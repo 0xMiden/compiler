@@ -5,7 +5,7 @@ use compact_str::CompactString;
 use smallvec::SmallVec;
 
 use super::OperationPass;
-use crate::{pass::PassExecutionState, OperationName, OperationRef};
+use crate::{OperationName, OperationRef, pass::PassExecutionState};
 
 #[allow(unused_variables)]
 pub trait PassInstrumentation {

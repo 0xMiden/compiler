@@ -6,7 +6,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::types::{Asset, NoteIdx, NoteType, Recipient, Tag};
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::output_note::create"]
     pub fn extern_output_note_create(
         tag: Tag,

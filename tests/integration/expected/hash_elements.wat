@@ -1,6 +1,6 @@
 (module $hash_elements.wasm
-  (type (;0;) (func (param i32) (result f32)))
-  (type (;1;) (func (param i32 i32 i32)))
+  (type (;0;) (func (param i32 i32 i32)))
+  (type (;1;) (func (param i32) (result f32)))
   (type (;2;) (func (param i32 i32)))
   (type (;3;) (func (param f32 f32)))
   (type (;4;) (func (param i32 i32 i32 i32)))
@@ -9,7 +9,8 @@
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
   (export "memory" (memory 0))
   (export "entrypoint" (func $entrypoint))
-  (func $entrypoint (;0;) (type 0) (param i32) (result f32)
+  (func $__rustc::__rust_dealloc (;0;) (type 0) (param i32 i32 i32))
+  (func $entrypoint (;1;) (type 1) (param i32) (result f32)
     (local i32 i32 i32 f32)
     global.get $__stack_pointer
     i32.const 48
@@ -66,11 +67,11 @@
     local.get 1
     i32.const 32
     i32.add
-    call $miden_stdlib_sys::intrinsics::word::Word::reverse
+    call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
     local.get 0
     i32.const 4
     i32.const 4
-    call $alloc::raw_vec::RawVecInner<A>::deallocate
+    call $<alloc::raw_vec::RawVecInner>::deallocate
     local.get 1
     f32.load
     local.set 4
@@ -80,8 +81,7 @@
     global.set $__stack_pointer
     local.get 4
   )
-  (func $__rustc::__rust_dealloc (;1;) (type 1) (param i32 i32 i32))
-  (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;2;) (type 2) (param i32 i32)
+  (func $<miden_stdlib_sys::intrinsics::word::Word>::reverse (;2;) (type 2) (param i32 i32)
     (local i32 i32 i32 f32)
     global.get $__stack_pointer
     i32.const 16
@@ -139,19 +139,19 @@
     i64.load align=4
     i64.store
   )
-  (func $intrinsics::felt::from_u32 (;3;) (type 0) (param i32) (result f32)
+  (func $intrinsics::felt::assert_eq (;3;) (type 3) (param f32 f32)
     unreachable
   )
-  (func $intrinsics::felt::assert_eq (;4;) (type 3) (param f32 f32)
+  (func $intrinsics::felt::from_u32 (;4;) (type 1) (param i32) (result f32)
     unreachable
   )
-  (func $std::crypto::hashes::rpo::hash_memory (;5;) (type 1) (param i32 i32 i32)
+  (func $std::crypto::hashes::rpo::hash_memory (;5;) (type 0) (param i32 i32 i32)
     unreachable
   )
-  (func $std::crypto::hashes::rpo::hash_memory_words (;6;) (type 1) (param i32 i32 i32)
+  (func $std::crypto::hashes::rpo::hash_memory_words (;6;) (type 0) (param i32 i32 i32)
     unreachable
   )
-  (func $alloc::raw_vec::RawVecInner<A>::deallocate (;7;) (type 1) (param i32 i32 i32)
+  (func $<alloc::raw_vec::RawVecInner>::deallocate (;7;) (type 0) (param i32 i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -164,7 +164,7 @@
     local.get 0
     local.get 1
     local.get 2
-    call $alloc::raw_vec::RawVecInner<A>::current_memory
+    call $<alloc::raw_vec::RawVecInner>::current_memory
     block ;; label = @1
       local.get 3
       i32.load offset=8
@@ -183,7 +183,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $alloc::raw_vec::RawVecInner<A>::current_memory (;8;) (type 4) (param i32 i32 i32 i32)
+  (func $<alloc::raw_vec::RawVecInner>::current_memory (;8;) (type 4) (param i32 i32 i32 i32)
     (local i32 i32 i32)
     i32.const 0
     local.set 4
@@ -218,7 +218,7 @@
     local.get 4
     i32.store
   )
-  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;9;) (type 1) (param i32 i32 i32)
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;9;) (type 0) (param i32 i32 i32)
     block ;; label = @1
       local.get 2
       i32.eqz

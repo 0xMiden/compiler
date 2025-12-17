@@ -2,8 +2,8 @@ use smallvec::SmallVec;
 
 use super::RegionTransformFailed;
 use crate::{
-    traits::BranchOpInterface, BlockArgumentRef, BlockRef, Region, RegionRef, Rewriter,
-    SuccessorOperands, Usable,
+    BlockArgumentRef, BlockRef, Region, RegionRef, Rewriter, SuccessorOperands, Usable,
+    traits::BranchOpInterface,
 };
 
 impl Region {
@@ -112,13 +112,13 @@ impl Region {
             }
 
             // If they are passing the same value, drop the argument.
-            if let Some(common_value) = common_value {
-                if same_arg {
-                    args_to_erase.push(arg_index);
+            if let Some(common_value) = common_value
+                && same_arg
+            {
+                args_to_erase.push(arg_index);
 
-                    // Remove the argument from the block.
-                    rewriter.replace_all_uses_of_value_with(block_arg, common_value);
-                }
+                // Remove the argument from the block.
+                rewriter.replace_all_uses_of_value_with(block_arg, common_value);
             }
         }
 

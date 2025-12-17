@@ -10,7 +10,7 @@
 //! those primitives.
 use midenc_hir::{Overflow, SourceSpan};
 
-use super::{masm, OpEmitter};
+use super::{OpEmitter, masm};
 
 #[allow(unused)]
 impl OpEmitter<'_> {

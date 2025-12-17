@@ -873,6 +873,8 @@ dependencies = [
  "semver 1.0.26",
  "syn",
  "toml 0.8.23",
+ "wit-bindgen-core",
+ "wit-bindgen-rust",
 ]
 
 [[package]]

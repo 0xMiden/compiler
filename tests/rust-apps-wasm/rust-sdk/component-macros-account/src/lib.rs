@@ -1,9 +1,10 @@
 #![no_std]
+#![feature(alloc_error_handler)]
 
-use miden::{component, export_type, Asset, Felt, Word};
+use miden::{Asset, Felt, Word, component, export_type};
 
 pub mod my_types {
-    use miden::{export_type, Felt};
+    use miden::{Felt, export_type};
 
     #[export_type]
     pub enum EnumA {

@@ -8,12 +8,12 @@ use super::{
     RewriterListener,
 };
 use crate::{
-    adt::SmallSet,
-    patterns::{PatternApplicationError, RewritePattern},
-    traits::{ConstantLike, Foldable, IsolatedFromAbove},
     AttrPrinter, BlockRef, Builder, Context, Forward, InsertionGuard, Listener, OpFoldResult,
     OperationFolder, OperationRef, ProgramPoint, RawWalk, Region, RegionRef, Report, SourceSpan,
     Spanned, Value, ValueRef, WalkResult,
+    adt::SmallSet,
+    patterns::{PatternApplicationError, RewritePattern},
+    traits::{ConstantLike, Foldable, IsolatedFromAbove},
 };
 
 /// Rewrite ops in the given region, which must be isolated from above, by repeatedly applying the

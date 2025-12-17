@@ -1,6 +1,6 @@
 use crate::{
-    dialects::{builtin::FunctionBuilder, test::*},
     Builder, BuilderExt, OpBuilder, Report, UnsafeIntrusiveEntityRef, ValueRef,
+    dialects::{builtin::FunctionBuilder, test::*},
 };
 
 pub trait TestOpBuilder<'f, B: ?Sized + Builder> {

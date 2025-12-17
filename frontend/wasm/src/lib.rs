@@ -25,7 +25,7 @@ use alloc::rc::Rc;
 
 use component::build_ir::translate_component;
 use error::WasmResult;
-use midenc_hir::{dialects::builtin, Context};
+use midenc_hir::{Context, dialects::builtin};
 use module::build_ir::translate_module_as_component;
 use wasmparser::WasmFeatures;
 

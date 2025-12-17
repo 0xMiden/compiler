@@ -1,7 +1,7 @@
 use miden_core::{Felt, FieldElement};
 use midenc_hir::{Overflow, SourceSpan};
 
-use super::{dup_from_offset, felt, masm, movup_from_offset, OpEmitter};
+use super::{OpEmitter, dup_from_offset, felt, masm, movup_from_offset};
 
 pub const SIGN_BIT: u32 = 1 << 31;
 
@@ -429,7 +429,7 @@ impl OpEmitter<'_> {
                 Overflow::Unchecked => masm::Instruction::Add,
                 Overflow::Checked => {
                     return self
-                        .emit_all([masm::Instruction::Add, masm::Instruction::U32Assert], span)
+                        .emit_all([masm::Instruction::Add, masm::Instruction::U32Assert], span);
                 }
                 Overflow::Wrapping => masm::Instruction::U32WrappingAdd,
                 Overflow::Overflowing => masm::Instruction::U32OverflowingAdd,
@@ -556,7 +556,7 @@ impl OpEmitter<'_> {
                             masm::Instruction::U32Assert,
                         ],
                         span,
-                    )
+                    );
                 }
                 Overflow::Wrapping => masm::Instruction::U32WrappingSubImm(imm.into()),
                 Overflow::Overflowing => masm::Instruction::U32OverflowingSubImm(imm.into()),
@@ -599,7 +599,7 @@ impl OpEmitter<'_> {
                 Overflow::Unchecked => masm::Instruction::Mul,
                 Overflow::Checked => {
                     return self
-                        .emit_all([masm::Instruction::Mul, masm::Instruction::U32Assert], span)
+                        .emit_all([masm::Instruction::Mul, masm::Instruction::U32Assert], span);
                 }
                 Overflow::Wrapping => masm::Instruction::U32WrappingMul,
                 Overflow::Overflowing => masm::Instruction::U32OverflowingMul,
@@ -650,7 +650,7 @@ impl OpEmitter<'_> {
                                     masm::Instruction::U32Assert,
                                 ],
                                 span,
-                            )
+                            );
                         }
                         Overflow::Wrapping => masm::Instruction::U32WrappingMulImm(imm.into()),
                         Overflow::Overflowing => {

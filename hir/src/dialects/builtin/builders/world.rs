@@ -1,13 +1,13 @@
 use alloc::format;
 
 use crate::{
+    Builder, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolNameComponent, SymbolPath,
+    SymbolTable, UnsafeIntrusiveEntityRef,
     dialects::builtin::{
         Component, ComponentId, ComponentRef, Module, ModuleBuilder, ModuleRef,
         PrimComponentBuilder, PrimModuleBuilder, World, WorldRef,
     },
     version::Version,
-    Builder, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolNameComponent, SymbolPath,
-    SymbolTable, UnsafeIntrusiveEntityRef,
 };
 
 pub struct WorldBuilder {

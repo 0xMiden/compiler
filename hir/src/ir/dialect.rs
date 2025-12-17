@@ -5,7 +5,7 @@ use core::ptr::{DynMetadata, Pointee};
 
 pub use self::info::DialectInfo;
 use crate::{
-    any::AsAny, interner, AttributeValue, Builder, OperationName, OperationRef, SourceSpan, Type,
+    AttributeValue, Builder, OperationName, OperationRef, SourceSpan, Type, any::AsAny, interner,
 };
 
 pub type DialectRegistrationHook = Box<dyn Fn(&mut DialectInfo, &super::Context)>;

@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::{
     cmp::Ordering,
     fmt,
-    iter::{repeat_n, repeat_with, ByRefSized},
+    iter::{ByRefSized, repeat_n, repeat_with},
     ops::{Index, IndexMut, Range, RangeBounds},
     ptr::{self, NonNull},
 };
@@ -1815,7 +1815,7 @@ impl<T, const N: usize> From<SmallDeque<T, N>> for SmallVec<[T; N]> {
                     // SmallVec's inline size, "move" `len` items into it, and the construct the
                     // SmallVec from the raw buffer and len
                     let mut buf = [const { core::mem::MaybeUninit::<T>::uninit() }; N];
-                    let buf_ptr = core::mem::MaybeUninit::slice_as_mut_ptr(&mut buf);
+                    let buf_ptr = buf.as_mut_ptr().cast_init();
                     ptr::copy(ptr.add(other.head), buf_ptr, len);
                     // While we are technically potentially letting a subset of elements in the
                     // array that never got uninitialized, be assumed to have been initialized
@@ -3739,7 +3739,7 @@ mod tests {
 
         impl Hasher for SimpleHasher {
             fn finish(&self) -> u64 {
-                self.0 .0
+                self.0.0
             }
 
             fn write(&mut self, bytes: &[u8]) {

@@ -1,9 +1,10 @@
 #![no_std]
+#![feature(alloc_error_handler)]
 
 use miden::*;
 
 use crate::bindings::miden::component_macros_account::component_macros_account::{
-    test_custom_types, StructA, StructB,
+    StructA, StructB, test_custom_types,
 };
 
 #[note_script]

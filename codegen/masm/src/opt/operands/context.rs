@@ -1,6 +1,6 @@
 use core::num::NonZeroU8;
 
-use midenc_hir::{self as hir, hashbrown, FxHashMap};
+use midenc_hir::{self as hir, FxHashMap, hashbrown};
 use smallvec::SmallVec;
 
 use super::{SolverError, SolverOptions, Stack, ValueOrAlias};

@@ -1,3 +1,5 @@
+#![expect(unused_assignments)]
+
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -10,11 +12,10 @@ use alloc::{
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub use miden_assembly::diagnostics::{
-    miette,
+    Diagnostic, Label, LabeledSpan, RelatedError, RelatedLabel, Report, Severity, WrapErr, miette,
     miette::MietteDiagnostic as AdHocDiagnostic,
     reporting,
     reporting::{PrintDiagnostic, ReportHandlerOpts},
-    Diagnostic, Label, LabeledSpan, RelatedError, RelatedLabel, Report, Severity, WrapErr,
 };
 pub use miden_core::*;
 pub use miden_debug_types::*;

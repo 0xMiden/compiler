@@ -17,7 +17,6 @@
 #![feature(fn_traits)]
 #![feature(unboxed_closures)]
 #![feature(box_into_inner)]
-#![feature(const_type_id)]
 #![feature(exact_size_is_empty)]
 #![feature(generic_const_exprs)]
 #![feature(clone_to_uninit)]
@@ -31,7 +30,7 @@
 #![feature(iter_collect_into)]
 #![feature(trusted_len)]
 #![feature(never_type)]
-#![feature(maybe_uninit_slice)]
+#![feature(cast_maybe_uninit)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(array_into_iter_constructors)]
@@ -54,7 +53,7 @@ pub use compact_str::{
     CompactString as SmallStr, CompactStringExt as SmallStrExt, ToCompactString as ToSmallStr,
 };
 pub use hashbrown;
-pub use smallvec::{smallvec, SmallVec, ToSmallVec};
+pub use smallvec::{SmallVec, ToSmallVec, smallvec};
 
 pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
 pub type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;
@@ -84,8 +83,8 @@ pub use midenc_session::diagnostics;
 
 pub use self::{
     attributes::{
-        markers::*, ArrayAttr, Attribute, AttributeSet, AttributeValue, DictAttr, Overflow,
-        SetAttr, Visibility,
+        ArrayAttr, Attribute, AttributeSet, AttributeValue, DictAttr, Overflow, SetAttr,
+        Visibility, markers::*,
     },
     direction::{Backward, Direction, Forward},
     eq::DynPartialEq,

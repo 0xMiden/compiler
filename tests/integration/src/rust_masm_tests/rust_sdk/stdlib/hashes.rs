@@ -9,8 +9,8 @@ use proptest::{
 use sha2::{Digest, Sha256};
 
 use crate::{
-    testing::{eval_package, Initializer},
     CompilerTest,
+    testing::{Initializer, eval_package},
 };
 
 /// Runs the provided stdlib hash function against random 32-byte inputs and compares the outputs

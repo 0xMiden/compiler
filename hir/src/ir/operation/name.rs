@@ -7,10 +7,9 @@ use core::{
 
 use super::OpRegistration;
 use crate::{
-    interner,
+    Context, interner,
     patterns::RewritePatternSet,
     traits::{Canonicalizable, TraitInfo},
-    Context,
 };
 
 /// The operation name, or mnemonic, that uniquely identifies an operation.
@@ -113,7 +112,7 @@ impl OperationName {
 
     #[inline(always)]
     unsafe fn downcast_ref_unchecked<T: 'static>(&self, ptr: *const ()) -> &T {
-        &*core::ptr::from_raw_parts(ptr.cast::<T>(), ())
+        unsafe { &*core::ptr::from_raw_parts(ptr.cast::<T>(), ()) }
     }
 
     #[inline]
@@ -127,7 +126,7 @@ impl OperationName {
 
     #[inline(always)]
     unsafe fn downcast_mut_unchecked<T: 'static>(&mut self, ptr: *mut ()) -> &mut T {
-        &mut *core::ptr::from_raw_parts_mut(ptr.cast::<T>(), ())
+        unsafe { &mut *core::ptr::from_raw_parts_mut(ptr.cast::<T>(), ()) }
     }
 
     pub(super) fn upcast<Trait>(&self, ptr: *const ()) -> Option<&Trait>

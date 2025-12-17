@@ -95,8 +95,8 @@ use midenc_hir::{Immediate, Operation, SourceSpan, Type, ValueRef};
 
 use super::{Operand, OperandStack};
 use crate::{
-    masm::{self as masm, Op},
     TraceEvent,
+    masm::{self as masm, Op},
 };
 
 /// This structure is used to emit the Miden Assembly ops corresponding to an IR instruction.
@@ -841,9 +841,9 @@ mod tests {
             assert_eq!(&ops[12], &Op::Inst(Span::new(span, masm::Instruction::MovDn6))); // [three, five_c, five_d, four_a, four_b, five_a, five_b]
             assert_eq!(&ops[13], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
             assert_eq!(&ops[14], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c,
-                                                                                         // five_d,
-                                                                                         // five_a,
-                                                                                         // five_b]
+            // five_d,
+            // five_a,
+            // five_b]
         }
 
         emitter.movdn(2, SourceSpan::default());
@@ -862,9 +862,9 @@ mod tests {
             assert_eq!(&ops[14], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c, five_d, five_a, five_b]
             assert_eq!(&ops[15], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
             assert_eq!(&ops[16], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [three, five_c, five_d, four_a,
-                                                                                         // four_b,
-                                                                                         // five_a,
-                                                                                         // five_b]
+            // four_b,
+            // five_a,
+            // five_b]
         }
 
         emitter.movup(2, SourceSpan::default());
@@ -881,9 +881,9 @@ mod tests {
             assert_eq!(&ops[16], &Op::Inst(Span::new(span, masm::Instruction::MovDn4))); // [three, five_c, five_d, four_a, four_b, five_a, five_b]
             assert_eq!(&ops[17], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_b, three, five_c, five_d, four_a, five_a, five_b]
             assert_eq!(&ops[18], &Op::Inst(Span::new(span, masm::Instruction::MovUp4))); // [four_a, four_b, three, five_c,
-                                                                                         // five_d,
-                                                                                         // five_a,
-                                                                                         // five_b]
+            // five_d,
+            // five_a,
+            // five_b]
         }
 
         emitter.drop(SourceSpan::default());

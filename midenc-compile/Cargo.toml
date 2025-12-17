@@ -26,7 +26,6 @@ std = [
 ]
 
 [dependencies]
-anyhow.workspace = true
 clap = { workspace = true, optional = true }
 log.workspace = true
 inventory.workspace = true

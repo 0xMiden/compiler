@@ -5,11 +5,11 @@ mod memory;
 use alloc::{format, rc::Rc, string::ToString, vec, vec::Vec};
 
 use midenc_hir::{
+    CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint, RegionRef,
+    Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange, ValueRef,
     dialects::builtin::{ComponentId, LocalVariable},
     formatter::DisplayValues,
-    smallvec, CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint,
-    RegionRef, Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange,
-    ValueRef,
+    smallvec,
 };
 use midenc_session::diagnostics::{InFlightDiagnosticBuilder, Severity};
 

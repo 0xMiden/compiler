@@ -13,7 +13,7 @@ enum Op {
 }
 
 #[inline(never)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 fn match_enum(a: u32, b: u32, foo: Op) -> u32 {
     match foo {
         Op::Add => a + b,
@@ -22,7 +22,7 @@ fn match_enum(a: u32, b: u32, foo: Op) -> u32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn __main() -> u32 {
     match_enum(3, 5, Op::Add) + match_enum(3, 5, Op::Sub) + match_enum(3, 5, Op::Mul)
 }

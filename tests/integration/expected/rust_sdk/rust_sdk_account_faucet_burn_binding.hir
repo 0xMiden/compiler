@@ -220,7 +220,7 @@ builtin.component miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-fa
             hir.store v150, v144;
             v151 = arith.constant 16 : i32;
             v152 = arith.add v98, v151 : i32 #[overflow = wrapping];
-            hir.exec @miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1/rust_sdk_account_faucet_burn_binding/miden_stdlib_sys::intrinsics::word::Word::reverse(v91, v152)
+            hir.exec @miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1/rust_sdk_account_faucet_burn_binding/<miden_stdlib_sys::intrinsics::word::Word>::reverse(v91, v152)
             v394 = arith.constant 32 : i32;
             v154 = arith.add v98, v394 : i32 #[overflow = wrapping];
             v155 = builtin.global_symbol @miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1/rust_sdk_account_faucet_burn_binding/__stack_pointer : ptr<byte, u8>
@@ -262,7 +262,7 @@ builtin.component miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-fa
             builtin.ret ;
         };
 
-        private builtin.function @miden_stdlib_sys::intrinsics::word::Word::reverse(v181: i32, v182: i32) {
+        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word>::reverse(v181: i32, v182: i32) {
         ^block23(v181: i32, v182: i32):
             v185 = builtin.global_symbol @miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1/rust_sdk_account_faucet_burn_binding/__stack_pointer : ptr<byte, u8>
             v186 = hir.bitcast v185 : ptr<byte, i32>;

@@ -227,11 +227,6 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
 proc intrinsics::felt::as_u64(felt) -> [u32; 2]
     u32split
 end
@@ -239,5 +234,10 @@ end
 @callconv("C")
 proc intrinsics::felt::assert_eq(felt, felt)
     assert_eq
+end
+
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
 end
 

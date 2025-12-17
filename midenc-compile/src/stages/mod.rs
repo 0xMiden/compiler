@@ -1,12 +1,12 @@
 use alloc::rc::Rc;
 
 use midenc_frontend_wasm as wasm;
-use midenc_hir::{dialects::builtin, Context};
+use midenc_hir::{Context, dialects::builtin};
 #[cfg(feature = "std")]
 use midenc_session::diagnostics::WrapErr;
 use midenc_session::{
-    diagnostics::{IntoDiagnostic, Report},
     OutputMode, Session,
+    diagnostics::{IntoDiagnostic, Report},
 };
 
 use super::Stage;

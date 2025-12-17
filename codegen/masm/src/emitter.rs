@@ -7,11 +7,11 @@ use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
 
 use crate::{
+    Constraint, OperandStack,
     emit::{InstOpEmitter, OpEmitter},
     linker::LinkInfo,
     masm,
-    opt::{operands::SolverOptions, OperandMovementConstraintSolver, SolverError},
-    Constraint, OperandStack,
+    opt::{OperandMovementConstraintSolver, SolverError, operands::SolverOptions},
 };
 
 pub(crate) struct BlockEmitter<'b> {

@@ -3,9 +3,9 @@ use alloc::boxed::Box;
 use midenc_dialect_hir::transforms::TransformSpills;
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_hir::{
+    Op,
     pass::{IRPrintingConfig, Nesting, PassManager},
     patterns::{GreedyRewriteConfig, RegionSimplificationLevel},
-    Op,
 };
 use midenc_hir_transform::{Canonicalizer, ControlFlowSink, SinkOperandDefs};
 

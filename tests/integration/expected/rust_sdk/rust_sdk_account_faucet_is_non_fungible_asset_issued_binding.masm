@@ -365,6 +365,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -377,6 +378,8 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -396,6 +399,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -405,6 +409,8 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -413,13 +419,13 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
+proc intrinsics::felt::eq(felt, felt) -> i32
+    eq
 end
 
 @callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
 end
 
 @callconv("C")

@@ -7,13 +7,13 @@ use core::{
 };
 
 use midenc_hir::{
-    adt::{SmallDenseMap, SmallSet},
-    pass::AnalysisManager,
-    traits::{BranchOpInterface, ReturnLike},
     AttributeValue, Block, BlockRef, CallOpInterface, CallableOpInterface, EntityWithId, Forward,
     Operation, OperationRef, ProgramPoint, RegionBranchOpInterface, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, RegionSuccessorIter, Report, SmallVec, SourceSpan, Spanned,
     Symbol, SymbolManager, SymbolMap, SymbolTable, ValueRef,
+    adt::{SmallDenseMap, SmallSet},
+    pass::AnalysisManager,
+    traits::{BranchOpInterface, ReturnLike},
 };
 
 use super::constant_propagation::ConstantValue;

@@ -108,9 +108,9 @@ mod edges;
 mod transform;
 
 use midenc_hir::{
-    adt::SmallSet, dominance::DominanceInfo, traits::BranchOpInterface, BlockRef, Builder,
-    OpBuilder, Operation, OperationRef, Region, RegionRef, Report, SmallVec, SourceSpan, Type,
-    Value, ValueRange, ValueRef, WalkResult,
+    BlockRef, Builder, OpBuilder, Operation, OperationRef, Region, RegionRef, Report, SmallVec,
+    SourceSpan, Type, Value, ValueRange, ValueRef, WalkResult, adt::SmallSet,
+    dominance::DominanceInfo, traits::BranchOpInterface,
 };
 
 use self::transform::TransformationContext;

@@ -35,7 +35,7 @@ As a result, floating-point types in Rust are not supported at all. Any attempt 
 result in a compilation error. We considered this a fair design tradeoff, as floating point math
 is unused/rare in the context in which Miden is used, in comparison to fixed-point or field
 arithmetic. In addition, implementing floating-point operations in software on the Miden VM would
-be extraordinarily expensive, which generally works against the purpose for using floats in the
+be extraordinarily expensive, which generally works against the purpose of using floats in the
 first place.
 
 At this point in time, we have no plans to support floats, but this may change if we are able to
@@ -50,8 +50,8 @@ find a better/more natural representation for `Felt` in WebAssembly.
 This feature corresponds to `call_indirect` in WebAssembly, and is associated with Rust features
 such as trait objects (which use indirection to call trait methods), and closures. Note that the
 Rust compiler is able to erase the indirection associated with certain abstractions statically
-in some cases, shown below. If Rust is unable to statically resolve all call targets, then `midenc`
-will raise an error when it encounters any use of `call_indirect`.
+in some cases, as shown below. If Rust is unable to statically resolve all call targets, then
+`midenc` will raise an error when it encounters any use of `call_indirect`.
 
 :::warning
 
@@ -144,7 +144,7 @@ by the compiler in some cases, and the set of procedures for which this is done 
 restricted to a hardcoded whitelist of known Miden procedures.
 
 This affects any procedure which returns a type larger than `u32` (excluding `Felt`, which for
-this purpose has the same size). For example, returing a Miden `Word` from a procedure, a common
+this purpose has the same size). For example, returning a Miden `Word` from a procedure, a common
 return type, is not compatible with Rust's ABI - it will attempt to generate code which allocates
 stack space in the caller, which it expects the callee to write to, inserting a new parameter at
 the start of the parameter list, and expecting nothing to be returned by value. The compiler handles
@@ -179,7 +179,7 @@ callee, which has the effect of requiring procedures to have a different ABI dep
 they expect to be dynamically-invoked or not.
 
 Our solution to that issue is to generate stubs which are used as the target of `dyn(exec|call)`,
-the body of which drop the callee hash, fix up the operand stack as necessary, and then uses a
+the body of which drops the callee hash, fixes up the operand stack as necessary, and then uses a
 simple `exec` or `call` to invoke the "real" callee. We will emit a single stub for every function
 which has its "address" taken, and use the hash of the stub in place of the actual callee hash.
 
@@ -208,13 +208,13 @@ the [WebAssembly Component Model](https://component-model.bytecodealliance.org/)
 interest to us, is the fact that components in this model are "shared-nothing", and the ABI used to
 communicate across component boundaries, is specially designed to enforce shared-nothing semantics
 on caller and callee. In addition to compiling for a specific Wasm target, we also rely on some
-additional tooling for describing component interfaces, types, and to generate Rust bindings for
+additional tooling for describing component interfaces, types, and generating Rust bindings for
 those descriptions, to ensure that calls across the boundary remain opaque, even to the linker,
 which ensures that the assumptions of the caller and callee with regard to what address space they
 operate in are preserved (i.e. a callee can never be inlined into the caller, and thus end up
 executing in the caller's context rather than the expected callee context).
 
-This is one of our top priorities, as it is critical to being able to use Rust to compile code for
+This is one of our top priorities, as it is critical to be able to use Rust to compile code for
 the Miden rollup, but it is also the most complex feature on our roadmap, hence why it is scheduled
 for our Beta 2 milestone, rather than Beta 1 (the next release), as it depends on multiple other
 subfeatures being implemented first.

@@ -20,8 +20,8 @@ mod spill;
 //pub use self::inliner::Inliner;
 pub use self::{
     canonicalization::Canonicalizer,
-    cfg_to_scf::{transform_cfg_to_scf, CFGToSCFInterface},
+    cfg_to_scf::{CFGToSCFInterface, transform_cfg_to_scf},
     sccp::SparseConditionalConstantPropagation,
     sink::{ControlFlowSink, SinkOperandDefs},
-    spill::{transform_spills, ReloadLike, SpillLike, TransformSpillsInterface},
+    spill::{ReloadLike, SpillLike, TransformSpillsInterface, transform_spills},
 };

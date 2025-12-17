@@ -1,12 +1,12 @@
 use super::BuiltinOpBuilder;
 use crate::{
+    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, SymbolName, SymbolTable,
+    Type, UnsafeIntrusiveEntityRef, Visibility,
     constants::ConstantData,
     dialects::builtin::{
         Function, FunctionRef, GlobalVariable, GlobalVariableRef, Module, ModuleRef,
         PrimModuleBuilder, Segment,
     },
-    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, SymbolName, SymbolTable,
-    Type, UnsafeIntrusiveEntityRef, Visibility,
 };
 
 /// A specialized builder for constructing/modifying [crate::dialects::hir::Module]

@@ -1,9 +1,8 @@
 use std::env;
 
 use midenc_driver::{
-    self as driver,
+    self as driver, ClapDiagnostic,
     diagnostics::{IntoDiagnostic, Report, WrapErr},
-    ClapDiagnostic,
 };
 
 pub fn main() -> Result<(), Report> {

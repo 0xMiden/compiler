@@ -1,4 +1,4 @@
-use midenc_hir::{formatter::DisplayValues, FxHashMap};
+use midenc_hir::{FxHashMap, formatter::DisplayValues};
 
 use crate::module::module_env::ParsedModule;
 

@@ -5,8 +5,8 @@ use log::Log;
 use midenc_compile as compile;
 use midenc_hir::Context;
 use midenc_session::{
-    diagnostics::{Emitter, Report},
     InputFile,
+    diagnostics::{Emitter, Report},
 };
 
 use crate::ClapDiagnostic;

@@ -1,10 +1,10 @@
 use miden_core::{Felt, FieldElement};
 use midenc_hir::{
-    dialects::builtin::LocalVariable, AddressSpace, ArrayType, PointerType, SourceSpan, StructType,
-    Type,
+    AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type,
+    dialects::builtin::LocalVariable,
 };
 
-use super::{masm, OpEmitter};
+use super::{OpEmitter, masm};
 use crate::lower::NativePtr;
 
 /// Allocation
@@ -62,7 +62,7 @@ impl OpEmitter<'_> {
                 );
                 match &ty {
                     Type::I128 => self.load_quad_word(None, span),
-                    Type::I64 | Type::U64 => self.load_double_word(None, span),
+                    Type::I64 | Type::U64 => self.load_double_word_int(None, span),
                     Type::Felt => self.load_felt(None, span),
                     Type::I32 | Type::U32 => self.load_word(None, span),
                     ty @ (Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1) => {
@@ -87,7 +87,7 @@ impl OpEmitter<'_> {
         let ptr = NativePtr::from_ptr(addr);
         match &ty {
             Type::I128 => self.load_quad_word(Some(ptr), span),
-            Type::I64 | Type::U64 => self.load_double_word(Some(ptr), span),
+            Type::I64 | Type::U64 => self.load_double_word_int(Some(ptr), span),
             Type::Felt => self.load_felt(Some(ptr), span),
             Type::I32 | Type::U32 => self.load_word(Some(ptr), span),
             Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1 => {
@@ -170,13 +170,17 @@ impl OpEmitter<'_> {
         }
     }
 
-    /// Load a pair of machine words (32-bit elements) to the operand stack
-    fn load_double_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
+    /// Load a 64-bit word from the given address.
+    fn load_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
-            return self.load_double_word_imm(imm, span);
+            self.load_double_word_imm(imm, span);
+        } else {
+            self.raw_exec("intrinsics::mem::load_dw", span);
         }
 
-        self.raw_exec("intrinsics::mem::load_dw", span);
+        // The mem::intrinsic loads two 32-bit words with the first at the top of the stack.  Swap
+        // them to make a big-endian-limbed stack value.
+        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Load a sub-word value (u8, u16, etc.) from memory
@@ -538,7 +542,7 @@ impl OpEmitter<'_> {
                 );
                 match value_ty {
                     Type::I128 => self.store_quad_word(None, span),
-                    Type::I64 | Type::U64 => self.store_double_word(None, span),
+                    Type::I64 | Type::U64 => self.store_double_word_int(None, span),
                     Type::Felt => self.store_felt(None, span),
                     Type::I32 | Type::U32 => self.store_word(None, span),
                     ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, None, span),
@@ -566,7 +570,7 @@ impl OpEmitter<'_> {
         let ptr = NativePtr::from_ptr(addr);
         match value_ty {
             Type::I128 => self.store_quad_word(Some(ptr), span),
-            Type::I64 | Type::U64 => self.store_double_word(Some(ptr), span),
+            Type::I64 | Type::U64 => self.store_double_word_int(Some(ptr), span),
             Type::Felt => self.store_felt(Some(ptr), span),
             Type::I32 | Type::U32 => self.store_word(Some(ptr), span),
             ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, Some(ptr), span),
@@ -853,13 +857,18 @@ impl OpEmitter<'_> {
         }
     }
 
-    /// Store a pair of machine words (32-bit elements) to the operand stack
-    fn store_double_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
-        if let Some(imm) = ptr {
-            return self.store_double_word_imm(imm, span);
-        }
+    /// Store a 64-bit word to the operand stack
+    fn store_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
+        // The mem::intrinsic stores two 32-bit words in stack order.  Swap them (the 3rd and 4th
+        // params) first to make a little-endian-limbed memory value.
+        self.emit(masm::Instruction::MovUp2, span);
+        self.emit(masm::Instruction::MovDn3, span);
 
-        self.raw_exec("intrinsics::mem::store_dw", span);
+        if let Some(imm) = ptr {
+            self.store_double_word_imm(imm, span);
+        } else {
+            self.raw_exec("intrinsics::mem::store_dw", span);
+        }
     }
 
     fn store_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {

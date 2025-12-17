@@ -3,9 +3,9 @@
 use alloc::{borrow::Cow, collections::BTreeMap};
 use core::{fmt, ops::Range};
 
-use cranelift_entity::{packed_option::ReservedValue, EntityRef, PrimaryMap};
+use cranelift_entity::{EntityRef, PrimaryMap, packed_option::ReservedValue};
 use indexmap::IndexMap;
-use midenc_hir::{interner::Symbol, FxHashMap, Ident};
+use midenc_hir::{FxHashMap, Ident, interner::Symbol};
 use midenc_session::DiagnosticsHandler;
 
 use self::types::*;

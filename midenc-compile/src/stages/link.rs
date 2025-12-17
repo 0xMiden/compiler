@@ -1,12 +1,12 @@
 use alloc::{borrow::ToOwned, collections::BTreeMap, string::ToString, sync::Arc, vec::Vec};
 
 use midenc_frontend_wasm::FrontendOutput;
-use midenc_hir::{interner::Symbol, BuilderExt, OpBuilder, SourceSpan};
+use midenc_hir::{BuilderExt, OpBuilder, SourceSpan, interner::Symbol};
 #[cfg(feature = "std")]
 use midenc_session::Path;
 use midenc_session::{
-    diagnostics::{Severity, Spanned},
     InputType, OutputMode, OutputType, ProjectType,
+    diagnostics::{Severity, Spanned},
 };
 
 use super::*;

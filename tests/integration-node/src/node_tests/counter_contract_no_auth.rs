@@ -1,9 +1,9 @@
 //! Counter contract test with no-auth authentication component
 
 use miden_client::{
+    Word,
     account::StorageMap,
     transaction::{OutputNote, TransactionRequestBuilder},
-    Word,
 };
 use miden_core::{Felt, FieldElement};
 

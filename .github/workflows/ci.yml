@@ -22,7 +22,7 @@ on:
 env:
   # Set the new value when the cache grows too much and we hit the runner's disk space limit
   # via https://github.com/rust-lang/docs.rs/pull/2433
-  RUST_CACHE_KEY: rust-cache-20250528
+  RUST_CACHE_KEY: rust-cache-20251212
 
 jobs:
   lint:
@@ -177,7 +177,6 @@ jobs:
         # Skip some tests cause they are a space hog and run them in the separate job
         run: |
           cargo make test -E 'package(miden-integration-tests) - test(~rust_masm_tests::examples)'
-
 
   midenc_integration_tests_examples:
     name: midenc integration tests

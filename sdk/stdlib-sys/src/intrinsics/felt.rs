@@ -1,6 +1,6 @@
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-extern "C" {
+unsafe extern "C" {
     #[link_name = "intrinsics::felt::from_u64_unchecked"]
     fn extern_from_u64_unchecked(value: u64) -> Felt;
 

@@ -1,9 +1,10 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
+    Builder, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
     dialects::builtin::FunctionRef,
-    interner::{symbols, Symbol},
-    smallvec, Builder, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
+    interner::{Symbol, symbols},
+    smallvec,
 };
 
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};

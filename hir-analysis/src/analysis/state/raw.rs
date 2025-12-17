@@ -1,8 +1,8 @@
 use core::{any::TypeId, ptr::NonNull};
 
 use midenc_hir::{
-    entity::{BorrowRef, BorrowRefMut, EntityRef, RawEntity},
     FxHashMap,
+    entity::{BorrowRef, BorrowRefMut, EntityRef, RawEntity},
 };
 
 use super::*;
@@ -98,9 +98,11 @@ pub struct RawAnalysisStateInfoHandle<T: ?Sized> {
 }
 impl<T: 'static> RawAnalysisStateInfoHandle<T> {
     pub unsafe fn new(info: NonNull<AnalysisStateInfo>) -> Self {
-        let offset = info.as_ref().descriptor().offset;
-        let state = info.byte_add(offset as usize).cast::<RawEntity<T>>();
-        Self { state, offset }
+        unsafe {
+            let offset = info.as_ref().descriptor().offset;
+            let state = info.byte_add(offset as usize).cast::<RawEntity<T>>();
+            Self { state, offset }
+        }
     }
 
     #[track_caller]

@@ -4,6 +4,9 @@ pub use self::interface::{
     ComponentExport, ComponentId, ComponentInterface, ModuleExport, ModuleInterface,
 };
 use crate::{
+    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{
@@ -11,9 +14,6 @@ use crate::{
         NoTerminator, SingleBlock, SingleRegion,
     },
     version::Version,
-    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
 };
 
 pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;

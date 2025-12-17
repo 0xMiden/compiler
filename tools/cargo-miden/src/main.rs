@@ -1,5 +1,5 @@
 use anyhow::Ok;
-use cargo_miden::{run, OutputType};
+use cargo_miden::{OutputType, run};
 
 fn main() -> anyhow::Result<()> {
     // Initialize logger

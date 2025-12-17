@@ -61,7 +61,7 @@ impl From<Digest> for [Felt; 4] {
 // Remove WIT import module and resolve via a linker stub instead. The stub will export
 // the MASM symbol `intrinsics::crypto::hmerge`, and the frontend will lower its
 // unreachable body to a MASM exec.
-extern "C" {
+unsafe extern "C" {
     /// Computes the hash of two digests using the Rescue Prime Optimized (RPO)
     /// permutation in 2-to-1 mode.
     ///

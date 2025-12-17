@@ -7,18 +7,18 @@ use alloc::{
 };
 
 use compact_str::{CompactString, ToCompactString};
-use midenc_session::{diagnostics::Severity, Options};
-use smallvec::{smallvec, SmallVec};
+use midenc_session::{Options, diagnostics::Severity};
+use smallvec::{SmallVec, smallvec};
 
 use super::{
     AnalysisManager, OperationPass, Pass, PassExecutionState, PassInstrumentation,
     PassInstrumentor, PipelineParentInfo, Statistic,
 };
 use crate::{
-    pass::{PostPassStatus, Print},
-    traits::IsolatedFromAbove,
     Context, EntityMut, OpPrintingFlags, OpRegistration, Operation, OperationName, OperationRef,
     Report,
+    pass::{PostPassStatus, Print},
+    traits::IsolatedFromAbove,
 };
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -119,19 +119,19 @@ impl PassManager {
 
         let op_name = op.borrow().name();
         let anchor = self.pm.name();
-        if let Some(anchor) = anchor {
-            if anchor != &op_name {
-                return Err(self
-                    .context
-                    .diagnostics()
-                    .diagnostic(Severity::Error)
-                    .with_message("failed to construct pass manager")
-                    .with_primary_label(
-                        op.borrow().span(),
-                        format!("can't run '{anchor}' pass manager on '{op_name}'"),
-                    )
-                    .into_report());
-            }
+        if let Some(anchor) = anchor
+            && anchor != &op_name
+        {
+            return Err(self
+                .context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message("failed to construct pass manager")
+                .with_primary_label(
+                    op.borrow().span(),
+                    format!("can't run '{anchor}' pass manager on '{op_name}'"),
+                )
+                .into_report());
         }
 
         // Register all dialects for the current pipeline.
@@ -401,20 +401,20 @@ impl OpPassManager {
         // If this pass runs on a different operation than this pass manager, then implicitly
         // nest a pass manager for this operation if enabled.
         let pass_op_name = pass.target_name(&self.context);
-        if let Some(pass_op_name) = pass_op_name {
-            if self.name.as_ref().is_some_and(|name| name != &pass_op_name) {
-                if matches!(self.nesting, Nesting::Implicit) {
-                    let mut nested = self.nest_for(pass_op_name);
-                    nested.add_pass(pass);
-                    return;
-                }
-                panic!(
-                    "cannot add pass '{}' restricted to '{pass_op_name}' to a pass manager \
-                     intended to run on '{}', did you intend to nest?",
-                    pass.name(),
-                    self.name().unwrap(),
-                );
+        if let Some(pass_op_name) = pass_op_name
+            && self.name.as_ref().is_some_and(|name| name != &pass_op_name)
+        {
+            if matches!(self.nesting, Nesting::Implicit) {
+                let mut nested = self.nest_for(pass_op_name);
+                nested.add_pass(pass);
+                return;
             }
+            panic!(
+                "cannot add pass '{}' restricted to '{pass_op_name}' to a pass manager intended \
+                 to run on '{}', did you intend to nest?",
+                pass.name(),
+                self.name().unwrap(),
+            );
         }
 
         self.passes.push(pass);
@@ -991,10 +991,10 @@ impl OpToOpPassAdaptor {
             // * If the pass said that it preserved all analyses then it can't have permuted the IR
             let run_verifier_now = !execution_state.preserved_analyses().is_all();
 
-            if run_verifier_now {
-                if let Err(verification_result) = Self::verify(&op, run_verifier_recursively) {
-                    result = result.map_err(|_| verification_result);
-                }
+            if run_verifier_now
+                && let Err(verification_result) = Self::verify(&op, run_verifier_recursively)
+            {
+                result = result.map_err(|_| verification_result);
             }
         }
 

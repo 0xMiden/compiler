@@ -3,11 +3,11 @@ use core::fmt;
 
 use super::Component;
 use crate::{
-    diagnostics::{miette, Diagnostic},
-    dialects::builtin::{Function, Module},
-    version::Version,
     FxHashMap, Signature, Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolTable, Type,
     Visibility,
+    diagnostics::{Diagnostic, miette},
+    dialects::builtin::{Function, Module},
+    version::Version,
 };
 
 /// The fully-qualfied identifier of a component

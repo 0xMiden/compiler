@@ -1,14 +1,14 @@
 use alloc::{boxed::Box, rc::Rc};
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use crate::{
+    AttributeValue, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
+    OperationRef, ProgramPoint, RegionRef, Rewriter, SourceSpan, Spanned, Type, Value, ValueRef,
     adt::SmallDenseMap,
     matchers::Matcher,
     patterns::{RewriterImpl, RewriterListener},
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
-    AttributeValue, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
-    OperationRef, ProgramPoint, RegionRef, Rewriter, SourceSpan, Spanned, Type, Value, ValueRef,
 };
 
 /// Represents a constant value uniqued by dialect, value, and type.

@@ -1,13 +1,14 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
+    AsValueRange, Block, BlockRef, Builder, Context, EntityWithId, FxHashMap, OpBuilder,
+    OperationRef, ProgramPoint, Region, RegionRef, Report, SmallVec, SourceSpan, Spanned, Type,
+    Usable, Value, ValueRange, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
     dominance::{DominanceInfo, PreOrderDomTreeIter},
     formatter::DisplayValues,
-    smallvec, AsValueRange, Block, BlockRef, Builder, Context, EntityWithId, FxHashMap, OpBuilder,
-    OperationRef, ProgramPoint, Region, RegionRef, Report, SmallVec, SourceSpan, Spanned, Type,
-    Usable, Value, ValueRange, ValueRef,
+    smallvec,
 };
 
 use super::{
@@ -1302,7 +1303,7 @@ struct ReturnLikeOpKey(OperationRef);
 impl Eq for ReturnLikeOpKey {}
 impl PartialEq for ReturnLikeOpKey {
     fn eq(&self, other: &Self) -> bool {
-        use midenc_hir::equivalence::{ignore_value_equivalence, OperationEquivalenceFlags};
+        use midenc_hir::equivalence::{OperationEquivalenceFlags, ignore_value_equivalence};
         let a = self.0.borrow();
         a.is_equivalent_with_options(
             &other.0.borrow(),

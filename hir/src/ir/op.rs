@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, format};
 
 use super::*;
-use crate::{any::AsAny, traits::TraitInfo, AttributeValue};
+use crate::{AttributeValue, any::AsAny, traits::TraitInfo};
 
 pub trait OpRegistration: Op {
     /// The name of the dialect this op is declared part of

@@ -2,9 +2,9 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
 use syn::{
-    punctuated::Punctuated, spanned::Spanned, Arm, Attribute, Error, Expr, ExprField, ExprMatch,
-    ExprMethodCall, ExprPath, ExprUnary, FieldPat, Ident, Index, Member, Pat, PatIdent, PatRest,
-    PatStruct, PatTupleStruct, PatWild, Path, PathArguments, PathSegment, Token, UnOp,
+    Arm, Attribute, Error, Expr, ExprField, ExprMatch, ExprMethodCall, ExprPath, ExprUnary,
+    FieldPat, Ident, Index, Member, Pat, PatIdent, PatRest, PatStruct, PatTupleStruct, PatWild,
+    Path, PathArguments, PathSegment, Token, UnOp, punctuated::Punctuated, spanned::Spanned,
 };
 
 pub fn derive_spanned_struct(

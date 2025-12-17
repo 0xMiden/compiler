@@ -1,12 +1,12 @@
 use midenc_hir::{
-    pass::{Pass, PassExecutionState},
-    patterns::NoopRewriterListener,
     BlockRef, Builder, EntityMut, OpBuilder, Operation, OperationFolder, OperationName, RegionList,
     Report, SmallVec, ValueRef,
+    pass::{Pass, PassExecutionState},
+    patterns::NoopRewriterListener,
 };
 use midenc_hir_analysis::{
-    analyses::{constant_propagation::ConstantValue, DeadCodeAnalysis, SparseConstantPropagation},
     DataFlowSolver, Lattice,
+    analyses::{DeadCodeAnalysis, SparseConstantPropagation, constant_propagation::ConstantValue},
 };
 
 /// This pass implements a general algorithm for sparse conditional constant propagation.

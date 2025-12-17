@@ -4,7 +4,7 @@ use midenc_hir::{
     Type,
 };
 
-use super::{int64, masm, OpEmitter};
+use super::{OpEmitter, int64, masm};
 use crate::TraceEvent;
 
 impl OpEmitter<'_> {

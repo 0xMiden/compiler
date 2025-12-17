@@ -3,11 +3,11 @@ use std::{path::PathBuf, rc::Rc};
 
 use midenc_compile::LinkOutput;
 use midenc_hir::{
+    BuilderExt, Context, Ident, Op, OpBuilder, Signature, SourceSpan,
     dialects::builtin::{
         self, ComponentBuilder, FunctionBuilder, FunctionRef, ModuleBuilder, WorldBuilder,
     },
     version::Version,
-    BuilderExt, Context, Ident, Op, OpBuilder, Signature, SourceSpan,
 };
 use midenc_session::{InputFile, Session};
 

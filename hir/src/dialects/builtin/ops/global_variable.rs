@@ -1,6 +1,9 @@
 use smallvec::smallvec;
 
 use crate::{
+    AsSymbolRef, Context, Ident, Op, OpPrinter, Operation, PointerType, Report, Spanned, Symbol,
+    SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
+    Visibility,
     derive::operation,
     dialects::builtin::BuiltinDialect,
     effects::{
@@ -11,9 +14,6 @@ use crate::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
         SingleRegion, UInt8,
     },
-    AsSymbolRef, Context, Ident, Op, OpPrinter, Operation, PointerType, Report, Spanned, Symbol,
-    SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
-    Visibility,
 };
 
 pub type GlobalVariableRef = UnsafeIntrusiveEntityRef<GlobalVariable>;

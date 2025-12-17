@@ -6,15 +6,15 @@ use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
-    pass::AnalysisManager,
     AbiParam, AddressSpace, BlockRef, Builder, Context, Ident, Op, OpBuilder, PointerType,
     ProgramPoint, Report, Signature, SourceSpan, SymbolTable, Type, ValueRef,
+    dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
+    pass::AnalysisManager,
 };
 
 use crate::analyses::{
-    spills::{Predecessor, Split},
     SpillAnalysis,
+    spills::{Predecessor, Split},
 };
 
 type AnalysisResult<T> = Result<T, Report>;

@@ -156,6 +156,7 @@ proc miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-co
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.40
     dup.3
     add
@@ -168,6 +169,8 @@ proc miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-co
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -190,6 +193,7 @@ proc miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-co
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.32
     dup.3
     add
@@ -202,6 +206,8 @@ proc miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-co
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -221,7 +227,7 @@ proc miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-co
     dup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-compute-delta-commitment-binding@0.0.1::rust_sdk_account_compute_delta_commitment_binding::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-compute-delta-commitment-binding@0.0.1::rust_sdk_account_compute_delta_commitment_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.1048584
@@ -243,6 +249,7 @@ proc miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-co
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -255,6 +262,8 @@ proc miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-co
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -274,6 +283,7 @@ proc miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-co
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -283,6 +293,8 @@ proc miden:rust-sdk-account-compute-delta-commitment-binding/rust-sdk-account-co
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -376,7 +388,7 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -407,6 +419,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -419,6 +432,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -438,6 +453,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -447,6 +463,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -594,6 +612,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.4
     add
@@ -606,6 +625,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -624,6 +645,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -633,6 +655,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw

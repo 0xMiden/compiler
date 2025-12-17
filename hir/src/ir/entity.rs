@@ -289,7 +289,7 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     #[inline]
     unsafe fn from_ptr(ptr: *mut RawEntityMetadata<T, Metadata>) -> Self {
         debug_assert!(!ptr.is_null());
-        Self::from_inner(NonNull::new_unchecked(ptr))
+        unsafe { Self::from_inner(NonNull::new_unchecked(ptr)) }
     }
 
     #[inline]

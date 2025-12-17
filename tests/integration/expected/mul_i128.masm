@@ -31,6 +31,8 @@ pub proc entrypoint.2(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     locaddr.0
     push.0
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -55,6 +57,8 @@ pub proc entrypoint.2(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     movup.2
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -87,6 +91,7 @@ pub proc entrypoint.2(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.8
     movup.8
     trace.240
@@ -109,6 +114,8 @@ pub proc entrypoint.2(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     movup.2
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw

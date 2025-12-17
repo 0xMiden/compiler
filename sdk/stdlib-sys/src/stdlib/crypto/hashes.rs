@@ -6,10 +6,10 @@ use alloc::vec::Vec;
 
 use crate::{
     felt,
-    intrinsics::{assert_eq, Digest, Felt, Word},
+    intrinsics::{Digest, Felt, Word, assert_eq},
 };
 
-extern "C" {
+unsafe extern "C" {
     /// Computes BLAKE3 1-to-1 hash.
     ///
     /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
@@ -55,7 +55,7 @@ extern "C" {
     );
 }
 
-extern "C" {
+unsafe extern "C" {
     /// Computes SHA256 1-to-1 hash.
     ///
     /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
@@ -101,7 +101,7 @@ extern "C" {
     );
 }
 
-extern "C" {
+unsafe extern "C" {
     /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
     /// hash function.
     ///

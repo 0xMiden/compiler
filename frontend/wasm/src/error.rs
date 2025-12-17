@@ -1,4 +1,4 @@
-use midenc_session::diagnostics::{miette, Diagnostic, Report};
+use midenc_session::diagnostics::{Diagnostic, Report, miette};
 use thiserror::Error;
 
 /// A WebAssembly translation error.

@@ -3,10 +3,10 @@ use core::fmt;
 
 use super::{Context, Operation};
 use crate::{
+    AttributeValue, EntityWithId, SuccessorOperands, Value,
     formatter::{Document, PrettyPrint},
     matchers::Matcher,
     traits::BranchOpInterface,
-    AttributeValue, EntityWithId, SuccessorOperands, Value,
 };
 
 #[derive(Debug)]

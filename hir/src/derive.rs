@@ -147,10 +147,10 @@ mod tests {
     use midenc_session::diagnostics::Severity;
 
     use crate::{
+        Builder, BuilderExt, Context, Op, Operation, Report, Spanned, Value,
         attributes::Overflow,
         dialects::test::{self, Add},
         pass::{Nesting, PassManager},
-        Builder, BuilderExt, Context, Op, Operation, Report, Spanned, Value,
     };
 
     derive! {

@@ -1,7 +1,7 @@
 use super::BuiltinOpBuilder;
 use crate::{
-    dialects::builtin::{ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef},
     Builder, Ident, Op, OpBuilder, Report, Signature, SymbolName, SymbolPath, SymbolTable,
+    dialects::builtin::{ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef},
 };
 
 pub struct ComponentBuilder {

@@ -7,7 +7,7 @@ use miden_lib::MidenLib;
 use miden_processor::ExecutionError;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_session::{diagnostics::Report, Emit, STDLIB};
+use midenc_session::{Emit, STDLIB, diagnostics::Report};
 
 use crate::CompilerTestBuilder;
 

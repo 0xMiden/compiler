@@ -9,7 +9,7 @@ use proptest::{
     test_runner::{TestError, TestRunner},
 };
 
-use crate::{rust_masm_tests::run_masm_vs_rust, CompilerTest};
+use crate::{CompilerTest, rust_masm_tests::run_masm_vs_rust};
 
 /// Compiles, runs VM vs. Rust fuzzing the inputs via proptest
 macro_rules! test_bin_op {

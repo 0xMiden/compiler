@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
-use midenc_hir::{dialects::builtin::BuiltinDialect, Context};
-use midenc_session::{diagnostics::Report, Session};
+use midenc_hir::{Context, dialects::builtin::BuiltinDialect};
+use midenc_session::{Session, diagnostics::Report};
 
-use super::{translator::ComponentTranslator, ComponentTypesBuilder, ParsedRootComponent};
+use super::{ComponentTypesBuilder, ParsedRootComponent, translator::ComponentTranslator};
 use crate::{
-    component::ComponentParser, error::WasmResult, supported_component_model_features,
-    FrontendOutput, WasmTranslationConfig,
+    FrontendOutput, WasmTranslationConfig, component::ComponentParser, error::WasmResult,
+    supported_component_model_features,
 };
 
 fn parse<'data>(

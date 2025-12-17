@@ -1,16 +1,16 @@
 use midenc_hir::{
-    formatter::DisplayValues, traits::BranchOpInterface, Block, BlockArgument, BlockArgumentRange,
-    CallOpInterface, CallableOpInterface, EntityWithId, Forward, OpOperandRange, OpResult,
-    OpResultRange, Operation, ProgramPoint, RegionBranchOpInterface, RegionBranchPoint,
-    RegionBranchTerminatorOpInterface, RegionSuccessor, Report, SmallVec, Spanned, StorableEntity,
-    SuccessorOperands, ValueRef,
+    Block, BlockArgument, BlockArgumentRange, CallOpInterface, CallableOpInterface, EntityWithId,
+    Forward, OpOperandRange, OpResult, OpResultRange, Operation, ProgramPoint,
+    RegionBranchOpInterface, RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionSuccessor,
+    Report, SmallVec, Spanned, StorableEntity, SuccessorOperands, ValueRef,
+    formatter::DisplayValues, traits::BranchOpInterface,
 };
 
 use super::{SparseDataFlowAnalysis, SparseLattice};
 use crate::{
-    analyses::dce::{CfgEdge, Executable, PredecessorState},
     AnalysisState, AnalysisStateGuard, AnalysisStateGuardMut, BuildableAnalysisState,
     DataFlowSolver,
+    analyses::dce::{CfgEdge, Executable, PredecessorState},
 };
 
 /// The base trait for sparse forward data-flow analyses.

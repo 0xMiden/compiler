@@ -683,17 +683,23 @@ mod tests {
         let lhs_op = lhs.borrow().get_defining_op().unwrap();
 
         // Ensure if the first matcher fails, then the whole match fails
-        assert!(match_both(match_op::<Add>(), constant_of::<Immediate>())
-            .matches(&lhs_op.borrow())
-            .is_none());
+        assert!(
+            match_both(match_op::<Add>(), constant_of::<Immediate>())
+                .matches(&lhs_op.borrow())
+                .is_none()
+        );
         // Ensure if the second matcher fails, then the whole match fails
-        assert!(match_both(constant_like(), constant_of::<bool>())
-            .matches(&lhs_op.borrow())
-            .is_none());
+        assert!(
+            match_both(constant_like(), constant_of::<bool>())
+                .matches(&lhs_op.borrow())
+                .is_none()
+        );
         // Ensure that if both matchers would succeed, then the whole match succeeds
-        assert!(match_both(constant_like(), constant_of::<Immediate>())
-            .matches(&lhs_op.borrow())
-            .is_some());
+        assert!(
+            match_both(constant_like(), constant_of::<Immediate>())
+                .matches(&lhs_op.borrow())
+                .is_some()
+        );
     }
 
     #[test]

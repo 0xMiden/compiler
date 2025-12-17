@@ -1,14 +1,13 @@
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 
-use miden_assembly::{ast::Module, Library};
+use miden_assembly::{Library, ast::Module};
 use miden_mast_package::Package;
 use midenc_codegen_masm::{
-    self as masm,
+    self as masm, MasmComponent, ToMasmComponent,
     intrinsics::{
-        ADVICE_INTRINSICS_MODULE_NAME, CRYPTO_INTRINSICS_MODULE_NAME, I128_INTRINSICS_MODULE_NAME,
-        I32_INTRINSICS_MODULE_NAME, I64_INTRINSICS_MODULE_NAME, MEM_INTRINSICS_MODULE_NAME,
+        ADVICE_INTRINSICS_MODULE_NAME, CRYPTO_INTRINSICS_MODULE_NAME, I32_INTRINSICS_MODULE_NAME,
+        I64_INTRINSICS_MODULE_NAME, I128_INTRINSICS_MODULE_NAME, MEM_INTRINSICS_MODULE_NAME,
     },
-    MasmComponent, ToMasmComponent,
 };
 use midenc_hir::{interner::Symbol, pass::AnalysisManager};
 use midenc_session::OutputType;

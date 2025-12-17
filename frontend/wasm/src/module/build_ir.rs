@@ -2,21 +2,22 @@ use core::mem;
 use std::rc::Rc;
 
 use midenc_hir::{
+    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, Visibility,
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
     },
     interner::Symbol,
     version::Version,
-    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, Visibility,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
 use wasmparser::Validator;
 
 use super::{
-    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder, MemoryIndex,
+    MemoryIndex, module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
 };
 use crate::{
+    WasmTranslationConfig,
     error::WasmResult,
     module::{
         func_translator::FuncTranslator,
@@ -24,7 +25,6 @@ use crate::{
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
         types::ir_type,
     },
-    WasmTranslationConfig,
 };
 
 /// Translate a valid Wasm core module binary into Miden IR component building
@@ -190,8 +190,7 @@ fn build_globals(
         let context = global_var_ref.borrow().as_operation().context_rc().clone();
         let init_region_ref = {
             let mut global_var = global_var_ref.borrow_mut();
-            let region_ref = global_var.initializer_mut().as_region_ref();
-            region_ref
+            global_var.initializer_mut().as_region_ref()
         };
         let mut op_builder = OpBuilder::new(context);
         op_builder.create_block(init_region_ref, None, &[]);

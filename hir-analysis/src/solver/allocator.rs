@@ -27,7 +27,9 @@ unsafe impl Allocator for DataFlowSolverAlloc {
 
     #[inline]
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        self.0.allocator().deallocate(ptr, layout.size());
+        unsafe {
+            self.0.allocator().deallocate(ptr, layout.size());
+        }
     }
 
     #[inline]
@@ -42,7 +44,7 @@ unsafe impl Allocator for DataFlowSolverAlloc {
         old_layout: Layout,
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, alloc::alloc::AllocError> {
-        self.0.allocator().grow(ptr, old_layout, new_layout).map_err(|_| AllocError)
+        unsafe { self.0.allocator().grow(ptr, old_layout, new_layout).map_err(|_| AllocError) }
     }
 
     #[inline]
@@ -52,7 +54,7 @@ unsafe impl Allocator for DataFlowSolverAlloc {
         old_layout: Layout,
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, alloc::alloc::AllocError> {
-        self.0.allocator().shrink(ptr, old_layout, new_layout).map_err(|_| AllocError)
+        unsafe { self.0.allocator().shrink(ptr, old_layout, new_layout).map_err(|_| AllocError) }
     }
 
     #[inline]
@@ -62,9 +64,11 @@ unsafe impl Allocator for DataFlowSolverAlloc {
         old_layout: Layout,
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, alloc::alloc::AllocError> {
-        self.0
-            .allocator()
-            .grow_zeroed(ptr, old_layout, new_layout)
-            .map_err(|_| AllocError)
+        unsafe {
+            self.0
+                .allocator()
+                .grow_zeroed(ptr, old_layout, new_layout)
+                .map_err(|_| AllocError)
+        }
     }
 }

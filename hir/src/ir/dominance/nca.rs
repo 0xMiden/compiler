@@ -1,13 +1,13 @@
 use alloc::{collections::BTreeMap, rc::Rc};
 use core::cell::{Cell, Ref, RefCell};
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use super::{DomTreeBase, DomTreeNode, DomTreeRoots};
 use crate::{
+    BlockRef, EntityId, EntityWithId, Region,
     cfg::{self, Graph, GraphDiff, Inverse},
     formatter::{DisplayOptional, DisplayValues},
-    BlockRef, EntityId, EntityWithId, Region,
 };
 
 /// [SemiNCAInfo] provides functionality for constructing a dominator tree for a control-flow graph
@@ -288,10 +288,10 @@ impl<const IS_POST_DOM: bool> SemiNCA<IS_POST_DOM> {
                     self.batch_updates.as_ref(),
                 )
             };
-            if let Some(succ_order) = succ_order {
-                if successors.len() > 1 {
-                    successors.sort_by(|a, b| succ_order[a].cmp(&succ_order[b]));
-                }
+            if let Some(succ_order) = succ_order
+                && successors.len() > 1
+            {
+                successors.sort_by(|a, b| succ_order[a].cmp(&succ_order[b]));
             }
 
             for succ in successors.into_iter().filter(|succ| condition(Some(block), Some(*succ))) {

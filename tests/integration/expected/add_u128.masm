@@ -44,6 +44,8 @@ pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -58,6 +60,8 @@ pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw

@@ -3,8 +3,8 @@ use core::fmt;
 
 use super::{DefaultResource, Effect, Resource};
 use crate::{
-    interner, AttributeSet, AttributeValue, BlockArgument, BlockArgumentRef, EntityRef, OpOperand,
-    OpOperandImpl, OpResult, OpResultRef, SymbolRef, Value, ValueRef,
+    AttributeSet, AttributeValue, BlockArgument, BlockArgumentRef, EntityRef, OpOperand,
+    OpOperandImpl, OpResult, OpResultRef, SymbolRef, Value, ValueRef, interner,
 };
 
 #[derive(Clone)]

@@ -4,12 +4,12 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{self as cf, ControlFlowOpBuilder};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
+    Builder, EntityMut, Forward, Op, Operation, OperationName, OperationRef, RawWalk, Report,
+    SmallVec, Spanned, Type, ValueRange, ValueRef, WalkResult,
     diagnostics::Severity,
     dialects::builtin,
     dominance::DominanceInfo,
     pass::{Pass, PassExecutionState, PostPassStatus},
-    Builder, EntityMut, Forward, Op, Operation, OperationName, OperationRef, RawWalk, Report,
-    SmallVec, Spanned, Type, ValueRange, ValueRef, WalkResult,
 };
 use midenc_hir_transform::{self as transforms, CFGToSCFInterface};
 
@@ -379,8 +379,8 @@ mod tests {
     use builtin::{BuiltinOpBuilder, FunctionBuilder};
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        dialects::builtin, pass, AbiParam, BuilderExt, Context, Ident, OpBuilder, PointerType,
-        Report, Signature, SourceSpan, Type,
+        AbiParam, BuilderExt, Context, Ident, OpBuilder, PointerType, Report, Signature,
+        SourceSpan, Type, dialects::builtin, pass,
     };
 
     use super::*;

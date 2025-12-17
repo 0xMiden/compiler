@@ -24,60 +24,7 @@ proc init
     mem_store.278538
 end
 
-# mod root_ns:root@1.0.0::test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4
-
-@callconv("C")
-pub proc global_var_update(
-
-)
-    push.1048577
-    push.0
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    swap.1
-    dup.1
-    mem_load
-    swap.1
-    push.8
-    u32wrapping_mul
-    u32shr
-    swap.1
-    drop
-    push.255
-    u32and
-    push.1
-    swap.1
-    u32wrapping_add
-    push.255
-    u32and
-    push.1048576
-    push.0
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    dup.0
-    mem_load
-    dup.2
-    push.8
-    u32wrapping_mul
-    push.255
-    swap.1
-    u32shl
-    u32not
-    swap.1
-    u32and
-    movup.3
-    movup.3
-    push.8
-    u32wrapping_mul
-    u32shl
-    u32or
-    swap.1
-    mem_store
-end
+# mod root_ns:root@1.0.0::test_rust_2512f26a084edd4aa11742f4c2ef0985a5681361fee42216136cb00d26224778
 
 @callconv("C")
 pub proc __main(
@@ -85,7 +32,7 @@ pub proc __main(
 ) -> i32
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::test_rust_e6d553fb1c80aef6e5d6f2891701197bedac471cf510bd2495f99889d9543cd4::global_var_update
+    exec.::root_ns:root@1.0.0::test_rust_2512f26a084edd4aa11742f4c2ef0985a5681361fee42216136cb00d26224778::global_var_update
     trace.252
     nop
     push.0
@@ -146,5 +93,58 @@ pub proc __main(
     drop
     push.255
     u32and
+end
+
+@callconv("C")
+pub proc global_var_update(
+
+)
+    push.1048577
+    push.0
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    swap.1
+    dup.1
+    mem_load
+    swap.1
+    push.8
+    u32wrapping_mul
+    u32shr
+    swap.1
+    drop
+    push.255
+    u32and
+    push.1
+    swap.1
+    u32wrapping_add
+    push.255
+    u32and
+    push.1048576
+    push.0
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    dup.0
+    mem_load
+    dup.2
+    push.8
+    u32wrapping_mul
+    push.255
+    swap.1
+    u32shl
+    u32not
+    swap.1
+    u32and
+    movup.3
+    movup.3
+    push.8
+    u32wrapping_mul
+    u32shl
+    u32or
+    swap.1
+    mem_store
 end
 

@@ -5,7 +5,7 @@ use miden_client::{
     note::NoteAssets,
     transaction::{OutputNote, TransactionRequestBuilder},
 };
-use miden_core::{utils::Serializable, Felt};
+use miden_core::{Felt, utils::Serializable};
 
 use super::helpers::*;
 use crate::local_node::ensure_shared_node;

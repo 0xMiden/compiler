@@ -10,8 +10,8 @@ use proc_macro::Span;
 use proc_macro2::{Ident, Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
-    spanned::Spanned, Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemStruct, ReturnType,
-    Type, Visibility,
+    Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemStruct, ReturnType, Type, Visibility,
+    spanned::Spanned,
 };
 
 use crate::{
@@ -23,7 +23,7 @@ use crate::{
         storage::process_storage_fields,
     },
     types::{
-        map_type_to_type_ref, registered_export_types, ExportedTypeDef, ExportedTypeKind, TypeRef,
+        ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
 };
 
@@ -173,6 +173,8 @@ fn expand_component_struct(
         #runtime_boilerplate
         #input_struct
         #default_impl
+        impl ::miden::native_account::NativeAccount for #struct_name {}
+        impl ::miden::active_account::ActiveAccount for #struct_name {}
         #link_section
     })
 }
@@ -236,7 +238,7 @@ fn expand_component_impl(
     if methods.is_empty() {
         return Err(syn::Error::new(
             call_site_span.into(),
-            "Component `impl` is missing `pub` methods. A component cannot have emty exports.",
+            "Component `impl` is missing `pub` methods. A component cannot have empty exports.",
         ));
     }
 
@@ -284,6 +286,11 @@ fn expand_component_impl(
 
     Ok(quote! {
         ::miden::generate!(inline = #inline_literal, with = { #(#custom_with_entries)* });
+        // Bring account traits into scope so users can call `self.add_asset()`, etc.
+        #[allow(unused_imports)]
+        use ::miden::native_account::NativeAccount as _;
+        #[allow(unused_imports)]
+        use ::miden::active_account::ActiveAccount as _;
         #impl_block
         impl #guest_trait_path for #component_type {
             #(#guest_methods)*
@@ -473,14 +480,13 @@ fn record_type_path(
 
     // Give single-segment paths a module prefix so we don't generate bare identifiers that fail to
     // resolve outside the component module.
-    if segments.len() <= 1 {
-        if let Some(last) = segments.last().cloned() {
-            if let Some(prefix) = module_prefix_segments {
-                let mut resolved = prefix.to_vec();
-                resolved.push(last);
-                segments = resolved;
-            }
-        }
+    if segments.len() <= 1
+        && let Some(last) = segments.last().cloned()
+        && let Some(prefix) = module_prefix_segments
+    {
+        let mut resolved = prefix.to_vec();
+        resolved.push(last);
+        segments = resolved;
     }
 
     paths.entry(type_ref.wit_name.clone()).or_insert(segments);

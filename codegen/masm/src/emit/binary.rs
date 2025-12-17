@@ -3,7 +3,7 @@ use core::assert_matches::assert_matches;
 use miden_core::Felt;
 use midenc_hir::{Immediate, Overflow, SourceSpan, Type};
 
-use super::{masm, OpEmitter};
+use super::{OpEmitter, masm};
 
 impl OpEmitter<'_> {
     pub fn eq(&mut self, span: SourceSpan) {
@@ -976,7 +976,7 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.band_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                                       // AND the low bits
+                // AND the low bits
                 self.emit_all(
                     [
                         // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
@@ -1028,7 +1028,7 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.band_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                                       // AND the low bits
+                // AND the low bits
                 self.emit_all(
                     [
                         // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
@@ -1086,7 +1086,7 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.bor_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                                      // OR the low bits
+                // OR the low bits
                 self.emit_all(
                     [
                         // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
@@ -1138,7 +1138,7 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.bor_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                                      // OR the low bits
+                // OR the low bits
                 self.emit_all(
                     [
                         // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
@@ -1196,7 +1196,7 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.bxor_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                                       // XOR the low bits
+                // XOR the low bits
                 self.emit_all(
                     [
                         // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]
@@ -1250,7 +1250,7 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.bxor_int64(span); // [band_hi_hi, band_hi_lo, b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo]
-                                       // XOR the low bits
+                // XOR the low bits
                 self.emit_all(
                     [
                         // [b_lo_hi, b_lo_lo, a_lo_hi, a_lo_lo, band_hi_hi, band_hi_lo]

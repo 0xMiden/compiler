@@ -5,8 +5,8 @@ use smallvec::SmallVec;
 
 use super::*;
 use crate::{
-    adt::SmallDenseMap, pass::Analysis, Block, BlockRef, Operation, OperationRef,
-    RegionKindInterface, RegionRef, Report,
+    Block, BlockRef, Operation, OperationRef, RegionKindInterface, RegionRef, Report,
+    adt::SmallDenseMap, pass::Analysis,
 };
 
 /// [DominanceInfo] provides a high-level API for querying dominance information.

@@ -1,5 +1,5 @@
 use midenc_hir::{Immediate, SourceSpan, Type, ValueRef};
-use midenc_session::diagnostics::{miette, Diagnostic};
+use midenc_session::diagnostics::{Diagnostic, miette};
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
 pub enum InvalidCastError {

@@ -12,10 +12,10 @@
 use alloc::rc::Rc;
 use core::mem;
 
-use cranelift_entity::{entity_impl, EntityList, ListPool};
+use cranelift_entity::{EntityList, ListPool, entity_impl};
 use midenc_hir::{
-    traits::BranchOpInterface, BlockRef, Context, FxHashMap, FxHashSet, OperationRef, SourceSpan,
-    Type, ValueRef,
+    BlockRef, Context, FxHashMap, FxHashSet, OperationRef, SourceSpan, Type, ValueRef,
+    traits::BranchOpInterface,
 };
 
 /// Structure containing the data relevant the construction of SSA for a given function.

@@ -52,8 +52,8 @@ pub use self::{
         OpOperandStorage,
     },
     operation::{
-        equivalence, OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName,
-        OperationRef,
+        OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName, OperationRef,
+        equivalence,
     },
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
     region::{

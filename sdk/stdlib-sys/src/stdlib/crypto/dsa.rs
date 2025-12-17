@@ -1,6 +1,6 @@
 use crate::intrinsics::{Felt, Word};
 
-extern "C" {
+unsafe extern "C" {
     #[link_name = "std::crypto::dsa::rpo_falcon512::verify"]
     fn extern_rpo_falcon512_verify(
         pk1: Felt,

@@ -5,9 +5,9 @@
 //! for the Wasm CM <-> core Wasm types conversion rules.
 
 use midenc_hir::{
-    diagnostics::{miette, Diagnostic},
     AbiParam, ArgumentExtension, ArgumentPurpose, CallConv, FunctionType, PointerType, Signature,
     StructType, Type, Visibility,
+    diagnostics::{Diagnostic, miette},
 };
 
 #[derive(Debug, thiserror::Error, Diagnostic)]

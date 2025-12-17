@@ -13,6 +13,22 @@ pub(crate) fn runtime_boilerplate() -> TokenStream2 {
         #[panic_handler]
         #[allow(clippy::empty_loop)]
         fn __miden_runtime_panic_handler(_info: &::core::panic::PanicInfo) -> ! {
+            #[cfg(target_family = "wasm")]
+            core::arch::wasm32::unreachable();
+
+            #[cfg(not(target_family = "wasm"))]
+            loop {}
+        }
+
+        #[cfg(not(test))]
+        #[doc = "Allocation error handler used when building for Miden VM"]
+        #[alloc_error_handler]
+        #[allow(clippy::empty_loop)]
+        fn __miden_runtime_alloc_error_handler(_layout: ::core::alloc::Layout) -> ! {
+            #[cfg(target_family = "wasm")]
+            core::arch::wasm32::unreachable();
+
+            #[cfg(not(target_family = "wasm"))]
             loop {}
         }
     }

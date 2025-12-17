@@ -1,6 +1,6 @@
 use std::{env, fs};
 
-use cargo_miden::{run, OutputType};
+use cargo_miden::{OutputType, run};
 use miden_mast_package::Package;
 use midenc_session::miden_assembly::utils::Deserializable;
 
@@ -14,7 +14,13 @@ fn example_project_args(example_name: &str) -> Vec<String> {
 }
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
-    let template = if let Ok(templates_path) = std::env::var("TEST_LOCAL_TEMPLATES_PATH") {
+    let template = if template.is_empty() {
+        if let Ok(project_template_path) = std::env::var("TEST_LOCAL_PROJECT_TEMPLATE_PATH") {
+            &format!("--template-path={project_template_path}")
+        } else {
+            template
+        }
+    } else if let Ok(templates_path) = std::env::var("TEST_LOCAL_TEMPLATES_PATH") {
         &format!("--template-path={templates_path}/{}", template.strip_prefix("--").unwrap())
     } else {
         template
@@ -40,7 +46,7 @@ fn test_all_templates_and_examples() {
     //
     // This is necessary because cfg!(test) does not work for integration tests, so we're forced
     // to use an out-of-band signal like this instead
-    env::set_var("TEST", "1");
+    unsafe { env::set_var("TEST", "1") };
 
     // Test example templates
 
@@ -438,7 +444,7 @@ fn new_project_integration_tests_pass() {
         .is_test(true)
         .format_timestamp(None)
         .try_init();
-    env::set_var("TEST", "1");
+    unsafe { env::set_var("TEST", "1") };
 
     let restore_dir = env::current_dir().unwrap();
     let temp_dir = env::temp_dir().join(format!(

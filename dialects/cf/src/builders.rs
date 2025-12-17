@@ -1,6 +1,6 @@
 use midenc_hir::{
-    dialects::builtin::FunctionBuilder, BlockRef, Builder, BuilderExt, OpBuilder, Report,
-    SourceSpan, UnsafeIntrusiveEntityRef, ValueRef,
+    BlockRef, Builder, BuilderExt, OpBuilder, Report, SourceSpan, UnsafeIntrusiveEntityRef,
+    ValueRef, dialects::builtin::FunctionBuilder,
 };
 
 use crate::*;

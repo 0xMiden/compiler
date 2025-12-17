@@ -9,15 +9,15 @@ use std::cell::RefCell;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
+    AbiParam, FunctionType, Op, Signature, SmallVec, SymbolPath, ValueRef,
     diagnostics::WrapErr,
     dialects::builtin::{BuiltinOpBuilder, FunctionRef, ModuleBuilder},
-    AbiParam, FunctionType, Op, Signature, SmallVec, SymbolPath, ValueRef,
 };
 use wasmparser::{FunctionBody, Operator};
 
 use crate::{
     error::WasmResult,
-    intrinsics::{convert_intrinsics_call, Intrinsic},
+    intrinsics::{Intrinsic, convert_intrinsics_call},
     miden_abi::{
         is_miden_abi_module, miden_abi_function_type, transform::transform_miden_abi_call,
     },

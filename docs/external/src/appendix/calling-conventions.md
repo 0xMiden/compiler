@@ -14,7 +14,7 @@ There are four calling conventions represented in the compiler:
   We specifically use the System V ABI because it is well understood, documented, and straightforward.
 - `Fast`, this convention allows the compiler to follow either the `C` calling convention, or modify it
   as it sees fit on a function-by-function basis. This convention provides no guarantees about how a
-  callee will expect arguments to be passed, so should not be used for functions which are expected to
+  callee will expect arguments to be passed, so it should not be used for functions which are expected to
   have a stable, predictable interface. This is a good choice for local functions, or functions which are
   only used within an executable/library and are not part of the public interface.
 - `Kernel`, this is a special calling convention that is used when defining kernel modules in the IR.
@@ -112,7 +112,7 @@ using intrinsics.
 Structures and unions assume the alignment of their most strictly aligned component. Each member is assigned to the
 lowest available offset with the appropriate alignment. The size of any object is always a multiple of the object's alignment.
 An array uses the same alignment as its elements. Structure and union objects can require padding to meet size and alignment
-constraints. The contents of any padding is undefined.
+constraints. The contents of any padding are undefined.
 
 ### Memory model
 
@@ -162,7 +162,7 @@ trying to load (or encode the data we're trying to store).
 Because we're essentially emulating byte-addressable memory on word-addressable memory, loads/stores can range from simple and
 straightforward, to expensive and complicated, depending on the size and alignment of the value type. The process goes as follows:
 
-* If the value type is word-aligned, it can be loaded/stored in as little as a single instruction depending on the size of the type
+* If the value type is word-aligned, it can be loaded/stored in as few as a single instruction depending on the size of the type
 * Likewise if the value type is element-aligned, and the address is word-aligned
 * Element-aligned values require some extra instructions to load a full word and drop the unused elements (or in the case of stores,
 loading the full word and replacing the element being stored)
@@ -260,7 +260,7 @@ in MASM parlance), but no function signature, i.e. given a MASM procedure, there
 many values it returns, let alone the types of arguments/return values. Instead, we're going to specify calling conventions in terms of
 Miden IR, which has a fairly expressive type system more or less equivalent to that of LLVM, and how that translates to Miden primitives.
 
-Functions in Miden IR always have a signature, which specify the following:
+Functions in Miden IR always have a signature, which specifies the following:
 
 * The calling convention required to call the function
 * The number and types of the function arguments

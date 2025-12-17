@@ -5,13 +5,13 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
-    pass::{Nesting, PassManager},
     AbiParam, AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, Report, Signature,
     SourceSpan, Type, ValueRef,
+    dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
+    pass::{Nesting, PassManager},
 };
 
-use crate::{transforms::TransformSpills, HirOpBuilder};
+use crate::{HirOpBuilder, transforms::TransformSpills};
 
 type TestResult<T> = Result<T, Report>;
 

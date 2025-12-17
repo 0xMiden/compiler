@@ -1,6 +1,6 @@
 use midenc_hir::{
-    dialects::builtin::{self, DataSegmentError, SegmentRef},
     Alignable, FxHashMap, Symbol,
+    dialects::builtin::{self, DataSegmentError, SegmentRef},
 };
 
 const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
@@ -277,11 +277,9 @@ impl GlobalVariableLayout {
 
         // Ensure the stack pointer is tracked and uses the same offset globally
         let is_stack_pointer = gv.name() == "__stack_pointer";
-        if is_stack_pointer {
-            if let Some(offset) = self.stack_pointer {
-                let _ = self.offsets.try_insert(key, offset);
-                return;
-            }
+        if is_stack_pointer && let Some(offset) = self.stack_pointer {
+            let _ = self.offsets.try_insert(key, offset);
+            return;
         }
 
         let ty = gv.ty();

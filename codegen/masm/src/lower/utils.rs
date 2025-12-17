@@ -2,7 +2,7 @@ use midenc_dialect_scf as scf;
 use midenc_hir::{Op, Operation, Region, Report, Spanned, ValueRef};
 use smallvec::SmallVec;
 
-use crate::{emitter::BlockEmitter, masm, Constraint};
+use crate::{Constraint, emitter::BlockEmitter, masm};
 
 /// Emit a conditonal branch-like region, e.g. `scf.if`.
 ///
@@ -493,16 +493,16 @@ mod tests {
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
+        AbiParam, Context, Ident, OpBuilder, Signature, Type,
         dialects::builtin::{self, BuiltinOpBuilder, FunctionBuilder, FunctionRef},
         formatter::PrettyPrint,
         pass::AnalysisManager,
         version::Version,
-        AbiParam, Context, Ident, OpBuilder, Signature, Type,
     };
     use midenc_hir_analysis::analyses::LivenessAnalysis;
 
     use super::*;
-    use crate::{linker::LinkInfo, OperandStack};
+    use crate::{OperandStack, linker::LinkInfo};
 
     #[test]
     fn util_emit_if_test() -> Result<(), Report> {

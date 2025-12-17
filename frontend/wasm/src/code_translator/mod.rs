@@ -15,13 +15,13 @@
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
-use midenc_dialect_hir::{assertions, HirOpBuilder};
+use midenc_dialect_hir::{HirOpBuilder, assertions};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
-    dialects::builtin::BuiltinOpBuilder,
     BlockRef, Builder, Felt, FieldElement, Immediate, PointerType,
     Type::{self, *},
     ValueRef,
+    dialects::builtin::BuiltinOpBuilder,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, SourceSpan};
 use wasmparser::{MemArg, Operator};
@@ -31,11 +31,11 @@ use crate::{
     error::WasmResult,
     intrinsics::convert_intrinsics_call,
     module::{
+        Module,
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
         function_builder_ext::FunctionBuilderExt,
         module_translation_state::ModuleTranslationState,
         types::{BlockType, FuncIndex, GlobalIndex, ModuleTypesBuilder},
-        Module,
     },
     ssa::Variable,
     unsupported_diag,

@@ -1,6 +1,6 @@
 use core::fmt;
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use super::{EntityGroup, StorableEntity};
 

@@ -3,7 +3,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::types::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::asset::build_fungible_asset"]
     pub fn extern_asset_build_fungible_asset(
         faucet_id_prefix: Felt,

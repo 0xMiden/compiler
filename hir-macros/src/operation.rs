@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
 use darling::{
-    util::{Flag, SpannedValue},
     Error, FromDeriveInput, FromField, FromMeta,
+    util::{Flag, SpannedValue},
 };
 use inflector::Inflector;
-use quote::{format_ident, quote, ToTokens};
-use syn::{parse_quote, spanned::Spanned, Ident, Token};
+use quote::{ToTokens, format_ident, quote};
+use syn::{Ident, Token, parse_quote, spanned::Spanned};
 
 pub fn derive_operation(input: syn::DeriveInput) -> darling::Result<proc_macro2::TokenStream> {
     let op = OpDefinition::from_derive_input(&input)?;
@@ -136,7 +136,7 @@ impl OpDefinition {
 
     fn hydrate(&mut self, fields: darling::ast::Fields<OperationField>) -> darling::Result<()> {
         let named_fields = match &mut self.op.fields {
-            syn::Fields::Named(syn::FieldsNamed { ref mut named, .. }) => named,
+            syn::Fields::Named(syn::FieldsNamed { named, .. }) => named,
             _ => unreachable!(),
         };
         let mut create_params = vec![];
@@ -232,7 +232,7 @@ impl OpDefinition {
                         None => {
                             self.operands.push(OpOperandGroup::Unnamed(vec![operand]));
                         }
-                        Some(OpOperandGroup::Unnamed(ref mut operands)) => {
+                        Some(OpOperandGroup::Unnamed(operands)) => {
                             operands.push(operand);
                         }
                         Some(OpOperandGroup::Named(..)) => {
@@ -260,7 +260,7 @@ impl OpDefinition {
                         None => {
                             self.results = Some(OpResultGroup::Unnamed(vec![result]));
                         }
-                        Some(OpResultGroup::Unnamed(ref mut results)) => {
+                        Some(OpResultGroup::Unnamed(results)) => {
                             results.push(result);
                         }
                         Some(OpResultGroup::Named(..)) => {
@@ -294,7 +294,7 @@ impl OpDefinition {
                         None => {
                             self.successors.push(SuccessorGroup::Unnamed(vec![field_name]));
                         }
-                        Some(SuccessorGroup::Unnamed(ref mut ids)) => {
+                        Some(SuccessorGroup::Unnamed(ids)) => {
                             ids.push(field_name);
                         }
                         Some(SuccessorGroup::Named(_) | SuccessorGroup::Keyed(..)) => {
@@ -940,8 +940,8 @@ impl quote::ToTokens for OpSymbolFns<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         // Symbols
         for Symbol {
-            name: ref symbol,
-            ty: ref symbol_kind,
+            name: symbol,
+            ty: symbol_kind,
         } in self.0.symbols.iter()
         {
             let span = symbol.span();
@@ -1014,7 +1014,7 @@ impl quote::ToTokens for OpSymbolFns<'_> {
             });
 
             let is_concrete_ty = match symbol_kind {
-                SymbolType::Concrete(ref ty) => [quote! {
+                SymbolType::Concrete(ty) => [quote! {
                     // The way we check the type depends on whether `symbol` is a reference to `self`
                     let (data_ptr, _) = ::midenc_hir::SymbolRef::as_ptr(&symbol).to_raw_parts();
                     if core::ptr::addr_eq(data_ptr, (self as *const Self as *const ())) {
@@ -1093,8 +1093,8 @@ impl quote::ToTokens for OpAttrFns<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         // Attributes
         for OpAttribute {
-            name: ref attr,
-            ty: ref attr_ty,
+            name: attr,
+            ty: attr_ty,
             ..
         } in self.0.attrs.iter()
         {
@@ -1155,12 +1155,8 @@ impl quote::ToTokens for OpOperandFns<'_> {
             match operand_group {
                 // Operands
                 OpOperandGroup::Unnamed(operands) => {
-                    for (
-                        operand_index,
-                        Operand {
-                            name: ref operand, ..
-                        },
-                    ) in operands.iter().enumerate()
+                    for (operand_index, Operand { name: operand, .. }) in
+                        operands.iter().enumerate()
                     {
                         let operand_index = syn::Lit::Int(syn::LitInt::new(
                             &format!("{operand_index}usize"),
@@ -1226,13 +1222,7 @@ impl quote::ToTokens for OpResultFns<'_> {
         if let Some(group) = self.0.results.as_ref() {
             match group {
                 OpResultGroup::Unnamed(results) => {
-                    for (
-                        index,
-                        OpResult {
-                            name: ref result, ..
-                        },
-                    ) in results.iter().enumerate()
-                    {
+                    for (index, OpResult { name: result, .. }) in results.iter().enumerate() {
                         let index = syn::Lit::Int(syn::LitInt::new(
                             &format!("{index}usize"),
                             result.span(),
@@ -2078,7 +2068,7 @@ impl OperationFieldAttrs {
                         match &attr.meta {
                             // A bare #[attr], nothing to do
                             syn::Meta::Path(_) => (),
-                            syn::Meta::List(ref list) => {
+                            syn::Meta::List(list) => {
                                 list.parse_nested_meta(|meta| {
                                     if meta.path.is_ident("hidden") {
                                         kind = Some(AttrKind::Hidden);
@@ -2196,7 +2186,7 @@ impl OperationFieldAttrs {
                         match &attr.meta {
                             // A bare #[symbol], nothing to do
                             syn::Meta::Path(_) => (),
-                            syn::Meta::List(ref list) => {
+                            syn::Meta::List(list) => {
                                 list.parse_nested_meta(|meta| {
                                     if meta.path.is_ident("callable") {
                                         symbol_ty = Some(SymbolType::Callable);

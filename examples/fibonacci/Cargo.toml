@@ -1,7 +1,7 @@
 [package]
 name = "fibonacci"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 # Build this crate as a self-contained, C-style dynamic library
@@ -12,5 +12,3 @@ crate-type = ["cdylib"]
 # Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
 # and transaction kernel API for the Miden rollup
 #miden = { git = "https://github.com/0xMiden/compiler" }
-
-

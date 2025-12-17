@@ -6,7 +6,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::types::{AccountId, Asset, NoteIdx, Recipient};
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::input_note::get_assets_info"]
     pub fn extern_input_note_get_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
 

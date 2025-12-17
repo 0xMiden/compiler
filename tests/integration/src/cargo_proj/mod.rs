@@ -12,7 +12,7 @@ use std::{
     time::{self, Duration},
 };
 
-use cargo_util::{is_ci, ProcessBuilder};
+use cargo_util::{ProcessBuilder, is_ci};
 
 /// Panics with a formatted message if the expression does not return `Ok`.
 #[macro_export]
@@ -396,7 +396,7 @@ pub fn basic_manifest(name: &str, version: &str) -> String {
         name = "{name}"
         version = "{version}"
         authors = []
-        edition = "2021"
+        edition = "2024"
     "#
     )
 }
@@ -409,7 +409,7 @@ pub fn basic_bin_manifest(name: &str) -> String {
         name = "{name}"
         version = "0.5.0"
         authors = ["wycats@example.com"]
-        edition = "2021"
+        edition = "2024"
 
         [[bin]]
 
@@ -426,7 +426,7 @@ pub fn basic_lib_manifest(name: &str) -> String {
         name = "{name}"
         version = "0.5.0"
         authors = ["wycats@example.com"]
-        edition = "2021"
+        edition = "2024"
 
         [lib]
 

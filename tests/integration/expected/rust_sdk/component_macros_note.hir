@@ -163,16 +163,16 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @intrinsics::felt::from_u32(v118: i32) -> felt {
-        ^block21(v118: i32):
-            v119 = hir.bitcast v118 : felt;
-            builtin.ret v119;
+        private builtin.function @intrinsics::felt::eq(v118: felt, v119: felt) -> i32 {
+        ^block21(v118: felt, v119: felt):
+            v120 = arith.eq v118, v119 : i1;
+            v121 = hir.cast v120 : i32;
+            builtin.ret v121;
         };
 
-        private builtin.function @intrinsics::felt::eq(v121: felt, v122: felt) -> i32 {
-        ^block23(v121: felt, v122: felt):
-            v123 = arith.eq v121, v122 : i1;
-            v124 = hir.cast v123 : i32;
+        private builtin.function @intrinsics::felt::from_u32(v123: i32) -> felt {
+        ^block23(v123: i32):
+            v124 = hir.bitcast v123 : felt;
             builtin.ret v124;
         };
 

@@ -6,8 +6,8 @@ mod world;
 pub use self::{component::*, function::*, module::*, world::*};
 use super::ops::*;
 use crate::{
-    constants::ConstantData, Builder, BuilderExt, Ident, Immediate, OpBuilder, Report, Signature,
-    SourceSpan, Spanned, Type, UnsafeIntrusiveEntityRef, ValueRef, Visibility,
+    Builder, BuilderExt, Ident, Immediate, OpBuilder, Report, Signature, SourceSpan, Spanned, Type,
+    UnsafeIntrusiveEntityRef, ValueRef, Visibility, constants::ConstantData,
 };
 
 pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {

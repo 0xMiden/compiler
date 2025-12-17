@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
 
 use miden_core::{
-    utils::{Deserializable, Serializable},
     Felt, FieldElement, Word,
+    utils::{Deserializable, Serializable},
 };
 use miden_debug::Executor;
 use miden_lib::MidenLib;
@@ -10,13 +10,13 @@ use miden_mast_package::Package;
 use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_hir::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
+use midenc_hir::{FunctionIdent, Ident, SourceSpan, interner::Symbol};
 use midenc_session::STDLIB;
 
 use crate::{
+    CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
-    CompilerTest, CompilerTestBuilder,
 };
 
 mod base;
@@ -66,7 +66,7 @@ fn rust_sdk_swapp_note_bindings() {
 [package]
 name = "{name}"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 authors = []
 
 [lib]
@@ -94,6 +94,7 @@ debug = false
     );
 
     let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
 
 use miden::*;
 

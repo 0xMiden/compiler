@@ -10,13 +10,13 @@ use std::{cell::RefCell, rc::Rc};
 
 use cranelift_entity::EntityRef;
 use midenc_hir::{
+    BlockRef, Builder, Context, Op,
     diagnostics::{ColumnNumber, LineNumber},
     dialects::builtin::{BuiltinOpBuilder, FunctionRef},
-    BlockRef, Builder, Context, Op,
 };
 use midenc_session::{
-    diagnostics::{DiagnosticsHandler, IntoDiagnostic, SourceManagerExt, SourceSpan},
     Session,
+    diagnostics::{DiagnosticsHandler, IntoDiagnostic, SourceManagerExt, SourceSpan},
 };
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 

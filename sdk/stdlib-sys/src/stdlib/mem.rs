@@ -8,7 +8,7 @@ use crate::{
     intrinsics::{Felt, Word},
 };
 
-extern "C" {
+unsafe extern "C" {
 
     /// Moves an arbitrary number of words from the advice stack to memory.
     ///

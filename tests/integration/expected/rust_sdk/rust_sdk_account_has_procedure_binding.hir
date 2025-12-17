@@ -143,16 +143,16 @@ builtin.component miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-
             builtin.ret ;
         };
 
-        private builtin.function @intrinsics::felt::from_u32(v91: i32) -> felt {
-        ^block19(v91: i32):
-            v92 = hir.bitcast v91 : felt;
-            builtin.ret v92;
+        private builtin.function @intrinsics::felt::eq(v91: felt, v92: felt) -> i32 {
+        ^block19(v91: felt, v92: felt):
+            v93 = arith.eq v91, v92 : i1;
+            v94 = hir.cast v93 : i32;
+            builtin.ret v94;
         };
 
-        private builtin.function @intrinsics::felt::eq(v94: felt, v95: felt) -> i32 {
-        ^block21(v94: felt, v95: felt):
-            v96 = arith.eq v94, v95 : i1;
-            v97 = hir.cast v96 : i32;
+        private builtin.function @intrinsics::felt::from_u32(v96: i32) -> felt {
+        ^block21(v96: i32):
+            v97 = hir.bitcast v96 : felt;
             builtin.ret v97;
         };
 

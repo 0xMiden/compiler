@@ -79,13 +79,13 @@ There are currently a limited set of dialects, comprising the set of operations 
 - `arith`, i.e. _arithmetic_, which provides all of the mathematical operations we currently support lowerings for. This dialect also provides the `Constant` operation for all supported numeric types.
 - `cf`, i.e. _control flow_, which provides all of the unstructured control flow or control flow-adjacent operations, i.e. `Br`, `CondBr`, `Switch`, and `Select`. The latter is not strictly speaking a control flow operation, but is semantically similar. This dialect is largely converted to the `scf` dialect before lowering, with the exception of `Select`, and limited support for `CondBr` (to handle a specific edge case of the control flow lifting transformation).
 - `scf`, i.e. _structured control flow_, which provides structured equivalents of all the control flow we support, i.e. `If`, `While` (for both while/do and do/while loops), and `IndexSwitch` (essentially equivalent to `cf.switch`, but in structured form). The `Yield` and `Condition` operations are defined in this dialect to represent control flow within (or out of) a child region of one of the previous three ops.
-- `hir` (likely to be renamed to `masm` or `vm` in the near future), which is currently used to represent the set of operations unique to the Miden VM, or correspond to compiler intrinsics implemented in Miden Assembly.
+- `hir` (likely to be renamed to `masm` or `vm` in the near future), which is currently used to represent the set of operations unique to the Miden VM, or corresponds to compiler intrinsics implemented in Miden Assembly.
 
 See [_defining dialects_](#defining-dialects) for more information on what dialects are responsible for in HIR.
 
 ### Operations
 
-An _operation_ represents a computation. Inputs to that computation are in the form of _operands_, and outputs of the computation are in the form of _results_. In practice, an operation may also have _effects_, such as reading/writing from memory, which also represent input/output of the operation, but not explicitly represented in an operation's operands and results.
+An _operation_ represents a computation. Inputs to that computation are in the form of _operands_, and outputs of the computation are in the form of _results_. In practice, an operation may also have _effects_, such as reading/writing from memory, which also represent input/output of the operation, but are not explicitly represented in an operation's operands and results.
 
 Operations can contain zero or more regions. An operation with no regions is also called a _primitive_ operation; while an operation with one or more regions is called a _structured_ operation. An example of the former is the `hir.call` operation, i.e. the function call instruction. An example of the latter is `scf.if`, which represents a structured conditional control flow operation, consisting of two regions, a "then" region, and an "else" region.
 
@@ -116,7 +116,7 @@ A _block_, or _basic block_, is a set of one or more [_operations_](#operations)
 
 Blocks belong to [_regions_](#regions), and if a block has no parent region, it is considered _orphaned_.
 
-A block may declare _block arguments_, the only other way to introduce [_values_](#values) into the IR, aside from operation results. Predecessors of a block must ensure that they provide inputs for all block arguments when transfering control to the block.
+A block may declare _block arguments_, the only other way to introduce [_values_](#values) into the IR, aside from operation results. Predecessors of a block must ensure that they provide inputs for all block arguments when transferring control to the block.
 
 Blocks which are reachable as successors of some control flow operation, are said to be _used_ by that operation. These uses are represented in the form of the `BlockOperand` type, which specifies what block is used, what operation is the user, and the index of the successor in the operation's [_successor storage_](#entity-storage). The `BlockOperand` is linked into the [_use-list_](#entity-lists) of the referenced `Block`, and a `BlockOperandRef` is stored as part of the successor information in the using operation's successor storage. This is the means by which the control flow graph is traversed - you can navigate to predecessors of a block by visiting all of its "users", and you navigate to successors of a block by visiting all successors of the block terminator operation.
 
@@ -131,7 +131,7 @@ A _value_ represents terms in a program, temporaries created to store data as it
 
 Value _definitions_ (aka "defs") can be introduced in two ways:
 
-1. Block argument lists, i.e. the `BlockArgument` value kind. In general, block arguments are used as a more intuitive and ergonomic representation of SSA _phi nodes_, joining multiple definitions of a single value together at control flow join points. Block arguments are also used to represent _region arguments_, which correspond to the set of values that will be forward to that region by the parent operation (or from a sibling region). These arguments are defined as block arguments of the region's entry block. A prime example of this, is the `Function` op. The parameters expressed by the function signature are reflected in the entry block argument list of the function body region.
+1. Block argument lists, i.e. the `BlockArgument` value kind. In general, block arguments are used as a more intuitive and ergonomic representation of SSA _phi nodes_, joining multiple definitions of a single value together at control flow join points. Block arguments are also used to represent _region arguments_, which correspond to the set of values that will be forwarded to that region by the parent operation (or from a sibling region). These arguments are defined as block arguments of the region's entry block. A prime example of this, is the `Function` op. The parameters expressed by the function signature are reflected in the entry block argument list of the function body region.
 2. Operation results, i.e. the `OpResult` value kind. This is the primary way in which values are introduced.
 
 Both value kinds above implement the `Value` trait, which provides the set of metadata and behaviors that are common across all value kinds. In general, you will almost always be working with values in terms of this trait, rather than the concrete type.
@@ -144,10 +144,10 @@ As always, all _uses_ of a value must be dominated by its definition. The IR is 
 
 An _operand_ is a [_value_](#values) used as an argument to an operation.
 
-Beyond the semantics of any given operation, operand ordering is only significant in so far as it is used as the order in which those items are expected to appear on the operand stack once lowered to Miden Assembly. The earlier an operand appears in the list of operands for an operation, the
+Beyond the semantics of any given operation, operand ordering is only significant insofar as it is used as the order in which those items are expected to appear on the operand stack once lowered to Miden Assembly. The earlier an operand appears in the list of operands for an operation, the
 closer to the top of the operand stack it will appear.
 
-Similarly, the ordering of operand results also correlates to the operand stack order after lowering. Specifically, the earlier a result appears in the result list, the closer to the top of the operand stack it will appear after the operation executes.
+Similarly, the ordering of operand results also correlates with the operand stack order after lowering. Specifically, the earlier a result appears in the result list, the closer to the top of the operand stack it will appear after the operation executes.
 
 #### Immediates
 
@@ -268,7 +268,7 @@ We care about this when performing inter-procedural analyses, as it dictates how
 
 ## High-Level Structure
 
-Beyond the core IR concepts introduced in the previous section, HIR also imposes some hierarchical structure to programs in form of builtin operations that are special-cased in certain respects:
+Beyond the core IR concepts introduced in the previous section, HIR also imposes some hierarchical structure to programs in form of built-in operations that are special-cased in certain respects:
 
 - [Worlds](#worlds)
 - [Components](#components)
@@ -464,7 +464,7 @@ You should always refer to the documentation associated with the types mentioned
 
 The `Session` type, provided by the `midenc-session` crate, represents all of the configuration for the current compilation _session_, i.e. invocation.
 
-A session begins by providing the compiler driver with some inputs, user-configurable flags/options, and intrumentation handler. A session ends when those inputs have been compiled to some output, and the driver exits.
+A session begins by providing the compiler driver with some inputs, user-configurable flags/options, and instrumentation handler. A session ends when those inputs have been compiled to some output, and the driver exits.
 
 ### Context
 
@@ -532,7 +532,7 @@ Examples include:
 - The list of operands using a block argument/op result
 - The list of symbol users referencing a symbol
 
-In conjunction with the list itself, there are a set of traits which facilitate automatically maintaining the relationship between parent and child entity as items are inserted, removed, or transferred between parent lists:
+In conjunction with the list itself, there is a set of traits which facilitate automatically maintaining the relationship between parent and child entity as items are inserted, removed, or transferred between parent lists:
 
 - `EntityParent<Child>`, implemented by any entity type which has some child entity of type `Child`. This provides us with the ability to map a parent/child relationship to the offset of the intrusive linked list in the parent entity, so that we can construct a reference to it. Entities can be the parent of multiple other entity types.
 - `EntityWithParent<Parent = T>`, implemented by the child entity which has some parent type `T`, this provides the inverse of `EntityParent`, i.e. the ability for the entity list infrastructure to resolve the parent type of a child entity it stores, and given a reference to the parent entity, get the relevant intrusive list for that child. Entities with a parent may only have a single parent entity type at this time.
@@ -562,7 +562,7 @@ Another thing to be aware of, is that relationships between entities where there
 - `BlockOperand` represents a "use" of a `Block` by an operation as a successor. This type is responsible for forming the edges of the CFG, and so much like `OpOperand`, the `Block` type has an entity list for `BlockOperand`s, effectively the set of that block's predecessors; while the operation has entity storage for `BlockOperandRefs` (or more precisely, `SuccessorInfo`, of which `BlockOperandRef` is one part).
 - `SymbolUse` represents a use of a `Symbol` by an operation. This underpins the maintenance of the call graph. Unlike operands, symbol usage is not tracked as a fundamental part of every operation, i.e. there is no dedicated `symbols` field of the `Operation` type which provides the entity storage for `SymbolUseRef`s, nor is there a field which defines the entity list. Instead, the symbol use list of an op that implements `Symbol`, must be defined as part of the concrete operation type. Similarly, any concrete operation type that can use/reference a `Symbol` op, must determine for itself how it will store that use. For this reason, symbol maintenance is a bit less ergonomic than other entity types.
 
-We now can explore the different means by which the IR can be traversed:
+We can now explore the different means by which the IR can be traversed:
 
 1. Using the raw traversal primitives described above.
 2. The `Graph` trait
@@ -584,7 +584,7 @@ The `Walk` trait defines how to walk all children of a given type, which are con
 
 The difference between `Walk` and `RawWalk`, is that `Walk` requires borrowed references to the types it is implemented for, while `RawWalk` relies on the traversal primitives we introduced at the start of this section, to avoid borrowing any of the entities being traversed, with the sole exception being to access child entity lists long enough to get a reference to the head of the list. If we are ever mutating the IR as we visit it, then we use `RawWalk`, otherwise `Walk` tends to be more ergonomic.
 
-The `Walk` and `RawWalk` traits provide both pre- and post-order traversals, which dictates in what order the visit callback is invoked. You can further dictate the direction in which the children are visited, e.g. are operations of a block visited forward (top-down), or backward (bottom-up)? Lastly, if you wish to be able to break out of a traversal early, the traits provide variants of all functions which allow the visit callback to return a `WalkResult` that dictates whether to continue the traversal, skip the children of the current node, or abort the traversal with an error.
+The `Walk` and `RawWalk` traits provide both pre- and post-order traversals, which dictate in what order the visit callback is invoked. You can further dictate the direction in which the children are visited, e.g. are operations of a block visited forward (top-down), or backward (bottom-up)? Lastly, if you wish to be able to break out of a traversal early, the traits provide variants of all functions which allow the visit callback to return a `WalkResult` that dictates whether to continue the traversal, skip the children of the current node, or abort the traversal with an error.
 
 #### `CallOpInterface` and `CallableOpInterface`
 
@@ -622,7 +622,7 @@ Currently, we distinguish the points representing "before" a block (i.e. at the 
 
 The `ProgramPoint` type can be reified as a literal cursor into the operation list of a block, and then used to perform some action relative to that cursor.
 
-The key thing to understand about program points has to do with the relationship between before/after (or start/end) and what location that actually refers to. The gist, is that a program point, when materialized as a cursor into an operation list, will always have the cursor positioned such that if you inserted a new operation at that point, it would be placed where you expect it to be - i.e. if "before" an operation, the insertion will place the new item immediately preceding the operation referenced by the program point. This is of particular importance if inserting multiple operations using the same point, as the order in which operations will be inserted depends on whether the position is before or after the point. For example, inserting multiple items "before" an operation, will have them appear in that same order in the containing block. However, inserting multiple items "after" an operation, will have them appear in reverse order they were inserted (i.e. the last to be inserted will appear first in the block relative to the others).
+The key thing to understand about program points has to do with the relationship between before/after (or start/end) and the location that actually refers to. The gist, is that a program point, when materialized as a cursor into an operation list, will always have the cursor positioned such that if you inserted a new operation at that point, it would be placed where you expect it to be - i.e. if "before" an operation, the insertion will place the new item immediately preceding the operation referenced by the program point. This is of particular importance if inserting multiple operations using the same point, as the order in which operations will be inserted depends on whether the position is before or after the point. For example, inserting multiple items "before" an operation, will have them appear in that same order in the containing block. However, inserting multiple items "after" an operation, will have them appear in reverse order they were inserted (i.e. the last to be inserted will appear first in the block relative to the others).
 
 ### Defining Dialects
 
@@ -793,7 +793,7 @@ It should be noted that the choice to implement `EffectOpInterface` for an opera
 
 For example, most operations will have a known effect (or lack thereof) on memory, e.g. `arith.add` will never have a memory effect, while `hir.load` by definition will read from memory. In some cases, whether an operation will have such an effect is not a property of the operation itself, but rather operations that may be nested in one of its child regions, e.g. `scf.if` has no memory effects in and of itself, but one of its regions might contain an operation which does, such as an `hir.store` in the "then" region. In this case, it does not make sense for `scf.if` to implement `EffectOpInterface<MemoryEffect>`, because memory effects are not specified for `scf.if`, but are instead derived from its regions.
 
-When `EffectOpInterface` is not implemented for some operation, then one must treat the operation as conservatively as possible in regards to the specific effect. For example, `scf.call` does not implement this interface for `MemoryEffect`, because whether the call has any memory effects depends on the function being called. As a result, one must assume that the `scf.call` could have any possible memory effect, unless you are able to prove otherwise using inter-procedural analysis.
+When `EffectOpInterface` is not implemented for some operation, then one must treat the operation as conservatively as possible regarding the specific effect. For example, `scf.call` does not implement this interface for `MemoryEffect`, because whether the call has any memory effects depends on the function being called. As a result, one must assume that the `scf.call` could have any possible memory effect, unless you are able to prove otherwise using inter-procedural analysis.
 
 #### Memory Effects
 
@@ -804,4 +804,4 @@ The infrastructure described above can be used to represent any manner of side e
 - The `HasRecursiveMemoryEffects` trait, which should be implemented on any operation whose regions may contain operations that have memory effects.
 - The `Operation::is_memory_effect_free` method, which returns a boolean indicating whether the operation is known not to have any memory effects.
 
-In most places, we're largely concerned with whether an operation is known to be memory effect free, thus allowing us to move that operation around freely. We have not started doing more sophisticated effect analysis and optimizations based on such analysis.
+In most places, we're largely concerned with whether an operation is known to be memory effect-free, thus allowing us to move that operation around freely. We have not started doing more sophisticated effect analysis and optimizations based on such analysis.

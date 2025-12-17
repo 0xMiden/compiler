@@ -2,32 +2,32 @@ use alloc::sync::Arc;
 use core::ops::Range;
 use std::path::PathBuf;
 
-use cranelift_entity::{packed_option::ReservedValue, PrimaryMap};
-use midenc_hir::{interner::Symbol, Ident};
+use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
+use midenc_hir::{Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
-    types::CoreTypeId, CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding,
-    ExternalKind, FuncToValidate, FunctionBody, NameSectionReader, Naming, Operator, Parser,
-    Payload, TypeRef, Validator, ValidatorResources,
+    CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding, ExternalKind,
+    FuncToValidate, FunctionBody, NameSectionReader, Naming, Operator, Parser, Payload, TypeRef,
+    Validator, ValidatorResources, types::CoreTypeId,
 };
 
 use super::{
-    types::{DataSegment, DataSegmentIndex},
     ModuleImport, TableInitialValue,
+    types::{DataSegment, DataSegmentIndex},
 };
 use crate::{
+    WasmTranslationConfig,
     component::SignatureIndex,
     error::WasmResult,
     module::{
+        FuncRefIndex, Module, ModuleType, TableSegment,
         types::{
-            convert_func_type, convert_global_type, convert_table_type, convert_valtype,
             DataSegmentOffset, DefinedFuncIndex, ElemIndex, EntityIndex, EntityType, FuncIndex,
             GlobalIndex, GlobalInit, MemoryIndex, ModuleTypesBuilder, TableIndex, TypeIndex,
-            WasmType,
+            WasmType, convert_func_type, convert_global_type, convert_table_type, convert_valtype,
         },
-        FuncRefIndex, Module, ModuleType, TableSegment,
     },
-    unsupported_diag, WasmTranslationConfig,
+    unsupported_diag,
 };
 
 /// Object containing the standalone environment information.

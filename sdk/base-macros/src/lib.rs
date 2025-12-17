@@ -55,6 +55,7 @@ mod boilerplate;
 mod component_macro;
 mod export_type;
 mod generate;
+mod manifest_paths;
 mod script;
 mod types;
 mod util;

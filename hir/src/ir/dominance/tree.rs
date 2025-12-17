@@ -5,13 +5,13 @@ use core::{
     num::NonZeroU32,
 };
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use super::{BatchUpdateInfo, SemiNCA};
 use crate::{
+    BlockRef, EntityId, EntityWithId, RegionRef,
     cfg::{self, Graph, Inverse, InvertibleGraph},
     formatter::DisplayOptional,
-    BlockRef, EntityId, EntityWithId, RegionRef,
 };
 
 #[derive(Debug, thiserror::Error)]

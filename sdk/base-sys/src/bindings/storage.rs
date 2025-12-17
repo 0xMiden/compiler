@@ -3,7 +3,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::StorageCommitmentRoot;
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::active_account::get_item"]
     pub fn extern_get_storage_item(index: Felt, ptr: *mut Word);
 

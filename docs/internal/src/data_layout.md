@@ -1,6 +1,6 @@
 # Data layout
 
-This document describes how we map data/memory accesses from the byte-addressable address space asssumed by Rust and most (if not virtually all) other languages, to the element-addressable address space of the Miden VM.
+This document describes how we map data/memory accesses from the byte-addressable address space assumed by Rust and most (if not virtually all) other languages, to the element-addressable address space of the Miden VM.
 
 The details of this are abstracted away by HIR - so if you are working with Miden from Rust, or some other language that lowers to Miden Assembly via the Miden compiler's intermediate representation (HIR), it is essentially transparent.
 

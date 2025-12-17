@@ -297,6 +297,8 @@ proc cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_
     u32wrapping_add
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -844,6 +846,8 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     movup.2
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -1083,6 +1087,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.0
     push.4294967295
     push.4294967295
@@ -1531,6 +1536,16 @@ proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
 end
 
 @callconv("C")
+proc intrinsics::felt::assert_eq(felt, felt)
+    assert_eq
+end
+
+@callconv("C")
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
+end
+
+@callconv("C")
 proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
     dup.1
     dup.1
@@ -1544,15 +1559,5 @@ proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
     assert
     mul.4294967296
     add
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
 end
 

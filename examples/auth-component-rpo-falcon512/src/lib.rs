@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(alloc_error_handler)]
 
 extern crate alloc;
 
@@ -6,11 +7,6 @@ use miden::{
     component, felt, hash_words, intrinsics::advice::adv_insert, native_account, tx, Felt, Value,
     ValueAccess, Word,
 };
-
-use crate::bindings::exports::miden::base::authentication_component::Guest;
-
-miden::generate!();
-bindings::export!(AuthComponent);
 
 /// Authentication component storage/layout.
 ///
@@ -27,13 +23,14 @@ struct AuthComponent {
     owner_public_key: Value,
 }
 
-impl Guest for AuthComponent {
-    fn auth_procedure(_arg: Word) {
+#[component]
+impl AuthComponent {
+    pub fn auth_procedure(&mut self, _arg: Word) {
         let ref_block_num = tx::get_block_number();
-        let final_nonce = native_account::incr_nonce();
+        let final_nonce = self.incr_nonce();
 
         // Gather tx summary parts
-        let acct_delta_commit = native_account::compute_delta_commitment();
+        let acct_delta_commit = self.compute_delta_commitment();
         let input_notes_commit = tx::get_input_notes_commitment();
         let output_notes_commit = tx::get_output_notes_commitment();
 
@@ -44,14 +41,13 @@ impl Guest for AuthComponent {
         // On the advice stack the words are expected to be in the reverse order
         tx_summary.reverse();
         // Insert tx summary into advice map under key `msg`
-        adv_insert(msg.clone(), &tx_summary);
+        adv_insert(msg, &tx_summary);
 
         // Load public key from storage slot 0
-        let storage = Self::default();
-        let pub_key: Word = storage.owner_public_key.read();
+        let pub_key: Word = self.owner_public_key.read();
 
         // Emit signature request event to advice stack,
-        miden::emit_falcon_sig_to_stack(msg.clone(), pub_key.clone());
+        miden::emit_falcon_sig_to_stack(msg, pub_key);
 
         // Verify the signature loaded on the advice stack.
         miden::rpo_falcon512_verify(pub_key, msg);

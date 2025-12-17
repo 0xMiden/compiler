@@ -1,7 +1,7 @@
 use miden_core::{Felt, FieldElement};
 use midenc_hir::SourceSpan;
 
-use super::{masm, OpEmitter};
+use super::{OpEmitter, masm};
 
 /// The value zero, as a field element
 pub const ZERO: Felt = Felt::ZERO;

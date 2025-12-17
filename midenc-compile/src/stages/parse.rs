@@ -5,12 +5,12 @@ use alloc::{format, rc::Rc, sync::Arc};
 use miden_assembly::utils::Deserializable;
 #[cfg(feature = "std")]
 use miden_assembly::utils::ReadAdapter;
-use midenc_session::{
-    diagnostics::{IntoDiagnostic, WrapErr},
-    InputFile, InputType,
-};
 #[cfg(feature = "std")]
 use midenc_session::{FileName, Path};
+use midenc_session::{
+    InputFile, InputType,
+    diagnostics::{IntoDiagnostic, WrapErr},
+};
 
 use super::*;
 
@@ -145,8 +145,8 @@ impl ParseStage {
         context: Rc<Context>,
     ) -> CompilerResult<ParseOutput> {
         use miden_assembly::{
-            ast::{self, Ident, ModuleKind},
             LibraryNamespace, LibraryPath,
+            ast::{self, Ident, ModuleKind},
         };
 
         // Construct library path for MASM module
@@ -180,8 +180,8 @@ impl ParseStage {
         context: Rc<Context>,
     ) -> CompilerResult<ParseOutput> {
         use miden_assembly::{
-            ast::{self, ModuleKind},
             LibraryPath,
+            ast::{self, ModuleKind},
         };
 
         let source = core::str::from_utf8(bytes)

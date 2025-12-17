@@ -4,8 +4,8 @@ use alloc::{collections::VecDeque, rc::Rc};
 use core::{any::TypeId, cell::RefCell, ptr::NonNull};
 
 use midenc_hir::{
-    hashbrown, pass::AnalysisManager, EntityRef, FxHashMap, Operation, ProgramPoint, Report,
-    SmallVec,
+    EntityRef, FxHashMap, Operation, ProgramPoint, Report, SmallVec, hashbrown,
+    pass::AnalysisManager,
 };
 
 use self::{allocator::DataFlowSolverAlloc, analysis::AnalysisStrategy};
@@ -496,8 +496,8 @@ impl DataFlowSolver {
         use hashbrown::hash_map::Entry;
 
         use crate::{
-            analysis::state::{RawAnalysisStateInfo, RawAnalysisStateInfoHandle},
             AnalysisStateSubscriptionBehavior,
+            analysis::state::{RawAnalysisStateInfo, RawAnalysisStateInfoHandle},
         };
 
         log::trace!(target: "dataflow-solver", "computing analysis state entry key");

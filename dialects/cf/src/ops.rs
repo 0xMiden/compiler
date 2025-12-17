@@ -327,24 +327,23 @@ impl Foldable for Select {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         if let Some(value) =
             matchers::foldable_operand_of::<Immediate>().matches(&self.cond().as_operand_ref())
+            && let Some(cond) = value.as_bool()
         {
-            if let Some(cond) = value.as_bool() {
-                let maybe_folded = if cond {
-                    matchers::foldable_operand()
-                        .matches(&self.first().as_operand_ref())
-                        .map(OpFoldResult::Attribute)
-                        .or_else(|| Some(OpFoldResult::Value(self.first().as_value_ref())))
-                } else {
-                    matchers::foldable_operand()
-                        .matches(&self.second().as_operand_ref())
-                        .map(OpFoldResult::Attribute)
-                        .or_else(|| Some(OpFoldResult::Value(self.second().as_value_ref())))
-                };
+            let maybe_folded = if cond {
+                matchers::foldable_operand()
+                    .matches(&self.first().as_operand_ref())
+                    .map(OpFoldResult::Attribute)
+                    .or_else(|| Some(OpFoldResult::Value(self.first().as_value_ref())))
+            } else {
+                matchers::foldable_operand()
+                    .matches(&self.second().as_operand_ref())
+                    .map(OpFoldResult::Attribute)
+                    .or_else(|| Some(OpFoldResult::Value(self.second().as_value_ref())))
+            };
 
-                if let Some(folded) = maybe_folded {
-                    results.push(folded);
-                    return FoldResult::Ok(());
-                }
+            if let Some(folded) = maybe_folded {
+                results.push(folded);
+                return FoldResult::Ok(());
             }
         }
 
@@ -357,24 +356,24 @@ impl Foldable for Select {
         operands: &[Option<Box<dyn AttributeValue>>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>()) {
-            if let Some(cond) = value.as_bool() {
-                let maybe_folded = if cond {
-                    operands[1]
-                        .as_deref()
-                        .map(|o| OpFoldResult::Attribute(o.clone_value()))
-                        .or_else(|| Some(OpFoldResult::Value(self.first().as_value_ref())))
-                } else {
-                    operands[2]
-                        .as_deref()
-                        .map(|o| OpFoldResult::Attribute(o.clone_value()))
-                        .or_else(|| Some(OpFoldResult::Value(self.second().as_value_ref())))
-                };
+        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>())
+            && let Some(cond) = value.as_bool()
+        {
+            let maybe_folded = if cond {
+                operands[1]
+                    .as_deref()
+                    .map(|o| OpFoldResult::Attribute(o.clone_value()))
+                    .or_else(|| Some(OpFoldResult::Value(self.first().as_value_ref())))
+            } else {
+                operands[2]
+                    .as_deref()
+                    .map(|o| OpFoldResult::Attribute(o.clone_value()))
+                    .or_else(|| Some(OpFoldResult::Value(self.second().as_value_ref())))
+            };
 
-                if let Some(folded) = maybe_folded {
-                    results.push(folded);
-                    return FoldResult::Ok(());
-                }
+            if let Some(folded) = maybe_folded {
+                results.push(folded);
+                return FoldResult::Ok(());
             }
         }
         FoldResult::Failed

@@ -9,8 +9,8 @@ use core::{
 use anyhow::anyhow;
 
 use super::{
-    interner::{symbols, Symbol},
     SourceSpan, Spanned,
+    interner::{Symbol, symbols},
 };
 use crate::{
     define_attr_type,

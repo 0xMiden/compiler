@@ -6,7 +6,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::{AccountId, Asset, Recipient};
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::active_note::get_inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
     #[link_name = "miden::active_note::get_assets"]

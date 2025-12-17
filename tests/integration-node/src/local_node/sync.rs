@@ -6,13 +6,13 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use fs2::FileExt;
 
 use super::{
-    lock_file, pid_file,
+    COORD_DIR, lock_file, pid_file,
     process::{is_process_running, kill_process},
-    ref_count_dir, COORD_DIR,
+    ref_count_dir,
 };
 
 /// Lock guard using fs2 file locking
@@ -94,15 +94,15 @@ pub fn get_ref_count() -> Result<usize> {
         let file_name_str = file_name.to_string_lossy();
 
         // Extract PID from handle name (format: handle-{pid}-{uuid})
-        if let Some(pid_str) = file_name_str.split('-').nth(1) {
-            if let Ok(pid) = pid_str.parse::<u32>() {
-                if is_process_running(pid) {
-                    active_count += 1;
-                } else {
-                    // Clean up stale reference from dead process
-                    eprintln!("[SharedNode] Cleaning up stale reference from dead process {pid}");
-                    let _ = fs::remove_file(entry.path());
-                }
+        if let Some(pid_str) = file_name_str.split('-').nth(1)
+            && let Ok(pid) = pid_str.parse::<u32>()
+        {
+            if is_process_running(pid) {
+                active_count += 1;
+            } else {
+                // Clean up stale reference from dead process
+                eprintln!("[SharedNode] Cleaning up stale reference from dead process {pid}");
+                let _ = fs::remove_file(entry.path());
             }
         }
     }

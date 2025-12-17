@@ -1,6 +1,6 @@
 use alloc::rc::Rc;
 
-use crate::{patterns::RewritePatternSet, Context, Op};
+use crate::{Context, Op, patterns::RewritePatternSet};
 
 /// This trait represents an [Op] that has a canonical/normal form.
 ///

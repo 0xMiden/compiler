@@ -16,7 +16,7 @@ mod fallback {
     };
     use core::any::Any;
 
-    use crate::{diagnostics::Report, CompileFlag, FlagAction};
+    use crate::{CompileFlag, FlagAction, diagnostics::Report};
 
     /// Violation of [`ArgMatches`] assumptions
     #[derive(Clone, Debug, thiserror::Error)]
@@ -114,7 +114,7 @@ mod fallback {
                         None => {
                             return Err(Report::msg(format!(
                                 "unexpected positional argument: '{arg}'"
-                            )))
+                            )));
                         }
                     },
                 };

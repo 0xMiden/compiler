@@ -78,15 +78,15 @@ builtin.component miden:cross-ctx-account/foo@1.0.0 {
             builtin.ret v47;
         };
 
-        private builtin.function @intrinsics::felt::from_u32(v49: i32) -> felt {
-        ^block17(v49: i32):
-            v50 = hir.bitcast v49 : felt;
+        private builtin.function @intrinsics::felt::as_u64(v49: felt) -> i64 {
+        ^block17(v49: felt):
+            v50 = hir.cast v49 : i64;
             builtin.ret v50;
         };
 
-        private builtin.function @intrinsics::felt::as_u64(v52: felt) -> i64 {
-        ^block19(v52: felt):
-            v53 = hir.cast v52 : i64;
+        private builtin.function @intrinsics::felt::from_u32(v52: i32) -> felt {
+        ^block19(v52: i32):
+            v53 = hir.bitcast v52 : felt;
             builtin.ret v53;
         };
 

@@ -4,7 +4,7 @@ use bitflags::bitflags;
 use smallvec::SmallVec;
 
 use super::Operation;
-use crate::{traits::Commutative, OpOperand, Region, Value, ValueRef};
+use crate::{OpOperand, Region, Value, ValueRef, traits::Commutative};
 
 bitflags! {
     #[derive(Copy, Clone)]

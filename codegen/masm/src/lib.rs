@@ -1,7 +1,5 @@
 #![feature(debug_closure_helpers)]
 #![feature(assert_matches)]
-#![feature(const_type_id)]
-#![feature(array_chunks)]
 #![feature(iter_array_chunks)]
 #![feature(iterator_try_collect)]
 #![deny(warnings)]
@@ -21,17 +19,17 @@ mod stack;
 
 pub mod masm {
     pub use miden_assembly_syntax::{
+        KernelLibrary, Library, LibraryNamespace, LibraryPath,
         ast::*,
         debuginfo::{SourceSpan, Span, Spanned},
         parser::{IntValue, PushValue},
-        KernelLibrary, Library, LibraryNamespace, LibraryPath,
     };
 }
 
 pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
-    events::{TraceEvent, TRACE_FRAME_END, TRACE_FRAME_START},
+    events::{TRACE_FRAME_END, TRACE_FRAME_START, TraceEvent},
     lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},
 };

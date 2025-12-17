@@ -6,12 +6,12 @@ use core::cell::RefCell;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
+    ArgumentPurpose, AsValueRange, CallConv, FunctionType, Op, Signature, SourceSpan, SymbolPath,
+    ValueRef,
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
     },
-    ArgumentPurpose, AsValueRange, CallConv, FunctionType, Op, Signature, SourceSpan, SymbolPath,
-    ValueRef,
 };
 
 use super::{

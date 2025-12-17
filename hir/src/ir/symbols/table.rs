@@ -1,10 +1,10 @@
 use super::{
-    generate_symbol_name, Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolPathAttr,
-    SymbolRef,
+    Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolPathAttr, SymbolRef,
+    generate_symbol_name,
 };
 use crate::{
-    traits::{GraphRegionNoTerminator, NoTerminator, Terminator},
     FxHashMap, Op, Operation, OperationRef, ProgramPoint, Report, UnsafeIntrusiveEntityRef,
+    traits::{GraphRegionNoTerminator, NoTerminator, Terminator},
 };
 
 /// A type alias for [SymbolTable] implementations referenced via [UnsafeIntrusiveEntityRef]
@@ -365,7 +365,7 @@ impl core::ops::Deref for Symbols<'_> {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Owned(ref symbols) => symbols,
+            Self::Owned(symbols) => symbols,
             Self::Borrowed(symbols) => symbols,
         }
     }
@@ -390,7 +390,7 @@ impl core::ops::Deref for SymbolsMut<'_> {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Owned(ref symbols) => symbols,
+            Self::Owned(symbols) => symbols,
             Self::Borrowed(symbols) => symbols,
         }
     }

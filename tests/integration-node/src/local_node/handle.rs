@@ -6,13 +6,13 @@ use anyhow::{Context, Result};
 use uuid::Uuid;
 
 use super::{
+    RPC_PORT,
     process::{is_port_in_use, is_process_running, start_shared_node},
     ref_count_dir, rpc_url,
     setup::LocalMidenNode,
     sync::{
         acquire_lock, add_reference, get_ref_count, read_pid, stop_node_if_no_references, write_pid,
     },
-    RPC_PORT,
 };
 
 /// Handle to the shared node instance. When dropped, decrements the reference count.

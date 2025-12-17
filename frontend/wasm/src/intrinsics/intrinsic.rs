@@ -1,7 +1,7 @@
 use midenc_hir::{
-    diagnostics::{miette, Diagnostic},
-    interner::{symbols, Symbol},
     FunctionType, SymbolNameComponent, SymbolPath, Type,
+    diagnostics::{Diagnostic, miette},
+    interner::{Symbol, symbols},
 };
 
 use super::{advice, crypto, debug, felt, mem};

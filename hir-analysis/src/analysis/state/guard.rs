@@ -2,12 +2,12 @@ use alloc::rc::Rc;
 use core::{cell::RefCell, ptr::NonNull};
 
 use midenc_hir::{
-    entity::{BorrowRef, BorrowRefMut},
     EntityRef,
+    entity::{BorrowRef, BorrowRefMut},
 };
 
 use super::*;
-use crate::{solver::AnalysisQueue, ChangeResult, DenseLattice, SparseLattice};
+use crate::{ChangeResult, DenseLattice, SparseLattice, solver::AnalysisQueue};
 
 /// An immmutable handle/guard for some analysis state T
 pub struct AnalysisStateGuard<'a, T: AnalysisState + 'static> {
@@ -18,12 +18,14 @@ pub struct AnalysisStateGuard<'a, T: AnalysisState + 'static> {
 }
 impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     pub(crate) unsafe fn new(info: NonNull<AnalysisStateInfo>) -> Self {
-        let handle = RawAnalysisStateInfoHandle::new(info);
-        let (state, _borrow) = handle.state_ref();
-        Self {
-            info,
-            state,
-            _borrow,
+        unsafe {
+            let handle = RawAnalysisStateInfoHandle::new(info);
+            let (state, _borrow) = handle.state_ref();
+            Self {
+                info,
+                state,
+                _borrow,
+            }
         }
     }
 
@@ -116,14 +118,16 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
         info: NonNull<AnalysisStateInfo>,
         worklist: Rc<RefCell<AnalysisQueue>>,
     ) -> Self {
-        let handle = RawAnalysisStateInfoHandle::new(info);
-        let (state, _borrow) = handle.state_mut();
-        Self {
-            worklist,
-            info,
-            state,
-            _borrow,
-            changed: ChangeResult::Unchanged,
+        unsafe {
+            let handle = RawAnalysisStateInfoHandle::new(info);
+            let (state, _borrow) = handle.state_mut();
+            Self {
+                worklist,
+                info,
+                state,
+                _borrow,
+                changed: ChangeResult::Unchanged,
+            }
         }
     }
 

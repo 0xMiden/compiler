@@ -10,7 +10,7 @@ use midenc_hir_symbol::sync::RwLock;
 
 #[cfg(feature = "std")]
 use crate::diagnostics::IntoDiagnostic;
-use crate::{diagnostics::Report, ColorChoice};
+use crate::{ColorChoice, diagnostics::Report};
 
 /// The [Emitter] trait is used for controlling how diagnostics are displayed.
 ///

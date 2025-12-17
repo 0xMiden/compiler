@@ -3,9 +3,9 @@ mod forward;
 mod lattice;
 
 use midenc_hir::{
-    cfg::Graph, dominance::DominanceInfo, loops::LoopForest, pass::AnalysisManager, Backward,
-    Block, BlockRef, CallOpInterface, EntityWithId, Forward, Operation, ProgramPoint,
+    Backward, Block, BlockRef, CallOpInterface, EntityWithId, Forward, Operation, ProgramPoint,
     RegionBranchOpInterface, RegionKindInterface, RegionRef, Report, Spanned, SymbolTable,
+    cfg::Graph, dominance::DominanceInfo, loops::LoopForest, pass::AnalysisManager,
 };
 
 pub use self::{
@@ -13,7 +13,7 @@ pub use self::{
     lattice::DenseLattice,
 };
 use super::{AnalysisStrategy, DataFlowAnalysis, DataFlowSolver, Dense};
-use crate::analyses::{dce::CfgEdge, LoopAction, LoopState};
+use crate::analyses::{LoopAction, LoopState, dce::CfgEdge};
 
 /// This type provides an [AnalysisStrategy] for dense data-flow analyses.
 ///

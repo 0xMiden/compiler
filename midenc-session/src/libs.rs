@@ -13,12 +13,12 @@ use miden_core::utils::Deserializable;
 use miden_stdlib::StdLibrary;
 use midenc_hir_symbol::sync::LazyLock;
 
-use crate::{diagnostics::Report, PathBuf, Session, TargetEnv};
 #[cfg(feature = "std")]
 use crate::{
-    diagnostics::{IntoDiagnostic, WrapErr},
     Path,
+    diagnostics::{IntoDiagnostic, WrapErr},
 };
+use crate::{PathBuf, Session, TargetEnv, diagnostics::Report};
 
 pub static STDLIB: LazyLock<Arc<CompiledLibrary>> =
     LazyLock::new(|| Arc::new(StdLibrary::default().into()));
@@ -157,7 +157,7 @@ impl LinkLibrary {
                         return Err(Report::msg(format!(
                             "Expected Miden package to contain a Library, got Program: '{}'",
                             path.display()
-                        )))
+                        )));
                     }
                     miden_mast_package::MastArtifact::Library(lib) => lib.clone(),
                 };

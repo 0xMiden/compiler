@@ -11,7 +11,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use intrusive_collections::{intrusive_adapter, LinkedListLink};
+use intrusive_collections::{LinkedListLink, intrusive_adapter};
 
 use crate::adt::SizedTypeProperties;
 
@@ -210,15 +210,15 @@ impl<T> Iterator for IntoIter<T> {
 impl<T> Drop for IntoIter<T> {
     fn drop(&mut self) {
         // Drop any items in the current chunk that we're responsible for dropping
-        if let Some(current_chunk) = self.current_chunk.take() {
-            if core::mem::needs_drop::<T>() {
-                let ptr = current_chunk.data();
-                while self.current_index < self.current_len {
-                    unsafe {
-                        let ptr = ptr.add(self.current_index);
-                        core::ptr::drop_in_place(ptr.as_ptr());
-                        self.current_index += 1;
-                    }
+        if let Some(current_chunk) = self.current_chunk.take()
+            && core::mem::needs_drop::<T>()
+        {
+            let ptr = current_chunk.data();
+            while self.current_index < self.current_len {
+                unsafe {
+                    let ptr = ptr.add(self.current_index);
+                    core::ptr::drop_in_place(ptr.as_ptr());
+                    self.current_index += 1;
                 }
             }
         }

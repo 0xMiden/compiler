@@ -1,18 +1,18 @@
 use alloc::{collections::VecDeque, rc::Rc};
 
 use midenc_hir::{
+    BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation, OperationRef,
+    ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Rewriter,
+    SmallVec, SourceSpan, Spanned, StorableEntity, Usable, ValueRange, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
     dominance::{DomTreeNode, DominanceFrontier, DominanceInfo},
     pass::{AnalysisManager, PostPassStatus},
     traits::SingleRegion,
-    BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation, OperationRef,
-    ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Rewriter,
-    SmallVec, SourceSpan, Spanned, StorableEntity, Usable, ValueRange, ValueRef,
 };
 use midenc_hir_analysis::analyses::{
-    spills::{Placement, Predecessor},
     SpillAnalysis,
+    spills::{Placement, Predecessor},
 };
 
 /// This interface is used in conjunction with [transform_spills] so that the transform can be used

@@ -1,5 +1,6 @@
 // Do not link against libstd (i.e. anything defined in `std::`)
 #![no_std]
+#![feature(alloc_error_handler)]
 
 // However, we could still use some standard library types while
 // remaining no-std compatible, if we uncommented the following lines:
@@ -18,13 +19,20 @@ fn my_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+// Required for no-std crates
+#[cfg(not(test))]
+#[alloc_error_handler]
+fn my_alloc_error(_info: core::alloc::Layout) -> ! {
+    loop {}
+}
+
 use bindings::exports::miden::cross_ctx_account_word::*;
 
 miden::generate!();
 bindings::export!(MyFoo);
 
 use foo::{MixedStruct, NestedStruct, Pair, Triple};
-use miden::{felt, Felt, Word};
+use miden::{Felt, Word, felt};
 
 struct MyFoo;
 
