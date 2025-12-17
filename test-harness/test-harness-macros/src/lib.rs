@@ -13,30 +13,40 @@ fn is_test() -> bool {
     false
 }
 
+// Returns the identifier for a specific FnArg
+fn get_binding_and_type(fn_arg: &syn::FnArg) -> Option<(&syn::PatIdent, &syn::PathSegment)> {
+    let syn::FnArg::Typed(arg) = fn_arg else {
+        return None;
+    };
+
+    let syn::Type::Path(syn::TypePath { path, .. }) = arg.ty.as_ref() else {
+        return None;
+    };
+
+    // The last token in the segments vector is the actual type, the rest
+    // are just path specifiers.
+    let path_segment = path.segments.last()?;
+
+    let syn::Pat::Ident(binding) = arg.pat.as_ref() else {
+        return None;
+    };
+
+    Some((binding, path_segment))
+}
+
 fn load_account(function: &mut syn::ItemFn) {
     let mut found_packages_vars = Vec::new();
 
-    for arg in function.sig.inputs.iter() {
-        let syn::FnArg::Typed(arg) = arg else {
-            continue;
-        };
-        let syn::Type::Path(syn::TypePath { path, .. }) = *arg.ty.clone() else {
-            continue;
-        };
-        // The last token in the segments vector is the actual type, the rest
-        // are just path specifiers.
-        let Some(maybe_package) = path.segments.last() else {
+    for fn_arg in function.sig.inputs.iter() {
+        let Some((binding, var_type)) = get_binding_and_type(fn_arg) else {
             continue;
         };
 
-        if maybe_package.ident != "Package" {
+        if var_type.ident != "Package" {
             continue;
         }
 
-        let syn::Pat::Ident(package_var_binding) = arg.pat.as_ref() else {
-            panic!("Couldn't find binding for package")
-        };
-        found_packages_vars.push(package_var_binding.ident.clone());
+        found_packages_vars.push(binding.ident.clone());
     }
 
     if found_packages_vars.len() > 1 {
