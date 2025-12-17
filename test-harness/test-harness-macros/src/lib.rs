@@ -34,20 +34,35 @@ fn get_binding_and_type(fn_arg: &syn::FnArg) -> Option<(&syn::PatIdent, &syn::Pa
     Some((binding, path_segment))
 }
 
-fn load_account(function: &mut syn::ItemFn) {
+/// Parse the arguments of a `#[miden-test]` function and check for `Package`s.
+///
+/// If the function has a single `Package` as argument, then it is removed from
+/// the argument list and the boilerplate code to load the generated `Package`
+/// into a variable will be generated. The name of the variable will match the
+/// one used as argument.
+///
+/// This will "consume" all the tokens that are of type `Package`.
+fn load_package(function: &mut syn::ItemFn) {
     let mut found_packages_vars = Vec::new();
 
-    for fn_arg in function.sig.inputs.iter() {
-        let Some((binding, var_type)) = get_binding_and_type(fn_arg) else {
-            continue;
-        };
+    let fn_args = &mut function.sig.inputs;
 
-        if var_type.ident != "Package" {
-            continue;
-        }
+    *fn_args = fn_args
+        .iter()
+        .filter(|&fn_arg| {
+            let Some((binding, var_type)) = get_binding_and_type(fn_arg) else {
+                return true;
+            };
 
-        found_packages_vars.push(binding.ident.clone());
-    }
+            if var_type.ident != "Package" {
+                return true;
+            }
+
+            found_packages_vars.push(binding.ident.clone());
+            false
+        })
+        .cloned()
+        .collect();
 
     if found_packages_vars.len() > 1 {
         let identifiers = found_packages_vars
@@ -65,11 +80,12 @@ Detected that all of the following variables are `Package`s: {identifiers}
     }
 
     let Some(package_binding_name) = found_packages_vars.first() else {
-        // If there are no variables with `Package` as its value, simply ignore it.
+        // If there are no variables with `Package` as its type, then don't load
+        // the `Package`.
         return;
     };
 
-    // This is env var is set by `cargo miden test`.
+    // This env var is set by `cargo miden test`.
     let package_path = std::env::var("CREATED_PACKAGE").unwrap();
 
     let load_package: Vec<syn::Stmt> = syn::parse_quote! {
@@ -80,7 +96,8 @@ Detected that all of the following variables are `Package`s: {identifiers}
             as miden_test_harness_lib::reexport::__miden_test_harness_Deserialzable>::read_from_bytes(&bytes).unwrap();
     };
 
-    // We add the the lines required to load the generated Package.
+    // We add the required lines to load the generated Package right at the
+    // beginning of the function.
     for (i, package) in load_package.iter().enumerate() {
         function.block.as_mut().stmts.insert(i, package.clone());
     }
@@ -96,9 +113,7 @@ pub fn miden_test(
     let fn_ident = input_fn.sig.ident.clone();
     let fn_name = fn_ident.clone().span().source_text().unwrap();
 
-    load_account(&mut input_fn);
-
-    input_fn.sig.inputs.clear();
+    load_package(&mut input_fn);
 
     let function = quote! {
         miden_test_harness_lib::miden_test_submit!(
