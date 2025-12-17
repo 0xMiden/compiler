@@ -7,7 +7,7 @@ sidebar_position: 1
 
 This chapter will walk you through compiling a Rust crate to a WebAssembly (Wasm) module
 in binary (i.e. `.wasm`) form. The Miden compiler has a frontend which can take such
-modules and compile them on to Miden Assembly, which will be covered in the next chapter.
+modules and compile them into Miden Assembly, which will be covered in the next chapter.
 
 ## Setup
 
