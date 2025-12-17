@@ -72,7 +72,7 @@ mod tests {
 
     // with the Package type. This test will simply behave as normal cargo test.
     #[miden_test]
-    fn foo() {
+    fn foo(chain: MockChainBuilder) {
         assert_eq!(2, 1 + 1)
     }
 }
