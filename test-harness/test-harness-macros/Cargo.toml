@@ -17,11 +17,10 @@ proc-macro = true
 [features]
 test-flag = []
 
-[dev-dependencies]
+[dependencies]
 # Miden dependencies
 miden-test-harness-lib.workspace = true
 
-[dependencies]
 # External dependencies
 quote.workspace = true
 syn.workspace = true

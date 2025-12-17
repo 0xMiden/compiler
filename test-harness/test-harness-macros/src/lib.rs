@@ -1,3 +1,6 @@
+use miden_test_harness_lib::reexport::{
+    __miden_test_harness_miden_mast_package::Package, miden_testing::*,
+};
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, ItemFn};
@@ -34,16 +37,17 @@ fn get_binding_and_type(fn_arg: &syn::FnArg) -> Option<(&syn::PatIdent, &syn::Pa
     Some((binding, path_segment))
 }
 
-/// Parse the arguments of a `#[miden-test]` function and check for `Package`s.
-///
-/// If the function has a single `Package` as argument, then it is removed from
-/// the argument list and the boilerplate code to load the generated `Package`
-/// into a variable will be generated. The name of the variable will match the
-/// one used as argument.
-///
-/// This will "consume" all the tokens that are of type `Package`.
-fn load_package(function: &mut syn::ItemFn) {
-    let mut found_packages_vars = Vec::new();
+/// Function that parses and consumes types T from `function`. `max_args`
+/// represents the maximum amount of arguments of type T that `function` may
+/// have.
+fn process_arguments<T>(
+    function: &mut syn::ItemFn,
+    max_args: usize,
+) -> Result<Vec<syn::Ident>, String> {
+    //  "T"'s name as used in the argument list. We skipt the whole path
+    let struct_name = std::any::type_name::<T>().split("::").last().unwrap();
+
+    let mut found_vars = Vec::new();
 
     let fn_args = &mut function.sig.inputs;
 
@@ -54,30 +58,46 @@ fn load_package(function: &mut syn::ItemFn) {
                 return true;
             };
 
-            if var_type.ident != "Package" {
+            if var_type.ident != struct_name {
                 return true;
             }
 
-            found_packages_vars.push(binding.ident.clone());
+            found_vars.push(binding.ident.clone());
             false
         })
         .cloned()
         .collect();
 
-    if found_packages_vars.len() > 1 {
-        let identifiers = found_packages_vars
+    if found_vars.len() > max_args {
+        let identifiers = found_vars
             .iter()
             .map(|ident| ident.to_string())
             .collect::<Vec<String>>()
             .join(", ");
 
-        panic!(
+        let err = format!(
             "
-Detected that all of the following variables are `Package`s: {identifiers}
+Detected that all of the following variables are `{struct_name}`s: {identifiers}
 
-#[miden_test] only supports having a single `Package` in its argument list."
-        )
+#[miden_test] only supports having {max_args} `{struct_name}` in its argument list."
+        );
+        return Err(err);
     }
+
+    Ok(found_vars)
+}
+
+/// Parse the arguments of a `#[miden-test]` function and check for `Package`s.
+///
+/// If the function has a single `Package` as argument, then it is removed from
+/// the argument list and the boilerplate code to load the generated `Package`
+/// into a variable will be generated. The name of the variable will match the
+/// one used as argument.
+///
+/// This will "consume" all the tokens that are of type `Package`.
+fn load_package(function: &mut syn::ItemFn) {
+    let found_packages_vars =
+        process_arguments::<Package>(function, 1).unwrap_or_else(|err| panic!("{err}"));
 
     let Some(package_binding_name) = found_packages_vars.first() else {
         // If there are no variables with `Package` as its type, then don't load
@@ -104,43 +124,10 @@ Detected that all of the following variables are `Package`s: {identifiers}
 }
 
 fn load_mock_chain(function: &mut syn::ItemFn) {
-    let mut found_packages_vars = Vec::new();
+    let found_mock_chain =
+        process_arguments::<MockChainBuilder>(function, 1).unwrap_or_else(|err| panic!("{err}"));
 
-    let fn_args = &mut function.sig.inputs;
-
-    *fn_args = fn_args
-        .iter()
-        .filter(|&fn_arg| {
-            let Some((binding, var_type)) = get_binding_and_type(fn_arg) else {
-                return true;
-            };
-
-            if var_type.ident != "MockChainBuilder" {
-                return true;
-            }
-
-            found_packages_vars.push(binding.ident.clone());
-            false
-        })
-        .cloned()
-        .collect();
-
-    if found_packages_vars.len() > 1 {
-        let identifiers = found_packages_vars
-            .iter()
-            .map(|ident| ident.to_string())
-            .collect::<Vec<String>>()
-            .join(", ");
-
-        panic!(
-            "
-Detected that all of the following variables are `MockChainBuilder`s: {identifiers}
-
-#[miden_test] only supports having a single `MockChainBuilder` in its argument list."
-        )
-    }
-
-    let Some(mock_chain_builder_name) = found_packages_vars.first() else {
+    let Some(mock_chain_builder_name) = found_mock_chain.first() else {
         // If there are no variables with `MockChainBuilder` as its type, then don't load
         // the `MockChainBuilder`.
         return;
