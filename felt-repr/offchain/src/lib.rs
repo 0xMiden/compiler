@@ -96,6 +96,44 @@ impl FromFeltRepr for bool {
     }
 }
 
+/// Encodes an `Option<T>` as a 1-felt tag followed by the payload (if present).
+///
+/// Format:
+/// - `None` => `[0]`
+/// - `Some(x)` => `[1, x...]`
+impl<T> FromFeltRepr for Option<T>
+where
+    T: FromFeltRepr,
+{
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+        match reader.read().as_int() {
+            0 => None,
+            1 => Some(T::from_felt_repr(reader)),
+            _ => panic!("Option: invalid tag"),
+        }
+    }
+}
+
+/// Encodes a `Vec<T>` as a length prefix followed by elements.
+///
+/// Format: `[len, elem0..., elemN-1...]` where `len` is a `u32` encoded in a single `Felt`.
+impl<T> FromFeltRepr for Vec<T>
+where
+    T: FromFeltRepr,
+{
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+        let len = reader.read().as_int();
+        assert!(len <= u32::MAX as u64, "Vec: length out of range");
+        let len = len as usize;
+
+        let mut result = Vec::with_capacity(len);
+        for _ in 0..len {
+            result.push(T::from_felt_repr(reader));
+        }
+        result
+    }
+}
+
 /// Trait for serializing a type into its felt memory representation.
 pub trait ToFeltRepr {
     /// Writes this value's felt representation to the writer.
@@ -137,5 +175,41 @@ impl ToFeltRepr for u8 {
 impl ToFeltRepr for bool {
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         writer.write(Felt::new(*self as u64));
+    }
+}
+
+/// Encodes an `Option<T>` as a 1-felt tag followed by the payload (if present).
+///
+/// Format:
+/// - `None` => `[0]`
+/// - `Some(x)` => `[1, x...]`
+impl<T> ToFeltRepr for Option<T>
+where
+    T: ToFeltRepr,
+{
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        match self {
+            None => writer.write(Felt::new(0)),
+            Some(value) => {
+                writer.write(Felt::new(1));
+                value.write_felt_repr(writer);
+            }
+        }
+    }
+}
+
+/// Encodes a `Vec<T>` as a length prefix followed by elements.
+///
+/// Format: `[len, elem0..., elemN-1...]` where `len` is a `u32` encoded in a single `Felt`.
+impl<T> ToFeltRepr for Vec<T>
+where
+    T: ToFeltRepr,
+{
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        assert!(self.len() <= u32::MAX as usize, "Vec: length out of range");
+        writer.write(Felt::new(self.len() as u64));
+        for elem in self {
+            elem.write_felt_repr(writer);
+        }
     }
 }
