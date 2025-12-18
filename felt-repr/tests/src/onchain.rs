@@ -824,3 +824,152 @@ fn test_enum_nested_with_struct_round_trip() {
     })
     .unwrap();
 }
+
+/// Test struct containing an `Option` field for on-chain/off-chain round-trip tests.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct WithOption {
+    prefix: Felt,
+    maybe: Option<u32>,
+    suffix: bool,
+}
+
+#[test]
+fn test_struct_with_option_round_trip() {
+    let original_none = WithOption {
+        prefix: Felt::new(7),
+        maybe: None,
+        suffix: false,
+    };
+    let original_some = WithOption {
+        prefix: Felt::new(5),
+        maybe: Some(42),
+        suffix: true,
+    };
+
+    let serialized_none = original_none.to_felt_repr();
+    let serialized_some = original_some.to_felt_repr();
+
+    assert_eq!(serialized_none.len(), 3);
+    assert_eq!(serialized_some.len(), 4);
+
+    let onchain_code = r#"(input: [Felt; 4]) -> Vec<Felt> {
+        use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
+
+        #[derive(FromFeltRepr, ToFeltRepr)]
+        struct WithOption {
+            prefix: Felt,
+            maybe: Option<u32>,
+            suffix: bool,
+        }
+
+        let mut reader = FeltReader::new(&input);
+        let deserialized = WithOption::from_felt_repr(&mut reader);
+
+        deserialized.to_felt_repr()
+    }"#;
+
+    let config = WasmTranslationConfig::default();
+    let name = "onchain_struct_with_option";
+    let temp_dir = TempDir::with_prefix(name).unwrap();
+    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let package = test.compiled_package();
+
+    let in_elem_addr = 21u32 * 16384;
+    let out_elem_addr = 20u32 * 16384;
+    let in_byte_addr = in_elem_addr * 4;
+    let out_byte_addr = out_elem_addr * 4;
+
+    // Case 1: `None` serializes to 3 felts, but the compiled on-chain entrypoint takes
+    // `[Felt; 4]` so we can reuse the same compiled package for both `None` and `Some`.
+    // The extra trailing `0` is never read by `FromFeltRepr`.
+    let mut input_none = serialized_none.clone();
+    input_none.resize(4, Felt::ZERO);
+    let initializers = [Initializer::MemoryFelts {
+        addr: in_elem_addr,
+        felts: Cow::from(input_none),
+    }];
+    let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
+    let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+        let result_felts = read_vec_felts(trace, out_byte_addr, serialized_none.len());
+        let mut reader = FeltReader::new(&result_felts);
+        let result_struct = WithOption::from_felt_repr(&mut reader);
+        assert_eq!(result_struct, original_none, "Option round-trip (None) failed");
+        Ok(())
+    })
+    .unwrap();
+
+    // Case 2: Some
+    let initializers = [Initializer::MemoryFelts {
+        addr: in_elem_addr,
+        felts: Cow::from(serialized_some.clone()),
+    }];
+    let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+        let result_felts = read_vec_felts(trace, out_byte_addr, serialized_some.len());
+        let mut reader = FeltReader::new(&result_felts);
+        let result_struct = WithOption::from_felt_repr(&mut reader);
+        assert_eq!(result_struct, original_some, "Option round-trip (Some) failed");
+        Ok(())
+    })
+    .unwrap();
+}
+
+/// Test struct containing a `Vec` field for on-chain/off-chain round-trip tests.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct WithVec {
+    prefix: Felt,
+    items: Vec<u8>,
+    suffix: bool,
+}
+
+#[test]
+fn test_struct_with_vec_round_trip() {
+    let original = WithVec {
+        prefix: Felt::new(9),
+        items: vec![1, 2, 3],
+        suffix: true,
+    };
+    let serialized = original.to_felt_repr();
+    assert_eq!(serialized.len(), 6);
+
+    let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
+        use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
+
+        #[derive(FromFeltRepr, ToFeltRepr)]
+        struct WithVec {
+            prefix: Felt,
+            items: Vec<u8>,
+            suffix: bool,
+        }
+
+        let mut reader = FeltReader::new(&input);
+        let deserialized = WithVec::from_felt_repr(&mut reader);
+        deserialized.to_felt_repr()
+    }"#;
+
+    let config = WasmTranslationConfig::default();
+    let name = "onchain_struct_with_vec";
+    let temp_dir = TempDir::with_prefix(name).unwrap();
+    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let package = test.compiled_package();
+
+    let in_elem_addr = 21u32 * 16384;
+    let out_elem_addr = 20u32 * 16384;
+    let in_byte_addr = in_elem_addr * 4;
+    let out_byte_addr = out_elem_addr * 4;
+
+    let initializers = [Initializer::MemoryFelts {
+        addr: in_elem_addr,
+        felts: Cow::from(serialized.clone()),
+    }];
+
+    let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
+
+    let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+        let result_felts = read_vec_felts(trace, out_byte_addr, 6);
+        let mut reader = FeltReader::new(&result_felts);
+        let result_struct = WithVec::from_felt_repr(&mut reader);
+        assert_eq!(result_struct, original, "Vec round-trip failed");
+        Ok(())
+    })
+    .unwrap();
+}

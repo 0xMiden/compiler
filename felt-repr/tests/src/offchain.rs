@@ -221,3 +221,90 @@ fn test_enum_nested_with_struct_roundtrip() {
     assert_eq!(felts.len(), 6);
     assert_roundtrip(&original);
 }
+
+/// Test struct containing an `Option` field.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct WithOption {
+    prefix: Felt,
+    maybe: Option<u32>,
+    suffix: bool,
+}
+
+#[test]
+fn test_struct_roundtrip_option_some() {
+    let original = WithOption {
+        prefix: Felt::new(5),
+        maybe: Some(42),
+        suffix: true,
+    };
+
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 4);
+    assert_eq!(felts, vec![Felt::new(5), Felt::new(1), Felt::new(42), Felt::new(1)]);
+
+    assert_roundtrip(&original);
+}
+
+#[test]
+fn test_struct_roundtrip_option_none() {
+    let original = WithOption {
+        prefix: Felt::new(7),
+        maybe: None,
+        suffix: false,
+    };
+
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 3);
+    assert_eq!(felts, vec![Felt::new(7), Felt::new(0), Felt::new(0)]);
+
+    assert_roundtrip(&original);
+}
+
+/// Test struct containing a `Vec` field.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct WithVec {
+    prefix: Felt,
+    items: Vec<u8>,
+    suffix: bool,
+}
+
+#[test]
+fn test_struct_roundtrip_vec_non_empty() {
+    let original = WithVec {
+        prefix: Felt::new(9),
+        items: vec![1, 2, 3],
+        suffix: true,
+    };
+
+    // prefix (1) + Vec<u8> (len 1 + 3 elems) + suffix (1)
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 6);
+    assert_eq!(
+        felts,
+        vec![
+            Felt::new(9),
+            Felt::new(3),
+            Felt::new(1),
+            Felt::new(2),
+            Felt::new(3),
+            Felt::new(1),
+        ]
+    );
+
+    assert_roundtrip(&original);
+}
+
+#[test]
+fn test_struct_roundtrip_vec_empty() {
+    let original = WithVec {
+        prefix: Felt::new(10),
+        items: vec![],
+        suffix: false,
+    };
+
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 3);
+    assert_eq!(felts, vec![Felt::new(10), Felt::new(0), Felt::new(0)]);
+
+    assert_roundtrip(&original);
+}
