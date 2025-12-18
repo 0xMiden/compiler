@@ -119,8 +119,8 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma, Data, DeriveInput,
-    Error, Field, Fields, Variant,
+    Data, DeriveInput, Error, Field, Fields, Variant, parse_macro_input, punctuated::Punctuated,
+    spanned::Spanned, token::Comma,
 };
 
 /// Extracts named fields from a struct, returning an error for unsupported items.
