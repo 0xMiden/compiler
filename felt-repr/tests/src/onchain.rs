@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use miden_core::{Felt, FieldElement};
 use miden_debug::{ExecutionTrace, Felt as TestFelt};
 use miden_felt_repr_offchain::{FeltReader, FromFeltRepr, ToFeltRepr};
-use miden_integration_tests::testing::{eval_package, Initializer};
+use miden_integration_tests::testing::{Initializer, eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use temp_dir::TempDir;
 
