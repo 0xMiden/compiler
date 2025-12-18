@@ -301,7 +301,7 @@ where
     Ok(outputs)
 }
 
-fn spawn_cargo(mut cmd: Command, cargo: &Path) -> Result<Vec<Artifact>> {
+pub(crate) fn spawn_cargo(mut cmd: Command, cargo: &Path) -> Result<Vec<Artifact>> {
     log::debug!("spawning command {cmd:?}");
 
     let mut child = cmd

@@ -53,6 +53,10 @@ where
             Ok(Some(CommandOutput::NewCommandOutput { project_path }))
         }
         cli::CargoMidenCommand::Build(cmd) => cmd.exec(build_output_type),
+        cli::CargoMidenCommand::Test(cmd) => {
+            cmd.exec()?;
+            Ok(None)
+        }
     }
 }
 
