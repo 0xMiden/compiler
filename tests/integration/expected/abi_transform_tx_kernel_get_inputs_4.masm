@@ -461,15 +461,19 @@ pub proc entrypoint(
                     trace.252
                     nop
                     push.4
-                    push.4
-                    dup.3
+                    dup.2
                     u32wrapping_add
-                    dup.1
-                    swap.2
-                    swap.1
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::deallocate
+                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
+                    trace.252
+                    nop
+                    push.4
+                    dup.2
+                    u32wrapping_add
+                    trace.240
+                    nop
+                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     push.16
@@ -871,6 +875,20 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
 end
 
 @callconv("C")
+proc <alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(
+    i32
+)
+    push.4
+    dup.0
+    swap.2
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::deallocate
+    trace.252
+    nop
+end
+
+@callconv("C")
 proc miden_base_sys::bindings::active_note::get_inputs(
     i32
 )
@@ -1007,6 +1025,13 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+end
+
+@callconv("C")
+proc <alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(
+    i32
+)
+    drop
 end
 
 @callconv("C")
