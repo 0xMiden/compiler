@@ -47,12 +47,12 @@ mod tests {
     };
 
     // This tests loads the generated package in the `foo` variable and is then
-    // printed in line 50.
-    // #[miden_test]
-    // fn bar(bar: Package) {
-    //     std::dbg!(&bar);
-    //     assert_eq!(1, 1 + 1);
-    // }
+    // printed.
+    #[miden_test]
+    fn bar(bar: Package) {
+        std::dbg!(&bar);
+        assert_eq!(1, 1 + 1);
+    }
 
     // This test will fail at compile time because it is only legal to have a
     // single package as an argument. The following error message is displayed:
@@ -67,18 +67,28 @@ mod tests {
     //            Detected that all of the following variables are `Package`s: foo, bar
     //
     //            #[miden_test] only supports having a single `Package` in its argument list.
+    // Uncomment to see the failure!
     // #[miden_test]
     // fn bing(foo: Package, bar: Package) {
     //     std::dbg!(&foo);
     //     assert_eq!(1, 1 + 1);
     // }
 
-    // This tests will not load the package since there is no argument declared
-    // with the Package type. This test will simply behave as normal cargo test.
-    // #[miden_test]
-    // fn foo(chain: MockChainBuilder) {
-    //     assert_eq!(2, 1 + 1)
-    // }
+    // This tests will work as a traditional test, since neither `Package` nor
+    // `MockChainBuilder` are declared, the test harness does not produce any
+    // type of code generation.
+    #[miden_test]
+    fn foo() {
+        assert_eq!(2, 1 + 1)
+    }
+
+    // This tests will work as a traditional test, since neither `Package` nor
+    // `MockChainBuilder` are declared, the test harness does not produce any
+    // type of code generation.
+    #[miden_test]
+    fn foo(chain: MockChainBuilder) {
+        assert_eq!(2, 1 + 1)
+    }
 
     // This function instantiates a `MockChain` with an `Account` with the
     // `AccountComponent` generated from the rust code from this file..
