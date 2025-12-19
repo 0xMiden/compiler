@@ -973,3 +973,52 @@ fn test_struct_with_vec_round_trip() {
     })
     .unwrap();
 }
+
+/// Test tuple struct serialization - full round-trip execution.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct TupleStruct(u32, bool, Felt);
+
+#[test]
+fn test_tuple_struct_round_trip() {
+    let original = TupleStruct(22, true, Felt::new(33));
+    let serialized = original.to_felt_repr();
+    assert_eq!(serialized, vec![Felt::new(22), Felt::new(1), Felt::new(33)]);
+
+    let onchain_code = r#"(input: [Felt; 3]) -> Vec<Felt> {
+        use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
+
+        #[derive(FromFeltRepr, ToFeltRepr)]
+        struct TupleStruct(u32, bool, Felt);
+
+        let mut reader = FeltReader::new(&input);
+        let deserialized = TupleStruct::from_felt_repr(&mut reader);
+        deserialized.to_felt_repr()
+    }"#;
+
+    let config = WasmTranslationConfig::default();
+    let name = "onchain_tuple_struct";
+    let temp_dir = TempDir::with_prefix(name).unwrap();
+    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let package = test.compiled_package();
+
+    let in_elem_addr = 21u32 * 16384;
+    let out_elem_addr = 20u32 * 16384;
+    let in_byte_addr = in_elem_addr * 4;
+    let out_byte_addr = out_elem_addr * 4;
+
+    let initializers = [Initializer::MemoryFelts {
+        addr: in_elem_addr,
+        felts: Cow::from(serialized.clone()),
+    }];
+
+    let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
+
+    let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+        let result_felts = read_vec_felts(trace, out_byte_addr, 3);
+        let mut reader = FeltReader::new(&result_felts);
+        let result_struct = TupleStruct::from_felt_repr(&mut reader);
+        assert_eq!(result_struct, original, "Tuple struct round-trip failed");
+        Ok(())
+    })
+    .unwrap();
+}

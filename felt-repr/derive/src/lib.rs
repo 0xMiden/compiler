@@ -72,11 +72,15 @@
 //!
 //! `struct S { a: A, b: B }` → `A` then `B`
 //!
+//! Tuple structs are encoded by serializing fields left-to-right:
+//!
+//! `struct T(A, B)` → `A` then `B`
+//!
 //! Important: the field order is part of the wire format. Reordering fields (or inserting a field
 //! in the middle) changes the encoding and will break compatibility with existing data.
 //!
 //! Current limitations:
-//! - Only structs with **named fields** are supported (no tuple structs, no unit structs).
+//! - Unit structs are not supported.
 //!
 //! ## Enums
 //!
@@ -119,25 +123,26 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
-    Data, DeriveInput, Error, Field, Fields, Variant, parse_macro_input, punctuated::Punctuated,
-    spanned::Spanned, token::Comma,
+    Data, DeriveInput, Error, Field, Fields, Index, Variant, parse_macro_input,
+    punctuated::Punctuated, spanned::Spanned, token::Comma,
 };
 
-/// Extracts named fields from a struct, returning an error for unsupported items.
-fn extract_struct_named_fields<'a>(
+/// Field list extracted from a struct, either named or tuple-style.
+enum StructFields<'a> {
+    Named(&'a Punctuated<Field, Comma>),
+    Unnamed(&'a Punctuated<Field, Comma>),
+}
+
+/// Extracts fields from a struct, returning an error for unsupported items.
+fn extract_struct_fields<'a>(
     input: &'a DeriveInput,
     trait_name: &str,
-) -> Result<&'a Punctuated<Field, Comma>, Error> {
+) -> Result<StructFields<'a>, Error> {
     let name = &input.ident;
     match &input.data {
         Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => Ok(&fields.named),
-            Fields::Unnamed(_) => Err(Error::new(
-                input.span(),
-                format!(
-                    "{trait_name} can only be derived for structs with named fields, not `{name}`"
-                ),
-            )),
+            Fields::Named(fields) => Ok(StructFields::Named(&fields.named)),
+            Fields::Unnamed(fields) => Ok(StructFields::Unnamed(&fields.unnamed)),
             Fields::Unit => Err(Error::new(
                 input.span(),
                 format!("{trait_name} cannot be derived for unit struct `{name}`"),
@@ -238,22 +243,37 @@ fn derive_from_felt_repr_impl(
 
     let trait_name = "FromFeltRepr";
     let expanded = match &input.data {
-        Data::Struct(_) => {
-            let fields = extract_struct_named_fields(input, trait_name)?;
-            let field_names: Vec<_> =
-                fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
-            let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
-            quote! {
-                impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
-                    #[inline(always)]
-                    fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> Self {
-                        Self {
-                            #(#field_names: <#field_types as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)),*
+        Data::Struct(_) => match extract_struct_fields(input, trait_name)? {
+            StructFields::Named(fields) => {
+                let field_names: Vec<_> =
+                    fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
+                let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
+                quote! {
+                    impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
+                        #[inline(always)]
+                        fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> Self {
+                            Self {
+                                #(#field_names: <#field_types as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)),*
+                            }
                         }
                     }
                 }
             }
-        }
+            StructFields::Unnamed(fields) => {
+                let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
+                let reads = field_types.iter().map(|ty| {
+                    quote! { <#ty as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader) }
+                });
+                quote! {
+                    impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
+                        #[inline(always)]
+                        fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> Self {
+                            Self(#(#reads),*)
+                        }
+                    }
+                }
+            }
+        },
         Data::Enum(_) => {
             let variants = extract_enum_variants(input, trait_name)?;
             ensure_no_explicit_discriminants(variants, trait_name, name)?;
@@ -359,18 +379,29 @@ fn derive_to_felt_repr_impl(
 
     let trait_name = "ToFeltRepr";
     let expanded = match &input.data {
-        Data::Struct(_) => {
-            let fields = extract_struct_named_fields(input, trait_name)?;
-            let field_names: Vec<_> =
-                fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
-            quote! {
-                impl #impl_generics #felt_repr_crate::ToFeltRepr for #name #ty_generics #where_clause {
-                    fn write_felt_repr(&self, writer: &mut #felt_repr_crate::FeltWriter<'_>) {
-                        #(#felt_repr_crate::ToFeltRepr::write_felt_repr(&self.#field_names, writer);)*
+        Data::Struct(_) => match extract_struct_fields(input, trait_name)? {
+            StructFields::Named(fields) => {
+                let field_names: Vec<_> =
+                    fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
+                quote! {
+                    impl #impl_generics #felt_repr_crate::ToFeltRepr for #name #ty_generics #where_clause {
+                        fn write_felt_repr(&self, writer: &mut #felt_repr_crate::FeltWriter<'_>) {
+                            #(#felt_repr_crate::ToFeltRepr::write_felt_repr(&self.#field_names, writer);)*
+                        }
                     }
                 }
             }
-        }
+            StructFields::Unnamed(fields) => {
+                let field_indexes: Vec<Index> = (0..fields.len()).map(Index::from).collect();
+                quote! {
+                    impl #impl_generics #felt_repr_crate::ToFeltRepr for #name #ty_generics #where_clause {
+                        fn write_felt_repr(&self, writer: &mut #felt_repr_crate::FeltWriter<'_>) {
+                            #(#felt_repr_crate::ToFeltRepr::write_felt_repr(&self.#field_indexes, writer);)*
+                        }
+                    }
+                }
+            }
+        },
         Data::Enum(_) => {
             let variants = extract_enum_variants(input, trait_name)?;
             ensure_no_explicit_discriminants(variants, trait_name, name)?;
