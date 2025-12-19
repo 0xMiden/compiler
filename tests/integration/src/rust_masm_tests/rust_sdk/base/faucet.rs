@@ -86,7 +86,7 @@ fn rust_sdk_account_faucet_create_non_fungible_asset_binding() {
     run_faucet_binding_test(
         "rust_sdk_account_faucet_create_non_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
-        let hash = Word::empty();
+        let hash = Word::default();
         faucet::create_non_fungible_asset(hash)
     }",
     );
