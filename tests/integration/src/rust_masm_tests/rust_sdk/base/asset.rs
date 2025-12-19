@@ -88,7 +88,7 @@ fn rust_sdk_account_asset_build_non_fungible_asset_binding() {
         "rust_sdk_account_asset_build_non_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
         let faucet = AccountId { prefix: Felt::from_u32(1), suffix: Felt::from_u32(0) };
-        let hash = Word::empty();
+        let hash = Word::default();
         asset::build_non_fungible_asset(faucet, hash)
     }",
     );
