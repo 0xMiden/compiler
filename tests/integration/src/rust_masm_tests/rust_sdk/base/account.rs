@@ -192,7 +192,7 @@ fn rust_sdk_account_has_procedure_binding() {
     run_account_binding_test(
         "rust_sdk_account_has_procedure_binding",
         "pub fn binding(&self) -> Felt {
-        let proc_root = Word::empty();
+        let proc_root = Word::default();
         if self.has_procedure(proc_root) {
             Felt::from_u32(1)
         } else {
@@ -207,7 +207,7 @@ fn rust_sdk_account_was_procedure_called_binding() {
     run_account_binding_test(
         "rust_sdk_account_was_procedure_called_binding",
         "pub fn binding(&self) -> Felt {
-        let proc_root = Word::empty();
+        let proc_root = Word::default();
         if self.was_procedure_called(proc_root) {
             Felt::from_u32(1)
         } else {
@@ -232,7 +232,7 @@ fn rust_sdk_account_storage_get_initial_map_item_binding() {
     run_account_binding_test(
         "rust_sdk_account_storage_get_initial_map_item_binding",
         "pub fn binding(&self) -> Word {
-        let key = Word::empty();
+        let key = Word::default();
         storage::get_initial_map_item(0, &key)
     }",
     );
