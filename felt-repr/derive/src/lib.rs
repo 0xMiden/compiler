@@ -417,7 +417,7 @@ fn derive_to_felt_repr_impl(
 
             quote! {
                 impl #impl_generics #felt_repr_crate::ToFeltRepr for #name #ty_generics #where_clause {
-                    #[inline(never)]
+                    #[inline(always)]
                     fn write_felt_repr(&self, writer: &mut #felt_repr_crate::FeltWriter<'_>) {
                         match self {
                             #(#arms,)*
