@@ -308,3 +308,16 @@ fn test_struct_roundtrip_vec_empty() {
 
     assert_roundtrip(&original);
 }
+
+/// Test tuple struct serialization/round-trip.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+struct TupleStruct(u32, bool, Felt);
+
+#[test]
+fn test_tuple_struct_roundtrip() {
+    let original = TupleStruct(22, true, Felt::new(33));
+    let felts = original.to_felt_repr();
+
+    assert_eq!(felts, vec![Felt::new(22), Felt::new(1), Felt::new(33)]);
+    assert_roundtrip(&original);
+}
