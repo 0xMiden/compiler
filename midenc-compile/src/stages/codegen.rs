@@ -10,9 +10,36 @@ use midenc_codegen_masm::{
     },
 };
 use midenc_hir::{interner::Symbol, pass::AnalysisManager};
-use midenc_session::OutputType;
+use midenc_session::{Emit, OutputType, Writer};
 
 use super::*;
+
+/// A wrapper that allows emitting a synthetic MASM output representing the full [MasmComponent].
+///
+/// The format matches the [core::fmt::Display] implementation for [MasmComponent], which is
+/// defined in `codegen/masm/src/artifact.rs`.
+struct MasmComponentEmit<'a>(&'a MasmComponent);
+
+impl Emit for MasmComponentEmit<'_> {
+    fn name(&self) -> Option<midenc_hir::interner::Symbol> {
+        None
+    }
+
+    fn output_type(&self, _mode: OutputMode) -> OutputType {
+        OutputType::Masm
+    }
+
+    fn write_to<W: Writer>(
+        &self,
+        mut writer: W,
+        mode: OutputMode,
+        _session: &Session,
+    ) -> anyhow::Result<()> {
+        assert_eq!(mode, OutputMode::Text, "masm emission does not support binary mode");
+        writer.write_fmt(format_args!("{}", self.0))?;
+        Ok(())
+    }
+}
 
 pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
@@ -53,11 +80,6 @@ impl Stage for CodegenStage {
             component.borrow().to_masm_component(analysis_manager).map(Box::new)?;
 
         let session = context.session();
-        if session.should_emit(OutputType::Masm) {
-            for module in masm_component.modules.iter() {
-                session.emit(OutputMode::Text, module).into_diagnostic()?;
-            }
-        }
 
         // Ensure intrinsics modules are linked
         for intrinsics_module in required_intrinsics_modules(session) {
@@ -72,6 +94,11 @@ impl Stage for CodegenStage {
         for module in masm_modules {
             log::debug!("adding external masm module '{}' to masm program", module.path());
             masm_component.modules.push(module);
+        }
+
+        if session.should_emit(OutputType::Masm) {
+            let artifact = MasmComponentEmit(&masm_component);
+            session.emit(OutputMode::Text, &artifact).into_diagnostic()?;
         }
 
         Ok(CodegenOutput {

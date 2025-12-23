@@ -854,7 +854,6 @@ impl CompilerTest {
     /// Compare the compiled MASM against the expected output
     pub fn expect_masm(&mut self, expected_masm_file: midenc_expect_test::ExpectFile) {
         let program = demangle(self.masm_src().as_str());
-        std::println!("{program}");
         expected_masm_file.assert_eq(&program);
     }
 

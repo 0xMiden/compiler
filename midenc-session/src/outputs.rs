@@ -8,6 +8,38 @@ use alloc::{
 
 use crate::{Path, PathBuf};
 
+/// Escape `name` for use as a single filesystem path component (e.g. a file stem).
+///
+/// This is used when emitting artifacts whose names may contain characters that are legal in
+/// compiler/session identifiers, but are problematic (or even invalid) as filenames on common
+/// filesystems.
+fn escape_path_component(name: &str) -> Cow<'_, str> {
+    if name.is_empty() {
+        return Cow::Borrowed("_");
+    }
+
+    let is_safe = name != "."
+        && name != ".."
+        && name.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'));
+    if is_safe {
+        return Cow::Borrowed(name);
+    }
+
+    let mut escaped = String::with_capacity(name.len());
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-') {
+            escaped.push(ch);
+        } else {
+            escaped.push('_');
+        }
+    }
+
+    match escaped.as_str() {
+        "" | "." | ".." => Cow::Borrowed("_"),
+        _ => Cow::Owned(escaped),
+    }
+}
+
 /// The type of output to produce for a given [OutputType], when multiple options are available
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OutputMode {
@@ -211,41 +243,48 @@ impl OutputFiles {
     /// Return the [OutputFile] representing where an output of `ty` type should be written,
     /// with an optional `name`, which overrides the file stem of the resulting path.
     pub fn output_file(&self, ty: OutputType, name: Option<&str>) -> OutputFile {
-        let default_name = name.unwrap_or(self.stem.as_str());
-        self.outputs
-            .get(&ty)
-            .and_then(|p| p.to_owned())
-            .map(|of| match of {
-                OutputFile::Real(path) => OutputFile::Real({
-                    let path = if path.is_absolute() {
-                        path
-                    } else {
-                        self.cwd.join(path)
-                    };
-                    if path.is_dir() {
-                        path.join(default_name).with_extension(ty.extension())
-                    } else if let Some(name) = name {
-                        path.with_stem_and_extension(name, ty.extension())
-                    } else {
-                        path
-                    }
-                }),
-                out @ OutputFile::Stdout => out,
-            })
-            .unwrap_or_else(|| {
+        let requested = self.outputs.contains_key(&ty);
+        let default_name = escape_path_component(name.unwrap_or(self.stem.as_str()));
+        match self.outputs.get(&ty).and_then(|p| p.to_owned()) {
+            Some(OutputFile::Real(path)) => OutputFile::Real({
+                let path = if path.is_absolute() {
+                    path
+                } else {
+                    self.cwd.join(path)
+                };
+                if path.is_dir() {
+                    path.join(default_name.as_ref()).with_extension(ty.extension())
+                } else if let Some(name) = name {
+                    let name = escape_path_component(name);
+                    path.with_stem_and_extension(name.as_ref(), ty.extension())
+                } else {
+                    path
+                }
+            }),
+            Some(OutputFile::Stdout) => OutputFile::Stdout,
+            None => {
+                // If the user requested an output type without specifying a destination, default to
+                // the session output directory (i.e. the working directory by default). Only
+                // compiler-internal temporaries use `tmp_dir`.
                 let out = if ty.is_intermediate() {
-                    self.with_directory_and_extension(&self.tmp_dir, ty.extension())
+                    if requested {
+                        self.with_directory_and_extension(&self.out_dir, ty.extension())
+                    } else {
+                        self.with_directory_and_extension(&self.tmp_dir, ty.extension())
+                    }
                 } else if let Some(output_file) = self.out_file.as_ref() {
                     return output_file.clone();
                 } else {
                     self.with_directory_and_extension(&self.out_dir, ty.extension())
                 };
                 OutputFile::Real(if let Some(name) = name {
-                    out.with_stem(name)
+                    let name = escape_path_component(name);
+                    out.with_stem(name.as_ref())
                 } else {
                     out
                 })
-            })
+            }
+        }
     }
 
     /// Return the most appropriate file path for an output of `ty` type.
@@ -274,9 +313,8 @@ impl OutputFiles {
     ///
     /// The file path is always a child of `self.tmp_dir`
     pub fn temp_path(&self, ty: OutputType, name: Option<&str>) -> PathBuf {
-        self.tmp_dir
-            .join(name.unwrap_or(self.stem.as_str()))
-            .with_extension(ty.extension())
+        let name = escape_path_component(name.unwrap_or(self.stem.as_str()));
+        self.tmp_dir.join(name.as_ref()).with_extension(ty.extension())
     }
 
     /// Build a file path which is either:
@@ -296,7 +334,8 @@ impl OutputFiles {
     /// `extension`
     #[inline]
     fn with_directory_and_extension(&self, directory: &Path, extension: &str) -> PathBuf {
-        directory.join(&self.stem).with_extension(extension)
+        let stem = escape_path_component(&self.stem);
+        directory.join(stem.as_ref()).with_extension(extension)
     }
 }
 
