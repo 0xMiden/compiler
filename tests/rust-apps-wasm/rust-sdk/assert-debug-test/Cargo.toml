@@ -1,0 +1,26 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "assert-debug-test"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../../../sdk/sdk" }
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = true
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug-assertions = true
+overflow-checks = false
+debug = true
+trim-paths = ["diagnostics", "object"]
