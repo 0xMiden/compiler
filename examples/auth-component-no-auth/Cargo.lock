@@ -807,6 +807,7 @@ version = "0.8.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
+ "miden-felt-repr-onchain",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
  "wit-bindgen 0.46.0",

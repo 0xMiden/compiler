@@ -15,7 +15,7 @@ edition.workspace = true
 crate-type = ["rlib"]
 
 [dependencies]
-miden-stdlib-sys = { path = "../../sdk/stdlib-sys", version = "0.7.1" }
+miden-stdlib-sys = { path = "../../stdlib-sys", version = "0.7.1" }
 miden-felt-repr-derive = { path = "../derive", version = "0.7.1" }
 
 [features]

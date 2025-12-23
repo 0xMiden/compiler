@@ -17,13 +17,13 @@ use miden_integration_tests::CompilerTest;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use temp_dir::TempDir;
 
-/// Get the path to the felt-repr/onchain crate
+/// Get the path to the `miden-felt-repr-onchain` crate.
 fn felt_repr_onchain_path() -> PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     PathBuf::from(manifest_dir).parent().unwrap().join("onchain")
 }
 
-/// Get the path to the stdlib-sys crate
+/// Get the path to the `miden-stdlib-sys` crate.
 fn stdlib_sys_path() -> PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     PathBuf::from(manifest_dir)
@@ -31,20 +31,13 @@ fn stdlib_sys_path() -> PathBuf {
         .unwrap()
         .parent()
         .unwrap()
-        .join("sdk")
         .join("stdlib-sys")
 }
 
-/// Get the path to the sdk-alloc crate
+/// Get the path to the `miden-sdk-alloc` crate.
 fn sdk_alloc_path() -> PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("sdk")
-        .join("alloc")
+    PathBuf::from(manifest_dir).parent().unwrap().parent().unwrap().join("alloc")
 }
 
 /// Build a compiler test with felt-repr-onchain dependency.
