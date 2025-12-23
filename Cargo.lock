@@ -2834,6 +2834,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
+ "wasmprinter",
  "wat",
 ]
 

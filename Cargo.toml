@@ -119,6 +119,7 @@ thiserror = { package = "miden-thiserror", version = "1.0" }
 toml = { version = "0.8", features = ["preserve_order"] }
 tokio = { version = "1.39.2", features = ["rt", "time", "macros", "rt-multi-thread"] }
 wat = "1.0.69"
+wasmprinter = "0.227"
 wasmparser = { version = "0.227", default-features = false, features = [
     "features",
     "component-model",
