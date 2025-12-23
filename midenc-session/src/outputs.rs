@@ -55,6 +55,8 @@ pub enum OutputMode {
 pub enum OutputType {
     /// The compiler will emit the parse tree of the input, if applicable
     Ast,
+    /// The compiler will emit WebAssembly text format (WAT), if applicable
+    Wat,
     /// The compiler will emit Miden IR
     Hir,
     /// The compiler will emit Miden Assembly text
@@ -76,6 +78,7 @@ impl OutputType {
     pub fn extension(&self) -> &'static str {
         match self {
             Self::Ast => "ast",
+            Self::Wat => "wat",
             Self::Hir => "hir",
             Self::Masm => "masm",
             Self::Mast => "mast",
@@ -86,8 +89,9 @@ impl OutputType {
 
     pub fn shorthand_display() -> String {
         format!(
-            "`{}`, `{}`, `{}`, `{}`, `{}`, `{}`",
+            "`{}`, `{}`, `{}`, `{}`, `{}`, `{}`, `{}`",
             Self::Ast,
+            Self::Wat,
             Self::Hir,
             Self::Masm,
             Self::Mast,
@@ -96,9 +100,10 @@ impl OutputType {
         )
     }
 
-    pub fn all() -> [OutputType; 6] {
+    pub fn all() -> [OutputType; 7] {
         [
             OutputType::Ast,
+            OutputType::Wat,
             OutputType::Hir,
             OutputType::Masm,
             OutputType::Mast,
@@ -111,6 +116,7 @@ impl fmt::Display for OutputType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Ast => f.write_str("ast"),
+            Self::Wat => f.write_str("wat"),
             Self::Hir => f.write_str("hir"),
             Self::Masm => f.write_str("masm"),
             Self::Mast => f.write_str("mast"),
@@ -125,6 +131,7 @@ impl FromStr for OutputType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "ast" => Ok(Self::Ast),
+            "wat" => Ok(Self::Wat),
             "hir" => Ok(Self::Hir),
             "masm" => Ok(Self::Masm),
             "mast" => Ok(Self::Mast),
@@ -490,6 +497,7 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
         Some(Box::new(
             [
                 PossibleValue::new("ast").help("Abstract Syntax Tree (text)"),
+                PossibleValue::new("wat").help("WebAssembly text format (text)"),
                 PossibleValue::new("hir").help("High-level Intermediate Representation (text)"),
                 PossibleValue::new("masm").help("Miden Assembly (text)"),
                 PossibleValue::new("mast").help("Merkelized Abstract Syntax Tree (text)"),
