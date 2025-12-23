@@ -75,7 +75,7 @@ impl FrozenRewritePatternSet {
                         .push(Rc::clone(&pattern));
                     this.patterns.push(pattern);
                 }
-                PatternKind::Trait(ref trait_id) => {
+                PatternKind::Trait(trait_id) => {
                     for dialect in this.context.registered_dialects().values() {
                         for op in dialect.registered_ops().iter() {
                             if op.implements_trait_id(trait_id) {

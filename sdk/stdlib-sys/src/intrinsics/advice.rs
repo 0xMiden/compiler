@@ -2,7 +2,7 @@
 
 use crate::{Felt, Word};
 
-extern "C" {
+unsafe extern "C" {
     /// Pushes a list of field elements onto the advice stack.
     /// The list is looked up in the advice map using `key` as the key.
     /// Returns the number of elements pushed on the advice stack.
@@ -18,7 +18,7 @@ pub fn adv_push_mapvaln(key: Word) -> Felt {
     unsafe { extern_adv_push_mapvaln(key[3], key[2], key[1], key[0]) }
 }
 
-extern "C" {
+unsafe extern "C" {
     /// Emits an event to request a Falcon signature for the provided message/public key.
     /// This maps to the MASM instruction: `emit.AUTH_REQUEST_EVENT`.
     #[link_name = "intrinsics::advice::emit_falcon_sig_to_stack"]
@@ -46,7 +46,7 @@ pub fn emit_falcon_sig_to_stack(msg: Word, pub_key: Word) {
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     /// Inserts values from memory into the advice map using the provided key and memory range.
     /// Maps to the VM op: adv.insert_mem
     /// Signature: (key0..key3, start_addr, end_addr)

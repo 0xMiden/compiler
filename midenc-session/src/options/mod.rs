@@ -3,8 +3,8 @@ use alloc::{fmt, str::FromStr, string::String, sync::Arc, vec, vec::Vec};
 #[cfg(feature = "std")]
 use crate::Path;
 use crate::{
-    diagnostics::{DiagnosticsConfig, Emitter},
     ColorChoice, CompileFlags, LinkLibrary, OutputTypes, PathBuf, ProjectType, TargetEnv,
+    diagnostics::{DiagnosticsConfig, Emitter},
 };
 
 /// This struct contains all of the configuration options for the compiler
@@ -36,6 +36,10 @@ pub struct Options {
     pub diagnostics: DiagnosticsConfig,
     /// The current working directory of the compiler
     pub current_dir: PathBuf,
+    /// Path prefixes to try when resolving relative paths in DWARF debug info
+    pub trim_path_prefixes: Vec<PathBuf>,
+    /// Print source location information in HIR output
+    pub print_hir_source_locations: bool,
     /// Only parse inputs
     pub parse_only: bool,
     /// Only perform semantic analysis on the input
@@ -119,6 +123,8 @@ impl Options {
             color: Default::default(),
             diagnostics: Default::default(),
             current_dir,
+            trim_path_prefixes: vec![],
+            print_hir_source_locations: false,
             parse_only: false,
             analyze_only: false,
             link_only: false,

@@ -537,9 +537,9 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.raw_exec("std::math::u64::clz", span); // [lo_clz, hi_clz]
-                                                            // Add the low bit leading zeros to those of the high bits, if the high
-                                                            // bits are all zeros; otherwise return only the
-                                                            // high bit count
+                // Add the low bit leading zeros to those of the high bits, if the high
+                // bits are all zeros; otherwise return only the
+                // high bit count
                 self.emit_push(0u32, span); // [0, lo_clz, hi_clz]
                 self.emit(masm::Instruction::Dup2, span); // [hi_clz, 0, lo_clz, hi_clz]
                 self.emit_push(Felt::new(32), span);
@@ -621,8 +621,8 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.raw_exec("std::math::u64::clo", span); // [lo_clo, hi_clo]
-                                                            // Add the low bit leading ones to those of the high bits, if the high bits
-                                                            // are all one; otherwise return only the high bit count
+                // Add the low bit leading ones to those of the high bits, if the high bits
+                // are all one; otherwise return only the high bit count
                 self.emit_push(0u32, span); // [0, lo_clo, hi_clo]
                 self.emit(masm::Instruction::Dup2, span); // [hi_clo, 0, lo_clo, hi_clo]
                 self.emit_push(Felt::new(32), span);
@@ -713,9 +713,9 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.raw_exec("std::math::u64::ctz", span); // [lo_ctz, hi_ctz]
-                                                            // Add the high bit trailing zeros to those of the low bits, if the low
-                                                            // bits are all zero; otherwise return only the low
-                                                            // bit count
+                // Add the high bit trailing zeros to those of the low bits, if the low
+                // bits are all zero; otherwise return only the low
+                // bit count
                 self.emit(masm::Instruction::Swap1, span);
                 self.emit_push(0u32, span); // [0, hi_ctz, lo_ctz]
                 self.emit(masm::Instruction::Dup2, span); // [lo_ctz, 0, hi_ctz, lo_ctz]
@@ -809,8 +809,8 @@ impl OpEmitter<'_> {
                     span,
                 );
                 self.raw_exec("std::math::u64::cto", span); // [lo_cto, hi_cto]
-                                                            // Add the high bit trailing ones to those of the low bits, if the low bits
-                                                            // are all one; otherwise return only the low bit count
+                // Add the high bit trailing ones to those of the low bits, if the low bits
+                // are all one; otherwise return only the low bit count
                 self.emit(masm::Instruction::Swap1, span);
                 self.emit_push(0u32, span); // [0, hi_cto, lo_cto]
                 self.emit(masm::Instruction::Dup2, span); // [lo_cto, 0, hi_cto, lo_cto]

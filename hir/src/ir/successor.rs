@@ -299,7 +299,9 @@ impl crate::StorableEntity for SuccessorInfo {
 
     #[inline(always)]
     unsafe fn set_index(&mut self, index: usize) {
-        self.block.set_index(index);
+        unsafe {
+            self.block.set_index(index);
+        }
     }
 
     #[inline(always)]

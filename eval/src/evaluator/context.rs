@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use midenc_hir::{dialects::builtin::ComponentId, Report, SourceSpan, Type};
+use midenc_hir::{Report, SourceSpan, Type, dialects::builtin::ComponentId};
 use midenc_session::diagnostics::WrapErr;
 
 use super::memory::{self, ReadFailed, WriteFailed};

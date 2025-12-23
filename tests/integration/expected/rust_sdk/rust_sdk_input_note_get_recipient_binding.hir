@@ -144,7 +144,7 @@ builtin.component miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input
             v103 = arith.add v73, v102 : i32 #[overflow = wrapping];
             v100 = arith.constant 32 : i32;
             v101 = arith.add v73, v100 : i32 #[overflow = wrapping];
-            hir.exec @miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1/rust_sdk_input_note_get_recipient_binding/miden_stdlib_sys::intrinsics::word::Word::reverse(v101, v103)
+            hir.exec @miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1/rust_sdk_input_note_get_recipient_binding/<miden_stdlib_sys::intrinsics::word::Word>::reverse(v101, v103)
             v105 = arith.constant 40 : u32;
             v104 = hir.bitcast v73 : u32;
             v106 = arith.add v104, v105 : u32 #[overflow = checked];
@@ -199,7 +199,7 @@ builtin.component miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input
             builtin.ret ;
         };
 
-        private builtin.function @miden_stdlib_sys::intrinsics::word::Word::reverse(v144: i32, v145: i32) {
+        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word>::reverse(v144: i32, v145: i32) {
         ^block17(v144: i32, v145: i32):
             v148 = builtin.global_symbol @miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1/rust_sdk_input_note_get_recipient_binding/__stack_pointer : ptr<byte, u8>
             v149 = hir.bitcast v148 : ptr<byte, i32>;

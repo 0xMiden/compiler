@@ -14,7 +14,7 @@ pub use self::{
     types::*,
 };
 use super::BlockRef;
-use crate::{derive, AttributeValue, Context, Operation, Report, Spanned};
+use crate::{AttributeValue, Context, Operation, Report, Spanned, derive};
 
 /// Marker trait for commutative ops, e.g. `X op Y == Y op X`
 pub trait Commutative {}

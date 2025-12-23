@@ -205,6 +205,25 @@ impl<T: Emit> Emit for Arc<T> {
     }
 }
 
+impl Emit for alloc::string::String {
+    fn name(&self) -> Option<Symbol> {
+        None
+    }
+
+    fn output_type(&self, _mode: OutputMode) -> OutputType {
+        OutputType::Hir
+    }
+
+    fn write_to<W: Writer>(
+        &self,
+        mut writer: W,
+        _mode: OutputMode,
+        _session: &Session,
+    ) -> anyhow::Result<()> {
+        writer.write_fmt(format_args!("{self}\n"))
+    }
+}
+
 impl Emit for miden_assembly::ast::Module {
     fn name(&self) -> Option<Symbol> {
         Some(Symbol::intern(self.path().to_string()))

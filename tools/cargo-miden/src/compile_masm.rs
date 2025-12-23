@@ -5,8 +5,8 @@ use std::{
 
 use midenc_compile::{Compiler, Context};
 use midenc_session::{
-    diagnostics::{IntoDiagnostic, Report, WrapErr},
     InputFile, OutputType,
+    diagnostics::{IntoDiagnostic, Report, WrapErr},
 };
 
 pub fn wasm_to_masm(
@@ -45,6 +45,7 @@ pub fn wasm_to_masm(
     ];
     args.append(&mut midenc_args);
 
+    log::debug!("midenc arguments: {}", &args.join(" "));
     let session = Rc::new(Compiler::new_session([input], None, args));
     let context = Rc::new(Context::new(session));
     println!("Creating Miden package {}", output_file.display());

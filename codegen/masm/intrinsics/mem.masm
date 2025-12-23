@@ -229,7 +229,9 @@ end
 # to perform a sequence of shifts and masks to get the bits where they belong. This function
 # performs those steps, with the assumption that the caller has three values on the operand stack
 # representing any unaligned double-word value
-export.realign_dw # [chunk_hi, chunk_mid, chunk_lo, offset]
+#
+# Stack transition is [chunk_hi, chunk_mid, chunk_lo, offset] -> [shifted_lo, shifted_hi]
+export.realign_dw
     # We will refer to the parts of our desired double-word value
     # as two parts, `x_hi` and `x_lo`.
     # Re-align the high bits by shifting out the offset
@@ -283,12 +285,9 @@ export.realign_dw # [chunk_hi, chunk_mid, chunk_lo, offset]
 
     # OR the two halves together, giving us our second word, `x_lo`
     u32or # [x_lo, x_hi]
-
-    # Swap the words so they are in the correct order
-    swap.1 # [x_hi, x_lo]
 end
 
-# Shift a double-word (64-bit, in two 32-bit chunks) value by the given offset.
+# Shift two 32-bit words by the given offset.
 #
 # Returns three 32-bit chunks [chunk_lo, chunk_mid, chunk_hi]
 export.offset_dw # [value_hi, value_lo, offset]
@@ -308,7 +307,7 @@ export.offset_dw # [value_hi, value_lo, offset]
     u32shr       # [ chunk_lo, chunk_mid, chunk_hi]
 end
 
-# Load a machine double-word (64-bit value, in two 32-bit chunks) to the operand stack
+# Load two 32-bit words to the operand stack
 export.load_dw # [addr, offset]
     # check for alignment and offset validity
     dup.1 eq.0                # [offset == 0, addr, offset]
@@ -326,15 +325,13 @@ export.load_dw # [addr, offset]
     else
         # unaligned; an unaligned double-word spans three elements
         #
-        # convert offset from bytes to bits
-        swap.1 push.8 u32wrapping_mul swap.1              # [addr, bit_offset]
+        # convert offset from bytes to bitcount from RHS of triplet (32 - offset * 8)
+        swap.1 push.8 mul push.32 swap.1 sub swap.1        # [addr, bit_offset]
 
-        # load the three elements containing the double-word on the stack
-        dup.0 push.2 u32overflowing_add assertz mem_load  # [e2, addr, bit_offset]
-        dup.1 push.1 add mem_load                         # [e1, e2, addr, bit_offset]
-        movup.2 mem_load                                  # [e0, e1, e2, bit_offset]
-
-        # re-align it, and we're done
+        # load the three elements containing the double-word on the stack and re-align
+        dup.0 mem_load                                     # [e0, addr, bit_offset]
+        dup.1 push.1 u32overflowing_add assertz mem_load   # [e1, e0, addr, bit_offset]
+        movup.2 push.2 u32overflowing_add assertz mem_load # [e2, e1, e0, bit_offset]
         exec.realign_dw
     end
 end
@@ -434,7 +431,7 @@ export.store_sw # [addr, offset, value]
     end
 end
 
-# Store a 64-bit value, i.e. two 32-bit machine words from the given native pointer tuple.
+# Store two 32-bit words to the given native pointer tuple.
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
@@ -536,7 +533,7 @@ end
 # Write `count` copies of `value` to memory, starting at `dst`.
 #
 # * `dst` is expected to be an address in byte-addressable space, _not_ an element address.
-# * `value` must be a 64-bit value or smaller
+# * `value` must be a two 32-bit words.
 export.memset_dw # [size, dst, count, value_hi, value_lo]
     # prepare to loop until `count` iterations have been performed
     push.0        # [i, dst, size, count, value_hi, value_lo]

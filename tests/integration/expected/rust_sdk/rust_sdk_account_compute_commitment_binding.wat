@@ -1,5 +1,5 @@
 (component
-  (type (;0;)
+  (type $ty-miden:base/core-types@1.0.0 (;0;)
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
@@ -8,8 +8,8 @@
       (export (;4;) "word" (type (eq 3)))
     )
   )
-  (import "miden:base/core-types@1.0.0" (instance (;0;) (type 0)))
-  (core module (;0;)
+  (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
+  (core module $main (;0;)
     (type (;0;) (func))
     (type (;1;) (func (result i32)))
     (type (;2;) (func (param i32 i32)))
@@ -49,7 +49,7 @@
       local.get 0
       i32.const 32
       i32.add
-      call $miden_stdlib_sys::intrinsics::word::Word::reverse
+      call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
       local.get 1
       i32.const 1048584
       i32.add
@@ -85,7 +85,7 @@
         i32.store8
       end
     )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;4;) (type 2) (param i32 i32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word>::reverse (;4;) (type 2) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -149,15 +149,15 @@
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "Wrust_sdk_account_compute_commitment_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00")
   )
-  (alias export 0 "word" (type (;1;)))
-  (core instance (;0;) (instantiate 0))
-  (alias core export 0 "memory" (core memory (;0;)))
-  (type (;2;) (func (result 1)))
-  (alias core export 0 "miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1#binding" (core func (;0;)))
-  (func (;0;) (type 2) (canon lift (core func 0) (memory 0)))
-  (alias export 0 "felt" (type (;3;)))
-  (alias export 0 "word" (type (;4;)))
-  (component (;0;)
+  (alias export $miden:base/core-types@1.0.0 "word" (type $word (;1;)))
+  (core instance $main (;0;) (instantiate $main))
+  (alias core export $main "memory" (core memory $memory (;0;)))
+  (type (;2;) (func (result $word)))
+  (alias core export $main "miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1#binding" (core func $miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1#binding (;0;)))
+  (func $binding (;0;) (type 2) (canon lift (core func $miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1#binding) (memory $memory)))
+  (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;3;)))
+  (alias export $miden:base/core-types@1.0.0 "word" (type $"#type4 word" (@name "word") (;4;)))
+  (component $miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
     (type (;2;) (tuple 1 1 1 1))
@@ -170,12 +170,12 @@
     (type (;8;) (func (result 7)))
     (export (;1;) "binding" (func 0) (func (type 8)))
   )
-  (instance (;1;) (instantiate 0
-      (with "import-func-binding" (func 0))
-      (with "import-type-felt" (type 3))
-      (with "import-type-word" (type 4))
-      (with "import-type-word0" (type 1))
+  (instance $miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1-shim-instance (;1;) (instantiate $miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1-shim-component
+      (with "import-func-binding" (func $binding))
+      (with "import-type-felt" (type $felt))
+      (with "import-type-word" (type $"#type4 word"))
+      (with "import-type-word0" (type $word))
     )
   )
-  (export (;2;) "miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1" (instance 1))
+  (export $miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1 (;2;) "miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1" (instance $miden:rust-sdk-account-compute-commitment-binding/rust-sdk-account-compute-commitment-binding@0.0.1-shim-instance))
 )

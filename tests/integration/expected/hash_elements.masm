@@ -13,6 +13,13 @@ end
 # mod root_ns:root@1.0.0::hash_elements
 
 @callconv("C")
+proc __rustc::__rust_dealloc(i32, i32, i32)
+    drop
+    drop
+    drop
+end
+
+@callconv("C")
 pub proc entrypoint(i32) -> felt
     push.1114112
     u32divmod.4
@@ -140,6 +147,7 @@ pub proc entrypoint(i32) -> felt
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.40
     dup.3
     add
@@ -152,6 +160,8 @@ pub proc entrypoint(i32) -> felt
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -174,6 +184,7 @@ pub proc entrypoint(i32) -> felt
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.32
     dup.3
     add
@@ -186,6 +197,8 @@ pub proc entrypoint(i32) -> felt
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -197,7 +210,7 @@ pub proc entrypoint(i32) -> felt
     dup.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::root_ns:root@1.0.0::hash_elements::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.4
@@ -206,7 +219,7 @@ pub proc entrypoint(i32) -> felt
     swap.3
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::alloc::raw_vec::RawVecInner<A>::deallocate
+    exec.::root_ns:root@1.0.0::hash_elements::<alloc::raw_vec::RawVecInner>::deallocate
     trace.252
     nop
     dup.0
@@ -237,14 +250,7 @@ pub proc entrypoint(i32) -> felt
 end
 
 @callconv("C")
-proc __rustc::__rust_dealloc(i32, i32, i32)
-    drop
-    drop
-    drop
-end
-
-@callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -275,6 +281,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -287,6 +294,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -306,6 +315,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -315,6 +325,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -462,6 +474,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.4
     add
@@ -474,6 +487,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -492,6 +507,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -501,6 +517,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -509,13 +527,13 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
+proc intrinsics::felt::assert_eq(felt, felt)
+    assert_eq
 end
 
 @callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
 end
 
 @callconv("C")
@@ -631,7 +649,7 @@ proc std::crypto::hashes::rpo::hash_memory_words(i32, i32, i32)
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::deallocate(
+proc <alloc::raw_vec::RawVecInner>::deallocate(
     i32,
     i32,
     i32
@@ -666,7 +684,7 @@ proc alloc::raw_vec::RawVecInner<A>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::alloc::raw_vec::RawVecInner<A>::current_memory
+    exec.::root_ns:root@1.0.0::hash_elements::<alloc::raw_vec::RawVecInner>::current_memory
     trace.252
     nop
     push.8
@@ -748,7 +766,7 @@ proc alloc::raw_vec::RawVecInner<A>::deallocate(
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::current_memory(
+proc <alloc::raw_vec::RawVecInner>::current_memory(
     i32,
     i32,
     i32,

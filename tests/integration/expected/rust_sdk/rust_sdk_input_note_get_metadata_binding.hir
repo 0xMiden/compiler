@@ -142,7 +142,7 @@ builtin.component miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-
             hir.store v98, v92;
             v99 = arith.constant 16 : i32;
             v100 = arith.add v72, v99 : i32 #[overflow = wrapping];
-            hir.exec @miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1/rust_sdk_input_note_get_metadata_binding/miden_stdlib_sys::intrinsics::word::Word::reverse(v65, v100)
+            hir.exec @miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1/rust_sdk_input_note_get_metadata_binding/<miden_stdlib_sys::intrinsics::word::Word>::reverse(v65, v100)
             v254 = arith.constant 32 : i32;
             v102 = arith.add v72, v254 : i32 #[overflow = wrapping];
             v103 = builtin.global_symbol @miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1/rust_sdk_input_note_get_metadata_binding/__stack_pointer : ptr<byte, u8>
@@ -151,7 +151,7 @@ builtin.component miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-
             builtin.ret ;
         };
 
-        private builtin.function @miden_stdlib_sys::intrinsics::word::Word::reverse(v105: i32, v106: i32) {
+        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word>::reverse(v105: i32, v106: i32) {
         ^block17(v105: i32, v106: i32):
             v109 = builtin.global_symbol @miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1/rust_sdk_input_note_get_metadata_binding/__stack_pointer : ptr<byte, u8>
             v110 = hir.bitcast v109 : ptr<byte, i32>;

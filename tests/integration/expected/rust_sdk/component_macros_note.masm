@@ -189,6 +189,8 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     movup.2
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -389,12 +391,12 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
+proc intrinsics::felt::eq(felt, felt) -> i32
+    eq
 end
 
 @callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
 end
 

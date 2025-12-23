@@ -22,7 +22,7 @@ on:
 env:
   # Set the new value when the cache grows too much and we hit the runner's disk space limit
   # via https://github.com/rust-lang/docs.rs/pull/2433
-  RUST_CACHE_KEY: rust-cache-20250528
+  RUST_CACHE_KEY: rust-cache-20251212
 
 jobs:
   lint:
@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -59,6 +60,7 @@ jobs:
     if: ${{ always() }}
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -85,6 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -117,6 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -152,6 +156,7 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -169,8 +174,39 @@ jobs:
             cargo install cargo-make --force
           fi
       - name: Test
+        # Skip some tests cause they are a space hog and run them in the separate job
         run: |
-          cargo make test -E 'package(miden-integration-tests)'
+          cargo make test -E 'package(miden-integration-tests) - test(~rust_masm_tests::examples)'
+
+  midenc_integration_tests_examples:
+    name: midenc integration tests
+    runs-on: ubuntu-latest
+    # We only want to run the integration tests if the unit tests pass, and that has the added
+    # benefit that we can re-use the cache from the unit test job for all integration tests
+    needs: [unit_tests]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ github.workflow }}-shared-tests
+          prefix-key: ${{ env.RUST_CACHE_KEY }}
+          # Do not persist the cache, leave that to the unit tests, we just use the cache here
+          save-if: false
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+      - name: Test
+        # Skip some tests cause they are a space hog and run them in the separate job
+        run: |
+          cargo make test -E 'test(~rust_masm_tests::examples)'
 
   cargo_miden_integration_tests:
     name: cargo-miden integration tests
@@ -180,6 +216,37 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ github.workflow }}-shared-tests
+          prefix-key: ${{ env.RUST_CACHE_KEY }}
+          # Do not persist the cache, leave that to the unit tests, we just use the cache here
+          save-if: false
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+      - name: Test
+        # Skip running the some test since they are a disc space hog.
+        run: |
+          cargo make test -E 'package(cargo-miden) - test(new_project_integration_tests_pass) - test(test_all_templates_and_examples)'
+
+  cargo_miden_tests_mpt:
+    name: cargo-miden test Miden project template
+    runs-on: ubuntu-latest
+    # We only want to run the integration tests if the unit tests pass, and that has the added
+    # benefit that we can re-use the cache from the unit test job for all integration tests
+    needs: [unit_tests]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -198,7 +265,36 @@ jobs:
           fi
       - name: Test
         run: |
-          cargo make test -E 'package(cargo-miden)'
+          cargo make test -E 'test(new_project_integration_tests_pass)'
+
+  cargo_miden_tests_templates_and_examples:
+    name: cargo-miden test new project templates and examples
+    runs-on: ubuntu-latest
+    # We only want to run the integration tests if the unit tests pass, and that has the added
+    # benefit that we can re-use the cache from the unit test job for all integration tests
+    needs: [unit_tests]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ github.workflow }}-shared-tests
+          prefix-key: ${{ env.RUST_CACHE_KEY }}
+          # Do not persist the cache, leave that to the unit tests, we just use the cache here
+          save-if: false
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+      - name: Test
+        run: |
+          cargo make test -E 'test(test_all_templates_and_examples)'
 
   miden_integration_node_tests:
     name: miden integration node tests
@@ -208,6 +304,7 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
@@ -226,9 +323,7 @@ jobs:
           fi
       - name: Test
         run: |
-          # Run sequentially as a workaround until
-          # https://github.com/0xMiden/compiler/issues/766 is resolved
-          cargo make test -E 'package(miden-integration-node-tests)' --test-threads 1
+          cargo make test -E 'package(miden-integration-node-tests)'
 
   cargo_publish_dry_run:
     name: cargo publish dry run
@@ -236,6 +331,7 @@ jobs:
     needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update

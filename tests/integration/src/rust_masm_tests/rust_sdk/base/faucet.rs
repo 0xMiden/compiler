@@ -4,6 +4,7 @@ use super::*;
 fn run_faucet_binding_test(name: &str, method: &str) {
     let lib_rs = format!(
         r"#![no_std]
+#![feature(alloc_error_handler)]
 
 use miden::*;
 
@@ -25,7 +26,7 @@ impl TestFaucet {{
 [package]
 name = "{name}"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 authors = []
 
 [lib]

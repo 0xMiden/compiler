@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Item};
+use syn::{Item, parse_macro_input};
 
 use crate::types::{exported_type_from_enum, exported_type_from_struct, register_export_type};
 

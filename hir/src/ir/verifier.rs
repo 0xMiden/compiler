@@ -248,7 +248,7 @@ mod tests {
     use core::hint::black_box;
 
     use super::*;
-    use crate::{traits::SingleBlock, Operation};
+    use crate::{Operation, traits::SingleBlock};
 
     struct Vacuous;
 

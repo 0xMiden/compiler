@@ -2,16 +2,16 @@
 
 use std::{fs, path::Path, process::Command};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
-use super::{process::kill_process, sync::read_pid, COORD_DIR};
+use super::{COORD_DIR, process::kill_process, sync::read_pid};
 
 // Version configuration for miden-node
 // NOTE: When updating miden-client version in Cargo.toml, update this constant to match
 // the compatible miden-node version. Both should typically use the same major.minor version.
 
 /// The exact miden-node version that is compatible with the miden-client version used in tests
-const MIDEN_NODE_VERSION: &str = "0.12.0";
+const MIDEN_NODE_VERSION: &str = "0.12.2";
 
 /// Manages the lifecycle of a local Miden node instance
 pub struct LocalMidenNode;
@@ -61,10 +61,10 @@ impl LocalMidenNode {
                     }
 
                     // Clean the entire coordination directory
-                    if let Err(e) = fs::remove_dir_all(COORD_DIR) {
-                        if e.kind() != std::io::ErrorKind::NotFound {
-                            eprintln!("Warning: Failed to clean coordination directory: {e}");
-                        }
+                    if let Err(e) = fs::remove_dir_all(COORD_DIR)
+                        && e.kind() != std::io::ErrorKind::NotFound
+                    {
+                        eprintln!("Warning: Failed to clean coordination directory: {e}");
                     }
 
                     true

@@ -59,3 +59,16 @@ pub fn generated_wit_folder_at(manifest_dir: &Path) -> Result<PathBuf, String> {
     })?;
     Ok(wit_deps_dir)
 }
+
+/// Strips line comments starting with `//` from the provided source line.
+///
+/// Returns the portion of the line before the comment, or the entire line if no comment exists.
+///
+/// **Note:** This is a simple heuristic that doesn't account for `//` appearing
+/// inside string literals. Only use for WIT source parsing where this is not an issue.
+pub fn strip_line_comment(line: &str) -> &str {
+    match line.split_once("//") {
+        Some((before, _)) => before,
+        None => line,
+    }
+}

@@ -2,7 +2,7 @@ pub(crate) mod stdlib;
 pub(crate) mod transform;
 pub(crate) mod tx_kernel;
 
-use midenc_hir::{interner::Symbol, FunctionType, FxHashMap, SymbolNameComponent, SymbolPath};
+use midenc_hir::{FunctionType, FxHashMap, SymbolNameComponent, SymbolPath, interner::Symbol};
 use midenc_hir_symbol::symbols;
 
 pub(crate) type FunctionTypeMap = FxHashMap<Symbol, FunctionType>;

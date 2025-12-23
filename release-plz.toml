@@ -7,6 +7,8 @@ release_always = false
 # We don't want release-plz creating tags for every published crate.
 git_release_enable = false
 git_tag_enable = false
+# set the path of all the crates to the changelog to the root of the repository
+changelog_path = "./CHANGELOG.md"
 
 [[package]]
 # The version bumps from any compiler crate should bubble up and bump the
@@ -18,3 +20,21 @@ git_tag_enable = true
 git_tag_name = "{{ version }}"
 git_release_name = "{{ version }}"
 
+
+[changelog]
+# group all the changes from all the packages in a single changelog
+# via https://release-plz.dev/docs/extra/single-changelog
+body = """
+
+## `{{ package }}` - [{{ version }}]{%- if release_link -%}({{ release_link }}){% endif %} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+{%- if commit.scope -%}
+- *({{commit.scope}})* {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}{%- if commit.links %} ({% for link in commit.links %}[{{link.text}}]({{link.href}}) {% endfor -%}){% endif %}
+{% else -%}
+- {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+"""

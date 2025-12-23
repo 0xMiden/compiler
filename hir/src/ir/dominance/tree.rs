@@ -5,13 +5,13 @@ use core::{
     num::NonZeroU32,
 };
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use super::{BatchUpdateInfo, SemiNCA};
 use crate::{
+    BlockRef, EntityId, EntityWithId, RegionRef,
     cfg::{self, Graph, Inverse, InvertibleGraph},
     formatter::DisplayOptional,
-    BlockRef, EntityId, EntityWithId, RegionRef,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -219,11 +219,11 @@ impl Iterator for DomTreeSuccessorIter {
 }
 impl DoubleEndedIterator for DomTreeSuccessorIter {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.num_children == 0 {
+        if self.index >= self.num_children {
             return None;
         }
-        let index = self.num_children;
         self.num_children -= 1;
+        let index = self.num_children;
         Some(self.node.children.borrow()[index].clone())
     }
 }
@@ -1026,5 +1026,52 @@ impl<const IS_POST_DOM: bool> PartialEq for DomTreeBase<IS_POST_DOM> {
                 }
                 None => true,
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::rc::Rc;
+
+    use super::*;
+
+    #[test]
+    fn dom_tree_successor_iter_forwards_backwards_and_mixed() {
+        let root = Rc::new(DomTreeNode::new(None, None));
+        let c0 = Rc::new(DomTreeNode::new(None, Some(root.clone())));
+        let c1 = Rc::new(DomTreeNode::new(None, Some(root.clone())));
+        let c2 = Rc::new(DomTreeNode::new(None, Some(root.clone())));
+
+        root.add_child(c0.clone());
+        root.add_child(c1.clone());
+        root.add_child(c2.clone());
+
+        let mut iter = DomTreeSuccessorIter::new(root.clone());
+        let first = iter.next().unwrap();
+        let second = iter.next().unwrap();
+        let third = iter.next().unwrap();
+        assert!(Rc::ptr_eq(&first, &c0));
+        assert!(Rc::ptr_eq(&second, &c1));
+        assert!(Rc::ptr_eq(&third, &c2));
+        assert!(iter.next().is_none());
+
+        let mut iter = DomTreeSuccessorIter::new(root.clone());
+        let last = iter.next_back().unwrap();
+        let mid = iter.next_back().unwrap();
+        let first_back = iter.next_back().unwrap();
+        assert!(Rc::ptr_eq(&last, &c2));
+        assert!(Rc::ptr_eq(&mid, &c1));
+        assert!(Rc::ptr_eq(&first_back, &c0));
+        assert!(iter.next_back().is_none());
+
+        let mut iter = DomTreeSuccessorIter::new(root);
+        let first = iter.next().unwrap();
+        let last = iter.next_back().unwrap();
+        let middle = iter.next().unwrap();
+        assert!(Rc::ptr_eq(&first, &c0));
+        assert!(Rc::ptr_eq(&last, &c2));
+        assert!(Rc::ptr_eq(&middle, &c1));
+        assert!(iter.next().is_none());
+        assert!(iter.next_back().is_none());
     }
 }

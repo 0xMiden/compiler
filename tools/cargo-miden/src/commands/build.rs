@@ -4,44 +4,51 @@ use std::{
     process::{Command, Stdio},
 };
 
-use anyhow::{bail, Context, Result};
-use cargo_metadata::{camino, Artifact, Message, Metadata, MetadataCommand, Package};
+use anyhow::{Context, Result, bail};
+use cargo_metadata::{Artifact, Message, Metadata, MetadataCommand, Package, camino};
 use clap::Args;
+use midenc_compile::Compiler;
 use midenc_session::TargetEnv;
 use path_absolutize::Absolutize;
 
 use crate::{
-    compile_masm,
-    config::{CargoArguments, CargoPackageSpec},
+    BuildOutput, CommandOutput, OutputType, compile_masm,
+    config::CargoPackageSpec,
     dependencies::process_miden_dependencies,
     target::{self, install_wasm32_target},
-    BuildOutput, CommandOutput, OutputType,
 };
 
 /// Command-line arguments accepted by `cargo miden build`.
 ///
-/// We capture all tokens following the `build` subcommand so that the build pipeline can
-/// interpret them and forward the appropriate options to Cargo.
+/// All arguments following `build` are parsed by the `midenc` compiler's argument parser.
+/// Cargo-specific options (`--release`, `--manifest-path`, `--workspace`, `--package`)
+/// are recognized and forwarded to the underlying `cargo build` invocation.
+/// All other options are passed to `midenc` for compilation.
 #[derive(Clone, Debug, Args)]
 #[command(disable_version_flag = true, trailing_var_arg = true)]
 pub struct BuildCommand {
-    /// Additional arguments forwarded to the underlying Cargo invocation.
-    #[arg(value_name = "CARGO_ARG", allow_hyphen_values = true)]
-    pub cargo_args: Vec<String>,
+    /// Arguments parsed by midenc (includes cargo-compatible options).
+    #[arg(value_name = "ARG", allow_hyphen_values = true)]
+    pub args: Vec<String>,
 }
 
 impl BuildCommand {
     /// Executes `cargo miden build`, returning the resulting command output.
     pub fn exec(self, build_output_type: OutputType) -> Result<Option<CommandOutput>> {
-        let mut invocation = Vec::with_capacity(self.cargo_args.len() + 1);
-        invocation.push("build".to_string());
-        invocation.extend(self.cargo_args);
+        // Parse all arguments using midenc's Compiler parser.
+        // This gives us a structured representation of all options.
+        let compiler_opts = Compiler::try_parse_from(&self.args).map_err(|e| {
+            // Render the clap error with full formatting (colors, suggestions, etc.)
+            anyhow::anyhow!("failed to parse 'cargo miden build' arguments: {}", e.render())
+        })?;
 
-        let cargo_args = CargoArguments::parse_from(invocation.clone().into_iter())?;
-        let metadata = load_metadata(cargo_args.manifest_path.as_deref())?;
+        // Extract cargo-specific options from parsed Compiler struct
+        let cargo_opts = CargoOptions::from_compiler(&compiler_opts)?;
+
+        let metadata = load_metadata(cargo_opts.manifest_path.as_deref())?;
 
         let mut packages =
-            load_component_metadata(&metadata, cargo_args.packages.iter(), cargo_args.workspace)?;
+            load_component_metadata(&metadata, cargo_opts.packages.iter(), cargo_opts.workspace)?;
 
         if packages.is_empty() {
             bail!(
@@ -50,7 +57,7 @@ impl BuildCommand {
             );
         }
 
-        let cargo_package = determine_cargo_package(&metadata, &cargo_args)?;
+        let cargo_package = determine_cargo_package(&metadata, &cargo_opts)?;
 
         let target_env = target::detect_target_environment(cargo_package)?;
         let project_type = target::target_environment_to_project_type(target_env);
@@ -59,70 +66,49 @@ impl BuildCommand {
             packages.push(PackageComponentMetadata::new(cargo_package)?);
         }
 
-        let dependency_packages_paths = process_miden_dependencies(cargo_package, &cargo_args)?;
+        let dependency_packages_paths = process_miden_dependencies(cargo_package, &cargo_opts)?;
 
-        let mut spawn_args: Vec<_> = invocation.clone();
-        spawn_args.extend_from_slice(
-            &[
-                "-Z",
-                "build-std=std,core,alloc,panic_abort",
-                "-Z",
-                "build-std-features=panic_immediate_abort",
-            ]
-            .map(|s| s.to_string()),
-        );
+        let spawn_args = build_cargo_args(&cargo_opts);
 
-        let cfg_pairs: Vec<(&str, &str)> = vec![
-            ("profile.dev.panic", "\"abort\""),
-            ("profile.dev.opt-level", "1"),
-            ("profile.dev.overflow-checks", "false"),
-            ("profile.dev.debug", "true"),
-            ("profile.dev.debug-assertions", "false"),
-            ("profile.release.opt-level", "\"z\""),
-            ("profile.release.panic", "\"abort\""),
-        ];
-
-        for (key, value) in cfg_pairs {
-            spawn_args.push("--config".to_string());
-            spawn_args.push(format!("{key}={value}"));
+        // Enable memcopy and 128-bit arithmetic ops
+        let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
+        // Enable errors on missing stub functions
+        extra_rust_flags.push_str(" -C link-args=--fatal-warnings");
+        // Remove the source file paths in the data segment for panics
+        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+        extra_rust_flags.push_str(" -Zlocation-detail=none");
+        // Build with panic=immediate-abort
+        extra_rust_flags.push_str(" -Zunstable-options");
+        extra_rust_flags.push_str(" -Cpanic=immediate-abort");
+        if let Ok(inherited) = std::env::var("RUSTFLAGS")
+            && !inherited.is_empty()
+        {
+            extra_rust_flags.push(' ');
+            extra_rust_flags.push_str(&inherited);
         }
-
-        let extra_rust_flags = String::from(
-            "-C target-feature=+bulk-memory,+wide-arithmetic -C link-args=--fatal-warnings",
-        );
-        let maybe_old_rustflags = match std::env::var("RUSTFLAGS") {
-            Ok(current) if !current.is_empty() => {
-                std::env::set_var("RUSTFLAGS", format!("{current} {extra_rust_flags}"));
-                Some(current)
-            }
-            _ => {
-                std::env::set_var("RUSTFLAGS", extra_rust_flags);
-                None
-            }
-        };
 
         let wasi = match target_env {
             TargetEnv::Rollup { .. } => "wasip2",
             _ => "wasip1",
         };
 
-        let wasm_outputs = run_cargo(wasi, &cargo_args, &spawn_args)?;
-
-        if let Some(old_rustflags) = maybe_old_rustflags {
-            std::env::set_var("RUSTFLAGS", old_rustflags);
-        } else {
-            std::env::remove_var("RUSTFLAGS");
-        }
+        let wasm_outputs = run_cargo(wasi, &spawn_args, [("RUSTFLAGS", extra_rust_flags)])?;
 
         assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
         let wasm_output = wasm_outputs.first().expect("expected at least one Wasm artifact");
 
+        // Build midenc flags from target environment defaults
         let mut midenc_flags = midenc_flags_from_target(target_env, project_type, wasm_output);
 
+        // Add dependency library paths
         for dep_path in dependency_packages_paths {
             midenc_flags.push("--link-library".to_string());
             midenc_flags.push(dep_path.to_string_lossy().to_string());
         }
+
+        // Merge user-provided midenc options from parsed Compiler struct
+        // User options override target-derived defaults
+        midenc_flags = merge_midenc_flags(midenc_flags, &compiler_opts);
 
         match build_output_type {
             OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
@@ -133,7 +119,7 @@ impl BuildCommand {
             })),
             OutputType::Masm => {
                 let metadata_out_dir =
-                    metadata.target_directory.join("miden").join(if cargo_args.release {
+                    metadata.target_directory.join("miden").join(if cargo_opts.release {
                         "release"
                     } else {
                         "debug"
@@ -159,17 +145,133 @@ impl BuildCommand {
     }
 }
 
-fn run_cargo(
-    wasi: &str,
-    cargo_args: &CargoArguments,
-    spawn_args: &[String],
-) -> Result<Vec<PathBuf>> {
+/// Cargo-specific options extracted from the `Compiler` struct.
+///
+/// These options are recognized by `cargo miden build` and forwarded to the underlying
+/// `cargo build` invocation. They are not used by the `midenc` compiler itself.
+#[derive(Debug, Default)]
+pub struct CargoOptions {
+    /// Build in release mode
+    pub release: bool,
+    /// Path to Cargo.toml
+    pub manifest_path: Option<PathBuf>,
+    /// Build all packages in the workspace
+    pub workspace: bool,
+    /// Packages to build
+    pub packages: Vec<CargoPackageSpec>,
+}
+
+impl CargoOptions {
+    /// Extract cargo-specific options from a Compiler struct.
+    fn from_compiler(compiler: &Compiler) -> Result<Self> {
+        let packages = compiler
+            .package
+            .iter()
+            .map(|s| {
+                CargoPackageSpec::new(s.clone())
+                    .with_context(|| format!("invalid package spec '{s}'"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Self {
+            release: compiler.release,
+            manifest_path: compiler.manifest_path.clone(),
+            workspace: compiler.workspace,
+            packages,
+        })
+    }
+}
+
+/// Builds the argument vector for the underlying `cargo build` invocation.
+fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
+    let mut args = vec!["build".to_string()];
+
+    // Add build-std flags required for Miden compilation
+    args.extend(
+        ["-Z", "build-std=core,alloc,proc_macro,panic_abort", "-Z", "build-std-features="]
+            .into_iter()
+            .map(|s| s.to_string()),
+    );
+
+    // Configure profile settings
+    let cfg_pairs: Vec<(&str, &str)> = vec![
+        ("profile.dev.panic", "\"abort\""),
+        ("profile.dev.opt-level", "1"),
+        ("profile.dev.overflow-checks", "false"),
+        ("profile.dev.debug", "true"),
+        ("profile.dev.debug-assertions", "false"),
+        ("profile.release.opt-level", "\"z\""),
+        ("profile.release.panic", "\"abort\""),
+    ];
+
+    for (key, value) in cfg_pairs {
+        args.push("--config".to_string());
+        args.push(format!("{key}={value}"));
+    }
+
+    // Forward cargo-specific options
+    if cargo_opts.release {
+        args.push("--release".to_string());
+    }
+
+    if let Some(ref manifest_path) = cargo_opts.manifest_path {
+        args.push("--manifest-path".to_string());
+        args.push(manifest_path.to_string_lossy().to_string());
+    }
+
+    if cargo_opts.workspace {
+        args.push("--workspace".to_string());
+    }
+
+    for package in &cargo_opts.packages {
+        args.push("--package".to_string());
+        args.push(package.to_string());
+    }
+
+    args
+}
+
+/// Merges user-provided `--emit` option with target-derived defaults.
+///
+/// Only the `--emit` option is merged from user input. All other options are
+/// determined by the detected target environment and project type.
+fn merge_midenc_flags(mut base: Vec<String>, compiler: &Compiler) -> Vec<String> {
+    // Only merge --emit options from user input
+    for spec in &compiler.output_types {
+        base.push("--emit".to_string());
+        let spec_str = match spec {
+            midenc_session::OutputTypeSpec::All { path } => {
+                if let Some(p) = path {
+                    format!("all={p}")
+                } else {
+                    "all".to_string()
+                }
+            }
+            midenc_session::OutputTypeSpec::Typed { output_type, path } => {
+                if let Some(p) = path {
+                    format!("{output_type}={p}")
+                } else {
+                    output_type.to_string()
+                }
+            }
+        };
+        base.push(spec_str);
+    }
+
+    base
+}
+
+fn run_cargo<E>(wasi: &str, spawn_args: &[String], env: E) -> Result<Vec<PathBuf>>
+where
+    E: IntoIterator<Item = (&'static str, String)>,
+{
     let cargo_path = std::env::var("CARGO")
         .map(PathBuf::from)
         .ok()
         .unwrap_or_else(|| PathBuf::from("cargo"));
 
     let mut cargo = Command::new(&cargo_path);
+    cargo.envs(env);
     cargo.args(spawn_args);
 
     // Handle the target for buildable commands
@@ -177,18 +279,12 @@ fn run_cargo(
 
     cargo.arg("--target").arg(format!("wasm32-{wasi}"));
 
-    if let Some(format) = &cargo_args.message_format {
-        if format != "json-render-diagnostics" {
-            bail!("unsupported cargo message format `{format}`");
-        }
-    }
-
     // It will output the message as json so we can extract the wasm files
     // that will be componentized
     cargo.arg("--message-format").arg("json-render-diagnostics");
     cargo.stdout(Stdio::piped());
 
-    let artifacts = spawn_cargo(cargo, &cargo_path, cargo_args, true)?;
+    let artifacts = spawn_cargo(cargo, &cargo_path)?;
 
     let outputs: Vec<PathBuf> = artifacts
         .into_iter()
@@ -205,12 +301,7 @@ fn run_cargo(
     Ok(outputs)
 }
 
-pub fn spawn_cargo(
-    mut cmd: Command,
-    cargo: &Path,
-    cargo_args: &CargoArguments,
-    process_messages: bool,
-) -> Result<Vec<Artifact>> {
+fn spawn_cargo(mut cmd: Command, cargo: &Path) -> Result<Vec<Artifact>> {
     log::debug!("spawning command {cmd:?}");
 
     let mut child = cmd
@@ -218,33 +309,26 @@ pub fn spawn_cargo(
         .context(format!("failed to spawn `{cargo}`", cargo = cargo.display()))?;
 
     let mut artifacts = Vec::new();
-    if process_messages {
-        let stdout = child.stdout.take().expect("no stdout");
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            let line = line.context("failed to read output from `cargo`")?;
+    let stdout = child.stdout.take().expect("no stdout");
+    let reader = BufReader::new(stdout);
+    for line in reader.lines() {
+        let line = line.context("failed to read output from `cargo`")?;
 
-            // If the command line arguments also had `--message-format`, echo the line
-            if cargo_args.message_format.is_some() {
-                println!("{line}");
-            }
+        if line.is_empty() {
+            continue;
+        }
 
-            if line.is_empty() {
-                continue;
-            }
-
-            for message in Message::parse_stream(line.as_bytes()) {
-                if let Message::CompilerArtifact(artifact) =
-                    message.context("unexpected JSON message from cargo")?
-                {
-                    for path in &artifact.filenames {
-                        match path.extension() {
-                            Some("wasm") => {
-                                artifacts.push(artifact);
-                                break;
-                            }
-                            _ => continue,
+        for message in Message::parse_stream(line.as_bytes()) {
+            if let Message::CompilerArtifact(artifact) =
+                message.context("unexpected JSON message from cargo")?
+            {
+                for path in &artifact.filenames {
+                    match path.extension() {
+                        Some("wasm") => {
+                            artifacts.push(artifact);
+                            break;
                         }
+                        _ => continue,
                     }
                 }
             }
@@ -264,9 +348,9 @@ pub fn spawn_cargo(
 
 fn determine_cargo_package<'a>(
     metadata: &'a cargo_metadata::Metadata,
-    cargo_args: &CargoArguments,
+    cargo_opts: &CargoOptions,
 ) -> Result<&'a cargo_metadata::Package> {
-    let package = if let Some(manifest_path) = cargo_args.manifest_path.as_deref() {
+    let package = if let Some(manifest_path) = cargo_opts.manifest_path.as_deref() {
         let mp_utf8 = camino::Utf8Path::from_path(manifest_path).ok_or_else(|| {
             anyhow::anyhow!("manifest path is not valid UTF-8: {}", manifest_path.display())
         })?;

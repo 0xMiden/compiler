@@ -1,12 +1,13 @@
 // Do not link against libstd (i.e. anything defined in `std::`)
 #![no_std]
+#![feature(alloc_error_handler)]
 
 // However, we could still use some standard library types while
 // remaining no-std compatible, if we uncommented the following lines:
 //
 // extern crate alloc;
 
-use miden::{component, Asset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word};
+use miden::{Asset, Felt, StorageMap, StorageMapAccess, Value, ValueAccess, Word, component};
 
 use crate::bindings::exports::miden::storage_example::*;
 
@@ -38,7 +39,7 @@ struct MyAccount {
 
 impl foo::Guest for MyAccount {
     fn set_asset_qty(pub_key: Word, asset: Asset, qty: Felt) {
-        let my_account = MyAccount::default();
+        let mut my_account = MyAccount::default();
         let owner_key: Word = my_account.owner_public_key.read();
         if pub_key == owner_key {
             my_account.asset_qty_map.set(asset, qty);

@@ -4,7 +4,7 @@ use core::fmt;
 use midenc_hir_type::PointerType;
 use midenc_session::diagnostics::Severity;
 
-use crate::{derive, ir::value::Value, Context, Op, Operation, Report, Type};
+use crate::{Context, Op, Operation, Report, Type, derive, ir::value::Value};
 
 /// OpInterface to compute the return type(s) of an operation.
 pub trait InferTypeOpInterface: Op {

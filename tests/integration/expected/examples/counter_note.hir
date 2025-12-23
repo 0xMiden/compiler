@@ -1,14 +1,14 @@
 builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @counter_note {
-        private builtin.function @counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() -> felt {
+        private builtin.function @counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0() -> felt {
         ^block3:
-            v0 = hir.call  : felt #[callee = miden:counter-contract/counter@0.1.0/get-count] #[signature = (result felt)];
+            v0 = hir.call  : felt #[callee = miden:counter-contract/counter-contract@0.1.0/get-count] #[signature = (result felt)];
             builtin.ret v0;
         };
 
-        private builtin.function @counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0() -> felt {
+        private builtin.function @counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0() -> felt {
         ^block6:
-            v1 = hir.call  : felt #[callee = miden:counter-contract/counter@0.1.0/increment-count] #[signature = (result felt)];
+            v1 = hir.call  : felt #[callee = miden:counter-contract/counter-contract@0.1.0/increment-count] #[signature = (result felt)];
             builtin.ret v1;
         };
 
@@ -25,12 +25,12 @@ builtin.component miden:base/note-script@1.0.0 {
         private builtin.function @miden:base/note-script@1.0.0#run(v2: felt, v3: felt, v4: felt, v5: felt) {
         ^block14(v2: felt, v3: felt, v4: felt, v5: felt):
             hir.exec @miden:base/note-script@1.0.0/counter_note/wit_bindgen::rt::run_ctors_once()
-            v7 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() : felt
-            v8 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::increment_count::wit_import0() : felt
+            v7 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0() : felt
+            v8 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0() : felt
             v9 = arith.constant 1 : i32;
             v10 = hir.exec @miden:base/note-script@1.0.0/counter_note/intrinsics::felt::from_u32(v9) : felt
             v11 = hir.exec @miden:base/note-script@1.0.0/counter_note/intrinsics::felt::add(v7, v10) : felt
-            v12 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter::get_count::wit_import0() : felt
+            v12 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0() : felt
             hir.exec @miden:base/note-script@1.0.0/counter_note/intrinsics::felt::assert_eq(v12, v11)
             builtin.ret ;
         };
@@ -75,16 +75,16 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret v38;
         };
 
-        private builtin.function @intrinsics::felt::from_u32(v40: i32) -> felt {
-        ^block22(v40: i32):
-            v41 = hir.bitcast v40 : felt;
-            builtin.ret v41;
+        private builtin.function @intrinsics::felt::assert_eq(v40: felt, v41: felt) {
+        ^block22(v40: felt, v41: felt):
+            hir.assert_eq v40, v41;
+            builtin.ret ;
         };
 
-        private builtin.function @intrinsics::felt::assert_eq(v43: felt, v44: felt) {
-        ^block24(v43: felt, v44: felt):
-            hir.assert_eq v43, v44;
-            builtin.ret ;
+        private builtin.function @intrinsics::felt::from_u32(v42: i32) -> felt {
+        ^block24(v42: i32):
+            v43 = hir.bitcast v42 : felt;
+            builtin.ret v43;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

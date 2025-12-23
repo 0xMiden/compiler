@@ -7,7 +7,7 @@ mod process;
 mod setup;
 mod sync;
 
-pub use handle::{ensure_shared_node, SharedNodeHandle};
+pub use handle::{SharedNodeHandle, ensure_shared_node};
 
 // Base directory for all miden test node files
 const BASE_DIR: &str = "/tmp/miden-test-node";

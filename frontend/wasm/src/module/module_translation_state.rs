@@ -1,11 +1,12 @@
 use midenc_hir::{
+    CallConv, FxHashMap, Signature, SymbolNameComponent, SymbolPath, Visibility,
     dialects::builtin::{ModuleBuilder, WorldBuilder},
     interner::Symbol,
-    smallvec, CallConv, FxHashMap, Signature, SymbolNameComponent, SymbolPath, Visibility,
+    smallvec,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
-use super::{instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder, FuncIndex, Module};
+use super::{FuncIndex, Module, instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder};
 use crate::{
     callable::CallableFunction, component::lower_imports::generate_import_lowering_function,
     error::WasmResult, translation_utils::sig_from_func_type,

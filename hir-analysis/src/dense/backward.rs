@@ -1,13 +1,13 @@
 use midenc_hir::{
-    cfg::Graph, Block, CallOpInterface, CallableOpInterface, Operation, ProgramPoint,
-    RegionBranchOpInterface, RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionRef,
-    Report, Spanned, SymbolTable,
+    Block, CallOpInterface, CallableOpInterface, Operation, ProgramPoint, RegionBranchOpInterface,
+    RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionRef, Report, Spanned, SymbolTable,
+    cfg::Graph,
 };
 
 use super::*;
 use crate::{
-    analyses::dce::{CfgEdge, Executable, PredecessorState},
     AnalysisStateGuardMut, BuildableAnalysisState, CallControlFlowAction, DataFlowSolver,
+    analyses::dce::{CfgEdge, Executable, PredecessorState},
 };
 
 /// The base trait for all dense backward data-flow analyses.

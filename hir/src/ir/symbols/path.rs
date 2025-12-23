@@ -1,11 +1,11 @@
 use alloc::{borrow::Cow, collections::VecDeque, format};
 use core::fmt;
 
-use midenc_session::diagnostics::{miette, Diagnostic};
-use smallvec::{smallvec, SmallVec};
+use midenc_session::diagnostics::{Diagnostic, miette};
+use smallvec::{SmallVec, smallvec};
 
 use super::SymbolUseRef;
-use crate::{define_attr_type, interner, FunctionIdent, SymbolName};
+use crate::{FunctionIdent, SymbolName, define_attr_type, interner};
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
 pub enum InvalidSymbolPathError {
@@ -241,7 +241,7 @@ impl SymbolPath {
     /// Set the value of the leaf component of the path, or append it if not yet present
     pub fn set_name(&mut self, name: SymbolName) {
         match self.path.last_mut() {
-            Some(SymbolNameComponent::Leaf(ref mut prev_name)) => {
+            Some(SymbolNameComponent::Leaf(prev_name)) => {
                 *prev_name = name;
             }
             _ => {
@@ -268,8 +268,8 @@ impl SymbolPath {
     /// Derive a Miden Assembly `LibraryPath` from this symbol path
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {
         use midenc_session::{
-            miden_assembly::{ast::Ident, SourceSpan, Span},
             LibraryNamespace, LibraryPath,
+            miden_assembly::{SourceSpan, Span, ast::Ident},
         };
 
         let mut components = self.path.iter();

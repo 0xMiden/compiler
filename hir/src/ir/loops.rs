@@ -7,14 +7,14 @@ use core::{
 use smallvec::SmallVec;
 
 use super::{
-    dominance::{DominanceInfo, DominanceTree, PostOrderDomTreeIter},
     RegionKindInterface, RegionRef,
+    dominance::{DominanceInfo, DominanceTree, PostOrderDomTreeIter},
 };
 use crate::{
+    BlockRef, Operation, OperationRef, PostOrderBlockIter, Report,
     adt::{SmallDenseMap, SmallSet},
     cfg::{Graph, Inverse, InvertibleGraph},
     pass::Analysis,
-    BlockRef, Operation, OperationRef, PostOrderBlockIter, Report,
 };
 
 /// Represents the results of analyzing an [Operation] and computing the [LoopForest] for each of
@@ -509,7 +509,7 @@ impl LoopForest {
                     None => {
                         return Err(Report::msg(
                             "top level loop is missing in computed loop forest",
-                        ))
+                        ));
                     }
                     Some(other_l) => {
                         // Recursively compare the loops
@@ -1267,10 +1267,10 @@ impl Loop {
         }
 
         // Check the parent loop pointer.
-        if let Some(parent) = self.parent_loop() {
-            if !parent.nested().contains(&parent) {
-                return Err(Report::msg("loop is not a subloop of its parent"));
-            }
+        if let Some(parent) = self.parent_loop()
+            && !parent.nested().contains(&parent)
+        {
+            return Err(Report::msg("loop is not a subloop of its parent"));
         }
 
         Ok(())

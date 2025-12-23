@@ -182,7 +182,7 @@ args = [
     "midenc",
     "--artifact-dir",
     "${MIDENC_BIN_DIR}",
-    "@@split(CARGO_MAKE_TASK_ARGS, )",
+    "@@split(CARGO_MAKE_TASK_ARGS, ;)",
 ]
 
 [tasks.cargo-miden]
@@ -197,7 +197,7 @@ args = [
     "cargo-miden",
     "--artifact-dir",
     "${MIDENC_BIN_DIR}",
-    "@@split(CARGO_MAKE_TASK_ARGS, )",
+    "@@split(CARGO_MAKE_TASK_ARGS, ;)",
 ]
 
 [tasks.build]
@@ -335,6 +335,7 @@ args = [
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit/parse",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit/wasm-translation",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit/source-location",
 ]
 dependencies = ["litcheck"]
 

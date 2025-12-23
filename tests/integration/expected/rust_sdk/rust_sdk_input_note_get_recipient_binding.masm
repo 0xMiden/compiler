@@ -173,6 +173,7 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -185,6 +186,8 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -204,6 +207,7 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -213,6 +217,8 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -354,6 +360,7 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.24
     dup.3
     add
@@ -366,6 +373,8 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -385,6 +394,7 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.16
     dup.3
     add
@@ -397,6 +407,8 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -410,7 +422,7 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1::rust_sdk_input_note_get_recipient_binding::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1::rust_sdk_input_note_get_recipient_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.40
@@ -430,6 +442,7 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.24
     dup.3
     add
@@ -445,6 +458,8 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     movup.2
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -467,6 +482,7 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.16
     dup.5
     add
@@ -482,6 +498,8 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     movup.2
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -501,6 +519,8 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     movup.2
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -515,6 +535,8 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -533,7 +555,7 @@ proc miden_base_sys::bindings::input_note::get_recipient(
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -564,6 +586,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -576,6 +599,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -595,6 +620,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -604,6 +630,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -751,6 +779,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.4
     add
@@ -763,6 +792,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -781,6 +812,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -790,6 +822,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw

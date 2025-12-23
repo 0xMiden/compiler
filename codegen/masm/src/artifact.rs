@@ -4,16 +4,16 @@ use alloc::{
 };
 use core::fmt;
 
-use miden_assembly::{ast::InvocationTarget, library::LibraryExport, Library};
+use miden_assembly::{Library, ast::InvocationTarget, library::LibraryExport};
 use miden_core::{Program, Word};
 use miden_mast_package::{MastArtifact, Package, ProcedureName};
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
-    diagnostics::{Report, SourceSpan, Span},
     Session,
+    diagnostics::{Report, SourceSpan, Span},
 };
 
-use crate::{lower::NativePtr, masm, TraceEvent};
+use crate::{TraceEvent, lower::NativePtr, masm};
 
 pub struct MasmComponent {
     pub id: builtin::ComponentId,
@@ -95,14 +95,13 @@ impl Rodata {
         let mut felts = Vec::with_capacity(bytes.len() / 4);
         let mut iter = bytes.iter().copied().array_chunks::<4>();
         felts.extend(iter.by_ref().map(|chunk| Felt::new(u32::from_le_bytes(chunk) as u64)));
-        if let Some(remainder) = iter.into_remainder() {
-            if remainder.len() > 0 {
-                let mut chunk = [0u8; 4];
-                for (i, byte) in remainder.into_iter().enumerate() {
-                    chunk[i] = byte;
-                }
-                felts.push(Felt::new(u32::from_le_bytes(chunk) as u64));
+        let remainder = iter.into_remainder();
+        if remainder.len() > 0 {
+            let mut chunk = [0u8; 4];
+            for (i, byte) in remainder.enumerate() {
+                chunk[i] = byte;
             }
+            felts.push(Felt::new(u32::from_le_bytes(chunk) as u64));
         }
 
         let size_in_felts = bytes.len().next_multiple_of(4) / 4;

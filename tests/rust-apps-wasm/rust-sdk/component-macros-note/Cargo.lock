@@ -809,7 +809,7 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
 name = "miden"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
@@ -868,7 +868,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
@@ -877,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "heck",
  "miden-objects",
@@ -886,11 +886,13 @@ dependencies = [
  "semver 1.0.27",
  "syn",
  "toml 0.8.23",
+ "wit-bindgen-core",
+ "wit-bindgen-rust",
 ]
 
 [[package]]
 name = "miden-base-sys"
-version = "0.7.0"
+version = "0.8.1"
 dependencies = [
  "miden-stdlib-sys",
 ]
@@ -1068,11 +1070,11 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.7.0"
+version = "0.8.0"
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.7.0"
+version = "0.8.0"
 
 [[package]]
 name = "miden-utils-diagnostics"

@@ -4,7 +4,7 @@ use core::{any::TypeId, fmt};
 use smallvec::SmallVec;
 
 use super::Rewriter;
-use crate::{interner, Context, OperationName, OperationRef, Report};
+use crate::{Context, OperationName, OperationRef, Report, interner};
 
 #[derive(Debug)]
 pub enum PatternKind {
@@ -266,7 +266,7 @@ mod tests {
             op: OperationRef,
             rewriter: &mut dyn Rewriter,
         ) -> Result<bool, Report> {
-            use crate::matchers::{self, match_chain, match_op, MatchWith, Matcher};
+            use crate::matchers::{self, MatchWith, Matcher, match_chain, match_op};
 
             let binder = MatchWith(|op: &UnsafeIntrusiveEntityRef<Shl>| {
                 log::trace!(

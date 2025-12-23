@@ -1,5 +1,5 @@
 (component
-  (type (;0;)
+  (type $ty-miden:base/core-types@1.0.0 (;0;)
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
@@ -10,8 +10,8 @@
       (export (;6;) "recipient" (type (eq 5)))
     )
   )
-  (import "miden:base/core-types@1.0.0" (instance (;0;) (type 0)))
-  (core module (;0;)
+  (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
+  (core module $main (;0;)
     (type (;0;) (func))
     (type (;1;) (func (result i32)))
     (type (;2;) (func (param i32 f32)))
@@ -98,7 +98,7 @@
       local.get 2
       i32.const 16
       i32.add
-      call $miden_stdlib_sys::intrinsics::word::Word::reverse
+      call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
       local.get 2
       local.get 2
       i64.load offset=40
@@ -122,7 +122,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;5;) (type 3) (param i32 i32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word>::reverse (;5;) (type 3) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -189,16 +189,16 @@
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "Srust_sdk_input_note_get_recipient_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00\00\00")
   )
-  (alias export 0 "recipient" (type (;1;)))
-  (core instance (;0;) (instantiate 0))
-  (alias core export 0 "memory" (core memory (;0;)))
-  (type (;2;) (func (result 1)))
-  (alias core export 0 "miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1#binding" (core func (;0;)))
-  (func (;0;) (type 2) (canon lift (core func 0) (memory 0)))
-  (alias export 0 "felt" (type (;3;)))
-  (alias export 0 "word" (type (;4;)))
-  (alias export 0 "recipient" (type (;5;)))
-  (component (;0;)
+  (alias export $miden:base/core-types@1.0.0 "recipient" (type $recipient (;1;)))
+  (core instance $main (;0;) (instantiate $main))
+  (alias core export $main "memory" (core memory $memory (;0;)))
+  (type (;2;) (func (result $recipient)))
+  (alias core export $main "miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1#binding" (core func $miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1#binding (;0;)))
+  (func $binding (;0;) (type 2) (canon lift (core func $miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1#binding) (memory $memory)))
+  (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;3;)))
+  (alias export $miden:base/core-types@1.0.0 "word" (type $word (;4;)))
+  (alias export $miden:base/core-types@1.0.0 "recipient" (type $"#type5 recipient" (@name "recipient") (;5;)))
+  (component $miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
     (type (;2;) (tuple 1 1 1 1))
@@ -213,13 +213,13 @@
     (type (;10;) (func (result 9)))
     (export (;1;) "binding" (func 0) (func (type 10)))
   )
-  (instance (;1;) (instantiate 0
-      (with "import-func-binding" (func 0))
-      (with "import-type-felt" (type 3))
-      (with "import-type-word" (type 4))
-      (with "import-type-recipient" (type 5))
-      (with "import-type-recipient0" (type 1))
+  (instance $miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1-shim-instance (;1;) (instantiate $miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1-shim-component
+      (with "import-func-binding" (func $binding))
+      (with "import-type-felt" (type $felt))
+      (with "import-type-word" (type $word))
+      (with "import-type-recipient" (type $"#type5 recipient"))
+      (with "import-type-recipient0" (type $recipient))
     )
   )
-  (export (;2;) "miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1" (instance 1))
+  (export $miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1 (;2;) "miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1" (instance $miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1-shim-instance))
 )

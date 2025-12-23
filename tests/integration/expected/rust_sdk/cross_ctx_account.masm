@@ -195,12 +195,12 @@ proc intrinsics::felt::add(felt, felt) -> felt
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
+proc intrinsics::felt::as_u64(felt) -> [u32; 2]
+    u32split
 end
 
 @callconv("C")
-proc intrinsics::felt::as_u64(felt) -> [u32; 2]
-    u32split
+proc intrinsics::felt::from_u32(i32) -> felt
+    nop
 end
 

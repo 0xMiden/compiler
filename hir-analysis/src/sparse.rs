@@ -3,13 +3,13 @@ mod forward;
 mod lattice;
 
 use midenc_hir::{
-    pass::AnalysisManager, Backward, CallOpInterface, Forward, OpOperandImpl, Operation,
-    ProgramPoint, RegionSuccessor, Report,
+    Backward, CallOpInterface, Forward, OpOperandImpl, Operation, ProgramPoint, RegionSuccessor,
+    Report, pass::AnalysisManager,
 };
 
 pub use self::{
-    backward::{set_all_to_exit_states, SparseBackwardDataFlowAnalysis},
-    forward::{set_all_to_entry_states, SparseForwardDataFlowAnalysis},
+    backward::{SparseBackwardDataFlowAnalysis, set_all_to_exit_states},
+    forward::{SparseForwardDataFlowAnalysis, set_all_to_entry_states},
     lattice::SparseLattice,
 };
 use super::{AnalysisStrategy, DataFlowAnalysis, DataFlowSolver, Sparse};

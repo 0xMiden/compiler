@@ -12,18 +12,13 @@
   (export "cabi_realloc_wit_bindgen_0_46_0" (func $cabi_realloc_wit_bindgen_0_46_0))
   (export "cabi_realloc" (func $cabi_realloc))
   (elem (;0;) (i32.const 1) func $cabi_realloc)
-  (func $entrypoint (;0;) (type 0) (param i32 i32) (result i32)
-    local.get 1
-    local.get 0
-    i32.add
-  )
-  (func $__rustc::__rust_alloc (;1;) (type 0) (param i32 i32) (result i32)
+  (func $__rustc::__rust_alloc (;0;) (type 0) (param i32 i32) (result i32)
     i32.const 1048580
     local.get 1
     local.get 0
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
   )
-  (func $__rustc::__rust_realloc (;2;) (type 1) (param i32 i32 i32 i32) (result i32)
+  (func $__rustc::__rust_realloc (;1;) (type 1) (param i32 i32 i32 i32) (result i32)
     block ;; label = @1
       i32.const 1048580
       local.get 2
@@ -48,6 +43,11 @@
     end
     local.get 2
   )
+  (func $entrypoint (;2;) (type 0) (param i32 i32) (result i32)
+    local.get 1
+    local.get 0
+    i32.add
+  )
   (func $__rustc::__rust_no_alloc_shim_is_unstable_v2 (;3;) (type 2)
     return
   )
@@ -70,7 +70,7 @@
       i32.const -2147483648
       local.get 1
       local.get 3
-      call $core::ptr::alignment::Alignment::max
+      call $<core::ptr::alignment::Alignment>::max
       local.tee 1
       i32.sub
       i32.gt_u
@@ -126,7 +126,7 @@
   (func $intrinsics::mem::heap_base (;5;) (type 4) (result i32)
     unreachable
   )
-  (func $core::ptr::alignment::Alignment::max (;6;) (type 0) (param i32 i32) (result i32)
+  (func $<core::ptr::alignment::Alignment>::max (;6;) (type 0) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0
@@ -147,14 +147,7 @@
     local.get 0
     call $__rustc::__rust_alloc
   )
-  (func $cabi_realloc_wit_bindgen_0_46_0 (;9;) (type 1) (param i32 i32 i32 i32) (result i32)
-    local.get 0
-    local.get 1
-    local.get 2
-    local.get 3
-    call $wit_bindgen::rt::cabi_realloc
-  )
-  (func $wit_bindgen::rt::cabi_realloc (;10;) (type 1) (param i32 i32 i32 i32) (result i32)
+  (func $wit_bindgen::rt::cabi_realloc (;9;) (type 1) (param i32 i32 i32 i32) (result i32)
     block ;; label = @1
       block ;; label = @2
         block ;; label = @3
@@ -181,6 +174,13 @@
       unreachable
     end
     local.get 2
+  )
+  (func $cabi_realloc_wit_bindgen_0_46_0 (;10;) (type 1) (param i32 i32 i32 i32) (result i32)
+    local.get 0
+    local.get 1
+    local.get 2
+    local.get 3
+    call $wit_bindgen::rt::cabi_realloc
   )
   (data $.rodata (;0;) (i32.const 1048576) "\01\00\00\00")
 )

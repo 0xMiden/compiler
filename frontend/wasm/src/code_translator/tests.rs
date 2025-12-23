@@ -2,9 +2,9 @@ use core::fmt::Write;
 use std::rc::Rc;
 
 use midenc_expect_test::expect_file;
-use midenc_hir::{dialects::builtin, Op, Operation, WalkResult};
+use midenc_hir::{Op, Operation, WalkResult, dialects::builtin};
 
-use crate::{translate, WasmTranslationConfig};
+use crate::{WasmTranslationConfig, translate};
 
 /// Check IR generated for a Wasm op(s).
 /// Wrap Wasm ops in a function and check the IR generated for the entry block of that function.

@@ -1,8 +1,8 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    dialects::builtin::FunctionRef, interner::symbols, Builder, Immediate, PointerType,
-    SymbolNameComponent, SymbolPath, Type, ValueRef,
+    Builder, Immediate, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
+    dialects::builtin::FunctionRef, interner::symbols,
 };
 
 use super::{stdlib, tx_kernel};

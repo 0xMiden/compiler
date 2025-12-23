@@ -1,17 +1,13 @@
 // Do not link against libstd (i.e. anything defined in `std::`)
 #![no_std]
+#![feature(alloc_error_handler)]
 
 // However, we could still use some standard library types while
 // remaining no-std compatible, if we uncommented the following lines:
 //
 // extern crate alloc;
 
-use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
-
-use crate::bindings::exports::miden::counter_contract::counter::Guest;
-
-miden::generate!();
-bindings::export!(CounterContract);
+use miden::{Felt, StorageMap, StorageMapAccess, Word, component, felt};
 
 /// Main contract structure for the counter example.
 #[component]
@@ -21,29 +17,20 @@ struct CounterContract {
     count_map: StorageMap,
 }
 
-impl Guest for CounterContract {
+#[component]
+impl CounterContract {
     /// Returns the current counter value stored in the contract's storage map.
-    fn get_count() -> Felt {
-        // Get the instance of the contract
-        let contract = CounterContract::default();
-        // Define a fixed key for the counter value within the map
+    pub fn get_count(&self) -> Felt {
         let key = Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]);
-        // Read the value associated with the key from the storage map
-        contract.count_map.get(&key)
+        self.count_map.get(&key)
     }
 
     /// Increments the counter value stored in the contract's storage map by one.
-    fn increment_count() -> Felt {
-        // Get the instance of the contract
-        let contract = CounterContract::default();
-        // Define the same fixed key
+    pub fn increment_count(&mut self) -> Felt {
         let key = Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]);
-        // Read the current value
-        let current_value: Felt = contract.count_map.get(&key);
-        // Increment the value by one
+        let current_value: Felt = self.count_map.get(&key);
         let new_value = current_value + felt!(1);
-        // Write the new value back to the storage map
-        contract.count_map.set(key, new_value);
+        self.count_map.set(key, new_value);
         new_value
     }
 }

@@ -1,6 +1,6 @@
 use miden_assembly::{
-    ast::{Module, ModuleKind},
     LibraryPath,
+    ast::{Module, ModuleKind},
 };
 use midenc_session::diagnostics::{PrintDiagnostic, SourceLanguage, SourceManager, Uri};
 

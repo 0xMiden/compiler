@@ -10,8 +10,8 @@ use traits::BranchOpInterface;
 
 use super::{traits::BuildableTypeConstraint, *};
 use crate::{
-    constants::{ConstantData, ConstantId, ConstantPool},
     FxHashMap,
+    constants::{ConstantData, ConstantId, ConstantPool},
 };
 
 /// Represents the shared state of the IR, used during a compilation session.

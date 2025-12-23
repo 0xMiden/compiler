@@ -1,13 +1,13 @@
 use crate::{
+    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
     },
-    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
 };
 
 pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;

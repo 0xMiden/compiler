@@ -4,6 +4,7 @@ use super::*;
 fn run_account_binding_test(name: &str, method: &str) {
     let lib_rs = format!(
         r"#![no_std]
+#![feature(alloc_error_handler)]
 
 use miden::*;
 
@@ -25,7 +26,7 @@ impl TestAccount {{
 [package]
 name = "{name}"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 authors = []
 
 [lib]
@@ -75,7 +76,7 @@ fn rust_sdk_account_get_code_commitment_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_code_commitment_binding",
         "pub fn binding(&self) -> Word {
-        active_account::get_code_commitment()
+        self.get_code_commitment()
     }",
     );
 }
@@ -85,7 +86,7 @@ fn rust_sdk_account_get_initial_storage_commitment_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_initial_storage_commitment_binding",
         "pub fn binding(&self) -> Word {
-        active_account::get_initial_storage_commitment()
+        self.get_initial_storage_commitment()
     }",
     );
 }
@@ -95,7 +96,7 @@ fn rust_sdk_account_compute_storage_commitment_binding() {
     run_account_binding_test(
         "rust_sdk_account_compute_storage_commitment_binding",
         "pub fn binding(&self) -> Word {
-        active_account::compute_storage_commitment()
+        self.compute_storage_commitment()
     }",
     );
 }
@@ -105,7 +106,7 @@ fn rust_sdk_account_compute_commitment_binding() {
     run_account_binding_test(
         "rust_sdk_account_compute_commitment_binding",
         "pub fn binding(&self) -> Word {
-        active_account::compute_commitment()
+        self.compute_commitment()
     }",
     );
 }
@@ -115,7 +116,7 @@ fn rust_sdk_account_compute_delta_commitment_binding() {
     run_account_binding_test(
         "rust_sdk_account_compute_delta_commitment_binding",
         "pub fn binding(&self) -> Word {
-        native_account::compute_delta_commitment()
+        self.compute_delta_commitment()
     }",
     );
 }
@@ -126,7 +127,7 @@ fn rust_sdk_account_get_initial_balance_binding() {
         "rust_sdk_account_get_initial_balance_binding",
         "pub fn binding(&self) -> Felt {
         let faucet = AccountId { prefix: Felt::from_u32(1), suffix: Felt::from_u32(0) };
-        active_account::get_initial_balance(faucet)
+        self.get_initial_balance(faucet)
     }",
     );
 }
@@ -137,7 +138,7 @@ fn rust_sdk_account_has_non_fungible_asset_binding() {
         "rust_sdk_account_has_non_fungible_asset_binding",
         "pub fn binding(&self) -> Felt {
         let asset = Asset::from([Felt::from_u32(0); 4]);
-        if active_account::has_non_fungible_asset(asset) {
+        if self.has_non_fungible_asset(asset) {
             Felt::from_u32(1)
         } else {
             Felt::from_u32(0)
@@ -151,7 +152,7 @@ fn rust_sdk_account_get_initial_vault_root_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_initial_vault_root_binding",
         "pub fn binding(&self) -> Word {
-        active_account::get_initial_vault_root()
+        self.get_initial_vault_root()
     }",
     );
 }
@@ -161,7 +162,7 @@ fn rust_sdk_account_get_vault_root_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_vault_root_binding",
         "pub fn binding(&self) -> Word {
-        active_account::get_vault_root()
+        self.get_vault_root()
     }",
     );
 }
@@ -171,7 +172,7 @@ fn rust_sdk_account_get_num_procedures_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_num_procedures_binding",
         "pub fn binding(&self) -> Felt {
-        active_account::get_num_procedures()
+        self.get_num_procedures()
     }",
     );
 }
@@ -181,7 +182,7 @@ fn rust_sdk_account_get_procedure_root_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_procedure_root_binding",
         "pub fn binding(&self) -> Word {
-        active_account::get_procedure_root(0)
+        self.get_procedure_root(0)
     }",
     );
 }
@@ -192,7 +193,7 @@ fn rust_sdk_account_has_procedure_binding() {
         "rust_sdk_account_has_procedure_binding",
         "pub fn binding(&self) -> Felt {
         let proc_root = Word::from([Felt::from_u32(0); 4]);
-        if active_account::has_procedure(proc_root) {
+        if self.has_procedure(proc_root) {
             Felt::from_u32(1)
         } else {
             Felt::from_u32(0)
@@ -207,7 +208,7 @@ fn rust_sdk_account_was_procedure_called_binding() {
         "rust_sdk_account_was_procedure_called_binding",
         "pub fn binding(&self) -> Felt {
         let proc_root = Word::from([Felt::from_u32(0); 4]);
-        if native_account::was_procedure_called(proc_root) {
+        if self.was_procedure_called(proc_root) {
             Felt::from_u32(1)
         } else {
             Felt::from_u32(0)

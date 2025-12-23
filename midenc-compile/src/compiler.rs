@@ -5,13 +5,12 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 use std::ffi::OsString;
 
 #[cfg(feature = "std")]
-use clap::{builder::ArgPredicate, Parser};
+use clap::{Parser, builder::ArgPredicate};
 use midenc_session::{
-    add_target_link_libraries,
-    diagnostics::{DefaultSourceManager, Emitter},
     ColorChoice, DebugInfo, InputFile, LinkLibrary, OptLevel, Options, OutputFile, OutputType,
     OutputTypeSpec, OutputTypes, Path, PathBuf, ProjectType, Session, TargetEnv, Verbosity,
-    Warnings,
+    Warnings, add_target_link_libraries,
+    diagnostics::{DefaultSourceManager, Emitter},
 };
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.
@@ -271,6 +270,21 @@ pub struct Compiler {
         )
     )]
     pub unstable: Vec<String>,
+
+    // The following options are primarily used by `cargo miden build` to pass through
+    // familiar Cargo options. They are hidden from `midenc --help` output.
+    /// Build in release mode (used by cargo miden build)
+    #[cfg_attr(feature = "std", arg(long, hide = true, default_value_t = false))]
+    pub release: bool,
+    /// Path to Cargo.toml (used by cargo miden build)
+    #[cfg_attr(feature = "std", arg(long, value_name = "PATH", hide = true))]
+    pub manifest_path: Option<PathBuf>,
+    /// Build all packages in the workspace (used by cargo miden build)
+    #[cfg_attr(feature = "std", arg(long, hide = true, default_value_t = false))]
+    pub workspace: bool,
+    /// Package(s) to build (used by cargo miden build)
+    #[cfg_attr(feature = "std", arg(long, value_name = "SPEC", hide = true))]
+    pub package: Vec<String>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -348,6 +362,29 @@ pub struct UnstableOptions {
         arg(long, default_value_t = false, help_heading = "Passes")
     )]
     pub print_ir_after_modified: bool,
+    /// Print source location information in HIR output
+    ///
+    /// When enabled, HIR output will include #loc() annotations showing the source file,
+    /// line, and column for each operation.
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "print-hir-source-locations",
+            default_value_t = false,
+            help_heading = "Printers"
+        )
+    )]
+    pub print_hir_source_locations: bool,
+    /// Specify path prefixes to try when resolving relative paths from DWARF debug info
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "trim-path-prefix",
+            value_name = "PATH",
+            help_heading = "Debugging"
+        )
+    )]
+    pub trim_path_prefixes: Vec<PathBuf>,
 }
 
 impl CodegenOptions {
@@ -435,6 +472,28 @@ NOTE: When specifying these options, strip the leading '--'",
 }
 
 impl Compiler {
+    /// Parse compiler options from command-line arguments.
+    ///
+    /// Returns the parsed options or an error if parsing failed.
+    /// This is used by `cargo miden build` to parse all arguments into `Compiler`
+    /// options before selectively forwarding them to `cargo build` and `midenc`.
+    #[cfg(feature = "std")]
+    pub fn try_parse_from<I, T>(iter: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let argv = [OsString::from("midenc")]
+            .into_iter()
+            .chain(iter.into_iter().map(|arg| arg.into()));
+        let command = <Self as clap::CommandFactory>::command();
+        let command = midenc_session::flags::register_flags(command);
+        let mut matches = command.try_get_matches_from(argv)?;
+
+        <Self as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)
+            .map_err(format_error::<Self>)
+    }
+
     /// Construct a [Compiler] programatically
     #[cfg(feature = "std")]
     pub fn new_session<I, A, S>(inputs: I, emitter: Option<Arc<dyn Emitter>>, argv: A) -> Session
@@ -516,6 +575,8 @@ impl Compiler {
         options.print_ir_after_all = unstable.print_ir_after_all;
         options.print_ir_after_pass = unstable.print_ir_after_pass;
         options.print_ir_after_modified = unstable.print_ir_after_modified;
+        options.print_hir_source_locations = unstable.print_hir_source_locations;
+        options.trim_path_prefixes = unstable.trim_path_prefixes;
 
         // Establish --target-dir
         let target_dir = if self.target_dir.is_absolute() {

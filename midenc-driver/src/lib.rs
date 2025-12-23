@@ -5,7 +5,7 @@ mod midenc;
 pub use clap::Error as ClapError;
 use log::Log;
 pub use midenc_session::diagnostics;
-use midenc_session::diagnostics::{miette, Diagnostic, Report};
+use midenc_session::diagnostics::{Diagnostic, Report, miette};
 
 pub use self::midenc::Midenc;
 

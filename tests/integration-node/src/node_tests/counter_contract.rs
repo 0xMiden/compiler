@@ -1,9 +1,9 @@
 //! Counter contract test module
 
 use miden_client::{
+    Word,
     account::StorageMap,
     transaction::{OutputNote, TransactionRequestBuilder},
-    Word,
 };
 use miden_core::{Felt, FieldElement};
 
@@ -100,28 +100,8 @@ pub fn test_counter_contract_local() {
             .build()
             .unwrap();
 
-        let tx_result = client
-            .execute_transaction(counter_account.id(), note_request)
-            .await
-            .map_err(|e| {
-                eprintln!("Transaction creation error: {e}");
-                e
-            })
-            .unwrap();
-        let executed_transaction = tx_result.executed_transaction();
-        // dbg!(executed_transaction.output_notes());
-
-        assert_eq!(executed_transaction.output_notes().num_notes(), 1);
-
-        let executed_tx_output_note = executed_transaction.output_notes().get_note(0);
-        assert_eq!(executed_tx_output_note.id(), counter_note.id());
-        let create_note_tx_id = executed_transaction.id();
-        let proven_tx = client.prove_transaction(&tx_result).await.unwrap();
-        let submission_height = client
-            .submit_proven_transaction(proven_tx, tx_result.tx_inputs().clone())
-            .await
-            .unwrap();
-        client.apply_transaction(&tx_result, submission_height).await.unwrap();
+        let create_note_tx_id =
+            client.submit_new_transaction(counter_account.id(), note_request).await.unwrap();
         eprintln!("Created counter note tx: {create_note_tx_id:?}");
 
         // Consume the note to increment the counter
@@ -130,25 +110,10 @@ pub fn test_counter_contract_local() {
             .build()
             .unwrap();
 
-        let tx_result = client
-            .execute_transaction(counter_account.id(), consume_request)
-            .await
-            .map_err(|e| {
-                eprintln!("Note consumption transaction error: {e}");
-                e
-            })
-            .unwrap();
-        eprintln!(
-            "Consumed counter note tx: https://testnet.midenscan.com/tx/{:?}",
-            &tx_result.executed_transaction().id()
-        );
-
-        let proven_tx = client.prove_transaction(&tx_result).await.unwrap();
-        let submission_height = client
-            .submit_proven_transaction(proven_tx, tx_result.tx_inputs().clone())
+        let _consume_tx_id = client
+            .submit_new_transaction(counter_account.id(), consume_request)
             .await
             .unwrap();
-        client.apply_transaction(&tx_result, submission_height).await.unwrap();
 
         let sync_result = client.sync_state().await.unwrap();
         eprintln!("Synced to block: {}", sync_result.block_num);

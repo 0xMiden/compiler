@@ -3,8 +3,8 @@ use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::{
-    testing::{eval_package, setup},
     CompilerTest,
+    testing::{eval_package, setup},
 };
 
 #[test]
@@ -15,7 +15,7 @@ fn test_func_arg_same() {
             intrinsic(x, y)
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         #[inline(never)]
         fn intrinsic(a: &mut Felt, b: &mut Felt) -> i32 {
             unsafe { (a as *mut Felt) as i32 }
@@ -92,7 +92,7 @@ fn test_func_arg_order() {
         }}
     }}
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn intrinsic(digests_ptr: *const Felt, result_ptr: *mut Felt) {{
         // see assert_eq above, before the call
         assert_eq(Felt::from_u32(digests_ptr as u32), Felt::from_u32(1048528));

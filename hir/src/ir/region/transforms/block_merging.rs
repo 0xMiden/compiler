@@ -3,8 +3,8 @@ use alloc::boxed::Box;
 
 use super::RegionTransformFailed;
 use crate::{
-    adt::SmallDenseMap, BlockArgument, BlockRef, DynHash, OpResult, Operation, OperationRef,
-    Region, RegionRef, Rewriter, ValueRef,
+    BlockArgument, BlockRef, DynHash, OpResult, Operation, OperationRef, Region, RegionRef,
+    Rewriter, ValueRef, adt::SmallDenseMap,
 };
 
 bitflags::bitflags! {

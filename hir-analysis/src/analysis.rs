@@ -1,6 +1,6 @@
 pub(super) mod state;
 
-use midenc_hir::{pass::AnalysisManager, Direction, Operation, ProgramPoint, Report};
+use midenc_hir::{Direction, Operation, ProgramPoint, Report, pass::AnalysisManager};
 
 pub use self::state::{
     AnalysisState, AnalysisStateGuard, AnalysisStateGuardMut, AnalysisStateInfo,

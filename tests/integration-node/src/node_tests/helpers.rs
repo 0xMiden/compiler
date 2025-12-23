@@ -3,14 +3,15 @@
 use std::{borrow::Borrow, collections::BTreeSet, path::Path, sync::Arc};
 
 use miden_client::{
+    Client, ClientError,
     account::{
-        component::{AuthRpoFalcon512, BasicFungibleFaucet, BasicWallet},
         Account, AccountId, AccountStorageMode, AccountType, StorageSlot,
+        component::{AuthRpoFalcon512, BasicFungibleFaucet, BasicWallet},
     },
     asset::{FungibleAsset, TokenSymbol},
     auth::{AuthSecretKey, PublicKeyCommitment},
     builder::ClientBuilder,
-    crypto::{rpo_falcon512::SecretKey, FeltRng, RpoRandomCoin},
+    crypto::{FeltRng, RpoRandomCoin, rpo_falcon512::SecretKey},
     keystore::FilesystemKeyStore,
     note::{
         Note, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag,
@@ -19,7 +20,6 @@ use miden_client::{
     rpc::{Endpoint, GrpcClient},
     transaction::{TransactionRequestBuilder, TransactionScript},
     utils::Deserializable,
-    Client, ClientError,
 };
 use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_core::{Felt, FieldElement, Word};
@@ -33,7 +33,7 @@ use miden_objects::{
     transaction::TransactionId,
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
-use rand::{rngs::StdRng, RngCore};
+use rand::{RngCore, rngs::StdRng};
 
 /// Test setup configuration
 pub struct TestSetup {

@@ -1,12 +1,12 @@
 (component
-  (type (;0;)
+  (type $ty-miden:base/core-types@1.0.0 (;0;)
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
     )
   )
-  (import "miden:base/core-types@1.0.0" (instance (;0;) (type 0)))
-  (core module (;0;)
+  (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
+  (core module $main (;0;)
     (type (;0;) (func))
     (type (;1;) (func (result f32)))
     (type (;2;) (func (param i32 f32)))
@@ -86,7 +86,7 @@
       local.get 2
       i32.const 32
       i32.add
-      call $miden_stdlib_sys::intrinsics::word::Word::reverse
+      call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
       local.get 0
       local.get 1
       f32.store offset=16
@@ -95,7 +95,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_stdlib_sys::intrinsics::word::Word::reverse (;5;) (type 3) (param i32 i32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word>::reverse (;5;) (type 3) (param i32 i32)
       (local i32 i32 i32 f32)
       global.get $__stack_pointer
       i32.const 16
@@ -162,14 +162,14 @@
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "Wrust_sdk_input_note_get_inputs_info_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00")
   )
-  (alias export 0 "felt" (type (;1;)))
-  (core instance (;0;) (instantiate 0))
-  (alias core export 0 "memory" (core memory (;0;)))
-  (type (;2;) (func (result 1)))
-  (alias core export 0 "miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1#binding" (core func (;0;)))
-  (func (;0;) (type 2) (canon lift (core func 0)))
-  (alias export 0 "felt" (type (;3;)))
-  (component (;0;)
+  (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;1;)))
+  (core instance $main (;0;) (instantiate $main))
+  (alias core export $main "memory" (core memory $memory (;0;)))
+  (type (;2;) (func (result $felt)))
+  (alias core export $main "miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1#binding" (core func $miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1#binding (;0;)))
+  (func $binding (;0;) (type 2) (canon lift (core func $miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1#binding)))
+  (alias export $miden:base/core-types@1.0.0 "felt" (type $"#type3 felt" (@name "felt") (;3;)))
+  (component $miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
     (import "import-type-felt0" (type (;2;) (eq 1)))
@@ -179,11 +179,11 @@
     (type (;5;) (func (result 4)))
     (export (;1;) "binding" (func 0) (func (type 5)))
   )
-  (instance (;1;) (instantiate 0
-      (with "import-func-binding" (func 0))
-      (with "import-type-felt" (type 3))
-      (with "import-type-felt0" (type 1))
+  (instance $miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1-shim-instance (;1;) (instantiate $miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1-shim-component
+      (with "import-func-binding" (func $binding))
+      (with "import-type-felt" (type $"#type3 felt"))
+      (with "import-type-felt0" (type $felt))
     )
   )
-  (export (;2;) "miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1" (instance 1))
+  (export $miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1 (;2;) "miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1" (instance $miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1-shim-instance))
 )

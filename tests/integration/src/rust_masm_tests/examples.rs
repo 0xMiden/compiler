@@ -8,13 +8,13 @@ use miden_objects::account::AccountComponentMetadata;
 use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
-    interner::Symbol, Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable,
+    Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable, interner::Symbol,
 };
 use midenc_session::STDLIB;
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
-use crate::{cargo_proj::project, CompilerTest, CompilerTestBuilder};
+use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project};
 
 #[test]
 fn storage_example() {
@@ -360,7 +360,6 @@ fn auth_component_no_auth() {
     test.expect_masm(expect_file![format!("../../expected/examples/auth_component_no_auth.masm")]);
     let auth_comp_package = test.compiled_package();
     let lib = auth_comp_package.unwrap_library();
-    let expected_module = "miden:base/authentication-component@1.0.0";
     let expected_function = "auth__procedure";
     let exports = lib
         .exports()
@@ -368,12 +367,8 @@ fn auth_component_no_auth() {
         .collect::<Vec<_>>();
     // dbg!(&exports);
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}'"
+        lib.exports().any(|export| { export.name.name.as_str() == expected_function }),
+        "expected one of the exports to contain function '{expected_function}'"
     );
 
     // Test that the package loads
@@ -400,15 +395,11 @@ fn auth_component_rpo_falcon512() {
     )]);
     let auth_comp_package = test.compiled_package();
     let lib = auth_comp_package.unwrap_library();
-    let expected_module = "miden:base/authentication-component@1.0.0";
     let expected_function = "auth__procedure";
+
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}'"
+        lib.exports().any(|export| { export.name.name.as_str() == expected_function }),
+        "expected one of the exports to contain function '{expected_function}'"
     );
 
     // Test that the package loads

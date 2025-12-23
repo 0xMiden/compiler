@@ -2,14 +2,14 @@ use alloc::{boxed::Box, rc::Rc};
 use core::fmt;
 
 use midenc_hir::{
-    traits::Foldable, AttributeValue, Dialect, FoldResult, Forward, OpFoldResult, Operation,
-    Report, SmallVec,
+    AttributeValue, Dialect, FoldResult, Forward, OpFoldResult, Operation, Report, SmallVec,
+    traits::Foldable,
 };
 
 use crate::{
-    sparse::{self, SparseDataFlowAnalysis},
     AnalysisState, AnalysisStateGuard, AnalysisStateGuardMut, BuildableDataFlowAnalysis,
     DataFlowSolver, Lattice, LatticeLike, SparseForwardDataFlowAnalysis, SparseLattice,
+    sparse::{self, SparseDataFlowAnalysis},
 };
 
 /// This lattice value represents a known constant value of a lattice.

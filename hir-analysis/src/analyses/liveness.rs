@@ -3,19 +3,19 @@ mod next_use_set;
 use core::borrow::Borrow;
 
 use midenc_hir::{
-    dominance::DominanceInfo,
-    pass::{Analysis, AnalysisManager, PreservedAnalyses},
     Backward, Block, BlockRef, CallOpInterface, EntityRef, Operation, ProgramPoint,
     RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Spanned, SymbolTable, ValueRef,
+    dominance::DominanceInfo,
+    pass::{Analysis, AnalysisManager, PreservedAnalyses},
 };
 
 pub use self::next_use_set::NextUseSet;
-use super::{dce::Executable, DeadCodeAnalysis, SparseConstantPropagation};
+use super::{DeadCodeAnalysis, SparseConstantPropagation, dce::Executable};
 use crate::{
-    analyses::{dce::CfgEdge, LoopState},
-    dense::DenseDataFlowAnalysis,
     AnalysisState, AnalysisStateGuardMut, BuildableDataFlowAnalysis, CallControlFlowAction,
     DataFlowSolver, DenseBackwardDataFlowAnalysis, DenseLattice, Lattice, LatticeLike,
+    analyses::{LoopState, dce::CfgEdge},
+    dense::DenseDataFlowAnalysis,
 };
 
 /// The distance penalty applied to an edge which exits a loop

@@ -173,6 +173,7 @@ mod tests {
     use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
     use midenc_expect_test::expect_file;
     use midenc_hir::{
+        AbiParam, BuilderExt, Context, Ident, OpBuilder, Report, Signature, SourceSpan, Type,
         dialects::{
             builtin::{self, BuiltinOpBuilder, FunctionBuilder},
             test::TestOpBuilder,
@@ -181,7 +182,6 @@ mod tests {
         patterns::{
             FrozenRewritePatternSet, GreedyRewriteConfig, RewritePattern, RewritePatternSet,
         },
-        AbiParam, BuilderExt, Context, Ident, OpBuilder, Report, Signature, SourceSpan, Type,
     };
 
     use super::*;

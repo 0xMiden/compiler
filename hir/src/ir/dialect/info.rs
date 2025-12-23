@@ -6,7 +6,7 @@ use core::{
 };
 
 use super::{Dialect, DialectRegistration};
-use crate::{interner, traits::TraitInfo, FxHashMap, OpRegistration, OperationName};
+use crate::{FxHashMap, OpRegistration, OperationName, interner, traits::TraitInfo};
 
 pub struct DialectInfo {
     /// The namespace of this dialect

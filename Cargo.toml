@@ -28,7 +28,7 @@ exclude = [
 
 [workspace.package]
 version = "0.5.1"
-rust-version = "1.90"
+rust-version = "1.92"
 authors = ["Miden contributors"]
 description = "An intermediate representation and compiler for Miden Assembly"
 repository = "https://github.com/0xMiden/compiler"
@@ -38,14 +38,14 @@ categories = ["compilers"]
 keywords = ["compiler", "miden"]
 license = "MIT"
 readme = "README.md"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [workspace.dependencies]
 anyhow = { version = "1.0", default-features = false }
 bitflags = "2.4"
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
-blink-alloc = { version = "0.3", default-features = false, features = [
+blink-alloc = { version = "0.4", default-features = false, features = [
     "alloc",
     "nightly",
 ] }
@@ -61,10 +61,6 @@ cranelift-entity = "0.120"
 compact_str = { version = "0.9", default-features = false }
 env_logger = "0.11"
 hashbrown = { version = "0.15", features = ["nightly"] }
-hashbrown_old_nightly_hack = { package = "hashbrown", version = "0.14.5", features = [
-    "allocator-api2",
-    "nightly",
-] }
 Inflector = "0.11"
 intrusive-collections = "0.9"
 inventory = "0.3"
@@ -187,6 +183,67 @@ opt-level = 3
 
 [profile.test.package.rand_chacha]
 opt-level = 3
+
+# Speed up the test profile (proving times)
+# ============================================================
+# The test package itself needs optimization
+[profile.test.package.miden-integration-node-tests]
+opt-level = 3
+
+# Core Miden packages
+[profile.test.package.miden-processor]
+opt-level = 3
+
+[profile.test.package.miden-prover]
+opt-level = 3
+
+[profile.test.package.winter-prover]
+opt-level = 3
+
+[profile.test.package.miden-client]
+opt-level = 3
+
+[profile.test.package.miden-lib]
+opt-level = 3
+
+[profile.test.package.miden-tx]
+opt-level = 3
+
+# Additional crypto and math-heavy dependencies
+[profile.test.package.miden-crypto]
+opt-level = 3
+
+[profile.test.package.winter-crypto]
+opt-level = 3
+
+[profile.test.package.winter-air]
+opt-level = 3
+
+[profile.test.package.winter-math]
+opt-level = 3
+
+[profile.test.package.miden-objects]
+opt-level = 3
+
+[profile.test.package.miden-core]
+opt-level = 3
+
+[profile.test.package.miden-assembly]
+opt-level = 3
+
+[profile.test.package.miden-stdlib]
+opt-level = 3
+
+# Compiler packages that might be used in tests
+[profile.test.package.midenc-frontend-wasm]
+opt-level = 3
+
+[profile.test.package.midenc-session]
+opt-level = 3
+
+[profile.test.package.miden-debug]
+opt-level = 3
+# ============================================================
 
 [profile.dev.package.dissimilar]
 opt-level = 3

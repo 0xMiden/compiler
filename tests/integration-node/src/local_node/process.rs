@@ -1,17 +1,16 @@
 //! Process management functionality for the shared node
 
 use std::{
-    fs::{self, File},
-    io::BufRead,
+    fs,
     net::TcpStream,
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
-use super::{data_dir, rpc_url, setup::LocalMidenNode, RPC_PORT};
+use super::{RPC_PORT, data_dir, rpc_url, setup::LocalMidenNode};
 
 /// Check if a port is in use
 pub fn is_port_in_use(port: u16) -> bool {
@@ -82,20 +81,30 @@ pub fn kill_process(pid: u32) -> Result<()> {
 pub async fn start_shared_node() -> Result<u32> {
     eprintln!("[SharedNode] Starting shared node process...");
 
-    // Ensure data directory exists
+    // Bootstrap if needed (data directory empty or doesn't exist)
     let data_dir_path = data_dir();
-    fs::create_dir_all(&data_dir_path).context("Failed to create data directory")?;
+    let needs_bootstrap = !data_dir_path.exists()
+        || fs::read_dir(&data_dir_path)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(true);
 
-    // Bootstrap if needed
-    let marker_file = data_dir_path.join(".bootstrapped");
-    if !marker_file.exists() {
+    if needs_bootstrap {
+        // Ensure we have a clean, empty data directory for bootstrap
+        if data_dir_path.exists() {
+            fs::remove_dir_all(&data_dir_path).context("Failed to remove data directory")?;
+        }
+        fs::create_dir_all(&data_dir_path).context("Failed to create data directory")?;
         LocalMidenNode::bootstrap(&data_dir_path).context("Failed to bootstrap miden-node")?;
-        // Create marker file
-        File::create(&marker_file).context("Failed to create bootstrap marker file")?;
     }
 
     // Start the node process
-    let mut child = Command::new("miden-node")
+    // Use Stdio::null() for stdout/stderr to avoid buffer blocking issues.
+    // When pipes are used, the child process can block if the pipe buffer fills up
+    // and the reading end doesn't consume data fast enough. Using inherit() also
+    // causes issues with nextest's parallel test execution.
+    //
+    // For debugging, users can run the node manually with RUST_LOG=debug.
+    let child = Command::new("miden-node")
         .args([
             "bundled",
             "start",
@@ -106,36 +115,12 @@ pub async fn start_shared_node() -> Result<u32> {
             "--block.interval",
             "1sec",
         ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .context("Failed to start miden-node process")?;
 
     let pid = child.id();
-
-    // Capture output for debugging
-    let stdout = child.stdout.take().expect("Failed to capture stdout");
-    let stderr = child.stderr.take().expect("Failed to capture stderr");
-
-    // Check if node output logging is enabled
-    let enable_node_output = std::env::var("MIDEN_NODE_OUTPUT").unwrap_or_default() == "1";
-
-    // Spawn threads to read output
-    thread::spawn(move || {
-        let reader = std::io::BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            if enable_node_output {
-                eprintln!("[shared node stdout] {line}");
-            }
-        }
-    });
-
-    thread::spawn(move || {
-        let reader = std::io::BufReader::new(stderr);
-        for line in reader.lines().map_while(Result::ok) {
-            eprintln!("[shared node stderr] {line}");
-        }
-    });
 
     // Detach the child process so it continues running after we exit
     drop(child);

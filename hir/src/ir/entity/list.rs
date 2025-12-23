@@ -386,7 +386,7 @@ where
         let parent = UnsafeIntrusiveEntityRef::into_raw(self.parent()).cast();
         let raw = UnsafeIntrusiveEntityRef::into_inner(ptr).as_ptr();
         EntityCursorMut {
-            cursor: self.list.cursor_mut_from_ptr(raw),
+            cursor: unsafe { self.list.cursor_mut_from_ptr(raw) },
             parent,
         }
     }
@@ -544,7 +544,7 @@ impl<T: EntityListItem> EntityList<T> {
         &mut self,
         ptr: UnsafeIntrusiveEntityRef<T>,
     ) -> EntityCursorMut<'_, T> {
-        <Self as EntityListTraits<T>>::cursor_mut_from_ptr(self, ptr)
+        unsafe { <Self as EntityListTraits<T>>::cursor_mut_from_ptr(self, ptr) }
     }
 
     /// Get an [EntityCursorMut] pointing to the first entity in the list, or the null object if
@@ -1150,7 +1150,7 @@ impl<T> RawEntityRef<T, IntrusiveLink> {
     #[inline]
     unsafe fn from_link_ptr(link: NonNull<IntrusiveLink>) -> Self {
         let offset = core::mem::offset_of!(RawEntityMetadata<T, IntrusiveLink>, metadata);
-        let ptr = link.byte_sub(offset).cast::<RawEntityMetadata<T, IntrusiveLink>>();
+        let ptr = unsafe { link.byte_sub(offset).cast::<RawEntityMetadata<T, IntrusiveLink>>() };
         Self { inner: ptr }
     }
 }
@@ -1183,7 +1183,7 @@ unsafe impl<T> intrusive_collections::PointerOps
     #[inline]
     unsafe fn from_raw(&self, value: *const Self::Value) -> Self::Pointer {
         debug_assert!(!value.is_null() && value.is_aligned());
-        UnsafeIntrusiveEntityRef::from_ptr(value.cast_mut())
+        unsafe { UnsafeIntrusiveEntityRef::from_ptr(value.cast_mut()) }
     }
 
     #[inline]
@@ -1228,18 +1228,20 @@ unsafe impl<T> intrusive_collections::Adapter for EntityAdapter<T> {
         link: <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr,
     ) -> *const <Self::PointerOps as intrusive_collections::PointerOps>::Value {
         let offset = core::mem::offset_of!(IntrusiveLink, link);
-        let link_ptr = link.byte_sub(offset).cast::<IntrusiveLink>();
-        let raw_entity_ref = UnsafeIntrusiveEntityRef::<T>::from_link_ptr(link_ptr);
-        raw_entity_ref.inner.as_ptr().cast_const()
+        unsafe {
+            let link_ptr = link.byte_sub(offset).cast::<IntrusiveLink>();
+            let raw_entity_ref = UnsafeIntrusiveEntityRef::<T>::from_link_ptr(link_ptr);
+            raw_entity_ref.inner.as_ptr().cast_const()
+        }
     }
 
     unsafe fn get_link(
         &self,
         value: *const <Self::PointerOps as intrusive_collections::PointerOps>::Value,
     ) -> <Self::LinkOps as intrusive_collections::LinkOps>::LinkPtr {
-        let raw_entity_ref = UnsafeIntrusiveEntityRef::from_ptr(value.cast_mut());
+        let raw_entity_ref = unsafe { UnsafeIntrusiveEntityRef::from_ptr(value.cast_mut()) };
         let offset = RawEntityMetadata::<T, IntrusiveLink>::metadata_offset();
-        raw_entity_ref.inner.byte_add(offset).cast()
+        unsafe { raw_entity_ref.inner.byte_add(offset).cast() }
     }
 
     fn link_ops(&self) -> &Self::LinkOps {
