@@ -2171,7 +2171,7 @@ dependencies = [
 
 [[package]]
 name = "miden"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
@@ -2231,7 +2231,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
@@ -2240,7 +2240,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "heck",
  "miden-objects",
@@ -2255,7 +2255,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-sys"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "miden-stdlib-sys",
 ]
@@ -2663,7 +2663,7 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.7.0"
+version = "0.8.0"
 
 [[package]]
 name = "miden-stdlib"
@@ -2683,7 +2683,7 @@ dependencies = [
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.7.1"
+version = "0.8.0"
 
 [[package]]
 name = "miden-thiserror"
