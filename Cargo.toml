@@ -27,7 +27,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.5.2"
 rust-version = "1.92"
 authors = ["Miden contributors"]
 description = "An intermediate representation and compiler for Miden Assembly"
@@ -127,23 +127,23 @@ wasmparser = { version = "0.227", default-features = false, features = [
 ] }
 
 # Workspace crates
-midenc-codegen-masm = { version = "0.5.1", path = "codegen/masm" }
-midenc-dialect-arith = { version = "0.5.1", path = "dialects/arith" }
-midenc-dialect-hir = { version = "0.5.1", path = "dialects/hir" }
-midenc-dialect-scf = { version = "0.5.1", path = "dialects/scf" }
-midenc-dialect-cf = { version = "0.5.1", path = "dialects/cf" }
-midenc-dialect-ub = { version = "0.5.1", path = "dialects/ub" }
-midenc-hir = { version = "0.5.1", path = "hir" }
-midenc-hir-analysis = { version = "0.5.1", path = "hir-analysis" }
-midenc-hir-eval = { version = "0.5.1", path = "eval" }
-midenc-hir-macros = { version = "0.5.1", path = "hir-macros" }
-midenc-hir-symbol = { version = "0.5.1", path = "hir-symbol" }
-midenc-hir-transform = { version = "0.5.1", path = "hir-transform" }
-midenc-frontend-wasm = { version = "0.5.1", path = "frontend/wasm" }
-midenc-compile = { version = "0.5.1", path = "midenc-compile" }
-midenc-driver = { version = "0.5.1", path = "midenc-driver" }
-midenc-session = { version = "0.5.1", path = "midenc-session" }
-cargo-miden = { version = "0.5.1", path = "tools/cargo-miden" }
+midenc-codegen-masm = { version = "0.5.2", path = "codegen/masm" }
+midenc-dialect-arith = { version = "0.5.2", path = "dialects/arith" }
+midenc-dialect-hir = { version = "0.5.2", path = "dialects/hir" }
+midenc-dialect-scf = { version = "0.5.2", path = "dialects/scf" }
+midenc-dialect-cf = { version = "0.5.2", path = "dialects/cf" }
+midenc-dialect-ub = { version = "0.5.2", path = "dialects/ub" }
+midenc-hir = { version = "0.5.2", path = "hir" }
+midenc-hir-analysis = { version = "0.5.2", path = "hir-analysis" }
+midenc-hir-eval = { version = "0.5.2", path = "eval" }
+midenc-hir-macros = { version = "0.5.2", path = "hir-macros" }
+midenc-hir-symbol = { version = "0.5.2", path = "hir-symbol" }
+midenc-hir-transform = { version = "0.5.2", path = "hir-transform" }
+midenc-frontend-wasm = { version = "0.5.2", path = "frontend/wasm" }
+midenc-compile = { version = "0.5.2", path = "midenc-compile" }
+midenc-driver = { version = "0.5.2", path = "midenc-driver" }
+midenc-session = { version = "0.5.2", path = "midenc-session" }
+cargo-miden = { version = "0.5.2", path = "tools/cargo-miden" }
 miden-integration-tests = { path = "tests/integration" }
 midenc-expect-test = { path = "tools/expect-test" }
 
