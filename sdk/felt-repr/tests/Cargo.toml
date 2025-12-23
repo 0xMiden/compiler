@@ -17,7 +17,7 @@ miden-felt-repr-offchain = { path = "../offchain", version = "0.7.1" }
 miden-core.workspace = true
 
 [dev-dependencies]
-miden-integration-tests = { path = "../../tests/integration" }
+miden-integration-tests = { path = "../../../tests/integration" }
 midenc-frontend-wasm.workspace = true
 midenc-session.workspace = true
 midenc-expect-test.workspace = true
