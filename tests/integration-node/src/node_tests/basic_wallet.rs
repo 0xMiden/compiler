@@ -6,6 +6,7 @@ use miden_client::{
     transaction::{OutputNote, TransactionRequestBuilder},
 };
 use miden_core::{Felt, utils::Serializable};
+use miden_felt_repr_offchain::{AccountIdFeltRepr, ToFeltRepr};
 
 use super::helpers::*;
 use crate::local_node::ensure_shared_node;
@@ -82,7 +83,7 @@ pub fn test_basic_wallet_p2id_local() {
             faucet_account.id(),
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![fungible_asset.into()]).unwrap(),
-                inputs: vec![alice_account.id().prefix().as_felt(), alice_account.id().suffix()],
+                inputs: AccountIdFeltRepr(&alice_account.id()).to_felt_repr(),
                 ..Default::default()
             },
         );
@@ -266,7 +267,7 @@ pub fn test_basic_wallet_p2ide_local() {
             faucet_account.id(),
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![fungible_asset.into()]).unwrap(),
-                inputs: vec![alice_account.id().prefix().as_felt(), alice_account.id().suffix()],
+                inputs: AccountIdFeltRepr(&alice_account.id()).to_felt_repr(),
                 ..Default::default()
             },
         );
@@ -338,12 +339,11 @@ pub fn test_basic_wallet_p2ide_local() {
             alice_account.id(),
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
-                inputs: vec![
-                    bob_account.id().prefix().as_felt(),
-                    bob_account.id().suffix(),
-                    timelock_height,
-                    reclaim_height,
-                ],
+                inputs: {
+                    let mut inputs = AccountIdFeltRepr(&bob_account.id()).to_felt_repr();
+                    inputs.extend([timelock_height, reclaim_height]);
+                    inputs
+                },
                 ..Default::default()
             },
         );
@@ -469,7 +469,7 @@ pub fn test_basic_wallet_p2ide_reclaim_local() {
             faucet_account.id(),
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![fungible_asset.into()]).unwrap(),
-                inputs: vec![alice_account.id().prefix().as_felt(), alice_account.id().suffix()],
+                inputs: AccountIdFeltRepr(&alice_account.id()).to_felt_repr(),
                 ..Default::default()
             },
         );
@@ -543,12 +543,11 @@ pub fn test_basic_wallet_p2ide_reclaim_local() {
             alice_account.id(),
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
-                inputs: vec![
-                    bob_account.id().prefix().as_felt(),
-                    bob_account.id().suffix(),
-                    timelock_height,
-                    reclaim_height,
-                ],
+                inputs: {
+                    let mut inputs = AccountIdFeltRepr(&bob_account.id()).to_felt_repr();
+                    inputs.extend([timelock_height, reclaim_height]);
+                    inputs
+                },
                 ..Default::default()
             },
         );
