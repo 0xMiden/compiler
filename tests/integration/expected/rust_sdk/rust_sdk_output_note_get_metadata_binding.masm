@@ -132,11 +132,6 @@ proc miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-me
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     dup.1
     trace.240
     nop
@@ -706,11 +701,6 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     nop
     exec.::intrinsics::mem::store_dw
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

@@ -339,16 +339,11 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        movup.2
-        swap.1
-        trace.240
-        nop
-        exec.::miden:base/note-script@1.0.0::p2id::intrinsics::felt::eq
-        trace.252
-        nop
         push.0
         push.1
         movup.2
+        movup.4
+        eq
         neq
         neq
         if.true
@@ -357,14 +352,11 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
             drop
             push.1
         else
-            trace.240
-            nop
-            exec.::miden:base/note-script@1.0.0::p2id::intrinsics::felt::eq
-            trace.252
-            nop
             push.0
             push.1
             movup.2
+            movup.3
+            eq
             neq
             neq
             dup.0
@@ -1573,11 +1565,6 @@ proc <alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::dr
     i32
 )
     drop
-end
-
-@callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
 end
 
 @callconv("C")

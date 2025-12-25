@@ -80,11 +80,6 @@ proc miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-bindi
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.0
     movup.2
     swap.1
@@ -166,33 +161,12 @@ proc miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-bindi
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
+    dup.0
+    dup.1
+    dup.2
     dup.4
     swap.1
     swap.3
-    swap.2
     swap.1
     swap.4
     trace.240
@@ -447,11 +421,6 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     nop
     exec.::intrinsics::mem::store_dw
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

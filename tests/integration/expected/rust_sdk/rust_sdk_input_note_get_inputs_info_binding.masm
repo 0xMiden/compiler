@@ -80,11 +80,6 @@ proc miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-i
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     dup.1
     trace.240
     nop
@@ -627,11 +622,6 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     nop
     exec.::intrinsics::mem::store_dw
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

@@ -14,19 +14,9 @@ end
 
 @callconv("C")
 pub proc entrypoint(felt, felt) -> i32
-    swap.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::lt_felt::intrinsics::felt::lt
-    trace.252
-    nop
     push.0
-    neq
-end
-
-@callconv("C")
-proc intrinsics::felt::lt(felt, felt) -> i32
-    swap.1
+    movdn.2
     lt
+    neq
 end
 

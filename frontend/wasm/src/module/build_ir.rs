@@ -24,7 +24,7 @@ use crate::{
     module::{
         DefinedFuncIndex,
         func_translator::FuncTranslator,
-        linker_stubs::is_unreachable_stub,
+        linker_stubs::{is_unreachable_stub, maybe_lower_linker_stub},
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
         types::ir_type,
     },
@@ -124,11 +124,11 @@ pub fn build_ir_module(
     let func_body_inputs = mem::take(&mut parsed_module.function_body_inputs);
 
     // Two-pass approach for linker stub inlining:
-    // Pass 1: Detect and register ALL linker stubs first.
+    // Pass 1: Detect and register intrinsic linker stubs that can be inlined as operations.
     // This ensures that when we translate function bodies in pass 2,
-    // all stubs are known and calls to them will be inlined regardless
+    // all inline-able stubs are known and calls to them will be inlined regardless
     // of function ordering in the WASM file.
-    let mut stub_indices: Vec<DefinedFuncIndex> = Vec::new();
+    let mut inlined_stub_indices: Vec<DefinedFuncIndex> = Vec::new();
     for (defined_func_idx, body_data) in &func_body_inputs {
         if !is_unreachable_stub(&body_data.body) {
             continue;
@@ -148,17 +148,30 @@ pub fn build_ir_module(
             continue;
         };
 
-        // Register the stub so calls to it will be inlined
-        if module_state.register_linker_stub(func_index, intrinsic)?.is_some() {
-            stub_indices.push(defined_func_idx);
+        // Check if this intrinsic can be inlined as an operation
+        let Some(conv) = intrinsic.conversion_result() else {
+            continue;
+        };
+
+        if !conv.is_operation() {
+            continue;
+        }
+
+        // Register the stub so calls to it will be inlined as operations
+        if let Some(mut function_ref) = module_state.register_linker_stub(func_index, intrinsic)? {
+            // Erase the stub function from the module since it will be inlined at call sites
+            function_ref.borrow_mut().as_operation_mut().erase();
+            inlined_stub_indices.push(defined_func_idx);
         }
     }
 
-    // Pass 2: Translate non-stub function bodies.
-    // At this point, all stubs are registered and calls to them will be inlined.
+    // Pass 2: Translate function bodies.
+    //   - Inline-able stubs were registered in pass 1 and are skipped here.
+    //   - Function-type stubs get their bodies synthesized.
+    //   - Regular functions are translated normally.
     for (defined_func_idx, body_data) in func_body_inputs {
-        // Skip stubs - they were already registered in pass 1
-        if stub_indices.contains(&defined_func_idx) {
+        // Skip stubs that were inlined in pass 1
+        if inlined_stub_indices.contains(&defined_func_idx) {
             continue;
         }
 
@@ -169,6 +182,12 @@ pub fn build_ir_module(
             module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
                 panic!("cannot build {func_name} function, since it is not defined in the module.")
             });
+
+        // If this is a linker stub that needs a synthesized body (function-type intrinsics
+        // or Miden ABI calls), handle it here.
+        if maybe_lower_linker_stub(function_ref, &body_data.body, module_state)? {
+            continue;
+        }
 
         let FunctionBodyData { validator, body } = body_data;
         let mut func_validator = validator.into_validator(Default::default());

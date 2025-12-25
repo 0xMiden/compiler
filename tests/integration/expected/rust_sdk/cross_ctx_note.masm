@@ -94,53 +94,26 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.11
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note::intrinsics::felt::from_u32
-    trace.252
-    nop
     dup.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note::intrinsics::felt::assert_eq
-    trace.252
-    nop
+    assert_eq
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::cross_ctx_note::cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1
     trace.252
     nop
     push.53
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note::intrinsics::felt::from_u32
-    trace.252
-    nop
     dup.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note::intrinsics::felt::assert_eq
-    trace.252
-    nop
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note::intrinsics::felt::as_u64
-    trace.252
-    nop
-    movup.2
+    assert_eq
+    swap.1
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    movdn.2
+    swap.1
+    u32split
     drop
     swap.1
     u32divmod.4
@@ -224,20 +197,5 @@ proc wit_bindgen::rt::run_ctors_once(
         swap.1
         mem_store
     end
-end
-
-@callconv("C")
-proc intrinsics::felt::as_u64(felt) -> [u32; 2]
-    u32split
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
 end
 

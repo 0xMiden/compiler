@@ -131,33 +131,14 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
     exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::advice::adv_push_mapvaln
     trace.252
     nop
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::as_u64
-    trace.252
-    nop
+    u32split
+    push.0
     push.3
-    dup.2
-    dup.2
+    dup.3
+    dup.3
     drop
     u32and
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
-    trace.252
-    nop
-    swap.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
-    trace.252
-    nop
+    assert_eq
     push.2
     push.0
     dup.0
@@ -177,19 +158,21 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
     exec.::std::math::u64::shr
     trace.252
     nop
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u64_unchecked
+    exec.::std::math::u64::lt
     trace.252
     nop
-    dup.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::as_u64
-    trace.252
-    nop
+    assert
+    mul.4294967296
+    add
     push.2
-    movdn.2
+    dup.1
+    u32split
     drop
     swap.1
     u32shl
@@ -404,17 +387,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
             trace.252
             nop
             push.1
-            trace.240
-            nop
-            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
-            trace.252
-            nop
-            swap.1
-            trace.240
-            nop
-            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
-            trace.252
-            nop
+            assert_eq
             push.4
             dup.2
             add
@@ -433,17 +406,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
             trace.252
             nop
             push.2
-            trace.240
-            nop
-            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
-            trace.252
-            nop
-            swap.1
-            trace.240
-            nop
-            exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
-            trace.252
-            nop
+            assert_eq
             push.0
             push.5
             dup.4
@@ -474,17 +437,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
                 trace.252
                 nop
                 push.6
-                trace.240
-                nop
-                exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
-                trace.252
-                nop
-                swap.1
-                trace.240
-                nop
-                exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
-                trace.252
-                nop
+                assert_eq
                 push.0
                 push.14
                 movup.4
@@ -515,17 +468,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
                     trace.252
                     nop
                     push.15
-                    trace.240
-                    nop
-                    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::from_u32
-                    trace.252
-                    nop
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::felt::assert_eq
-                    trace.252
-                    nop
+                    assert_eq
                     push.16
                     movup.2
                     u32wrapping_add
@@ -760,37 +703,6 @@ proc intrinsics::advice::adv_push_mapvaln(felt, felt, felt, felt) -> felt
     exec.::intrinsics::advice::adv_push_mapvaln
     trace.252
     nop
-end
-
-@callconv("C")
-proc intrinsics::felt::as_u64(felt) -> [u32; 2]
-    u32split
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
 end
 
 @callconv("C")
