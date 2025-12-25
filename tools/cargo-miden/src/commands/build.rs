@@ -255,6 +255,10 @@ fn merge_midenc_flags(
                     "all".to_string()
                 }
             }
+            midenc_session::OutputTypeSpec::Inter { path } => match path {
+                Some(path) => format!("inter={path}"),
+                None => "inter".to_string(),
+            },
             midenc_session::OutputTypeSpec::Typed { output_type, path } => {
                 if let Some(p) = path {
                     format!("{output_type}={p}")
