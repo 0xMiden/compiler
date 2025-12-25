@@ -393,6 +393,9 @@ impl Session {
         if self.should_emit(ty) {
             match self.output_files.output_file(ty, name.map(|n| n.as_str())) {
                 OutputFile::Real(path) => Some(path),
+                OutputFile::Directory(_) => {
+                    unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
+                }
                 OutputFile::Stdout => None,
             }
         } else {
@@ -409,6 +412,9 @@ impl Session {
             match self.output_files.output_file(output_type, name) {
                 OutputFile::Real(path) => {
                     item.write_to_file(&path, mode, self)?;
+                }
+                OutputFile::Directory(_) => {
+                    unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
                 }
                 OutputFile::Stdout => {
                     let stdout = std::io::stdout().lock();

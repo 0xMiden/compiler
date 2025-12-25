@@ -111,6 +111,12 @@ impl OutputType {
             OutputType::Masp,
         ]
     }
+
+    /// Returns the subset of [OutputType] values considered "intermediate" for convenience
+    /// emission (WAT, HIR, MASM).
+    pub fn inter() -> [OutputType; 3] {
+        [OutputType::Wat, OutputType::Hir, OutputType::Masm]
+    }
 }
 impl fmt::Display for OutputType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -145,12 +151,18 @@ impl FromStr for OutputType {
 #[derive(Debug, Clone)]
 pub enum OutputFile {
     Real(PathBuf),
+    /// A directory in which to place outputs.
+    ///
+    /// This is distinct from [OutputFile::Real] because callers may want a path to be treated as a
+    /// directory even if it does not exist yet.
+    Directory(PathBuf),
     Stdout,
 }
 impl OutputFile {
     pub fn parent(&self) -> Option<&Path> {
         match self {
             Self::Real(path) => path.parent(),
+            Self::Directory(path) => Some(path.as_ref()),
             Self::Stdout => None,
         }
     }
@@ -158,6 +170,7 @@ impl OutputFile {
     pub fn filestem(&self) -> Option<Cow<'_, str>> {
         match self {
             Self::Real(path) => path.file_stem().map(|stem| stem.to_string_lossy()),
+            Self::Directory(_) => None,
             Self::Stdout => None,
         }
     }
@@ -171,6 +184,7 @@ impl OutputFile {
         use std::io::IsTerminal;
         match self {
             Self::Real(_) => false,
+            Self::Directory(_) => false,
             Self::Stdout => std::io::stdout().is_terminal(),
         }
     }
@@ -183,6 +197,7 @@ impl OutputFile {
     pub fn as_path(&self) -> Option<&Path> {
         match self {
             Self::Real(path) => Some(path.as_ref()),
+            Self::Directory(path) => Some(path.as_ref()),
             Self::Stdout => None,
         }
     }
@@ -195,6 +210,15 @@ impl OutputFile {
     ) -> PathBuf {
         match self {
             Self::Real(path) => path.clone(),
+            Self::Directory(dir) => {
+                let dir = if dir.is_absolute() {
+                    dir.clone()
+                } else {
+                    outputs.cwd.join(dir)
+                };
+                let stem = escape_path_component(name.unwrap_or(outputs.stem.as_str()));
+                dir.join(stem.as_ref()).with_extension(ty.extension())
+            }
             Self::Stdout => outputs.temp_path(ty, name),
         }
     }
@@ -203,6 +227,7 @@ impl fmt::Display for OutputFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Real(path) => write!(f, "{}", path.display()),
+            Self::Directory(path) => write!(f, "{}", path.display()),
             Self::Stdout => write!(f, "stdout"),
         }
     }
@@ -268,6 +293,14 @@ impl OutputFiles {
                     path
                 }
             }),
+            Some(OutputFile::Directory(dir)) => OutputFile::Real({
+                let dir = if dir.is_absolute() {
+                    dir
+                } else {
+                    self.cwd.join(dir)
+                };
+                dir.join(default_name.as_ref()).with_extension(ty.extension())
+            }),
             Some(OutputFile::Stdout) => OutputFile::Stdout,
             None => {
                 // If the user requested an output type without specifying a destination, default to
@@ -302,6 +335,9 @@ impl OutputFiles {
     pub fn output_path(&self, ty: OutputType) -> PathBuf {
         match self.output_file(ty, None) {
             OutputFile::Real(path) => path,
+            OutputFile::Directory(_) => {
+                unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
+            }
             OutputFile::Stdout => {
                 if ty.is_intermediate() {
                     self.with_directory_and_extension(&self.tmp_dir, ty.extension())
@@ -331,6 +367,7 @@ impl OutputFiles {
     pub fn with_extension(&self, extension: &str) -> PathBuf {
         match self.out_file.as_ref() {
             Some(OutputFile::Real(path)) => path.with_extension(extension),
+            Some(OutputFile::Directory(dir)) => self.with_directory_and_extension(dir, extension),
             Some(OutputFile::Stdout) | None => {
                 self.with_directory_and_extension(&self.out_dir, extension)
             }
@@ -374,9 +411,32 @@ impl OutputTypes {
                         map.insert(ty, path.clone());
                     }
                 }
+                OutputTypeSpec::Inter { path } => {
+                    // Emit a bundle of intermediate artifacts into the same directory.
+                    for output_type in OutputType::inter() {
+                        match map.get(&output_type) {
+                            // If the user already chose an explicit destination for this type,
+                            // don't allow `inter` to override it.
+                            Some(Some(_)) => {
+                                return Err(clap::Error::raw(
+                                    clap::error::ErrorKind::ValueValidation,
+                                    format!(
+                                        "conflicting --emit options given for output type \
+                                         '{output_type}'"
+                                    ),
+                                ));
+                            }
+                            _ => {
+                                // If the user requested the type without a destination, or hasn't
+                                // requested it at all yet, route it to the `inter` directory.
+                                map.insert(output_type, path.clone());
+                            }
+                        }
+                    }
+                }
                 OutputTypeSpec::Typed { output_type, path } => {
                     if path.is_some() {
-                        if matches!(map.get(&output_type), Some(Some(OutputFile::Real(_)))) {
+                        if matches!(map.get(&output_type), Some(Some(_))) {
                             return Err(clap::Error::raw(
                                 clap::error::ErrorKind::ValueValidation,
                                 format!(
@@ -464,6 +524,12 @@ pub enum OutputTypeSpec {
     All {
         path: Option<OutputFile>,
     },
+    /// Emit a common set of intermediate artifacts (WAT, HIR, MASM) into a directory.
+    ///
+    /// The directory path is interpreted relative to the session working directory.
+    Inter {
+        path: Option<OutputFile>,
+    },
     Typed {
         output_type: OutputType,
         path: Option<OutputFile>,
@@ -503,6 +569,7 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
                 PossibleValue::new("mast").help("Merkelized Abstract Syntax Tree (text)"),
                 PossibleValue::new("masl").help("Merkelized Abstract Syntax Tree (binary)"),
                 PossibleValue::new("masp").help("Miden Assembly Package Format (binary)"),
+                PossibleValue::new("inter").help("WAT + HIR + MASM (text, optional directory)"),
                 PossibleValue::new("all").help("All of the above"),
             ]
             .into_iter(),
@@ -527,12 +594,27 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
         if shorthand == "all" {
             return Ok(OutputTypeSpec::All { path });
         }
+        if shorthand == "inter" {
+            let path = match path {
+                None => None,
+                Some(OutputFile::Real(path)) => Some(OutputFile::Directory(path)),
+                Some(OutputFile::Stdout) => {
+                    return Err(Error::raw(
+                        ErrorKind::InvalidValue,
+                        "invalid output type: `inter=-` - expected `inter[=PATH]`",
+                    ));
+                }
+                Some(OutputFile::Directory(_)) => unreachable!("inter path is parsed as real"),
+            };
+            return Ok(OutputTypeSpec::Inter { path });
+        }
         let output_type = shorthand.parse::<OutputType>().map_err(|_| {
             Error::raw(
                 ErrorKind::InvalidValue,
                 format!(
-                    "invalid output type: `{shorthand}` - expected one of: {display}",
-                    display = OutputType::shorthand_display()
+                    "invalid output type: `{shorthand}` - expected one of: {display}, `all`, \
+                     `inter[=PATH]`",
+                    display = OutputType::shorthand_display(),
                 ),
             )
         })?;
