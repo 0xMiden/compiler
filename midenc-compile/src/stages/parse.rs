@@ -321,7 +321,8 @@ fn wasm_to_wat(wasm_bytes: &[u8]) -> CompilerResult<String> {
         }
     }
 
-    let mut wat = String::with_capacity(1024);
+    // WAT text should be at least ~3x larger than the binary Wasm representation
+    let mut wat = String::with_capacity(wasm_bytes.len() * 3);
     let config = wasmprinter::Config::new();
     let mut wasm_printer = NoCustomSectionsPrinter(wasmprinter::PrintFmtWrite(&mut wat));
     config
