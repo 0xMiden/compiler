@@ -194,6 +194,8 @@ impl CompilerTestBuilder {
             "-C".into(),
             "target-feature=+bulk-memory,+wide-arithmetic".into(),
             // Compile with panic=immediate-abort to avoid emitting any panic formatting code
+            "-Z".into(),
+            "unstable-options".into(),
             "-C".into(),
             "panic=immediate-abort".into(),
             // Remap the compiler workspace to `.` so that build outputs do not embed user-
@@ -301,8 +303,10 @@ impl CompilerTestBuilder {
     /// Consume the builder, invoke any tools required to obtain the inputs for the test, and if
     /// successful, return a [CompilerTest], ready for evaluation.
     pub fn build(mut self) -> CompilerTest {
+        let source = self.source;
+
         // Set up the command used to compile the test inputs (typically Rust -> Wasm)
-        let mut command = match self.source {
+        let mut command = match &source {
             CompilerTestInputType::CargoMiden(_) => {
                 let mut cmd = Command::new("cargo");
                 cmd.arg("miden").arg("build");
@@ -312,18 +316,18 @@ impl CompilerTestBuilder {
         };
 
         // Extract the directory in which source code is presumed to exist (or will be placed)
-        let project_dir = match self.source {
-            CompilerTestInputType::CargoMiden(CargoTest {
-                ref project_dir, ..
-            }) => Cow::Borrowed(project_dir.as_path()),
-            CompilerTestInputType::Rustc(RustcTest { ref target_dir, .. }) => target_dir
+        let project_dir = match &source {
+            CompilerTestInputType::CargoMiden(CargoTest { project_dir, .. }) => {
+                Cow::Borrowed(project_dir.as_path())
+            }
+            CompilerTestInputType::Rustc(RustcTest { target_dir, .. }) => target_dir
                 .as_deref()
                 .map(Cow::Borrowed)
                 .unwrap_or_else(|| Cow::Owned(std::env::temp_dir())),
         };
 
         // Cargo-based source types share a lot of configuration in common
-        if let CompilerTestInputType::CargoMiden(ref config) = self.source {
+        if let CompilerTestInputType::CargoMiden(ref config) = source {
             let manifest_path = project_dir.join("Cargo.toml");
             command.arg("--manifest-path").arg(manifest_path);
             if config.release {
@@ -332,6 +336,7 @@ impl CompilerTestBuilder {
         }
 
         // All test source types support custom RUSTFLAGS
+        let mut rustflags_env = None::<String>;
         if !self.rustflags.is_empty() {
             let mut flags = String::with_capacity(
                 self.rustflags.iter().map(|flag| flag.len()).sum::<usize>() + self.rustflags.len(),
@@ -342,15 +347,18 @@ impl CompilerTestBuilder {
                 }
                 flags.push_str(flag.as_ref());
             }
-            command.env("RUSTFLAGS", flags);
+            command.env("RUSTFLAGS", &flags);
+            rustflags_env = Some(flags);
         }
 
         // Pipe output of command to terminal
         command.stdout(Stdio::piped());
 
         // Build test
-        match self.source {
-            CompilerTestInputType::CargoMiden(..) => {
+        match source {
+            CompilerTestInputType::CargoMiden(config) => {
+                maybe_dump_cargo_expand(&config, rustflags_env.as_deref());
+
                 let mut args = vec![command.get_program().to_str().unwrap().to_string()];
                 let cmd_args: Vec<String> = command
                     .get_args()
@@ -1026,6 +1034,90 @@ fn wasm_to_wat(wasm_bytes: &[u8]) -> String {
     let mut wasm_printer = NoCustomSectionsPrinter(wasmprinter::PrintFmtWrite(&mut wat));
     config.print(wasm_bytes, &mut wasm_printer).unwrap();
     wat
+}
+
+/// Run `cargo expand` for the given Cargo test fixture, and write the expanded Rust code to disk if
+/// `MIDENC_EXPAND[=<path>]` is set.
+///
+/// When `MIDENC_EXPAND` is set with an empty value, the expanded output is written to the current
+/// working directory. When set to `1`, it is treated as enabled and also defaults to the current
+/// working directory. When set to a non-empty value other than `1`, it is treated as the output
+/// directory.
+fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
+    let Some(value) = std::env::var_os("MIDENC_EXPAND") else {
+        return;
+    };
+
+    let project_dir = if test.project_dir.is_absolute() {
+        test.project_dir.clone()
+    } else {
+        std::env::current_dir().unwrap().join(&test.project_dir)
+    };
+
+    let out_dir = if value.is_empty() || value == std::ffi::OsStr::new("1") {
+        std::env::current_dir().unwrap()
+    } else {
+        PathBuf::from(value)
+    };
+    fs::create_dir_all(&out_dir).unwrap_or_else(|err| {
+        panic!("failed to create MIDENC_EXPAND output directory '{}': {err}", out_dir.display())
+    });
+
+    let filename = format!("{}.expanded.rs", sanitize_filename_component(test.name.as_ref()));
+    let out_file = out_dir.join(filename);
+
+    let manifest_path = project_dir.join("Cargo.toml");
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("expand")
+        .arg("--manifest-path")
+        .arg(&manifest_path)
+        // Match the target used by `cargo miden build` (and our compiler tests), so `cfg(target_*)`
+        // and target-specific `RUSTFLAGS` behave consistently.
+        .arg("--target")
+        .arg("wasm32-unknown-unknown")
+        // Ensure the output we write doesn't include ANSI codes.
+        .env("CARGO_TERM_COLOR", "never");
+
+    if test.release {
+        cmd.arg("--release");
+    }
+    if let Some(rustflags_env) = rustflags_env {
+        cmd.env("RUSTFLAGS", rustflags_env);
+    }
+
+    let output = cmd.output().unwrap_or_else(|err| {
+        panic!("failed to invoke 'cargo expand' (is cargo-expand installed?): {err}")
+    });
+    if !output.status.success() {
+        panic!(
+            "'cargo expand' failed (status: {:?})\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fs::write(&out_file, &output.stdout).unwrap_or_else(|err| {
+        panic!("failed to write expanded Rust code to '{}': {err}", out_file.display())
+    });
+    eprintln!("wrote expanded Rust code to '{}'", out_file.display());
+}
+
+/// Convert an arbitrary test name into a reasonable filename component.
+fn sanitize_filename_component(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => out.push(ch),
+            _ => out.push('_'),
+        }
+    }
+    if out.is_empty() {
+        "expanded".to_string()
+    } else {
+        out
+    }
 }
 
 fn hash_string(inputs: &str) -> String {
