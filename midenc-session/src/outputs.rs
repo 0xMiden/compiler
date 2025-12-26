@@ -406,14 +406,28 @@ impl OutputTypes {
                             "--emit=all cannot be combined with other --emit types",
                         ));
                     }
-                    if let Some(OutputFile::Real(path)) = &path
-                        && path.extension().is_some()
-                    {
-                        return Err(clap::Error::raw(
-                            clap::error::ErrorKind::ValueValidation,
-                            "invalid path for --emit=all: must be a directory",
-                        ));
-                    }
+                    let path = match path {
+                        None => None,
+                        Some(OutputFile::Real(path)) => {
+                            if path.extension().is_some() {
+                                return Err(clap::Error::raw(
+                                    clap::error::ErrorKind::ValueValidation,
+                                    "invalid path for --emit=all: must be a directory",
+                                ));
+                            }
+                            Some(OutputFile::Directory(path))
+                        }
+                        Some(OutputFile::Directory(path)) => {
+                            if path.extension().is_some() {
+                                return Err(clap::Error::raw(
+                                    clap::error::ErrorKind::ValueValidation,
+                                    "invalid path for --emit=all: must be a directory",
+                                ));
+                            }
+                            Some(OutputFile::Directory(path))
+                        }
+                        Some(OutputFile::Stdout) => Some(OutputFile::Stdout),
+                    };
                     for ty in OutputType::all() {
                         map.insert(ty, path.clone());
                     }
@@ -599,6 +613,12 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
             Some((shorthand, path)) => (shorthand, Some(OutputFile::Real(PathBuf::from(path)))),
         };
         if shorthand == "all" {
+            let path = match path {
+                None => None,
+                Some(OutputFile::Real(path)) => Some(OutputFile::Directory(path)),
+                Some(OutputFile::Stdout) => Some(OutputFile::Stdout),
+                Some(OutputFile::Directory(_)) => unreachable!("all path is parsed as real"),
+            };
             return Ok(OutputTypeSpec::All { path });
         }
         if shorthand == "inter" {
