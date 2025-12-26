@@ -19,8 +19,10 @@ use midenc_session::{FileName, Path};
 use super::*;
 
 /// A wrapper that emits WebAssembly text format (WAT).
+#[cfg(feature = "std")]
 struct WatEmit<'a>(&'a str);
 
+#[cfg(feature = "std")]
 impl Emit for WatEmit<'_> {
     fn name(&self) -> Option<midenc_hir::interner::Symbol> {
         None
@@ -36,7 +38,9 @@ impl Emit for WatEmit<'_> {
         mode: OutputMode,
         _session: &Session,
     ) -> anyhow::Result<()> {
-        assert_eq!(mode, OutputMode::Text, "wat emission does not support binary mode");
+        if mode != OutputMode::Text {
+            anyhow::bail!("wat emission does not support binary mode");
+        }
         writer.write_fmt(format_args!("{}", self.0))?;
         Ok(())
     }

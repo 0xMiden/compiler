@@ -379,8 +379,6 @@ impl CompilerTestBuilder {
                     } => (artifact_path, midenc_flags),
                     other => panic!("Expected Wasm output, got {:?}", other),
                 };
-                // dbg!(&wasm_artifact_path);
-                // dbg!(&extra_midenc_flags);
                 self.midenc_flags.append(&mut extra_midenc_flags);
                 let artifact_name =
                     wasm_artifact_path.file_stem().unwrap().to_str().unwrap().to_string();
@@ -396,7 +394,6 @@ impl CompilerTestBuilder {
                         },
                     )
                 }));
-                // dbg!(&inputs);
 
                 let context = setup::default_context(inputs, &self.midenc_flags);
                 let session = context.session_rc();

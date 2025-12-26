@@ -35,7 +35,9 @@ impl Emit for MasmComponentEmit<'_> {
         mode: OutputMode,
         _session: &Session,
     ) -> anyhow::Result<()> {
-        assert_eq!(mode, OutputMode::Text, "masm emission does not support binary mode");
+        if mode != OutputMode::Text {
+            anyhow::bail!("masm emission does not support binary mode");
+        }
         writer.write_fmt(format_args!("{}", self.0))?;
         Ok(())
     }
