@@ -1072,7 +1072,7 @@ fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
         // Match the target used by `cargo miden build` (and our compiler tests), so `cfg(target_*)`
         // and target-specific `RUSTFLAGS` behave consistently.
         .arg("--target")
-        .arg("wasm32-unknown-unknown")
+        .arg("wasm32-wasip2")
         // Ensure the output we write doesn't include ANSI codes.
         .env("CARGO_TERM_COLOR", "never");
 
