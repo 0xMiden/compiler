@@ -106,10 +106,17 @@ impl BuildCommand {
             midenc_flags.push(dep_path.to_string_lossy().to_string());
         }
 
-        // Merge user-provided midenc options from parsed Compiler struct
-        // User options override target-derived defaults
+        // Merge user-provided build options
+        midenc_flags.extend_from_slice(&self.args);
+        // When debug info is enabled, automatically add -Ztrim-path-prefix to normalize
+        // source paths in debug information.
         let package_source_dir = cargo_package.manifest_path.parent().map(|p| p.as_std_path());
-        midenc_flags = merge_midenc_flags(midenc_flags, &compiler_opts, package_source_dir);
+        if compiler_opts.debug != midenc_session::DebugInfo::None
+            && let Some(source_dir) = package_source_dir
+        {
+            let trim_prefix = format!("-Ztrim-path-prefix={}", source_dir.display());
+            midenc_flags.push(trim_prefix);
+        }
 
         match build_output_type {
             OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
@@ -230,65 +237,6 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
     }
 
     args
-}
-
-/// Merges user-provided options with target-derived defaults.
-///
-/// The following options are merged from user input:
-/// - `--emit` options
-/// - `--debug` option (and automatically adds `-Ztrim-path-prefix` when debug is enabled)
-///
-/// All other options are determined by the detected target environment and project type.
-fn merge_midenc_flags(
-    mut base: Vec<String>,
-    compiler: &Compiler,
-    package_source_dir: Option<&Path>,
-) -> Vec<String> {
-    // Merge --emit options from user input
-    for spec in &compiler.output_types {
-        base.push("--emit".to_string());
-        let spec_str = match spec {
-            midenc_session::OutputTypeSpec::All { path } => {
-                if let Some(p) = path {
-                    format!("all={p}")
-                } else {
-                    "all".to_string()
-                }
-            }
-            midenc_session::OutputTypeSpec::Inter { path } => match path {
-                Some(path) => format!("inter={path}"),
-                None => "inter".to_string(),
-            },
-            midenc_session::OutputTypeSpec::Typed { output_type, path } => {
-                if let Some(p) = path {
-                    format!("{output_type}={p}")
-                } else {
-                    output_type.to_string()
-                }
-            }
-        };
-        base.push(spec_str);
-    }
-
-    // Pass through the --debug flag to midenc
-    let debug_level = match compiler.debug {
-        midenc_session::DebugInfo::None => "none",
-        midenc_session::DebugInfo::Line => "line",
-        midenc_session::DebugInfo::Full => "full",
-    };
-    base.push("--debug".to_string());
-    base.push(debug_level.to_string());
-
-    // When debug info is enabled, automatically add -Ztrim-path-prefix to normalize
-    // source paths in debug information.
-    if compiler.debug != midenc_session::DebugInfo::None
-        && let Some(source_dir) = package_source_dir
-    {
-        let trim_prefix = format!("-Ztrim-path-prefix={}", source_dir.display());
-        base.push(trim_prefix);
-    }
-
-    base
 }
 
 fn run_cargo<E>(wasi: &str, spawn_args: &[String], env: E) -> Result<Vec<PathBuf>>
