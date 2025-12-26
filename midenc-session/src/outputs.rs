@@ -367,7 +367,14 @@ impl OutputFiles {
     pub fn with_extension(&self, extension: &str) -> PathBuf {
         match self.out_file.as_ref() {
             Some(OutputFile::Real(path)) => path.with_extension(extension),
-            Some(OutputFile::Directory(dir)) => self.with_directory_and_extension(dir, extension),
+            Some(OutputFile::Directory(dir)) => {
+                let dir = if dir.is_absolute() {
+                    dir.clone()
+                } else {
+                    self.cwd.join(dir)
+                };
+                self.with_directory_and_extension(&dir, extension)
+            }
             Some(OutputFile::Stdout) | None => {
                 self.with_directory_and_extension(&self.out_dir, extension)
             }
