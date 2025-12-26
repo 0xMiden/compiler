@@ -9,12 +9,14 @@ use core::fmt;
 use miden_assembly::utils::Deserializable;
 #[cfg(feature = "std")]
 use miden_assembly::utils::ReadAdapter;
-use midenc_session::{
-    Emit, InputFile, InputType, OutputType, Writer,
-    diagnostics::{IntoDiagnostic, WrapErr},
-};
+#[cfg(feature = "std")]
+use midenc_session::{Emit, OutputType, Writer};
 #[cfg(feature = "std")]
 use midenc_session::{FileName, Path};
+use midenc_session::{
+    InputFile, InputType,
+    diagnostics::{IntoDiagnostic, WrapErr},
+};
 
 use super::*;
 
@@ -154,10 +156,12 @@ impl Stage for ParseStage {
             ParseOutput::Module(ref module) => {
                 context.session().emit(OutputMode::Text, module).into_diagnostic()?;
             }
+            #[cfg(feature = "std")]
             ParseOutput::Wasm(ref wasm_input) => {
-                #[cfg(feature = "std")]
                 self.emit_wat_for_wasm_input(wasm_input, context.session())?;
             }
+            #[cfg(not(feature = "std"))]
+            ParseOutput::Wasm(_) => (),
             ParseOutput::Library(_) | ParseOutput::Package(_) => (),
         }
 
