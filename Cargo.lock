@@ -2819,6 +2819,7 @@ dependencies = [
 name = "midenc-compile"
 version = "0.6.0"
 dependencies = [
+ "anyhow",
  "clap",
  "inventory",
  "log",
@@ -2832,6 +2833,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
+ "wasmprinter",
  "wat",
 ]
 

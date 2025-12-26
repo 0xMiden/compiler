@@ -140,8 +140,6 @@ pub fn process_miden_dependencies(
                     if cargo_opts.release {
                         dep_build_args.push("--release".to_string());
                     }
-                    // Dependencies should always be built as libraries
-                    dep_build_args.push("--lib".to_string());
 
                     // We expect dependencies to *always* produce Masm libraries (.masp)
                     let command_output = crate::run(dep_build_args.into_iter(), OutputType::Masm)

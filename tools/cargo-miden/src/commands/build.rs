@@ -106,9 +106,8 @@ impl BuildCommand {
             midenc_flags.push(dep_path.to_string_lossy().to_string());
         }
 
-        // Merge user-provided midenc options from parsed Compiler struct
-        // User options override target-derived defaults
-        midenc_flags = merge_midenc_flags(midenc_flags, &compiler_opts);
+        // Merge user-provided build options
+        midenc_flags.extend_from_slice(&self.args);
 
         match build_output_type {
             OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
@@ -229,36 +228,6 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
     }
 
     args
-}
-
-/// Merges user-provided `--emit` option with target-derived defaults.
-///
-/// Only the `--emit` option is merged from user input. All other options are
-/// determined by the detected target environment and project type.
-fn merge_midenc_flags(mut base: Vec<String>, compiler: &Compiler) -> Vec<String> {
-    // Only merge --emit options from user input
-    for spec in &compiler.output_types {
-        base.push("--emit".to_string());
-        let spec_str = match spec {
-            midenc_session::OutputTypeSpec::All { path } => {
-                if let Some(p) = path {
-                    format!("all={p}")
-                } else {
-                    "all".to_string()
-                }
-            }
-            midenc_session::OutputTypeSpec::Typed { output_type, path } => {
-                if let Some(p) = path {
-                    format!("{output_type}={p}")
-                } else {
-                    output_type.to_string()
-                }
-            }
-        };
-        base.push(spec_str);
-    }
-
-    base
 }
 
 fn run_cargo<E>(wasi: &str, spawn_args: &[String], env: E) -> Result<Vec<PathBuf>>
