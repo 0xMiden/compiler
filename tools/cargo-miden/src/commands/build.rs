@@ -235,8 +235,18 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
 ///
 /// Only the `--emit` option is merged from user input. All other options are
 /// determined by the detected target environment and project type.
+///
+/// This function enables users to request intermediate compiler artifacts,
+/// such as MASM code, by passing `--emit` options that are forwarded to `midenc`.
+/// For example:
+/// - `cargo miden build --emit masm` - emits MASM code to the output directory
+/// - `cargo miden build --emit masm=path/to/file.masm` - emits MASM to a specific file
+/// - `cargo miden build --emit masm=-` - emits MASM to stdout
+/// - `cargo miden build --emit hir,masm` - emits both HIR and MASM
 fn merge_midenc_flags(mut base: Vec<String>, compiler: &Compiler) -> Vec<String> {
     // Only merge --emit options from user input
+    // This allows users to request MASM output (and other intermediate artifacts)
+    // by passing --emit options that are forwarded to midenc, matching midenc's behavior
     for spec in &compiler.output_types {
         base.push("--emit".to_string());
         let spec_str = match spec {
