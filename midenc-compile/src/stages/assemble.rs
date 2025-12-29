@@ -2,7 +2,7 @@ use alloc::{string::ToString, vec, vec::Vec};
 
 use miden_assembly::ast::QualifiedProcedureName;
 use miden_mast_package::{Dependency, MastArtifact, Package, PackageExport};
-use midenc_session::{Session, diagnostics::IntoDiagnostic};
+use midenc_session::Session;
 
 use super::*;
 
@@ -43,8 +43,6 @@ impl Stage for AssembleStage {
                 "successfully assembled mast artifact with digest {}",
                 DisplayHex::new(&mast.digest().as_bytes())
             );
-            session.emit(OutputMode::Text, &mast).into_diagnostic()?;
-            session.emit(OutputMode::Binary, &mast).into_diagnostic()?;
             Ok(Artifact::Assembled(build_package(mast, &input, session)))
         } else {
             log::debug!(

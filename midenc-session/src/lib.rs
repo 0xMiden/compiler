@@ -304,7 +304,7 @@ impl Session {
 
     /// Get the [OutputFile] to write the assembled MAST output to
     pub fn out_file(&self) -> OutputFile {
-        let out_file = self.output_files.output_file(OutputType::Masl, None);
+        let out_file = self.output_files.output_file(OutputType::Masp, None);
 
         if let OutputFile::Real(ref path) = out_file {
             self.check_file_is_writeable(path);

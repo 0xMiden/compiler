@@ -283,10 +283,8 @@ impl Emit for miden_assembly::Library {
     }
 
     fn output_type(&self, mode: OutputMode) -> OutputType {
-        match mode {
-            OutputMode::Text => OutputType::Mast,
-            OutputMode::Binary => OutputType::Masl,
-        }
+        let _ = mode;
+        OutputType::Mast
     }
 
     fn write_to<W: Writer>(
@@ -364,10 +362,8 @@ impl Emit for miden_core::Program {
     }
 
     fn output_type(&self, mode: OutputMode) -> OutputType {
-        match mode {
-            OutputMode::Text => OutputType::Mast,
-            OutputMode::Binary => OutputType::Masl,
-        }
+        let _ = mode;
+        OutputType::Mast
     }
 
     fn write_to<W: Writer>(
@@ -462,20 +458,26 @@ impl Emit for MastArtifact {
     }
 
     fn output_type(&self, mode: OutputMode) -> OutputType {
-        match mode {
-            OutputMode::Text => OutputType::Mast,
-            OutputMode::Binary => OutputType::Masl,
-        }
+        let _ = mode;
+        OutputType::Mast
     }
 
     fn write_to<W: Writer>(
         &self,
         mut writer: W,
-        _mode: OutputMode,
-        _session: &Session,
+        mode: OutputMode,
+        session: &Session,
     ) -> anyhow::Result<()> {
-        let mut writer = ByteWriterAdapter(&mut writer);
-        self.write_into(&mut writer);
-        Ok(())
+        match mode {
+            OutputMode::Text => match self {
+                MastArtifact::Executable(program) => program.write_to(writer, mode, session),
+                MastArtifact::Library(lib) => lib.write_to(writer, mode, session),
+            },
+            OutputMode::Binary => {
+                let mut writer = ByteWriterAdapter(&mut writer);
+                self.write_into(&mut writer);
+                Ok(())
+            }
+        }
     }
 }

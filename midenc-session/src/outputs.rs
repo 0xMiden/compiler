@@ -65,8 +65,6 @@ pub enum OutputType {
     Masm,
     /// The compiler will emit a Merkalized Abstract Syntax Tree in text form
     Mast,
-    /// The compiler will emit a MAST library in binary form
-    Masl,
     /// The compiler will emit a MAST package in binary form
     #[default]
     Masp,
@@ -74,7 +72,7 @@ pub enum OutputType {
 impl OutputType {
     /// Returns true if this output type is an intermediate artifact produced during compilation
     pub fn is_intermediate(&self) -> bool {
-        !matches!(self, Self::Mast | Self::Masl | Self::Masp)
+        !matches!(self, Self::Mast | Self::Masp)
     }
 
     pub fn extension(&self) -> &'static str {
@@ -84,20 +82,18 @@ impl OutputType {
             Self::Hir => "hir",
             Self::Masm => "masm",
             Self::Mast => "mast",
-            Self::Masl => "masl",
             Self::Masp => "masp",
         }
     }
 
     pub fn shorthand_display() -> String {
         format!(
-            "`{}`, `{}`, `{}`, `{}`, `{}`, `{}`, `{}`",
+            "`{}`, `{}`, `{}`, `{}`, `{}`, `{}`",
             Self::Ast,
             Self::Wat,
             Self::Hir,
             Self::Masm,
             Self::Mast,
-            Self::Masl,
             Self::Masp,
         )
     }
@@ -109,7 +105,6 @@ impl OutputType {
             OutputType::Hir,
             OutputType::Masm,
             OutputType::Mast,
-            OutputType::Masl,
             OutputType::Masp,
         ]
     }
@@ -128,7 +123,6 @@ impl fmt::Display for OutputType {
             Self::Hir => f.write_str("hir"),
             Self::Masm => f.write_str("masm"),
             Self::Mast => f.write_str("mast"),
-            Self::Masl => f.write_str("masl"),
             Self::Masp => f.write_str("masp"),
         }
     }
@@ -143,7 +137,6 @@ impl FromStr for OutputType {
             "hir" => Ok(Self::Hir),
             "masm" => Ok(Self::Masm),
             "mast" => Ok(Self::Mast),
-            "masl" => Ok(Self::Masl),
             "masp" => Ok(Self::Masp),
             _ => Err(()),
         }
@@ -250,7 +243,7 @@ pub struct OutputFiles {
     pub out_dir: PathBuf,
     /// If specified, the specific path at which to write the compiler output.
     ///
-    /// This _only_ applies to the final output, i.e. the `.masl` library or executable.
+    /// This _only_ applies to the final output, e.g. the `.masp` package.
     pub out_file: Option<OutputFile>,
     /// The raw output types requested by the user on the command line
     pub outputs: OutputTypes,
@@ -517,27 +510,18 @@ impl OutputTypes {
 
     pub fn should_link(&self) -> bool {
         self.0.keys().any(|k| {
-            matches!(
-                k,
-                OutputType::Hir
-                    | OutputType::Masm
-                    | OutputType::Mast
-                    | OutputType::Masl
-                    | OutputType::Masp
-            )
+            matches!(k, OutputType::Hir | OutputType::Masm | OutputType::Mast | OutputType::Masp)
         })
     }
 
     pub fn should_codegen(&self) -> bool {
-        self.0.keys().any(|k| {
-            matches!(k, OutputType::Masm | OutputType::Mast | OutputType::Masl | OutputType::Masp)
-        })
+        self.0
+            .keys()
+            .any(|k| matches!(k, OutputType::Masm | OutputType::Mast | OutputType::Masp))
     }
 
     pub fn should_assemble(&self) -> bool {
-        self.0
-            .keys()
-            .any(|k| matches!(k, OutputType::Mast | OutputType::Masl | OutputType::Masp))
+        self.0.keys().any(|k| matches!(k, OutputType::Mast | OutputType::Masp))
     }
 }
 
@@ -592,7 +576,6 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
                 PossibleValue::new("hir").help("High-level Intermediate Representation (text)"),
                 PossibleValue::new("masm").help("Miden Assembly (text)"),
                 PossibleValue::new("mast").help("Merkelized Abstract Syntax Tree (text)"),
-                PossibleValue::new("masl").help("Merkelized Abstract Syntax Tree (binary)"),
                 PossibleValue::new("masp").help("Miden Assembly Package Format (binary)"),
                 PossibleValue::new("ir").help("WAT + HIR + MASM (text, optional directory)"),
                 PossibleValue::new("all").help("All of the above"),

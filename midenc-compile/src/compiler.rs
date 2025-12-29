@@ -537,9 +537,8 @@ impl Compiler {
 
         // Initialize output types
         let mut output_types = OutputTypes::new(self.output_types).unwrap_or_else(|err| err.exit());
-        let has_final_output = output_types
-            .keys()
-            .any(|ty| matches!(ty, OutputType::Mast | OutputType::Masl | OutputType::Masp));
+        let has_final_output =
+            output_types.keys().any(|ty| matches!(ty, OutputType::Mast | OutputType::Masp));
         if !has_final_output {
             // By default, we always produce a final artifact; `--emit` selects additional outputs.
             output_types.insert(OutputType::Masp, output_file.clone());
