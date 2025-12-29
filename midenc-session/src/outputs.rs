@@ -102,8 +102,8 @@ impl OutputType {
         )
     }
 
-    pub fn all() -> [OutputType; 7] {
-        [
+    pub const fn all() -> &'static [OutputType] {
+        &[
             OutputType::Ast,
             OutputType::Wat,
             OutputType::Hir,
@@ -116,8 +116,8 @@ impl OutputType {
 
     /// Returns the subset of [OutputType] values considered "intermediate" for convenience
     /// emission (WAT, HIR, MASM).
-    pub fn ir() -> [OutputType; 3] {
-        [OutputType::Wat, OutputType::Hir, OutputType::Masm]
+    pub const fn ir() -> &'static [OutputType] {
+        &[OutputType::Wat, OutputType::Hir, OutputType::Masm]
     }
 }
 impl fmt::Display for OutputType {
@@ -430,7 +430,7 @@ impl OutputTypes {
                         }
                         Some(OutputFile::Stdout) => Some(OutputFile::Stdout),
                     };
-                    for ty in OutputType::all() {
+                    for &ty in OutputType::all() {
                         map.insert(ty, path.clone());
                     }
                 }
@@ -637,7 +637,7 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
                 }
                 Some(OutputFile::Directory(_)) => unreachable!("ir path is parsed as real"),
             };
-            let output_types = SmallVec::from_slice(&OutputType::ir());
+            let output_types = SmallVec::from_slice(OutputType::ir());
             return Ok(OutputTypeSpec::Subset { output_types, path });
         }
         let output_type = shorthand.parse::<OutputType>().map_err(|_| {
