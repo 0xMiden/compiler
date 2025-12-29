@@ -55,7 +55,7 @@ This will run all of the unit tests in the workspace, as well as all of our `lit
 ### Emitting internal sources/artifacts
 
 - `MIDENC_EMIT`: Environment-variable equivalent of `--emit`. Accepts the same `KIND[=PATH]` syntax
-  (comma-delimited), where `PATH` is treated either as folder e.g. `MIDENC_EMIT=inter=target/emit` or file `MIDENC_EMIT=hir=my_name.hir`.
+  (comma-delimited), where `PATH` is treated either as folder e.g. `MIDENC_EMIT=ir=target/emit` or file `MIDENC_EMIT=hir=my_name.hir`.
 - `MIDENC_EMIT_MACRO_EXPAND[=<dir>]`: When set, integration tests dump `cargo expand`
   output for Rust fixtures to `<fixture>.expanded.rs` files in `<dir>` (or the CWD if empty/`1`).
 

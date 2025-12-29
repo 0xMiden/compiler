@@ -114,7 +114,7 @@ impl OutputType {
 
     /// Returns the subset of [OutputType] values considered "intermediate" for convenience
     /// emission (WAT, HIR, MASM).
-    pub fn inter() -> [OutputType; 3] {
+    pub fn ir() -> [OutputType; 3] {
         [OutputType::Wat, OutputType::Hir, OutputType::Masm]
     }
 }
@@ -434,10 +434,10 @@ impl OutputTypes {
                 }
                 OutputTypeSpec::Inter { path } => {
                     // Emit a bundle of intermediate artifacts into the same directory.
-                    for output_type in OutputType::inter() {
+                    for output_type in OutputType::ir() {
                         match map.get(&output_type) {
                             // If the user already chose an explicit destination for this type,
-                            // don't allow `inter` to override it.
+                            // don't allow `ir`/`inter` to override it.
                             Some(Some(_)) => {
                                 return Err(clap::Error::raw(
                                     clap::error::ErrorKind::ValueValidation,
@@ -449,7 +449,7 @@ impl OutputTypes {
                             }
                             _ => {
                                 // If the user requested the type without a destination, or hasn't
-                                // requested it at all yet, route it to the `inter` directory.
+                                // requested it at all yet, route it to the `ir` directory.
                                 map.insert(output_type, path.clone());
                             }
                         }
@@ -590,7 +590,7 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
                 PossibleValue::new("mast").help("Merkelized Abstract Syntax Tree (text)"),
                 PossibleValue::new("masl").help("Merkelized Abstract Syntax Tree (binary)"),
                 PossibleValue::new("masp").help("Miden Assembly Package Format (binary)"),
-                PossibleValue::new("inter").help("WAT + HIR + MASM (text, optional directory)"),
+                PossibleValue::new("ir").help("WAT + HIR + MASM (text, optional directory)"),
                 PossibleValue::new("all").help("All of the above"),
             ]
             .into_iter(),
@@ -621,17 +621,17 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
             };
             return Ok(OutputTypeSpec::All { path });
         }
-        if shorthand == "inter" {
+        if shorthand == "ir" || shorthand == "inter" {
             let path = match path {
                 None => None,
                 Some(OutputFile::Real(path)) => Some(OutputFile::Directory(path)),
                 Some(OutputFile::Stdout) => {
                     return Err(Error::raw(
                         ErrorKind::InvalidValue,
-                        "invalid output type: `inter=-` - expected `inter[=PATH]`",
+                        format!("invalid output type: `{shorthand}=-` - expected `ir[=PATH]`"),
                     ));
                 }
-                Some(OutputFile::Directory(_)) => unreachable!("inter path is parsed as real"),
+                Some(OutputFile::Directory(_)) => unreachable!("ir path is parsed as real"),
             };
             return Ok(OutputTypeSpec::Inter { path });
         }
@@ -640,7 +640,7 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
                 ErrorKind::InvalidValue,
                 format!(
                     "invalid output type: `{shorthand}` - expected one of: {display}, `all`, \
-                     `inter[=PATH]`",
+                     `ir[=PATH]`",
                     display = OutputType::shorthand_display(),
                 ),
             )
