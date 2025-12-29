@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 # Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
 # and transaction kernel API for the Miden rollup
 miden = { path = "../../sdk/sdk" }
-miden-felt-repr-onchain = { path = "../../sdk/felt-repr-onchain" }
+miden-felt-repr-onchain = { path = "../../felt-repr/onchain" }
 
 [package.metadata.component]
 package = "miden:p2id"
