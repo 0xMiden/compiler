@@ -2790,6 +2790,7 @@ dependencies = [
 name = "midenc-codegen-masm"
 version = "0.6.0"
 dependencies = [
+ "anyhow",
  "env_logger",
  "inventory",
  "itertools 0.14.0",
@@ -2834,7 +2835,6 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
- "wasmprinter",
  "wat",
 ]
 
@@ -2932,6 +2932,7 @@ dependencies = [
  "midenc-hir-symbol",
  "midenc-session",
  "wasmparser 0.227.1",
+ "wasmprinter",
  "wat",
 ]
 

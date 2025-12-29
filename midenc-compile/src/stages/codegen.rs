@@ -10,38 +10,9 @@ use midenc_codegen_masm::{
     },
 };
 use midenc_hir::{interner::Symbol, pass::AnalysisManager};
-use midenc_session::{Emit, OutputType, Writer};
+use midenc_session::OutputType;
 
 use super::*;
-
-/// A wrapper that allows emitting a synthetic MASM output representing the full [MasmComponent].
-///
-/// The format matches the [core::fmt::Display] implementation for [MasmComponent], which is
-/// defined in `codegen/masm/src/artifact.rs`.
-struct MasmComponentEmit<'a>(&'a MasmComponent);
-
-impl Emit for MasmComponentEmit<'_> {
-    fn name(&self) -> Option<midenc_hir::interner::Symbol> {
-        None
-    }
-
-    fn output_type(&self, _mode: OutputMode) -> OutputType {
-        OutputType::Masm
-    }
-
-    fn write_to<W: Writer>(
-        &self,
-        mut writer: W,
-        mode: OutputMode,
-        _session: &Session,
-    ) -> anyhow::Result<()> {
-        if mode != OutputMode::Text {
-            anyhow::bail!("masm emission does not support binary mode");
-        }
-        writer.write_fmt(format_args!("{}", self.0))?;
-        Ok(())
-    }
-}
 
 pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
@@ -99,8 +70,7 @@ impl Stage for CodegenStage {
         }
 
         if session.should_emit(OutputType::Masm) {
-            let artifact = MasmComponentEmit(&masm_component);
-            session.emit(OutputMode::Text, &artifact).into_diagnostic()?;
+            session.emit(OutputMode::Text, masm_component.as_ref()).into_diagnostic()?;
         }
 
         Ok(CodegenOutput {

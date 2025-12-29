@@ -23,7 +23,6 @@ std = [
     "midenc-session/std",
     "dep:clap",
     "dep:wat",
-    "dep:wasmprinter",
 ]
 
 [dependencies]
@@ -42,4 +41,3 @@ midenc-hir-transform.workspace = true
 midenc-session.workspace = true
 thiserror.workspace = true
 wat = { workspace = true, optional = true }
-wasmprinter = { workspace = true, optional = true }

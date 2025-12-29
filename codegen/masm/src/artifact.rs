@@ -9,7 +9,7 @@ use miden_core::{Program, Word};
 use miden_mast_package::{MastArtifact, Package, ProcedureName};
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
-    Session,
+    Emit, OutputMode, OutputType, Session, Writer,
     diagnostics::{Report, SourceSpan, Span},
 };
 
@@ -36,6 +36,29 @@ pub struct MasmComponent {
     pub stack_pointer: Option<u32>,
     /// The set of modules in this component
     pub modules: Vec<Arc<masm::Module>>,
+}
+
+impl Emit for MasmComponent {
+    fn name(&self) -> Option<Symbol> {
+        None
+    }
+
+    fn output_type(&self, _mode: OutputMode) -> OutputType {
+        OutputType::Masm
+    }
+
+    fn write_to<W: Writer>(
+        &self,
+        mut writer: W,
+        mode: OutputMode,
+        _session: &Session,
+    ) -> anyhow::Result<()> {
+        if mode != OutputMode::Text {
+            anyhow::bail!("masm emission does not support binary mode");
+        }
+        writer.write_fmt(core::format_args!("{self}"))?;
+        Ok(())
+    }
 }
 
 /// Represents a read-only data segment, combined with its content digest
