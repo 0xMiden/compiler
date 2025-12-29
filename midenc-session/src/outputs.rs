@@ -6,6 +6,8 @@ use alloc::{
     string::String,
 };
 
+use smallvec::SmallVec;
+
 use crate::{Path, PathBuf};
 
 /// Escape `name` for use as a single filesystem path component (e.g. a file stem).
@@ -432,9 +434,9 @@ impl OutputTypes {
                         map.insert(ty, path.clone());
                     }
                 }
-                OutputTypeSpec::Inter { path } => {
-                    // Emit a bundle of intermediate artifacts into the same directory.
-                    for output_type in OutputType::ir() {
+                OutputTypeSpec::Subset { output_types, path } => {
+                    // Emit a bundle of output types into the same destination.
+                    for output_type in output_types {
                         match map.get(&output_type) {
                             // If the user already chose an explicit destination for this type,
                             // don't allow `ir`/`inter` to override it.
@@ -545,10 +547,12 @@ pub enum OutputTypeSpec {
     All {
         path: Option<OutputFile>,
     },
-    /// Emit a common set of intermediate artifacts (WAT, HIR, MASM) into a directory.
+    /// Emit a set of output types to a common destination (typically a directory).
     ///
-    /// The directory path is interpreted relative to the session working directory.
-    Inter {
+    /// This is primarily intended for shorthand specifications like `--emit=ir[=PATH]`, but can
+    /// represent any two-or-more output types with a shared destination.
+    Subset {
+        output_types: SmallVec<[OutputType; 3]>,
         path: Option<OutputFile>,
     },
     Typed {
@@ -621,7 +625,7 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
             };
             return Ok(OutputTypeSpec::All { path });
         }
-        if shorthand == "ir" || shorthand == "inter" {
+        if shorthand == "ir" {
             let path = match path {
                 None => None,
                 Some(OutputFile::Real(path)) => Some(OutputFile::Directory(path)),
@@ -633,7 +637,8 @@ impl clap::builder::TypedValueParser for OutputTypeParser {
                 }
                 Some(OutputFile::Directory(_)) => unreachable!("ir path is parsed as real"),
             };
-            return Ok(OutputTypeSpec::Inter { path });
+            let output_types = SmallVec::from_slice(&OutputType::ir());
+            return Ok(OutputTypeSpec::Subset { output_types, path });
         }
         let output_type = shorthand.parse::<OutputType>().map_err(|_| {
             Error::raw(

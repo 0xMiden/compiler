@@ -3060,6 +3060,7 @@ dependencies = [
  "midenc-hir-macros",
  "midenc-hir-symbol",
  "parking_lot",
+ "smallvec",
  "termcolor",
 ]
 
