@@ -1,20 +1,18 @@
-use std::{borrow::Borrow, collections::VecDeque, sync::Arc};
+use std::{borrow::Borrow, collections::VecDeque};
 
 use miden_core::utils::{Deserializable, Serializable};
-use miden_debug::{Executor, ToMidenRepr};
-use miden_lib::MidenLib;
-use miden_mast_package::{Package, SectionId};
+use miden_debug::ToMidenRepr;
+use miden_mast_package::SectionId;
 use miden_objects::account::AccountComponentMetadata;
 use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
     Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable, interner::Symbol,
 };
-use midenc_session::STDLIB;
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
-use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project};
+use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project, testing::executor_with_std};
 
 #[test]
 fn storage_example() {
@@ -63,19 +61,6 @@ fn storage_example() {
     .assert_eq(&toml);
 }
 
-fn executor_with_std(package: &Package, args: Vec<Felt>) -> Result<Executor, TestCaseError> {
-    let mut exec = Executor::new(args);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
-    exec.with_dependencies(package.manifest.dependencies())
-        .map_err(|err| TestCaseError::fail(err.to_string()))?;
-    Ok(exec)
-}
-
 #[test]
 fn fibonacci() {
     fn expected_fib(n: u32) -> u32 {
@@ -100,7 +85,7 @@ fn fibonacci() {
     TestRunner::default()
         .run(&(1u32..30), move |a| {
             let rust_out = expected_fib(a);
-            let exec = executor_with_std(&package, vec![Felt::new(a as u64)])?;
+            let exec = executor_with_std(vec![Felt::new(a as u64)], Some(&package));
             let output: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
@@ -143,7 +128,7 @@ fn collatz() {
         .run(&(1u32..30), move |a| {
             let rust_out = expected(a);
             let args = a.to_felts().to_vec();
-            let exec = executor_with_std(&package, args)?;
+            let exec = executor_with_std(args, Some(&package));
             let output: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
@@ -223,7 +208,7 @@ fn is_prime() {
             prop_assert_eq!(rust_out as i32, result);
 
             let args = a.to_felts().to_vec();
-            let exec = executor_with_std(&package, args)?;
+            let exec = executor_with_std(args, Some(&package));
             let output: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);

@@ -4,10 +4,36 @@ mod eval;
 mod initializer;
 pub mod setup;
 
+use std::sync::Arc;
+
+use miden_core::Felt;
+use miden_debug::Executor;
+use miden_lib::MidenLib;
+use miden_mast_package::Package;
+use midenc_session::STDLIB;
+
 pub use self::{
     eval::{compile_link_output_to_package, compile_test_module, eval_link_output, eval_package},
     initializer::Initializer,
 };
+
+/// Creates an executor with standard library and base library loaded.
+///
+/// If a package is provided, its dependencies will also be added to the executor.
+pub fn executor_with_std(args: Vec<Felt>, package: Option<&Package>) -> Executor {
+    let mut exec = Executor::new(args);
+    let std_library = (*STDLIB).clone();
+    exec.dependency_resolver_mut()
+        .add(*std_library.digest(), std_library.clone().into());
+    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*base_library.digest(), base_library.clone().into());
+    if let Some(pkg) = package {
+        exec.with_dependencies(pkg.manifest.dependencies())
+            .expect("Failed to set up dependencies");
+    }
+    exec
+}
 
 /// Pretty-print `report` to a String
 pub fn format_report(report: miden_assembly::diagnostics::Report) -> String {
