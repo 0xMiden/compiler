@@ -1034,14 +1034,14 @@ fn wasm_to_wat(wasm_bytes: &[u8]) -> String {
 }
 
 /// Run `cargo expand` for the given Cargo test fixture, and write the expanded Rust code to disk if
-/// `MIDENC_EXPAND[=<path>]` is set.
+/// `MIDENC_EMIT_MACRO_EXPAND[=<path>]` is set.
 ///
-/// When `MIDENC_EXPAND` is set with an empty value, the expanded output is written to the current
-/// working directory. When set to `1`, it is treated as enabled and also defaults to the current
-/// working directory. When set to a non-empty value other than `1`, it is treated as the output
-/// directory.
+/// When `MIDENC_EMIT_MACRO_EXPAND` is set with an empty value, the expanded output is written to
+/// the current working directory. When set to `1`, it is treated as enabled and also defaults to
+/// the current working directory. When set to a non-empty value other than `1`, it is treated as
+/// the output directory.
 fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
-    let Some(value) = std::env::var_os("MIDENC_EXPAND") else {
+    let Some(value) = std::env::var_os("MIDENC_EMIT_MACRO_EXPAND") else {
         return;
     };
 
@@ -1057,7 +1057,10 @@ fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
         PathBuf::from(value)
     };
     fs::create_dir_all(&out_dir).unwrap_or_else(|err| {
-        panic!("failed to create MIDENC_EXPAND output directory '{}': {err}", out_dir.display())
+        panic!(
+            "failed to create MIDENC_EMIT_MACRO_EXPAND output directory '{}': {err}",
+            out_dir.display()
+        )
     });
 
     let filename = format!("{}.expanded.rs", sanitize_filename_component(test.name.as_ref()));
