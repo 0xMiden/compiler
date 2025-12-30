@@ -27,10 +27,10 @@ The debugger may also be used as a library, but that is left as an exercise for 
 
 ```shell
 # Compile a program to MAST from a rustc-generated Wasm module
-midenc compile foo.wasm -o foo.masl
+midenc compile foo.wasm -o foo.masp
 
 # Load that program into the debugger and start executing it
-midenc debug foo.masl
+midenc debug foo.masp
 ```
 
 ## Program inputs
@@ -48,7 +48,7 @@ To specify the contents of the operand stack, you can do so by following the raw
 Each operand must be a valid field element value, in either decimal or hexadecimal format. For example:
 
 ```shell
-midenc debug foo.masl -- 1 2 0xdeadbeef
+midenc debug foo.masp -- 1 2 0xdeadbeef
 ```
 
 If you pass arguments via the command line in conjunction with `--inputs`, then the command line arguments

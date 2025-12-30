@@ -53,11 +53,6 @@ impl Stage for CodegenStage {
             component.borrow().to_masm_component(analysis_manager).map(Box::new)?;
 
         let session = context.session();
-        if session.should_emit(OutputType::Masm) {
-            for module in masm_component.modules.iter() {
-                session.emit(OutputMode::Text, module).into_diagnostic()?;
-            }
-        }
 
         // Ensure intrinsics modules are linked
         for intrinsics_module in required_intrinsics_modules(session) {
@@ -72,6 +67,10 @@ impl Stage for CodegenStage {
         for module in masm_modules {
             log::debug!("adding external masm module '{}' to masm program", module.path());
             masm_component.modules.push(module);
+        }
+
+        if session.should_emit(OutputType::Masm) {
+            session.emit(OutputMode::Text, masm_component.as_ref()).into_diagnostic()?;
         }
 
         Ok(CodegenOutput {

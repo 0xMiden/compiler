@@ -13,7 +13,7 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["wasmparser/std", "gimli/std", "midenc-hir-symbol/std"]
+std = ["wasmparser/std", "gimli/std", "midenc-hir-symbol/std", "dep:wasmprinter"]
 
 [dependencies]
 anyhow.workspace = true
@@ -32,6 +32,7 @@ midenc-hir-symbol.workspace = true
 midenc-session.workspace = true
 thiserror.workspace = true
 wasmparser.workspace = true
+wasmprinter = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Use local paths for dev-only dependency to avoid relying on crates.io during packaging

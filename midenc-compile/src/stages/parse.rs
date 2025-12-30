@@ -1,10 +1,14 @@
 #[cfg(feature = "std")]
+use alloc::borrow::Cow;
+#[cfg(feature = "std")]
 use alloc::string::ToString;
 use alloc::{format, rc::Rc, sync::Arc};
 
 use miden_assembly::utils::Deserializable;
 #[cfg(feature = "std")]
 use miden_assembly::utils::ReadAdapter;
+#[cfg(feature = "std")]
+use midenc_frontend_wasm::{WatEmit, wasm_to_wat};
 #[cfg(feature = "std")]
 use midenc_session::{FileName, Path};
 use midenc_session::{
@@ -122,13 +126,45 @@ impl Stage for ParseStage {
             ParseOutput::Module(ref module) => {
                 context.session().emit(OutputMode::Text, module).into_diagnostic()?;
             }
-            ParseOutput::Wasm(_) | ParseOutput::Library(_) | ParseOutput::Package(_) => (),
+            #[cfg(feature = "std")]
+            ParseOutput::Wasm(ref wasm_input) => {
+                self.emit_wat_for_wasm_input(wasm_input, context.session())?;
+            }
+            #[cfg(not(feature = "std"))]
+            ParseOutput::Wasm(_) => (),
+            ParseOutput::Library(_) | ParseOutput::Package(_) => (),
         }
 
         Ok(parsed)
     }
 }
 impl ParseStage {
+    #[cfg(feature = "std")]
+    fn emit_wat_for_wasm_input(&self, input: &InputType, session: &Session) -> CompilerResult<()> {
+        if !session.should_emit(midenc_session::OutputType::Wat) {
+            return Ok(());
+        }
+
+        let wasm_bytes: Cow<'_, [u8]> = match input {
+            InputType::Real(path) => {
+                Cow::Owned(std::fs::read(path).into_diagnostic().wrap_err_with(|| {
+                    format!("failed to read wasm input from '{}'", path.display())
+                })?)
+            }
+            InputType::Stdin { input, .. } => Cow::Borrowed(input),
+        };
+
+        let wat = wasm_to_wat(wasm_bytes.as_ref())
+            .into_diagnostic()
+            .wrap_err("failed to convert wasm to wat")?;
+        let artifact = WatEmit(&wat);
+        session
+            .emit(OutputMode::Text, &artifact)
+            .into_diagnostic()
+            .wrap_err("failed to emit wat output")?;
+        Ok(())
+    }
+
     #[cfg(feature = "std")]
     fn parse_wasm_from_wat_file(&self, path: &Path) -> CompilerResult<ParseOutput> {
         let wasm = wat::parse_file(path).into_diagnostic().wrap_err("failed to parse wat")?;

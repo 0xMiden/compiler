@@ -2790,6 +2790,7 @@ dependencies = [
 name = "midenc-codegen-masm"
 version = "0.6.0"
 dependencies = [
+ "anyhow",
  "env_logger",
  "inventory",
  "itertools 0.14.0",
@@ -2820,6 +2821,7 @@ dependencies = [
 name = "midenc-compile"
 version = "0.6.0"
 dependencies = [
+ "anyhow",
  "clap",
  "inventory",
  "log",
@@ -2930,6 +2932,7 @@ dependencies = [
  "midenc-hir-symbol",
  "midenc-session",
  "wasmparser 0.227.1",
+ "wasmprinter",
  "wat",
 ]
 
@@ -3058,6 +3061,7 @@ dependencies = [
  "midenc-hir-macros",
  "midenc-hir-symbol",
  "parking_lot",
+ "smallvec",
  "termcolor",
 ]
 

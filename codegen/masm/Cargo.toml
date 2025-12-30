@@ -16,6 +16,7 @@ default = ["std"]
 std = ["midenc-hir/std", "midenc-dialect-hir/std", "petgraph/std"]
 
 [dependencies]
+anyhow.workspace = true
 inventory.workspace = true
 log.workspace = true
 miden-assembly.workspace = true
