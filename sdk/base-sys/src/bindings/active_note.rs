@@ -26,6 +26,19 @@ unsafe extern "C" {
 }
 
 /// Get the inputs of the currently executing note.
+///
+/// # Examples
+///
+/// Parse a note input layout into domain types:
+///
+/// ```rust,ignore
+/// use miden::{active_note, AccountId, Asset};
+///
+/// let inputs = active_note::get_inputs();
+///
+/// // Example layout: first two inputs store a target `AccountId`.
+/// let target = AccountId::from(inputs[0], inputs[1]);
+/// ```
 pub fn get_inputs() -> Vec<Felt> {
     const MAX_INPUTS: usize = 256;
     let mut inputs: Vec<Felt> = Vec::with_capacity(MAX_INPUTS);

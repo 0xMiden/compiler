@@ -91,7 +91,38 @@ pub fn export_type(
     export_type::expand(attr, item)
 }
 
-/// Marks the function as a note script
+/// Marks the function as a note script.
+///
+/// The annotated function must be named `run` and take either:
+/// - `fn run(arg: Word)`
+/// - `fn run(arg: Word, account: &mut Account)`
+///
+/// The optional `account` parameter is an injected wrapper around an imported account components
+/// (e.g. a basic wallet), and lets the note script call methods such as `get_id()` and
+/// `receive_asset(...)`.
+///
+/// # Examples
+///
+/// A pay-to-id note script that validates the consuming account and forwards all note assets to a
+/// basic wallet by calling `receive_asset`:
+///
+/// ```rust,ignore
+/// use miden::*;
+///
+/// // `Account` is generated from the imported account component dependency (e.g. `miden:basic-wallet`).
+/// use crate::bindings::Account;
+///
+/// #[note_script]
+/// fn run(_arg: Word, account: &mut Account) {
+///     let inputs = active_note::get_inputs();
+///     let target_account = AccountId::from(inputs[0], inputs[1]);
+///     assert_eq!(account.get_id(), target_account);
+///
+///     for asset in active_note::get_assets() {
+///         account.receive_asset(asset);
+///     }
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn note_script(
     attr: proc_macro::TokenStream,
