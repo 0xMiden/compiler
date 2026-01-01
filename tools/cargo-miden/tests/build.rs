@@ -83,6 +83,9 @@ fn test_all_templates_and_examples() {
     assert!(storage.is_library());
     assert_eq!(storage.name, "storage_example");
 
+    // TODO: is it time to ditch the basic-wallet from example command?
+    // With the new onchain deserialization it becomes too painful.
+
     // Test basic-wallet-tx-script example using different entry points
     // Test 1: Using "basic-wallet-tx-script" as the example name
     let (tx_script, wallet, p2id) = build_triple_example_projects(

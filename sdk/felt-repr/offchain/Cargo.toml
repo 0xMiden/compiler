@@ -1,0 +1,23 @@
+[package]
+name = "miden-felt-repr-offchain"
+description = "Serialization into felt representation for off-chain use"
+version = "0.7.1"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+miden-core.workspace = true
+miden-objects.workspace = true
+miden-felt-repr-derive = { path = "../derive", version = "0.7.1" }
+
+[features]
+default = []

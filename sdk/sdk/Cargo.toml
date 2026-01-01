@@ -19,6 +19,7 @@ miden-sdk-alloc = { version = "0.8.0", path = "../alloc" }
 miden-stdlib-sys = { version = "0.8.0", path = "../stdlib-sys" }
 miden-base = { version = "0.8.0", path = "../base" }
 miden-base-sys = { version = "0.8.1", path = "../base-sys" }
+miden-felt-repr-onchain = { version = "0.7.1", path = "../felt-repr/onchain" }
 wit-bindgen = { version = "0.46", default-features = false, features = ["macros"] }
 
 [features]

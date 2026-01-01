@@ -2,12 +2,6 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
-// However, we could still use some standard library types while
-// remaining no-std compatible, if we uncommented the following lines:
-//
-// extern crate alloc;
-// use alloc::vec::Vec;
-
 use miden::*;
 
 use crate::bindings::Account;
@@ -15,12 +9,10 @@ use crate::bindings::Account;
 #[note_script]
 fn run(_arg: Word, account: &mut Account) {
     let inputs = active_note::get_inputs();
-    let target_account_id_prefix = inputs[0];
-    let target_account_id_suffix = inputs[1];
+    let target_account_id: AccountId = inputs.as_slice().into();
 
-    let target_account = AccountId::from(target_account_id_prefix, target_account_id_suffix);
     let current_account = account.get_id();
-    assert_eq!(current_account, target_account);
+    assert_eq!(current_account, target_account_id);
 
     let assets = active_note::get_assets();
     for asset in assets {
