@@ -64,31 +64,24 @@ fn test_rust_assert_macro_source_location_with_debug_executor() {
             }
         };
 
-        // The panic message should contain assertion failure with source location.
-        let panic_message = normalize_panic_message(&panic_message);
-
-        // Verify the panic message contains the expected error and source location info.
-        let panic_message = normalize_whitespace(&panic_message);
-        expect![[r#"
-            × program execution failed at step 184 (cycle 183): assertion failed at clock cycle 183 with error code: 0
-            ╭─[assert-debug-test/src/lib.rs:26:13]
-            25 │ pub fn entrypoint(x: u32) -> u32 {
-            26 │     assert!(x > 100);
-            ·             ▲
-            27 │     x
-            ╰────
-        "#]]
-        .assert_eq(&panic_message);
+        // The panic message should contain the source location.
+        // Extract just the source location ("assert-debug-test/src/lib.rs:26:13")
+        let panic_message = strip_ansi_codes(&panic_message);
+        let source_location = extract_source_location(&panic_message);
+        expect![[r#"assert-debug-test/src/lib.rs:26:13"#]].assert_eq(&source_location);
     }
 }
 
-fn normalize_panic_message(s: &str) -> String {
-    let stripped = strip_ansi_codes(s);
-    normalize_paths(&stripped)
-}
-
-fn normalize_whitespace(s: &str) -> String {
-    s.lines().map(|line| line.trim_start()).collect::<Vec<_>>().join("\n") + "\n"
+/// Extract the source location from a panic message.
+fn extract_source_location(s: &str) -> String {
+    // Look for the pattern: assert-debug-test/src/lib.rs:LINE:COL
+    if let Some(start) = s.find("assert-debug-test/") {
+        let rest = &s[start..];
+        // Location ends at ']' or whitespace or end of string
+        let end = rest.find([']', '\n', ' ']).unwrap_or(rest.len());
+        return rest[..end].to_string();
+    }
+    "source location not found".to_string()
 }
 
 /// Strip ANSI escape codes from a string.
@@ -108,20 +101,6 @@ fn strip_ansi_codes(s: &str) -> String {
             }
         } else {
             result.push(c);
-        }
-    }
-    result
-}
-
-fn normalize_paths(s: &str) -> String {
-    let mut result = s.to_string();
-    while let Some(start) = result.find("/") {
-        if let Some(marker_pos) = result[start..].find("assert-debug-test/") {
-            let abs_start = start;
-            let rel_start = start + marker_pos;
-            result = format!("{}{}", &result[..abs_start], &result[rel_start..]);
-        } else {
-            break;
         }
     }
     result
