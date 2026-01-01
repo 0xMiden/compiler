@@ -154,7 +154,7 @@ midenc-expect-test = { path = "tools/expect-test" }
 #miden-core = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-core = { path = "../miden-vm/core" }
 #miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "4099516c08c9a56c6d1271fddfc798f40da0d702" }
-miden-debug = { git = "https://github.com/0xMiden/miden-debug", rev = "0cfdc623f51c721ff7812a0f70836ffaea182898" }
+miden-debug = { git = "https://github.com/0xMiden/miden-debug", tag = "v0.4.4" }
 #miden-debug-types = { path = "../miden-vm/crates/debug/types" }
 #miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-processor = { path = "../miden-vm/processor" }

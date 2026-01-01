@@ -1,33 +1,17 @@
 //! Tests that verify debug source location information is correctly preserved
 //! from Rust source code through to MASM compilation and execution.
 
-use std::{
-    panic::{self, AssertUnwindSafe},
-    path::PathBuf,
-};
+use std::panic::{self, AssertUnwindSafe};
 
 use miden_core::Felt;
+use midenc_expect_test::expect;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::{CompilerTest, testing::executor_with_std};
 
-/// Get the absolute path to the assert-debug-test fixture.
-fn get_test_fixture_path() -> PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|_| std::env::current_dir().unwrap().to_str().unwrap().to_string());
-    PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .join("rust-apps-wasm")
-        .join("rust-sdk")
-        .join("assert-debug-test")
-}
-
 #[test]
 fn test_rust_assert_macro_source_location_with_debug_executor() {
     let config = WasmTranslationConfig::default();
-    let fixture_path = get_test_fixture_path();
-    let fixture_path_str = fixture_path.to_string_lossy();
 
     // Note: cargo-miden automatically:
     // 1. Passes --debug to midenc
@@ -37,10 +21,6 @@ fn test_rust_assert_macro_source_location_with_debug_executor() {
         config,
         [],
     );
-
-    eprintln!("\n=== Fixture path ===");
-    eprintln!("{fixture_path_str}");
-    eprintln!("============================================\n");
 
     let package = test.compiled_package();
     let program = package.unwrap_program();
@@ -53,7 +33,6 @@ fn test_rust_assert_macro_source_location_with_debug_executor() {
         let trace = exec.execute(&program, test.session.source_manager.clone());
         let result: u32 = trace.parse_result().expect("Failed to parse result");
         assert_eq!(result, 200, "When x > 100, function should return x");
-        eprintln!("SUCCESS: Assertion passed when x=200 > 100");
     }
 
     // Now test that when assertion fails (x <= 100), we get a panic with source location
@@ -71,64 +50,79 @@ fn test_rust_assert_macro_source_location_with_debug_executor() {
         }));
 
         // The execution should panic (fail) because assert!(50 > 100) fails
-        assert!(
-            result.is_err(),
-            "Execution should have panicked due to failed assertion (x=50 <= 100)"
-        );
+        // Extract and validate the panic message with source location
+        let panic_message = match result {
+            Ok(_) => panic!("Expected execution to fail with assertion error (x=50 <= 100)"),
+            Err(panic_info) => {
+                if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "Unknown panic".to_string()
+                }
+            }
+        };
 
-        // Check the panic message for source location information
-        if let Err(panic_info) = result {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else {
-                "Unknown panic".to_string()
-            };
+        // The panic message should contain assertion failure with source location.
+        let panic_message = normalize_panic_message(&panic_message);
 
-            eprintln!("\n=== Panic message from failed assertion ===");
-            eprintln!("{panic_message}");
-            eprintln!("============================================\n");
+        // Verify the panic message contains the expected error and source location info.
+        let panic_message = normalize_whitespace(&panic_message);
+        expect![[r#"
+            × program execution failed at step 184 (cycle 183): assertion failed at clock cycle 183 with error code: 0
+            ╭─[assert-debug-test/src/lib.rs:26:13]
+            25 │ pub fn entrypoint(x: u32) -> u32 {
+            26 │     assert!(x > 100);
+            ·             ▲
+            27 │     x
+            ╰────
+        "#]]
+        .assert_eq(&panic_message);
+    }
+}
 
-            // The panic message should indicate an assertion failure
-            assert!(
-                panic_message.contains("assertion failed"),
-                "Panic message should indicate assertion failure. Got: {panic_message}"
-            );
+fn normalize_panic_message(s: &str) -> String {
+    let stripped = strip_ansi_codes(s);
+    normalize_paths(&stripped)
+}
 
-            // Check if source location info is present - the assert! macro is on line 26
-            let has_source_file = panic_message.contains("assert-debug-test/src/lib.rs");
-            let has_lib_rs = panic_message.contains("lib.rs");
+fn normalize_whitespace(s: &str) -> String {
+    s.lines().map(|line| line.trim_start()).collect::<Vec<_>>().join("\n") + "\n"
+}
 
-            // Line 26 contains: assert!(x > 100);
-            let has_line_info = panic_message.contains(":26:");
-
-            // Column 13 is where the assertion expression starts
-            let has_column_info = panic_message.contains(":26:13");
-
-            eprintln!("SUCCESS: Assertion correctly failed when x=50 <= 100");
-            eprintln!(
-                "Has source file reference (assert-debug-test/src/lib.rs): {has_source_file}"
-            );
-            eprintln!("Has lib.rs reference: {has_lib_rs}");
-            eprintln!("Has line info (:26:): {has_line_info}");
-            eprintln!("Has column info (:26:13): {has_column_info}");
-
-            // Source locations MUST be resolved now - this is a regression test
-            assert!(
-                has_lib_rs,
-                "Panic message should contain source file reference (lib.rs). Got: {panic_message}"
-            );
-            assert!(
-                has_line_info,
-                "Panic message should contain line 26 (where assert! is). Got: {panic_message}"
-            );
-            assert!(
-                has_column_info,
-                "Panic message should contain column 13 (:26:13). Got: {panic_message}"
-            );
-
-            eprintln!("Source locations are being resolved correctly!");
+/// Strip ANSI escape codes from a string.
+fn strip_ansi_codes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next == 'm' {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
         }
     }
+    result
+}
+
+fn normalize_paths(s: &str) -> String {
+    let mut result = s.to_string();
+    while let Some(start) = result.find("/") {
+        if let Some(marker_pos) = result[start..].find("assert-debug-test/") {
+            let abs_start = start;
+            let rel_start = start + marker_pos;
+            result = format!("{}{}", &result[..abs_start], &result[rel_start..]);
+        } else {
+            break;
+        }
+    }
+    result
 }
