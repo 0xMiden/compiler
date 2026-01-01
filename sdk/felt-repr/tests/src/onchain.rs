@@ -237,10 +237,10 @@ fn test_five_felts_struct_round_trip() {
     .unwrap();
 }
 
-/// Minimal struct to reproduce u64 stack tracking bug.
-/// The bug requires: 1 u64 + 4 smaller integer types (u8 or u32).
-/// With Felt fields it passes; with u8/u32 fields it fails.
-/// The difference is that u8/u32 use `as_u32` intrinsic after reading.
+/// Minimal struct used to reproduce issue #815 ("u64 in a struct leads to heap MAGIC corruption").
+///
+/// The field mix is chosen to increase register pressure during (de)serialization and force values
+/// to be spilled to procedure locals.
 #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 struct MinimalU64Bug {
     n1: u64,
@@ -250,15 +250,9 @@ struct MinimalU64Bug {
     y: u32,
 }
 
-/// Minimal test case for u64 stack tracking bug.
-///
-/// The bug occurs when:
-/// 1. Multiple u64 fields are read (as_u64 returns 2 felts on stack each)
-/// 2. Another field (y) is NOT immediately consumed (no assert_eq)
-/// 3. The value needs to be spilled to a local variable
-///
-/// This causes incorrect stack position tracking, spilling the wrong value.
-#[ignore = "until https://github.com/0xMiden/compiler/issues/815 is resolved"]
+/// Regression test for issue https://github.com/0xMiden/compiler/issues/815
+/// Historically, spilling to procedure locals could overwrite the heap header magic, causing the
+/// first `Vec` allocation to fail with "rust heap has not been initialized".
 #[test]
 fn test_minimal_u64_bug() {
     let original = MinimalU64Bug {
@@ -290,8 +284,7 @@ fn test_minimal_u64_bug() {
         let mut reader = FeltReader::new(&input);
         let deserialized = TestStruct::from_felt_repr(&mut reader);
 
-        // NOT using assert_eq on y - this triggers the bug
-        // The y value needs to survive until to_felt_repr()
+        // NOTE: Keep `y` live until `to_felt_repr()` to force spilling to locals.
 
         deserialized.to_felt_repr()
     }"#;
