@@ -126,56 +126,8 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::miden:base/note-script@1.0.0::component_macros_note::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
-    push.11
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.22
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.33
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.44
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.99
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.88
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.77
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.66
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.8
-    dup.9
+    dup.1
     add
     u32assert
     push.8
@@ -197,33 +149,39 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.8
-    dup.9
+    dup.1
     u32wrapping_add
+    push.66
+    push.77
+    push.88
+    push.99
+    push.44
+    push.33
+    push.22
+    push.11
+    dup.4
+    dup.6
     dup.8
-    dup.5
-    dup.6
-    dup.6
-    dup.6
-    dup.6
+    dup.10
     swap.1
     swap.10
-    swap.13
-    swap.1
-    swap.11
-    swap.3
-    swap.8
     swap.6
-    swap.12
     swap.2
     swap.9
     swap.5
+    swap.1
+    swap.11
+    swap.7
+    swap.3
+    swap.8
+    swap.4
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::component_macros_note::component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22
     trace.252
     nop
     push.12
-    dup.3
+    dup.1
     add
     u32assert
     push.4
@@ -240,7 +198,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.8
-    dup.4
+    dup.2
     add
     u32assert
     push.4
@@ -256,32 +214,23 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.3
-    swap.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::eq
-    trace.252
-    nop
     push.0
     push.1
-    movup.2
+    push.11
+    movup.3
+    eq
     neq
     neq
     if.true
         drop
         drop
-        drop
         push.0
     else
-        trace.240
-        nop
-        exec.::miden:base/note-script@1.0.0::component_macros_note::intrinsics::felt::eq
-        trace.252
-        nop
         push.0
         push.1
-        movup.2
+        push.99
+        movup.3
+        eq
         neq
         neq
         dup.0
@@ -388,15 +337,5 @@ proc wit_bindgen::rt::run_ctors_once(
         swap.1
         mem_store
     end
-end
-
-@callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
 end
 

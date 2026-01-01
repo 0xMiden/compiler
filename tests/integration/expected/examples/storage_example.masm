@@ -425,15 +425,11 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.5
-    trace.240
-    nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::intrinsics::felt::eq
-    trace.252
-    nop
     push.0
     push.1
-    movup.2
+    movup.7
+    movup.3
+    eq
     neq
     neq
     if.true
@@ -444,16 +440,11 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
         dropw
         dropw
     else
-        movup.2
-        movup.4
-        trace.240
-        nop
-        exec.::miden:storage-example/foo@1.0.0::storage_example::intrinsics::felt::eq
-        trace.252
-        nop
         push.0
         push.1
-        movup.2
+        movup.6
+        movup.5
+        eq
         neq
         neq
         if.true
@@ -465,33 +456,25 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
             drop
             drop
         else
-            swap.3
-            trace.240
-            nop
-            exec.::miden:storage-example/foo@1.0.0::storage_example::intrinsics::felt::eq
-            trace.252
-            nop
             push.0
             push.1
-            movup.2
+            movup.5
+            movup.4
+            eq
             neq
             neq
             if.true
-                movdn.7
+                drop
+                movdn.6
                 dropw
                 drop
                 drop
-                drop
             else
-                swap.2
-                trace.240
-                nop
-                exec.::miden:storage-example/foo@1.0.0::storage_example::intrinsics::felt::eq
-                trace.252
-                nop
                 push.0
                 push.1
-                movup.2
+                movup.4
+                movup.3
+                eq
                 neq
                 neq
                 if.true
@@ -1149,26 +1132,8 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     i32,
     felt
 )
-    push.0
-    trace.240
-    nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.12
-    dup.4
+    dup.1
     add
     u32assert
     push.4
@@ -1177,7 +1142,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     u32mod
     u32assert
     assertz
-    movup.5
+    movup.2
     swap.1
     u32divmod.4
     swap.1
@@ -1187,7 +1152,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     trace.252
     nop
     push.8
-    dup.4
+    dup.1
     add
     u32assert
     push.4
@@ -1196,6 +1161,8 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     u32mod
     u32assert
     assertz
+    push.0
+    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -1204,7 +1171,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     trace.252
     nop
     push.4
-    dup.3
+    dup.1
     add
     u32assert
     push.4
@@ -1213,6 +1180,8 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     u32mod
     u32assert
     assertz
+    push.0
+    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -1220,29 +1189,20 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdl
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    swap.1
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    push.0
+    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

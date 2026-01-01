@@ -1,8 +1,9 @@
-use core::mem;
+use core::{mem, str::FromStr};
 use std::rc::Rc;
 
 use midenc_hir::{
-    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, Visibility,
+    Builder, BuilderExt, Context, FunctionIdent, FxHashMap, Ident, Op, OpBuilder, SymbolPath,
+    Visibility,
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
@@ -19,9 +20,11 @@ use super::{
 use crate::{
     WasmTranslationConfig,
     error::WasmResult,
+    intrinsics::Intrinsic,
     module::{
+        DefinedFuncIndex,
         func_translator::FuncTranslator,
-        linker_stubs::maybe_lower_linker_stub,
+        linker_stubs::{is_unreachable_stub, maybe_lower_linker_stub},
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
         types::ir_type,
     },
@@ -115,11 +118,63 @@ pub fn build_ir_module(
     })
     .into_diagnostic()?;
     let mut func_translator = FuncTranslator::new(context.clone());
-    // Although this renders this parsed module invalid(without functiong
+    // Although this renders this parsed module invalid(without function
     // bodies), we don't support multiple module instances. Thus, this
     // ParseModule will not be used again to make another module instance.
     let func_body_inputs = mem::take(&mut parsed_module.function_body_inputs);
+
+    // Two-pass approach for linker stub inlining:
+    // Pass 1: Detect and register intrinsic linker stubs that can be inlined as operations.
+    // This ensures that when we translate function bodies in pass 2,
+    // all inline-able stubs are known and calls to them will be inlined regardless
+    // of function ordering in the WASM file.
+    let mut inlined_stub_indices: Vec<DefinedFuncIndex> = Vec::new();
+    for (defined_func_idx, body_data) in &func_body_inputs {
+        if !is_unreachable_stub(&body_data.body) {
+            continue;
+        }
+
+        let func_index = parsed_module.module.func_index(defined_func_idx);
+        let func_name = parsed_module.module.func_name(func_index).as_str();
+
+        // Try to parse the function name as a MASM function ident to get the symbol path
+        let Ok(func_ident) = FunctionIdent::from_str(func_name) else {
+            continue;
+        };
+        let import_path: SymbolPath = SymbolPath::from_masm_function_id(func_ident);
+
+        // Try to recognize as an intrinsic
+        let Ok(intrinsic) = Intrinsic::try_from(&import_path) else {
+            continue;
+        };
+
+        // Check if this intrinsic can be inlined as an operation
+        let Some(conv) = intrinsic.conversion_result() else {
+            continue;
+        };
+
+        if !conv.is_operation() {
+            continue;
+        }
+
+        // Register the stub so calls to it will be inlined as operations
+        if let Some(mut function_ref) = module_state.register_linker_stub(func_index, intrinsic)? {
+            // Erase the stub function from the module since it will be inlined at call sites
+            function_ref.borrow_mut().as_operation_mut().erase();
+            inlined_stub_indices.push(defined_func_idx);
+        }
+    }
+
+    // Pass 2: Translate function bodies.
+    //   - Inline-able stubs were registered in pass 1 and are skipped here.
+    //   - Function-type stubs get their bodies synthesized.
+    //   - Regular functions are translated normally.
     for (defined_func_idx, body_data) in func_body_inputs {
+        // Skip stubs that were inlined in pass 1
+        if inlined_stub_indices.contains(&defined_func_idx) {
+            continue;
+        }
+
         let func_index = parsed_module.module.func_index(defined_func_idx);
         let func_name = parsed_module.module.func_name(func_index).as_str();
 
@@ -127,9 +182,9 @@ pub fn build_ir_module(
             module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
                 panic!("cannot build {func_name} function, since it is not defined in the module.")
             });
-        // If this is a linker stub, synthesize its body to exec the MASM callee.
-        // Note: Intrinsics and Miden ABI (SDK/stdlib) calls are expected to be
-        // surfaced via such linker stubs rather than as core-wasm imports.
+
+        // If this is a linker stub that needs a synthesized body (function-type intrinsics
+        // or Miden ABI calls), handle it here.
         if maybe_lower_linker_stub(function_ref, &body_data.body, module_state)? {
             continue;
         }

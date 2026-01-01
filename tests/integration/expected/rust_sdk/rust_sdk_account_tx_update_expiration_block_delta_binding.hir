@@ -13,9 +13,8 @@ builtin.component miden:base/transaction-script@1.0.0 {
         private builtin.function @miden:base/transaction-script@1.0.0#run(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
             hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/wit_bindgen::rt::run_ctors_once()
-            v4 = arith.constant 42 : i32;
-            v5 = hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/intrinsics::felt::from_u32(v4) : felt
-            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/miden_base_sys::bindings::tx::update_expiration_block_delta(v5)
+            v35 = arith.constant 42 : felt;
+            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/miden_base_sys::bindings::tx::update_expiration_block_delta(v35)
             builtin.ret ;
         };
 
@@ -42,12 +41,12 @@ builtin.component miden:base/transaction-script@1.0.0 {
                 v20 = hir.bitcast v19 : ptr<byte, i32>;
                 v21 = hir.load v20 : i32;
                 hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/__wasm_call_ctors()
-                v39 = arith.constant 1 : u8;
-                v41 = arith.constant 1048584 : i32;
-                v23 = arith.add v21, v41 : i32 #[overflow = wrapping];
+                v37 = arith.constant 1 : u8;
+                v39 = arith.constant 1048584 : i32;
+                v23 = arith.add v21, v39 : i32 #[overflow = wrapping];
                 v27 = hir.bitcast v23 : u32;
                 v28 = hir.int_to_ptr v27 : ptr<byte, u8>;
-                hir.store v28, v39;
+                hir.store v28, v37;
                 scf.yield ;
             };
             builtin.ret ;
@@ -59,15 +58,9 @@ builtin.component miden:base/transaction-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @intrinsics::felt::from_u32(v30: i32) -> felt {
-        ^block17(v30: i32):
-            v31 = hir.bitcast v30 : felt;
-            builtin.ret v31;
-        };
-
-        private builtin.function @miden::tx::update_expiration_block_delta(v33: felt) {
-        ^block19(v33: felt):
-            hir.exec @miden/tx/update_expiration_block_delta(v33)
+        private builtin.function @miden::tx::update_expiration_block_delta(v30: felt) {
+        ^block17(v30: felt):
+            hir.exec @miden/tx/update_expiration_block_delta(v30)
             builtin.ret ;
         };
 
@@ -82,9 +75,9 @@ builtin.component miden:base/transaction-script@1.0.0 {
         builtin.segment @1048576 = 0x0000000100000001;
     };
 
-    public builtin.function @run(v34: felt, v35: felt, v36: felt, v37: felt) {
-    ^block23(v34: felt, v35: felt, v36: felt, v37: felt):
-        hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/miden:base/transaction-script@1.0.0#run(v34, v35, v36, v37)
+    public builtin.function @run(v31: felt, v32: felt, v33: felt, v34: felt) {
+    ^block21(v31: felt, v32: felt, v33: felt, v34: felt):
+        hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/miden:base/transaction-script@1.0.0#run(v31, v32, v33, v34)
         builtin.ret ;
     };
 };

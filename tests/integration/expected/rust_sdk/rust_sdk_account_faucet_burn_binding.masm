@@ -135,11 +135,6 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.0
     movup.2
     swap.1
@@ -936,11 +931,6 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     nop
     exec.::intrinsics::mem::store_dw
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

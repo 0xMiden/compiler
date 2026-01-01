@@ -85,141 +85,36 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
-    push.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.2
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.3
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.4
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.5
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.6
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.7
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.8
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.9
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.10
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.11
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.12
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.13
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.14
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.15
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.7
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    movup.7
-    swap.8
-    movdn.7
-    movup.6
-    swap.9
-    movdn.6
-    movup.5
-    swap.10
-    movdn.5
-    movup.4
-    swap.11
-    movdn.4
-    movup.3
-    swap.12
-    movdn.3
-    movup.2
-    swap.13
-    movdn.2
-    swap.1
-    swap.14
-    swap.1
+    push.14
+    push.13
+    push.12
+    push.11
+    push.10
+    push.9
+    push.8
+    push.6
+    push.5
+    push.4
+    push.3
+    push.2
+    push.1
+    dup.14
     swap.15
+    swap.6
+    swap.5
+    swap.4
+    swap.3
+    swap.2
+    swap.1
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
     trace.252
     nop
     push.458760
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::from_u32
-    trace.252
-    nop
-    swap.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::intrinsics::felt::assert_eq
-    trace.252
-    nop
+    assert_eq
 end
 
 @callconv("C")
@@ -294,15 +189,5 @@ proc wit_bindgen::rt::run_ctors_once(
         swap.1
         mem_store
     end
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
 end
 

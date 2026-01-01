@@ -62,11 +62,6 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     push.42
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_update_expiration_block_delta_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
-    trace.240
-    nop
     exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_update_expiration_block_delta_binding::miden_base_sys::bindings::tx::update_expiration_block_delta
     trace.252
     nop
@@ -154,11 +149,6 @@ proc miden_base_sys::bindings::tx::update_expiration_block_delta(
     nop
     exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_update_expiration_block_delta_binding::miden::tx::update_expiration_block_delta
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

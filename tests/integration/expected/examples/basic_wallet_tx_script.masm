@@ -393,33 +393,14 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::advice::adv_push_mapvaln
     trace.252
     nop
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::as_u64
-    trace.252
-    nop
+    u32split
+    push.0
     push.3
-    dup.2
-    dup.2
+    dup.3
+    dup.3
     drop
     u32and
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::from_u32
-    trace.252
-    nop
-    swap.1
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::assert_eq
-    trace.252
-    nop
+    assert_eq
     push.2
     push.0
     dup.0
@@ -439,19 +420,21 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::std::math::u64::shr
     trace.252
     nop
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::from_u64_unchecked
+    exec.::std::math::u64::lt
     trace.252
     nop
-    dup.0
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::as_u64
-    trace.252
-    nop
+    assert
+    mul.4294967296
+    add
     push.2
-    movdn.2
+    dup.1
+    u32split
     drop
     swap.1
     u32shl
@@ -1586,37 +1569,6 @@ proc intrinsics::advice::adv_push_mapvaln(felt, felt, felt, felt) -> felt
     exec.::intrinsics::advice::adv_push_mapvaln
     trace.252
     nop
-end
-
-@callconv("C")
-proc intrinsics::felt::as_u64(felt) -> [u32; 2]
-    u32split
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
 end
 
 @callconv("C")

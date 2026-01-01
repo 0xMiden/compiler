@@ -193,11 +193,6 @@ proc miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-asse
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.4
     dup.2
     u32wrapping_add
@@ -221,11 +216,6 @@ proc miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-asse
     trace.240
     nop
     exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::intrinsics::felt::from_u32
     trace.252
     nop
     push.16
@@ -917,11 +907,6 @@ proc miden_base_sys::bindings::output_note::get_assets(
     nop
     exec.::intrinsics::mem::store_sw
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

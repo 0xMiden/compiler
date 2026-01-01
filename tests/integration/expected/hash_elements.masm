@@ -79,26 +79,11 @@ pub proc entrypoint(i32) -> felt
     swap.1
     swap.1
     u32shr
-    push.3
-    dup.1
-    u32and
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::hash_elements::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::hash_elements::intrinsics::felt::from_u32
-    trace.252
-    nop
-    swap.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::hash_elements::intrinsics::felt::assert_eq
-    trace.252
-    nop
+    push.3
+    dup.2
+    u32and
+    assert_eq
     push.0
     push.0
     push.3
@@ -523,16 +508,6 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     nop
     exec.::intrinsics::mem::store_dw
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

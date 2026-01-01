@@ -2,19 +2,13 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @le_felt {
         public builtin.function @entrypoint(v0: felt, v1: felt) -> i32 {
         ^block4(v0: felt, v1: felt):
-            v3 = hir.exec @root_ns:root@1.0.0/le_felt/intrinsics::felt::le(v1, v0) : i32
-            v4 = arith.constant 0 : i32;
-            v5 = arith.neq v3, v4 : i1;
-            v6 = arith.zext v5 : u32;
-            v7 = hir.bitcast v6 : i32;
-            builtin.ret v7;
-        };
-
-        private builtin.function @intrinsics::felt::le(v8: felt, v9: felt) -> i32 {
-        ^block6(v8: felt, v9: felt):
-            v10 = arith.lte v8, v9 : i1;
-            v11 = hir.cast v10 : i32;
-            builtin.ret v11;
+            v5 = arith.constant 0 : i32;
+            v3 = arith.lte v1, v0 : i1;
+            v4 = hir.cast v3 : i32;
+            v6 = arith.neq v4, v5 : i1;
+            v7 = arith.zext v6 : u32;
+            v8 = hir.bitcast v7 : i32;
+            builtin.ret v8;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

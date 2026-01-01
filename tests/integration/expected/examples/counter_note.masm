@@ -92,28 +92,15 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     drop
-    push.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::counter_note::intrinsics::felt::from_u32
-    trace.252
-    nop
-    swap.1
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::counter_note::intrinsics::felt::add
-    trace.252
-    nop
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
     trace.252
     nop
-    trace.240
-    nop
-    exec.::miden:base/note-script@1.0.0::counter_note::intrinsics::felt::assert_eq
-    trace.252
-    nop
+    push.1
+    movup.2
+    add
+    assert_eq
 end
 
 @callconv("C")
@@ -188,20 +175,5 @@ proc wit_bindgen::rt::run_ctors_once(
         swap.1
         mem_store
     end
-end
-
-@callconv("C")
-proc intrinsics::felt::add(felt, felt) -> felt
-    add
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
 end
 
