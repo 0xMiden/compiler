@@ -44,6 +44,24 @@ unsafe extern "C" {
 /// - If the asset is not valid.
 /// - If the total value of two fungible assets is greater than or equal to 2^63.
 /// - If the vault already contains the same non-fungible asset.
+///
+/// # Examples
+///
+/// Implement a basic-wallet style `receive_asset` method by adding the asset to the vault:
+///
+/// ```rust,ignore
+/// use miden::{component, native_account::NativeAccount, Asset};
+///
+/// #[component]
+/// struct MyAccount;
+///
+/// #[component]
+/// impl MyAccount {
+///     pub fn receive_asset(&mut self, asset: Asset) {
+///         self.add_asset(asset);
+///     }
+/// }
+/// ```
 pub fn add_asset(asset: Asset) -> Asset {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
@@ -123,6 +141,24 @@ pub trait NativeAccount {
     /// - If the asset is not valid.
     /// - If the total value of two fungible assets is greater than or equal to 2^63.
     /// - If the vault already contains the same non-fungible asset.
+    ///
+    /// # Examples
+    ///
+    /// Implement a basic-wallet style `receive_asset` method by adding the asset to the vault:
+    ///
+    /// ```rust,ignore
+    /// use miden::{component, native_account::NativeAccount, Asset};
+    ///
+    /// #[component]
+    /// struct MyAccount;
+    ///
+    /// #[component]
+    /// impl MyAccount {
+    ///     pub fn receive_asset(&mut self, asset: Asset) {
+    ///         self.add_asset(asset);
+    ///     }
+    /// }
+    /// ```
     #[inline]
     fn add_asset(&mut self, asset: Asset) -> Asset {
         add_asset(asset)
