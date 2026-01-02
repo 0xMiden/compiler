@@ -857,34 +857,44 @@ impl OpEmitter<'_> {
         }
     }
 
-    /// Store a 64-bit word to the operand stack
+    /// Store a 64-bit integer in linear memory.
+    ///
+    /// Values are represented as two 32-bit limbs on the operand stack in big-endian order
+    /// (`[hi, lo]`).
     fn store_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
-        // The mem::intrinsic stores two 32-bit words in stack order.  Swap them (the 3rd and 4th
-        // params) first to make a little-endian-limbed memory value.
-        self.emit(masm::Instruction::MovUp2, span);
-        self.emit(masm::Instruction::MovDn3, span);
-
-        if let Some(imm) = ptr {
-            self.store_double_word_imm(imm, span);
-        } else {
-            self.raw_exec("intrinsics::mem::store_dw", span);
-        }
-    }
-
-    fn store_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        if ptr.is_element_aligned() {
-            self.emit_all(
-                [
-                    masm::Instruction::U32Assert2,
-                    masm::Instruction::MemStoreImm(ptr.addr.into()),
-                    masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
-                ],
-                span,
-            );
-        } else {
-            // Delegate to `store_dw` to handle unaligned stores
-            self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::store_dw", span);
+        match ptr {
+            // When storing to an immediate address, the operand stack only contains the value
+            // limbs. We must swap them so that the low limb is stored at the lower address.
+            Some(ptr) if ptr.is_element_aligned() => {
+                // Stack: [value_hi, value_lo]
+                self.emit_all(
+                    [
+                        masm::Instruction::Swap1,
+                        masm::Instruction::U32Assert2,
+                        masm::Instruction::MemStoreImm(ptr.addr.into()),
+                        masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
+                    ],
+                    span,
+                );
+            }
+            // When storing to a dynamic address, or an unaligned immediate address, the operand
+            // stack contains (or must contain) the native pointer pair `(element_addr, byte_offset)`
+            // above the value limbs. This is derived from the 32-bit byte pointer via `divmod 4`.
+            // Swap the limbs underneath the pointer pair before delegating to the mem intrinsic.
+            Some(ptr) => {
+                // Stack: [value_hi, value_lo]
+                self.push_native_ptr(ptr, span);
+                // Stack: [addr, offset, value_hi, value_lo]
+                self.emit(masm::Instruction::MovUp2, span);
+                self.emit(masm::Instruction::MovDn3, span);
+                self.raw_exec("intrinsics::mem::store_dw", span);
+            }
+            None => {
+                // Stack: [addr, offset, value_hi, value_lo]
+                self.emit(masm::Instruction::MovUp2, span);
+                self.emit(masm::Instruction::MovDn3, span);
+                self.raw_exec("intrinsics::mem::store_dw", span);
+            }
         }
     }
 
