@@ -140,7 +140,7 @@ export.extract_element # [element_index, w3, w2, w1, w0]
     movup.2 cdrop
 end
 
-# Load a field element from the given native pointer triplet.
+# Load a field element from the given native pointer tuple.
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
@@ -330,7 +330,7 @@ export.load_dw # [addr, offset]
     else
         # unaligned; an unaligned double-word spans three elements
         #
-        # convert offset from bytes to bitcount from RHS of triplet (32 - offset * 8)
+        # convert offset from bytes to bitcount from RHS of tuple (32 - offset * 8)
         swap.1 push.8 mul push.32 swap.1 sub swap.1        # [addr, bit_offset]
 
         # load the three elements containing the double-word on the stack and re-align

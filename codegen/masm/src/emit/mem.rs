@@ -130,7 +130,8 @@ impl OpEmitter<'_> {
 
     /// Load a field element from a naturally aligned address, either immediate or dynamic
     ///
-    /// A native pointer triplet is expected on the stack if an immediate is not given.
+    /// A native pointer pair `(element_addr, byte_offset)` is expected on the stack if an
+    /// immediate is not given.
     fn load_felt(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.load_felt_imm(imm, span);
@@ -147,7 +148,8 @@ impl OpEmitter<'_> {
     /// Loads a single 32-bit machine word, i.e. a single field element, not the Miden notion of a
     /// word
     ///
-    /// Expects a native pointer triplet on the stack if an immediate address is not given.
+    /// Expects a native pointer pair `(element_addr, byte_offset)` on the stack if an immediate
+    /// address is not given.
     fn load_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.load_word_imm(imm, span);
@@ -901,7 +903,8 @@ impl OpEmitter<'_> {
     /// Stores a single 32-bit machine word, i.e. a single field element, not the Miden notion of a
     /// word
     ///
-    /// Expects a native pointer triplet on the stack if an immediate address is not given.
+    /// Expects a native pointer pair `(element_addr, byte_offset)` on the stack if an immediate
+    /// address is not given.
     fn store_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.store_word_imm(imm, span);
@@ -926,7 +929,8 @@ impl OpEmitter<'_> {
 
     /// Store a field element to a naturally aligned address, either immediate or dynamic
     ///
-    /// A native pointer triplet is expected on the stack if an immediate is not given.
+    /// A native pointer pair `(element_addr, byte_offset)` is expected on the stack if an
+    /// immediate is not given.
     fn store_felt(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.store_felt_imm(imm, span);
