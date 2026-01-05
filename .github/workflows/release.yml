@@ -46,14 +46,22 @@ jobs:
 
   upload-artifacts:
     name: upload pre-built midenc executable artifacts
-    runs-on: ubuntu-latest
     needs: publish
     if: ${{ github.repository_owner == '0xMiden' && needs.publish.outputs.releases_created == 'true' }}
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     strategy:
       matrix:
+        os: [macos-latest, ubuntu-latest]
         target: [aarch64-apple-darwin, x86_64-unknown-linux-gnu]
+        exclude:
+          - os: macos-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
     steps:
       - *checkout
       - *install-rust
@@ -91,6 +99,22 @@ jobs:
           ARGS="--release --target ${{ matrix.target }}"
           cargo make --profile production midenc ${ARGS}
           cargo make --profile production cargo-miden ${ARGS}
+      - name: prepare artifacts
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        run: |
+          set -e
+          mv bin/midenc midenc-${{ matrix.target }}
+          mv bin/cargo-miden cargo-miden-${{ matrix.target }}
+      - name: attest midenc
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: midenc-${{ matrix.target }}
+      - name: attest cargo-miden
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: cargo-miden-${{ matrix.target }}
       - name: upload
         if: ${{ steps.midenc-release.outputs.release_tag != '' }}
         env:
@@ -98,9 +122,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          mv bin/midenc midenc-${{ matrix.target }}
           gh release upload ${RELEASE_TAG} midenc-${{ matrix.target }}
-          mv bin/cargo-miden cargo-miden-${{ matrix.target }}
           gh release upload ${RELEASE_TAG} cargo-miden-${{ matrix.target }}
 
   release:
