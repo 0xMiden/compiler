@@ -1,0 +1,95 @@
+# Test-only workflow for validating our release artifact build matrix and provenance
+# attestation without creating a GitHub Release.
+name: release-artifacts-test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/workflows/release-test.yml"
+  push:
+    branches-ignore:
+      - main
+      - next
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/workflows/release-test.yml"
+
+jobs:
+  build-and-attest:
+    name: build + attest (${{ matrix.target }})
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        target: [aarch64-apple-darwin, x86_64-unknown-linux-gnu]
+        exclude:
+          - os: macos-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+
+      - name: Add target
+        run: |
+          rustup target add ${{ matrix.target }}
+
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+
+      - name: build binaries
+        run: |
+          set -e
+          ARGS="--release --target ${{ matrix.target }}"
+          cargo make --profile production midenc ${ARGS}
+          cargo make --profile production cargo-miden ${ARGS}
+
+      - name: prepare artifacts
+        run: |
+          set -e
+          mv bin/midenc midenc-${{ matrix.target }}
+          mv bin/cargo-miden cargo-miden-${{ matrix.target }}
+
+      - name: attest midenc
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: midenc-${{ matrix.target }}
+
+      - name: attest cargo-miden
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: cargo-miden-${{ matrix.target }}
+
+      - name: upload midenc
+        uses: actions/upload-artifact@v4
+        with:
+          name: midenc-${{ matrix.target }}
+          path: midenc-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: upload cargo-miden
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-miden-${{ matrix.target }}
+          path: cargo-miden-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 7
