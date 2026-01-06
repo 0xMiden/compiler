@@ -19,6 +19,34 @@ impl AccountId {
     }
 }
 
+/// A fungible or a non-fungible asset.
+///
+/// All assets are encoded using a single word (4 elements) such that it is easy to determine the
+/// type of an asset both inside and outside Miden VM. Specifically:
+///
+/// Element 1 of the asset will be:
+/// - ZERO for a fungible asset.
+/// - non-ZERO for a non-fungible asset.
+///
+/// Element 3 of both asset types is the prefix of an
+/// [`AccountId`], which can be used to distinguish assets.
+///
+/// The methodology for constructing fungible and non-fungible assets is described below.
+///
+/// # Fungible assets
+///
+/// - A fungible asset's data layout is: `[amount, 0, faucet_id_suffix, faucet_id_prefix]`.
+///
+/// # Non-fungible assets
+///
+/// - A non-fungible asset's data layout is: `[hash0, hash1, hash2, faucet_id_prefix]`.
+///
+/// The 4 elements of non-fungible assets are computed as follows:
+/// - First the asset data is hashed. This compresses an asset of an arbitrary length to 4 field
+///   elements: `[hash0, hash1, hash2, hash3]`.
+/// - `hash3` is then replaced with the prefix of the faucet ID (`faucet_id_prefix`) which issues
+///   the asset: `[hash0, hash1, hash2, faucet_id_prefix]`.
+///
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Asset {
