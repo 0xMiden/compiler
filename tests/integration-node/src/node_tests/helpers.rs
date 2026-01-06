@@ -157,6 +157,7 @@ pub async fn create_account_with_component(
     Ok(account)
 }
 
+#[allow(dead_code)]
 /// Create a basic wallet account with standard RpoFalcon512 auth.
 ///
 /// This helper does not require a component package and always adds the `BasicWallet` component.
@@ -188,6 +189,7 @@ pub async fn create_basic_wallet_account(
     Ok(account)
 }
 
+#[allow(dead_code)]
 /// Helper to create an account with a custom component and a custom authentication component
 pub async fn create_account_with_component_and_auth_package(
     client: &mut Client<FilesystemKeyStore<StdRng>>,

@@ -2504,6 +2504,7 @@ dependencies = [
  "miden-core",
  "miden-felt-repr-offchain",
  "miden-integration-tests",
+ "miden-lib",
  "miden-mast-package",
  "miden-objects",
  "midenc-frontend-wasm",

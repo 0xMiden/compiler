@@ -4,23 +4,33 @@
 //! RPO-Falcon512 secret key cannot create notes on behalf of the counter
 //! contract account that uses the Rust-compiled auth component.
 
+use std::{borrow::Borrow, collections::BTreeSet, sync::Arc};
+
 use miden_client::{
-    Client, DebugMode, Word,
-    account::StorageMap,
-    auth::{AuthSecretKey, PublicKeyCommitment},
-    keystore::FilesystemKeyStore,
-    transaction::{OutputNote, TransactionRequestBuilder},
+    Word,
+    account::component::BasicWallet,
+    auth::{AuthSecretKey, BasicAuthenticator, PublicKeyCommitment},
+    crypto::{FeltRng, RpoRandomCoin, rpo_falcon512::SecretKey},
+    note::{
+        Note, NoteAssets, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript,
+        NoteTag, NoteType,
+    },
+    testing::MockChain,
+    transaction::OutputNote,
     utils::Deserializable,
 };
-use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_core::{Felt, FieldElement};
-use miden_mast_package::SectionId;
-use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
-use rand::{RngCore, rngs::StdRng};
+use miden_lib::account::interface::AccountInterface;
+use miden_mast_package::{Package, SectionId};
+use miden_objects::account::{
+    Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
+    AccountId, AccountStorageMode, AccountType, StorageMap, StorageSlot,
+};
+use rand::{SeedableRng, rngs::StdRng};
 
-use super::helpers::*;
-use crate::local_node::ensure_shared_node;
+use super::helpers::compile_rust_package;
 
+/// Asserts the counter value stored in the counter contract component's storage map.
 fn assert_counter_storage(
     counter_account_storage: &miden_client::account::AccountStorage,
     expected: u64,
@@ -43,29 +53,25 @@ fn assert_counter_storage(
     );
 }
 
-/// Build a counter account from the counter component package and the
-/// Rust-compiled RPO-Falcon512 auth component package.
-async fn create_counter_account_with_rust_rpo_auth(
-    client: &mut Client<FilesystemKeyStore<StdRng>>,
-    component_package: std::sync::Arc<miden_mast_package::Package>,
-    auth_component_package: std::sync::Arc<miden_mast_package::Package>,
-    keystore: std::sync::Arc<FilesystemKeyStore<StdRng>>,
-) -> Result<miden_client::account::Account, miden_client::ClientError> {
-    use std::collections::BTreeSet;
-
-    use miden_objects::account::{
-        AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
-        AccountStorageMode, AccountType, StorageSlot,
-    };
-
-    // Build counter component from template/metadata with initial storage
-    let account_component = match component_package.sections.iter().find_map(|s| {
-        if s.id == SectionId::ACCOUNT_COMPONENT_METADATA {
-            Some(s.data.as_ref())
+/// Builds an existing counter account using a Rust-compiled RPO-Falcon512 authentication component.
+///
+/// Returns the account along with the generated secret key which can authenticate transactions for
+/// this account.
+fn build_counter_account_with_rust_rpo_auth(
+    component_package: Arc<Package>,
+    auth_component_package: Arc<Package>,
+) -> (Account, SecretKey) {
+    let counter_component_metadata = component_package.sections.iter().find_map(|section| {
+        if section.id == SectionId::ACCOUNT_COMPONENT_METADATA {
+            Some(section.data.borrow())
         } else {
             None
         }
-    }) {
+    });
+
+    let supported_types = BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode]);
+
+    let counter_component = match counter_component_metadata {
         None => panic!("no account component metadata present"),
         Some(bytes) => {
             let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
@@ -77,45 +83,78 @@ async fn create_counter_account_with_rust_rpo_auth(
             // Initialize the counter storage to 1 at key [0,0,0,1]
             let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
             let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-            let storage = vec![StorageSlot::Map(StorageMap::with_entries([(key, value)]).unwrap())];
+            let storage_slots =
+                vec![StorageSlot::Map(StorageMap::with_entries([(key, value)]).unwrap())];
 
-            let component = AccountComponent::new(template.library().clone(), storage).unwrap();
-            component.with_supported_types(BTreeSet::from_iter([
-                AccountType::RegularAccountUpdatableCode,
-            ]))
+            AccountComponent::new(template.library().clone(), storage_slots)
+                .unwrap()
+                .with_supported_types(supported_types.clone())
         }
     };
 
-    // Build the Rust-compiled auth component with public key commitment in slot 0
-    let key_pair = SecretKey::with_rng(client.rng());
-    let pk_commitment: Word = PublicKeyCommitment::from(key_pair.public_key()).into();
-    let mut auth_component = AccountComponent::new(
+    // Build the Rust-compiled auth component with public key commitment in slot 0.
+    let mut rng = StdRng::seed_from_u64(1);
+    let secret_key = SecretKey::with_rng(&mut rng);
+    let pk_commitment: Word = PublicKeyCommitment::from(secret_key.public_key()).into();
+    let auth_component = AccountComponent::new(
         auth_component_package.unwrap_library().as_ref().clone(),
         vec![StorageSlot::Value(pk_commitment)],
     )
-    .unwrap();
-    auth_component = auth_component
-        .with_supported_types(BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode]));
+    .unwrap()
+    .with_supported_types(supported_types);
 
-    let mut init_seed = [0_u8; 32];
-    client.rng().fill_bytes(&mut init_seed);
-
-    let _ = client.sync_state().await?;
-
-    let account = AccountBuilder::new(init_seed)
+    let seed = [0_u8; 32];
+    let account = AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
         .with_auth_component(auth_component)
-        .with_component(miden_client::account::component::BasicWallet)
-        .with_component(account_component)
-        .build()
-        .unwrap();
+        .with_component(BasicWallet)
+        .with_component(counter_component)
+        .build_existing()
+        .expect("failed to build counter account");
 
-    client.add_account(&account, false).await?;
+    (account, secret_key)
+}
 
-    keystore.add_key(&AuthSecretKey::RpoFalcon512(key_pair)).unwrap();
+/// Creates a note from a compiled note package without requiring a `Client` RNG.
+fn create_note_from_package(
+    package: Arc<Package>,
+    sender_id: AccountId,
+    tag: NoteTag,
+    rng: &mut impl FeltRng,
+) -> Note {
+    let note_program = package.unwrap_program();
+    let note_script =
+        NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
 
-    Ok(account)
+    let serial_num = rng.draw_word();
+    let recipient = NoteRecipient::new(serial_num, note_script, NoteInputs::new(vec![]).unwrap());
+
+    let metadata = NoteMetadata::new(
+        sender_id,
+        NoteType::Public,
+        tag,
+        NoteExecutionHint::always(),
+        Felt::ZERO,
+    )
+    .unwrap();
+
+    Note::new(NoteAssets::default(), metadata, recipient)
+}
+
+/// Builds a `send_notes` transaction script for a basic wallet account.
+///
+/// The resulting script creates the provided output notes and triggers the account's auth
+/// component when output notes are produced.
+fn build_send_notes_script(
+    account: &Account,
+    notes: &[Note],
+) -> miden_objects::transaction::TransactionScript {
+    let partial_notes =
+        notes.iter().map(miden_objects::note::PartialNote::from).collect::<Vec<_>>();
+    AccountInterface::from(account)
+        .build_send_notes_script(&partial_notes, None, false)
+        .expect("failed to build send_notes transaction script")
 }
 
 /// Verify that another client (without the RPO-Falcon512 key) cannot create notes for
@@ -129,111 +168,78 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let temp_dir = temp_dir::TempDir::with_prefix("test_counter_contract_rust_auth_")
-            .expect("Failed to create temp directory");
-        let node_handle = ensure_shared_node().await.expect("Failed to get shared node");
+        let (counter_account, secret_key) =
+            build_counter_account_with_rust_rpo_auth(contract_package, rpo_auth_package);
+        let counter_account_id = counter_account.id();
 
-        let TestSetup {
-            mut client,
-            keystore,
-        } = setup_test_infrastructure(&temp_dir, &node_handle)
-            .await
-            .expect("Failed to setup test infrastructure");
+        let mut builder = MockChain::builder();
+        builder
+            .add_account(counter_account)
+            .expect("failed to add counter account to mock chain builder");
 
-        let counter_account = create_counter_account_with_rust_rpo_auth(
-            &mut client,
-            contract_package.clone(),
-            rpo_auth_package.clone(),
-            keystore.clone(),
-        )
-        .await
-        .unwrap();
+        let mut chain = builder.build().expect("failed to build mock chain");
+        chain.prove_next_block().unwrap();
+        chain.prove_next_block().unwrap();
+
+        let counter_account = chain.committed_account(counter_account_id).unwrap().clone();
         eprintln!(
             "Counter account (Rust RPO-Falcon512 auth) ID: {:?}",
             counter_account.id().to_hex()
         );
 
-        assert_counter_storage(
-            client
-                .get_account(counter_account.id())
-                .await
-                .unwrap()
-                .unwrap()
-                .account()
-                .storage(),
-            1,
-        );
+        assert_counter_storage(chain.committed_account(counter_account.id()).unwrap().storage(), 1);
 
         // Positive check: original client (with the key) can create a note
+        let mut rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
         let own_note = create_note_from_package(
-            &mut client,
             note_package.clone(),
             counter_account.id(),
-            NoteCreationConfig::default(),
+            NoteTag::from_account_id(counter_account.id()),
+            &mut rng,
         );
-        let own_request = TransactionRequestBuilder::new()
-            .own_output_notes(vec![OutputNote::Full(own_note.clone())])
-            .build()
-            .unwrap();
-        let tx_result = client
-            .execute_transaction(counter_account.id(), own_request.clone())
+        let tx_script = build_send_notes_script(&counter_account, std::slice::from_ref(&own_note));
+        let authenticator = BasicAuthenticator::new(&[AuthSecretKey::RpoFalcon512(secret_key)]);
+
+        let tx_context_builder = chain
+            .build_tx_context(counter_account.clone(), &[], &[])
+            .unwrap()
+            .tx_script(tx_script)
+            .extend_expected_output_notes(vec![OutputNote::Full(own_note.clone())])
+            .authenticator(Some(authenticator));
+        let tx_context = tx_context_builder.build().unwrap();
+        let executed_tx = tx_context
+            .execute()
             .await
             .expect("authorized client should be able to create a note");
-        assert_eq!(tx_result.executed_transaction().output_notes().num_notes(), 1);
-        assert_eq!(tx_result.executed_transaction().output_notes().get_note(0).id(), own_note.id());
+        assert_eq!(executed_tx.output_notes().num_notes(), 1);
+        assert_eq!(executed_tx.output_notes().get_note(0).id(), own_note.id());
 
-        let proven_tx = client.prove_transaction(&tx_result).await.unwrap();
-        let submission_height = client
-            .submit_proven_transaction(proven_tx, tx_result.tx_inputs().clone())
-            .await
-            .unwrap();
-        client.apply_transaction(&tx_result, submission_height).await.unwrap();
+        chain.add_pending_executed_transaction(&executed_tx).unwrap();
+        chain.prove_next_block().unwrap();
 
-        // Create a separate client with its own empty keystore (no key for counter account)
-        let attacker_dir = temp_dir::TempDir::with_prefix("attacker_client_")
-            .expect("Failed to create temp directory");
-        let rpc_url = node_handle.rpc_url().to_string();
-        let endpoint = miden_client::rpc::Endpoint::try_from(rpc_url.as_str()).unwrap();
-        let rpc_api = std::sync::Arc::new(miden_client::rpc::GrpcClient::new(&endpoint, 10_000));
-        let attacker_store_path = attacker_dir.path().join("store.sqlite3");
-        let attacker_keystore_path = attacker_dir.path().join("keystore");
-
-        let mut attacker_client = miden_client::builder::ClientBuilder::new()
-            .rpc(rpc_api)
-            .sqlite_store(attacker_store_path.clone())
-            .filesystem_keystore(attacker_keystore_path.to_str().unwrap())
-            .in_debug_mode(DebugMode::Enabled)
-            .build()
-            .await
-            .unwrap();
-
-        // The attacker needs the account record locally to attempt building a tx
-        // Reuse the same account object; seed is not needed for reading/state queries
-        attacker_client
-            .add_account(&counter_account, false)
-            .await
-            .expect("failed to add account to attacker client");
-
-        // Attacker tries to create an output note on behalf of the counter account
-        // (origin = counter_account.id()), but does not have the required secret key.
+        // Negative check: without the RPO-Falcon512 key, creating output notes should fail.
+        let counter_account = chain.committed_account(counter_account_id).unwrap().clone();
         let forged_note = create_note_from_package(
-            &mut attacker_client,
-            note_package.clone(),
+            note_package,
             counter_account.id(),
-            NoteCreationConfig::default(),
+            NoteTag::from_account_id(counter_account.id()),
+            &mut rng,
         );
+        let tx_script =
+            build_send_notes_script(&counter_account, std::slice::from_ref(&forged_note));
 
-        let forged_request = TransactionRequestBuilder::new()
-            .own_output_notes(vec![OutputNote::Full(forged_note.clone())])
-            .build()
-            .unwrap();
+        let tx_context_builder = chain
+            .build_tx_context(counter_account, &[], &[])
+            .unwrap()
+            .tx_script(tx_script)
+            .extend_expected_output_notes(vec![OutputNote::Full(forged_note)])
+            .authenticator(None);
+        let tx_context = tx_context_builder.build().unwrap();
 
-        let result =
-            attacker_client.execute_transaction(counter_account.id(), forged_request).await;
-
+        let result = tx_context.execute().await;
         assert!(
             result.is_err(),
-            "Unauthorized client unexpectedly created a transaction for the counter account"
+            "Unauthorized executor unexpectedly created a transaction for the counter account"
         );
     });
 }
