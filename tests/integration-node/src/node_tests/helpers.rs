@@ -1,5 +1,7 @@
 //! Common helper functions for node tests
 
+#![allow(dead_code)]
+
 use std::{borrow::Borrow, collections::BTreeSet, path::Path, sync::Arc};
 
 use miden_client::{
