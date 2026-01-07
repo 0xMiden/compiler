@@ -981,6 +981,7 @@ version = "0.7.1"
 dependencies = [
  "miden-core",
  "miden-felt",
+ "miden-felt-repr-derive",
 ]
 
 [[package]]

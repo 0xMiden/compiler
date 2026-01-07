@@ -11,6 +11,10 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub use miden_felt::Felt;
+/// Derive macro for generating `FromFeltRepr` implementations.
+pub use miden_felt_repr_derive::DeriveFromFeltRepr;
+/// Derive macro for generating `ToFeltRepr` implementations.
+pub use miden_felt_repr_derive::DeriveToFeltRepr;
 
 /// A reader that wraps a slice of `Felt` elements and tracks the current position.
 pub struct FeltReader<'a> {

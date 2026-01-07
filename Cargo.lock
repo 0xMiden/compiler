@@ -2472,6 +2472,7 @@ version = "0.7.1"
 dependencies = [
  "miden-core",
  "miden-felt",
+ "miden-felt-repr-derive",
 ]
 
 [[package]]
@@ -2506,6 +2507,8 @@ version = "0.7.1"
 dependencies = [
  "miden-core",
  "miden-debug",
+ "miden-felt",
+ "miden-felt-repr",
  "miden-felt-repr-offchain",
  "miden-integration-tests",
  "miden-lib",
