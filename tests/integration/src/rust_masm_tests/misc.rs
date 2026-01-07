@@ -149,33 +149,16 @@ fn test_issue_831_invalid_stack_offset_movup_16_args_15() {
     // - 7 `Felt` (7)
     // - 4 `u64`  (8)
     // Total: 15
-    let main_fn = r#"
-        () -> Felt {
-            let a0 = Felt::from_u32(1);
-            let a1 = Felt::from_u32(2);
-            let a2 = a0 + a1;
-            let a3 = a0 * a1;
-            let a4 = a2 + a3;
-            let a5 = a4 + a0;
-            let a6 = a5 + a1;
+    let main_fn = r#"(a0: Felt, a1: Felt, a2: Felt, a3: Felt, a4: Felt, a5: Felt, a6: Felt, a7: Felt, a8: Felt, a9: Felt, a10: Felt, a11: Felt, a12: Felt, a13: Felt, a14: Felt) -> Felt {
+            let b0 = a0 + a1;
+            let b1 = a2 * a3;
+            let b2 = a4 + a5;
+            let b3 = a6 + a7;
 
-            consume_15(
-                a0,
-                a1,
-                a2,
-                a3,
-                a4,
-                a5,
-                a6,
-                a0.as_u64(),
-                a1.as_u64(),
-                a2.as_u64(),
-                a3.as_u64(),
-                {
-                    let v = alloc::vec![a0, a1, a2, a3, a4, a5, a6, Felt::from_u32(0)];
-                    let _ = v[0];
-                },
-            )
+            consume_15(a0, a1, b0, b1, b2, b3, a8, a9.as_u64(), a10.as_u64(), a11.as_u64(), a12.as_u64(), {
+                let v = alloc::vec![a13, a14, b0, b1];
+                let _ = v[0];
+            })
         }
 
         #[inline(never)]
@@ -209,35 +192,16 @@ fn test_issue_831_invalid_stack_offset_movup_16_args_16() {
     // - 8 `Felt` (8)
     // - 4 `u64`  (8)
     // Total: 16
-    let main_fn = r#"
-        () -> Felt {
-            let a0 = Felt::from_u32(1);
-            let a1 = Felt::from_u32(2);
-            let a2 = a0 + a1;
-            let a3 = a0 * a1;
-            let a4 = a2 + a3;
-            let a5 = a4 + a0;
-            let a6 = a5 + a1;
-            let a7 = a6 + a2;
+    let main_fn = r#"(a0: Felt, a1: Felt, a2: Felt, a3: Felt, a4: Felt, a5: Felt, a6: Felt, a7: Felt, a8: Felt, a9: Felt, a10: Felt, a11: Felt, a12: Felt, a13: Felt, a14: Felt, a15: Felt) -> Felt {
+            let b0 = a0 + a1;
+            let b1 = a2 + a3;
+            let b2 = a4 * a5;
+            let b3 = a6 + a7;
 
-            consume_16(
-                a0,
-                a1,
-                a2,
-                a3,
-                a4,
-                a5,
-                a6,
-                a7,
-                a0.as_u64(),
-                a1.as_u64(),
-                a2.as_u64(),
-                a3.as_u64(),
-                {
-                    let v = alloc::vec![a0, a1, a2, a3, a4, a5, a6, a7];
-                    let _ = v[0];
-                },
-            )
+            consume_16(a0, a1, b0, b1, b2, b3, a8, a9, a10.as_u64(), a11.as_u64(), a12.as_u64(), a13.as_u64(), {
+                let v = alloc::vec![a14, a15, b0, b2];
+                let _ = v[0];
+            })
         }
 
         #[inline(never)]
@@ -270,18 +234,9 @@ fn test_issue_831_invalid_stack_offset_movup_16_args_17() {
     //
     // 17 felts is above the 16-felt cutoff, so these should be passed indirectly via a pointer.
     let main_fn = r#"
-        () -> Felt {
-            let a0 = Felt::from_u32(1);
-            let a1 = Felt::from_u32(2);
-            let a2 = a0 + a1;
-            let a3 = a0 * a1;
-            let a4 = a2 + a3;
-            let a5 = a4 + a0;
-            let a6 = a5 + a1;
-            let a7 = a6 + a2;
-            let a8 = a7 + a3;
-
-            let args = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a0, a1, a2, a3, a4, a5, a6, a7];
+        (
+            args: [Felt; 17],
+        ) -> Felt {
             consume_17(args.as_ptr())
         }
 
