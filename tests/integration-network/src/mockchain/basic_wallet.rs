@@ -99,6 +99,7 @@ pub fn test_basic_wallet_p2id() {
         transfer_asset,
         note_package,
         tx_script_package,
+        &mut note_rng,
     );
     execute_tx(&mut chain, alice_tx_context_builder);
 

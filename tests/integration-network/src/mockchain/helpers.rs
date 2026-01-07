@@ -6,7 +6,7 @@ use miden_client::{
     Word,
     account::component::BasicWallet,
     asset::FungibleAsset,
-    crypto::{FeltRng, RpoRandomCoin},
+    crypto::FeltRng,
     note::{
         Note, NoteAssets, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript,
         NoteTag, NoteType,
@@ -230,6 +230,9 @@ pub(super) fn execute_tx(chain: &mut MockChain, tx_context_builder: TransactionC
 ///
 /// Builds the transaction context by constructing the same advice-map + script-arg commitment
 /// expected by the tx script, without requiring a `miden_client::Client`.
+///
+/// The caller provides an RNG used to generate a unique note serial number, to avoid accidental
+/// note ID collisions across multiple transfers.
 pub(super) fn build_asset_transfer_tx(
     chain: &MockChain,
     sender_id: AccountId,
@@ -237,6 +240,7 @@ pub(super) fn build_asset_transfer_tx(
     asset: FungibleAsset,
     p2id_note_package: Arc<Package>,
     tx_script_package: Arc<Package>,
+    rng: &mut impl FeltRng,
 ) -> (TransactionContextBuilder, Note) {
     let note_program = p2id_note_package.unwrap_program();
     let note_script =
@@ -248,7 +252,7 @@ pub(super) fn build_asset_transfer_tx(
         tx_script_program.entrypoint(),
     );
 
-    let serial_num = RpoRandomCoin::new(tx_script_program.hash()).draw_word();
+    let serial_num = rng.draw_word();
     let inputs = NoteInputs::new(AccountIdFeltRepr(&recipient_id).to_felt_repr()).unwrap();
     let note_recipient = NoteRecipient::new(serial_num, note_script, inputs);
 
