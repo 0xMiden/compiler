@@ -304,17 +304,17 @@ pub(super) fn build_asset_transfer_tx(
 // COUNTER CONTRACT HELPERS
 // ================================================================================================
 
-/// Asserts the counter value stored in the counter contract component's storage map.
+/// Asserts the counter value stored in the counter contract's storage map at `storage_slot`.
 pub(super) fn assert_counter_storage(
     counter_account_storage: &miden_client::account::AccountStorage,
-    component_slot: u8,
+    storage_slot: u8,
     expected: u64,
 ) {
     // according to `examples/counter-contract` for inner (slot, key) values
     let counter_contract_storage_key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
 
     let word = counter_account_storage
-        .get_map_item(component_slot, counter_contract_storage_key)
+        .get_map_item(storage_slot, counter_contract_storage_key)
         .expect("Failed to get counter value from storage slot");
 
     let val = word.last().unwrap();
