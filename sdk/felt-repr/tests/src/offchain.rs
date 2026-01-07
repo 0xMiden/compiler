@@ -4,10 +4,7 @@
 //! involving on-chain execution.
 
 use miden_felt::Felt;
-use miden_felt_repr::{
-    DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr, FeltReader, FromFeltRepr,
-    ToFeltRepr,
-};
+use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
 /// Serializes `value` off-chain and deserializes it back, asserting equality.
 fn assert_roundtrip<T>(value: &T)

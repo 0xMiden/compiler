@@ -11,10 +11,10 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub use miden_felt::Felt;
-/// Derive macro for generating `FromFeltRepr` implementations.
-pub use miden_felt_repr_derive::DeriveFromFeltRepr;
-/// Derive macro for generating `ToFeltRepr` implementations.
-pub use miden_felt_repr_derive::DeriveToFeltRepr;
+/// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
+pub use miden_felt_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
+/// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
+pub use miden_felt_repr_derive::DeriveToFeltRepr as ToFeltRepr;
 
 /// A reader that wraps a slice of `Felt` elements and tracks the current position.
 pub struct FeltReader<'a> {
@@ -208,6 +208,15 @@ impl ToFeltRepr for bool {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         writer.write(Felt::from_u64_unchecked(*self as u64));
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ToFeltRepr for miden_objects::account::AccountId {
+    #[inline(always)]
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        writer.write(self.prefix().as_felt().into());
+        writer.write(self.suffix().into());
     }
 }
 

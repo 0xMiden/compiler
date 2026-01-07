@@ -1,22 +1,17 @@
 //! Derive macros for felt representation serialization/deserialization.
 //!
-//! This crate provides proc-macros used by `miden-felt-repr` (and its thin wrappers
-//! `miden-felt-repr-{onchain,offchain}`) to derive `ToFeltRepr`/`FromFeltRepr` implementations for
-//! user-defined types.
+//! This crate provides proc-macros used by `miden-felt-repr` to derive `ToFeltRepr`/`FromFeltRepr`
+//! implementations for user-defined types.
 //!
 //! # Usage
 //!
-//! This crate is not typically used directly. Instead, depend on either:
-//! - `miden-felt-repr` (preferred), or
-//! - `miden-felt-repr-onchain` (for on-chain code), or
-//! - `miden-felt-repr-offchain` (for off-chain code),
-//!
-//! and derive the traits re-exported by those crates.
+//! This crate is not typically used directly. Instead, depend on `miden-felt-repr` and derive the
+//! traits re-exported by that crate.
 //!
 //! ## Struct example
 //!
 //! ```ignore
-//! use miden_felt_repr_offchain::{FromFeltRepr, ToFeltRepr};
+//! use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
 //! use miden_core::Felt;
 //!
 //! #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
@@ -34,7 +29,7 @@
 //! ## Enum example
 //!
 //! ```ignore
-//! use miden_felt_repr_offchain::{FromFeltRepr, ToFeltRepr};
+//! use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
 //! use miden_core::Felt;
 //!
 //! #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
@@ -235,11 +230,8 @@ pub fn derive_from_felt_repr(input: TokenStream) -> TokenStream {
 pub fn derive_from_felt_repr_onchain(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match derive_from_felt_repr_impl(
-        &input,
-        quote!(miden_felt_repr_onchain),
-        quote!(miden_felt_repr_onchain::Felt),
-    ) {
+    match derive_from_felt_repr_impl(&input, quote!(miden_felt_repr), quote!(miden_felt_repr::Felt))
+    {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
     }
@@ -354,7 +346,7 @@ fn derive_from_felt_repr_impl(
     Ok(expanded.into())
 }
 
-/// Derives `ToFeltRepr` trait (offchain) for a struct with named fields, or an enum.
+/// Derives `ToFeltRepr` trait for a struct with named fields, or an enum.
 ///
 /// Structs are encoded by serializing their fields in declaration order.
 ///
@@ -364,7 +356,7 @@ fn derive_from_felt_repr_impl(
 /// # Example
 ///
 /// ```ignore
-/// use miden_felt_repr_offchain::ToFeltRepr;
+/// use miden_felt_repr::ToFeltRepr;
 ///
 /// #[derive(ToFeltRepr)]
 /// pub struct AccountId {
@@ -376,7 +368,7 @@ fn derive_from_felt_repr_impl(
 pub fn derive_to_felt_repr_offchain(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr_offchain)) {
+    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr)) {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
     }
@@ -481,7 +473,7 @@ fn derive_to_felt_repr_impl(
     Ok(expanded.into())
 }
 
-/// Derives `ToFeltRepr` trait (onchain) for a struct with named fields, or an enum.
+/// Derives `ToFeltRepr` trait for a struct with named fields, or an enum.
 ///
 /// Structs are encoded by serializing their fields in declaration order.
 ///
@@ -491,7 +483,7 @@ fn derive_to_felt_repr_impl(
 /// # Example
 ///
 /// ```ignore
-/// use miden_felt_repr_onchain::ToFeltRepr;
+/// use miden_felt_repr::ToFeltRepr;
 ///
 /// #[derive(ToFeltRepr)]
 /// pub struct AccountId {
@@ -503,7 +495,7 @@ fn derive_to_felt_repr_impl(
 pub fn derive_to_felt_repr_onchain(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr_onchain)) {
+    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr)) {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
     }
@@ -520,7 +512,7 @@ pub fn derive_to_felt_repr(input: TokenStream) -> TokenStream {
     }
 }
 
-/// Derives `FromFeltRepr` trait (offchain) for a struct with named fields, or an enum.
+/// Derives `FromFeltRepr` trait for a struct with named fields, or an enum.
 ///
 /// Structs are encoded by serializing their fields in declaration order.
 ///
@@ -530,7 +522,7 @@ pub fn derive_to_felt_repr(input: TokenStream) -> TokenStream {
 /// # Example
 ///
 /// ```ignore
-/// use miden_felt_repr_offchain::FromFeltRepr;
+/// use miden_felt_repr::FromFeltRepr;
 ///
 /// #[derive(FromFeltRepr)]
 /// pub struct AccountId {
@@ -542,11 +534,8 @@ pub fn derive_to_felt_repr(input: TokenStream) -> TokenStream {
 pub fn derive_from_felt_repr_offchain(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match derive_from_felt_repr_impl(
-        &input,
-        quote!(miden_felt_repr_offchain),
-        quote!(miden_felt_repr_offchain::Felt),
-    ) {
+    match derive_from_felt_repr_impl(&input, quote!(miden_felt_repr), quote!(miden_felt_repr::Felt))
+    {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
     }

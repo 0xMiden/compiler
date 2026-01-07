@@ -7,10 +7,7 @@ use std::borrow::Cow;
 
 use miden_debug::{ExecutionTrace, Felt as TestFelt};
 use miden_felt::Felt;
-use miden_felt_repr::{
-    DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr, Felt as ReprFelt,
-    FeltReader, FromFeltRepr, ToFeltRepr,
-};
+use miden_felt_repr::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
 use miden_integration_tests::testing::{Initializer, eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use temp_dir::TempDir;
@@ -139,7 +136,6 @@ fn test_two_felts_struct_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 2]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct TestStruct {
@@ -214,7 +210,6 @@ fn test_five_felts_struct_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 5]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct TestStruct {
@@ -296,7 +291,6 @@ fn test_minimal_u64_bug() {
 
     let onchain_code = r#"(input: [Felt; 5]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         assert_eq(input[0], felt!(111111));
         assert_eq(input[4], felt!(55));
@@ -384,7 +378,6 @@ fn test_mixed_types_no_u64_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct TestStruct {
@@ -479,7 +472,6 @@ fn test_nested_struct_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct Inner {
@@ -570,7 +562,6 @@ fn test_enum_unit_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 2]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         enum SimpleEnum {
@@ -640,7 +631,6 @@ fn test_enum_tuple_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 3]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         enum MixedEnum {
@@ -724,7 +714,6 @@ fn test_struct_with_enum_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct Inner {
@@ -817,7 +806,6 @@ fn test_enum_nested_with_struct_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         enum State {
@@ -903,7 +891,6 @@ fn test_struct_with_option_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 4]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct WithOption {
@@ -986,7 +973,6 @@ fn test_struct_with_vec_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct WithVec {
@@ -1050,7 +1036,6 @@ fn test_tuple_struct_round_trip() {
 
     let onchain_code = r#"(input: [Felt; 3]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
-        use miden_felt_repr::{DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct TupleStruct(u32, bool, Felt);

@@ -23,7 +23,7 @@ use miden_client::{
 };
 use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_core::{Felt, FieldElement, Word};
-use miden_felt_repr_offchain::{AccountIdFeltRepr, ToFeltRepr};
+use miden_felt_repr::ToFeltRepr;
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::{Package, SectionId};
 use miden_objects::{
@@ -450,11 +450,7 @@ pub async fn send_asset_to_account(
         sender_account_id,
         NoteCreationConfig {
             assets: miden_client::note::NoteAssets::new(vec![asset.into()]).unwrap(),
-            inputs: AccountIdFeltRepr(&recipient_account_id)
-                .to_felt_repr()
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            inputs: recipient_account_id.to_felt_repr().into_iter().map(Into::into).collect(),
             note_type: config.note_type,
             tag: config.tag,
             execution_hint: config.execution_hint,
@@ -471,14 +467,9 @@ pub async fn send_asset_to_account(
     // Prepare note recipient
     let program_hash = tx_script_program.hash();
     let serial_num = RpoRandomCoin::new(program_hash).draw_word();
-    let inputs = NoteInputs::new(
-        AccountIdFeltRepr(&recipient_account_id)
-            .to_felt_repr()
-            .into_iter()
-            .map(Into::into)
-            .collect(),
-    )
-    .unwrap();
+    let inputs =
+        NoteInputs::new(recipient_account_id.to_felt_repr().into_iter().map(Into::into).collect())
+            .unwrap();
     let note_recipient = NoteRecipient::new(serial_num, p2id_note.script().clone(), inputs);
 
     // Prepare commitment data

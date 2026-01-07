@@ -6,7 +6,7 @@ use miden_client::{
     transaction::{OutputNote, TransactionRequestBuilder},
 };
 use miden_core::{Felt, utils::Serializable};
-use miden_felt_repr_offchain::{AccountIdFeltRepr, ToFeltRepr};
+use miden_felt_repr::ToFeltRepr;
 
 use super::helpers::*;
 use crate::local_node::ensure_shared_node;
@@ -83,11 +83,7 @@ pub fn test_basic_wallet_p2id_local() {
             faucet_account.id(),
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![fungible_asset.into()]).unwrap(),
-                inputs: AccountIdFeltRepr(&alice_account.id())
-                    .to_felt_repr()
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
+                inputs: alice_account.id().to_felt_repr().into_iter().map(Into::into).collect(),
                 ..Default::default()
             },
         );
@@ -271,11 +267,7 @@ pub fn test_basic_wallet_p2ide_local() {
             faucet_account.id(),
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![fungible_asset.into()]).unwrap(),
-                inputs: AccountIdFeltRepr(&alice_account.id())
-                    .to_felt_repr()
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
+                inputs: alice_account.id().to_felt_repr().into_iter().map(Into::into).collect(),
                 ..Default::default()
             },
         );
@@ -348,11 +340,8 @@ pub fn test_basic_wallet_p2ide_local() {
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
                 inputs: {
-                    let mut inputs: Vec<Felt> = AccountIdFeltRepr(&bob_account.id())
-                        .to_felt_repr()
-                        .into_iter()
-                        .map(Into::into)
-                        .collect();
+                    let mut inputs: Vec<Felt> =
+                        bob_account.id().to_felt_repr().into_iter().map(Into::into).collect();
                     inputs.extend([timelock_height, reclaim_height]);
                     inputs
                 },
@@ -481,11 +470,7 @@ pub fn test_basic_wallet_p2ide_reclaim_local() {
             faucet_account.id(),
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![fungible_asset.into()]).unwrap(),
-                inputs: AccountIdFeltRepr(&alice_account.id())
-                    .to_felt_repr()
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
+                inputs: alice_account.id().to_felt_repr().into_iter().map(Into::into).collect(),
                 ..Default::default()
             },
         );
@@ -560,11 +545,8 @@ pub fn test_basic_wallet_p2ide_reclaim_local() {
             NoteCreationConfig {
                 assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
                 inputs: {
-                    let mut inputs: Vec<Felt> = AccountIdFeltRepr(&bob_account.id())
-                        .to_felt_repr()
-                        .into_iter()
-                        .map(Into::into)
-                        .collect();
+                    let mut inputs: Vec<Felt> =
+                        bob_account.id().to_felt_repr().into_iter().map(Into::into).collect();
                     inputs.extend([timelock_height, reclaim_height]);
                     inputs
                 },
