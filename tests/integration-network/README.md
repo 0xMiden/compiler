@@ -1,24 +1,22 @@
-# Miden Integration Node Tests
+# Miden Integration Network Tests
 
-This crate contains integration tests that require a local Miden node instance or testnet connection.
+This crate contains integration tests that exercise contract deployment and execution on a mock
+chain (`miden_client::testing::MockChain`).
 
 ## Overview
 
 The tests in this crate are separated from the main integration tests because they:
-- Require a local Miden node to be running or testnet connectivity
-- Are slower due to network operations and multi-step nature of the test scenarios
+- Exercise multi-step end-to-end scenarios (account setup, block production, tx execution)
+- Can be slower due to proving and compiling example packages
 
 ## Running Tests
 
-To see debug output from the node:
-
 ```bash
-MIDEN_NODE_OUTPUT=1 cargo test -p midenc-integration-network-tests
+cargo test -p midenc-integration-network-tests
 ```
 
-## Process Cleanup
+To see test output:
 
-The local node management system ensures that:
-- Only one node instance runs at a time, shared across all tests
-- The node is automatically stopped when the last test using the node is finished
-- No orphaned miden-node processes remain after test execution
+```bash
+cargo test -p midenc-integration-network-tests -- --nocapture
+```

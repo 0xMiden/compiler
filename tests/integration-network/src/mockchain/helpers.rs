@@ -1,4 +1,4 @@
-//! Common helper functions for node tests.
+//! Common helper functions for mock-chain integration tests.
 
 use std::{borrow::Borrow, collections::BTreeSet, future::Future, sync::Arc};
 
@@ -93,7 +93,7 @@ impl Default for NoteCreationConfig {
     }
 }
 
-/// Creates a note from a compiled note package without requiring a local node `Client`.
+/// Creates a note from a compiled note package without requiring a `miden_client::Client`.
 pub(super) fn create_note_from_package(
     package: Arc<Package>,
     sender_id: AccountId,
@@ -228,8 +228,8 @@ pub(super) fn execute_tx(chain: &mut MockChain, tx_context_builder: TransactionC
 /// Builds a transaction context which transfers an asset from `sender_id` to `recipient_id` using
 /// the custom transaction script package.
 ///
-/// This mirrors the `send_asset_to_account` helper logic (advice-map + script-arg commitment)
-/// without requiring a local node `Client`.
+/// Builds the transaction context by constructing the same advice-map + script-arg commitment
+/// expected by the tx script, without requiring a `miden_client::Client`.
 pub(super) fn build_asset_transfer_tx(
     chain: &MockChain,
     sender_id: AccountId,
@@ -323,10 +323,8 @@ pub(super) fn assert_counter_storage(
     );
 }
 
-/// Builds an account builder for an existing public account containing the counter contract
-/// component.
-/// Builds an account builder for an existing public counter account containing a custom auth
-/// component (compiled as a package library).
+/// Builds an account builder for an existing public counter account containing the counter
+/// contract component and a custom authentication component compiled as a package library.
 pub(super) fn build_existing_counter_account_builder_with_auth_package(
     contract_package: Arc<Package>,
     auth_component_package: Arc<Package>,
