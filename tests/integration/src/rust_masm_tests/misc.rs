@@ -4,17 +4,19 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::{
     CompilerTest,
-    testing::{eval_package, setup},
+    testing::{Initializer, eval_package, setup},
 };
 
-/// Compiles a Rust entrypoint body using `miden-stdlib-sys`.
+/// Compiles a Rust entrypoint body using `miden-stdlib-sys` and returns the resulting test harness.
 ///
-/// This is useful for regressions where the compiler fails during MIR/HIR lowering or MASM codegen,
-/// and no runtime execution is required.
-fn compile_rust_fn_body_with_stdlib_sys(name: &'static str, main_fn: &str) {
+/// This is useful for regressions where the issue may occur during compilation or execution.
+fn compile_rust_fn_body_with_stdlib_sys(
+    name: &'static str,
+    main_fn: &str,
+    midenc_flags: impl IntoIterator<Item = String>,
+) -> CompilerTest {
     let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(name, main_fn, config, []);
-    let _package = test.compiled_package();
+    CompilerTest::rust_fn_body_with_stdlib_sys(name, main_fn, config, midenc_flags)
 }
 
 #[test]
@@ -181,7 +183,42 @@ fn test_issue_831_invalid_stack_offset_movup_16_args_15() {
         }
     "#;
 
-    compile_rust_fn_body_with_stdlib_sys("issue_831_args_15", main_fn);
+    let mut test = compile_rust_fn_body_with_stdlib_sys("issue_831_args_15", main_fn, []);
+    let package = test.compiled_package();
+
+    let a0 = Felt::from(1u32);
+    let a1 = Felt::from(2u32);
+    let a2 = Felt::from(3u32);
+    let a3 = Felt::from(4u32);
+    let a4 = Felt::from(5u32);
+    let a5 = Felt::from(6u32);
+    let a6 = Felt::from(7u32);
+    let a7 = Felt::from(8u32);
+    let a8 = Felt::from(9u32);
+    let a9 = Felt::from(10u32);
+    let a10 = Felt::from(20u32);
+    let a11 = Felt::from(30u32);
+    let a12 = Felt::from(40u32);
+    let a13 = Felt::from(13u32);
+    let a14 = Felt::from(14u32);
+
+    // Note: arguments are pushed on the operand stack in reverse order.
+    let args = [a14, a13, a12, a11, a10, a9, a8, a7, a6, a5, a4, a3, a2, a1, a0];
+
+    let b0 = a0 + a1;
+    let b1 = a2 * a3;
+    let b2 = a4 + a5;
+    let b3 = a6 + a7;
+    let d0 = a9.as_int();
+    let d1 = a10.as_int();
+    let d2 = a11.as_int();
+    let d3 = a12.as_int();
+    let mix = (d0 ^ d1 ^ d2 ^ d3) as u32;
+    let expected = a0 + a1 + b0 + b1 + b2 + b3 + a8 + Felt::from(mix);
+
+    let output =
+        eval_package::<Felt, _, _>(&package, [], &args, &test.session, |_| Ok(())).unwrap();
+    assert_eq!(output, expected);
 }
 
 #[test]
@@ -225,7 +262,43 @@ fn test_issue_831_invalid_stack_offset_movup_16_args_16() {
         }
     "#;
 
-    compile_rust_fn_body_with_stdlib_sys("issue_831_args_16", main_fn);
+    let mut test = compile_rust_fn_body_with_stdlib_sys("issue_831_args_16", main_fn, []);
+    let package = test.compiled_package();
+
+    let a0 = Felt::from(1u32);
+    let a1 = Felt::from(2u32);
+    let a2 = Felt::from(3u32);
+    let a3 = Felt::from(4u32);
+    let a4 = Felt::from(5u32);
+    let a5 = Felt::from(6u32);
+    let a6 = Felt::from(7u32);
+    let a7 = Felt::from(8u32);
+    let a8 = Felt::from(9u32);
+    let a9 = Felt::from(10u32);
+    let a10 = Felt::from(10u32);
+    let a11 = Felt::from(20u32);
+    let a12 = Felt::from(30u32);
+    let a13 = Felt::from(40u32);
+    let a14 = Felt::from(14u32);
+    let a15 = Felt::from(15u32);
+
+    // Note: arguments are pushed on the operand stack in reverse order.
+    let args = [a15, a14, a13, a12, a11, a10, a9, a8, a7, a6, a5, a4, a3, a2, a1, a0];
+
+    let b0 = a0 + a1;
+    let b1 = a2 + a3;
+    let b2 = a4 * a5;
+    let b3 = a6 + a7;
+    let d0 = a10.as_int();
+    let d1 = a11.as_int();
+    let d2 = a12.as_int();
+    let d3 = a13.as_int();
+    let mix = (d0 ^ d1 ^ d2 ^ d3) as u32;
+    let expected = a0 + a1 + b0 + b1 + b2 + b3 + a8 + a9 + Felt::from(mix);
+
+    let output =
+        eval_package::<Felt, _, _>(&package, [], &args, &test.session, |_| Ok(())).unwrap();
+    assert_eq!(output, expected);
 }
 
 #[test]
@@ -249,5 +322,52 @@ fn test_issue_831_invalid_stack_offset_movup_16_args_17() {
         }
     "#;
 
-    compile_rust_fn_body_with_stdlib_sys("issue_831_args_17", main_fn);
+    let mut test = compile_rust_fn_body_with_stdlib_sys(
+        "issue_831_args_17",
+        main_fn,
+        ["--test-harness".into()],
+    );
+    let package = test.compiled_package();
+
+    // `eval_package` only supports up to 16 operand stack inputs, so pass a pointer to the 17-felt
+    // argument payload, and initialize the payload via the test harness initializers.
+    //
+    // NOTE: The payload is initialized in element-addressable space. The pointer passed here must
+    // match the addressing convention expected by the ABI for indirect arguments.
+    let args_base_addr = 20u32 * 65536;
+    let payload_element_addr = args_base_addr / 4;
+
+    let payload = vec![
+        Felt::from(1u32),
+        Felt::from(2u32),
+        Felt::from(3u32),
+        Felt::from(4u32),
+        Felt::from(5u32),
+        Felt::from(6u32),
+        Felt::from(7u32),
+        Felt::from(8u32),
+        Felt::from(9u32),
+        Felt::from(10u32),
+        Felt::from(11u32),
+        Felt::from(12u32),
+        Felt::from(13u32),
+        Felt::from(14u32),
+        Felt::from(15u32),
+        Felt::from(16u32),
+        Felt::from(17u32),
+    ];
+    let expected = payload.iter().copied().fold(Felt::ZERO, |acc, item| acc + item);
+
+    let initializers = [Initializer::MemoryFelts {
+        addr: payload_element_addr,
+        felts: (&payload).into(),
+    }];
+
+    // Pass the payload pointer as a single argument (see note above).
+    let args = [Felt::new(args_base_addr as u64)];
+
+    let output =
+        eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |_| Ok(()))
+            .unwrap();
+    assert_eq!(output, expected);
 }
