@@ -13,7 +13,7 @@
 pub const MODULUS: u64 = 0xffff_ffff_0000_0001;
 
 /// Errors returned by [`Felt::new`].
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum FeltError {
     /// The provided value was not a valid canonical felt.
     InvalidValue,

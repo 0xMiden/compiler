@@ -5,7 +5,7 @@ pub use miden_base::*;
 pub use miden_base_sys::bindings::*;
 /// Unified `Felt` and related helpers.
 pub use miden_felt as felt;
-/// Error type for [`Felt::new`].
+/// Error type for [`felt::Felt::new`].
 pub use miden_felt::FeltError;
 /// Felt representation helpers.
 pub use miden_felt_repr as felt_repr;
