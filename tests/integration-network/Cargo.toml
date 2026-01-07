@@ -1,5 +1,5 @@
 [package]
-name = "miden-integration-node-tests"
+name = "midenc-integration-network-tests"
 version.workspace = true
 rust-version.workspace = true
 authors.workspace = true

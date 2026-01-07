@@ -13,7 +13,7 @@ The tests in this crate are separated from the main integration tests because th
 To see debug output from the node:
 
 ```bash
-MIDEN_NODE_OUTPUT=1 cargo test -p miden-integration-node-tests
+MIDEN_NODE_OUTPUT=1 cargo test -p midenc-integration-network-tests
 ```
 
 ## Process Cleanup

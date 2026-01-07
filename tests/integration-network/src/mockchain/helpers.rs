@@ -36,7 +36,7 @@ use rand::{SeedableRng, rngs::StdRng};
 
 thread_local! {
     static TOKIO_RUNTIME: tokio::runtime::Runtime = tokio::runtime::Runtime::new()
-        .expect("failed to build tokio runtime for integration-node tests");
+        .expect("failed to build tokio runtime for integration-network tests");
 }
 
 /// Runs the provided future to completion on a shared Tokio runtime.

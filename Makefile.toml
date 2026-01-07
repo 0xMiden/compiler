@@ -277,7 +277,7 @@ args = ["audit"]
 
 [tasks.test]
 category = "Test"
-description = "Runs all tests including integration node tests"
+description = "Runs all tests including network integration tests"
 dependencies = ["test-rust"]
 
 [tasks.install-cargo-miden]
