@@ -59,7 +59,7 @@ pub fn test_counter_contract() {
 
     eprintln!("Counter account ID: {:?}", counter_account.id().to_hex());
 
-    // The counter contract storage value should be zero after the account creation
+    // The counter contract storage value should be 1 after account creation (initialized to 1).
     assert_counter_storage(chain.committed_account(counter_account.id()).unwrap().storage(), 1, 1);
 
     // Consume the note to increment the counter
@@ -68,6 +68,6 @@ pub fn test_counter_contract() {
         .unwrap();
     execute_tx(&mut chain, tx_context_builder);
 
-    // The counter contract storage value should be 1 (incremented) after the note is consumed
+    // The counter contract storage value should be 2 after the note is consumed (incremented by 1).
     assert_counter_storage(chain.committed_account(counter_account.id()).unwrap().storage(), 1, 2);
 }
