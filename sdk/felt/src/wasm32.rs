@@ -1,4 +1,4 @@
-//! `wasm32` implementation of [`crate::Felt`].
+//! On-chain implementation of [`crate::Felt`].
 
 use crate::{Felt, FeltError, MODULUS};
 
@@ -81,13 +81,13 @@ impl Felt {
         }
     }
 
-    /// Returns the canonical `u64` value of this field element.
+    /// Returns the canonical `u64` value of this felt.
     #[inline(always)]
     pub fn as_u64(self) -> u64 {
         unsafe { extern_as_u64(self) }
     }
 
-    /// Returns true if this field element is odd.
+    /// Returns true if this felt is odd.
     #[inline(always)]
     pub fn is_odd(self) -> bool {
         unsafe { extern_is_odd(self) != 0 }

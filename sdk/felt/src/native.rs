@@ -1,4 +1,4 @@
-//! Native (non-`wasm32`) implementation of [`crate::Felt`].
+//! Off-chain implementation of [`crate::Felt`].
 
 use miden_core::{Felt as CoreFelt, FieldElement};
 
@@ -30,13 +30,13 @@ impl Felt {
         }
     }
 
-    /// Returns the canonical `u64` value of this field element.
+    /// Returns the canonical `u64` value of this felt.
     #[inline(always)]
     pub fn as_u64(self) -> u64 {
         self.0.as_int()
     }
 
-    /// Returns true if this field element is odd.
+    /// Returns true if this felt is odd.
     #[inline(always)]
     pub fn is_odd(self) -> bool {
         self.as_u64() & 1 == 1

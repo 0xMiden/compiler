@@ -23,4 +23,4 @@ miden-core.workspace = true
 
 [features]
 default = []
-true-felt = []
+regular-felt-on-wasm = []

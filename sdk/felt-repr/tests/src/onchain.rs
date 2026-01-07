@@ -19,7 +19,6 @@ fn to_core_felts(felts: &[ReprFelt]) -> Vec<miden_core::Felt> {
     felts.iter().copied().map(Into::into).collect()
 }
 
-/// Reads a `Vec<Felt>` returned via the Rust ABI from VM memory.
 fn read_vec_felts(
     trace: &ExecutionTrace,
     vec_meta_addr: u32,
