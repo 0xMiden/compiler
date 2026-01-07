@@ -74,7 +74,7 @@ impl Felt {
     /// Creates a `Felt` from `value`, returning an error if it is out of range.
     #[inline(always)]
     pub fn new(value: u64) -> Result<Self, FeltError> {
-        if value > Self::M {
+        if value >= Self::M {
             Err(FeltError::InvalidValue)
         } else {
             Ok(Self::from_u64_unchecked(value))
