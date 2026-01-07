@@ -1,9 +1,13 @@
 //! Off-chain serialization/deserialization tests.
 //!
-//! These tests verify the correctness of the off-chain `ToFeltRepr` and `FromFeltRepr`
-//! implementations without involving on-chain execution.
+//! These tests verify the correctness of `ToFeltRepr` and `FromFeltRepr` implementations without
+//! involving on-chain execution.
 
-use miden_felt_repr_offchain::{Felt, FeltReader, FromFeltRepr, ToFeltRepr};
+use miden_felt::Felt;
+use miden_felt_repr::{
+    DeriveFromFeltRepr as FromFeltRepr, DeriveToFeltRepr as ToFeltRepr, FeltReader, FromFeltRepr,
+    ToFeltRepr,
+};
 
 /// Serializes `value` off-chain and deserializes it back, asserting equality.
 fn assert_roundtrip<T>(value: &T)

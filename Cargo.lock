@@ -2509,7 +2509,6 @@ dependencies = [
  "miden-debug",
  "miden-felt",
  "miden-felt-repr",
- "miden-felt-repr-offchain",
  "miden-integration-tests",
  "miden-lib",
  "miden-processor",

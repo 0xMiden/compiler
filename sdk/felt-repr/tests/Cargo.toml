@@ -15,7 +15,6 @@ publish = false
 [dependencies]
 miden-felt = { path = "../../felt", version = "0.8.0" }
 miden-felt-repr = { path = "../repr", version = "0.7.1" }
-miden-felt-repr-offchain = { path = "../offchain", version = "0.7.1" }
 miden-core.workspace = true
 
 [dev-dependencies]
