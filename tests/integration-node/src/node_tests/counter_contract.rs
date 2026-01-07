@@ -20,7 +20,7 @@ use super::helpers::{
 
 /// Tests the counter contract deployment and note consumption workflow on a mock chain.
 #[test]
-pub fn test_counter_contract_mockchain() {
+pub fn test_counter_contract() {
     // Compile the contracts first (before creating any runtime)
     let contract_package = compile_rust_package("../../examples/counter-contract", true);
     let note_package = compile_rust_package("../../examples/counter-note", true);

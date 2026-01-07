@@ -18,7 +18,7 @@ use super::helpers::{
 
 /// Tests the basic-wallet contract deployment and p2id note consumption workflow on a mock chain.
 #[test]
-pub fn test_basic_wallet_p2id_mockchain() {
+pub fn test_basic_wallet_p2id() {
     // Compile the contracts first (before creating any runtime)
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
     let note_package = compile_rust_package("../../examples/p2id-note", true);
@@ -122,7 +122,7 @@ pub fn test_basic_wallet_p2id_mockchain() {
 /// - Alice creates a p2ide note for Bob (with timelock=0, reclaim=0)
 /// - Bob consumes the p2ide note and receives the assets
 #[test]
-pub fn test_basic_wallet_p2ide_mockchain() {
+pub fn test_basic_wallet_p2ide() {
     // Compile the contracts first (before creating any runtime)
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
     let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);
@@ -244,7 +244,7 @@ pub fn test_basic_wallet_p2ide_mockchain() {
 /// - Alice reclaims the note herself (exercises the reclaim branch)
 /// - Verify Alice has her original balance back
 #[test]
-pub fn test_basic_wallet_p2ide_reclaim_mockchain() {
+pub fn test_basic_wallet_p2ide_reclaim() {
     // Compile the contracts first (before creating any runtime)
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
     let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);

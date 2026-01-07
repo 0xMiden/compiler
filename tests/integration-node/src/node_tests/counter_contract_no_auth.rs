@@ -27,7 +27,7 @@ use super::helpers::{
 /// - Sender issues a counter note to the network
 /// - Counter account consumes the note without requiring authentication/signature
 #[test]
-pub fn test_counter_contract_no_auth_mockchain() {
+pub fn test_counter_contract_no_auth() {
     // Compile the contracts first (before creating any runtime)
     let contract_package = compile_rust_package("../../examples/counter-contract", true);
     let note_package = compile_rust_package("../../examples/counter-note", true);
