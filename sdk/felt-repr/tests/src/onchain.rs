@@ -286,13 +286,14 @@ fn test_minimal_u64_bug() {
     };
     let serialized = original.to_felt_repr();
 
-    assert_eq!(serialized.len(), 5);
+    assert_eq!(serialized.len(), 6);
 
-    let onchain_code = r#"(input: [Felt; 5]) -> Vec<Felt> {
+    let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         assert_eq(input[0], felt!(111111));
-        assert_eq(input[4], felt!(55));
+        assert_eq(input[1], felt!(0));
+        assert_eq(input[5], felt!(55));
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct TestStruct {
@@ -335,7 +336,7 @@ fn test_minimal_u64_bug() {
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
-        let result_felts = read_vec_felts(trace, out_byte_addr, 5);
+        let result_felts = read_vec_felts(trace, out_byte_addr, 6);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = MinimalU64Bug::from_felt_repr(&mut reader);
 
@@ -451,7 +452,7 @@ struct Outer {
 /// Test nested struct serialization - full round-trip execution.
 ///
 /// Tests a struct containing another struct as a field, plus bool fields.
-/// Outer has: 1 Felt + Inner(1 Felt + 1 u64) + 1 u32 + 2 bool = 6 Felts total.
+/// Outer has: 1 Felt + Inner(1 Felt + 1 u64) + 1 u32 + 2 bool = 7 Felts total.
 #[test]
 fn test_nested_struct_round_trip() {
     let original = Outer {
@@ -466,10 +467,10 @@ fn test_nested_struct_round_trip() {
     };
     let serialized = original.to_felt_repr();
 
-    // Outer.a (1) + Inner.x (1) + Inner.y (1) + Outer.b (1) + flag1 (1) + flag2 (1) = 6 Felts
-    assert_eq!(serialized.len(), 6);
+    // Outer.a (1) + Inner.x (1) + Inner.y (2) + Outer.b (1) + flag1 (1) + flag2 (1) = 7 Felts
+    assert_eq!(serialized.len(), 7);
 
-    let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
+    let onchain_code = r#"(input: [Felt; 7]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
@@ -524,7 +525,7 @@ fn test_nested_struct_round_trip() {
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
-        let result_felts = read_vec_felts(trace, out_byte_addr, 6);
+        let result_felts = read_vec_felts(trace, out_byte_addr, 7);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = Outer::from_felt_repr(&mut reader);
 
@@ -801,9 +802,9 @@ fn test_enum_nested_with_struct_round_trip() {
     });
     let serialized = original.to_felt_repr();
 
-    assert_eq!(serialized.len(), 6);
+    assert_eq!(serialized.len(), 7);
 
-    let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
+    let onchain_code = r#"(input: [Felt; 7]) -> Vec<Felt> {
         use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
@@ -852,7 +853,7 @@ fn test_enum_nested_with_struct_round_trip() {
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
-        let result_felts = read_vec_felts(trace, out_byte_addr, 6);
+        let result_felts = read_vec_felts(trace, out_byte_addr, 7);
         let mut reader = FeltReader::new(&result_felts);
         let result_enum = Top::from_felt_repr(&mut reader);
         assert_eq!(result_enum, original, "Nested enum round-trip failed");

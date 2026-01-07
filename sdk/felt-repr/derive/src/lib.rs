@@ -59,7 +59,7 @@
 //! The following primitive encodings are provided by the runtime crates:
 //!
 //! - `Felt`: encoded as a single `Felt`
-//! - `u64`: encoded as a single `Felt`
+//! - `u64`: encoded as 2 `Felt`s (low `u32`, then high `u32`)
 //! - `u32`, `u8`: encoded as a single `Felt`
 //! - `bool`: encoded as a single `Felt` (`0` = `false`, non-zero = `true`)
 //!

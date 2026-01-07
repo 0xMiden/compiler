@@ -64,7 +64,7 @@ metadata.
 Provided by the runtime crates:
 
 - `Felt`: 1 felt
-- `u64`: 1 felt
+- `u64`: 2 felts (low `u32`, then high `u32`)
 - `u32`, `u8`: 1 felt
 - `bool`: 1 felt (`0` = `false`, non-zero = `true`)
 

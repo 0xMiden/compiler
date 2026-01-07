@@ -86,7 +86,13 @@ impl FromFeltRepr for miden_core::Felt {
 impl FromFeltRepr for u64 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_u64()
+        // Encode u64 as 2 u32 limbs
+        let lo = reader.read().as_u64();
+        assert!(lo <= u32::MAX as u64, "u64: low limb out of range");
+        let hi = reader.read().as_u64();
+        assert!(hi <= u32::MAX as u64, "u64: high limb out of range");
+
+        (hi << 32) | lo
     }
 }
 
@@ -186,7 +192,10 @@ impl ToFeltRepr for miden_core::Felt {
 impl ToFeltRepr for u64 {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::from_u64_unchecked(*self));
+        let lo = (*self & 0xffff_ffff) as u32;
+        let hi = (*self >> 32) as u32;
+        writer.write(Felt::from_u32(lo));
+        writer.write(Felt::from_u32(hi));
     }
 }
 

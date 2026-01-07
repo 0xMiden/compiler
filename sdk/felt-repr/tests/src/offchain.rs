@@ -114,11 +114,12 @@ fn test_struct_roundtrip_nested() {
     };
 
     let felts = original.to_felt_repr();
-    assert_eq!(felts.len(), 4);
+    assert_eq!(felts.len(), 5);
     assert_eq!(felts[0], Felt::from_u64_unchecked(1));
     assert_eq!(felts[1], Felt::from_u64_unchecked(2));
     assert_eq!(felts[2], Felt::from_u64_unchecked(3));
     assert_eq!(felts[3], Felt::from_u64_unchecked(0));
+    assert_eq!(felts[4], Felt::from_u64_unchecked(0));
 
     assert_roundtrip(&original);
 }
@@ -163,10 +164,11 @@ fn test_enum_roundtrip_tuple_variant() {
 fn test_enum_roundtrip_struct_variant() {
     let original = MixedEnum::Struct { n: 9, flag: true };
     let felts = original.to_felt_repr();
-    assert_eq!(felts.len(), 3);
+    assert_eq!(felts.len(), 4);
     assert_eq!(felts[0], Felt::from_u64_unchecked(2));
     assert_eq!(felts[1], Felt::from_u64_unchecked(9));
-    assert_eq!(felts[2], Felt::from_u64_unchecked(1));
+    assert_eq!(felts[2], Felt::from_u64_unchecked(0));
+    assert_eq!(felts[3], Felt::from_u64_unchecked(1));
     assert_roundtrip(&original);
 }
 
@@ -189,14 +191,15 @@ fn test_struct_with_enum_roundtrip() {
         suffix: 13,
     };
 
-    // prefix (1) + msg(tag=3 + Inner(2)) + suffix (1) = 5 felts
+    // prefix (1) + msg(tag=3 + Inner(3)) + suffix (1) = 6 felts
     let felts = original.to_felt_repr();
-    assert_eq!(felts.len(), 5);
+    assert_eq!(felts.len(), 6);
     assert_eq!(felts[0], Felt::from_u64_unchecked(10));
     assert_eq!(felts[1], Felt::from_u64_unchecked(3));
     assert_eq!(felts[2], Felt::from_u64_unchecked(11));
     assert_eq!(felts[3], Felt::from_u64_unchecked(12));
-    assert_eq!(felts[4], Felt::from_u64_unchecked(13));
+    assert_eq!(felts[4], Felt::from_u64_unchecked(0));
+    assert_eq!(felts[5], Felt::from_u64_unchecked(13));
 
     assert_roundtrip(&original);
 }
@@ -216,9 +219,9 @@ fn test_enum_nested_with_struct_roundtrip() {
         suffix: 23,
     });
 
-    // tag (1) + WithEnum(prefix 1 + msg 3 + suffix 1) = 6 felts
+    // tag (1) + WithEnum(prefix 1 + msg 4 + suffix 1) = 7 felts
     let felts = original.to_felt_repr();
-    assert_eq!(felts.len(), 6);
+    assert_eq!(felts.len(), 7);
     assert_roundtrip(&original);
 }
 
@@ -349,4 +352,24 @@ fn test_tuple_struct_roundtrip() {
         ]
     );
     assert_roundtrip(&original);
+}
+
+#[test]
+fn test_u64_roundtrip_uses_u32_limbs() {
+    let test_cases: [u64; 6] =
+        [0, 1, u32::MAX as u64, (u32::MAX as u64) << 32, 0x1122_3344_5566_7788, u64::MAX];
+
+    for value in test_cases {
+        let felts = value.to_felt_repr();
+        assert_eq!(felts.len(), 2);
+
+        let expected_lo = value & 0xffff_ffff;
+        let expected_hi = value >> 32;
+        assert_eq!(felts[0].as_u64(), expected_lo);
+        assert_eq!(felts[1].as_u64(), expected_hi);
+
+        let mut reader = FeltReader::new(&felts);
+        let roundtripped = u64::from_felt_repr(&mut reader);
+        assert_eq!(roundtripped, value);
+    }
 }
