@@ -1,4 +1,66 @@
-pub use miden_felt::{Felt, FeltError, assert, assert_eq, assertz};
+//! Felt-related intrinsics and helpers.
+
+pub use miden_felt::{Felt, FeltError};
+
+#[cfg(target_arch = "wasm32")]
+unsafe extern "C" {
+    #[link_name = "intrinsics::felt::assert"]
+    fn extern_assert(a: Felt);
+
+    #[link_name = "intrinsics::felt::assertz"]
+    fn extern_assertz(a: Felt);
+
+    #[link_name = "intrinsics::felt::assert_eq"]
+    fn extern_assert_eq(a: Felt, b: Felt);
+}
+
+/// Fails if `a` != 1.
+#[cfg(target_arch = "wasm32")]
+#[inline(always)]
+pub fn assert(a: Felt) {
+    unsafe { extern_assert(a) }
+}
+
+/// Fails if `a` != 0.
+#[cfg(target_arch = "wasm32")]
+#[inline(always)]
+pub fn assertz(a: Felt) {
+    unsafe { extern_assertz(a) }
+}
+
+/// Fails if `a` != `b`.
+#[cfg(target_arch = "wasm32")]
+#[inline(always)]
+pub fn assert_eq(a: Felt, b: Felt) {
+    unsafe { extern_assert_eq(a, b) }
+}
+
+/// Fails if `a` != 1.
+#[cfg(not(target_arch = "wasm32"))]
+#[inline(always)]
+pub fn assert(a: Felt) {
+    if a != Felt::from_u64_unchecked(1) {
+        panic!("assert: expected 1");
+    }
+}
+
+/// Fails if `a` != 0.
+#[cfg(not(target_arch = "wasm32"))]
+#[inline(always)]
+pub fn assertz(a: Felt) {
+    if a != Felt::from_u64_unchecked(0) {
+        panic!("assertz: expected 0");
+    }
+}
+
+/// Fails if `a` != `b`.
+#[cfg(not(target_arch = "wasm32"))]
+#[inline(always)]
+pub fn assert_eq(a: Felt, b: Felt) {
+    if a != b {
+        panic!("assert_eq: values differ");
+    }
+}
 
 /// Creates a `Felt` from an integer constant checking that it is within the
 /// valid range at compile time.
