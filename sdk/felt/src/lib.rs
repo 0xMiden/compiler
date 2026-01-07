@@ -5,8 +5,8 @@
 //! - On `wasm32` targets, `Felt` is backed by a VM intrinsic-backed `f32` representation.
 //! - On non-`wasm32` targets, `Felt` is backed by `miden-core`'s field element type.
 //!
-//! The `true-felt` feature is reserved for future work; it is not supported on `wasm32` targets in
-//! this PoC.
+//! The `true-felt` feature is reserved for future work; it currently has no effect on `wasm32`
+//! targets in this PoC.
 
 #![no_std]
 #![deny(warnings)]
@@ -20,9 +20,6 @@ pub enum FeltError {
     /// The provided value was not a valid canonical field element.
     InvalidValue,
 }
-
-#[cfg(all(target_arch = "wasm32", feature = "true-felt"))]
-compile_error!("The `true-felt` feature is not supported on `wasm32` targets in this PoC");
 
 #[cfg(target_arch = "wasm32")]
 #[repr(transparent)]
