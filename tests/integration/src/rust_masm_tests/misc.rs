@@ -7,6 +7,16 @@ use crate::{
     testing::{eval_package, setup},
 };
 
+/// Compiles a Rust entrypoint body using `miden-stdlib-sys`.
+///
+/// This is useful for regressions where the compiler fails during MIR/HIR lowering or MASM codegen,
+/// and no runtime execution is required.
+fn compile_rust_fn_body_with_stdlib_sys(name: &'static str, main_fn: &str) {
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(name, main_fn, config, []);
+    let _package = test.compiled_package();
+}
+
 #[test]
 fn test_func_arg_same() {
     // This test reproduces the https://github.com/0xMiden/compiler/issues/606
@@ -129,4 +139,160 @@ fn test_func_arg_order() {
 
     eval_package::<Felt, _, _>(&test.compiled_package(), [], &args, &test.session, |trace| Ok(()))
         .unwrap();
+}
+
+#[test]
+fn test_issue_831_invalid_stack_offset_movup_16_args_15() {
+    // This test reproduces https://github.com/0xMiden/compiler/issues/831
+    //
+    // The callee has a flattened argument payload size of 15 felts:
+    // - 7 `Felt` (7)
+    // - 4 `u64`  (8)
+    // Total: 15
+    let main_fn = r#"
+        () -> Felt {
+            let a0 = Felt::from_u32(1);
+            let a1 = Felt::from_u32(2);
+            let a2 = a0 + a1;
+            let a3 = a0 * a1;
+            let a4 = a2 + a3;
+            let a5 = a4 + a0;
+            let a6 = a5 + a1;
+
+            consume_15(
+                a0,
+                a1,
+                a2,
+                a3,
+                a4,
+                a5,
+                a6,
+                a0.as_u64(),
+                a1.as_u64(),
+                a2.as_u64(),
+                a3.as_u64(),
+                {
+                    let v = alloc::vec![a0, a1, a2, a3, a4, a5, a6, Felt::from_u32(0)];
+                    let _ = v[0];
+                },
+            )
+        }
+
+        #[inline(never)]
+        fn consume_15(
+            a0: Felt,
+            a1: Felt,
+            a2: Felt,
+            a3: Felt,
+            a4: Felt,
+            a5: Felt,
+            a6: Felt,
+            d0: u64,
+            d1: u64,
+            d2: u64,
+            d3: u64,
+            _: (),
+        ) -> Felt {
+            let mix = (d0 ^ d1 ^ d2 ^ d3) as u32;
+            a0 + a1 + a2 + a3 + a4 + a5 + a6 + Felt::from_u32(mix)
+        }
+    "#;
+
+    compile_rust_fn_body_with_stdlib_sys("issue_831_args_15", main_fn);
+}
+
+#[test]
+fn test_issue_831_invalid_stack_offset_movup_16_args_16() {
+    // This test reproduces https://github.com/0xMiden/compiler/issues/831
+    //
+    // The callee has a flattened argument payload size of 16 felts:
+    // - 8 `Felt` (8)
+    // - 4 `u64`  (8)
+    // Total: 16
+    let main_fn = r#"
+        () -> Felt {
+            let a0 = Felt::from_u32(1);
+            let a1 = Felt::from_u32(2);
+            let a2 = a0 + a1;
+            let a3 = a0 * a1;
+            let a4 = a2 + a3;
+            let a5 = a4 + a0;
+            let a6 = a5 + a1;
+            let a7 = a6 + a2;
+
+            consume_16(
+                a0,
+                a1,
+                a2,
+                a3,
+                a4,
+                a5,
+                a6,
+                a7,
+                a0.as_u64(),
+                a1.as_u64(),
+                a2.as_u64(),
+                a3.as_u64(),
+                {
+                    let v = alloc::vec![a0, a1, a2, a3, a4, a5, a6, a7];
+                    let _ = v[0];
+                },
+            )
+        }
+
+        #[inline(never)]
+        fn consume_16(
+            a0: Felt,
+            a1: Felt,
+            a2: Felt,
+            a3: Felt,
+            a4: Felt,
+            a5: Felt,
+            a6: Felt,
+            a7: Felt,
+            d0: u64,
+            d1: u64,
+            d2: u64,
+            d3: u64,
+            _: (),
+        ) -> Felt {
+            let mix = (d0 ^ d1 ^ d2 ^ d3) as u32;
+            a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + Felt::from_u32(mix)
+        }
+    "#;
+
+    compile_rust_fn_body_with_stdlib_sys("issue_831_args_16", main_fn);
+}
+
+#[test]
+fn test_issue_831_invalid_stack_offset_movup_16_args_17() {
+    // This test reproduces https://github.com/0xMiden/compiler/issues/831
+    //
+    // 17 felts is above the 16-felt cutoff, so these should be passed indirectly via a pointer.
+    let main_fn = r#"
+        () -> Felt {
+            let a0 = Felt::from_u32(1);
+            let a1 = Felt::from_u32(2);
+            let a2 = a0 + a1;
+            let a3 = a0 * a1;
+            let a4 = a2 + a3;
+            let a5 = a4 + a0;
+            let a6 = a5 + a1;
+            let a7 = a6 + a2;
+            let a8 = a7 + a3;
+
+            let args = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a0, a1, a2, a3, a4, a5, a6, a7];
+            consume_17(args.as_ptr())
+        }
+
+        #[inline(never)]
+        fn consume_17(args_ptr: *const Felt) -> Felt {
+            let args = unsafe { ::core::slice::from_raw_parts(args_ptr, 17) };
+            args.iter()
+                .copied()
+                .fold(Felt::from_u32(0), |acc, item| acc + item)
+        }
+    "#;
+
+    compile_rust_fn_body_with_stdlib_sys("issue_831_args_17", main_fn);
 }

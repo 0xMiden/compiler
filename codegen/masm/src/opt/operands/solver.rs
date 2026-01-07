@@ -183,6 +183,7 @@ impl OperandMovementConstraintSolver {
                 self.tactics.push(Box::new(MoveUpAndSwap));
                 self.tactics.push(Box::new(MoveDownAndSwap));
             } else {
+                self.tactics.push(Box::new(PlaceAll));
                 self.tactics.push(Box::new(Linear));
                 self.tactics.push(Box::new(CopyAll));
             }
@@ -214,6 +215,23 @@ impl OperandMovementConstraintSolver {
                 Ok(_) => {
                     if builder.is_valid() {
                         let solution = builder.take();
+                        // The operand stack solver operates on an abstract stack model, and some
+                        // tactics may compute actions that reference operands outside of the top-16
+                        // addressable window. Such solutions are not applicable in MASM without
+                        // additional spilling, so discard them and continue searching.
+                        if solution.iter().any(|action| match action {
+                            Action::Copy(index)
+                            | Action::Swap(index)
+                            | Action::MoveUp(index)
+                            | Action::MoveDown(index) => *index >= 16,
+                        }) {
+                            log::trace!(
+                                "discarding solution produced by tactic {}: stack index out of \
+                                 scope for MASM operand scheduling",
+                                tactic.name()
+                            );
+                            continue;
+                        }
                         let solution_size = solution.len();
                         let best_size = best_solution.as_ref().map(|best| best.len());
                         match best_size {
@@ -258,8 +276,18 @@ impl OperandMovementConstraintSolver {
             }
             let remaining_fuel = self.fuel.saturating_sub(tactic.cost(&self.context));
             if remaining_fuel == 0 {
-                log::trace!("no more optimization fuel, using the best solution found so far");
-                break;
+                // Fuel is meant to cap optimization work after we have at least one solution. If we
+                // don't have a solution yet, keep trying remaining tactics even without fuel.
+                if best_solution.is_some() {
+                    log::trace!("no more optimization fuel, using the best solution found so far");
+                    break;
+                }
+                log::trace!(
+                    "no optimization fuel remaining and no solution found yet, continuing with \
+                     remaining tactics"
+                );
+                self.fuel = 0;
+                continue;
             }
             self.fuel = remaining_fuel;
         }

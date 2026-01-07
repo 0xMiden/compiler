@@ -429,6 +429,8 @@ pub enum Placement {
     Split(Split),
 }
 
+// TODO: set the K to 12 to preserve space in stack scheduling for 16 arg function calls
+
 /// The maximum number of operand stack slots which can be assigned without spills.
 const K: usize = 16;
 

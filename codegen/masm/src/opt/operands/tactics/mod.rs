@@ -6,12 +6,14 @@ mod copy_all;
 mod linear;
 mod move_down_and_swap;
 mod move_up_and_swap;
+mod place_all;
 mod swap_and_move_up;
 mod two_args;
 
 pub use self::{
     copy_all::CopyAll, linear::Linear, move_down_and_swap::MoveDownAndSwap,
-    move_up_and_swap::MoveUpAndSwap, swap_and_move_up::SwapAndMoveUp, two_args::TwoArgs,
+    move_up_and_swap::MoveUpAndSwap, place_all::PlaceAll, swap_and_move_up::SwapAndMoveUp,
+    two_args::TwoArgs,
 };
 
 /// An error returned by an [OperandMovementConstraintSolver] tactic

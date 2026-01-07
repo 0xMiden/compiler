@@ -335,14 +335,13 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.0
     movup.2
-    swap.5
+    movup.3
+    swap.1
+    movup.4
     movdn.2
-    swap.1
-    swap.4
-    swap.1
-    swap.3
+    dup.3
+    movdn.3
     trace.240
     nop
     exec.::miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::miden::asset::build_fungible_asset

@@ -1,0 +1,29 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "issue-831-invalid-stack-offset"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[dependencies]
+miden-sdk-alloc = { path = "../../../../sdk/alloc" }
+miden-stdlib-sys = { path = "../../../../sdk/stdlib-sys" }
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+# optimize for size
+opt-level = "z"
+debug = false
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug = true
+debug-assertions = true
+overflow-checks = false
+trim-paths = ["diagnostics", "object"]

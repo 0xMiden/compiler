@@ -1,0 +1,186 @@
+(seed0: Felt, seed1: Felt) -> Felt {
+    // This fixture is based on the report in:
+    // https://github.com/0xMiden/compiler/issues/831
+    //
+    // The issue triggers when a function's flattened argument payload is close to the 16-felt
+    // limit (the max depth directly addressable via stack ops), and the compiler needs to emit a
+    // memory store while many operands are live on the operand stack.
+    //
+    // We construct four variants corresponding to total argument sizes of 14, 15, 16, and 17
+    // felts. The functions are intentionally called from the entrypoint so we exercise the
+    // compiler's argument flattening and call lowering logic as well.
+    let f0 = seed0;
+    let f1 = seed1;
+    let f2 = seed0 + seed1;
+    let f3 = seed0 * seed1;
+    let f4 = seed0 - seed1;
+
+    // Derive a few extra values so we can pass a full 17-felt payload.
+    let f5 = f0 + f2;
+    let f6 = f1 + f3;
+    let f7 = f2 + f4;
+    let f8 = f3 + f5;
+    let f9 = f4 + f6;
+    let f10 = f5 + f6;
+    let f11 = f7 + f8;
+    let f12 = f9 + f10;
+    let f13 = f11 + f12;
+    let f14 = f13 + f0;
+    let f15 = f14 + f1;
+    let f16 = f15 + f2;
+
+    let r14 = args_14(f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13);
+    let r15 = args_15(f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14);
+    let r16 = args_16(
+        f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15,
+    );
+    let args_17_payload = [
+        f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16,
+    ];
+    let r17 = args_17(args_17_payload.as_ptr());
+
+    r14 + r15 + r16 + r17
+}
+
+#[inline(never)]
+fn consume_u64s_and_unit(
+    a0: Felt,
+    a1: Felt,
+    a2: Felt,
+    a3: Felt,
+    a4: Felt,
+    a5: Felt,
+    a6: Felt,
+    a7: Felt,
+    d0: u64,
+    d1: u64,
+    d2: u64,
+    d3: u64,
+    _: (),
+) -> Felt {
+    let mix = (d0 ^ d1 ^ d2 ^ d3) as u32;
+    let sum = a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7;
+    sum + Felt::from_u32(mix)
+}
+
+#[inline(never)]
+fn args_14(
+    a0: Felt,
+    a1: Felt,
+    a2: Felt,
+    a3: Felt,
+    a4: Felt,
+    a5: Felt,
+    a6: Felt,
+    a7: Felt,
+    a8: Felt,
+    a9: Felt,
+    a10: Felt,
+    a11: Felt,
+    a12: Felt,
+    a13: Felt,
+) -> Felt {
+    // Total argument payload size: 14 felts
+    a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11 + a12 + a13
+}
+
+#[inline(never)]
+fn args_15(
+    serial_num0: Felt,
+    serial_num1: Felt,
+    serial_num2: Felt,
+    serial_num3: Felt,
+    offered0: Felt,
+    offered1: Felt,
+    offered2: Felt,
+    offered3: Felt,
+    requested0: Felt,
+    requested1: Felt,
+    requested2: Felt,
+    requested3: Felt,
+    note_creator_prefix: Felt,
+    note_creator_suffix: Felt,
+    aux: Felt,
+) -> Felt {
+    // Total argument payload size: 15 felts.
+    //
+    // This is intentionally close to `create_swapp_note` from:
+    // https://github.com/inicio-labs/miden-swapp/blob/05c0ce4a5ce1d0490b3923932b1414c05d777fbe/contracts/swapp-note/src/lib.rs
+    //
+    // We keep four 2-felt values (u64) live across the `vec![..]` initialization stores by
+    // evaluating them as leading call arguments.
+    let result = consume_u64s_and_unit(
+        offered0,
+        offered1,
+        offered2,
+        offered3,
+        requested0,
+        requested1,
+        requested2,
+        requested3,
+        serial_num0.as_u64(),
+        serial_num1.as_u64(),
+        serial_num2.as_u64(),
+        serial_num3.as_u64(),
+        {
+            // The 15-felt reproducer in issue #831 involves a `vec![..]` literal with many element
+            // stores, while multiple 2-felt values are live on the operand stack. We model that by
+            // allocating and partially reading the vector here, while the `u64` arguments above
+            // are already evaluated and must remain live for the call.
+            let data = alloc::vec![
+                offered0,
+                offered1,
+                offered2,
+                offered3,
+                requested0,
+                requested1,
+                requested2,
+                requested3,
+                note_creator_prefix,
+                note_creator_suffix,
+                Felt::from_u32(0),
+                Felt::from_u32(0),
+                Felt::from_u32(0),
+                Felt::from_u32(0),
+                Felt::from_u32(0),
+                Felt::from_u32(0),
+            ];
+            let _ = data[0];
+        },
+    );
+
+    result + aux + note_creator_prefix
+}
+
+#[inline(never)]
+fn args_16(
+    a0: Felt,
+    a1: Felt,
+    a2: Felt,
+    a3: Felt,
+    a4: Felt,
+    a5: Felt,
+    a6: Felt,
+    a7: Felt,
+    a8: Felt,
+    a9: Felt,
+    a10: Felt,
+    a11: Felt,
+    a12: Felt,
+    a13: Felt,
+    a14: Felt,
+    a15: Felt,
+) -> Felt {
+    // Total argument payload size: 16 felts
+    a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11 + a12 + a13 + a14 + a15
+}
+
+#[inline(never)]
+fn args_17(args_ptr: *const Felt) -> Felt {
+    // Total argument payload size: 17 felts.
+    //
+    // This is expected to be passed via a pointer rather than flattened directly into function
+    // arguments (the cutoff is 16 32-bit values).
+    let args = unsafe { ::core::slice::from_raw_parts(args_ptr, 17) };
+    args.iter().copied().fold(Felt::from_u32(0), |acc, item| acc + item)
+}
