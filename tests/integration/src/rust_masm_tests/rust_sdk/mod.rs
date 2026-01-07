@@ -123,6 +123,24 @@ fn run(_arg: Word) {
     test.compiled_package();
 }
 
+/// Reproduces https://github.com/0xMiden/compiler/issues/831
+///
+/// NOTE: This is expected to fail until #831 is fixed, by panicking during compilation with:
+/// `invalid stack offset for movup: 16 is out of range`.
+#[test]
+fn rust_sdk_invalid_stack_offset_movup_16_issue_831() {
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/issue-invalid-stack-offset-movup",
+        config,
+        [],
+    );
+
+    // Ensure the crate compiles all the way to a package. This currently triggers the #831 panic
+    // in MASM codegen.
+    let package = test.compiled_package();
+}
+
 #[test]
 fn rust_sdk_cross_ctx_account_and_note() {
     let config = WasmTranslationConfig::default();
