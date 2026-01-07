@@ -1,7 +1,7 @@
-//! Integration tests that require a local Miden node instance
+//! Integration tests which exercise contract deployment and execution on a mock chain.
 
-pub mod basic_wallet;
-pub mod counter_contract;
-pub mod counter_contract_no_auth;
-pub mod counter_contract_rust_auth;
-pub mod helpers;
+mod basic_wallet;
+mod counter_contract;
+mod counter_contract_no_auth;
+mod counter_contract_rust_auth;
+mod helpers;

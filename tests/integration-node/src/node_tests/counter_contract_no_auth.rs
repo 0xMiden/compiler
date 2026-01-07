@@ -34,75 +34,64 @@ pub fn test_counter_contract_no_auth_mockchain() {
     let no_auth_auth_component =
         compile_rust_package("../../examples/auth-component-no-auth", true);
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-        let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-        let counter_storage_slots =
-            vec![StorageSlot::Map(StorageMap::with_entries([(key, value)]).unwrap())];
+    let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+    let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+    let counter_storage_slots =
+        vec![StorageSlot::Map(StorageMap::with_entries([(key, value)]).unwrap())];
 
-        let mut builder = MockChain::builder();
+    let mut builder = MockChain::builder();
 
-        let counter_account = build_existing_counter_account_builder_with_auth_package(
-            contract_package,
-            no_auth_auth_component,
-            vec![],
-            counter_storage_slots,
-            [0_u8; 32],
-        )
-        .build_existing()
-        .expect("failed to build counter account");
-        builder
-            .add_account(counter_account.clone())
-            .expect("failed to add counter account to mock chain builder");
-        eprintln!("Counter account (no-auth) ID: {:?}", counter_account.id().to_hex());
+    let counter_account = build_existing_counter_account_builder_with_auth_package(
+        contract_package,
+        no_auth_auth_component,
+        vec![],
+        counter_storage_slots,
+        [0_u8; 32],
+    )
+    .build_existing()
+    .expect("failed to build counter account");
+    builder
+        .add_account(counter_account.clone())
+        .expect("failed to add counter account to mock chain builder");
+    eprintln!("Counter account (no-auth) ID: {:?}", counter_account.id().to_hex());
 
-        // Create a separate sender account using only the BasicWallet component
-        let seed = [1_u8; 32];
-        let sender_builder = AccountBuilder::new(seed)
-            .account_type(AccountType::RegularAccountUpdatableCode)
-            .storage_mode(AccountStorageMode::Public)
-            .with_component(BasicWallet);
-        let sender_account = builder
-            .add_account_from_builder(Auth::BasicAuth, sender_builder, AccountState::Exists)
-            .expect("failed to add sender account to mock chain builder");
-        eprintln!("Sender account ID: {:?}", sender_account.id().to_hex());
+    // Create a separate sender account using only the BasicWallet component
+    let seed = [1_u8; 32];
+    let sender_builder = AccountBuilder::new(seed)
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_component(BasicWallet);
+    let sender_account = builder
+        .add_account_from_builder(Auth::BasicAuth, sender_builder, AccountState::Exists)
+        .expect("failed to add sender account to mock chain builder");
+    eprintln!("Sender account ID: {:?}", sender_account.id().to_hex());
 
-        // Sender creates the counter note (note script increments counter's storage on consumption)
-        let mut rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
-        let counter_note = create_note_from_package(
-            note_package.clone(),
-            sender_account.id(),
-            NoteCreationConfig {
-                tag: NoteTag::from_account_id(counter_account.id()),
-                ..Default::default()
-            },
-            &mut rng,
-        );
-        eprintln!("Counter note hash: {:?}", counter_note.id().to_hex());
-        builder.add_output_note(OutputNote::Full(counter_note.clone()));
+    // Sender creates the counter note (note script increments counter's storage on consumption)
+    let mut rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let counter_note = create_note_from_package(
+        note_package.clone(),
+        sender_account.id(),
+        NoteCreationConfig {
+            tag: NoteTag::from_account_id(counter_account.id()),
+            ..Default::default()
+        },
+        &mut rng,
+    );
+    eprintln!("Counter note hash: {:?}", counter_note.id().to_hex());
+    builder.add_output_note(OutputNote::Full(counter_note.clone()));
 
-        let mut chain = builder.build().expect("failed to build mock chain");
-        chain.prove_next_block().unwrap();
-        chain.prove_next_block().unwrap();
+    let mut chain = builder.build().expect("failed to build mock chain");
+    chain.prove_next_block().unwrap();
+    chain.prove_next_block().unwrap();
 
-        assert_counter_storage(
-            chain.committed_account(counter_account.id()).unwrap().storage(),
-            0,
-            1,
-        );
+    assert_counter_storage(chain.committed_account(counter_account.id()).unwrap().storage(), 0, 1);
 
-        // Consume the note with the counter account (no signature/auth required).
-        let tx_context_builder = chain
-            .build_tx_context(counter_account.clone(), &[counter_note.id()], &[])
-            .unwrap();
-        execute_tx(&mut chain, tx_context_builder).await;
+    // Consume the note with the counter account (no signature/auth required).
+    let tx_context_builder = chain
+        .build_tx_context(counter_account.clone(), &[counter_note.id()], &[])
+        .unwrap();
+    execute_tx(&mut chain, tx_context_builder);
 
-        // The counter contract storage value should be 2 after the note is consumed
-        assert_counter_storage(
-            chain.committed_account(counter_account.id()).unwrap().storage(),
-            0,
-            2,
-        );
-    });
+    // The counter contract storage value should be 2 after the note is consumed
+    assert_counter_storage(chain.committed_account(counter_account.id()).unwrap().storage(), 0, 2);
 }

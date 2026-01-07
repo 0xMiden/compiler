@@ -1,6 +1,6 @@
 //! Common helper functions for node tests.
 
-use std::{borrow::Borrow, collections::BTreeSet, sync::Arc};
+use std::{borrow::Borrow, collections::BTreeSet, future::Future, sync::Arc};
 
 use miden_client::{
     Word,
@@ -30,6 +30,19 @@ use miden_objects::{
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{SeedableRng, rngs::StdRng};
+
+// ASYNC HELPERS
+// ================================================================================================
+
+thread_local! {
+    static TOKIO_RUNTIME: tokio::runtime::Runtime = tokio::runtime::Runtime::new()
+        .expect("failed to build tokio runtime for integration-node tests");
+}
+
+/// Runs the provided future to completion on a shared Tokio runtime.
+pub(super) fn block_on<F: Future>(future: F) -> F::Output {
+    TOKIO_RUNTIME.with(|rt| rt.block_on(future))
+}
 
 // COMPILATION
 // ================================================================================================
@@ -205,12 +218,9 @@ pub(super) fn build_send_notes_script(
 }
 
 /// Executes a transaction context against the chain and commits it in the next block.
-pub(super) async fn execute_tx(
-    chain: &mut MockChain,
-    tx_context_builder: TransactionContextBuilder,
-) {
+pub(super) fn execute_tx(chain: &mut MockChain, tx_context_builder: TransactionContextBuilder) {
     let tx_context = tx_context_builder.build().unwrap();
-    let executed_tx = tx_context.execute().await.unwrap();
+    let executed_tx = block_on(tx_context.execute()).unwrap();
     chain.add_pending_executed_transaction(&executed_tx).unwrap();
     chain.prove_next_block().unwrap();
 }
