@@ -363,7 +363,7 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
             v279 = arith.add v835, v882 : i32 #[overflow = wrapping];
             hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_stdlib_sys::intrinsics::advice::adv_insert(v279, v281, v880)
             v879 = arith.constant 0 : i32;
-            v284 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v879) : felt
+            v284 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/<miden_felt::Felt as core::convert::From<u8>>::from(v879) : felt
             v878 = arith.constant 128 : i32;
             v286 = arith.add v835, v878 : i32 #[overflow = wrapping];
             hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::active_account::get_item(v284, v286)
@@ -808,51 +808,51 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
             builtin.ret ;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v608: i32) -> felt {
-        ^block39(v608: i32):
-            v610 = arith.constant 255 : i32;
-            v611 = arith.band v608, v610 : i32;
-            v612 = hir.bitcast v611 : felt;
-            builtin.ret v612;
-        };
-
-        private builtin.function @intrinsics::advice::adv_insert_mem(v613: felt, v614: felt, v615: felt, v616: felt, v617: i32, v618: i32) {
-        ^block41(v613: felt, v614: felt, v615: felt, v616: felt, v617: i32, v618: i32):
-            hir.exec @intrinsics/advice/adv_insert_mem(v613, v614, v615, v616, v617, v618)
+        private builtin.function @intrinsics::advice::adv_insert_mem(v608: felt, v609: felt, v610: felt, v611: felt, v612: i32, v613: i32) {
+        ^block39(v608: felt, v609: felt, v610: felt, v611: felt, v612: i32, v613: i32):
+            hir.exec @intrinsics/advice/adv_insert_mem(v608, v609, v610, v611, v612, v613)
             builtin.ret ;
         };
 
-        private builtin.function @intrinsics::advice::emit_falcon_sig_to_stack(v619: felt, v620: felt, v621: felt, v622: felt, v623: felt, v624: felt, v625: felt, v626: felt) {
-        ^block45(v619: felt, v620: felt, v621: felt, v622: felt, v623: felt, v624: felt, v625: felt, v626: felt):
-            hir.exec @intrinsics/advice/emit_falcon_sig_to_stack(v619, v620, v621, v622, v623, v624, v625, v626)
+        private builtin.function @intrinsics::advice::emit_falcon_sig_to_stack(v614: felt, v615: felt, v616: felt, v617: felt, v618: felt, v619: felt, v620: felt, v621: felt) {
+        ^block43(v614: felt, v615: felt, v616: felt, v617: felt, v618: felt, v619: felt, v620: felt, v621: felt):
+            hir.exec @intrinsics/advice/emit_falcon_sig_to_stack(v614, v615, v616, v617, v618, v619, v620, v621)
             builtin.ret ;
         };
 
-        private builtin.function @std::crypto::dsa::rpo_falcon512::verify(v627: felt, v628: felt, v629: felt, v630: felt, v631: felt, v632: felt, v633: felt, v634: felt) {
-        ^block47(v627: felt, v628: felt, v629: felt, v630: felt, v631: felt, v632: felt, v633: felt, v634: felt):
-            hir.exec @std/crypto/dsa/rpo_falcon512/verify(v627, v628, v629, v630, v631, v632, v633, v634)
+        private builtin.function @std::crypto::dsa::rpo_falcon512::verify(v622: felt, v623: felt, v624: felt, v625: felt, v626: felt, v627: felt, v628: felt, v629: felt) {
+        ^block45(v622: felt, v623: felt, v624: felt, v625: felt, v626: felt, v627: felt, v628: felt, v629: felt):
+            hir.exec @std/crypto/dsa/rpo_falcon512/verify(v622, v623, v624, v625, v626, v627, v628, v629)
             builtin.ret ;
         };
 
-        private builtin.function @std::crypto::hashes::rpo::hash_memory_words(v635: i32, v636: i32, v637: i32) {
-        ^block53(v635: i32, v636: i32, v637: i32):
-            v638, v639, v640, v641 = hir.exec @std/crypto/hashes/rpo/hash_memory_words(v635, v636) : felt, felt, felt, felt
-            v642 = hir.bitcast v637 : u32;
-            v643 = hir.int_to_ptr v642 : ptr<byte, felt>;
-            hir.store v643, v638;
-            v644 = arith.constant 4 : u32;
-            v645 = arith.add v642, v644 : u32 #[overflow = checked];
-            v646 = hir.int_to_ptr v645 : ptr<byte, felt>;
-            hir.store v646, v639;
-            v647 = arith.constant 8 : u32;
-            v648 = arith.add v642, v647 : u32 #[overflow = checked];
-            v649 = hir.int_to_ptr v648 : ptr<byte, felt>;
-            hir.store v649, v640;
-            v650 = arith.constant 12 : u32;
-            v651 = arith.add v642, v650 : u32 #[overflow = checked];
-            v652 = hir.int_to_ptr v651 : ptr<byte, felt>;
-            hir.store v652, v641;
+        private builtin.function @std::crypto::hashes::rpo::hash_memory_words(v630: i32, v631: i32, v632: i32) {
+        ^block51(v630: i32, v631: i32, v632: i32):
+            v633, v634, v635, v636 = hir.exec @std/crypto/hashes/rpo/hash_memory_words(v630, v631) : felt, felt, felt, felt
+            v637 = hir.bitcast v632 : u32;
+            v638 = hir.int_to_ptr v637 : ptr<byte, felt>;
+            hir.store v638, v633;
+            v639 = arith.constant 4 : u32;
+            v640 = arith.add v637, v639 : u32 #[overflow = checked];
+            v641 = hir.int_to_ptr v640 : ptr<byte, felt>;
+            hir.store v641, v634;
+            v642 = arith.constant 8 : u32;
+            v643 = arith.add v637, v642 : u32 #[overflow = checked];
+            v644 = hir.int_to_ptr v643 : ptr<byte, felt>;
+            hir.store v644, v635;
+            v645 = arith.constant 12 : u32;
+            v646 = arith.add v637, v645 : u32 #[overflow = checked];
+            v647 = hir.int_to_ptr v646 : ptr<byte, felt>;
+            hir.store v647, v636;
             builtin.ret ;
+        };
+
+        private builtin.function @<miden_felt::Felt as core::convert::From<u8>>::from(v648: i32) -> felt {
+        ^block55(v648: i32):
+            v650 = arith.constant 255 : i32;
+            v651 = arith.band v648, v650 : i32;
+            v652 = hir.bitcast v651 : felt;
+            builtin.ret v652;
         };
 
         private builtin.function @miden::active_account::get_item(v653: felt, v654: i32) {

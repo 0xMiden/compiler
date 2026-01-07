@@ -10,9 +10,9 @@
     (type (;0;) (func))
     (type (;1;) (func (param i32 i32)))
     (type (;2;) (func (result f32)))
-    (type (;3;) (func (param i32) (result f32)))
-    (type (;4;) (func (param i32 f32)))
-    (type (;5;) (func (param f32 f32) (result f32)))
+    (type (;3;) (func (param i32 f32)))
+    (type (;4;) (func (param f32 f32) (result f32)))
+    (type (;5;) (func (param i32) (result f32)))
     (type (;6;) (func (param f32 f32 f32 f32 f32 i32)))
     (type (;7;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
@@ -33,7 +33,7 @@
       local.tee 2
       global.set $__stack_pointer
       i32.const 0
-      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+      call $<miden_felt::Felt as core::convert::From<u8>>::from
       local.get 1
       f32.load offset=12
       local.get 1
@@ -151,9 +151,9 @@
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::add
       local.tee 5
-      call $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from
+      call $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::Felt>>::from
       i32.const 0
-      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+      call $<miden_felt::Felt as core::convert::From<u8>>::from
       local.get 4
       local.get 3
       local.get 2
@@ -284,13 +284,7 @@
       i64.load align=4
       i64.store
     )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;7;) (type 3) (param i32) (result f32)
-      local.get 0
-      i32.const 255
-      i32.and
-      f32.reinterpret_i32
-    )
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from (;8;) (type 4) (param i32 f32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::Felt>>::from (;7;) (type 3) (param i32 f32)
       (local f32 f32 f32)
       i32.const 0
       call $intrinsics::felt::from_u32
@@ -314,11 +308,17 @@
       local.get 2
       f32.store
     )
-    (func $intrinsics::felt::add (;9;) (type 5) (param f32 f32) (result f32)
+    (func $intrinsics::felt::add (;8;) (type 4) (param f32 f32) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;10;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u32 (;9;) (type 5) (param i32) (result f32)
       unreachable
+    )
+    (func $<miden_felt::Felt as core::convert::From<u8>>::from (;10;) (type 5) (param i32) (result f32)
+      local.get 0
+      i32.const 255
+      i32.and
+      f32.reinterpret_i32
     )
     (func $miden::active_account::get_map_item (;11;) (type 6) (param f32 f32 f32 f32 f32 i32)
       unreachable

@@ -800,6 +800,7 @@ version = "0.8.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
+ "miden-felt",
  "miden-felt-repr-onchain",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
@@ -960,6 +961,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-felt"
+version = "0.8.0"
+dependencies = [
+ "miden-core",
+]
+
+[[package]]
+name = "miden-felt-repr"
+version = "0.7.1"
+dependencies = [
+ "miden-core",
+ "miden-felt",
+]
+
+[[package]]
 name = "miden-felt-repr-derive"
 version = "0.7.1"
 dependencies = [
@@ -972,8 +988,8 @@ dependencies = [
 name = "miden-felt-repr-onchain"
 version = "0.7.1"
 dependencies = [
+ "miden-felt-repr",
  "miden-felt-repr-derive",
- "miden-stdlib-sys",
 ]
 
 [[package]]
@@ -1081,6 +1097,9 @@ version = "0.8.0"
 [[package]]
 name = "miden-stdlib-sys"
 version = "0.8.0"
+dependencies = [
+ "miden-felt",
+]
 
 [[package]]
 name = "miden-utils-diagnostics"

@@ -68,7 +68,7 @@ builtin.component miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-fa
             v33 = hir.load v32 : i32;
             v383 = arith.constant 16 : i32;
             v35 = arith.add v369, v383 : i32 #[overflow = wrapping];
-            hir.exec @miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1/rust_sdk_account_faucet_mint_binding/<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(v369, v35)
+            hir.exec @miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1/rust_sdk_account_faucet_mint_binding/<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from(v369, v35)
             v382 = arith.constant 16 : i32;
             v37 = arith.add v369, v382 : i32 #[overflow = wrapping];
             hir.exec @miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1/rust_sdk_account_faucet_mint_binding/miden_base_sys::bindings::faucet::mint(v37, v369)
@@ -228,7 +228,7 @@ builtin.component miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-fa
             builtin.ret ;
         };
 
-        private builtin.function @<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(v157: i32, v158: i32) {
+        private builtin.function @<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from(v157: i32, v158: i32) {
         ^block21(v157: i32, v158: i32):
             v160 = arith.constant 8 : u32;
             v159 = hir.bitcast v158 : u32;

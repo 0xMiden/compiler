@@ -22,7 +22,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             hir.store v12, v10;
             hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen::rt::run_ctors_once()
             v13 = arith.constant 1 : i32;
-            v14 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v13) : felt
+            v14 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_felt::Felt as core::convert::From<u8>>::from(v13) : felt
             v15 = arith.constant 16 : i32;
             v16 = arith.add v10, v15 : i32 #[overflow = wrapping];
             hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden::active_account::get_map_item(v14, v3, v2, v1, v0, v16)
@@ -89,7 +89,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             hir.store v73, v71;
             hir.exec @miden:storage-example/foo@1.0.0/storage_example/wit_bindgen::rt::run_ctors_once()
             v65 = arith.constant 0 : i32;
-            v75 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v65) : felt
+            v75 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_felt::Felt as core::convert::From<u8>>::from(v65) : felt
             hir.exec @miden:storage-example/foo@1.0.0/storage_example/miden::active_account::get_item(v75, v71)
             v77 = arith.constant 8 : u32;
             v76 = hir.bitcast v71 : u32;
@@ -212,9 +212,9 @@ builtin.component miden:storage-example/foo@1.0.0 {
                         ^block17:
                             v164 = arith.constant 32 : i32;
                             v165 = arith.add v71, v164 : i32 #[overflow = wrapping];
-                            hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from(v165, v64)
+                            hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::Felt>>::from(v165, v64)
                             v531 = arith.constant 1 : i32;
-                            v167 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v531) : felt
+                            v167 = hir.exec @miden:storage-example/foo@1.0.0/storage_example/<miden_felt::Felt as core::convert::From<u8>>::from(v531) : felt
                             v169 = arith.constant 44 : u32;
                             v168 = hir.bitcast v71 : u32;
                             v170 = arith.add v168, v169 : u32 #[overflow = checked];
@@ -499,50 +499,50 @@ builtin.component miden:storage-example/foo@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v373: i32) -> felt {
-        ^block28(v373: i32):
-            v375 = arith.constant 255 : i32;
-            v376 = arith.band v373, v375 : i32;
-            v377 = hir.bitcast v376 : felt;
-            builtin.ret v377;
+        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::Felt>>::from(v373: i32, v374: felt) {
+        ^block28(v373: i32, v374: felt):
+            v383 = arith.constant 12 : u32;
+            v382 = hir.bitcast v373 : u32;
+            v384 = arith.add v382, v383 : u32 #[overflow = checked];
+            v385 = arith.constant 4 : u32;
+            v386 = arith.mod v384, v385 : u32;
+            hir.assertz v386 #[code = 250];
+            v387 = hir.int_to_ptr v384 : ptr<byte, felt>;
+            hir.store v387, v374;
+            v389 = arith.constant 8 : u32;
+            v388 = hir.bitcast v373 : u32;
+            v390 = arith.add v388, v389 : u32 #[overflow = checked];
+            v645 = arith.constant 4 : u32;
+            v392 = arith.mod v390, v645 : u32;
+            hir.assertz v392 #[code = 250];
+            v639 = arith.constant 0 : felt;
+            v393 = hir.int_to_ptr v390 : ptr<byte, felt>;
+            hir.store v393, v639;
+            v644 = arith.constant 4 : u32;
+            v394 = hir.bitcast v373 : u32;
+            v396 = arith.add v394, v644 : u32 #[overflow = checked];
+            v643 = arith.constant 4 : u32;
+            v398 = arith.mod v396, v643 : u32;
+            hir.assertz v398 #[code = 250];
+            v642 = arith.constant 0 : felt;
+            v399 = hir.int_to_ptr v396 : ptr<byte, felt>;
+            hir.store v399, v642;
+            v400 = hir.bitcast v373 : u32;
+            v641 = arith.constant 4 : u32;
+            v402 = arith.mod v400, v641 : u32;
+            hir.assertz v402 #[code = 250];
+            v640 = arith.constant 0 : felt;
+            v403 = hir.int_to_ptr v400 : ptr<byte, felt>;
+            hir.store v403, v640;
+            builtin.ret ;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from(v378: i32, v379: felt) {
-        ^block30(v378: i32, v379: felt):
-            v388 = arith.constant 12 : u32;
-            v387 = hir.bitcast v378 : u32;
-            v389 = arith.add v387, v388 : u32 #[overflow = checked];
-            v390 = arith.constant 4 : u32;
-            v391 = arith.mod v389, v390 : u32;
-            hir.assertz v391 #[code = 250];
-            v392 = hir.int_to_ptr v389 : ptr<byte, felt>;
-            hir.store v392, v379;
-            v394 = arith.constant 8 : u32;
-            v393 = hir.bitcast v378 : u32;
-            v395 = arith.add v393, v394 : u32 #[overflow = checked];
-            v645 = arith.constant 4 : u32;
-            v397 = arith.mod v395, v645 : u32;
-            hir.assertz v397 #[code = 250];
-            v639 = arith.constant 0 : felt;
-            v398 = hir.int_to_ptr v395 : ptr<byte, felt>;
-            hir.store v398, v639;
-            v644 = arith.constant 4 : u32;
-            v399 = hir.bitcast v378 : u32;
-            v401 = arith.add v399, v644 : u32 #[overflow = checked];
-            v643 = arith.constant 4 : u32;
-            v403 = arith.mod v401, v643 : u32;
-            hir.assertz v403 #[code = 250];
-            v642 = arith.constant 0 : felt;
-            v404 = hir.int_to_ptr v401 : ptr<byte, felt>;
-            hir.store v404, v642;
-            v405 = hir.bitcast v378 : u32;
-            v641 = arith.constant 4 : u32;
-            v407 = arith.mod v405, v641 : u32;
-            hir.assertz v407 #[code = 250];
-            v640 = arith.constant 0 : felt;
-            v408 = hir.int_to_ptr v405 : ptr<byte, felt>;
-            hir.store v408, v640;
-            builtin.ret ;
+        private builtin.function @<miden_felt::Felt as core::convert::From<u8>>::from(v404: i32) -> felt {
+        ^block30(v404: i32):
+            v406 = arith.constant 255 : i32;
+            v407 = arith.band v404, v406 : i32;
+            v408 = hir.bitcast v407 : felt;
+            builtin.ret v408;
         };
 
         private builtin.function @miden::active_account::get_item(v409: felt, v410: i32) {

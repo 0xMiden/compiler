@@ -252,7 +252,7 @@ proc core::slice::index::slice_index_fail(i32, i32, i32)
 end
 
 @callconv("C")
-proc <alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index(
+proc <alloc::vec::Vec<miden_felt::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index(
     i32,
     i32,
     i32,
@@ -710,7 +710,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
             u32wrapping_add
             trace.240
             nop
-            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<miden_felt::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
             trace.252
             nop
             push.12
@@ -835,7 +835,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from
                 trace.252
                 nop
                 push.64
@@ -855,7 +855,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 dup.4
                 trace.240
                 nop
-                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<miden_felt::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
                 trace.252
                 nop
                 push.4
@@ -978,7 +978,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from
                     trace.252
                     nop
                     push.64
@@ -1066,7 +1066,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<miden_felt::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     push.20
@@ -1074,7 +1074,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::raw_vec::RawVec<miden_felt::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     push.80
@@ -1379,7 +1379,7 @@ proc intrinsics::mem::heap_base(
 end
 
 @callconv("C")
-proc <alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(
+proc <alloc::raw_vec::RawVec<miden_felt::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
     push.4
@@ -1481,7 +1481,7 @@ proc miden_base_sys::bindings::output_note::create(
 end
 
 @callconv("C")
-proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(
+proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from(
     i32,
     i32
 )
@@ -1556,7 +1556,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
 end
 
 @callconv("C")
-proc <alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(
+proc <alloc::vec::Vec<miden_felt::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
     drop

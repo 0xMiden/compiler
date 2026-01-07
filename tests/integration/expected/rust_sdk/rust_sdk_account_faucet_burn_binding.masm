@@ -220,7 +220,7 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     dup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from
     trace.252
     nop
     push.16
@@ -583,7 +583,7 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
 end
 
 @callconv("C")
-proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(
+proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from(
     i32,
     i32
 )

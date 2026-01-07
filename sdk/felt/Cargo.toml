@@ -1,0 +1,26 @@
+[package]
+name = "miden-felt"
+description = "A unified Felt type for on-chain and off-chain Miden Rust code"
+version = "0.8.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+miden-core.workspace = true
+
+[features]
+default = []
+true-felt = []

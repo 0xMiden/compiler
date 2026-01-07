@@ -865,7 +865,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     push.0
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::<miden_felt::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     push.128
@@ -1856,14 +1856,6 @@ proc miden_stdlib_sys::intrinsics::advice::adv_insert(
 end
 
 @callconv("C")
-proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(
-    i32
-) -> felt
-    push.255
-    u32and
-end
-
-@callconv("C")
 proc intrinsics::advice::adv_insert_mem(felt, felt, felt, felt, i32, i32)
     trace.240
     nop
@@ -1962,6 +1954,14 @@ proc std::crypto::hashes::rpo::hash_memory_words(i32, i32, i32)
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+end
+
+@callconv("C")
+proc <miden_felt::Felt as core::convert::From<u8>>::from(
+    i32
+) -> felt
+    push.255
+    u32and
 end
 
 @callconv("C")

@@ -18,7 +18,7 @@ impl<'a> From<&'a AccountId> for AccountIdFeltRepr<'a> {
 
 impl ToFeltRepr for AccountIdFeltRepr<'_> {
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(self.0.prefix().as_felt());
-        writer.write(self.0.suffix());
+        writer.write(self.0.prefix().as_felt().into());
+        writer.write(self.0.suffix().into());
     }
 }

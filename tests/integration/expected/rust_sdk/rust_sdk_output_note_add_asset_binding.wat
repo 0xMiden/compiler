@@ -59,7 +59,7 @@
       local.get 0
       i32.const 16
       i32.add
-      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from
       local.get 0
       i32.const 0
       call $intrinsics::felt::from_u32
@@ -103,7 +103,7 @@
       local.get 1
       call $miden::output_note::add_asset
     )
-    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from (;5;) (type 3) (param i32 i32)
+    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from (;5;) (type 3) (param i32 i32)
       local.get 0
       local.get 1
       i64.load offset=8 align=4

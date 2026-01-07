@@ -61,6 +61,7 @@ impl From<Digest> for [Felt; 4] {
 // Remove WIT import module and resolve via a linker stub instead. The stub will export
 // the MASM symbol `intrinsics::crypto::hmerge`, and the frontend will lower its
 // unreachable body to a MASM exec.
+#[cfg(target_arch = "wasm32")]
 unsafe extern "C" {
     /// Computes the hash of two digests using the Rescue Prime Optimized (RPO)
     /// permutation in 2-to-1 mode.
@@ -87,6 +88,7 @@ unsafe extern "C" {
 /// * `digests` - An array of two digests to be merged. The function internally
 ///   reorders them as required by the VM instruction (from [A, B] to [B, A] on the stack).
 #[inline]
+#[cfg(target_arch = "wasm32")]
 pub fn merge(digests: [Digest; 2]) -> Digest {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
@@ -97,4 +99,12 @@ pub fn merge(digests: [Digest; 2]) -> Digest {
 
         Digest::from_word(ret_area.assume_init())
     }
+}
+
+/// Computes the hash of two digests using the Rescue Prime Optimized (RPO) permutation in 2-to-1
+/// mode.
+#[inline]
+#[cfg(not(target_arch = "wasm32"))]
+pub fn merge(_digests: [Digest; 2]) -> Digest {
+    unimplemented!("crypto intrinsics are only available on wasm32")
 }

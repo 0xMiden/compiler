@@ -3,6 +3,10 @@
 
 pub use miden_base::*;
 pub use miden_base_sys::bindings::*;
+/// Unified `Felt` and related helpers.
+pub use miden_felt as felt;
+/// Error type for [`Felt::new`].
+pub use miden_felt::FeltError;
 /// Felt representation helpers for on-chain code.
 pub use miden_felt_repr_onchain as felt_repr;
 pub use miden_sdk_alloc::BumpAlloc;

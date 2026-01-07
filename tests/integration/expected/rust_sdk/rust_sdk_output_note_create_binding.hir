@@ -65,7 +65,7 @@ builtin.component miden:rust-sdk-output-note-create-binding/rust-sdk-output-note
             };
             v197 = arith.constant 16 : i32;
             v32 = arith.add v187, v197 : i32 #[overflow = wrapping];
-            hir.exec @miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1/rust_sdk_output_note_create_binding/<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(v187, v32)
+            hir.exec @miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1/rust_sdk_output_note_create_binding/<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from(v187, v32)
             v196 = arith.constant 0 : felt;
             v41 = hir.exec @miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1/rust_sdk_output_note_create_binding/miden_base_sys::bindings::output_note::create(v196, v196, v196, v196, v187) : felt
             v195 = arith.constant 32 : i32;
@@ -146,7 +146,7 @@ builtin.component miden:rust-sdk-output-note-create-binding/rust-sdk-output-note
             builtin.ret v101;
         };
 
-        private builtin.function @<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(v102: i32, v103: i32) {
+        private builtin.function @<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::Felt; 4]>>::from(v102: i32, v103: i32) {
         ^block21(v102: i32, v103: i32):
             v105 = arith.constant 8 : u32;
             v104 = hir.bitcast v103 : u32;

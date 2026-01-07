@@ -7,15 +7,23 @@ use std::borrow::Cow;
 
 use miden_core::{Felt, FieldElement};
 use miden_debug::{ExecutionTrace, Felt as TestFelt};
-use miden_felt_repr_offchain::{FeltReader, FromFeltRepr, ToFeltRepr};
+use miden_felt_repr_offchain::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
 use miden_integration_tests::testing::{Initializer, eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use temp_dir::TempDir;
 
 use crate::build_felt_repr_test;
 
+fn to_core_felts(felts: &[ReprFelt]) -> Vec<Felt> {
+    felts.iter().copied().map(Into::into).collect()
+}
+
 /// Reads a `Vec<Felt>` returned via the Rust ABI from VM memory.
-fn read_vec_felts(trace: &ExecutionTrace, vec_meta_addr: u32, expected_len: usize) -> Vec<Felt> {
+fn read_vec_felts(
+    trace: &ExecutionTrace,
+    vec_meta_addr: u32,
+    expected_len: usize,
+) -> Vec<ReprFelt> {
     let vec_metadata: [TestFelt; 4] = trace
         .read_from_rust_memory(vec_meta_addr)
         .expect("Failed to read Vec metadata from memory");
@@ -34,7 +42,7 @@ fn read_vec_felts(trace: &ExecutionTrace, vec_meta_addr: u32, expected_len: usiz
             .read_from_rust_memory(word_addr)
             .unwrap_or_else(|| panic!("Failed to read word for element {i}"));
         let elem_in_word = ((byte_addr % 16) / 4) as usize;
-        result.push(word[elem_in_word].0);
+        result.push(word[elem_in_word].0.into());
     }
 
     result
@@ -79,7 +87,8 @@ fn test_felt_reader() {
     let in_byte_addr = in_elem_addr * 4;
     let out_byte_addr = out_elem_addr * 4;
 
-    let input_word: Vec<Felt> = vec![serialized[0], serialized[1], Felt::ZERO, Felt::ZERO];
+    let input_word: Vec<Felt> =
+        vec![serialized[0].into(), serialized[1].into(), Felt::ZERO, Felt::ZERO];
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
@@ -93,7 +102,7 @@ fn test_felt_reader() {
             .read_from_rust_memory(out_byte_addr)
             .expect("Failed to read result from memory");
 
-        let result_felts = [result_word[0].0, result_word[1].0];
+        let result_felts = [result_word[0].0.into(), result_word[1].0.into()];
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = TwoFelts::from_felt_repr(&mut reader);
 
@@ -143,7 +152,7 @@ fn test_two_felts_struct_round_trip() {
     let in_byte_addr = in_elem_addr * 4;
     let out_byte_addr = out_elem_addr * 4;
 
-    let input_felts: Vec<Felt> = vec![serialized[0], serialized[1]];
+    let input_felts: Vec<Felt> = vec![serialized[0].into(), serialized[1].into()];
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
@@ -186,7 +195,7 @@ fn test_five_felts_struct_round_trip() {
     let serialized = original.to_felt_repr();
 
     assert_eq!(serialized.len(), 5);
-    assert_eq!(serialized[4], Felt::new(55555));
+    assert_eq!(Felt::from(serialized[4]), Felt::new(55555));
 
     let onchain_code = r#"(input: [Felt; 5]) -> Vec<Felt> {
         use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
@@ -217,7 +226,7 @@ fn test_five_felts_struct_round_trip() {
     let in_byte_addr = in_elem_addr * 4;
     let out_byte_addr = out_elem_addr * 4;
 
-    let input_felts: Vec<Felt> = serialized.clone();
+    let input_felts: Vec<Felt> = to_core_felts(&serialized);
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
@@ -300,7 +309,7 @@ fn test_minimal_u64_bug() {
     let in_byte_addr = in_elem_addr * 4;
     let out_byte_addr = out_elem_addr * 4;
 
-    let input_felts: Vec<Felt> = serialized.clone();
+    let input_felts: Vec<Felt> = to_core_felts(&serialized);
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
@@ -383,7 +392,7 @@ fn test_mixed_types_no_u64_round_trip() {
     let in_byte_addr = in_elem_addr * 4;
     let out_byte_addr = out_elem_addr * 4;
 
-    let input_felts: Vec<Felt> = serialized.clone();
+    let input_felts: Vec<Felt> = to_core_felts(&serialized);
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
@@ -483,7 +492,7 @@ fn test_nested_struct_round_trip() {
     let in_byte_addr = in_elem_addr * 4;
     let out_byte_addr = out_elem_addr * 4;
 
-    let input_felts: Vec<Felt> = serialized.clone();
+    let input_felts: Vec<Felt> = to_core_felts(&serialized);
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
@@ -525,8 +534,8 @@ fn test_enum_unit_round_trip() {
     let serialized = original.to_felt_repr();
 
     assert_eq!(serialized.len(), 2);
-    assert_eq!(serialized[0], Felt::new(999));
-    assert_eq!(serialized[1], Felt::new(1));
+    assert_eq!(Felt::from(serialized[0]), Felt::new(999));
+    assert_eq!(Felt::from(serialized[1]), Felt::new(1));
 
     let onchain_code = r#"(input: [Felt; 2]) -> Vec<Felt> {
         use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
@@ -562,7 +571,7 @@ fn test_enum_unit_round_trip() {
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
-        felts: Cow::from(serialized.clone()),
+        felts: Cow::from(to_core_felts(&serialized)),
     }];
 
     let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
@@ -590,9 +599,9 @@ fn test_enum_tuple_round_trip() {
     let serialized = original.to_felt_repr();
 
     assert_eq!(serialized.len(), 3);
-    assert_eq!(serialized[0], Felt::new(1));
-    assert_eq!(serialized[1], Felt::new(111));
-    assert_eq!(serialized[2], Felt::new(222));
+    assert_eq!(Felt::from(serialized[0]), Felt::new(1));
+    assert_eq!(Felt::from(serialized[1]), Felt::new(111));
+    assert_eq!(Felt::from(serialized[2]), Felt::new(222));
 
     let onchain_code = r#"(input: [Felt; 3]) -> Vec<Felt> {
         use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
@@ -622,7 +631,7 @@ fn test_enum_tuple_round_trip() {
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
-        felts: Cow::from(serialized.clone()),
+        felts: Cow::from(to_core_felts(&serialized)),
     }];
 
     let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
@@ -715,7 +724,7 @@ fn test_struct_with_enum_round_trip() {
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
-        felts: Cow::from(serialized.clone()),
+        felts: Cow::from(to_core_felts(&serialized)),
     }];
 
     let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
@@ -803,7 +812,7 @@ fn test_enum_nested_with_struct_round_trip() {
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
-        felts: Cow::from(serialized.clone()),
+        felts: Cow::from(to_core_felts(&serialized)),
     }];
 
     let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
@@ -876,10 +885,10 @@ fn test_struct_with_option_round_trip() {
     // `[Felt; 4]` so we can reuse the same compiled package for both `None` and `Some`.
     // The extra trailing `0` is never read by `FromFeltRepr`.
     let mut input_none = serialized_none.clone();
-    input_none.resize(4, Felt::ZERO);
+    input_none.resize(4, ReprFelt::from_u64_unchecked(0));
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
-        felts: Cow::from(input_none),
+        felts: Cow::from(to_core_felts(&input_none)),
     }];
     let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
     let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -894,7 +903,7 @@ fn test_struct_with_option_round_trip() {
     // Case 2: Some
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
-        felts: Cow::from(serialized_some.clone()),
+        felts: Cow::from(to_core_felts(&serialized_some)),
     }];
     let _: Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, serialized_some.len());
@@ -952,7 +961,7 @@ fn test_struct_with_vec_round_trip() {
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
-        felts: Cow::from(serialized.clone()),
+        felts: Cow::from(to_core_felts(&serialized)),
     }];
 
     let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];
@@ -975,7 +984,14 @@ struct TupleStruct(u32, bool, Felt);
 fn test_tuple_struct_round_trip() {
     let original = TupleStruct(22, true, Felt::new(33));
     let serialized = original.to_felt_repr();
-    assert_eq!(serialized, vec![Felt::new(22), Felt::new(1), Felt::new(33)]);
+    assert_eq!(
+        serialized,
+        vec![
+            ReprFelt::from_u64_unchecked(22),
+            ReprFelt::from_u64_unchecked(1),
+            ReprFelt::from_u64_unchecked(33),
+        ]
+    );
 
     let onchain_code = r#"(input: [Felt; 3]) -> Vec<Felt> {
         use miden_felt_repr_onchain::{FeltReader, FromFeltRepr, ToFeltRepr};
@@ -1001,7 +1017,7 @@ fn test_tuple_struct_round_trip() {
 
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
-        felts: Cow::from(serialized.clone()),
+        felts: Cow::from(to_core_felts(&serialized)),
     }];
 
     let args = [Felt::new(in_byte_addr as u64), Felt::new(out_byte_addr as u64)];

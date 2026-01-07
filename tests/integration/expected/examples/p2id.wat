@@ -176,11 +176,11 @@
         local.get 4
         i32.const 16
         i32.add
-        call $<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
+        call $<alloc::vec::Vec<miden_felt::Felt> as core::ops::drop::Drop>::drop
         local.get 4
         i32.const 16
         i32.add
-        call $<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
+        call $<alloc::raw_vec::RawVec<miden_felt::Felt> as core::ops::drop::Drop>::drop
         local.get 4
         i32.const 48
         i32.add
@@ -354,7 +354,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop (;13;) (type 6) (param i32)
+    (func $<alloc::raw_vec::RawVec<miden_felt::Felt> as core::ops::drop::Drop>::drop (;13;) (type 6) (param i32)
       local.get 0
       i32.const 4
       i32.const 4
@@ -444,7 +444,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop (;17;) (type 6) (param i32))
+    (func $<alloc::vec::Vec<miden_felt::Felt> as core::ops::drop::Drop>::drop (;17;) (type 6) (param i32))
     (func $intrinsics::felt::eq (;18;) (type 7) (param f32 f32) (result i32)
       unreachable
     )

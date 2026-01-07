@@ -629,7 +629,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::miden:base/note-script@1.0.0::p2id::<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
+                exec.::miden:base/note-script@1.0.0::p2id::<alloc::vec::Vec<miden_felt::Felt> as core::ops::drop::Drop>::drop
                 trace.252
                 nop
                 push.16
@@ -637,7 +637,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
+                exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVec<miden_felt::Felt> as core::ops::drop::Drop>::drop
                 trace.252
                 nop
                 push.48
@@ -1212,7 +1212,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
 end
 
 @callconv("C")
-proc <alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(
+proc <alloc::raw_vec::RawVec<miden_felt::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
     push.4
@@ -1561,7 +1561,7 @@ proc miden_base_sys::bindings::active_account::get_id(i32)
 end
 
 @callconv("C")
-proc <alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(
+proc <alloc::vec::Vec<miden_felt::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
     drop

@@ -1,12 +1,13 @@
 # `miden-felt-repr-derive`
 
-Derive macros used by `miden-felt-repr-onchain` and `miden-felt-repr-offchain` to implement
+Derive macros used by `miden-felt-repr` (and its thin wrappers `miden-felt-repr-{onchain,offchain}`) to implement
 serialization/deserialization to a flat sequence of `Felt` elements (“felt repr”).
 
 ## Usage
 
 This crate is not typically used directly. Instead, depend on either:
 
+- `miden-felt-repr` (preferred), or
 - `miden-felt-repr-onchain` (for on-chain code), or
 - `miden-felt-repr-offchain` (for off-chain code),
 
