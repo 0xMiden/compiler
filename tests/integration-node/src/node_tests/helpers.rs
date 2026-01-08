@@ -70,6 +70,11 @@ pub async fn setup_test_infrastructure(
     Ok(TestSetup { client, keystore })
 }
 
+/// Converts an [`AccountId`] into a `Vec<Felt>` suitable for note inputs.
+pub fn account_id_inputs(account_id: &AccountId) -> Vec<Felt> {
+    account_id.to_felt_repr().into_iter().map(Into::into).collect()
+}
+
 /// Configuration for creating an account with a custom component
 pub struct AccountCreationConfig {
     pub account_type: AccountType,
@@ -450,7 +455,7 @@ pub async fn send_asset_to_account(
         sender_account_id,
         NoteCreationConfig {
             assets: miden_client::note::NoteAssets::new(vec![asset.into()]).unwrap(),
-            inputs: recipient_account_id.to_felt_repr().into_iter().map(Into::into).collect(),
+            inputs: account_id_inputs(&recipient_account_id),
             note_type: config.note_type,
             tag: config.tag,
             execution_hint: config.execution_hint,
@@ -467,9 +472,7 @@ pub async fn send_asset_to_account(
     // Prepare note recipient
     let program_hash = tx_script_program.hash();
     let serial_num = RpoRandomCoin::new(program_hash).draw_word();
-    let inputs =
-        NoteInputs::new(recipient_account_id.to_felt_repr().into_iter().map(Into::into).collect())
-            .unwrap();
+    let inputs = NoteInputs::new(account_id_inputs(&recipient_account_id)).unwrap();
     let note_recipient = NoteRecipient::new(serial_num, p2id_note.script().clone(), inputs);
 
     // Prepare commitment data
