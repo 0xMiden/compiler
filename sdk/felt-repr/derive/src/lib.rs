@@ -197,7 +197,7 @@ fn ensure_no_explicit_discriminants(
     Ok(())
 }
 
-/// Derives `FromFeltRepr` for `miden-felt-repr` (unified) for a struct with named fields, or an enum.
+/// Derives `FromFeltRepr` for `miden-felt-repr` for a struct with named fields, or an enum.
 ///
 /// Structs are encoded by serializing their fields in declaration order.
 ///
@@ -219,19 +219,9 @@ fn ensure_no_explicit_discriminants(
 pub fn derive_from_felt_repr(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match derive_from_felt_repr_impl(&input, quote!(miden_felt_repr), quote!(miden_felt_repr::Felt))
-    {
-        Ok(ts) => ts,
-        Err(err) => err.into_compile_error().into(),
-    }
-}
-
-#[proc_macro_derive(DeriveFromFeltReprOnchain)]
-pub fn derive_from_felt_repr_onchain(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-
-    match derive_from_felt_repr_impl(&input, quote!(miden_felt_repr), quote!(miden_felt_repr::Felt))
-    {
+    let expanded =
+        derive_from_felt_repr_impl(&input, quote!(miden_felt_repr), quote!(miden_felt_repr::Felt));
+    match expanded {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
     }
@@ -364,8 +354,8 @@ fn derive_from_felt_repr_impl(
 ///     pub suffix: Felt,
 /// }
 /// ```
-#[proc_macro_derive(DeriveToFeltReprOffchain)]
-pub fn derive_to_felt_repr_offchain(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(DeriveToFeltRepr)]
+pub fn derive_to_felt_repr(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr)) {
@@ -471,72 +461,4 @@ fn derive_to_felt_repr_impl(
     };
 
     Ok(expanded.into())
-}
-
-/// Derives `ToFeltRepr` trait for a struct with named fields, or an enum.
-///
-/// Structs are encoded by serializing their fields in declaration order.
-///
-/// Enums are encoded as a `u32` tag (variant ordinal, starting from `0`)
-/// followed by the selected variant payload encoded in declaration order.
-///
-/// # Example
-///
-/// ```ignore
-/// use miden_felt_repr::ToFeltRepr;
-///
-/// #[derive(ToFeltRepr)]
-/// pub struct AccountId {
-///     pub prefix: Felt,
-///     pub suffix: Felt,
-/// }
-/// ```
-#[proc_macro_derive(DeriveToFeltReprOnchain)]
-pub fn derive_to_felt_repr_onchain(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-
-    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr)) {
-        Ok(ts) => ts,
-        Err(err) => err.into_compile_error().into(),
-    }
-}
-
-/// Derives `ToFeltRepr` trait for `miden-felt-repr` (unified) for a struct with named fields, or an enum.
-#[proc_macro_derive(DeriveToFeltRepr)]
-pub fn derive_to_felt_repr(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-
-    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr)) {
-        Ok(ts) => ts,
-        Err(err) => err.into_compile_error().into(),
-    }
-}
-
-/// Derives `FromFeltRepr` trait for a struct with named fields, or an enum.
-///
-/// Structs are encoded by serializing their fields in declaration order.
-///
-/// Enums are encoded as a `u32` tag (variant ordinal, starting from `0`)
-/// followed by the selected variant payload encoded in declaration order.
-///
-/// # Example
-///
-/// ```ignore
-/// use miden_felt_repr::FromFeltRepr;
-///
-/// #[derive(FromFeltRepr)]
-/// pub struct AccountId {
-///     pub prefix: Felt,
-///     pub suffix: Felt,
-/// }
-/// ```
-#[proc_macro_derive(DeriveFromFeltReprOffchain)]
-pub fn derive_from_felt_repr_offchain(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-
-    match derive_from_felt_repr_impl(&input, quote!(miden_felt_repr), quote!(miden_felt_repr::Felt))
-    {
-        Ok(ts) => ts,
-        Err(err) => err.into_compile_error().into(),
-    }
 }
