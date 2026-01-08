@@ -24,7 +24,7 @@ members = [
     "sdk/stdlib-sys",
     "tools/*",
     "tests/integration",
-    "tests/integration-node",
+    "tests/integration-network",
 ]
 exclude = [
     "sdk/.cargo",
@@ -194,7 +194,7 @@ opt-level = 3
 # Speed up the test profile (proving times)
 # ============================================================
 # The test package itself needs optimization
-[profile.test.package.miden-integration-node-tests]
+[profile.test.package.midenc-integration-network-tests]
 opt-level = 3
 
 # Core Miden packages

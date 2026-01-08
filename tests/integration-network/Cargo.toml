@@ -1,5 +1,5 @@
 [package]
-name = "miden-integration-node-tests"
+name = "midenc-integration-network-tests"
 version.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -12,19 +12,15 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-anyhow.workspace = true
-fs2 = "0.4"
-miden-client = { version = "0.12", features = ["std", "tonic"] }
-miden-client-sqlite-store = { version = "0.12" }
+miden-client = { version = "0.12", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
+miden-lib = { version = "0.12" }
 miden-felt-repr-offchain = { version = "0.7.1", path = "../../sdk/felt-repr/offchain" }
 miden-mast-package.workspace = true
 miden-objects = { workspace = true, features = ["std"] }
 midenc-frontend-wasm.workspace = true
 rand = "0.9"
-temp-dir = "0.1"
 tokio.workspace = true
-uuid = { version = "1.10", features = ["v4"] }
 
 # For accessing the test builder from the main integration tests
 miden-integration-tests = { path = "../integration" }

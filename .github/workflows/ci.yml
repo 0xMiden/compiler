@@ -113,7 +113,7 @@ jobs:
           cargo make check --tests
       - name: Test
         run: |
-          cargo make test -E 'not (package(miden-integration-tests) or package(miden-integration-node-tests) or package(cargo-miden))'
+          cargo make test -E 'not (package(miden-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden))'
 
   check_release:
     name: release checks
@@ -323,7 +323,7 @@ jobs:
           fi
       - name: Test
         run: |
-          cargo make test -E 'package(miden-integration-node-tests)'
+          cargo make test -E 'package(midenc-integration-network-tests)'
 
   cargo_publish_dry_run:
     name: cargo publish dry run
