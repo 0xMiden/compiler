@@ -201,5 +201,3 @@ impl Ord for Felt {
         self.as_u64().cmp(&other.as_u64())
     }
 }
-
-// Note: Felt assertion intrinsics live in `miden-stdlib-sys`.

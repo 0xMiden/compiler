@@ -8,12 +8,11 @@ use miden_client::{
     transaction::OutputNote,
 };
 use miden_core::Felt;
-use miden_felt_repr_offchain::{AccountIdFeltRepr, ToFeltRepr};
 
 use super::helpers::{
     NoteCreationConfig, assert_account_has_fungible_asset, build_asset_transfer_tx,
     build_existing_basic_wallet_account_builder, build_send_notes_script, compile_rust_package,
-    create_note_from_package, execute_tx,
+    create_note_from_package, execute_tx, to_core_felts,
 };
 
 /// Tests the basic-wallet contract deployment and p2id note consumption workflow on a mock chain.
@@ -63,7 +62,7 @@ pub fn test_basic_wallet_p2id() {
         faucet_id,
         NoteCreationConfig {
             assets: NoteAssets::new(vec![mint_asset.into()]).unwrap(),
-            inputs: AccountIdFeltRepr(&alice_id).to_felt_repr(),
+            inputs: to_core_felts(&alice_id),
             ..Default::default()
         },
         &mut note_rng,
@@ -168,7 +167,7 @@ pub fn test_basic_wallet_p2ide() {
         faucet_id,
         NoteCreationConfig {
             assets: NoteAssets::new(vec![mint_asset.into()]).unwrap(),
-            inputs: AccountIdFeltRepr(&alice_id).to_felt_repr(),
+            inputs: to_core_felts(&alice_id),
             ..Default::default()
         },
         &mut p2id_rng,
@@ -205,7 +204,7 @@ pub fn test_basic_wallet_p2ide() {
         NoteCreationConfig {
             assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
             inputs: {
-                let mut inputs = AccountIdFeltRepr(&bob_id).to_felt_repr();
+                let mut inputs = to_core_felts(&bob_id);
                 inputs.extend([timelock_height, reclaim_height]);
                 inputs
             },
@@ -290,7 +289,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
         faucet_id,
         NoteCreationConfig {
             assets: NoteAssets::new(vec![mint_asset.into()]).unwrap(),
-            inputs: AccountIdFeltRepr(&alice_id).to_felt_repr(),
+            inputs: to_core_felts(&alice_id),
             ..Default::default()
         },
         &mut p2id_rng,
@@ -327,7 +326,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
         NoteCreationConfig {
             assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
             inputs: {
-                let mut inputs = AccountIdFeltRepr(&bob_id).to_felt_repr();
+                let mut inputs = to_core_felts(&bob_id);
                 inputs.extend([timelock_height, reclaim_height]);
                 inputs
             },
