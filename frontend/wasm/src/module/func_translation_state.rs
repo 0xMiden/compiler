@@ -5,13 +5,16 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
+use alloc::rc::Rc;
+use core::cell::RefCell;
+
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     BlockRef, Builder, OperationRef, SourceSpan, Type, ValueRef,
     dialects::builtin::attributes::Signature,
 };
 
-use super::function_builder_ext::FunctionBuilderExt;
+use super::{debug_info::FunctionDebugInfo, function_builder_ext::FunctionBuilderExt};
 use crate::{error::WasmResult, module::types::BlockType};
 
 /// Information about the presence of an associated `else` for an `if`, or the
@@ -232,6 +235,8 @@ pub struct FuncTranslationState {
     /// Is the current translation state still reachable? This is false when translating operators
     /// like End, Return, or Unreachable.
     pub(crate) reachable: bool,
+    /// Optional debug metadata for the current function.
+    pub(crate) debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
 }
 
 impl FuncTranslationState {
@@ -241,6 +246,7 @@ impl FuncTranslationState {
             stack: Vec::new(),
             control_stack: Vec::new(),
             reachable: true,
+            debug_info: None,
         }
     }
 
@@ -248,6 +254,7 @@ impl FuncTranslationState {
         debug_assert!(self.stack.is_empty());
         debug_assert!(self.control_stack.is_empty());
         self.reachable = true;
+        self.debug_info = None;
     }
 
     /// Initialize the state for compiling a function with the given signature.
@@ -257,6 +264,10 @@ impl FuncTranslationState {
     pub(crate) fn initialize(&mut self, sig: &Signature, exit_block: BlockRef) {
         self.clear();
         self.push_block(exit_block, 0, sig.results().len());
+    }
+
+    pub(crate) fn set_debug_info(&mut self, info: Option<Rc<RefCell<FunctionDebugInfo>>>) {
+        self.debug_info = info;
     }
 
     /// Push a value.

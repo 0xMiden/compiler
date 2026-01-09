@@ -86,6 +86,27 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(arg)
     }
 
+    fn dbg_value(
+        &mut self,
+        value: ValueRef,
+        variable: DILocalVariableAttr,
+        span: SourceSpan,
+    ) -> Result<DbgValueRef, Report> {
+        self.dbg_value_with_expr(value, variable, None, span)
+    }
+
+    fn dbg_value_with_expr(
+        &mut self,
+        value: ValueRef,
+        variable: DILocalVariableAttr,
+        expression: Option<DIExpressionAttr>,
+        span: SourceSpan,
+    ) -> Result<DbgValueRef, Report> {
+        let expr = expression.unwrap_or_default();
+        let op_builder = self.builder_mut().create::<DbgValue, (_, _, _)>(span);
+        op_builder(value, variable, expr)
+    }
+
     fn builder(&self) -> &B;
     fn builder_mut(&mut self) -> &mut B;
 }

@@ -21,8 +21,9 @@ use midenc_session::{
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
 use super::{
-    function_builder_ext::SSABuilderListener, module_env::ParsedModule,
-    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
+    debug_info::FunctionDebugInfo, function_builder_ext::SSABuilderListener,
+    module_env::ParsedModule, module_translation_state::ModuleTranslationState,
+    types::ModuleTypesBuilder,
 };
 use crate::{
     code_translator::translate_operator,
@@ -69,11 +70,18 @@ impl FuncTranslator {
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
         config: &crate::WasmTranslationConfig,
+        debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
     ) -> WasmResult<()> {
         let context = func.borrow().as_operation().context_rc();
         let mut op_builder = midenc_hir::OpBuilder::new(context)
             .with_listener(SSABuilderListener::new(self.func_ctx.clone()));
         let mut builder = FunctionBuilderExt::new(func, &mut op_builder);
+
+        if let Some(info) = debug_info.clone() {
+            builder.set_debug_metadata(info);
+        }
+
+        self.state.set_debug_info(debug_info);
 
         let entry_block = builder.current_block();
         builder.seal_block(entry_block); // Declare all predecessors known.
@@ -313,6 +321,8 @@ fn parse_function_body<B: ?Sized + Builder>(
             &session.diagnostics,
             effective_span,
         )?;
+
+        builder.apply_location_schedule(offset, span);
     }
 
     // The final `End` operator left us in the exit block where we need to manually add a return

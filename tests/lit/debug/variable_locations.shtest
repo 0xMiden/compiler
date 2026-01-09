@@ -1,0 +1,6 @@
+# Test that debug info tracks source locations in a loop
+# RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && rustc 'tests/lit/debug/variable_locations.rs' --crate-type=cdylib --target wasm32-unknown-unknown -C opt-level=0 -C panic=abort -C debuginfo=2 -o \"\$TMPDIR/variable_locations.wasm\" && bin/midenc \"\$TMPDIR/variable_locations.wasm\" --entrypoint=entrypoint -Z print-hir-source-locations --emit hir=- 2>&1" | filecheck %s
+
+# Check that function has source location annotations
+# CHECK-LABEL: builtin.function @entrypoint
+# CHECK: #loc("{{.*}}variable_locations.rs":{{[0-9]+}}
