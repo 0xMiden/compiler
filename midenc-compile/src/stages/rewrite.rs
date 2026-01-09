@@ -8,7 +8,7 @@ use midenc_hir::{
     patterns::{GreedyRewriteConfig, RegionSimplificationLevel},
 };
 use midenc_hir_transform::{
-    Canonicalizer, CommonSubexpressionElimination, SinkOperandDefs,
+    Canonicalizer, CommonSubexpressionElimination, RemoveDeadDebugOps, SinkOperandDefs,
     SparseConditionalConstantPropagation,
 };
 
@@ -79,6 +79,8 @@ impl Stage for ApplyRewritesStage {
                 func_pm.add_pass(Box::new(TransformSpills));
                 //func_pm.add_pass(Box::new(ControlFlowSink));
                 //func_pm.add_pass(Box::new(DeadCodeElimination));
+                // Remove debug ops whose operands are dead to prevent codegen issues
+                func_pm.add_pass(Box::new(RemoveDeadDebugOps));
             }
             // Function passes for component-level functions
             {
@@ -97,6 +99,8 @@ impl Stage for ApplyRewritesStage {
                 func_pm.add_pass(Box::new(TransformSpills));
                 //func_pm.add_pass(Box::new(ControlFlowSink));
                 //func_pm.add_pass(Box::new(DeadCodeElimination));
+                // Remove debug ops whose operands are dead to prevent codegen issues
+                func_pm.add_pass(Box::new(RemoveDeadDebugOps));
             }
         }
 
@@ -107,6 +111,18 @@ impl Stage for ApplyRewritesStage {
 
         log::trace!(target: "driver", "after rewrites: {}", input.world.borrow().as_operation());
         log::debug!(target: "driver", "rewrites successful");
+
+        // Emit HIR if requested
+        let session = context.session();
+        if session.should_emit(midenc_session::OutputType::Hir) {
+            log::debug!(target: "driver", "emitting HIR component");
+            session
+                .emit(midenc_session::OutputMode::Text, &*input.component.borrow())
+                .into_diagnostic()?;
+            log::debug!(target: "driver", "HIR component emitted successfully");
+        } else {
+            log::debug!(target: "driver", "HIR emission not requested");
+        }
 
         if context.session().rewrite_only() {
             log::debug!(target: "driver", "stopping compiler early (rewrite-only=true)");

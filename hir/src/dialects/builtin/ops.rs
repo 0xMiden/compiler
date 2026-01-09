@@ -1,5 +1,6 @@
 mod cast;
 mod component;
+mod debug;
 mod function;
 mod global_variable;
 mod interface;
