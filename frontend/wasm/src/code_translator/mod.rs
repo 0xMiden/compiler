@@ -57,6 +57,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
+    builder.record_debug_span(span);
+
     if !state.reachable {
         translate_unreachable_operator(op, builder, state, mod_types, diagnostics, span)?;
         return Ok(());

@@ -1,0 +1,6 @@
+# Test that HIR includes source locations for function parameters
+# RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && rustc 'tests/lit/debug/function_metadata.rs' --crate-type=cdylib --target wasm32-unknown-unknown -C opt-level=0 -C panic=abort -C debuginfo=2 -o \"\$TMPDIR/function_metadata.wasm\" && bin/midenc \"\$TMPDIR/function_metadata.wasm\" --entrypoint=multiply -Z print-hir-source-locations --emit hir=- 2>&1" | filecheck %s
+
+# Check that function has source location annotations
+# CHECK-LABEL: builtin.function @multiply
+# CHECK: #loc("{{.*}}function_metadata.rs":{{[0-9]+}}
