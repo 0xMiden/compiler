@@ -7,7 +7,9 @@ pub use self::{component::*, function::*, module::*, world::*};
 use super::ops::*;
 use crate::{
     Builder, BuilderExt, Ident, Immediate, OpBuilder, Report, Signature, SourceSpan, Spanned, Type,
-    UnsafeIntrusiveEntityRef, ValueRef, Visibility, constants::ConstantData,
+    UnsafeIntrusiveEntityRef, ValueRef, Visibility,
+    attributes::{DIExpressionAttr, DILocalVariableAttr},
+    constants::ConstantData,
 };
 
 pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
@@ -82,6 +84,27 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
     ) -> Result<UnsafeIntrusiveEntityRef<RetImm>, Report> {
         let op_builder = self.builder_mut().create::<RetImm, _>(span);
         op_builder(arg)
+    }
+
+    fn dbg_value(
+        &mut self,
+        value: ValueRef,
+        variable: DILocalVariableAttr,
+        span: SourceSpan,
+    ) -> Result<DbgValueRef, Report> {
+        self.dbg_value_with_expr(value, variable, None, span)
+    }
+
+    fn dbg_value_with_expr(
+        &mut self,
+        value: ValueRef,
+        variable: DILocalVariableAttr,
+        expression: Option<DIExpressionAttr>,
+        span: SourceSpan,
+    ) -> Result<DbgValueRef, Report> {
+        let expr = expression.unwrap_or_default();
+        let op_builder = self.builder_mut().create::<DbgValue, (_, _, _)>(span);
+        op_builder(value, variable, expr)
     }
 
     fn builder(&self) -> &B;

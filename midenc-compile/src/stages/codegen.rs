@@ -20,6 +20,8 @@ pub struct CodegenOutput {
     pub link_packages: BTreeMap<Symbol, Arc<Package>>,
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// The serialized DebugInfoSection for the .debug_info custom section
+    pub debug_info_bytes: Option<Vec<u8>>,
 }
 
 /// Perform code generation on the possibly-linked output of previous stages
@@ -73,11 +75,29 @@ impl Stage for CodegenStage {
             session.emit(OutputMode::Text, masm_component.as_ref()).into_diagnostic()?;
         }
 
+        // Build debug info section if debug decorators are enabled
+        let debug_info_bytes = if session.options.emit_debug_decorators() {
+            use miden_assembly::utils::Serializable;
+
+            log::debug!("collecting debug info for .debug_info section");
+            let debug_section =
+                crate::debug_info::build_debug_info_section(&component.borrow(), true);
+            debug_section.map(|section| {
+                let mut bytes = alloc::vec::Vec::new();
+                section.write_into(&mut bytes);
+                log::debug!("built debug_info section: {} bytes", bytes.len());
+                bytes
+            })
+        } else {
+            None
+        };
+
         Ok(CodegenOutput {
             component: Arc::from(masm_component),
             link_libraries,
             link_packages,
             account_component_metadata_bytes: linker_output.account_component_metadata_bytes,
+            debug_info_bytes,
         })
     }
 }

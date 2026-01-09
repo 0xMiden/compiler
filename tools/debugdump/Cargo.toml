@@ -1,0 +1,25 @@
+[package]
+name = "miden-debugdump"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "A tool to dump debug information from MASP packages"
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories = ["development-tools", "command-line-utilities"]
+keywords = ["debug", "miden", "dwarfdump"]
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "miden-debugdump"
+path = "src/main.rs"
+
+[dependencies]
+miden-mast-package.workspace = true
+miden-core.workspace = true
+clap.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,5 @@
+name = "debugdump"
+patterns = ["*.wat"]
+working_dir = "../../../"
+
+[format.shtest]

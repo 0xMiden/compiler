@@ -56,6 +56,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
+    builder.record_debug_span(span);
+
     if !state.reachable {
         translate_unreachable_operator(op, builder, state, mod_types, diagnostics, span)?;
         return Ok(());
@@ -90,11 +92,11 @@ pub fn translate_operator<B: ?Sized + Builder>(
             } else {
                 val
             };
-            builder.def_var(var, val);
+            builder.def_var_with_dbg(var, val, span);
         }
         Operator::LocalTee { local_index } => {
             let val = state.peek1();
-            builder.def_var(Variable::from_u32(*local_index), val);
+            builder.def_var_with_dbg(Variable::from_u32(*local_index), val, span);
         }
         /********************************** Globals ****************************************/
         Operator::GlobalGet { global_index } => {

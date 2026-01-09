@@ -32,6 +32,7 @@ log.workspace = true
 inventory.workspace = true
 midenc-codegen-masm.workspace = true
 miden-assembly.workspace = true
+miden-debug-types.workspace = true
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-dialect-scf.workspace = true

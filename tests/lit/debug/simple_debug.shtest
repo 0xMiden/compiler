@@ -1,0 +1,6 @@
+# Test that basic debug info source locations are emitted for a simple function
+# RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && rustc 'tests/lit/debug/simple_debug.rs' --crate-type=cdylib --target wasm32-unknown-unknown -C opt-level=0 -C panic=abort -C debuginfo=2 -o \"\$TMPDIR/simple_debug.wasm\" && bin/midenc \"\$TMPDIR/simple_debug.wasm\" --entrypoint=add -Z print-hir-source-locations --emit hir=- 2>&1" | filecheck %s
+
+# Check that function has source location annotations
+# CHECK-LABEL: builtin.function @add
+# CHECK: #loc("{{.*}}simple_debug.rs":{{[0-9]+}}
