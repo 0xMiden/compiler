@@ -245,15 +245,18 @@ impl NewCommand {
             .context("Failed to scaffold new Miden project from the template")?;
 
         // Try to add the new crate to workspace Cargo.toml if one exists
-        use path_absolutize::Absolutize;
-        let project_path_abs = self
-            .path
-            .absolutize()
-            .context("Failed to convert project path to absolute path")?
-            .to_path_buf();
-        if let Err(e) = add_to_workspace_if_exists(&project_path_abs) {
-            // Log warning but don't fail the command if workspace update fails
-            eprintln!("Warning: Failed to add crate to workspace: {e}");
+        // Skip this in test environment to avoid polluting workspace with test projects
+        if !cfg!(test) && std::env::var("TEST").is_err() {
+            use path_absolutize::Absolutize;
+            let project_path_abs = self
+                .path
+                .absolutize()
+                .context("Failed to convert project path to absolute path")?
+                .to_path_buf();
+            if let Err(e) = add_to_workspace_if_exists(&project_path_abs) {
+                // Log warning but don't fail the command if workspace update fails
+                eprintln!("Warning: Failed to add crate to workspace: {e}");
+            }
         }
 
         Ok(self.path)
