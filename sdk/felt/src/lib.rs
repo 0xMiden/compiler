@@ -2,8 +2,8 @@
 //!
 //! This crate provides a single `Felt` type that can be used in both on-chain (Wasm) and off-chain
 //! (native) Rust code:
-//! - On `wasm32` targets, `Felt` is backed by an on-chain felt.
-//! - On non-`wasm32` targets, `Felt` is backed by a felt (`miden-core`'s field element).
+//! - On Wasm targets, `Felt` is backed by an on-chain felt.
+//! - On non-Wasm targets, `Felt` is backed by a felt (`miden-core`'s field element).
 //!
 
 #![no_std]
@@ -19,12 +19,12 @@ pub enum FeltError {
     InvalidValue,
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 mod wasm32;
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub use wasm32::Felt;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 mod native;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 pub use native::Felt;

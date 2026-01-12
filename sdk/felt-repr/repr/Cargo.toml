@@ -18,7 +18,7 @@ crate-type = ["rlib"]
 miden-felt = { version = "0.8.0", path = "../../felt" }
 miden-felt-repr-derive = { path = "../derive", version = "0.7.1" }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
 miden-core.workspace = true
 miden-objects.workspace = true
 

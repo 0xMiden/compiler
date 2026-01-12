@@ -18,7 +18,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
 miden-core.workspace = true
 
 [features]

@@ -75,7 +75,7 @@ impl FromFeltRepr for Felt {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 impl FromFeltRepr for miden_core::Felt {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
@@ -181,7 +181,7 @@ impl ToFeltRepr for Felt {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 impl ToFeltRepr for miden_core::Felt {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
@@ -220,7 +220,7 @@ impl ToFeltRepr for bool {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_family = "wasm"))]
 impl ToFeltRepr for miden_objects::account::AccountId {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
