@@ -78,7 +78,7 @@ mod tests {
     // `MockChainBuilder` are declared, the test harness does not produce any
     // type of code generation.
     #[miden_test]
-    fn foo() {
+    fn biz() {
         assert_eq!(2, 1 + 1)
     }
 
