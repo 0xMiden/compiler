@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 miden = { path = "../../sdk/sdk" }
 miden-test-harness-macros = { path = "../../test-harness/test-harness-macros"}
-miden-test-harness-lib = { path = "../../test-harness/test-harness-lib"}
+miden-test-harness = { path = "../../test-harness/test-harness-lib"}
 
 [dev-dependencies]
 miden-objects = { version = "0.12", default-features = false }

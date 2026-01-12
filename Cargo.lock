@@ -2748,7 +2748,7 @@ name = "miden-stdlib-sys"
 version = "0.7.1"
 
 [[package]]
-name = "miden-test-harness-lib"
+name = "miden-test-harness"
 version = "0.5.1"
 dependencies = [
  "clap",
@@ -2763,7 +2763,7 @@ dependencies = [
 name = "miden-test-harness-macros"
 version = "0.5.1"
 dependencies = [
- "miden-test-harness-lib",
+ "miden-test-harness",
  "quote",
  "syn",
 ]

@@ -19,7 +19,7 @@ test-flag = []
 
 [dependencies]
 # Miden dependencies
-miden-test-harness-lib.workspace = true
+miden-test-harness.workspace = true
 
 # External dependencies
 quote.workspace = true

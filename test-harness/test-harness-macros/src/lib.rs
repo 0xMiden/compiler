@@ -1,4 +1,4 @@
-use miden_test_harness_lib::reexport::{
+use miden_test_harness::reexport::{
     __miden_test_harness_miden_mast_package::Package, miden_testing::*,
 };
 use proc_macro::TokenStream;
@@ -112,8 +112,8 @@ fn load_package(function: &mut syn::ItemFn) {
         let path = #package_path;
         let bytes = std::fs::read(path).unwrap();
         let #package_binding_name =
-            <miden_test_harness_lib::reexport::__miden_test_harness_miden_mast_package::Package
-            as miden_test_harness_lib::reexport::__miden_test_harness_Deserialzable>::read_from_bytes(&bytes).unwrap();
+            <miden_test_harness::reexport::__miden_test_harness_miden_mast_package::Package
+            as miden_test_harness::reexport::__miden_test_harness_Deserialzable>::read_from_bytes(&bytes).unwrap();
     };
 
     // We add the required lines to load the generated Package right at the
@@ -134,7 +134,7 @@ fn load_mock_chain(function: &mut syn::ItemFn) {
     };
 
     let load_mock_chain_builder: Vec<syn::Stmt> = syn::parse_quote! {
-        let mut #mock_chain_builder_name = miden_test_harness_lib::reexport::miden_testing::MockChainBuilder::new();
+        let mut #mock_chain_builder_name = miden_test_harness::reexport::miden_testing::MockChainBuilder::new();
     };
 
     // We add the required lines to load the generated MockChainBuilder right at the
@@ -158,8 +158,8 @@ pub fn miden_test(
     load_mock_chain(&mut input_fn);
 
     let function = quote! {
-        miden_test_harness_lib::miden_test_submit!(
-            miden_test_harness_lib::MidenTest {
+        miden_test_harness::miden_test_submit!(
+            miden_test_harness::MidenTest {
                 name: #fn_name,
                 test_fn: #fn_ident,
             }
@@ -196,12 +196,12 @@ pub fn miden_test_block(
 
     let main_function = if is_test() {
         quote! {
-            use miden_test_harness_lib;
+            use miden_test_harness;
 
             fn main() {
-                let args = miden_test_harness_lib::MidenTestArguments::from_args();
+                let args = miden_test_harness::MidenTestArguments::from_args();
 
-                miden_test_harness_lib::run(args);
+                miden_test_harness::run(args);
             }
         }
     } else {
