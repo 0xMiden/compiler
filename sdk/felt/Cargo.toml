@@ -21,6 +21,8 @@ crate-type = ["rlib"]
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 miden-core.workspace = true
 
+[target.'cfg(target_family = "wasm")'.dependencies]
+miden-core = { workspace = true, optional = true }
+
 [features]
 default = []
-regular-felt-on-wasm = []
