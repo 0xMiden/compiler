@@ -3,11 +3,11 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 use crate::felt;
 use crate::intrinsics::{Felt, Word};
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
 
     /// Moves an arbitrary number of words from the advice stack to memory.
@@ -79,7 +79,7 @@ unsafe extern "C" {
 /// Cycles:
 /// - Even num_words: 48 + 9 * num_words / 2
 /// - Odd num_words: 65 + 9 * round_down(num_words / 2)
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
     struct Result {
         hash: Word,
@@ -102,15 +102,15 @@ pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
 
 /// Reads an arbitrary number of words `num_words` from the advice stack and returns them along with
 /// sequantial RPO hash of all read words.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 pub fn pipe_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
-    unimplemented!("std::mem bindings are only available on wasm32")
+    unimplemented!("std::mem bindings are only available when targeting the Miden VM")
 }
 
 /// Returns an even number of words from the advice stack along with the RPO hash of all read words.
 ///
 /// Cycles: 10 + 9 * num_words / 2
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
     struct Result {
         c: Word,
@@ -151,15 +151,15 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
 }
 
 /// Returns an even number of words from the advice stack along with the RPO hash of all read words.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 pub fn pipe_double_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
-    unimplemented!("std::mem bindings are only available on wasm32")
+    unimplemented!("std::mem bindings are only available when targeting the Miden VM")
 }
 
 /// Pops an arbitrary number of words from the advice stack and asserts it matches the commitment.
 /// Returns a Vec containing the loaded words.
 #[inline]
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
     // Allocate a Vec with the specified capacity
     let num_words_usize = num_words.as_u64() as usize;
@@ -187,8 +187,8 @@ pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
 
 /// Pops an arbitrary number of words from the advice stack and asserts it matches the commitment.
 /// Returns a Vec containing the loaded words.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 #[inline]
 pub fn adv_load_preimage(_num_words: Felt, _commitment: Word) -> Vec<Felt> {
-    unimplemented!("std::mem bindings are only available on wasm32")
+    unimplemented!("std::mem bindings are only available when targeting the Miden VM")
 }

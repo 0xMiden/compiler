@@ -2,7 +2,7 @@
 
 pub use miden_felt::{Felt, FeltError};
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
     #[link_name = "intrinsics::felt::assert"]
     fn extern_assert(a: Felt);
@@ -15,28 +15,28 @@ unsafe extern "C" {
 }
 
 /// Fails if `a` != 1.
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 #[inline(always)]
 pub fn assert(a: Felt) {
     unsafe { extern_assert(a) }
 }
 
 /// Fails if `a` != 0.
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 #[inline(always)]
 pub fn assertz(a: Felt) {
     unsafe { extern_assertz(a) }
 }
 
 /// Fails if `a` != `b`.
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 #[inline(always)]
 pub fn assert_eq(a: Felt, b: Felt) {
     unsafe { extern_assert_eq(a, b) }
 }
 
 /// Fails if `a` != 1.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 #[inline(always)]
 pub fn assert(a: Felt) {
     if a != Felt::from_u64_unchecked(1) {
@@ -45,7 +45,7 @@ pub fn assert(a: Felt) {
 }
 
 /// Fails if `a` != 0.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 #[inline(always)]
 pub fn assertz(a: Felt) {
     if a != Felt::from_u64_unchecked(0) {
@@ -54,7 +54,7 @@ pub fn assertz(a: Felt) {
 }
 
 /// Fails if `a` != `b`.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 #[inline(always)]
 pub fn assert_eq(a: Felt, b: Felt) {
     if a != b {

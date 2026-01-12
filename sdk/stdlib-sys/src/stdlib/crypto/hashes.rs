@@ -2,7 +2,7 @@
 //! functions. The input and output elements are assumed to contain one 32-bit
 //! value per element.
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 mod imp {
     use alloc::vec::Vec;
 
@@ -321,7 +321,7 @@ mod imp {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 mod imp {
     use alloc::vec::Vec;
 
@@ -330,51 +330,67 @@ mod imp {
     /// Computes BLAKE3 1-to-1 hash.
     #[inline]
     pub fn blake3_hash_1to1(_input: [u8; 32]) -> [u8; 32] {
-        unimplemented!("std::crypto::hashes bindings are only available on wasm32")
+        unimplemented!(
+            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+        )
     }
 
     /// Computes BLAKE3 2-to-1 hash.
     #[inline]
     pub fn blake3_hash_2to1(_input: [u8; 64]) -> [u8; 32] {
-        unimplemented!("std::crypto::hashes bindings are only available on wasm32")
+        unimplemented!(
+            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+        )
     }
 
     /// Computes SHA256 1-to-1 hash.
     #[inline]
     pub fn sha256_hash_1to1(_input: [u8; 32]) -> [u8; 32] {
-        unimplemented!("std::crypto::hashes bindings are only available on wasm32")
+        unimplemented!(
+            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+        )
     }
 
     /// Computes SHA256 2-to-1 hash.
     #[inline]
     pub fn sha256_hash_2to1(_input: [u8; 64]) -> [u8; 32] {
-        unimplemented!("std::crypto::hashes bindings are only available on wasm32")
+        unimplemented!(
+            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+        )
     }
 
     /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
     /// hash function.
     #[inline]
     pub fn hash_elements(_elements: Vec<Felt>) -> Digest {
-        unimplemented!("std::crypto::hashes bindings are only available on wasm32")
+        unimplemented!(
+            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+        )
     }
 
     /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO) hash
     /// function.
     #[inline]
     pub fn hash_words(_words: &[Word]) -> Digest {
-        unimplemented!("std::crypto::hashes bindings are only available on wasm32")
+        unimplemented!(
+            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+        )
     }
 
     /// ABI helper for `std::crypto::hashes::rpo::hash_memory`.
     #[inline]
     pub fn extern_hash_memory(_ptr: u32, _num_elements: u32, _result_ptr: *mut Felt) {
-        unimplemented!("std::crypto::hashes bindings are only available on wasm32")
+        unimplemented!(
+            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+        )
     }
 
     /// ABI helper for `std::crypto::hashes::rpo::hash_memory_words`.
     #[inline]
     pub fn extern_hash_memory_words(_start_addr: u32, _end_addr: u32, _result_ptr: *mut Felt) {
-        unimplemented!("std::crypto::hashes bindings are only available on wasm32")
+        unimplemented!(
+            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+        )
     }
 }
 

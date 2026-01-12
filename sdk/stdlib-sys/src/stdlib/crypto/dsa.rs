@@ -1,9 +1,9 @@
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 use crate::intrinsics::Word;
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 use crate::intrinsics::{Felt, Word};
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
     #[link_name = "std::crypto::dsa::rpo_falcon512::verify"]
     fn extern_rpo_falcon512_verify(
@@ -32,7 +32,7 @@ unsafe extern "C" {
 /// pushing the signature to the advice stack. For production deployments, ensure secret key
 /// handling occurs outside the VM.
 #[inline(always)]
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_family = "wasm", miden))]
 pub fn rpo_falcon512_verify(pk: Word, msg: Word) {
     unsafe {
         extern_rpo_falcon512_verify(pk[3], pk[2], pk[1], pk[0], msg[3], msg[2], msg[1], msg[0]);
@@ -40,7 +40,7 @@ pub fn rpo_falcon512_verify(pk: Word, msg: Word) {
 }
 
 #[inline(always)]
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 pub fn rpo_falcon512_verify(_pk: Word, _msg: Word) {
-    unimplemented!("std::crypto::dsa bindings are only available on wasm32")
+    unimplemented!("std::crypto::dsa bindings are only available when targeting the Miden VM")
 }

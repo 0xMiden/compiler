@@ -72,6 +72,9 @@ impl BuildCommand {
 
         // Enable memcopy and 128-bit arithmetic ops
         let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
+        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
+        // cfg-based dependency selection.
+        extra_rust_flags.push_str(" --cfg miden");
         // Enable errors on missing stub functions
         extra_rust_flags.push_str(" -C link-args=--fatal-warnings");
         // Remove the source file paths in the data segment for panics
@@ -196,7 +199,7 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
 
     // Add build-std flags required for Miden compilation
     args.extend(
-        ["-Z", "build-std=core,alloc,proc_macro,panic_abort", "-Z", "build-std-features="]
+        ["-Z", "build-std=core,alloc,panic_abort", "-Z", "build-std-features="]
             .into_iter()
             .map(|s| s.to_string()),
     );
