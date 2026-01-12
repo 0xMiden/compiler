@@ -20,34 +20,11 @@ pub enum FeltError {
 }
 
 #[cfg(target_arch = "wasm32")]
-#[repr(transparent)]
-#[derive(Copy, Clone, Debug)]
-/// A `Felt` represented as an on-chain felt.
-pub struct Felt {
-    /// The backing type is `f32` which will be treated as a felt by the compiler.
-    /// We're basically hijacking the Wasm `f32` type and treat as felt.
-    pub inner: f32,
-    // We cannot define this type as `Felt(f32)` since there is no struct tuple support in WIT.
-    // For the type remapping to work the bindings are expecting the remapped type to be the same
-    // shape as the one generated from WIT.
-    // In WIT it's defined as
-    // ```wit
-    //    record felt {
-    //        inner: f32,
-    //    }
-    //
-    //```
-    // see sdk/base-macros/wit/miden.wit so we have to define it like that here.
-    //
-}
-
-#[cfg(target_arch = "wasm32")]
 mod wasm32;
-#[cfg(not(target_arch = "wasm32"))]
-#[repr(transparent)]
-#[derive(Copy, Clone, Debug)]
-/// A `Felt` represented as a felt (`miden_core::Felt`).
-pub struct Felt(pub miden_core::Felt);
+#[cfg(target_arch = "wasm32")]
+pub use wasm32::Felt;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::Felt;

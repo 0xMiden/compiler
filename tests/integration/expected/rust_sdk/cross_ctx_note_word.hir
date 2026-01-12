@@ -442,7 +442,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v407 = arith.constant -4294967296 : i64;
             v408 = hir.cast v407 : felt;
             hir.assert_eq v406, v408;
-            v409 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_felt::Felt as core::convert::From<u32>>::from(v399) : felt
+            v409 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_felt::wasm32::Felt as core::convert::From<u32>>::from(v399) : felt
             v410 = arith.constant -1 : i32;
             v411 = hir.bitcast v410 : felt;
             hir.assert_eq v409, v411;
@@ -450,7 +450,7 @@ builtin.component miden:base/note-script@1.0.0 {
             hir.assert_eq v392, v538;
             v384 = arith.zext v383 : u32;
             v385 = hir.bitcast v384 : i32;
-            v414 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_felt::Felt as core::convert::From<u8>>::from(v385) : felt
+            v414 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v385) : felt
             v537 = arith.constant 122 : felt;
             hir.assert_eq v414, v537;
             v536 = arith.constant 1 : felt;
@@ -466,7 +466,7 @@ builtin.component miden:base/note-script@1.0.0 {
             hir.assert_eq v423, v536;
             v370 = arith.zext v369 : u32;
             v371 = hir.bitcast v370 : i32;
-            v426 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_felt::Felt as core::convert::From<u16>>::from(v371) : felt
+            v426 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_felt::wasm32::Felt as core::convert::From<u16>>::from(v371) : felt
             v574 = arith.constant 12 : felt;
             hir.assert_eq v426, v574;
             v572 = arith.constant 8 : i32;
@@ -549,13 +549,13 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @<miden_felt::Felt as core::convert::From<u32>>::from(v491: i32) -> felt {
+        private builtin.function @<miden_felt::wasm32::Felt as core::convert::From<u32>>::from(v491: i32) -> felt {
         ^block32(v491: i32):
             v493 = hir.bitcast v491 : felt;
             builtin.ret v493;
         };
 
-        private builtin.function @<miden_felt::Felt as core::convert::From<u16>>::from(v494: i32) -> felt {
+        private builtin.function @<miden_felt::wasm32::Felt as core::convert::From<u16>>::from(v494: i32) -> felt {
         ^block34(v494: i32):
             v496 = arith.constant 65535 : i32;
             v497 = arith.band v494, v496 : i32;
@@ -563,7 +563,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret v498;
         };
 
-        private builtin.function @<miden_felt::Felt as core::convert::From<u8>>::from(v499: i32) -> felt {
+        private builtin.function @<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v499: i32) -> felt {
         ^block36(v499: i32):
             v501 = arith.constant 255 : i32;
             v502 = arith.band v499, v501 : i32;

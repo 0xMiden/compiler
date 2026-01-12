@@ -2,7 +2,12 @@
 
 use miden_core::{Felt as CoreFelt, FieldElement};
 
-use crate::{Felt, FeltError, MODULUS};
+use crate::{FeltError, MODULUS};
+
+#[repr(transparent)]
+#[derive(Copy, Clone, Debug)]
+/// A `Felt` represented as a felt (`miden_core::Felt`).
+pub struct Felt(pub miden_core::Felt);
 
 impl Felt {
     /// Field modulus = 2^64 - 2^32 + 1.

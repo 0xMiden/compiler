@@ -41,7 +41,7 @@
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       i32.const 1
-      call $<miden_felt::Felt as core::convert::From<u8>>::from
+      call $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
       local.get 3
       local.get 2
       local.get 1
@@ -81,7 +81,7 @@
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       i32.const 0
-      call $<miden_felt::Felt as core::convert::From<u8>>::from
+      call $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
       local.get 9
       call $miden::active_account::get_item
       local.get 9
@@ -138,9 +138,9 @@
         i32.const 32
         i32.add
         local.get 8
-        call $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::Felt>>::from
+        call $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::wasm32::Felt>>::from
         i32.const 1
-        call $<miden_felt::Felt as core::convert::From<u8>>::from
+        call $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
         local.get 7
         local.get 6
         local.get 5
@@ -269,7 +269,7 @@
       i64.load align=4
       i64.store
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::Felt>>::from (;6;) (type 4) (param i32 f32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::wasm32::Felt>>::from (;6;) (type 4) (param i32 f32)
       (local f32 f32 f32)
       i32.const 0
       call $intrinsics::felt::from_u32
@@ -299,7 +299,7 @@
     (func $intrinsics::felt::from_u32 (;8;) (type 6) (param i32) (result f32)
       unreachable
     )
-    (func $<miden_felt::Felt as core::convert::From<u8>>::from (;9;) (type 6) (param i32) (result f32)
+    (func $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from (;9;) (type 6) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and

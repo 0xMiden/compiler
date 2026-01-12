@@ -70,7 +70,7 @@
       f32.load offset=32
       local.set 5
       i32.const 0
-      call $<miden_felt::Felt as core::convert::From<u8>>::from
+      call $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
       local.get 2
       local.get 3
       local.get 4
@@ -190,7 +190,7 @@
     (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
       unreachable
     )
-    (func $<miden_felt::Felt as core::convert::From<u8>>::from (;6;) (type 3) (param i32) (result f32)
+    (func $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from (;6;) (type 3) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and

@@ -865,7 +865,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     push.0
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::<miden_felt::Felt as core::convert::From<u8>>::from
+    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     push.128
@@ -1957,7 +1957,7 @@ proc std::crypto::hashes::rpo::hash_memory_words(i32, i32, i32)
 end
 
 @callconv("C")
-proc <miden_felt::Felt as core::convert::From<u8>>::from(
+proc <miden_felt::wasm32::Felt as core::convert::From<u8>>::from(
     i32
 ) -> felt
     push.255
