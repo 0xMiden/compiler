@@ -518,7 +518,7 @@ fn rewrite_cfg_spills(
         // definitions
         let block = block_ref.borrow();
         for op in block.body().iter().rev() {
-            find_inst_uses(&op, &mut used, analysis);
+            find_inst_uses_including_nested_regions(&op, &mut used, analysis);
         }
 
         // At the top of the block, if any of the block parameters are in the "used" set, remove
@@ -536,6 +536,77 @@ fn rewrite_cfg_spills(
     }
 
     rewrite_spill_pseudo_instructions(context, analysis, interface, Some(dominfo))
+}
+
+/// Rewrite uses of spilled values in `op` and any nested regions of `op`.
+///
+/// This is required for correctness when spills/reloads are inserted into regions nested under a
+/// CFG block (e.g. structured control flow like `scf.if`), as those uses are otherwise ignored by
+/// the CFG rewrite pass.
+fn find_inst_uses_including_nested_regions(
+    op: &Operation,
+    used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
+    analysis: &SpillAnalysis,
+) {
+    if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
+        merge_nested_region_uses(branch, used, analysis);
+    }
+
+    find_inst_uses(op, used, analysis);
+}
+
+/// Merge into `used` the set of unsatisfied uses of spilled values from regions nested under
+/// `branch` that are reachable from the parent.
+fn merge_nested_region_uses(
+    branch: &dyn RegionBranchOpInterface,
+    used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
+    analysis: &SpillAnalysis,
+) {
+    // Each successor region must be processed independently so that reloads in one region do not
+    // incorrectly rewrite uses from another (e.g. `then` vs `else` branches).
+    let mut nested_uses =
+        FxHashMap::<BlockRef, SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>>::default();
+    for region in Region::postorder_region_graph_for(branch) {
+        let region = region.borrow();
+        assert!(region.has_one_block(), "multi-block regions are not currently supported");
+        let entry = region.entry_block_ref().expect("expected region to have an entry block");
+        drop(region);
+        nested_uses.insert(entry, collect_region_uses(entry, analysis));
+    }
+
+    for successor in branch.get_successor_regions(RegionBranchPoint::Parent) {
+        let Some(region) = successor.into_successor() else {
+            continue;
+        };
+        let entry = region
+            .borrow()
+            .entry_block_ref()
+            .expect("expected region to have an entry block");
+        let Some(region_used) = nested_uses.remove(&entry) else {
+            continue;
+        };
+        for (value, users) in region_used {
+            used.entry(value).or_default().extend(users.iter().copied());
+        }
+    }
+}
+
+/// Collect the set of unsatisfied uses of spilled values at the entry of `block_ref`.
+fn collect_region_uses(
+    block_ref: BlockRef,
+    analysis: &SpillAnalysis,
+) -> SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8> {
+    let mut used = SmallDenseMap::<ValueRef, SmallSet<OpOperand, 8>, 8>::default();
+    let block = block_ref.borrow();
+    for op in block.body().iter().rev() {
+        find_inst_uses_including_nested_regions(&op, &mut used, analysis);
+    }
+
+    for arg in ValueRange::<2>::from(block.arguments()) {
+        used.remove(&arg);
+    }
+
+    used
 }
 
 /// Insert additional phi nodes as follows:

@@ -25,5 +25,6 @@ midenc-hir-transform.workspace = true
 
 [dev-dependencies]
 # Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+midenc-dialect-scf.workspace = true
 midenc-expect-test = { path = "../../tools/expect-test" }
 env_logger.workspace = true

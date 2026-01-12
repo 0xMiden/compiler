@@ -2846,6 +2846,7 @@ dependencies = [
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
+ "midenc-dialect-scf",
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",

@@ -3,6 +3,7 @@ use std::string::ToString;
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
+use midenc_dialect_scf::{ScfDialect, StructuredControlFlowOpBuilder};
 use midenc_expect_test::expect_file;
 use midenc_hir::{
     AbiParam, AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, Report, Signature,
@@ -273,5 +274,167 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
         .count();
     assert!(stores == 1, "expected only one store_local ops\n{after}");
     assert!(loads == 1, "expected only one load_local op\n{after}");
+    Ok(())
+}
+
+/// Build a small multi-block CFG containing a `scf.if`, where spilled values are only used inside
+/// the nested regions of the `scf.if`.
+///
+/// This is a regression test for issue #831, where spill/reload rewriting failed to account for
+/// uses inside nested regions during CFG reconstruction. Without that rewrite, reloads appear
+/// unused and are removed, causing their corresponding spills to be removed as well.
+///
+/// Operand stack pressure before the `hir.exec @test/example` call:
+///
+/// - The spills analysis models stack pressure in felts and enforces `K = 16`.
+/// - The call arguments require 15 felts total:
+///   - `v9: ptr` = 1 felt
+///   - `v6: u128` = 4 felts
+///   - `v10: u128` is passed twice = 8 felts
+///   - `v11: u64` = 2 felts
+/// - We keep `v4: u32` and `v5: ptr` live across the call (both used only after the call, inside
+///   the `scf.if`), adding 2 more felts.
+///
+/// Total pressure at the call is `15 + 2 = 17`, which exceeds `K`, so at least one of `{v4, v5}`
+/// must be spilled.
+///
+/// In this specific IR, `v4` and `v5` have equal spill priority:
+///
+/// - Both are 1 felt
+/// - Both have the same next use (`hir.store v5, v4` inside the `scf.if`)
+///
+/// The MIN heuristic orders candidates stably and `W` preserves insertion order, so `{v4, v5}` stay
+/// in that order and we pick from the end, which means we currently spill `v5`.
+#[test]
+fn materializes_spills_nested_scf_if() -> TestResult<()> {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .format_timestamp(None)
+        .is_test(true)
+        .try_init();
+
+    let span = SourceSpan::UNKNOWN;
+    let context = Rc::new(Context::default());
+    context.get_or_register_dialect::<ScfDialect>();
+    let mut ob = OpBuilder::new(context.clone());
+
+    let module = ob.create_module(Ident::with_empty_span("test".into()))?;
+    let module_body = module.borrow().body().as_region_ref();
+    ob.create_block(module_body, None, &[]);
+    let func = ob.create_function(
+        Ident::with_empty_span("test::spill_nested_scf_if".into()),
+        Signature::new(
+            [AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U8,
+                AddressSpace::Element,
+            ))))],
+            [AbiParam::new(Type::U32)],
+        ),
+    )?;
+
+    let callee_sig = Signature::new(
+        [
+            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U128,
+                AddressSpace::Element,
+            )))),
+            AbiParam::new(Type::U128),
+            AbiParam::new(Type::U128),
+            AbiParam::new(Type::U128),
+            AbiParam::new(Type::U64),
+        ],
+        [AbiParam::new(Type::U32)],
+    );
+    let callee =
+        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
+
+    {
+        let mut b = FunctionBuilder::new(func, &mut ob);
+        let entry = b.current_block();
+        let exit = b.create_block();
+        let exit_arg = b.append_block_param(exit, Type::U32, span);
+        let v0 = entry.borrow().arguments()[0] as ValueRef;
+        let v1 = b.ptrtoint(v0, Type::U32, span)?;
+        let k32 = b.u32(32, span);
+        let v2 = b.add_unchecked(v1, k32, span)?;
+        let v3 = b.inttoptr(
+            v2,
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U128,
+                AddressSpace::Element,
+            ))),
+            span,
+        )?;
+        let v4 = b.load(v3, span)?;
+        let k64 = b.u32(64, span);
+        let v5 = b.add_unchecked(v1, k64, span)?;
+        let v6 = b.inttoptr(
+            v5,
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U128,
+                AddressSpace::Element,
+            ))),
+            span,
+        )?;
+        let v7 = b.load(v6, span)?;
+        let one = b.u64(1, span);
+        let call = b.exec(callee, callee_sig.clone(), [v6, v4, v7, v7, one], span)?;
+        let v8 = call.borrow().results()[0] as ValueRef;
+
+        // Make the branch condition depend only on the call result, so that values defined before
+        // the call are only used inside the nested `scf.if` regions.
+        let zero = b.u32(0, span);
+        let cond = b.eq(v8, zero, span)?;
+
+        let mut if_op = b.r#if(cond, &[Type::U32], span)?;
+        let (then_block, else_block) = (context.create_block(), context.create_block());
+        {
+            let mut if_op = if_op.borrow_mut();
+            if_op.then_body_mut().push_back(then_block);
+            if_op.else_body_mut().push_back(else_block);
+        }
+
+        // then
+        b.switch_to_block(then_block);
+        b.store(v3, v2, span)?;
+        b.r#yield([v8], span)?;
+
+        // else
+        b.switch_to_block(else_block);
+        b.store(v3, v2, span)?;
+        b.r#yield([v8], span)?;
+
+        // back to entry
+        b.switch_to_block(entry);
+        let v9 = if_op.as_operation_ref().borrow().results()[0] as ValueRef;
+        b.br(exit, [v9], span)?;
+
+        // exit
+        b.switch_to_block(exit);
+        b.ret(Some(exit_arg), span)?;
+    }
+
+    let before = func.as_operation_ref().borrow().to_string();
+
+    expect_file!["expected/materialize_spills_nested_scf_if_before.hir"].assert_eq(&before);
+
+    let mut pm = PassManager::on::<Function>(context, Nesting::Implicit);
+    pm.add_pass(Box::new(TransformSpills));
+    pm.run(func.as_operation_ref())?;
+
+    let after = func.as_operation_ref().borrow().to_string();
+
+    expect_file!["expected/materialize_spills_nested_scf_if_after.hir"].assert_eq(&after);
+
+    let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
+    let loads = after
+        .lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            t.contains("= hir.load_local ") || t.starts_with("hir.load_local ")
+        })
+        .count();
+    assert!(stores > 0, "expected at least one store_local op\n{after}");
+    assert!(loads > 0, "expected at least one load_local op\n{after}");
+
     Ok(())
 }
