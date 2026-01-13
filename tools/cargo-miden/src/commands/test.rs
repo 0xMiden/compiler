@@ -54,12 +54,6 @@ fn test_cargo_args() -> Vec<String> {
     // Add build-std flags required for Miden compilation
     args.extend(["-Z", "build-std=std,core,alloc"].into_iter().map(|s| s.to_string()));
 
-    // Flag required to enable tests in test-harness-lib
-    args.extend(
-        ["--features", "miden-test-harness-macros/test-flag"]
-            .into_iter()
-            .map(|s| s.to_string()),
-    );
     args
 }
 

@@ -3,17 +3,6 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, ItemFn};
 
-#[cfg(feature = "test-flag")]
-fn is_test() -> bool {
-    true
-}
-
-#[cfg(not(feature = "test-flag"))]
-fn is_test() -> bool {
-    // true // Uncomment to debug.
-    false
-}
-
 // Returns the identifier for a specific FnArg
 fn get_binding_and_type(fn_arg: &syn::FnArg) -> Option<(&syn::PatIdent, &syn::PathSegment)> {
     let syn::FnArg::Typed(arg) = fn_arg else {
@@ -177,35 +166,38 @@ pub fn miden_test_suite(
 ) -> proc_macro::TokenStream {
     let mut input_module = parse_macro_input!(item as syn::ItemMod);
 
-    // We add an internal "use" here in order for the tests inside the `mod tests`
-    // block to use the `miden_test` macro without needing to pass the full path.
-    let internal_use = syn::parse_quote! {
-        use miden_test_harness_macros::miden_test;
-    };
-    input_module.content.as_mut().unwrap().1.insert(0, internal_use);
+    {
+        // We add an internal "use" here in order for the tests inside the `mod
+        // tests` block to use the `miden_test` macro without needing to pass
+        // the full path.
+        let internal_use = syn::parse_quote! {
+            use miden_test_harness_macros::miden_test;
+        };
+        input_module.content.as_mut().unwrap().1.insert(0, internal_use);
+    }
 
-    let module = if is_test() {
-        quote! {
-            #input_module
-        }
-    } else {
-        quote! {}
-    };
+    {
+        let cfg_test: syn::Attribute = syn::parse_quote!(#[cfg(test)]);
 
-    let main_function = if is_test() {
+        // We add #[cfg(test)] so that it is only expanded with the test
+        // profile. However, we want the code to always be present in order for
+        // rust-analyzer to provide information.
+        input_module.attrs.insert(0, cfg_test);
+    }
+
+    let main_function = {
         quote! {
+            #[cfg(test)]
             fn main() {
                 let args = ::miden_test_harness::MidenTestArguments::from_args();
 
                 ::miden_test_harness::run(args);
             }
         }
-    } else {
-        quote! {}
     };
 
     let block = quote! {
-        #module
+        #input_module
 
         #main_function
     };

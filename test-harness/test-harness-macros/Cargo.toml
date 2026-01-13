@@ -14,9 +14,6 @@ edition.workspace = true
 [lib]
 proc-macro = true
 
-[features]
-test-flag = []
-
 [dependencies]
 # Miden dependencies
 miden-test-harness.workspace = true
