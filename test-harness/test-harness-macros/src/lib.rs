@@ -111,7 +111,7 @@ fn load_package(function: &mut syn::ItemFn) {
         let bytes = std::fs::read(path).unwrap();
         let #package_binding_name =
             <miden_test_harness::__miden_test_harness_miden_mast_package::Package
-            as miden_test_harness::__miden_test_harness_Deserialzable>::read_from_bytes(&bytes).unwrap();
+            as miden_objects::utils::Deserializable>::read_from_bytes(&bytes).unwrap();
     };
 
     // We add the required lines to load the generated Package right at the
