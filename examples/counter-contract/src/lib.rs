@@ -6,7 +6,7 @@
 //
 // extern crate alloc;
 
-use miden_test_harness_macros::miden_test_block;
+use miden_test_harness_macros::miden_test_suite;
 
 #[cfg(not(test))]
 mod component {
@@ -39,7 +39,7 @@ mod component {
     }
 }
 
-#[miden_test_block]
+#[miden_test_suite]
 mod tests {
     use miden_lib::account::auth::AuthRpoFalcon512;
     use miden_objects::account::{
