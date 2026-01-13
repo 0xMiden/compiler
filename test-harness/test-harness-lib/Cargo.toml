@@ -17,7 +17,9 @@ path = "src/mod.rs"
 [dependencies]
 libtest-mimic = "0.8.1"
 miden-objects = "0.12.4"
-miden-mast-package.workspace = true
+miden-testing = "0.12.4"
 inventory.workspace = true
 clap.workspace = true
-miden-testing = "0.12.4"
+
+# Miden dependencies
+miden-test-harness-macros.workspace = true

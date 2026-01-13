@@ -1,4 +1,5 @@
-use miden_test_harness::{__miden_test_harness_miden_mast_package::Package, miden_testing::*};
+use miden_mast_package::Package;
+use miden_testing::MockChainBuilder;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, ItemFn};
@@ -99,8 +100,7 @@ fn load_package(function: &mut syn::ItemFn) {
         let path = #package_path;
         let bytes = std::fs::read(path).unwrap();
         let #package_binding_name =
-            <miden_test_harness::__miden_test_harness_miden_mast_package::Package
-            as miden_objects::utils::Deserializable>::read_from_bytes(&bytes).unwrap();
+            <::miden_objects::vm::Package as ::miden_objects::utils::Deserializable>::read_from_bytes(&bytes).unwrap();
     };
 
     // We add the required lines to load the generated Package right at the
@@ -121,7 +121,7 @@ fn load_mock_chain(function: &mut syn::ItemFn) {
     };
 
     let load_mock_chain_builder: Vec<syn::Stmt> = syn::parse_quote! {
-        let mut #mock_chain_builder_name = miden_test_harness::miden_testing::MockChainBuilder::new();
+        let mut #mock_chain_builder_name = ::miden_test_harness::miden_testing::MockChainBuilder::new();
     };
 
     // We add the required lines to load the generated MockChainBuilder right at the

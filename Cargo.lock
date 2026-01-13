@@ -2754,8 +2754,8 @@ dependencies = [
  "clap",
  "inventory",
  "libtest-mimic",
- "miden-mast-package",
  "miden-objects",
+ "miden-test-harness-macros",
  "miden-testing",
 ]
 
@@ -2763,7 +2763,8 @@ dependencies = [
 name = "miden-test-harness-macros"
 version = "0.5.1"
 dependencies = [
- "miden-test-harness",
+ "miden-mast-package",
+ "miden-testing",
  "quote",
  "syn",
 ]

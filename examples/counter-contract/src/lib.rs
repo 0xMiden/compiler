@@ -50,7 +50,7 @@ mod tests {
     // printed.
     #[miden_test]
     fn bar(bar: Package) {
-        std::dbg!(&bar);
+        // std::dbg!(&bar);
         assert_eq!(1, 1 + 1);
     }
 

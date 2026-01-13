@@ -603,7 +603,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1452,8 +1452,8 @@ dependencies = [
  "clap",
  "inventory",
  "libtest-mimic",
- "miden-mast-package",
  "miden-objects",
+ "miden-test-harness-macros",
  "miden-testing",
 ]
 
@@ -1461,7 +1461,8 @@ dependencies = [
 name = "miden-test-harness-macros"
 version = "0.5.1"
 dependencies = [
- "miden-test-harness",
+ "miden-mast-package",
+ "miden-testing",
  "quote",
  "syn",
 ]
@@ -2363,7 +2364,7 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2111ef44dae28680ae9752bb89409e7310ca33a8c621ebe7b106cf5c928b3ac0"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
