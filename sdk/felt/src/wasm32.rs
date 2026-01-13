@@ -1,6 +1,6 @@
 //! On-chain implementation of [`crate::Felt`].
 
-use crate::{FeltError, MODULUS};
+use crate::FeltImpl;
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
@@ -76,59 +76,42 @@ unsafe extern "C" {
     pub(crate) fn extern_add(a: Felt, b: Felt) -> Felt;
 }
 
-impl Felt {
-    /// Field modulus = 2^64 - 2^32 + 1.
-    pub const M: u64 = MODULUS;
+// Note: inherent `Felt` methods live in `sdk/felt/src/lib.rs` and delegate to the crate-local
+// `FeltImpl` trait to ensure the on-chain/off-chain APIs don't drift.
 
-    /// Creates a `Felt` from `value` without range checks.
+impl FeltImpl for Felt {
     #[inline(always)]
-    pub fn from_u64_unchecked(value: u64) -> Self {
+    fn from_u64_unchecked(value: u64) -> Self {
         unsafe { extern_from_u64_unchecked(value) }
     }
 
-    /// Creates a `Felt` from a `u32` value.
     #[inline(always)]
-    pub fn from_u32(value: u32) -> Self {
+    fn from_u32(value: u32) -> Self {
         unsafe { extern_from_u32(value) }
     }
 
-    /// Creates a `Felt` from `value`, returning an error if it is out of range.
     #[inline(always)]
-    pub fn new(value: u64) -> Result<Self, FeltError> {
-        if value >= Self::M {
-            Err(FeltError::InvalidValue)
-        } else {
-            Ok(Self::from_u64_unchecked(value))
-        }
-    }
-
-    /// Returns the canonical `u64` value of this felt.
-    #[inline(always)]
-    pub fn as_u64(self) -> u64 {
+    fn as_u64(self) -> u64 {
         unsafe { extern_as_u64(self) }
     }
 
-    /// Returns true if this felt is odd.
     #[inline(always)]
-    pub fn is_odd(self) -> bool {
+    fn is_odd(self) -> bool {
         unsafe { extern_is_odd(self) != 0 }
     }
 
-    /// Returns `self^-1`. Fails if `self = 0`.
     #[inline(always)]
-    pub fn inv(self) -> Self {
+    fn inv(self) -> Self {
         unsafe { extern_inv(self) }
     }
 
-    /// Returns `2^self`. Fails if `self > 63`.
     #[inline(always)]
-    pub fn pow2(self) -> Self {
+    fn pow2(self) -> Self {
         unsafe { extern_pow2(self) }
     }
 
-    /// Returns `self^other`.
     #[inline(always)]
-    pub fn exp(self, other: Self) -> Self {
+    fn exp(self, other: Self) -> Self {
         unsafe { extern_exp(self, other) }
     }
 }
@@ -296,3 +279,17 @@ impl Ord for Felt {
 
 // Note: public `assert` helpers live in `sdk/felt/src/lib.rs` to preserve their stable paths in
 // emitted WASM and expected-file tests.
+
+impl core::fmt::Display for Felt {
+    #[inline]
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.as_u64(), f)
+    }
+}
+
+impl core::hash::Hash for Felt {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        core::hash::Hash::hash(&self.as_u64(), state);
+    }
+}

@@ -2,68 +2,48 @@
 
 use miden_core::{Felt as CoreFelt, FieldElement};
 
-use crate::{FeltError, MODULUS};
+use crate::FeltImpl;
 
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
 /// A `Felt` represented as a felt (`miden_core::Felt`).
 pub struct Felt(pub miden_core::Felt);
 
-impl Felt {
-    /// Field modulus = 2^64 - 2^32 + 1.
-    pub const M: u64 = MODULUS;
-
-    /// Creates a `Felt` from `value` without range checks.
+impl FeltImpl for Felt {
     #[inline(always)]
-    pub fn from_u64_unchecked(value: u64) -> Self {
+    fn from_u64_unchecked(value: u64) -> Self {
         Self(CoreFelt::new(value))
     }
 
-    /// Creates a `Felt` from a `u32` value.
     #[inline(always)]
-    pub fn from_u32(value: u32) -> Self {
+    fn from_u32(value: u32) -> Self {
         Self::from_u64_unchecked(value as u64)
     }
 
-    /// Creates a `Felt` from `value`, returning an error if it is out of range.
     #[inline(always)]
-    pub fn new(value: u64) -> Result<Self, FeltError> {
-        if value >= Self::M {
-            Err(FeltError::InvalidValue)
-        } else {
-            Ok(Self::from_u64_unchecked(value))
-        }
-    }
-
-    /// Returns the canonical `u64` value of this felt.
-    #[inline(always)]
-    pub fn as_u64(self) -> u64 {
+    fn as_u64(self) -> u64 {
         self.0.as_int()
     }
 
-    /// Returns true if this felt is odd.
     #[inline(always)]
-    pub fn is_odd(self) -> bool {
+    fn is_odd(self) -> bool {
         self.as_u64() & 1 == 1
     }
 
-    /// Returns `self^-1`. Fails if `self = 0`.
     #[inline(always)]
-    pub fn inv(self) -> Self {
+    fn inv(self) -> Self {
         Self(self.0.inv())
     }
 
-    /// Returns `2^self`. Fails if `self > 63`.
     #[inline(always)]
-    pub fn pow2(self) -> Self {
+    fn pow2(self) -> Self {
         let n = self.as_u64();
         assert!(n <= 63, "pow2: exponent out of range");
         Self(CoreFelt::new(1u64 << (n as u32)))
     }
 
-    /// Returns `self^other`.
     #[inline(always)]
-    pub fn exp(self, other: Self) -> Self {
+    fn exp(self, other: Self) -> Self {
         Self(self.0.exp(other.as_u64()))
     }
 }
@@ -204,5 +184,19 @@ impl Ord for Felt {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.as_u64().cmp(&other.as_u64())
+    }
+}
+
+impl core::fmt::Display for Felt {
+    #[inline]
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.as_u64(), f)
+    }
+}
+
+impl core::hash::Hash for Felt {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        core::hash::Hash::hash(&self.as_u64(), state);
     }
 }
