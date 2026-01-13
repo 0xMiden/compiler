@@ -10,9 +10,11 @@ public builtin.function @test::spill_nested_scf_while(v0: ptr<element, u8>) -> u
     v9 = hir.int_to_ptr v8 : ptr<element, u128>;
     v10 = hir.load v9 : u128;
     v11 = arith.constant 1 : u64;
+    hir.store_local v4 #[local = lv0];
     v12 = hir.exec @test/example(v9, v6, v10, v10, v11) : u32
     v13 = arith.constant 0 : u32;
     v14 = arith.eq v12, v13 : i1;
+    v18 = hir.load_local  : u32 #[local = lv0];
     scf.while {
     ^block3:
         scf.condition v14;
@@ -20,7 +22,7 @@ public builtin.function @test::spill_nested_scf_while(v0: ptr<element, u8>) -> u
     ^block4:
         v15 = arith.constant 72 : u32;
         v16 = arith.add v2, v15 : u32 #[overflow = unchecked];
-        hir.store v5, v4;
+        hir.store v5, v18;
         hir.store v5, v16;
         scf.yield ;
     };

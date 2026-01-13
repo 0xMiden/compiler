@@ -6,8 +6,8 @@ use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_dialect_scf::{ScfDialect, StructuredControlFlowOpBuilder};
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AbiParam, AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, Report, Signature,
-    ProgramPoint, SourceSpan, Type, ValueRef,
+    AbiParam, AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, ProgramPoint,
+    Report, Signature, SourceSpan, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     pass::{Nesting, PassManager},
 };
@@ -576,17 +576,13 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
         span,
         inst: None,
     });
-    analysis
-        .reloads
-        .push(midenc_hir_analysis::analyses::spills::ReloadInfo {
-            id: midenc_hir_analysis::analyses::spills::Reload::new(0),
-            place: midenc_hir_analysis::analyses::spills::Placement::At(ProgramPoint::before(
-                while_op,
-            )),
-            value: spilled_value,
-            span,
-            inst: None,
-        });
+    analysis.reloads.push(midenc_hir_analysis::analyses::spills::ReloadInfo {
+        id: midenc_hir_analysis::analyses::spills::Reload::new(0),
+        place: midenc_hir_analysis::analyses::spills::Placement::At(ProgramPoint::before(while_op)),
+        value: spilled_value,
+        span,
+        inst: None,
+    });
 
     let before = func.as_operation_ref().borrow().to_string();
 

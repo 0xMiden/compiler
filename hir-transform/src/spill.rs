@@ -565,34 +565,22 @@ fn merge_op_nested_region_uses(
 
 /// Merge into `used` the set of unsatisfied uses of spilled values from regions nested under
 /// `branch` that are reachable from the parent.
+///
+/// For region-branch ops, this includes *transitively* reachable regions. For example, `scf.while`
+/// has an `after` region which is not an immediate successor of the parent, but is still reachable
+/// from the parent through the region graph (via the `before` region).
 fn merge_nested_region_uses(
     branch: &dyn RegionBranchOpInterface,
     used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
     analysis: &SpillAnalysis,
 ) {
-    // Each successor region must be processed independently so that reloads in one region do not
-    // incorrectly rewrite uses from another (e.g. `then` vs `else` branches).
-    let mut nested_uses =
-        FxHashMap::<BlockRef, SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>>::default();
     for region in Region::postorder_region_graph_for(branch) {
         let region = region.borrow();
         assert!(region.has_one_block(), "multi-block regions are not currently supported");
         let entry = region.entry_block_ref().expect("expected region to have an entry block");
         drop(region);
-        nested_uses.insert(entry, collect_region_uses(entry, analysis));
-    }
 
-    for successor in branch.get_successor_regions(RegionBranchPoint::Parent) {
-        let Some(region) = successor.into_successor() else {
-            continue;
-        };
-        let entry = region
-            .borrow()
-            .entry_block_ref()
-            .expect("expected region to have an entry block");
-        let Some(region_used) = nested_uses.remove(&entry) else {
-            continue;
-        };
+        let region_used = collect_region_uses(entry, analysis);
         for (value, users) in region_used {
             used.entry(value).or_default().extend(users.iter().copied());
         }
