@@ -309,7 +309,7 @@ fn rewrite_single_block_spills(
     }
 
     let mut block_states =
-        FxHashMap::<BlockRef, SmallDenseMap<ValueRef, SmallSet<OpOperand, 4>, 4>>::default();
+        FxHashMap::<BlockRef, SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>>::default();
     let entry_block = region.borrow().entry_block_ref().unwrap();
     let mut block_q = VecDeque::from([Node::new(entry_block)]);
 
@@ -373,50 +373,11 @@ fn rewrite_single_block_spills(
         }
 
         let used = block_states.entry(node.block).or_default();
-
-        let reload_like = op.as_trait::<dyn ReloadLike>();
-        let is_reload_like = reload_like.is_some();
-        if let Some(reload_like) = reload_like {
-            // We've found a reload of a spilled value, rewrite all uses of the spilled value
-            // found so far to use the reload instead.
-            let spilled = reload_like.spilled_value();
-            let reloaded = reload_like.reloaded();
-
-            if let Some(to_rewrite) = used.remove(&spilled) {
-                debug_assert!(!to_rewrite.is_empty(), "expected empty use sets to be removed");
-
-                for mut user in to_rewrite {
-                    user.borrow_mut().set(reloaded);
-                }
-            } else {
-                // This reload is unused, so remove it entirely, and move to the next op
-                node.move_next();
-                block_q.push_back(node);
-                continue;
-            }
-        }
+        find_inst_uses(&op, used, analysis);
 
         // Advance the cursor in this block
         node.move_next();
         block_q.push_back(node);
-
-        // Remove any use tracking for spilled values defined by this op
-        for result in ValueRange::<2>::from(op.results().all()) {
-            if analysis.is_spilled(&result) {
-                used.remove(&result);
-                continue;
-            }
-        }
-
-        // Record any uses of spilled values by this op, so long as the op is not reload-like
-        if !is_reload_like {
-            for operand in op.operands().iter().copied() {
-                let value = operand.borrow().as_value_ref();
-                if analysis.is_spilled(&value) {
-                    used.entry(value).or_default().insert(operand);
-                }
-            }
-        }
     }
 
     let context = { op.borrow().context_rc() };
@@ -548,11 +509,58 @@ fn find_inst_uses_including_nested_regions(
     used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
     analysis: &SpillAnalysis,
 ) {
-    if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
-        merge_nested_region_uses(branch, used, analysis);
-    }
+    merge_op_nested_region_uses(op, used, analysis);
 
     find_inst_uses(op, used, analysis);
+}
+
+/// Merge into `used` the set of unsatisfied uses of spilled values from regions nested under `op`
+/// that are reachable from the parent.
+///
+/// NOTE: We process each nested region independently so that reloads in one region do not
+/// incorrectly rewrite uses from another (e.g. `then` vs `else` branches).
+fn merge_op_nested_region_uses(
+    op: &Operation,
+    used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
+    analysis: &SpillAnalysis,
+) {
+    // If this op participates in the region-branch interface, use the successor relation to only
+    // consider regions reachable from the parent.
+    if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
+        merge_nested_region_uses(branch, used, analysis);
+        return;
+    }
+
+    // Fallback for ops that contain regions but do not implement RegionBranchOpInterface.
+    //
+    // We conservatively treat each region as reachable from the parent, and only attempt to
+    // collect uses from single-block regions (multi-block nested regions require SSA reconstruction
+    // within the nested CFG).
+    for region in op.regions().iter() {
+        let region = region.as_region_ref();
+        let region_borrowed = region.borrow();
+
+        if region_borrowed.is_empty() {
+            continue;
+        }
+        if !region_borrowed.has_one_block() {
+            log::trace!(
+                target: "insert-spills",
+                "skipping multi-block nested region {region} when collecting spill uses"
+            );
+            continue;
+        }
+
+        let entry = region_borrowed
+            .entry_block_ref()
+            .expect("expected non-empty region to have an entry block");
+        drop(region_borrowed);
+
+        let region_used = collect_region_uses(entry, analysis);
+        for (value, users) in region_used {
+            used.entry(value).or_default().extend(users.iter().copied());
+        }
+    }
 }
 
 /// Merge into `used` the set of unsatisfied uses of spilled values from regions nested under
