@@ -1,7 +1,7 @@
 //! Reproducer for https://github.com/0xMiden/compiler/issues/831
 //!
-//! This note-script compiles successfully through Wasm + HIR, but currently panics during MASM
-//! codegen with: `invalid stack offset for movup: 16 is out of range`.
+//! This note-script previously triggered a panic during MASM codegen with:
+//! `invalid stack offset for movup: 16 is out of range`.
 
 #![no_std]
 #![feature(alloc_error_handler)]

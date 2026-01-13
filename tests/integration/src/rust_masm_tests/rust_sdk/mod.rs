@@ -123,9 +123,9 @@ fn run(_arg: Word) {
     test.compiled_package();
 }
 
-/// Reproduces https://github.com/0xMiden/compiler/issues/831
+/// Regression test for https://github.com/0xMiden/compiler/issues/831
 ///
-/// NOTE: This is expected to fail until #831 is fixed, by panicking during compilation with:
+/// Previously, compilation could panic during MASM codegen with:
 /// `invalid stack offset for movup: 16 is out of range`.
 #[test]
 fn rust_sdk_invalid_stack_offset_movup_16_issue_831() {
@@ -136,8 +136,8 @@ fn rust_sdk_invalid_stack_offset_movup_16_issue_831() {
         [],
     );
 
-    // Ensure the crate compiles all the way to a package. This currently triggers the #831 panic
-    // in MASM codegen.
+    // Ensure the crate compiles all the way to a package. This previously triggered the #831
+    // panic in MASM codegen.
     let package = test.compiled_package();
 }
 
