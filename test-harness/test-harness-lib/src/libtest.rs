@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 // ============================= Test function ================================
 
-/// Struct that represents a function marked with #[miden-test].
+/// Struct that represents a function marked with #[miden_test].
 /// NOTE: This structure is only intended to be used by the
 /// miden-test-harness-macros crate.
 pub struct MidenTest {
