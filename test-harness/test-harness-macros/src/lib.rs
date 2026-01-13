@@ -196,12 +196,10 @@ pub fn miden_test_block(
 
     let main_function = if is_test() {
         quote! {
-            use miden_test_harness;
-
             fn main() {
-                let args = miden_test_harness::MidenTestArguments::from_args();
+                let args = ::miden_test_harness::MidenTestArguments::from_args();
 
-                miden_test_harness::run(args);
+                ::miden_test_harness::run(args);
             }
         }
     } else {
