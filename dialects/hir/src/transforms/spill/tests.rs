@@ -7,7 +7,7 @@ use midenc_dialect_scf::{ScfDialect, StructuredControlFlowOpBuilder};
 use midenc_expect_test::expect_file;
 use midenc_hir::{
     AbiParam, AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, Report, Signature,
-    SourceSpan, Type, ValueRef,
+    ProgramPoint, SourceSpan, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     pass::{Nesting, PassManager},
 };
@@ -424,6 +424,191 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
     let after = func.as_operation_ref().borrow().to_string();
 
     expect_file!["expected/materialize_spills_nested_scf_if_after.hir"].assert_eq(&after);
+
+    let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
+    let loads = after
+        .lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            t.contains("= hir.load_local ") || t.starts_with("hir.load_local ")
+        })
+        .count();
+    assert!(stores > 0, "expected at least one store_local op\n{after}");
+    assert!(loads > 0, "expected at least one load_local op\n{after}");
+
+    Ok(())
+}
+
+/// Build a small multi-block CFG containing a `scf.while`, where spilled values are only used
+/// inside the `after` region of the `scf.while`.
+///
+/// This is a regression test for spill/reload rewriting in the CFG reconstruction pass: the
+/// rewrite must account for uses inside *all* regions nested under a region-branch op. In
+/// particular, `scf.while`'s `after` region is not directly reachable from the parent, but uses
+/// within it still require reloads to be preserved and rewritten correctly.
+#[test]
+fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .format_timestamp(None)
+        .is_test(true)
+        .try_init();
+
+    let span = SourceSpan::UNKNOWN;
+    let context = Rc::new(Context::default());
+    context.get_or_register_dialect::<ScfDialect>();
+    let mut ob = OpBuilder::new(context.clone());
+
+    let module = ob.create_module(Ident::with_empty_span("test".into()))?;
+    let module_body = module.borrow().body().as_region_ref();
+    ob.create_block(module_body, None, &[]);
+    let func = ob.create_function(
+        Ident::with_empty_span("test::spill_nested_scf_while".into()),
+        Signature::new(
+            [AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U8,
+                AddressSpace::Element,
+            ))))],
+            [AbiParam::new(Type::U32)],
+        ),
+    )?;
+
+    let callee_sig = Signature::new(
+        [
+            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U128,
+                AddressSpace::Element,
+            )))),
+            AbiParam::new(Type::U128),
+            AbiParam::new(Type::U128),
+            AbiParam::new(Type::U128),
+            AbiParam::new(Type::U64),
+        ],
+        [AbiParam::new(Type::U32)],
+    );
+    let callee =
+        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
+
+    // We construct a synthetic spill/reload pair to focus this test on the rewrite logic.
+    //
+    // In particular, we spill a value before a call, reload it before the `scf.while`, and then
+    // ensure the only post-reload uses occur in the `after` region of the `scf.while`.
+    //
+    // The CFG rewrite must treat those nested uses as "real" uses, otherwise the reload appears
+    // unused and is removed, which then causes the spill to be removed as well.
+    let (call_op, while_op, spilled_value) = {
+        let mut b = FunctionBuilder::new(func, &mut ob);
+        let entry = b.current_block();
+        let exit = b.create_block();
+        let exit_arg = b.append_block_param(exit, Type::U32, span);
+
+        let v0 = entry.borrow().arguments()[0] as ValueRef;
+        let v1 = b.ptrtoint(v0, Type::U32, span)?;
+        let k32 = b.u32(32, span);
+        let v2 = b.add_unchecked(v1, k32, span)?;
+        let v3 = b.inttoptr(
+            v2,
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U128,
+                AddressSpace::Element,
+            ))),
+            span,
+        )?;
+        let v4 = b.load(v3, span)?;
+        let k64 = b.u32(64, span);
+        let v5 = b.add_unchecked(v1, k64, span)?;
+        let v6 = b.inttoptr(
+            v5,
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U128,
+                AddressSpace::Element,
+            ))),
+            span,
+        )?;
+        let v7 = b.load(v6, span)?;
+        let one = b.u64(1, span);
+        let call = b.exec(callee, callee_sig.clone(), [v6, v4, v7, v7, one], span)?;
+        let call_op = call.as_operation_ref();
+        let v8 = call.borrow().results()[0] as ValueRef;
+
+        // Ensure the loop condition is not known at compile time, and does not depend on the
+        // values we want to force to be spilled across the call.
+        let zero = b.u32(0, span);
+        let cond = b.eq(v8, zero, span)?;
+
+        let while_op = b.r#while(core::iter::empty::<ValueRef>(), &[], span)?;
+        let while_op_ref = while_op.as_operation_ref();
+        let (before_block, after_block) = {
+            let while_op = while_op.borrow();
+            (
+                while_op.before().entry_block_ref().unwrap(),
+                while_op.after().entry_block_ref().unwrap(),
+            )
+        };
+
+        // before: if `cond` is true, enter the `after` region, otherwise exit the loop.
+        b.switch_to_block(before_block);
+        b.condition(cond, core::iter::empty::<ValueRef>(), span)?;
+
+        // after: use values defined before the call so they are live across it, but only used in
+        // the `after` region (and not forwarded via the `before` region terminator).
+        b.switch_to_block(after_block);
+        let k72 = b.u32(72, span);
+        let v9 = b.add_unchecked(v1, k72, span)?;
+        b.store(v3, v2, span)?;
+        b.store(v3, v9, span)?;
+        b.r#yield(core::iter::empty::<ValueRef>(), span)?;
+
+        // back to entry: exit the function.
+        b.switch_to_block(entry);
+        b.br(exit, [v8], span)?;
+
+        b.switch_to_block(exit);
+        b.ret(Some(exit_arg), span)?;
+        (call_op, while_op_ref, v2)
+    };
+
+    let mut analysis = midenc_hir_analysis::analyses::SpillAnalysis::default();
+    analysis.spilled.insert(spilled_value);
+    analysis.spills.push(midenc_hir_analysis::analyses::spills::SpillInfo {
+        id: midenc_hir_analysis::analyses::spills::Spill::new(0),
+        place: midenc_hir_analysis::analyses::spills::Placement::At(ProgramPoint::before(call_op)),
+        value: spilled_value,
+        span,
+        inst: None,
+    });
+    analysis
+        .reloads
+        .push(midenc_hir_analysis::analyses::spills::ReloadInfo {
+            id: midenc_hir_analysis::analyses::spills::Reload::new(0),
+            place: midenc_hir_analysis::analyses::spills::Placement::At(ProgramPoint::before(
+                while_op,
+            )),
+            value: spilled_value,
+            span,
+            inst: None,
+        });
+
+    let before = func.as_operation_ref().borrow().to_string();
+
+    expect_file!["expected/materialize_spills_nested_scf_while_after_region_before.hir"]
+        .assert_eq(&before);
+
+    let mut interface = super::TransformSpillsImpl {
+        function: func,
+        locals: Default::default(),
+    };
+    let analysis_manager = midenc_hir::pass::AnalysisManager::new(func.as_operation_ref(), None);
+    midenc_hir_transform::transform_spills(
+        func.as_operation_ref(),
+        &mut analysis,
+        &mut interface,
+        analysis_manager,
+    )?;
+
+    let after = func.as_operation_ref().borrow().to_string();
+
+    expect_file!["expected/materialize_spills_nested_scf_while_after_region_after.hir"]
+        .assert_eq(&after);
 
     let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
     let loads = after
