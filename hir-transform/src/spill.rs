@@ -8,7 +8,7 @@ use midenc_hir::{
     cfg::Graph,
     dominance::{DomTreeNode, DominanceFrontier, DominanceInfo},
     pass::{AnalysisManager, PostPassStatus},
-    traits::SingleRegion,
+    traits::{IsolatedFromAbove, SingleRegion},
 };
 use midenc_hir_analysis::analyses::{
     SpillAnalysis,
@@ -479,7 +479,7 @@ fn rewrite_cfg_spills(
         // definitions
         let block = block_ref.borrow();
         for op in block.body().iter().rev() {
-            find_inst_uses_including_nested_regions(&op, &mut used, analysis);
+            find_inst_uses(&op, &mut used, analysis);
         }
 
         // At the top of the block, if any of the block parameters are in the "used" set, remove
@@ -504,14 +504,14 @@ fn rewrite_cfg_spills(
 /// This is required for correctness when spills/reloads are inserted into regions nested under a
 /// CFG block (e.g. structured control flow like `scf.if`), as those uses are otherwise ignored by
 /// the CFG rewrite pass.
-fn find_inst_uses_including_nested_regions(
+fn find_inst_uses(
     op: &Operation,
     used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
     analysis: &SpillAnalysis,
 ) {
     merge_op_nested_region_uses(op, used, analysis);
 
-    find_inst_uses(op, used, analysis);
+    find_inst_uses_in_op(op, used, analysis);
 }
 
 /// Merge into `used` the set of unsatisfied uses of spilled values from regions nested under `op`
@@ -524,6 +524,10 @@ fn merge_op_nested_region_uses(
     used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
     analysis: &SpillAnalysis,
 ) {
+    if op.implements::<dyn IsolatedFromAbove>() {
+        return;
+    }
+
     // If this op participates in the region-branch interface, use the successor relation to only
     // consider regions reachable from the parent.
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
@@ -556,7 +560,7 @@ fn merge_op_nested_region_uses(
             .expect("expected non-empty region to have an entry block");
         drop(region_borrowed);
 
-        let region_used = collect_region_uses(entry, analysis);
+        let region_used = collect_block_uses(entry, analysis);
         for (value, users) in region_used {
             used.entry(value).or_default().extend(users.iter().copied());
         }
@@ -580,7 +584,7 @@ fn merge_nested_region_uses(
         let entry = region.entry_block_ref().expect("expected region to have an entry block");
         drop(region);
 
-        let region_used = collect_region_uses(entry, analysis);
+        let region_used = collect_block_uses(entry, analysis);
         for (value, users) in region_used {
             used.entry(value).or_default().extend(users.iter().copied());
         }
@@ -588,14 +592,14 @@ fn merge_nested_region_uses(
 }
 
 /// Collect the set of unsatisfied uses of spilled values at the entry of `block_ref`.
-fn collect_region_uses(
+fn collect_block_uses(
     block_ref: BlockRef,
     analysis: &SpillAnalysis,
 ) -> SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8> {
     let mut used = SmallDenseMap::<ValueRef, SmallSet<OpOperand, 8>, 8>::default();
     let block = block_ref.borrow();
     for op in block.body().iter().rev() {
-        find_inst_uses_including_nested_regions(&op, &mut used, analysis);
+        find_inst_uses(&op, &mut used, analysis);
     }
 
     for arg in ValueRange::<2>::from(block.arguments()) {
@@ -666,7 +670,8 @@ fn insert_required_phis(
     inserted_phis
 }
 
-fn find_inst_uses(
+/// Find uses of spilled values in `op` itself (not including nested regions).
+fn find_inst_uses_in_op(
     op: &Operation,
     used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
     analysis: &SpillAnalysis,
