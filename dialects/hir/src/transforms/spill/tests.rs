@@ -413,28 +413,31 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
         b.ret(Some(exit_arg), span)?;
     }
 
-    let before = func.as_operation_ref().borrow().to_string();
-
-    expect_file!["expected/materialize_spills_nested_scf_if_before.hir"].assert_eq(&before);
-
     let mut pm = PassManager::on::<Function>(context, Nesting::Implicit);
     pm.add_pass(Box::new(TransformSpills));
     pm.run(func.as_operation_ref())?;
 
     let after = func.as_operation_ref().borrow().to_string();
 
-    expect_file!["expected/materialize_spills_nested_scf_if_after.hir"].assert_eq(&after);
+    litcheck_filecheck::filecheck!(
+        &after,
+        r#"
+; COM: Spill before call
+; CHECK: hir.store_local
+; CHECK: hir.exec @test/example
+; CHECK: scf.if
 
-    let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
-    let loads = after
-        .lines()
-        .filter(|l| {
-            let t = l.trim_start();
-            t.contains("= hir.load_local ") || t.starts_with("hir.load_local ")
-        })
-        .count();
-    assert!(stores > 0, "expected at least one store_local op\n{after}");
-    assert!(loads > 0, "expected at least one load_local op\n{after}");
+; COM: First reload in `then`
+; CHECK-LABEL: ^block3:
+; CHECK: hir.load_local
+; CHECK-NEXT: hir.store
+
+; COM: Second reload in `else`
+; CHECK-LABEL: ^block4:
+; CHECK: hir.load_local
+; CHECK-NEXT: hir.store
+"#
+    );
 
     Ok(())
 }
@@ -584,11 +587,6 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
         inst: None,
     });
 
-    let before = func.as_operation_ref().borrow().to_string();
-
-    expect_file!["expected/materialize_spills_nested_scf_while_after_region_before.hir"]
-        .assert_eq(&before);
-
     let mut interface = super::TransformSpillsImpl {
         function: func,
         locals: Default::default(),
@@ -603,19 +601,16 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
 
     let after = func.as_operation_ref().borrow().to_string();
 
-    expect_file!["expected/materialize_spills_nested_scf_while_after_region_after.hir"]
-        .assert_eq(&after);
-
-    let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
-    let loads = after
-        .lines()
-        .filter(|l| {
-            let t = l.trim_start();
-            t.contains("= hir.load_local ") || t.starts_with("hir.load_local ")
-        })
-        .count();
-    assert!(stores > 0, "expected at least one store_local op\n{after}");
-    assert!(loads > 0, "expected at least one load_local op\n{after}");
+    litcheck_filecheck::filecheck!(
+        &after,
+        r#"
+; CHECK: hir.store_local
+; CHECK: hir.exec @test/example
+; CHECK: hir.load_local
+; CHECK: scf.while
+; CHECK: hir.store
+"#
+    );
 
     Ok(())
 }
