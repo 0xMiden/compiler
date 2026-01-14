@@ -32,8 +32,11 @@ fn process_arguments<T>(
     function: &mut syn::ItemFn,
     max_args: usize,
 ) -> Result<Vec<syn::Ident>, String> {
-    //  "T"'s name as used in the argument list. We skipt the whole path
-    let struct_name = std::any::type_name::<T>().split("::").last().unwrap();
+    //  "T"'s name as used in the argument list. We skip the whole path
+    let struct_name = std::any::type_name::<T>()
+        .split("::")
+        .last()
+        .unwrap_or_else(|| panic!("Failed to split the {}'s", ::core::any::type_name::<T>()));
 
     let mut found_vars = Vec::new();
 
@@ -94,7 +97,8 @@ fn load_package(function: &mut syn::ItemFn) {
     };
 
     // This env var is set by `cargo miden test`.
-    let package_path = std::env::var("CARGO_MIDEN_TEST_PACKAGE_PATH").unwrap();
+    let package_path = std::env::var("CARGO_MIDEN_TEST_PACKAGE_PATH")
+        .expect("Failed to obtain CARGO_MIDEN_TEST_PACKAGE_PATH environment variable.");
 
     let package_bytes = std::fs::read(&package_path).unwrap_or_else(|err| {
         panic!("failed to read .masp Package file {package_path} logger: {err}")
@@ -146,7 +150,10 @@ pub fn miden_test(
     let mut input_fn = parse_macro_input!(item as ItemFn);
 
     let fn_ident = input_fn.sig.ident.clone();
-    let fn_name = fn_ident.clone().span().source_text().unwrap();
+    let fn_name =
+        fn_ident.clone().span().source_text().unwrap_or_else(|| {
+            panic!("Failed to obtain function name from identifier '{fn_ident}'.")
+        });
 
     load_package(&mut input_fn);
     load_mock_chain(&mut input_fn);
@@ -180,7 +187,12 @@ pub fn miden_test_suite(
         let internal_use = syn::parse_quote! {
             use miden_test_harness_macros::miden_test;
         };
-        input_module.content.as_mut().unwrap().1.insert(0, internal_use);
+        input_module
+            .content
+            .as_mut()
+            .expect("Failed to open 'mod test''s content as mut")
+            .1
+            .insert(0, internal_use);
     }
 
     {
