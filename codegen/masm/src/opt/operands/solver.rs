@@ -124,6 +124,47 @@ pub struct OperandMovementConstraintSolver {
     fuel: usize,
 }
 impl OperandMovementConstraintSolver {
+    /// Returns true if `solution` would require accessing stack slots beyond what MASM supports.
+    ///
+    /// MASM stack manipulation instructions can only directly access the first 16 *field elements*
+    /// on the operand stack (indices `0..16`). Since a single operand may consist of multiple
+    /// field elements, an operand index `< 16` can still map to an invalid MASM stack offset.
+    fn solution_requires_unsupported_stack_access(solution: &[Action], stack: &Stack) -> bool {
+        let mut pending = stack.clone();
+        for action in solution.iter().copied() {
+            let index = match action {
+                Action::Copy(index)
+                | Action::Swap(index)
+                | Action::MoveUp(index)
+                | Action::MoveDown(index) => index as usize,
+            };
+
+            let required_stack_depth: usize =
+                pending.iter().rev().take(index + 1).map(|v| v.stack_size()).sum();
+            if required_stack_depth > 16 {
+                return true;
+            }
+
+            match action {
+                Action::Copy(index) => {
+                    let value = pending[index as usize];
+                    pending.push(value);
+                }
+                Action::Swap(index) => {
+                    pending.swap(index as usize);
+                }
+                Action::MoveUp(index) => {
+                    pending.movup(index as usize);
+                }
+                Action::MoveDown(index) => {
+                    pending.movdn(index as usize);
+                }
+            }
+        }
+
+        false
+    }
+
     /// Construct a new solver for the given expected operands, constraints, and operand stack
     /// state.
     pub fn new(
@@ -214,6 +255,17 @@ impl OperandMovementConstraintSolver {
                 Ok(_) => {
                     if builder.is_valid() {
                         let solution = builder.take();
+                        if Self::solution_requires_unsupported_stack_access(
+                            &solution,
+                            self.context.stack(),
+                        ) {
+                            log::trace!(
+                                "a solution was found using tactic {}, but it requires stack \
+                                 access deeper than supported by MASM; rejecting it",
+                                tactic.name()
+                            );
+                            continue;
+                        }
                         let solution_size = solution.len();
                         let best_size = best_solution.as_ref().map(|best| best.len());
                         match best_size {
@@ -279,7 +331,15 @@ impl OperandMovementConstraintSolver {
             // The tactic was applied successfully
             Ok(_) => {
                 if builder.is_valid() {
-                    Ok(Some(builder.take()))
+                    let solution = builder.take();
+                    if Self::solution_requires_unsupported_stack_access(
+                        &solution,
+                        self.context.stack(),
+                    ) {
+                        Ok(None)
+                    } else {
+                        Ok(Some(solution))
+                    }
                 } else {
                     log::trace!(
                         "a partial solution was found using tactic {}, but is not sufficient on \

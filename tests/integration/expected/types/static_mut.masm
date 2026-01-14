@@ -64,9 +64,8 @@ pub proc __main(
         dup.1
         neq
         push.3735929054
-        dup.1
-        dup.4
-        swap.1
+        dup.3
+        dup.2
         cdrop
         push.3735929054
         dup.2

@@ -124,6 +124,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     dup.8
+    swap.8
     movup.3
     swap.5
     movdn.3
@@ -133,7 +134,6 @@ pub proc entrypoint(i32, i32)
     swap.1
     swap.7
     swap.1
-    swap.8
     trace.240
     nop
     exec.::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::std::crypto::hashes::blake3::hash_1to1

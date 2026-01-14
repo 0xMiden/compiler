@@ -26,26 +26,103 @@ impl Tactic for Linear {
 
             let mut graph = DiGraphMap::<Operand, ()>::new();
 
-            // Materialize copies
-            let mut materialized = SmallSet::<ValueOrAlias, 4>::default();
-            for (b_pos, b_value) in builder.context().expected().iter().rev().enumerate() {
-                // Where is B
-                if let Some(_b_at) = builder.get_current_position(b_value) {
-                    log::trace!(
-                        "no copy needed for {b_value:?} from index {b_pos} to top of stack",
-                    );
-                    materialized.insert(*b_value);
-                } else {
-                    // B isn't on the stack because it is a copy we haven't materialized yet
-                    assert!(b_value.is_alias());
-                    let b_at = builder.unwrap_current_position(&b_value.unaliased());
-                    log::trace!(
-                        "materializing copy of {b_value:?} from index {b_pos} to top of stack",
-                    );
-                    builder.dup(b_at, b_value.unwrap_alias());
-                    materialized.insert(*b_value);
+            // If materializing all missing copies will grow the stack beyond the addressable MASM
+            // operand window, ensure move-constrained expected operands remain reachable after all
+            // copies are pushed.
+            let missing_copies = builder
+                .context()
+                .expected()
+                .iter()
+                .filter(|value| value.is_alias() && builder.get_current_position(value).is_none())
+                .count();
+            if builder.stack().len() + missing_copies > 16 {
+                let max_safe_index = 15usize.saturating_sub(missing_copies);
+                // Repeatedly move the deepest move-constrained operand that would fall out of the
+                // addressable window to the top. This avoids generating solutions that require
+                // stack access at index 16+ when copies are materialized.
+                loop {
+                    let mut worst: Option<u8> = None;
+                    for value in builder.context().expected().iter() {
+                        if value.is_alias() {
+                            continue;
+                        }
+                        let Some(pos) = builder.get_current_position(value) else {
+                            continue;
+                        };
+                        if pos as usize > max_safe_index {
+                            worst = Some(worst.map_or(pos, |best| core::cmp::max(best, pos)));
+                        }
+                    }
+
+                    let Some(pos) = worst else {
+                        break;
+                    };
+                    builder.movup(pos);
                     changed = true;
                 }
+            }
+
+            // Materialize copies
+            let mut materialized = SmallSet::<ValueOrAlias, 4>::default();
+            // First, mark all expected operands already present on the stack as materialized.
+            for expected in builder.context().expected().iter() {
+                if builder.get_current_position(expected).is_some() {
+                    materialized.insert(*expected);
+                }
+            }
+            // Materialize missing copies deepest-first so that we don't push an as-yet-unmaterialized
+            // copy source past the 16-operand addressing window.
+            loop {
+                let mut next_copy: Option<(u8, ValueOrAlias)> = None;
+                for expected in builder.context().expected().iter() {
+                    if builder.get_current_position(expected).is_some() {
+                        continue;
+                    }
+                    // `expected` isn't on the stack because it is a copy we haven't materialized yet
+                    assert!(expected.is_alias());
+                    let source_at = builder.unwrap_current_position(&expected.unaliased());
+                    match next_copy {
+                        None => next_copy = Some((source_at, *expected)),
+                        Some((best_at, _)) if source_at > best_at => {
+                            next_copy = Some((source_at, *expected))
+                        }
+                        _ => {}
+                    }
+                }
+
+                let Some((source_at, expected)) = next_copy else {
+                    break;
+                };
+
+                log::trace!(
+                    "materializing copy of {expected:?} from index {source_at} to top of stack",
+                );
+
+                // When the stack contains exactly 16 operands, we cannot emit stack manipulation
+                // instructions that directly address index 16+.
+                //
+                // If the only missing piece is a copy of the operand already on top of the stack,
+                // we can safely materialize it by first pushing the original below the 16-operand
+                // argument window and then duplicating it back to the top.
+                //
+                // This prevents generating solutions that would require an invalid `swap 16` or
+                // `movup 16` during cycle resolution.
+                if builder.arity() == 16
+                    && builder.stack().len() == 16
+                    && builder.unwrap_expected_position(&expected) == 0
+                    && source_at == 0
+                    && (1..builder.arity()).all(|i| builder.is_expected(i as u8))
+                {
+                    // Rotate the original copied operand below the 16 expected operands, then
+                    // duplicate it back to the top as the required alias.
+                    builder.movdn(15);
+                    builder.dup(15, expected.unwrap_alias());
+                } else {
+                    builder.dup(source_at, expected.unwrap_alias());
+                }
+
+                materialized.insert(expected);
+                changed = true;
             }
 
             // Visit each materialized operand and, if out of place, add it to the graph
@@ -243,6 +320,7 @@ mod tests {
     use proptest::prelude::*;
 
     use crate::opt::operands::{
+        OperandMovementConstraintSolver, SolverContext, SolverOptions,
         tactics::Linear,
         testing::{self, ProblemInputs},
     };
@@ -252,6 +330,117 @@ mod tests {
         (stack_size in 0usize..16)
         (problem in testing::generate_stack_subset_copy_any_problem(stack_size)) -> ProblemInputs {
             problem
+        }
+    }
+
+    #[test]
+    fn linear_tactic_does_not_require_out_of_range_actions_when_copies_grow_stack() {
+        // Regression test: when the stack grows beyond 16 operands due to copy materialization,
+        // the tactic must still produce a solution that never requires addressing index 16+.
+        let problem = testing::make_problem_inputs(
+            vec![0, 6, 9, 3, 2, 11, 5, 12, 10, 4, 1, 7, 8, 13],
+            8,
+            0b1111_1000,
+        );
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve_with_tactic::<Linear>()
+        .expect("expected tactic to be applicable")
+        .expect("expected tactic to produce a complete solution");
+
+        let context = SolverContext::new(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid");
+        let mut pending = context.stack().clone();
+        for action in actions {
+            let index = match action {
+                super::Action::Copy(index)
+                | super::Action::Swap(index)
+                | super::Action::MoveUp(index)
+                | super::Action::MoveDown(index) => index,
+            };
+            let required_depth: usize =
+                pending.iter().rev().take(index as usize + 1).map(|v| v.stack_size()).sum();
+            assert!(
+                index < 16,
+                "tactic generated out-of-range action {action:?} for problem {problem:#?}"
+            );
+            assert!(
+                required_depth <= 16,
+                "tactic requires stack access at depth {required_depth} for action {action:?} in \
+                 problem {problem:#?}"
+            );
+
+            match action {
+                super::Action::Copy(index) => {
+                    let value = pending[index as usize];
+                    pending.push(value);
+                }
+                super::Action::Swap(index) => {
+                    pending.swap(index as usize);
+                }
+                super::Action::MoveUp(index) => {
+                    pending.movup(index as usize);
+                }
+                super::Action::MoveDown(index) => {
+                    pending.movdn(index as usize);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn linear_tactic_handles_regression_case_via_public_test_helper() -> Result<(), TestCaseError> {
+        let problem = testing::make_problem_inputs(
+            vec![0, 6, 9, 3, 2, 11, 5, 12, 10, 4, 1, 7, 8, 13],
+            8,
+            0b1111_1000,
+        );
+
+        testing::solve_problem_with_tactic::<Linear>(problem)
+    }
+
+    #[test]
+    fn linear_tactic_consistently_solves_regression_case() {
+        let problem = testing::make_problem_inputs(
+            vec![0, 6, 9, 3, 2, 11, 5, 12, 10, 4, 1, 7, 8, 13],
+            8,
+            0b1111_1000,
+        );
+
+        for _ in 0..64 {
+            let actions = OperandMovementConstraintSolver::new_with_options(
+                &problem.expected,
+                &problem.constraints,
+                &problem.stack,
+                SolverOptions {
+                    fuel: 10,
+                    ..Default::default()
+                },
+            )
+            .expect("expected solver context to be valid")
+            .solve_with_tactic::<Linear>()
+            .expect("expected tactic to be applicable");
+            assert!(
+                actions.is_some(),
+                "linear tactic produced a partial solution for regression case: {problem:#?}"
+            );
         }
     }
 

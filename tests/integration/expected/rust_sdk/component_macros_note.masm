@@ -159,22 +159,24 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     push.33
     push.22
     push.11
-    dup.4
-    dup.6
-    dup.8
-    dup.10
+    dup.7
+    dup.7
+    dup.7
+    dup.7
+    swap.8
+    swap.4
     swap.1
-    swap.10
-    swap.6
-    swap.2
     swap.9
     swap.5
     swap.1
+    movup.2
+    swap.10
+    swap.6
+    movdn.2
+    movup.3
     swap.11
     swap.7
-    swap.3
-    swap.8
-    swap.4
+    movdn.3
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::component_macros_note::component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22

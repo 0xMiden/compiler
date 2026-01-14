@@ -550,18 +550,18 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         dup.1
         swap.1
         u32shr
-        movup.5
-        swap.6
-        movdn.5
-        movup.3
-        swap.8
-        movdn.3
         movup.2
         swap.9
         movdn.2
+        movup.3
+        swap.8
+        movdn.3
         swap.1
         swap.7
         swap.4
+        movup.5
+        swap.6
+        movdn.5
         trace.240
         nop
         exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::std::mem::pipe_preimage_to_memory
@@ -1049,13 +1049,13 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     exec.::intrinsics::mem::load_felt
                     trace.252
                     nop
-                    movup.4
-                    swap.5
-                    movdn.4
                     swap.1
                     swap.2
                     swap.1
                     swap.3
+                    movup.4
+                    swap.5
+                    movdn.4
                     trace.240
                     nop
                     exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
@@ -2133,6 +2133,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         push.3735929054
         dup.0
         dup.1
+        swap.1
         swap.4
         swap.1
         swap.3
@@ -2158,10 +2159,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                 neq
                 if.true
                     push.1
-                    dup.3
-                    dup.7
+                    dup.6
+                    dup.4
                     dup.4
                     swap.2
+                    swap.1
                     trace.240
                     nop
                     exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::alloc::Global>::alloc_impl
@@ -2307,11 +2309,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                 movup.2
                 cdrop
             else
+                swap.4
+                swap.1
                 movup.2
                 swap.5
                 movdn.2
-                swap.4
-                swap.1
                 drop
                 drop
                 drop
@@ -2375,14 +2377,12 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         dup.3
         cdrop
         push.3735929054
-        dup.3
-        dup.5
-        swap.1
-        cdrop
-        push.3735929054
         dup.4
-        dup.7
-        swap.1
+        dup.4
+        cdrop
+        push.3735929054
+        dup.6
+        dup.5
         cdrop
         push.3735929054
         dup.5
@@ -2391,11 +2391,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         movdn.2
         cdrop
         push.3735929054
-        movup.2
-        swap.7
-        movdn.2
         swap.1
         swap.5
+        movup.2
+        swap.7
+        movdn.2
         cdrop
         swap.1
         swap.5

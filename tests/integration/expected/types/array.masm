@@ -93,9 +93,8 @@ pub proc sum_arr(i32, i32) -> i32
             swap.1
             cdrop
             push.3735929054
-            dup.2
-            dup.4
-            swap.1
+            dup.3
+            dup.3
             cdrop
             push.3735929054
             push.4

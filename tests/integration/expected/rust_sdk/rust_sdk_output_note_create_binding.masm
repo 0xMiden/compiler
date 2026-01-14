@@ -127,8 +127,9 @@ proc miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-bindi
         movdn.2
         cdrop
         push.3735929054
-        dup.2
-        dup.4
+        dup.3
+        dup.3
+        swap.1
         swap.2
         swap.1
         cdrop
@@ -161,13 +162,13 @@ proc miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-bindi
     trace.252
     nop
     push.0
-    dup.0
+    dup.1
     dup.1
     dup.2
-    dup.4
+    dup.3
     swap.1
+    swap.2
     swap.3
-    swap.1
     swap.4
     trace.240
     nop

@@ -707,32 +707,37 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
             u32wrapping_add
         end
         push.3735929054
-        dup.3
-        dup.9
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
+        dup.8
         dup.4
-        dup.9
+        swap.1
         swap.2
         swap.1
         cdrop
         push.3735929054
+        dup.8
         dup.5
-        dup.9
+        swap.1
         swap.2
         swap.1
         cdrop
         push.3735929054
+        dup.8
         dup.6
-        dup.9
+        swap.1
         swap.2
         swap.1
         cdrop
         push.3735929054
+        dup.8
         dup.7
-        dup.9
+        swap.1
+        swap.2
+        swap.1
+        cdrop
+        push.3735929054
+        dup.8
+        dup.8
+        swap.1
         swap.2
         swap.1
         cdrop
@@ -742,15 +747,15 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
         cdrop
         push.1
         u32and
-        movup.3
-        swap.5
-        swap.7
-        movdn.3
         swap.1
         swap.2
         swap.4
         swap.6
         swap.1
+        movup.3
+        swap.5
+        swap.7
+        movdn.3
         if.true
             movup.7
             drop
@@ -1043,16 +1048,16 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::advice::emit_falcon_sig_to_stack
     trace.252
     nop
+    swap.1
+    swap.2
+    swap.1
+    swap.3
     movup.4
     swap.8
     swap.7
     swap.6
     swap.5
     movdn.4
-    swap.1
-    swap.2
-    swap.1
-    swap.3
     trace.240
     nop
     exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::std::crypto::dsa::rpo_falcon512::verify
@@ -1422,6 +1427,7 @@ proc core::ptr::swap_nonoverlapping_bytes::swap_nonoverlapping_chunks::<4>(
             push.3735929054
             dup.0
             dup.1
+            swap.1
             swap.2
         else
             dup.2
@@ -1655,14 +1661,16 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
             u32wrapping_add
         end
         push.3735929054
-        dup.3
-        dup.6
+        dup.5
+        dup.4
+        swap.1
         swap.2
         swap.1
         cdrop
         push.3735929054
-        dup.4
-        dup.6
+        dup.5
+        dup.5
+        swap.1
         swap.2
         swap.1
         cdrop

@@ -449,16 +449,15 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
                 dup.2
                 cdrop
                 push.3735929054
-                dup.2
-                dup.4
-                swap.1
+                dup.3
+                dup.3
                 cdrop
                 push.3735929054
+                swap.1
+                swap.3
                 movup.2
                 swap.4
                 movdn.2
-                swap.1
-                swap.3
                 cdrop
             end
         end
@@ -735,14 +734,16 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
             u32wrapping_add
         end
         push.3735929054
-        dup.3
-        dup.6
+        dup.5
+        dup.4
+        swap.1
         swap.2
         swap.1
         cdrop
         push.3735929054
-        dup.4
-        dup.6
+        dup.5
+        dup.5
+        swap.1
         swap.2
         swap.1
         cdrop

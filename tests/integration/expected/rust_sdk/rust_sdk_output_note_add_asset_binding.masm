@@ -127,8 +127,9 @@ proc miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset
         movdn.2
         cdrop
         push.3735929054
-        dup.2
-        dup.4
+        dup.3
+        dup.3
+        swap.1
         swap.2
         swap.1
         cdrop

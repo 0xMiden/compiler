@@ -290,18 +290,18 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
         dup.1
         swap.1
         u32shr
-        movup.5
-        swap.7
-        movdn.5
-        movup.3
-        swap.9
-        movdn.3
         movup.2
         swap.10
         movdn.2
+        movup.3
+        swap.9
+        movdn.3
         swap.1
         swap.8
         swap.4
+        movup.5
+        swap.7
+        movdn.5
         trace.240
         nop
         exec.::root_ns:root@1.0.0::adv_load_preimage::std::mem::pipe_preimage_to_memory
@@ -992,6 +992,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         push.3735929054
         dup.0
         dup.1
+        swap.1
         swap.4
         swap.1
         swap.3
@@ -1017,10 +1018,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                 neq
                 if.true
                     push.1
-                    dup.3
-                    dup.7
+                    dup.6
+                    dup.4
                     dup.4
                     swap.2
+                    swap.1
                     trace.240
                     nop
                     exec.::root_ns:root@1.0.0::adv_load_preimage::<alloc::alloc::Global>::alloc_impl
@@ -1166,11 +1168,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                 movup.2
                 cdrop
             else
+                swap.4
+                swap.1
                 movup.2
                 swap.5
                 movdn.2
-                swap.4
-                swap.1
                 drop
                 drop
                 drop
@@ -1234,14 +1236,12 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         dup.3
         cdrop
         push.3735929054
-        dup.3
-        dup.5
-        swap.1
-        cdrop
-        push.3735929054
         dup.4
-        dup.7
-        swap.1
+        dup.4
+        cdrop
+        push.3735929054
+        dup.6
+        dup.5
         cdrop
         push.3735929054
         dup.5
@@ -1250,11 +1250,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         movdn.2
         cdrop
         push.3735929054
-        movup.2
-        swap.7
-        movdn.2
         swap.1
         swap.5
+        movup.2
+        swap.7
+        movdn.2
         cdrop
         swap.1
         swap.5
