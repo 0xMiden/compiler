@@ -38,7 +38,7 @@ impl TestCommand {
 
         let spawn_args = test_cargo_args();
         unsafe {
-            std::env::set_var("CREATED_PACKAGE", artifact_path);
+            std::env::set_var("CARGO_MIDEN_TEST_PACKAGE_PATH", artifact_path);
         }
 
         run_cargo_test(&spawn_args)?;

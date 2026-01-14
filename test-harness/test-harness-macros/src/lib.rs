@@ -94,7 +94,7 @@ fn load_package(function: &mut syn::ItemFn) {
     };
 
     // This env var is set by `cargo miden test`.
-    let package_path = std::env::var("CREATED_PACKAGE").unwrap();
+    let package_path = std::env::var("CARGO_MIDEN_TEST_PACKAGE_PATH").unwrap();
 
     let package_bytes = std::fs::read(&package_path).unwrap_or_else(|err| {
         panic!("failed to read .masp Package file {package_path} logger: {err}")
