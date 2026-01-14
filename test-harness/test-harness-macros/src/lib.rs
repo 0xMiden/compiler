@@ -166,6 +166,7 @@ pub fn miden_test(
             }
         );
 
+        #[test]
         #[cfg(test)]
         #input_fn
     };
