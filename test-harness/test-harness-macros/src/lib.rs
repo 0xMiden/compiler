@@ -96,9 +96,16 @@ fn load_package(function: &mut syn::ItemFn) {
     // This env var is set by `cargo miden test`.
     let package_path = std::env::var("CREATED_PACKAGE").unwrap();
 
+    let package_bytes = std::fs::read(&package_path).unwrap_or_else(|err| {
+        panic!("failed to read .masp Package file {package_path} logger: {err}")
+    });
+
     let load_package: Vec<syn::Stmt> = syn::parse_quote! {
-        let path = #package_path;
-        let bytes = std::fs::read(path).unwrap();
+        // Inserts every byte from the package_bytes vector separated by a
+        // comma.  For more information see:
+        // https://docs.rs/quote/latest/quote/macro.quote.html#interpolation
+        let bytes = [#(#package_bytes),*];
+
         let #package_binding_name =
             <::miden_objects::vm::Package as ::miden_objects::utils::Deserializable>::read_from_bytes(&bytes).unwrap();
     };
