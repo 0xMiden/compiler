@@ -181,6 +181,7 @@ impl ProjectBuilder {
         self.root.target_debug_dir()
     }
 
+    /// Creates a new [`ProjectBuilder`] rooted at `root`.
     pub fn new(root: PathBuf) -> ProjectBuilder {
         ProjectBuilder {
             root: Project { root },
@@ -226,6 +227,7 @@ impl ProjectBuilder {
         self
     }
 
+    /// Disables automatic generation of a `Cargo.toml` when building the project.
     pub fn no_manifest(mut self) -> Self {
         self.no_manifest = true;
         self
@@ -457,6 +459,7 @@ impl Project {
         fs::write(self.root().join("Cargo.toml"), contents).unwrap();
     }
 
+    /// Creates a symlink within the project directory.
     pub fn symlink(&self, src: impl AsRef<Path>, dst: impl AsRef<Path>) {
         let src = self.root().join(src.as_ref());
         let dst = self.root().join(dst.as_ref());
@@ -468,7 +471,10 @@ impl Project {
     }
 }
 
-// Generates a project layout
+/// Creates a [`ProjectBuilder`] for a generated Cargo project.
+///
+/// The project is located under the workspace `target/` directory to maximize reuse of build
+/// artifacts across test runs.
 #[track_caller]
 pub fn project(proj_folder_name: &str) -> ProjectBuilder {
     /// Compute the directory under which generated Cargo projects should live.

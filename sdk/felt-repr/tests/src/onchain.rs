@@ -10,7 +10,6 @@ use miden_felt::Felt;
 use miden_felt_repr::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
 use miden_integration_tests::testing::{Initializer, eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use temp_dir::TempDir;
 
 use crate::build_felt_repr_test;
 
@@ -78,8 +77,7 @@ fn test_felt_reader() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_felt_reader";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -150,8 +148,7 @@ fn test_two_felts_struct_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_two_felts_struct";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -227,8 +224,7 @@ fn test_five_felts_struct_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_five_felts_struct";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -314,8 +310,7 @@ fn test_minimal_u64_bug() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_minimal_u64_bug";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -400,8 +395,7 @@ fn test_mixed_types_no_u64_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_mixed_types_no_u64";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -503,8 +497,7 @@ fn test_nested_struct_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_nested_struct";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -583,8 +576,7 @@ fn test_enum_unit_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_enum_unit";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -646,8 +638,7 @@ fn test_enum_tuple_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_enum_tuple";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -742,8 +733,7 @@ fn test_struct_with_enum_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_struct_with_enum";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -833,8 +823,7 @@ fn test_enum_nested_with_struct_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_enum_nested_struct";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -907,8 +896,7 @@ fn test_struct_with_option_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_struct_with_option";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -988,8 +976,7 @@ fn test_struct_with_vec_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_struct_with_vec";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
@@ -1047,8 +1034,7 @@ fn test_tuple_struct_round_trip() {
 
     let config = WasmTranslationConfig::default();
     let name = "onchain_tuple_struct";
-    let temp_dir = TempDir::with_prefix(name).unwrap();
-    let mut test = build_felt_repr_test(&temp_dir, name, onchain_code, config);
+    let mut test = build_felt_repr_test(name, onchain_code, config);
     let package = test.compiled_package();
 
     let in_elem_addr = 21u32 * 16384;
