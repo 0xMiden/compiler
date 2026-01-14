@@ -2,11 +2,18 @@
 
 extern crate alloc;
 
-// External dependencies
+#[cfg(not(target_family = "wasm"))]
 pub mod libtest;
-pub use libtest::*;
+
+// External dependencies
 // RE-EXPORTS
 // ================================================================================================
-pub use miden_objects::utils::Deserializable;
-pub use miden_test_harness_macros;
-pub use miden_testing;
+pub use miden_test_harness_macros::{miden_test, miden_test_suite};
+
+#[cfg(not(target_family = "wasm"))]
+pub mod reexports {
+    pub use miden_objects::utils::Deserializable;
+    pub use miden_testing;
+
+    pub use crate::libtest::*;
+}

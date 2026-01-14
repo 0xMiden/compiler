@@ -6,9 +6,9 @@
 //
 // extern crate alloc;
 
-use miden_test_harness_macros::miden_test_suite;
+use miden_test_harness::miden_test_suite;
 
-#[cfg(not(test))]
+#[cfg(target_family = "wasm")]
 mod component {
     use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
 

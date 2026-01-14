@@ -121,7 +121,7 @@ fn load_mock_chain(function: &mut syn::ItemFn) {
     };
 
     let load_mock_chain_builder: Vec<syn::Stmt> = syn::parse_quote! {
-        let mut #mock_chain_builder_name = ::miden_test_harness::miden_testing::MockChainBuilder::new();
+        let mut #mock_chain_builder_name = ::miden_test_harness::reexports::miden_testing::MockChainBuilder::new();
     };
 
     // We add the required lines to load the generated MockChainBuilder right at the
@@ -145,8 +145,8 @@ pub fn miden_test(
     load_mock_chain(&mut input_fn);
 
     let function = quote! {
-        miden_test_harness::miden_test_submit!(
-            miden_test_harness::MidenTest {
+        ::miden_test_harness::reexports::miden_test_submit!(
+           ::miden_test_harness::reexports::MidenTest {
                 name: #fn_name,
                 test_fn: #fn_ident,
             }
@@ -189,9 +189,9 @@ pub fn miden_test_suite(
         quote! {
             #[cfg(test)]
             fn main() {
-                let args = ::miden_test_harness::MidenTestArguments::from_args();
+                let args = ::miden_test_harness::reexports::MidenTestArguments::from_args();
 
-                ::miden_test_harness::run(args);
+                ::miden_test_harness::reexports::run(args);
             }
         }
     };
