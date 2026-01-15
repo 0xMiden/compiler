@@ -471,13 +471,16 @@ impl Project {
 
 /// Creates a [`ProjectBuilder`] for a generated Cargo project.
 ///
-/// The project is located under the workspace `target/` directory to maximize reuse of build
-/// artifacts across test runs.
+/// The project is located under the Cargo target directory to maximize reuse of build artifacts
+/// across test runs.
+///
+/// The directory is derived from an absolute `CARGO_TARGET_DIR` when set, or inferred from the test
+/// executable location.
 #[track_caller]
 pub fn project(proj_folder_name: &str) -> ProjectBuilder {
     /// Compute the directory under which generated Cargo projects should live.
     ///
-    /// We keep these projects in the workspace `target` directory so that Cargo build artifacts
+    /// We keep these projects in the Cargo target directory so that Cargo build artifacts
     /// (under each project's `target/`) can be reused across test runs.
     fn cargo_projects_root() -> PathBuf {
         static ROOT: OnceLock<PathBuf> = OnceLock::new();

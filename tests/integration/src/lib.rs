@@ -12,7 +12,7 @@ pub mod testing;
 pub use self::cargo_proj::Project;
 /// Builder for constructing on-disk Cargo projects used by tests.
 pub use self::cargo_proj::ProjectBuilder;
-/// Generates an on-disk Cargo project in the workspace `target/` directory for use in tests.
+/// Generates an on-disk Cargo project in the Cargo target directory for use in tests.
 pub use self::cargo_proj::project;
 pub use self::{
     compiler_test::{CargoTest, CompilerTest, CompilerTestBuilder, RustcTest},
