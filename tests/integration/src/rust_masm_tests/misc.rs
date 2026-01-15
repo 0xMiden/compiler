@@ -55,10 +55,9 @@ fn test_func_arg_same() {
     .unwrap();
 }
 
-/// Reproduces https://github.com/0xMiden/compiler/issues/831
+/// Regression test for https://github.com/0xMiden/compiler/issues/831
 ///
-/// NOTE: With `Felt`-only code, this currently trips an internal stack-manipulation assertion during
-/// compilation:
+/// Previously, compilation could panic during stack manipulation with:
 /// `invalid stack index: only the first 16 elements on the stack are directly accessible, got 16`.
 #[test]
 fn test_invalid_stack_index_16_issue_831() {
@@ -91,8 +90,8 @@ fn test_invalid_stack_index_16_issue_831() {
 
     let package = test.compiled_package();
 
-    // Once #831 is fixed, this should execute and return the expected value.
-    // Arguments are pushed in reverse order on stack
+    // This should execute and return the expected value.
+    // Arguments are pushed in reverse order on stack.
     let args: [Felt; 16] = [
         Felt::from(16u32),
         Felt::from(15u32),
