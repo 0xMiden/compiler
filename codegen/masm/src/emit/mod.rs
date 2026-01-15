@@ -326,12 +326,27 @@ impl<'a> OpEmitter<'a> {
     pub fn dup(&mut self, i: u8, span: SourceSpan) {
         assert_valid_stack_index!(i);
         let index = i as usize;
+        // Check if we can access this operand without exceeding the 16-element limit
+        let effective_len: usize = self.stack.iter().rev().take(index + 1).map(|o| o.size()).sum();
+        assert!(
+            effective_len <= 16,
+            "invalid operand stack index ({index}): requires access to more than 16 elements, \
+             which is not supported in Miden"
+        );
         let i = self.stack.effective_index(index);
         self.stack.dup(index);
         // Emit low-level instructions corresponding to the operand we duplicated
         let last = self.stack.peek().expect("operand stack is empty");
         let n = last.size();
         let offset = n - 1;
+        assert!(
+            i + offset < 16,
+            "invalid operand stack offset: effective index {} + offset {} = {} exceeds 15, \
+             which is not supported in Miden",
+            i,
+            offset,
+            i + offset
+        );
         for _ in 0..n {
             self.emit(dup_from_offset(i + offset), span);
         }
@@ -343,12 +358,27 @@ impl<'a> OpEmitter<'a> {
     pub fn movup(&mut self, i: u8, span: SourceSpan) {
         assert_valid_stack_index!(i);
         let index = i as usize;
+        // Check if we can access this operand without exceeding the 16-element limit
+        let effective_len: usize = self.stack.iter().rev().take(index + 1).map(|o| o.size()).sum();
+        assert!(
+            effective_len <= 16,
+            "invalid operand stack index ({index}): requires access to more than 16 elements, \
+             which is not supported in Miden"
+        );
         let i = self.stack.effective_index(index);
         self.stack.movup(index);
         // Emit low-level instructions corresponding to the operand we moved
         let moved = self.stack.peek().expect("operand stack is empty");
         let n = moved.size();
         let offset = n - 1;
+        assert!(
+            i + offset < 16,
+            "invalid operand stack offset: effective index {} + offset {} = {} exceeds 15, \
+             which is not supported in Miden",
+            i,
+            offset,
+            i + offset
+        );
         for _ in 0..n {
             self.emit(movup_from_offset(i + offset), span);
         }
@@ -360,7 +390,20 @@ impl<'a> OpEmitter<'a> {
     pub fn movdn(&mut self, i: u8, span: SourceSpan) {
         assert_valid_stack_index!(i);
         let index = i as usize;
+        // Check if we can access this position without exceeding the 16-element limit
+        let effective_len: usize = self.stack.iter().rev().take(index + 1).map(|o| o.size()).sum();
+        assert!(
+            effective_len <= 16,
+            "invalid operand stack index ({index}): requires access to more than 16 elements, \
+             which is not supported in Miden"
+        );
         let i = self.stack.effective_index_inclusive(index);
+        assert!(
+            i < 16,
+            "invalid operand stack offset: effective index {} exceeds 15, \
+             which is not supported in Miden",
+            i
+        );
         let top = self.stack.peek().expect("operand stack is empty");
         let top_size = top.size();
         self.stack.movdn(index);
@@ -377,24 +420,59 @@ impl<'a> OpEmitter<'a> {
         assert!(i > 0, "swap requires a non-zero index");
         assert_valid_stack_index!(i);
         let index = i as usize;
+        // Check if we can access this operand without exceeding the 16-element limit
+        let effective_len: usize = self.stack.iter().rev().take(index + 1).map(|o| o.size()).sum();
+        assert!(
+            effective_len <= 16,
+            "invalid operand stack index ({index}): requires access to more than 16 elements, \
+             which is not supported in Miden"
+        );
         let src = self.stack[0].size();
         let dst = self.stack[index].size();
         let i = self.stack.effective_index(index);
         self.stack.swap(index);
         match (src, dst) {
             (1, 1) => {
+                assert!(
+                    i < 16,
+                    "invalid operand stack offset: effective index {} exceeds 15, \
+                     which is not supported in Miden",
+                    i
+                );
                 self.emit(swap_from_offset(i), span);
             }
             (1, n) if i == 1 => {
                 // We can simply move the top element below the `dst` operand
+                assert!(
+                    i + (n - 1) < 16,
+                    "invalid operand stack offset: effective index {} + offset {} = {} exceeds 15, \
+                     which is not supported in Miden",
+                    i,
+                    n - 1,
+                    i + (n - 1)
+                );
                 self.emit(movdn_from_offset(i + (n - 1)), span);
             }
             (n, 1) if i == n => {
                 // We can simply move the `dst` element to the top
+                assert!(
+                    i < 16,
+                    "invalid operand stack offset: effective index {} exceeds 15, \
+                     which is not supported in Miden",
+                    i
+                );
                 self.emit(movup_from_offset(i), span);
             }
             (n, m) if i == n => {
                 // We can simply move `dst` down
+                assert!(
+                    i + (m - 1) < 16,
+                    "invalid operand stack offset: effective index {} + offset {} = {} exceeds 15, \
+                     which is not supported in Miden",
+                    i,
+                    m - 1,
+                    i + (m - 1)
+                );
                 for _ in 0..n {
                     self.emit(movdn_from_offset(i + (m - 1)), span);
                 }
@@ -402,16 +480,36 @@ impl<'a> OpEmitter<'a> {
             (n, m) => {
                 assert!(i >= n);
                 let offset = m - 1;
+                assert!(
+                    i + offset < 16,
+                    "invalid operand stack offset: effective index {} + offset {} = {} exceeds 15, \
+                     which is not supported in Miden",
+                    i,
+                    offset,
+                    i + offset
+                );
                 for _ in 0..n {
                     self.emit(movdn_from_offset(i + offset), span);
                 }
                 let i = (i as i8 + (m as i8 - n as i8)) as u8 as usize;
+                assert!(
+                    i < 16,
+                    "invalid operand stack offset: effective index {} exceeds 15, \
+                     which is not supported in Miden",
+                    i
+                );
                 match i - 1 {
                     1 => {
                         assert_eq!(m, 1);
                         self.emit(masm::Instruction::Swap1, span);
                     }
                     i => {
+                        assert!(
+                            i < 16,
+                            "invalid operand stack offset: effective index {} exceeds 15, \
+                             which is not supported in Miden",
+                            i
+                        );
                         for _ in 0..m {
                             self.emit(movup_from_offset(i), span);
                         }
