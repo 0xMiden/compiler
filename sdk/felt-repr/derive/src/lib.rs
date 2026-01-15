@@ -1,20 +1,17 @@
 //! Derive macros for felt representation serialization/deserialization.
 //!
-//! This crate provides proc-macros used by `miden-felt-repr-{onchain,offchain}` to derive
-//! `ToFeltRepr`/`FromFeltRepr` implementations for user-defined types.
+//! This crate provides proc-macros used by `miden-felt-repr` to derive `ToFeltRepr`/`FromFeltRepr`
+//! implementations for user-defined types.
 //!
 //! # Usage
 //!
-//! This crate is not typically used directly. Instead, depend on either:
-//! - `miden-felt-repr-onchain` (for on-chain code), or
-//! - `miden-felt-repr-offchain` (for off-chain code),
-//!
-//! and derive the traits re-exported by those crates.
+//! This crate is not typically used directly. Instead, depend on `miden-felt-repr` and derive the
+//! traits re-exported by that crate.
 //!
 //! ## Struct example
 //!
 //! ```ignore
-//! use miden_felt_repr_offchain::{FromFeltRepr, ToFeltRepr};
+//! use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
 //! use miden_core::Felt;
 //!
 //! #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
@@ -32,7 +29,7 @@
 //! ## Enum example
 //!
 //! ```ignore
-//! use miden_felt_repr_offchain::{FromFeltRepr, ToFeltRepr};
+//! use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
 //! use miden_core::Felt;
 //!
 //! #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
@@ -62,7 +59,7 @@
 //! The following primitive encodings are provided by the runtime crates:
 //!
 //! - `Felt`: encoded as a single `Felt`
-//! - `u64`: encoded as a single `Felt`
+//! - `u64`: encoded as 2 `Felt`s (low `u32`, then high `u32`)
 //! - `u32`, `u8`: encoded as a single `Felt`
 //! - `bool`: encoded as a single `Felt` (`0` = `false`, non-zero = `true`)
 //!
@@ -200,7 +197,7 @@ fn ensure_no_explicit_discriminants(
     Ok(())
 }
 
-/// Derives `FromFeltRepr` for a struct with named fields, or an enum.
+/// Derives `FromFeltRepr` for `miden-felt-repr` for a struct with named fields, or an enum.
 ///
 /// Structs are encoded by serializing their fields in declaration order.
 ///
@@ -210,7 +207,7 @@ fn ensure_no_explicit_discriminants(
 /// # Example
 ///
 /// ```ignore
-/// use miden_felt_repr_onchain::FromFeltRepr;
+/// use miden_felt_repr::FromFeltRepr;
 ///
 /// #[derive(FromFeltRepr)]
 /// pub struct AccountId {
@@ -218,15 +215,13 @@ fn ensure_no_explicit_discriminants(
 ///     pub suffix: Felt,
 /// }
 /// ```
-#[proc_macro_derive(DeriveFromFeltReprOnchain)]
-pub fn derive_from_felt_repr_onchain(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(DeriveFromFeltRepr)]
+pub fn derive_from_felt_repr(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match derive_from_felt_repr_impl(
-        &input,
-        quote!(miden_felt_repr_onchain),
-        quote!(miden_stdlib_sys::Felt),
-    ) {
+    let expanded =
+        derive_from_felt_repr_impl(&input, quote!(miden_felt_repr), quote!(miden_felt_repr::Felt));
+    match expanded {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
     }
@@ -341,7 +336,7 @@ fn derive_from_felt_repr_impl(
     Ok(expanded.into())
 }
 
-/// Derives `ToFeltRepr` trait (offchain) for a struct with named fields, or an enum.
+/// Derives `ToFeltRepr` trait for a struct with named fields, or an enum.
 ///
 /// Structs are encoded by serializing their fields in declaration order.
 ///
@@ -351,7 +346,7 @@ fn derive_from_felt_repr_impl(
 /// # Example
 ///
 /// ```ignore
-/// use miden_felt_repr_offchain::ToFeltRepr;
+/// use miden_felt_repr::ToFeltRepr;
 ///
 /// #[derive(ToFeltRepr)]
 /// pub struct AccountId {
@@ -359,11 +354,11 @@ fn derive_from_felt_repr_impl(
 ///     pub suffix: Felt,
 /// }
 /// ```
-#[proc_macro_derive(DeriveToFeltReprOffchain)]
-pub fn derive_to_felt_repr_offchain(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(DeriveToFeltRepr)]
+pub fn derive_to_felt_repr(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr_offchain)) {
+    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr)) {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
     }
@@ -466,64 +461,4 @@ fn derive_to_felt_repr_impl(
     };
 
     Ok(expanded.into())
-}
-
-/// Derives `ToFeltRepr` trait (onchain) for a struct with named fields, or an enum.
-///
-/// Structs are encoded by serializing their fields in declaration order.
-///
-/// Enums are encoded as a `u32` tag (variant ordinal, starting from `0`)
-/// followed by the selected variant payload encoded in declaration order.
-///
-/// # Example
-///
-/// ```ignore
-/// use miden_felt_repr_onchain::ToFeltRepr;
-///
-/// #[derive(ToFeltRepr)]
-/// pub struct AccountId {
-///     pub prefix: Felt,
-///     pub suffix: Felt,
-/// }
-/// ```
-#[proc_macro_derive(DeriveToFeltReprOnchain)]
-pub fn derive_to_felt_repr_onchain(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-
-    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr_onchain)) {
-        Ok(ts) => ts,
-        Err(err) => err.into_compile_error().into(),
-    }
-}
-
-/// Derives `FromFeltRepr` trait (offchain) for a struct with named fields, or an enum.
-///
-/// Structs are encoded by serializing their fields in declaration order.
-///
-/// Enums are encoded as a `u32` tag (variant ordinal, starting from `0`)
-/// followed by the selected variant payload encoded in declaration order.
-///
-/// # Example
-///
-/// ```ignore
-/// use miden_felt_repr_offchain::FromFeltRepr;
-///
-/// #[derive(FromFeltRepr)]
-/// pub struct AccountId {
-///     pub prefix: Felt,
-///     pub suffix: Felt,
-/// }
-/// ```
-#[proc_macro_derive(DeriveFromFeltReprOffchain)]
-pub fn derive_from_felt_repr_offchain(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-
-    match derive_from_felt_repr_impl(
-        &input,
-        quote!(miden_felt_repr_offchain),
-        quote!(miden_core::Felt),
-    ) {
-        Ok(ts) => ts,
-        Err(err) => err.into_compile_error().into(),
-    }
 }

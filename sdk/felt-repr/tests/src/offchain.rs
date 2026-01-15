@@ -1,10 +1,10 @@
 //! Off-chain serialization/deserialization tests.
 //!
-//! These tests verify the correctness of the off-chain `ToFeltRepr` and `FromFeltRepr`
-//! implementations without involving on-chain execution.
+//! These tests verify the correctness of `ToFeltRepr` and `FromFeltRepr` implementations without
+//! involving on-chain execution.
 
-use miden_core::Felt;
-use miden_felt_repr_offchain::{FeltReader, FromFeltRepr, ToFeltRepr};
+use miden_felt::Felt;
+use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
 /// Serializes `value` off-chain and deserializes it back, asserting equality.
 fn assert_roundtrip<T>(value: &T)
@@ -27,33 +27,33 @@ struct TwoFelts {
 #[test]
 fn test_serialization() {
     let value = TwoFelts {
-        a: Felt::new(12345),
-        b: Felt::new(67890),
+        a: Felt::from_u64_unchecked(12345),
+        b: Felt::from_u64_unchecked(67890),
     };
 
     let felts = value.to_felt_repr();
 
     assert_eq!(felts.len(), 2);
-    assert_eq!(felts[0], Felt::new(12345));
-    assert_eq!(felts[1], Felt::new(67890));
+    assert_eq!(felts[0], Felt::from_u64_unchecked(12345));
+    assert_eq!(felts[1], Felt::from_u64_unchecked(67890));
 }
 
 #[test]
 fn test_deserialization() {
-    let felts = [Felt::new(12345), Felt::new(67890)];
+    let felts = [Felt::from_u64_unchecked(12345), Felt::from_u64_unchecked(67890)];
 
     let mut reader = FeltReader::new(&felts);
     let value = TwoFelts::from_felt_repr(&mut reader);
 
-    assert_eq!(value.a, Felt::new(12345));
-    assert_eq!(value.b, Felt::new(67890));
+    assert_eq!(value.a, Felt::from_u64_unchecked(12345));
+    assert_eq!(value.b, Felt::from_u64_unchecked(67890));
 }
 
 #[test]
 fn test_roundtrip() {
     let original = TwoFelts {
-        a: Felt::new(12345),
-        b: Felt::new(67890),
+        a: Felt::from_u64_unchecked(12345),
+        b: Felt::from_u64_unchecked(67890),
     };
 
     assert_roundtrip(&original);
@@ -71,7 +71,7 @@ struct MixedStruct {
 #[test]
 fn test_struct_roundtrip_mixed_types() {
     let original = MixedStruct {
-        a: Felt::new(11),
+        a: Felt::from_u64_unchecked(11),
         b: 22,
         c: true,
         d: 33,
@@ -79,10 +79,10 @@ fn test_struct_roundtrip_mixed_types() {
 
     let felts = original.to_felt_repr();
     assert_eq!(felts.len(), 4);
-    assert_eq!(felts[0], Felt::new(11));
-    assert_eq!(felts[1], Felt::new(22));
-    assert_eq!(felts[2], Felt::new(1));
-    assert_eq!(felts[3], Felt::new(33));
+    assert_eq!(felts[0], Felt::from_u64_unchecked(11));
+    assert_eq!(felts[1], Felt::from_u64_unchecked(22));
+    assert_eq!(felts[2], Felt::from_u64_unchecked(1));
+    assert_eq!(felts[3], Felt::from_u64_unchecked(33));
 
     assert_roundtrip(&original);
 }
@@ -107,18 +107,19 @@ fn test_struct_roundtrip_nested() {
     let original = Outer {
         head: 1,
         inner: Inner {
-            x: Felt::new(2),
+            x: Felt::from_u64_unchecked(2),
             y: 3,
         },
         tail: false,
     };
 
     let felts = original.to_felt_repr();
-    assert_eq!(felts.len(), 4);
-    assert_eq!(felts[0], Felt::new(1));
-    assert_eq!(felts[1], Felt::new(2));
-    assert_eq!(felts[2], Felt::new(3));
-    assert_eq!(felts[3], Felt::new(0));
+    assert_eq!(felts.len(), 5);
+    assert_eq!(felts[0], Felt::from_u64_unchecked(1));
+    assert_eq!(felts[1], Felt::from_u64_unchecked(2));
+    assert_eq!(felts[2], Felt::from_u64_unchecked(3));
+    assert_eq!(felts[3], Felt::from_u64_unchecked(0));
+    assert_eq!(felts[4], Felt::from_u64_unchecked(0));
 
     assert_roundtrip(&original);
 }
@@ -135,7 +136,7 @@ enum SimpleEnum {
 fn test_enum_roundtrip_unit() {
     let original = SimpleEnum::B;
     let felts = original.to_felt_repr();
-    assert_eq!(felts, vec![Felt::new(1)]);
+    assert_eq!(felts, vec![Felt::from_u64_unchecked(1)]);
     assert_roundtrip(&original);
 }
 
@@ -150,12 +151,12 @@ enum MixedEnum {
 
 #[test]
 fn test_enum_roundtrip_tuple_variant() {
-    let original = MixedEnum::Pair(Felt::new(7), 8);
+    let original = MixedEnum::Pair(Felt::from_u64_unchecked(7), 8);
     let felts = original.to_felt_repr();
     assert_eq!(felts.len(), 3);
-    assert_eq!(felts[0], Felt::new(1));
-    assert_eq!(felts[1], Felt::new(7));
-    assert_eq!(felts[2], Felt::new(8));
+    assert_eq!(felts[0], Felt::from_u64_unchecked(1));
+    assert_eq!(felts[1], Felt::from_u64_unchecked(7));
+    assert_eq!(felts[2], Felt::from_u64_unchecked(8));
     assert_roundtrip(&original);
 }
 
@@ -163,10 +164,11 @@ fn test_enum_roundtrip_tuple_variant() {
 fn test_enum_roundtrip_struct_variant() {
     let original = MixedEnum::Struct { n: 9, flag: true };
     let felts = original.to_felt_repr();
-    assert_eq!(felts.len(), 3);
-    assert_eq!(felts[0], Felt::new(2));
-    assert_eq!(felts[1], Felt::new(9));
-    assert_eq!(felts[2], Felt::new(1));
+    assert_eq!(felts.len(), 4);
+    assert_eq!(felts[0], Felt::from_u64_unchecked(2));
+    assert_eq!(felts[1], Felt::from_u64_unchecked(9));
+    assert_eq!(felts[2], Felt::from_u64_unchecked(0));
+    assert_eq!(felts[3], Felt::from_u64_unchecked(1));
     assert_roundtrip(&original);
 }
 
@@ -181,22 +183,23 @@ struct WithEnum {
 #[test]
 fn test_struct_with_enum_roundtrip() {
     let original = WithEnum {
-        prefix: Felt::new(10),
+        prefix: Felt::from_u64_unchecked(10),
         msg: MixedEnum::Nested(Inner {
-            x: Felt::new(11),
+            x: Felt::from_u64_unchecked(11),
             y: 12,
         }),
         suffix: 13,
     };
 
-    // prefix (1) + msg(tag=3 + Inner(2)) + suffix (1) = 5 felts
+    // prefix (1) + msg(tag=3 + Inner(3)) + suffix (1) = 6 felts
     let felts = original.to_felt_repr();
-    assert_eq!(felts.len(), 5);
-    assert_eq!(felts[0], Felt::new(10));
-    assert_eq!(felts[1], Felt::new(3));
-    assert_eq!(felts[2], Felt::new(11));
-    assert_eq!(felts[3], Felt::new(12));
-    assert_eq!(felts[4], Felt::new(13));
+    assert_eq!(felts.len(), 6);
+    assert_eq!(felts[0], Felt::from_u64_unchecked(10));
+    assert_eq!(felts[1], Felt::from_u64_unchecked(3));
+    assert_eq!(felts[2], Felt::from_u64_unchecked(11));
+    assert_eq!(felts[3], Felt::from_u64_unchecked(12));
+    assert_eq!(felts[4], Felt::from_u64_unchecked(0));
+    assert_eq!(felts[5], Felt::from_u64_unchecked(13));
 
     assert_roundtrip(&original);
 }
@@ -211,14 +214,14 @@ enum Top {
 #[test]
 fn test_enum_nested_with_struct_roundtrip() {
     let original = Top::Some(WithEnum {
-        prefix: Felt::new(21),
+        prefix: Felt::from_u64_unchecked(21),
         msg: MixedEnum::Struct { n: 22, flag: false },
         suffix: 23,
     });
 
-    // tag (1) + WithEnum(prefix 1 + msg 3 + suffix 1) = 6 felts
+    // tag (1) + WithEnum(prefix 1 + msg 4 + suffix 1) = 7 felts
     let felts = original.to_felt_repr();
-    assert_eq!(felts.len(), 6);
+    assert_eq!(felts.len(), 7);
     assert_roundtrip(&original);
 }
 
@@ -233,14 +236,22 @@ struct WithOption {
 #[test]
 fn test_struct_roundtrip_option_some() {
     let original = WithOption {
-        prefix: Felt::new(5),
+        prefix: Felt::from_u64_unchecked(5),
         maybe: Some(42),
         suffix: true,
     };
 
     let felts = original.to_felt_repr();
     assert_eq!(felts.len(), 4);
-    assert_eq!(felts, vec![Felt::new(5), Felt::new(1), Felt::new(42), Felt::new(1)]);
+    assert_eq!(
+        felts,
+        vec![
+            Felt::from_u64_unchecked(5),
+            Felt::from_u64_unchecked(1),
+            Felt::from_u64_unchecked(42),
+            Felt::from_u64_unchecked(1)
+        ]
+    );
 
     assert_roundtrip(&original);
 }
@@ -248,14 +259,21 @@ fn test_struct_roundtrip_option_some() {
 #[test]
 fn test_struct_roundtrip_option_none() {
     let original = WithOption {
-        prefix: Felt::new(7),
+        prefix: Felt::from_u64_unchecked(7),
         maybe: None,
         suffix: false,
     };
 
     let felts = original.to_felt_repr();
     assert_eq!(felts.len(), 3);
-    assert_eq!(felts, vec![Felt::new(7), Felt::new(0), Felt::new(0)]);
+    assert_eq!(
+        felts,
+        vec![
+            Felt::from_u64_unchecked(7),
+            Felt::from_u64_unchecked(0),
+            Felt::from_u64_unchecked(0)
+        ]
+    );
 
     assert_roundtrip(&original);
 }
@@ -271,7 +289,7 @@ struct WithVec {
 #[test]
 fn test_struct_roundtrip_vec_non_empty() {
     let original = WithVec {
-        prefix: Felt::new(9),
+        prefix: Felt::from_u64_unchecked(9),
         items: vec![1, 2, 3],
         suffix: true,
     };
@@ -282,12 +300,12 @@ fn test_struct_roundtrip_vec_non_empty() {
     assert_eq!(
         felts,
         vec![
-            Felt::new(9),
-            Felt::new(3),
-            Felt::new(1),
-            Felt::new(2),
-            Felt::new(3),
-            Felt::new(1),
+            Felt::from_u64_unchecked(9),
+            Felt::from_u64_unchecked(3),
+            Felt::from_u64_unchecked(1),
+            Felt::from_u64_unchecked(2),
+            Felt::from_u64_unchecked(3),
+            Felt::from_u64_unchecked(1),
         ]
     );
 
@@ -297,14 +315,21 @@ fn test_struct_roundtrip_vec_non_empty() {
 #[test]
 fn test_struct_roundtrip_vec_empty() {
     let original = WithVec {
-        prefix: Felt::new(10),
+        prefix: Felt::from_u64_unchecked(10),
         items: vec![],
         suffix: false,
     };
 
     let felts = original.to_felt_repr();
     assert_eq!(felts.len(), 3);
-    assert_eq!(felts, vec![Felt::new(10), Felt::new(0), Felt::new(0)]);
+    assert_eq!(
+        felts,
+        vec![
+            Felt::from_u64_unchecked(10),
+            Felt::from_u64_unchecked(0),
+            Felt::from_u64_unchecked(0)
+        ]
+    );
 
     assert_roundtrip(&original);
 }
@@ -315,9 +340,36 @@ struct TupleStruct(u32, bool, Felt);
 
 #[test]
 fn test_tuple_struct_roundtrip() {
-    let original = TupleStruct(22, true, Felt::new(33));
+    let original = TupleStruct(22, true, Felt::from_u64_unchecked(33));
     let felts = original.to_felt_repr();
 
-    assert_eq!(felts, vec![Felt::new(22), Felt::new(1), Felt::new(33)]);
+    assert_eq!(
+        felts,
+        vec![
+            Felt::from_u64_unchecked(22),
+            Felt::from_u64_unchecked(1),
+            Felt::from_u64_unchecked(33)
+        ]
+    );
     assert_roundtrip(&original);
+}
+
+#[test]
+fn test_u64_roundtrip_uses_u32_limbs() {
+    let test_cases: [u64; 6] =
+        [0, 1, u32::MAX as u64, (u32::MAX as u64) << 32, 0x1122_3344_5566_7788, u64::MAX];
+
+    for value in test_cases {
+        let felts = value.to_felt_repr();
+        assert_eq!(felts.len(), 2);
+
+        let expected_lo = value & 0xffff_ffff;
+        let expected_hi = value >> 32;
+        assert_eq!(felts[0].as_u64(), expected_lo);
+        assert_eq!(felts[1].as_u64(), expected_hi);
+
+        let mut reader = FeltReader::new(&felts);
+        let roundtripped = u64::from_felt_repr(&mut reader);
+        assert_eq!(roundtripped, value);
+    }
 }

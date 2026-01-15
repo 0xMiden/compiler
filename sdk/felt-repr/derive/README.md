@@ -1,22 +1,18 @@
 # `miden-felt-repr-derive`
 
-Derive macros used by `miden-felt-repr-onchain` and `miden-felt-repr-offchain` to implement
-serialization/deserialization to a flat sequence of `Felt` elements (“felt repr”).
+Derive macros used by `miden-felt-repr` to implement serialization/deserialization to a flat
+sequence of `Felt` elements (“felt repr”).
 
 ## Usage
 
-This crate is not typically used directly. Instead, depend on either:
-
-- `miden-felt-repr-onchain` (for on-chain code), or
-- `miden-felt-repr-offchain` (for off-chain code),
-
-and derive the traits re-exported by those crates.
+This crate is not typically used directly. Instead, depend on `miden-felt-repr` and derive the
+traits re-exported by that crate.
 
 ### Struct example
 
 ```rust
-use miden_core::Felt;
-use miden_felt_repr_offchain::{FromFeltRepr, ToFeltRepr};
+use miden_felt::Felt;
+use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
 
 #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 struct AccountId {
@@ -25,8 +21,8 @@ struct AccountId {
 }
 
 let value = AccountId {
-    prefix: Felt::new(1),
-    suffix: Felt::new(2),
+    prefix: Felt::from_u64_unchecked(1),
+    suffix: Felt::from_u64_unchecked(2),
 };
 let felts = value.to_felt_repr();
 let roundtrip = AccountId::from(felts.as_slice());
@@ -36,8 +32,8 @@ assert_eq!(roundtrip, value);
 ### Enum example
 
 ```rust
-use miden_core::Felt;
-use miden_felt_repr_offchain::{FromFeltRepr, ToFeltRepr};
+use miden_felt::Felt;
+use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
 
 #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 enum Message {
@@ -49,7 +45,7 @@ enum Message {
 // Ping -> tag = 0
 // Transfer -> tag = 1
 let value = Message::Transfer {
-    to: Felt::new(7),
+    to: Felt::from_u64_unchecked(7),
     amount: 10,
 };
 let felts = value.to_felt_repr();
@@ -68,7 +64,7 @@ metadata.
 Provided by the runtime crates:
 
 - `Felt`: 1 felt
-- `u64`: 1 felt
+- `u64`: 2 felts (low `u32`, then high `u32`)
 - `u32`, `u8`: 1 felt
 - `bool`: 1 felt (`0` = `false`, non-zero = `true`)
 

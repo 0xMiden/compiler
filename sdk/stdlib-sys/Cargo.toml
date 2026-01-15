@@ -17,6 +17,7 @@ links = "miden_stdlib_sys_stubs"
 crate-type = ["rlib"]
 
 [dependencies]
+miden-felt = { version = "0.8.0", path = "../felt" }
 
 [features]
 default = []

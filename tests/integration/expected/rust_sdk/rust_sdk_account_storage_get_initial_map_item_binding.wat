@@ -70,7 +70,7 @@
       f32.load offset=32
       local.set 5
       i32.const 0
-      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+      call $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
       local.get 2
       local.get 3
       local.get 4
@@ -187,14 +187,14 @@
       i64.load align=4
       i64.store
     )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;5;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
+      unreachable
+    )
+    (func $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from (;6;) (type 3) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
       f32.reinterpret_i32
-    )
-    (func $intrinsics::felt::from_u32 (;6;) (type 3) (param i32) (result f32)
-      unreachable
     )
     (func $miden::active_account::get_initial_map_item (;7;) (type 4) (param f32 f32 f32 f32 f32 i32)
       unreachable

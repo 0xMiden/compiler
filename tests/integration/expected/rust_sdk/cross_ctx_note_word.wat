@@ -49,8 +49,8 @@
     (type (;4;) (func (param i64 f32 i32 f32 i32 i32 i32 i32)))
     (type (;5;) (func))
     (type (;6;) (func (param f32 f32 f32 f32)))
-    (type (;7;) (func (param i32) (result f32)))
-    (type (;8;) (func (param f32 f32)))
+    (type (;7;) (func (param f32 f32)))
+    (type (;8;) (func (param i32) (result f32)))
     (type (;9;) (func (param i64) (result f32)))
     (import "miden:cross-ctx-account-word/foo@1.0.0" "process-word" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7 (;0;) (type 0)))
     (import "miden:cross-ctx-account-word/foo@1.0.0" "process-another-word" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7 (;1;) (type 0)))
@@ -256,7 +256,7 @@
       call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 15
-      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from
+      call $<miden_felt::wasm32::Felt as core::convert::From<u32>>::from
       i32.const -1
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
@@ -265,7 +265,7 @@
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
       local.get 14
-      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+      call $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
       i32.const 122
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
@@ -279,7 +279,7 @@
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
       local.get 12
-      call $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from
+      call $<miden_felt::wasm32::Felt as core::convert::From<u16>>::from
       i32.const 12
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
@@ -335,30 +335,30 @@
         i32.store8
       end
     )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from (;11;) (type 7) (param i32) (result f32)
+    (func $intrinsics::felt::assert_eq (;11;) (type 7) (param f32 f32)
+      unreachable
+    )
+    (func $intrinsics::felt::from_u32 (;12;) (type 8) (param i32) (result f32)
+      unreachable
+    )
+    (func $intrinsics::felt::from_u64_unchecked (;13;) (type 9) (param i64) (result f32)
+      unreachable
+    )
+    (func $<miden_felt::wasm32::Felt as core::convert::From<u32>>::from (;14;) (type 8) (param i32) (result f32)
       local.get 0
       f32.reinterpret_i32
     )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from (;12;) (type 7) (param i32) (result f32)
+    (func $<miden_felt::wasm32::Felt as core::convert::From<u16>>::from (;15;) (type 8) (param i32) (result f32)
       local.get 0
       i32.const 65535
       i32.and
       f32.reinterpret_i32
     )
-    (func $<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from (;13;) (type 7) (param i32) (result f32)
+    (func $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from (;16;) (type 8) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
       f32.reinterpret_i32
-    )
-    (func $intrinsics::felt::assert_eq (;14;) (type 8) (param f32 f32)
-      unreachable
-    )
-    (func $intrinsics::felt::from_u32 (;15;) (type 7) (param i32) (result f32)
-      unreachable
-    )
-    (func $intrinsics::felt::from_u64_unchecked (;16;) (type 9) (param i64) (result f32)
-      unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00")
   )

@@ -22,7 +22,7 @@ builtin.component miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-acc
             hir.store v8, v6;
             hir.exec @miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-procedure-root-binding@0.0.1/rust_sdk_account_get_procedure_root_binding/wit_bindgen::rt::run_ctors_once()
             v1 = arith.constant 0 : i32;
-            v10 = hir.exec @miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-procedure-root-binding@0.0.1/rust_sdk_account_get_procedure_root_binding/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v1) : felt
+            v10 = hir.exec @miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-procedure-root-binding@0.0.1/rust_sdk_account_get_procedure_root_binding/<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v1) : felt
             v11 = arith.constant 16 : i32;
             v12 = arith.add v6, v11 : i32 #[overflow = wrapping];
             hir.exec @miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-procedure-root-binding@0.0.1/rust_sdk_account_get_procedure_root_binding/miden::active_account::get_procedure_root(v10, v12)
@@ -263,7 +263,7 @@ builtin.component miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-acc
             builtin.ret ;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v184: i32) -> felt {
+        private builtin.function @<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v184: i32) -> felt {
         ^block21(v184: i32):
             v186 = arith.constant 255 : i32;
             v187 = arith.band v184, v186 : i32;

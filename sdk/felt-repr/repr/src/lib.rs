@@ -1,22 +1,20 @@
-//! Serialization/deserialization for felt representation in off-chain use.
+//! Serialization/deserialization for felt representation.
 //!
 //! This crate provides traits and utilities for converting Rust types to and from
-//! a sequence of `Felt` elements, suitable for preparing data to send to on-chain code.
+//! a sequence of [`Felt`] elements.
 
 #![no_std]
 #![deny(warnings)]
 
 extern crate alloc;
 
-mod account_id;
-
 use alloc::vec::Vec;
 
-pub use account_id::AccountIdFeltRepr;
-use miden_core::Felt;
-/// Re-export the derive macros with the same name as the traits.
-pub use miden_felt_repr_derive::DeriveFromFeltReprOffchain as FromFeltRepr;
-pub use miden_felt_repr_derive::DeriveToFeltReprOffchain as ToFeltRepr;
+pub use miden_felt::Felt;
+/// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
+pub use miden_felt_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
+/// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
+pub use miden_felt_repr_derive::DeriveToFeltRepr as ToFeltRepr;
 
 /// A reader that wraps a slice of `Felt` elements and tracks the current position.
 pub struct FeltReader<'a> {
@@ -26,6 +24,7 @@ pub struct FeltReader<'a> {
 
 impl<'a> FeltReader<'a> {
     /// Creates a new `FeltReader` from a slice of `Felt` elements.
+    #[inline(always)]
     pub fn new(data: &'a [Felt]) -> Self {
         Self { data, pos: 0 }
     }
@@ -35,6 +34,7 @@ impl<'a> FeltReader<'a> {
     /// # Panics
     ///
     /// Panics if there are no more elements to read.
+    #[inline(always)]
     pub fn read(&mut self) -> Felt {
         assert!(self.pos < self.data.len(), "FeltReader: no more elements to read");
         let felt = self.data[self.pos];
@@ -50,11 +50,13 @@ pub struct FeltWriter<'a> {
 
 impl<'a> FeltWriter<'a> {
     /// Creates a new `FeltWriter` from a mutable reference to a `Vec<Felt>`.
+    #[inline(always)]
     pub fn new(data: &'a mut Vec<Felt>) -> Self {
         Self { data }
     }
 
     /// Writes a `Felt` element to the output.
+    #[inline(always)]
     pub fn write(&mut self, felt: Felt) {
         self.data.push(felt);
     }
@@ -67,32 +69,51 @@ pub trait FromFeltRepr: Sized {
 }
 
 impl FromFeltRepr for Felt {
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
         reader.read()
     }
 }
 
-impl FromFeltRepr for u64 {
+#[cfg(not(target_family = "wasm"))]
+impl FromFeltRepr for miden_core::Felt {
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_int()
+        Self::from(reader.read())
+    }
+}
+
+impl FromFeltRepr for u64 {
+    #[inline(always)]
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+        // Encode u64 as 2 u32 limbs
+        let lo = reader.read().as_u64();
+        assert!(lo <= u32::MAX as u64, "u64: low limb out of range");
+        let hi = reader.read().as_u64();
+        assert!(hi <= u32::MAX as u64, "u64: high limb out of range");
+
+        (hi << 32) | lo
     }
 }
 
 impl FromFeltRepr for u32 {
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_int() as u32
+        reader.read().as_u64() as u32
     }
 }
 
 impl FromFeltRepr for u8 {
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_int() as u8
+        reader.read().as_u64() as u8
     }
 }
 
 impl FromFeltRepr for bool {
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_int() != 0
+        reader.read().as_u64() != 0
     }
 }
 
@@ -105,8 +126,9 @@ impl<T> FromFeltRepr for Option<T>
 where
     T: FromFeltRepr,
 {
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        match reader.read().as_int() {
+        match reader.read().as_u64() {
             0 => None,
             1 => Some(T::from_felt_repr(reader)),
             _ => panic!("Option: invalid tag"),
@@ -121,14 +143,18 @@ impl<T> FromFeltRepr for Vec<T>
 where
     T: FromFeltRepr,
 {
+    #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        let len = reader.read().as_int();
+        let len = reader.read().as_u64();
         assert!(len <= u32::MAX as u64, "Vec: length out of range");
         let len = len as usize;
 
         let mut result = Vec::with_capacity(len);
-        for _ in 0..len {
+
+        let mut i = 0usize;
+        while i < len {
             result.push(T::from_felt_repr(reader));
+            i += 1;
         }
         result
     }
@@ -149,32 +175,57 @@ pub trait ToFeltRepr {
 }
 
 impl ToFeltRepr for Felt {
+    #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         writer.write(*self);
     }
 }
 
-impl ToFeltRepr for u64 {
+#[cfg(not(target_family = "wasm"))]
+impl ToFeltRepr for miden_core::Felt {
+    #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::new(*self));
+        writer.write((*self).into());
+    }
+}
+
+impl ToFeltRepr for u64 {
+    #[inline(always)]
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        let lo = (*self & 0xffff_ffff) as u32;
+        let hi = (*self >> 32) as u32;
+        writer.write(Felt::from_u32(lo));
+        writer.write(Felt::from_u32(hi));
     }
 }
 
 impl ToFeltRepr for u32 {
+    #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::new(*self as u64));
+        writer.write(Felt::from_u64_unchecked(*self as u64));
     }
 }
 
 impl ToFeltRepr for u8 {
+    #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::new(*self as u64));
+        writer.write(Felt::from_u64_unchecked(*self as u64));
     }
 }
 
 impl ToFeltRepr for bool {
+    #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::new(*self as u64));
+        writer.write(Felt::from_u64_unchecked(*self as u64));
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl ToFeltRepr for miden_objects::account::AccountId {
+    #[inline(always)]
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        writer.write(self.prefix().as_felt().into());
+        writer.write(self.suffix().into());
     }
 }
 
@@ -187,11 +238,12 @@ impl<T> ToFeltRepr for Option<T>
 where
     T: ToFeltRepr,
 {
+    #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         match self {
-            None => writer.write(Felt::new(0)),
+            None => writer.write(Felt::from_u64_unchecked(0)),
             Some(value) => {
-                writer.write(Felt::new(1));
+                writer.write(Felt::from_u64_unchecked(1));
                 value.write_felt_repr(writer);
             }
         }
@@ -205,11 +257,16 @@ impl<T> ToFeltRepr for Vec<T>
 where
     T: ToFeltRepr,
 {
+    #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        assert!(self.len() <= u32::MAX as usize, "Vec: length out of range");
-        writer.write(Felt::new(self.len() as u64));
-        for elem in self {
-            elem.write_felt_repr(writer);
+        let len = self.len();
+        assert!(len <= u32::MAX as usize, "Vec: length out of range");
+        writer.write(Felt::from_u64_unchecked(len as u64));
+
+        let mut i = 0usize;
+        while i < len {
+            self[i].write_felt_repr(writer);
+            i += 1;
         }
     }
 }

@@ -2214,7 +2214,8 @@ version = "0.8.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
- "miden-felt-repr-onchain",
+ "miden-felt",
+ "miden-felt-repr",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
  "wit-bindgen",
@@ -2297,7 +2298,7 @@ dependencies = [
 name = "miden-base-sys"
 version = "0.8.1"
 dependencies = [
- "miden-felt-repr-onchain",
+ "miden-felt-repr",
  "miden-stdlib-sys",
 ]
 
@@ -2459,6 +2460,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-felt"
+version = "0.8.0"
+dependencies = [
+ "miden-core",
+]
+
+[[package]]
+name = "miden-felt-repr"
+version = "0.7.1"
+dependencies = [
+ "miden-core",
+ "miden-felt",
+ "miden-felt-repr-derive",
+ "miden-objects",
+]
+
+[[package]]
 name = "miden-felt-repr-derive"
 version = "0.7.1"
 dependencies = [
@@ -2468,29 +2486,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-felt-repr-offchain"
-version = "0.7.1"
-dependencies = [
- "miden-core",
- "miden-felt-repr-derive",
- "miden-objects",
-]
-
-[[package]]
-name = "miden-felt-repr-onchain"
-version = "0.7.1"
-dependencies = [
- "miden-felt-repr-derive",
- "miden-stdlib-sys",
-]
-
-[[package]]
 name = "miden-felt-repr-tests"
 version = "0.7.1"
 dependencies = [
  "miden-core",
  "miden-debug",
- "miden-felt-repr-offchain",
+ "miden-felt",
+ "miden-felt-repr",
  "miden-integration-tests",
  "miden-lib",
  "miden-processor",
@@ -2745,6 +2747,9 @@ dependencies = [
 [[package]]
 name = "miden-stdlib-sys"
 version = "0.8.0"
+dependencies = [
+ "miden-felt",
+]
 
 [[package]]
 name = "miden-testing"
@@ -3140,7 +3145,7 @@ version = "0.6.0"
 dependencies = [
  "miden-client",
  "miden-core",
- "miden-felt-repr-offchain",
+ "miden-felt-repr",
  "miden-integration-tests",
  "miden-lib",
  "miden-mast-package",

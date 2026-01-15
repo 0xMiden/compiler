@@ -65,7 +65,7 @@ builtin.component miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk
             };
             v189 = arith.constant 16 : i32;
             v32 = arith.add v174, v189 : i32 #[overflow = wrapping];
-            hir.exec @miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1/rust_sdk_account_has_non_fungible_asset_binding/<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(v174, v32)
+            hir.exec @miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1/rust_sdk_account_has_non_fungible_asset_binding/<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::wasm32::Felt; 4]>>::from(v174, v32)
             v34 = arith.constant 12 : u32;
             v33 = hir.bitcast v174 : u32;
             v35 = arith.add v33, v34 : u32 #[overflow = checked];
@@ -147,7 +147,7 @@ builtin.component miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk
             builtin.ret ;
         };
 
-        private builtin.function @<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(v96: i32, v97: i32) {
+        private builtin.function @<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::wasm32::Felt; 4]>>::from(v96: i32, v97: i32) {
         ^block19(v96: i32, v97: i32):
             v99 = arith.constant 8 : u32;
             v98 = hir.bitcast v97 : u32;

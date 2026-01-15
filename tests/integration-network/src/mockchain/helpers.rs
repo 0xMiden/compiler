@@ -16,7 +16,7 @@ use miden_client::{
     utils::Deserializable,
 };
 use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
-use miden_felt_repr_offchain::{AccountIdFeltRepr, ToFeltRepr};
+use miden_felt_repr::ToFeltRepr;
 use miden_integration_tests::CompilerTestBuilder;
 use miden_lib::account::interface::AccountInterface;
 use miden_mast_package::{Package, SectionId};
@@ -30,6 +30,11 @@ use miden_objects::{
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{SeedableRng, rngs::StdRng};
+
+/// Converts a value's felt representation into `miden_core::Felt` elements.
+pub(super) fn to_core_felts<T: ToFeltRepr + ?Sized>(value: &T) -> Vec<Felt> {
+    value.to_felt_repr().into_iter().map(Into::into).collect()
+}
 
 // ASYNC HELPERS
 // ================================================================================================
@@ -253,7 +258,7 @@ pub(super) fn build_asset_transfer_tx(
     );
 
     let serial_num = rng.draw_word();
-    let inputs = NoteInputs::new(AccountIdFeltRepr(&recipient_id).to_felt_repr()).unwrap();
+    let inputs = NoteInputs::new(to_core_felts(&recipient_id)).unwrap();
     let note_recipient = NoteRecipient::new(serial_num, note_script, inputs);
 
     let config = NoteCreationConfig {

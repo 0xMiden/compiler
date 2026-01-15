@@ -2,13 +2,12 @@ package miden:base@1.0.0;
 
 /// Types to be used in tx-kernel interface
 interface core-types {
-    /// Represents base field element in the field using Montgomery representation.
-    /// Internal values represent x * R mod M where R = 2^64 mod M and x in [0, M).
-    /// The backing type is `f64` but the internal values are always integer in the range [0, M).
-    /// Field modulus M = 2^64 - 2^32 + 1
+    /// Represents an on-chain felt.
+    ///
+    /// Field modulus M = 2^64 - 2^32 + 1.
     record felt {
-        /// We plan to use f32 as the backing type for the field element. It has the size that we need and
-        /// we don't plan to support floating point arithmetic in programs for Miden VM.
+        /// The backing type is `f32` which will be treated as a felt by the compiler.
+	/// We're basically hijacking the Wasm `f32` type and treat as felt.
         inner: f32,
     }
 
