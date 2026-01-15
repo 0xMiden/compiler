@@ -39,7 +39,10 @@ fn sdk_alloc_path() -> PathBuf {
     PathBuf::from(manifest_dir).parent().unwrap().parent().unwrap().join("alloc")
 }
 
-/// Build a compiler test with felt-repr-onchain dependency.
+/// Build a [`CompilerTest`] with a `miden-felt-repr-onchain` dependency.
+///
+/// The test crate is generated on disk via [`project`], which places it under the Cargo target
+/// directory to reuse build artifacts across test runs.
 fn build_felt_repr_test(name: &str, fn_body: &str, config: WasmTranslationConfig) -> CompilerTest {
     let felt_repr = felt_repr_path();
     let stdlib_sys = stdlib_sys_path();
