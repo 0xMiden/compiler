@@ -144,7 +144,7 @@ impl OperandMovementConstraintSolver {
 
             let required_stack_depth: usize =
                 pending.iter().rev().take(index + 1).map(|v| v.stack_size()).sum();
-            if required_stack_depth > 16 {
+            if required_stack_depth > MASM_STACK_WINDOW_FELTS {
                 return true;
             }
 

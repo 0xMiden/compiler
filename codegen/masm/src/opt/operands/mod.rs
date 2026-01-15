@@ -10,6 +10,9 @@ pub use midenc_hir::{StackOperand as Operand, ValueOrAlias};
 pub use self::solver::{OperandMovementConstraintSolver, SolverError, SolverOptions};
 use self::{context::SolverContext, stack::Stack};
 
+/// The number of field elements addressable by MASM stack manipulation instructions.
+pub(crate) const MASM_STACK_WINDOW_FELTS: usize = 16;
+
 /// This represents a specific action that should be taken by
 /// the code generator with regard to an operand on the stack.
 ///

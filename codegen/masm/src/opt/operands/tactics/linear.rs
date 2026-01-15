@@ -14,7 +14,7 @@ fn find_deepest_addressable_copy_source(stack: &Stack, value: &ValueOrAlias) -> 
     let mut source = None;
     for (pos, operand) in stack.iter().rev().enumerate() {
         required_depth += operand.stack_size();
-        if required_depth > 16 {
+        if required_depth > MASM_STACK_WINDOW_FELTS {
             break;
         }
         if operand.unaliased() == target {
@@ -78,7 +78,7 @@ impl Tactic for Linear {
                             .map(|v| v.stack_size())
                             .sum();
                         let projected_depth = current_depth + missing_copy_felts;
-                        if projected_depth > 16 {
+                        if projected_depth > MASM_STACK_WINDOW_FELTS {
                             match worst {
                                 None => worst = Some((pos, current_depth)),
                                 Some((_, best_depth)) if current_depth > best_depth => {
