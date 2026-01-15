@@ -24,6 +24,68 @@ fn find_deepest_addressable_copy_source(stack: &Stack, value: &ValueOrAlias) -> 
     source
 }
 
+/// Moves move-constrained expected operands towards the top if copy materialization would push them
+/// beyond the MASM addressable window.
+///
+/// Returns `true` if the stack state was modified.
+fn preemptively_move_endangered_operands_to_top(builder: &mut SolutionBuilder) -> bool {
+    let missing_copy_felts: usize = builder
+        .context()
+        .expected()
+        .iter()
+        .filter(|value| value.is_alias() && builder.get_current_position(value).is_none())
+        .map(|value| value.stack_size())
+        .sum();
+    if missing_copy_felts == 0 {
+        return false;
+    }
+
+    let mut changed = false;
+
+    // Repeatedly move the deepest move-constrained operand that would fall out of the addressable
+    // window to the top. This avoids generating solutions that require unsupported stack access
+    // when copies are materialized.
+    loop {
+        let mut worst: Option<(u8, usize)> = None;
+        for value in builder.context().expected().iter() {
+            if value.is_alias() {
+                continue;
+            }
+            let Some(pos) = builder.get_current_position(value) else {
+                continue;
+            };
+            let current_depth: usize = builder
+                .stack()
+                .iter()
+                .rev()
+                .take(pos as usize + 1)
+                .map(|v| v.stack_size())
+                .sum();
+            let projected_depth = current_depth + missing_copy_felts;
+            if projected_depth > MASM_STACK_WINDOW_FELTS {
+                match worst {
+                    None => worst = Some((pos, current_depth)),
+                    Some((_, best_depth)) if current_depth > best_depth => {
+                        worst = Some((pos, current_depth))
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let Some((pos, _)) = worst else {
+            break;
+        };
+        if pos == 0 {
+            break;
+        }
+        builder.movup(pos);
+        changed = true;
+    }
+
+    changed
+}
+
 /// This tactic produces a solution for the given constraints by traversing
 /// the stack top-to-bottom, copying/evicting/swapping as needed to put
 /// the expected value for the current working index in place.
@@ -47,58 +109,7 @@ impl Tactic for Linear {
 
             let mut graph = DiGraphMap::<Operand, ()>::new();
 
-            // If materializing all missing copies will push move-constrained expected operands
-            // beyond the addressable MASM stack window (16 field elements), move them to the top
-            // while they are still reachable.
-            let missing_copy_felts: usize = builder
-                .context()
-                .expected()
-                .iter()
-                .filter(|value| value.is_alias() && builder.get_current_position(value).is_none())
-                .map(|value| value.stack_size())
-                .sum();
-            if missing_copy_felts > 0 {
-                // Repeatedly move the deepest move-constrained operand that would fall out of the
-                // addressable window to the top. This avoids generating solutions that require
-                // unsupported stack access when copies are materialized.
-                loop {
-                    let mut worst: Option<(u8, usize)> = None;
-                    for value in builder.context().expected().iter() {
-                        if value.is_alias() {
-                            continue;
-                        }
-                        let Some(pos) = builder.get_current_position(value) else {
-                            continue;
-                        };
-                        let current_depth: usize = builder
-                            .stack()
-                            .iter()
-                            .rev()
-                            .take(pos as usize + 1)
-                            .map(|v| v.stack_size())
-                            .sum();
-                        let projected_depth = current_depth + missing_copy_felts;
-                        if projected_depth > MASM_STACK_WINDOW_FELTS {
-                            match worst {
-                                None => worst = Some((pos, current_depth)),
-                                Some((_, best_depth)) if current_depth > best_depth => {
-                                    worst = Some((pos, current_depth))
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-
-                    let Some((pos, _)) = worst else {
-                        break;
-                    };
-                    if pos == 0 {
-                        break;
-                    }
-                    builder.movup(pos);
-                    changed = true;
-                }
-            }
+            changed |= preemptively_move_endangered_operands_to_top(builder);
 
             // Materialize copies
             let mut materialized = SmallSet::<ValueOrAlias, 4>::default();
