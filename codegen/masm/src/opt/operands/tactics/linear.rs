@@ -2,6 +2,7 @@ use midenc_hir::adt::SmallSet;
 use petgraph::prelude::{DiGraphMap, Direction};
 
 use super::*;
+use crate::opt::operands::MASM_STACK_WINDOW_FELTS;
 
 /// Returns the deepest addressable source index for materializing a copy of `value`.
 ///
