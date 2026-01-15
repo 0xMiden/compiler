@@ -127,9 +127,12 @@ impl OperandMovementConstraintSolver {
     /// Returns true if `solution` would require accessing stack slots beyond what MASM supports.
     ///
     /// MASM stack manipulation instructions can only directly access the first 16 *field elements*
-    /// on the operand stack (indices `0..16`). Since a single operand may consist of multiple
+    /// on the operand stack (indices `0..=15`). Since a single operand may consist of multiple
     /// field elements, an operand index `< 16` can still map to an invalid MASM stack offset.
-    fn solution_requires_unsupported_stack_access(solution: &[Action], stack: &Stack) -> bool {
+    pub(crate) fn solution_requires_unsupported_stack_access(
+        solution: &[Action],
+        stack: &Stack,
+    ) -> bool {
         let mut pending = stack.clone();
         for action in solution.iter().copied() {
             let index = match action {

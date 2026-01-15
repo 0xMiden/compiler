@@ -3,6 +3,27 @@ use petgraph::prelude::{DiGraphMap, Direction};
 
 use super::*;
 
+/// Returns the deepest addressable source index for materializing a copy of `value`.
+///
+/// MASM stack manipulation instructions can only directly access the first 16 field elements on
+/// the operand stack. Since a single operand may consist of multiple field elements, we must
+/// ensure the copy source is within that addressable window.
+fn find_deepest_addressable_copy_source(stack: &Stack, value: &ValueOrAlias) -> Option<u8> {
+    let target = value.unaliased();
+    let mut required_depth = 0usize;
+    let mut source = None;
+    for (pos, operand) in stack.iter().rev().enumerate() {
+        required_depth += operand.stack_size();
+        if required_depth > 16 {
+            break;
+        }
+        if operand.unaliased() == target {
+            source = Some(pos as u8);
+        }
+    }
+    source
+}
+
 /// This tactic produces a solution for the given constraints by traversing
 /// the stack top-to-bottom, copying/evicting/swapping as needed to put
 /// the expected value for the current working index in place.
@@ -26,22 +47,22 @@ impl Tactic for Linear {
 
             let mut graph = DiGraphMap::<Operand, ()>::new();
 
-            // If materializing all missing copies will grow the stack beyond the addressable MASM
-            // operand window, ensure move-constrained expected operands remain reachable after all
-            // copies are pushed.
-            let missing_copies = builder
+            // If materializing all missing copies will push move-constrained expected operands
+            // beyond the addressable MASM operand window, move them to the top while they are
+            // still reachable.
+            let missing_copy_felts: usize = builder
                 .context()
                 .expected()
                 .iter()
                 .filter(|value| value.is_alias() && builder.get_current_position(value).is_none())
-                .count();
-            if builder.stack().len() + missing_copies > 16 {
-                let max_safe_index = 15usize.saturating_sub(missing_copies);
+                .map(|value| value.stack_size())
+                .sum();
+            if missing_copy_felts > 0 {
                 // Repeatedly move the deepest move-constrained operand that would fall out of the
                 // addressable window to the top. This avoids generating solutions that require
-                // stack access at index 16+ when copies are materialized.
+                // unsupported stack access when copies are materialized.
                 loop {
-                    let mut worst: Option<u8> = None;
+                    let mut worst: Option<(u8, usize)> = None;
                     for value in builder.context().expected().iter() {
                         if value.is_alias() {
                             continue;
@@ -49,14 +70,31 @@ impl Tactic for Linear {
                         let Some(pos) = builder.get_current_position(value) else {
                             continue;
                         };
-                        if pos as usize > max_safe_index {
-                            worst = Some(worst.map_or(pos, |best| core::cmp::max(best, pos)));
+                        let current_depth: usize = builder
+                            .stack()
+                            .iter()
+                            .rev()
+                            .take(pos as usize + 1)
+                            .map(|v| v.stack_size())
+                            .sum();
+                        let projected_depth = current_depth + missing_copy_felts;
+                        if projected_depth > 16 {
+                            match worst {
+                                None => worst = Some((pos, current_depth)),
+                                Some((_, best_depth)) if current_depth > best_depth => {
+                                    worst = Some((pos, current_depth))
+                                }
+                                _ => {}
+                            }
                         }
                     }
 
-                    let Some(pos) = worst else {
+                    let Some((pos, _)) = worst else {
                         break;
                     };
+                    if pos == 0 {
+                        break;
+                    }
                     builder.movup(pos);
                     changed = true;
                 }
@@ -80,7 +118,8 @@ impl Tactic for Linear {
                     }
                     // `expected` isn't on the stack because it is a copy we haven't materialized yet
                     assert!(expected.is_alias());
-                    let source_at = builder.unwrap_current_position(&expected.unaliased());
+                    let source_at = find_deepest_addressable_copy_source(builder.stack(), expected)
+                        .ok_or(TacticError::NotApplicable)?;
                     match next_copy {
                         None => next_copy = Some((source_at, *expected)),
                         Some((best_at, _)) if source_at > best_at => {
@@ -98,8 +137,8 @@ impl Tactic for Linear {
                     "materializing copy of {expected:?} from index {source_at} to top of stack",
                 );
 
-                // When the stack contains exactly 16 operands, we cannot emit stack manipulation
-                // instructions that directly address index 16+.
+                // When the stack contains exactly 16 field elements, we cannot emit stack
+                // manipulation instructions that directly address index 16+.
                 //
                 // If the only missing piece is a copy of the operand already on top of the stack,
                 // we can safely materialize it by first pushing the original below the 16-operand
@@ -334,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn linear_tactic_does_not_require_out_of_range_actions_when_copies_grow_stack() {
+    fn linear_tactic_regression_case_does_not_require_unsupported_stack_access() {
         // Regression test: when the stack grows beyond 16 operands due to copy materialization,
         // the tactic must still produce a solution that never requires addressing index 16+.
         let problem = testing::make_problem_inputs(
@@ -342,20 +381,6 @@ mod tests {
             8,
             0b1111_1000,
         );
-
-        let actions = OperandMovementConstraintSolver::new_with_options(
-            &problem.expected,
-            &problem.constraints,
-            &problem.stack,
-            SolverOptions {
-                fuel: 10,
-                ..Default::default()
-            },
-        )
-        .expect("expected solver context to be valid")
-        .solve_with_tactic::<Linear>()
-        .expect("expected tactic to be applicable")
-        .expect("expected tactic to produce a complete solution");
 
         let context = SolverContext::new(
             &problem.expected,
@@ -367,62 +392,6 @@ mod tests {
             },
         )
         .expect("expected solver context to be valid");
-        let mut pending = context.stack().clone();
-        for action in actions {
-            let index = match action {
-                super::Action::Copy(index)
-                | super::Action::Swap(index)
-                | super::Action::MoveUp(index)
-                | super::Action::MoveDown(index) => index,
-            };
-            let required_depth: usize =
-                pending.iter().rev().take(index as usize + 1).map(|v| v.stack_size()).sum();
-            assert!(
-                index < 16,
-                "tactic generated out-of-range action {action:?} for problem {problem:#?}"
-            );
-            assert!(
-                required_depth <= 16,
-                "tactic requires stack access at depth {required_depth} for action {action:?} in \
-                 problem {problem:#?}"
-            );
-
-            match action {
-                super::Action::Copy(index) => {
-                    let value = pending[index as usize];
-                    pending.push(value);
-                }
-                super::Action::Swap(index) => {
-                    pending.swap(index as usize);
-                }
-                super::Action::MoveUp(index) => {
-                    pending.movup(index as usize);
-                }
-                super::Action::MoveDown(index) => {
-                    pending.movdn(index as usize);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn linear_tactic_handles_regression_case_via_public_test_helper() -> Result<(), TestCaseError> {
-        let problem = testing::make_problem_inputs(
-            vec![0, 6, 9, 3, 2, 11, 5, 12, 10, 4, 1, 7, 8, 13],
-            8,
-            0b1111_1000,
-        );
-
-        testing::solve_problem_with_tactic::<Linear>(problem)
-    }
-
-    #[test]
-    fn linear_tactic_consistently_solves_regression_case() {
-        let problem = testing::make_problem_inputs(
-            vec![0, 6, 9, 3, 2, 11, 5, 12, 10, 4, 1, 7, 8, 13],
-            8,
-            0b1111_1000,
-        );
 
         for _ in 0..64 {
             let actions = OperandMovementConstraintSolver::new_with_options(
@@ -440,6 +409,15 @@ mod tests {
             assert!(
                 actions.is_some(),
                 "linear tactic produced a partial solution for regression case: {problem:#?}"
+            );
+            let actions = actions.unwrap();
+            assert!(
+                !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                    &actions,
+                    context.stack(),
+                ),
+                "linear tactic produced a solution requiring unsupported stack access: \
+                 {problem:#?}"
             );
         }
     }
