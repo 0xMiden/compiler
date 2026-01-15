@@ -233,7 +233,11 @@ impl ProjectBuilder {
         self
     }
 
-    /// Creates the project.
+    /// Creates the project on disk.
+    ///
+    /// This is intentionally incremental: it prunes stale files from previous runs and rewrites
+    /// only changed files, while preserving Cargo artifacts like `target/` and `Cargo.lock` to
+    /// maximize caching across test runs.
     pub fn build(mut self) -> Project {
         let last_path_component =
             self.root.root().file_name().unwrap().to_string_lossy().to_string();
