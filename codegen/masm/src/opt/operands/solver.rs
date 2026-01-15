@@ -274,24 +274,24 @@ impl OperandMovementConstraintSolver {
                                 Some(best_size) if best_size > solution_size => {
                                     best_solution = Some(solution);
                                     log::trace!(
-                                        "a better solution ({solution_size} vs {best_size}) was found \
-                                         using tactic {}",
+                                        "a better solution ({solution_size} vs {best_size}) was \
+                                         found using tactic {}",
                                         tactic.name()
                                     );
                                 }
                                 Some(best_size) => {
                                     log::trace!(
-                                        "a solution of size {solution_size} was found using tactic \
-                                         {}, but it is no better than the best found so far \
-                                         ({best_size})",
+                                        "a solution of size {solution_size} was found using \
+                                         tactic {}, but it is no better than the best found so \
+                                         far ({best_size})",
                                         tactic.name()
                                     );
                                 }
                                 None => {
                                     best_solution = Some(solution);
                                     log::trace!(
-                                        "an initial solution of size {solution_size} was found using \
-                                         tactic {}",
+                                        "an initial solution of size {solution_size} was found \
+                                         using tactic {}",
                                         tactic.name()
                                     );
                                 }

@@ -159,11 +159,7 @@ impl Tactic for Linear {
                 // This prevents generating solutions that would require an invalid `swap 16` or
                 // `movup 16` during cycle resolution.
                 if builder.arity() == MASM_STACK_WINDOW_FELTS
-                    && builder
-                        .stack()
-                        .iter()
-                        .map(|operand| operand.stack_size())
-                        .sum::<usize>()
+                    && builder.stack().iter().map(|operand| operand.stack_size()).sum::<usize>()
                         == MASM_STACK_WINDOW_FELTS
                     && builder.unwrap_expected_position(&expected) == 0
                     && source_at == 0
