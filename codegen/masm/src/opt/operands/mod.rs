@@ -20,7 +20,7 @@ pub(crate) const MASM_STACK_WINDOW_FELTS: usize = 16;
 /// the effect of which is to place all of the current instruction's
 /// operands exactly where they need to be, just when they are
 /// needed.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Action {
     /// Copy the operand at the given index to the top of the stack
     Copy(u8),

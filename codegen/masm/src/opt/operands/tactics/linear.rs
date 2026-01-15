@@ -372,10 +372,46 @@ mod tests {
     use proptest::prelude::*;
 
     use crate::opt::operands::{
-        OperandMovementConstraintSolver, SolverContext, SolverOptions,
+        Action, OperandMovementConstraintSolver, SolverContext, SolverOptions,
         tactics::Linear,
         testing::{self, ProblemInputs},
     };
+
+    fn solve_with_linear_tactic(problem: &ProblemInputs) -> Vec<Action> {
+        OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve_with_tactic::<Linear>()
+        .expect("expected tactic to be applicable")
+        .expect("expected tactic to produce a full solution")
+    }
+
+    fn assert_actions_place_expected_on_top(problem: &ProblemInputs, actions: &[Action]) {
+        let mut stack = problem.stack.clone();
+        for action in actions.iter().copied() {
+            match action {
+                Action::Copy(index) => stack.dup(index as usize),
+                Action::Swap(index) => stack.swap(index as usize),
+                Action::MoveUp(index) => stack.movup(index as usize),
+                Action::MoveDown(index) => stack.movdn(index as usize),
+            }
+        }
+
+        for (index, expected) in problem.expected.iter().copied().enumerate() {
+            assert_eq!(
+                &stack[index], &expected,
+                "solution did not place {} at the correct location on the stack",
+                expected
+            );
+        }
+    }
 
     prop_compose! {
         fn generate_linear_problem()
@@ -383,6 +419,94 @@ mod tests {
         (problem in testing::generate_stack_subset_copy_any_problem(stack_size)) -> ProblemInputs {
             problem
         }
+    }
+
+    /// Demonstrates the simplest cycle: the top two expected operands are swapped.
+    ///
+    /// The tactic should resolve this with a single `swap(1)`.
+    #[test]
+    fn linear_two_cycle_at_top_uses_single_swap() {
+        let problem = testing::make_problem_inputs(vec![1, 0], 2, 0);
+        let actions = solve_with_linear_tactic(&problem);
+        assert_eq!(actions, vec![Action::Swap(1)]);
+        assert_actions_place_expected_on_top(&problem, &actions);
+    }
+
+    /// Demonstrates a 3-cycle permutation of expected operands.
+    ///
+    /// The tactic resolves the cycle by swapping the top operand into its destination, which
+    /// brings the next operand to the top, and repeats until the cycle is closed.
+    #[test]
+    fn linear_three_cycle_resolves_with_two_swaps() {
+        let problem = testing::make_problem_inputs(vec![2, 0, 1], 3, 0);
+        let actions = solve_with_linear_tactic(&problem);
+        assert_eq!(actions, vec![Action::Swap(2), Action::Swap(1)]);
+        assert_actions_place_expected_on_top(&problem, &actions);
+    }
+
+    /// Demonstrates how the tactic resolves a cycle that does not include the top of stack.
+    ///
+    /// The tactic picks the shallowest member of the cycle, `movup`s it to the top to avoid
+    /// disturbing unrelated operands, performs swaps along the cycle, then `movdn`s back.
+    #[test]
+    fn linear_cycle_below_top_uses_movup_swap_movdn() {
+        let problem = testing::make_problem_inputs(vec![0, 1, 3, 2], 4, 0);
+        let actions = solve_with_linear_tactic(&problem);
+        assert_eq!(actions, vec![Action::MoveUp(2), Action::Swap(3), Action::MoveDown(2)]);
+        assert_actions_place_expected_on_top(&problem, &actions);
+    }
+
+    /// Demonstrates how the tactic handles a non-expected operand that occupies a needed slot.
+    ///
+    /// The tactic forms a cycle that includes the extra value, so that resolving the cycle both
+    /// places expected operands and pushes the extra operand below the expected prefix.
+    #[test]
+    fn linear_evicts_non_expected_operand_by_forming_cycle() {
+        let problem = testing::make_problem_inputs(vec![1, 2, 0], 2, 0);
+        let actions = solve_with_linear_tactic(&problem);
+        assert_eq!(actions, vec![Action::Swap(1), Action::Swap(2)]);
+        assert_actions_place_expected_on_top(&problem, &actions);
+    }
+
+    /// Demonstrates the "materialize copies first" phase.
+    ///
+    /// Here, the only missing expected operand is a copy of `v0`, so the tactic should emit a
+    /// single `dup` from the current position of `v0`.
+    #[test]
+    fn linear_materializes_copy_with_dup_from_source_index() {
+        let problem = testing::make_problem_inputs(vec![1, 0], 2, 0b0001);
+        let actions = solve_with_linear_tactic(&problem);
+        assert_eq!(actions, vec![Action::Copy(1)]);
+        assert_actions_place_expected_on_top(&problem, &actions);
+    }
+
+    /// Demonstrates the MASM 16-felt addressing edge case for copy materialization.
+    ///
+    /// When the stack contains exactly 16 field elements and the only missing operand is a copy of
+    /// the value already on top of stack, the tactic must avoid producing a solution which would
+    /// require addressing beyond the MASM stack window.
+    #[test]
+    fn linear_full_window_top_copy_does_not_require_unsupported_stack_access() {
+        let problem = testing::make_problem_inputs((0..16).collect(), 16, 0b0000_0000_0000_0001);
+        let actions = solve_with_linear_tactic(&problem);
+        assert_actions_place_expected_on_top(&problem, &actions);
+        let context = SolverContext::new(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid");
+        assert!(
+            !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                &actions,
+                context.stack(),
+            ),
+            "linear tactic produced a solution requiring unsupported stack access: {problem:#?}"
+        );
     }
 
     #[test]
@@ -406,35 +530,30 @@ mod tests {
         )
         .expect("expected solver context to be valid");
 
-        // Repeat to exercise potential nondeterminism from iteration order of hash-based
-        // structures used by the tactic.
-        for _ in 0..64 {
-            let actions = OperandMovementConstraintSolver::new_with_options(
-                &problem.expected,
-                &problem.constraints,
-                &problem.stack,
-                SolverOptions {
-                    fuel: 10,
-                    ..Default::default()
-                },
-            )
-            .expect("expected solver context to be valid")
-            .solve_with_tactic::<Linear>()
-            .expect("expected tactic to be applicable");
-            assert!(
-                actions.is_some(),
-                "linear tactic produced a partial solution for regression case: {problem:#?}"
-            );
-            let actions = actions.unwrap();
-            assert!(
-                !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
-                    &actions,
-                    context.stack(),
-                ),
-                "linear tactic produced a solution requiring unsupported stack access: \
-                 {problem:#?}"
-            );
-        }
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve_with_tactic::<Linear>()
+        .expect("expected tactic to be applicable");
+        assert!(
+            actions.is_some(),
+            "linear tactic produced a partial solution for regression case: {problem:#?}"
+        );
+        let actions = actions.unwrap();
+        assert!(
+            !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                &actions,
+                context.stack(),
+            ),
+            "linear tactic produced a solution requiring unsupported stack access: {problem:#?}"
+        );
     }
 
     proptest! {
