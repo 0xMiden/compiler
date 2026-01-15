@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use miden_mast_package::Package;
 use miden_testing::MockChainBuilder;
 use proc_macro::TokenStream;
@@ -78,6 +80,14 @@ Detected that all of the following variables are `{struct_name}`s: {identifiers}
     Ok(found_vars)
 }
 
+/// Returns the PathBuf containing the `.masp` file of the generated Package.
+fn get_package_path() -> PathBuf {
+    // This env var is set by `cargo miden test`.
+    std::env::var("CARGO_MIDEN_TEST_PACKAGE_PATH")
+        .expect("Failed to obtain CARGO_MIDEN_TEST_PACKAGE_PATH environment variable.")
+        .into()
+}
+
 /// Parse the arguments of a `#[miden-test]` function and check for `Package`s.
 ///
 /// If the function has a single `Package` as argument, then it is removed from
@@ -96,12 +106,10 @@ fn load_package(function: &mut syn::ItemFn) {
         return;
     };
 
-    // This env var is set by `cargo miden test`.
-    let package_path = std::env::var("CARGO_MIDEN_TEST_PACKAGE_PATH")
-        .expect("Failed to obtain CARGO_MIDEN_TEST_PACKAGE_PATH environment variable.");
+    let package_path = get_package_path();
 
     let package_bytes = std::fs::read(&package_path).unwrap_or_else(|err| {
-        panic!("failed to read .masp Package file {package_path} logger: {err}")
+        panic!("failed to read .masp Package file {} logger: {err}", package_path.display())
     });
 
     let load_package: Vec<syn::Stmt> = syn::parse_quote! {
