@@ -158,10 +158,15 @@ pub fn miden_test(
     let mut input_fn = parse_macro_input!(item as ItemFn);
 
     let fn_ident = input_fn.sig.ident.clone();
-    let fn_name =
-        fn_ident.clone().span().source_text().unwrap_or_else(|| {
-            panic!("Failed to obtain function name from identifier '{fn_ident}'.")
-        });
+
+    // When running a test function via an IDE*'s rust-analyzer's lens,
+    // source_text() returns None. In those cases, we fallback to a default name
+    // in order for the test to still be executable.
+    //
+    // *: List of IDEs where this has been tested on:
+    // - [VSCode](https://code.visualstudio.com/)
+
+    let fn_name = fn_ident.clone().span().source_text().unwrap_or(String::from("test_function"));
 
     load_package(&mut input_fn);
     load_mock_chain(&mut input_fn);
