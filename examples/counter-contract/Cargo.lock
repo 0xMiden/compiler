@@ -145,7 +145,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb531853791a215d7c62a30daf0dde835f381ab5de4589cfe7c649d2cbe92bd6"
 dependencies = [
  "addr2line",
- "cfg-if",
+ "cfg-if 1.0.1",
  "libc",
  "miniz_oxide",
  "object",
@@ -210,7 +210,7 @@ dependencies = [
  "arrayref",
  "arrayvec",
  "cc",
- "cfg-if",
+ "cfg-if 1.0.1",
  "constant_time_eq",
 ]
 
@@ -242,6 +242,12 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
+
+[[package]]
+name = "cfg-if"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
@@ -252,7 +258,7 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3613f74bd2eac03dad61bd53dbe620703d4371614fe0bc3b9f04dd36fe4e818"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
  "cipher",
  "cpufeatures",
 ]
@@ -413,7 +419,7 @@ version = "4.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
  "cpufeatures",
  "curve25519-dalek-derive",
  "digest",
@@ -735,7 +741,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d18470a76cb7f8ff746cf1f7470914f900252ec36bbc40b569d74b1258446827"
 dependencies = [
  "cc",
- "cfg-if",
+ "cfg-if 1.0.1",
  "libc",
  "log",
  "rustversion",
@@ -759,7 +765,7 @@ version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "335ff9f135e4384c8150d6f27c6daed433577f86b4750418338c01a1a2528592"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
  "js-sys",
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
@@ -772,7 +778,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26145e563e54f2cadc477553f1ec5ee650b00862f0a58bcd12cbdc5f0ea2d2f4"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
  "js-sys",
  "libc",
  "r-efi",
@@ -968,7 +974,7 @@ version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6e3919bbaa2945715f0bb6d3934a173d1e9a59ac23767fbaaef277265a7411b"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
  "ecdsa",
  "elliptic-curve",
  "once_cell",
@@ -1079,7 +1085,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
  "generator",
  "scoped-tls",
  "tracing",
@@ -1327,7 +1333,7 @@ checksum = "eef536978f24a179d94fa2a41e4f92b28e7d8aab14b8d23df28ad2a3d7098b20"
 dependencies = [
  "backtrace",
  "backtrace-ext",
- "cfg-if",
+ "cfg-if 1.0.1",
  "futures",
  "indenter",
  "lazy_static",
@@ -1449,6 +1455,7 @@ version = "0.7.1"
 name = "miden-test-harness"
 version = "0.5.1"
 dependencies = [
+ "cfg-if 0.1.10",
  "clap",
  "inventory",
  "libtest-mimic",
@@ -1744,7 +1751,7 @@ version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc838d2a56b5b1a6c25f55575dfc605fabb63bb2365f6c2353ef9159aa69e4a5"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
  "libc",
  "redox_syscall",
  "smallvec",
@@ -2210,7 +2217,7 @@ version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
  "cpufeatures",
  "digest",
 ]
@@ -2423,7 +2430,7 @@ version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
 ]
 
 [[package]]
@@ -2703,7 +2710,7 @@ version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1edc8929d7499fc4e8f0be2262a241556cfc54a0bea223790e71446f2aab1ef5"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.1",
  "once_cell",
  "wasm-bindgen-macro",
 ]

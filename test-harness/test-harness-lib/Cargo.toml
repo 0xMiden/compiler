@@ -18,6 +18,7 @@ path = "src/mod.rs"
 libtest-mimic = "0.8.1"
 inventory.workspace = true
 clap.workspace = true
+cfg-if = "0.1"
 
 # Miden dependencies
 miden-test-harness-macros.workspace = true

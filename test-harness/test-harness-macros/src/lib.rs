@@ -172,16 +172,21 @@ pub fn miden_test(
     load_mock_chain(&mut input_fn);
 
     let function = quote! {
-        ::miden_test_harness::reexports::miden_test_submit!(
-           ::miden_test_harness::reexports::MidenTest {
-                name: #fn_name,
-                test_fn: #fn_ident,
-            }
-        );
+        ::miden_test_harness::reexports::cfg_if! {
+            if #[cfg(test)] {
 
-        #[test]
-        #[cfg(test)]
-        #input_fn
+                ::miden_test_harness::reexports::miden_test_submit!(
+                    ::miden_test_harness::reexports::MidenTest {
+                        name: #fn_name,
+                        test_fn: #fn_ident,
+                    }
+                );
+
+                // #[test]
+                #input_fn
+            } else {
+            }
+        }
     };
 
     TokenStream::from(function)
