@@ -363,9 +363,7 @@ impl ProjectBuilder {
 /// otherwise discover the repo's root workspace and reject the generated package as an unlisted
 /// member. Adding an (empty) `[workspace]` table makes the generated package its own workspace.
 fn ensure_workspace_root_manifest(manifest: &str) -> Cow<'_, str> {
-    let has_workspace_table = manifest.starts_with("[workspace]")
-        || manifest.contains("\n[workspace]")
-        || manifest.contains("\r\n[workspace]");
+    let has_workspace_table = manifest.lines().any(|line| line.trim() == "[workspace]");
     if has_workspace_table {
         return Cow::Borrowed(manifest);
     }
