@@ -48,8 +48,8 @@ impl Tactic for Linear {
             let mut graph = DiGraphMap::<Operand, ()>::new();
 
             // If materializing all missing copies will push move-constrained expected operands
-            // beyond the addressable MASM operand window, move them to the top while they are
-            // still reachable.
+            // beyond the addressable MASM stack window (16 field elements), move them to the top
+            // while they are still reachable.
             let missing_copy_felts: usize = builder
                 .context()
                 .expected()
@@ -109,7 +109,7 @@ impl Tactic for Linear {
                 }
             }
             // Materialize missing copies deepest-first so that we don't push an as-yet-unmaterialized
-            // copy source past the 16-operand addressing window.
+            // copy source past the 16-field-element addressing window.
             loop {
                 let mut next_copy: Option<(u8, ValueOrAlias)> = None;
                 for expected in builder.context().expected().iter() {
@@ -141,8 +141,8 @@ impl Tactic for Linear {
                 // manipulation instructions that directly address index 16+.
                 //
                 // If the only missing piece is a copy of the operand already on top of the stack,
-                // we can safely materialize it by first pushing the original below the 16-operand
-                // argument window and then duplicating it back to the top.
+                // we can safely materialize it by first pushing the original below the 16-field-element
+                // addressing window and then duplicating it back to the top.
                 //
                 // This prevents generating solutions that would require an invalid `swap 16` or
                 // `movup 16` during cycle resolution.
