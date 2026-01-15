@@ -30,7 +30,7 @@ impl<V: Into<Word> + From<Word>> ValueAccess<V> for Value {
 
 pub trait StorageMapAccess<K, V> {
     /// Returns a map item value for `key` from the account storage.
-    fn get(&self, key: &K) -> V;
+    fn get(&self, key: &K) -> Option<V>;
     /// Sets a map item `value` for `key` in the account storage and returns (old_root, old_value)
     fn set(&mut self, key: K, value: V) -> (StorageCommitmentRoot, V);
 }
@@ -44,8 +44,8 @@ impl<K: Into<Word> + AsRef<Word>, V: From<Word> + Into<Word>> StorageMapAccess<K
 {
     /// Returns a map item value from the account storage.
     #[inline(always)]
-    fn get(&self, key: &K) -> V {
-        storage::get_map_item(self.slot, key.as_ref()).into()
+    fn get(&self, key: &K) -> Option<V> {
+        Some(storage::get_map_item(self.slot, key.as_ref()).into())
     }
 
     /// Sets a map item `value` in the account storage and returns (old_root, old_value)
