@@ -390,8 +390,8 @@ mod tests {
 
     #[test]
     fn linear_tactic_regression_case_does_not_require_unsupported_stack_access() {
-        // Regression test: when the stack grows beyond 16 operands due to copy materialization,
-        // the tactic must still produce a solution that never requires addressing index 16+.
+        // Regression test: copy materialization can increase stack depth, but the tactic must
+        // still never require addressing beyond the MASM stack window (16 field elements).
         let problem = testing::make_problem_inputs(
             vec![0, 6, 9, 3, 2, 11, 5, 12, 10, 4, 1, 7, 8, 13],
             8,
@@ -409,6 +409,8 @@ mod tests {
         )
         .expect("expected solver context to be valid");
 
+        // Repeat to exercise potential nondeterminism from iteration order of hash-based
+        // structures used by the tactic.
         for _ in 0..64 {
             let actions = OperandMovementConstraintSolver::new_with_options(
                 &problem.expected,
