@@ -1,12 +1,8 @@
 use std::{path::PathBuf, process::Command};
 
-use anyhow::bail;
 use clap::Args;
 
-use crate::{
-    commands::{build, BuildCommand},
-    BuildOutput, CommandOutput, OutputType,
-};
+use crate::commands::build;
 
 /// Command-line arguments accepted by `cargo miden build`.
 ///
@@ -24,22 +20,7 @@ pub struct TestCommand {
 
 impl TestCommand {
     pub fn exec(self) -> anyhow::Result<()> {
-        let build = BuildCommand {
-            args: self.args.clone(),
-        };
-
-        let Some(CommandOutput::BuildCommandOutput {
-            output: BuildOutput::Masm { artifact_path },
-        }) = build.exec(OutputType::Masm)?
-        else {
-            // This should never happend since we are hardcoding the output as MASM.
-            bail!("cargo miden test requires projects to be compiled to a masm artifact.")
-        };
-
         let spawn_args = test_cargo_args();
-        unsafe {
-            std::env::set_var("CARGO_MIDEN_TEST_PACKAGE_PATH", artifact_path);
-        }
 
         run_cargo_test(&spawn_args)?;
 
