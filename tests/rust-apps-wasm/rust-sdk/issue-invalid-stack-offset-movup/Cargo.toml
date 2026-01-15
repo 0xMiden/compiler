@@ -1,0 +1,32 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "issue-invalid-stack-offset-movup"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../../../sdk/sdk" }
+
+[package.metadata.component]
+package = "miden:issue-invalid-stack-offset-movup"
+
+[package.metadata.miden]
+project-kind = "note-script"
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = false
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug-assertions = true
+overflow-checks = false
+debug = true
+trim-paths = ["diagnostics", "object"]
