@@ -21,10 +21,10 @@ builtin.component miden:rust-sdk-account-asset-build-fungible-asset-binding/rust
             v8 = hir.bitcast v7 : ptr<byte, i32>;
             hir.store v8, v6;
             hir.exec @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/wit_bindgen::rt::run_ctors_once()
-            v252 = arith.constant 10 : felt;
-            v253 = arith.constant 0 : felt;
-            v254 = arith.constant 1 : felt;
-            hir.exec @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/miden_base_sys::bindings::asset::build_fungible_asset(v6, v254, v253, v252)
+            v165 = arith.constant 10 : felt;
+            v166 = arith.constant 0 : felt;
+            v167 = arith.constant 1 : felt;
+            hir.exec @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/miden_base_sys::bindings::asset::build_fungible_asset(v6, v167, v166, v165)
             v15 = builtin.global_symbol @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v16 = hir.bitcast v15 : ptr<byte, i32>;
             v17 = hir.load v16 : i32;
@@ -33,33 +33,33 @@ builtin.component miden:rust-sdk-account-asset-build-fungible-asset-binding/rust
             v21 = arith.constant 8 : u32;
             v20 = hir.bitcast v6 : u32;
             v22 = arith.add v20, v21 : u32 #[overflow = checked];
-            v259 = arith.constant 8 : u32;
-            v24 = arith.mod v22, v259 : u32;
+            v172 = arith.constant 8 : u32;
+            v24 = arith.mod v22, v172 : u32;
             hir.assertz v24 #[code = 250];
             v25 = hir.int_to_ptr v22 : ptr<byte, i64>;
             v26 = hir.load v25 : i64;
-            v258 = arith.constant 8 : u32;
+            v171 = arith.constant 8 : u32;
             v27 = hir.bitcast v19 : u32;
-            v29 = arith.add v27, v258 : u32 #[overflow = checked];
+            v29 = arith.add v27, v171 : u32 #[overflow = checked];
             v30 = arith.constant 4 : u32;
             v31 = arith.mod v29, v30 : u32;
             hir.assertz v31 #[code = 250];
             v32 = hir.int_to_ptr v29 : ptr<byte, i64>;
             hir.store v32, v26;
             v33 = hir.bitcast v6 : u32;
-            v257 = arith.constant 8 : u32;
-            v35 = arith.mod v33, v257 : u32;
+            v170 = arith.constant 8 : u32;
+            v35 = arith.mod v33, v170 : u32;
             hir.assertz v35 #[code = 250];
             v36 = hir.int_to_ptr v33 : ptr<byte, i64>;
             v37 = hir.load v36 : i64;
             v38 = hir.bitcast v19 : u32;
-            v256 = arith.constant 4 : u32;
-            v40 = arith.mod v38, v256 : u32;
+            v169 = arith.constant 4 : u32;
+            v40 = arith.mod v38, v169 : u32;
             hir.assertz v40 #[code = 250];
             v41 = hir.int_to_ptr v38 : ptr<byte, i64>;
             hir.store v41, v37;
-            v255 = arith.constant 16 : i32;
-            v43 = arith.add v6, v255 : i32 #[overflow = wrapping];
+            v168 = arith.constant 16 : i32;
+            v43 = arith.add v6, v168 : i32 #[overflow = wrapping];
             v44 = builtin.global_symbol @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/__stack_pointer : ptr<byte, u8>
             v45 = hir.bitcast v44 : ptr<byte, i32>;
             hir.store v45, v43;
@@ -89,12 +89,12 @@ builtin.component miden:rust-sdk-account-asset-build-fungible-asset-binding/rust
                 v60 = hir.bitcast v59 : ptr<byte, i32>;
                 v61 = hir.load v60 : i32;
                 hir.exec @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/__wasm_call_ctors()
-                v261 = arith.constant 1 : u8;
-                v263 = arith.constant 1048600 : i32;
-                v63 = arith.add v61, v263 : i32 #[overflow = wrapping];
+                v174 = arith.constant 1 : u8;
+                v176 = arith.constant 1048600 : i32;
+                v63 = arith.add v61, v176 : i32 #[overflow = wrapping];
                 v67 = hir.bitcast v63 : u32;
                 v68 = hir.int_to_ptr v67 : ptr<byte, u8>;
-                hir.store v68, v261;
+                hir.store v68, v174;
                 scf.yield ;
             };
             builtin.ret ;
@@ -105,198 +105,72 @@ builtin.component miden:rust-sdk-account-asset-build-fungible-asset-binding/rust
             v74 = builtin.global_symbol @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/__stack_pointer : ptr<byte, u8>
             v75 = hir.bitcast v74 : ptr<byte, i32>;
             v76 = hir.load v75 : i32;
-            v77 = arith.constant 32 : i32;
+            v77 = arith.constant 16 : i32;
             v78 = arith.sub v76, v77 : i32 #[overflow = wrapping];
             v79 = builtin.global_symbol @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/__stack_pointer : ptr<byte, u8>
             v80 = hir.bitcast v79 : ptr<byte, i32>;
             hir.store v80, v78;
             hir.exec @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/miden::asset::build_fungible_asset(v70, v71, v72, v78)
-            v82 = arith.constant 8 : u32;
             v81 = hir.bitcast v78 : u32;
-            v83 = arith.add v81, v82 : u32 #[overflow = checked];
-            v268 = arith.constant 8 : u32;
-            v85 = arith.mod v83, v268 : u32;
-            hir.assertz v85 #[code = 250];
-            v86 = hir.int_to_ptr v83 : ptr<byte, i64>;
-            v87 = hir.load v86 : i64;
-            v89 = arith.constant 24 : u32;
-            v88 = hir.bitcast v78 : u32;
-            v90 = arith.add v88, v89 : u32 #[overflow = checked];
-            v267 = arith.constant 8 : u32;
-            v92 = arith.mod v90, v267 : u32;
-            hir.assertz v92 #[code = 250];
-            v93 = hir.int_to_ptr v90 : ptr<byte, i64>;
-            hir.store v93, v87;
-            v94 = hir.bitcast v78 : u32;
-            v266 = arith.constant 8 : u32;
-            v96 = arith.mod v94, v266 : u32;
-            hir.assertz v96 #[code = 250];
-            v97 = hir.int_to_ptr v94 : ptr<byte, i64>;
-            v98 = hir.load v97 : i64;
-            v100 = arith.constant 16 : u32;
-            v99 = hir.bitcast v78 : u32;
-            v101 = arith.add v99, v100 : u32 #[overflow = checked];
-            v265 = arith.constant 8 : u32;
-            v103 = arith.mod v101, v265 : u32;
-            hir.assertz v103 #[code = 250];
-            v104 = hir.int_to_ptr v101 : ptr<byte, i64>;
-            hir.store v104, v98;
-            v105 = arith.constant 16 : i32;
-            v106 = arith.add v78, v105 : i32 #[overflow = wrapping];
-            hir.exec @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/<miden_stdlib_sys::intrinsics::word::Word>::reverse(v69, v106)
-            v264 = arith.constant 32 : i32;
-            v108 = arith.add v78, v264 : i32 #[overflow = wrapping];
-            v109 = builtin.global_symbol @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/__stack_pointer : ptr<byte, u8>
-            v110 = hir.bitcast v109 : ptr<byte, i32>;
-            hir.store v110, v108;
+            v82 = arith.constant 8 : u32;
+            v83 = arith.mod v81, v82 : u32;
+            hir.assertz v83 #[code = 250];
+            v84 = hir.int_to_ptr v81 : ptr<byte, i64>;
+            v85 = hir.load v84 : i64;
+            v183 = arith.constant 8 : u32;
+            v89 = hir.bitcast v69 : u32;
+            v91 = arith.add v89, v183 : u32 #[overflow = checked];
+            v182 = arith.constant 8 : u32;
+            v93 = arith.mod v91, v182 : u32;
+            hir.assertz v93 #[code = 250];
+            v86 = arith.constant 32 : i64;
+            v87 = hir.cast v86 : u32;
+            v88 = arith.rotl v85, v87 : i64;
+            v94 = hir.int_to_ptr v91 : ptr<byte, i64>;
+            hir.store v94, v88;
+            v181 = arith.constant 8 : u32;
+            v95 = hir.bitcast v78 : u32;
+            v97 = arith.add v95, v181 : u32 #[overflow = checked];
+            v180 = arith.constant 8 : u32;
+            v99 = arith.mod v97, v180 : u32;
+            hir.assertz v99 #[code = 250];
+            v100 = hir.int_to_ptr v97 : ptr<byte, i64>;
+            v101 = hir.load v100 : i64;
+            v105 = hir.bitcast v69 : u32;
+            v179 = arith.constant 8 : u32;
+            v107 = arith.mod v105, v179 : u32;
+            hir.assertz v107 #[code = 250];
+            v178 = arith.constant 32 : i64;
+            v103 = hir.cast v178 : u32;
+            v104 = arith.rotl v101, v103 : i64;
+            v108 = hir.int_to_ptr v105 : ptr<byte, i64>;
+            hir.store v108, v104;
+            v177 = arith.constant 16 : i32;
+            v110 = arith.add v78, v177 : i32 #[overflow = wrapping];
+            v111 = builtin.global_symbol @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/__stack_pointer : ptr<byte, u8>
+            v112 = hir.bitcast v111 : ptr<byte, i32>;
+            hir.store v112, v110;
             builtin.ret ;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word>::reverse(v111: i32, v112: i32) {
-        ^block17(v111: i32, v112: i32):
-            v115 = builtin.global_symbol @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/__stack_pointer : ptr<byte, u8>
-            v116 = hir.bitcast v115 : ptr<byte, i32>;
-            v117 = hir.load v116 : i32;
-            v118 = arith.constant 16 : i32;
-            v119 = arith.sub v117, v118 : i32 #[overflow = wrapping];
-            v121 = arith.constant 8 : u32;
-            v120 = hir.bitcast v112 : u32;
-            v122 = arith.add v120, v121 : u32 #[overflow = checked];
-            v355 = arith.constant 8 : u32;
-            v124 = arith.mod v122, v355 : u32;
-            hir.assertz v124 #[code = 250];
-            v125 = hir.int_to_ptr v122 : ptr<byte, i64>;
-            v126 = hir.load v125 : i64;
-            v354 = arith.constant 8 : u32;
-            v127 = hir.bitcast v119 : u32;
-            v129 = arith.add v127, v354 : u32 #[overflow = checked];
-            v130 = arith.constant 4 : u32;
-            v131 = arith.mod v129, v130 : u32;
-            hir.assertz v131 #[code = 250];
-            v132 = hir.int_to_ptr v129 : ptr<byte, i64>;
-            hir.store v132, v126;
-            v133 = hir.bitcast v112 : u32;
-            v353 = arith.constant 8 : u32;
-            v135 = arith.mod v133, v353 : u32;
-            hir.assertz v135 #[code = 250];
-            v136 = hir.int_to_ptr v133 : ptr<byte, i64>;
-            v137 = hir.load v136 : i64;
-            v138 = hir.bitcast v119 : u32;
-            v352 = arith.constant 4 : u32;
-            v140 = arith.mod v138, v352 : u32;
-            hir.assertz v140 #[code = 250];
-            v141 = hir.int_to_ptr v138 : ptr<byte, i64>;
-            hir.store v141, v137;
-            v142 = arith.constant 12 : i32;
-            v143 = arith.add v119, v142 : i32 #[overflow = wrapping];
-            v113 = arith.constant 0 : i32;
-            v323, v324, v325, v326, v327, v328 = scf.while v113, v119, v143, v111 : i32, i32, i32, i32, i32, i32 {
-            ^block37(v329: i32, v330: i32, v331: i32, v332: i32):
-                v351 = arith.constant 0 : i32;
-                v146 = arith.constant 8 : i32;
-                v147 = arith.eq v329, v146 : i1;
-                v148 = arith.zext v147 : u32;
-                v149 = hir.bitcast v148 : i32;
-                v151 = arith.neq v149, v351 : i1;
-                v317, v318 = scf.if v151 : i32, i32 {
-                ^block36:
-                    v277 = ub.poison i32 : i32;
-                    scf.yield v277, v277;
-                } else {
-                ^block22:
-                    v153 = arith.add v330, v329 : i32 #[overflow = wrapping];
-                    v154 = hir.bitcast v153 : u32;
-                    v350 = arith.constant 4 : u32;
-                    v156 = arith.mod v154, v350 : u32;
-                    hir.assertz v156 #[code = 250];
-                    v157 = hir.int_to_ptr v154 : ptr<byte, felt>;
-                    v158 = hir.load v157 : felt;
-                    v160 = hir.bitcast v331 : u32;
-                    v349 = arith.constant 4 : u32;
-                    v162 = arith.mod v160, v349 : u32;
-                    hir.assertz v162 #[code = 250];
-                    v163 = hir.int_to_ptr v160 : ptr<byte, i32>;
-                    v164 = hir.load v163 : i32;
-                    v165 = hir.bitcast v153 : u32;
-                    v348 = arith.constant 4 : u32;
-                    v167 = arith.mod v165, v348 : u32;
-                    hir.assertz v167 #[code = 250];
-                    v168 = hir.int_to_ptr v165 : ptr<byte, i32>;
-                    hir.store v168, v164;
-                    v169 = hir.bitcast v331 : u32;
-                    v347 = arith.constant 4 : u32;
-                    v171 = arith.mod v169, v347 : u32;
-                    hir.assertz v171 #[code = 250];
-                    v172 = hir.int_to_ptr v169 : ptr<byte, felt>;
-                    hir.store v172, v158;
-                    v175 = arith.constant -4 : i32;
-                    v176 = arith.add v331, v175 : i32 #[overflow = wrapping];
-                    v173 = arith.constant 4 : i32;
-                    v174 = arith.add v329, v173 : i32 #[overflow = wrapping];
-                    scf.yield v174, v176;
-                };
-                v345 = ub.poison i32 : i32;
-                v320 = cf.select v151, v345, v332 : i32;
-                v346 = ub.poison i32 : i32;
-                v319 = cf.select v151, v346, v330 : i32;
-                v276 = arith.constant 1 : u32;
-                v269 = arith.constant 0 : u32;
-                v322 = cf.select v151, v269, v276 : u32;
-                v310 = arith.trunc v322 : i1;
-                scf.condition v310, v317, v319, v318, v320, v330, v332;
-            } do {
-            ^block38(v333: i32, v334: i32, v335: i32, v336: i32, v337: i32, v338: i32):
-                scf.yield v333, v334, v335, v336;
-            };
-            v344 = arith.constant 8 : u32;
-            v178 = hir.bitcast v327 : u32;
-            v180 = arith.add v178, v344 : u32 #[overflow = checked];
-            v343 = arith.constant 4 : u32;
-            v182 = arith.mod v180, v343 : u32;
-            hir.assertz v182 #[code = 250];
-            v183 = hir.int_to_ptr v180 : ptr<byte, i64>;
-            v184 = hir.load v183 : i64;
-            v342 = arith.constant 8 : u32;
-            v185 = hir.bitcast v328 : u32;
-            v187 = arith.add v185, v342 : u32 #[overflow = checked];
-            v341 = arith.constant 8 : u32;
-            v189 = arith.mod v187, v341 : u32;
-            hir.assertz v189 #[code = 250];
-            v190 = hir.int_to_ptr v187 : ptr<byte, i64>;
-            hir.store v190, v184;
-            v191 = hir.bitcast v327 : u32;
-            v340 = arith.constant 4 : u32;
-            v193 = arith.mod v191, v340 : u32;
-            hir.assertz v193 #[code = 250];
-            v194 = hir.int_to_ptr v191 : ptr<byte, i64>;
-            v195 = hir.load v194 : i64;
-            v196 = hir.bitcast v328 : u32;
-            v339 = arith.constant 8 : u32;
-            v198 = arith.mod v196, v339 : u32;
-            hir.assertz v198 #[code = 250];
-            v199 = hir.int_to_ptr v196 : ptr<byte, i64>;
-            hir.store v199, v195;
-            builtin.ret ;
-        };
-
-        private builtin.function @miden::asset::build_fungible_asset(v200: felt, v201: felt, v202: felt, v203: i32) {
-        ^block23(v200: felt, v201: felt, v202: felt, v203: i32):
-            v204, v205, v206, v207 = hir.exec @miden/asset/build_fungible_asset(v200, v201, v202) : felt, felt, felt, felt
-            v208 = hir.bitcast v203 : u32;
-            v209 = hir.int_to_ptr v208 : ptr<byte, felt>;
-            hir.store v209, v204;
-            v210 = arith.constant 4 : u32;
-            v211 = arith.add v208, v210 : u32 #[overflow = checked];
-            v212 = hir.int_to_ptr v211 : ptr<byte, felt>;
-            hir.store v212, v205;
-            v213 = arith.constant 8 : u32;
-            v214 = arith.add v208, v213 : u32 #[overflow = checked];
-            v215 = hir.int_to_ptr v214 : ptr<byte, felt>;
-            hir.store v215, v206;
-            v216 = arith.constant 12 : u32;
-            v217 = arith.add v208, v216 : u32 #[overflow = checked];
-            v218 = hir.int_to_ptr v217 : ptr<byte, felt>;
-            hir.store v218, v207;
+        private builtin.function @miden::asset::build_fungible_asset(v113: felt, v114: felt, v115: felt, v116: i32) {
+        ^block17(v113: felt, v114: felt, v115: felt, v116: i32):
+            v117, v118, v119, v120 = hir.exec @miden/asset/build_fungible_asset(v113, v114, v115) : felt, felt, felt, felt
+            v121 = hir.bitcast v116 : u32;
+            v122 = hir.int_to_ptr v121 : ptr<byte, felt>;
+            hir.store v122, v117;
+            v123 = arith.constant 4 : u32;
+            v124 = arith.add v121, v123 : u32 #[overflow = checked];
+            v125 = hir.int_to_ptr v124 : ptr<byte, felt>;
+            hir.store v125, v118;
+            v126 = arith.constant 8 : u32;
+            v127 = arith.add v121, v126 : u32 #[overflow = checked];
+            v128 = hir.int_to_ptr v127 : ptr<byte, felt>;
+            hir.store v128, v119;
+            v129 = arith.constant 12 : u32;
+            v130 = arith.add v121, v129 : u32 #[overflow = checked];
+            v131 = hir.int_to_ptr v130 : ptr<byte, felt>;
+            hir.store v131, v120;
             builtin.ret ;
         };
 
@@ -312,36 +186,36 @@ builtin.component miden:rust-sdk-account-asset-build-fungible-asset-binding/rust
     };
 
     public builtin.function @binding() -> felt, felt, felt, felt {
-    ^block27:
-        v219 = hir.exec @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1#binding() : i32
-        v361 = arith.constant 0 : i32;
-        v220 = arith.constant 0 : i32;
-        v221 = arith.add v219, v220 : i32 #[overflow = unchecked];
-        v223 = arith.add v221, v361 : i32 #[overflow = unchecked];
-        v359 = arith.constant 0 : i32;
-        v360 = arith.constant 0 : i32;
-        v225 = arith.add v223, v360 : i32 #[overflow = unchecked];
-        v227 = arith.add v225, v359 : i32 #[overflow = unchecked];
-        v228 = hir.int_to_ptr v227 : ptr<byte, felt>;
-        v229 = hir.load v228 : felt;
-        v358 = arith.constant 0 : i32;
-        v230 = arith.constant 4 : i32;
-        v231 = arith.add v223, v230 : i32 #[overflow = unchecked];
-        v233 = arith.add v231, v358 : i32 #[overflow = unchecked];
-        v234 = hir.int_to_ptr v233 : ptr<byte, felt>;
-        v235 = hir.load v234 : felt;
-        v357 = arith.constant 0 : i32;
-        v236 = arith.constant 8 : i32;
-        v237 = arith.add v223, v236 : i32 #[overflow = unchecked];
-        v239 = arith.add v237, v357 : i32 #[overflow = unchecked];
-        v240 = hir.int_to_ptr v239 : ptr<byte, felt>;
-        v241 = hir.load v240 : felt;
-        v356 = arith.constant 0 : i32;
-        v242 = arith.constant 12 : i32;
-        v243 = arith.add v223, v242 : i32 #[overflow = unchecked];
-        v245 = arith.add v243, v356 : i32 #[overflow = unchecked];
-        v246 = hir.int_to_ptr v245 : ptr<byte, felt>;
-        v247 = hir.load v246 : felt;
-        builtin.ret v229, v235, v241, v247;
+    ^block21:
+        v132 = hir.exec @miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1/rust_sdk_account_asset_build_fungible_asset_binding/miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1#binding() : i32
+        v189 = arith.constant 0 : i32;
+        v133 = arith.constant 0 : i32;
+        v134 = arith.add v132, v133 : i32 #[overflow = unchecked];
+        v136 = arith.add v134, v189 : i32 #[overflow = unchecked];
+        v187 = arith.constant 0 : i32;
+        v188 = arith.constant 0 : i32;
+        v138 = arith.add v136, v188 : i32 #[overflow = unchecked];
+        v140 = arith.add v138, v187 : i32 #[overflow = unchecked];
+        v141 = hir.int_to_ptr v140 : ptr<byte, felt>;
+        v142 = hir.load v141 : felt;
+        v186 = arith.constant 0 : i32;
+        v143 = arith.constant 4 : i32;
+        v144 = arith.add v136, v143 : i32 #[overflow = unchecked];
+        v146 = arith.add v144, v186 : i32 #[overflow = unchecked];
+        v147 = hir.int_to_ptr v146 : ptr<byte, felt>;
+        v148 = hir.load v147 : felt;
+        v185 = arith.constant 0 : i32;
+        v149 = arith.constant 8 : i32;
+        v150 = arith.add v136, v149 : i32 #[overflow = unchecked];
+        v152 = arith.add v150, v185 : i32 #[overflow = unchecked];
+        v153 = hir.int_to_ptr v152 : ptr<byte, felt>;
+        v154 = hir.load v153 : felt;
+        v184 = arith.constant 0 : i32;
+        v155 = arith.constant 12 : i32;
+        v156 = arith.add v136, v155 : i32 #[overflow = unchecked];
+        v158 = arith.add v156, v184 : i32 #[overflow = unchecked];
+        v159 = hir.int_to_ptr v158 : ptr<byte, felt>;
+        v160 = hir.load v159 : felt;
+        builtin.ret v142, v148, v154, v160;
     };
 };
