@@ -15,7 +15,7 @@ end
 @callconv("C")
 pub proc entrypoint(felt, felt) -> i32
     push.0
-    movdn.2
+    swap.2
     lte
     neq
 end

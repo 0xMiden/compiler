@@ -6,8 +6,8 @@
   (export "memory" (memory 0))
   (export "entrypoint" (func $entrypoint))
   (func $entrypoint (;0;) (type 0) (param f32 f32) (result i32)
-    local.get 1
     local.get 0
+    local.get 1
     call $intrinsics::felt::lt
     i32.const 0
     i32.ne
