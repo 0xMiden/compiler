@@ -11,7 +11,7 @@ traits re-exported by that crate.
 ### Struct example
 
 ```rust
-use miden_felt::Felt;
+use miden_field::Felt;
 use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
 
 #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
@@ -32,7 +32,7 @@ assert_eq!(roundtrip, value);
 ### Enum example
 
 ```rust
-use miden_felt::Felt;
+use miden_field::Felt;
 use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
 
 #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]

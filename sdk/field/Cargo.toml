@@ -1,6 +1,6 @@
 [package]
-name = "miden-felt"
-description = "A unified Felt type for on-chain and off-chain Miden Rust code"
+name = "miden-field"
+description = "A unified field element type for on-chain and off-chain Miden Rust code"
 version = "0.8.0"
 rust-version.workspace = true
 authors.workspace = true

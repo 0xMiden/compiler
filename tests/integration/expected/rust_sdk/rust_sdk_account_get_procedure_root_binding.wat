@@ -33,7 +33,7 @@
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       i32.const 0
-      call $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
+      call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
       local.get 0
       i32.const 16
       i32.add
@@ -146,7 +146,7 @@
       i64.load align=4
       i64.store
     )
-    (func $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from (;5;) (type 3) (param i32) (result f32)
+    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;5;) (type 3) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and

@@ -21,7 +21,7 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             v9 = hir.bitcast v8 : ptr<byte, i32>;
             hir.store v9, v7;
             v2 = arith.constant 0 : i32;
-            v11 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v2) : felt
+            v11 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v2) : felt
             v13 = arith.constant 12 : u32;
             v12 = hir.bitcast v1 : u32;
             v14 = arith.add v12, v13 : u32 #[overflow = checked];
@@ -218,9 +218,9 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             v174 = arith.add v171, v526 : felt #[overflow = unchecked];
             v163 = arith.constant 48 : i32;
             v164 = arith.add v128, v163 : i32 #[overflow = wrapping];
-            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::wasm32::Felt>>::from(v164, v174)
+            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from(v164, v174)
             v122 = arith.constant 0 : i32;
-            v176 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v122) : felt
+            v176 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v122) : felt
             v178 = arith.constant 60 : u32;
             v177 = hir.bitcast v128 : u32;
             v179 = arith.add v177, v178 : u32 #[overflow = checked];
@@ -501,7 +501,7 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             builtin.ret ;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::wasm32::Felt>>::from(v383: i32, v384: felt) {
+        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from(v383: i32, v384: felt) {
         ^block25(v383: i32, v384: felt):
             v393 = arith.constant 12 : u32;
             v392 = hir.bitcast v383 : u32;
@@ -539,7 +539,7 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             builtin.ret ;
         };
 
-        private builtin.function @<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v414: i32) -> felt {
+        private builtin.function @<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v414: i32) -> felt {
         ^block27(v414: i32):
             v416 = arith.constant 255 : i32;
             v417 = arith.band v414, v416 : i32;

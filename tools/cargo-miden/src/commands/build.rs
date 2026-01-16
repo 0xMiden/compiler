@@ -253,7 +253,7 @@ where
 
     let mut cargo = Command::new(&cargo_path);
     cargo.envs(env);
-    // This env var is used by crates (e.g. `miden-felt`) to distinguish compiling to Wasm for a
+    // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm for a
     // "real" Wasm runtime vs compiling to Wasm as an intermediate artifact that will be compiled
     // to Miden VM code by `midenc`.
     cargo.env("MIDENC_TARGET_IS_MIDEN_VM", "1");

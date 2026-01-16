@@ -10,11 +10,11 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-pub use miden_felt::Felt;
 /// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
 pub use miden_felt_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
 /// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
 pub use miden_felt_repr_derive::DeriveToFeltRepr as ToFeltRepr;
+pub use miden_field::Felt;
 
 /// A reader that wraps a slice of `Felt` elements and tracks the current position.
 pub struct FeltReader<'a> {

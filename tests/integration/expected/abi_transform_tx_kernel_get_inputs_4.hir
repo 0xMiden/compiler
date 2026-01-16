@@ -118,7 +118,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.assertz v78 #[code = 250];
             v79 = hir.int_to_ptr v76 : ptr<byte, i32>;
             v80 = hir.load v79 : i32;
-            v81 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<miden_felt::wasm32::Felt as core::convert::From<u32>>::from(v80) : felt
+            v81 = hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<miden_field::wasm32::Felt as core::convert::From<u32>>::from(v80) : felt
             v745 = arith.constant 4 : felt;
             hir.assert_eq v81, v745;
             v777 = arith.constant 0 : i32;
@@ -218,10 +218,10 @@ builtin.component root_ns:root@1.0.0 {
                             hir.assert_eq v148, v741;
                             v763 = arith.constant 4 : i32;
                             v152 = arith.add v69, v763 : i32 #[overflow = wrapping];
-                            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<alloc::vec::Vec<miden_felt::wasm32::Felt> as core::ops::drop::Drop>::drop(v152)
+                            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v152)
                             v762 = arith.constant 4 : i32;
                             v154 = arith.add v69, v762 : i32 #[overflow = wrapping];
-                            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<alloc::raw_vec::RawVec<miden_felt::wasm32::Felt> as core::ops::drop::Drop>::drop(v154)
+                            hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v154)
                             v761 = arith.constant 16 : i32;
                             v156 = arith.add v69, v761 : i32 #[overflow = wrapping];
                             v157 = builtin.global_symbol @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/__stack_pointer : ptr<byte, u8>
@@ -457,7 +457,7 @@ builtin.component root_ns:root@1.0.0 {
             ub.unreachable ;
         };
 
-        private builtin.function @<alloc::raw_vec::RawVec<miden_felt::wasm32::Felt> as core::ops::drop::Drop>::drop(v304: i32) {
+        private builtin.function @<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v304: i32) {
         ^block44(v304: i32):
             v305 = arith.constant 4 : i32;
             hir.exec @root_ns:root@1.0.0/abi_transform_tx_kernel_get_inputs_4/<alloc::raw_vec::RawVecInner>::deallocate(v304, v305, v305)
@@ -529,12 +529,12 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @<alloc::vec::Vec<miden_felt::wasm32::Felt> as core::ops::drop::Drop>::drop(v360: i32) {
+        private builtin.function @<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v360: i32) {
         ^block48(v360: i32):
             builtin.ret ;
         };
 
-        private builtin.function @<miden_felt::wasm32::Felt as core::convert::From<u32>>::from(v361: i32) -> felt {
+        private builtin.function @<miden_field::wasm32::Felt as core::convert::From<u32>>::from(v361: i32) -> felt {
         ^block50(v361: i32):
             v363 = hir.bitcast v361 : felt;
             builtin.ret v363;

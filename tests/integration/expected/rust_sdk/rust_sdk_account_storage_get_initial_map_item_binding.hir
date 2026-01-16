@@ -96,7 +96,7 @@ builtin.component miden:rust-sdk-account-storage-get-initial-map-item-binding/ru
             v57 = hir.int_to_ptr v54 : ptr<byte, felt>;
             v58 = hir.load v57 : felt;
             v359 = arith.constant 0 : i32;
-            v60 = hir.exec @miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1/rust_sdk_account_storage_get_initial_map_item_binding/<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v359) : felt
+            v60 = hir.exec @miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1/rust_sdk_account_storage_get_initial_map_item_binding/<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v359) : felt
             v358 = arith.constant 16 : i32;
             v62 = arith.add v337, v358 : i32 #[overflow = wrapping];
             hir.exec @miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1/rust_sdk_account_storage_get_initial_map_item_binding/miden::active_account::get_initial_map_item(v60, v37, v44, v51, v58, v62)
@@ -337,7 +337,7 @@ builtin.component miden:rust-sdk-account-storage-get-initial-map-item-binding/ru
             builtin.ret ;
         };
 
-        private builtin.function @<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v234: i32) -> felt {
+        private builtin.function @<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v234: i32) -> felt {
         ^block25(v234: i32):
             v236 = arith.constant 255 : i32;
             v237 = arith.band v234, v236 : i32;

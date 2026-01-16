@@ -363,7 +363,7 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
             v279 = arith.add v835, v882 : i32 #[overflow = wrapping];
             hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_stdlib_sys::intrinsics::advice::adv_insert(v279, v281, v880)
             v879 = arith.constant 0 : i32;
-            v284 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v879) : felt
+            v284 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v879) : felt
             v878 = arith.constant 128 : i32;
             v286 = arith.add v835, v878 : i32 #[overflow = wrapping];
             hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::active_account::get_item(v284, v286)
@@ -847,7 +847,7 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
             builtin.ret ;
         };
 
-        private builtin.function @<miden_felt::wasm32::Felt as core::convert::From<u8>>::from(v648: i32) -> felt {
+        private builtin.function @<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v648: i32) -> felt {
         ^block55(v648: i32):
             v650 = arith.constant 255 : i32;
             v651 = arith.band v648, v650 : i32;
