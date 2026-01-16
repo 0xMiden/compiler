@@ -255,12 +255,12 @@ impl PartialOrd for Felt {
 
     #[inline(always)]
     fn lt(&self, other: &Self) -> bool {
-        unsafe { extern_lt(*other, *self) != 0 }
+        unsafe { extern_lt(*self, *other) != 0 }
     }
 
     #[inline(always)]
     fn le(&self, other: &Self) -> bool {
-        unsafe { extern_le(*other, *self) != 0 }
+        unsafe { extern_le(*self, *other) != 0 }
     }
 }
 
