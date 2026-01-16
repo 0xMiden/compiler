@@ -1,3 +1,7 @@
+#![no_std]
+
+extern crate alloc;
+
 #[cfg(not(target_family = "wasm"))]
 pub mod libtest;
 
