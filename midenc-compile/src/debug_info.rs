@@ -4,7 +4,7 @@
 //! and building a `DebugInfoSection` that can be serialized into the `.debug_info`
 //! custom section of a MASP package.
 
-use alloc::{collections::BTreeMap, string::ToString};
+use alloc::{collections::BTreeMap, format, string::ToString};
 
 use miden_debug_types::{ColumnNumber, LineNumber};
 use miden_mast_package::debug_info::{
@@ -53,21 +53,31 @@ impl DebugInfoBuilder {
     }
 
     /// Adds a file to the file table and returns its index.
+    ///
+    /// The `directory` parameter, if provided, is joined with the path to create
+    /// a full path. The debug info section stores full paths only.
     pub fn add_file(&mut self, path: &str, directory: Option<&str>) -> u32 {
-        if let Some(&idx) = self.file_indices.get(path) {
+        // Build the full path
+        let full_path = if let Some(dir) = directory {
+            if path.starts_with('/') || path.starts_with("\\\\") {
+                // Already absolute
+                path.to_string()
+            } else {
+                format!("{}/{}", dir.trim_end_matches('/'), path)
+            }
+        } else {
+            path.to_string()
+        };
+
+        if let Some(&idx) = self.file_indices.get(&full_path) {
             return idx;
         }
 
-        let path_idx = self.section.add_string(path);
-        let directory_idx = directory.map(|d| self.section.add_string(d));
-
-        let mut file = DebugFileInfo::new(path_idx);
-        if let Some(dir_idx) = directory_idx {
-            file = file.with_directory(dir_idx);
-        }
+        let path_idx = self.section.add_string(&full_path);
+        let file = DebugFileInfo::new(path_idx);
 
         let idx = self.section.add_file(file);
-        self.file_indices.insert(path.to_string(), idx);
+        self.file_indices.insert(full_path, idx);
         idx
     }
 
