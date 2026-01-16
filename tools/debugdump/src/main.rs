@@ -372,15 +372,6 @@ fn print_file(idx: usize, file: &DebugFileInfo, debug_info: &DebugInfoSection, r
 
     print!("  [{:4}] {}", idx, path);
 
-    if let Some(dir_idx) = file.directory_idx {
-        let dir = if raw {
-            format!("str[{}]", dir_idx)
-        } else {
-            debug_info.get_string(dir_idx).unwrap_or("<unknown>").to_string()
-        };
-        print!(" (dir: {})", dir);
-    }
-
     if let Some(checksum) = &file.checksum {
         print!(" [checksum: ");
         for byte in &checksum[..4] {
