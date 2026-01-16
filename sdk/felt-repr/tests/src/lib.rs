@@ -11,11 +11,10 @@ mod onchain;
 
 extern crate alloc;
 
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
-use miden_integration_tests::CompilerTest;
+use miden_integration_tests::{CompilerTest, project};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use temp_dir::TempDir;
 
 /// Get the path to the `miden-felt-repr` crate.
 fn felt_repr_path() -> PathBuf {
@@ -40,15 +39,11 @@ fn sdk_alloc_path() -> PathBuf {
     PathBuf::from(manifest_dir).parent().unwrap().parent().unwrap().join("alloc")
 }
 
-/// Build a compiler test with `miden-felt-repr` dependency.
+/// Build a [`CompilerTest`] with a `miden-felt-repr-onchain` dependency.
 ///
-/// The `temp_dir` must be kept alive for the duration of the test to prevent cleanup.
-fn build_felt_repr_test(
-    temp_dir: &TempDir,
-    name: &str,
-    fn_body: &str,
-    config: WasmTranslationConfig,
-) -> CompilerTest {
+/// The test crate is generated on disk via [`project`], which places it under the Cargo target
+/// directory to reuse build artifacts across test runs.
+fn build_felt_repr_test(name: &str, fn_body: &str, config: WasmTranslationConfig) -> CompilerTest {
     let felt_repr = felt_repr_path();
     let stdlib_sys = stdlib_sys_path();
     let sdk_alloc = sdk_alloc_path();
@@ -116,11 +111,10 @@ pub extern "C" fn entrypoint{fn_body}
 "#
     );
 
-    let project_dir = temp_dir.path().to_path_buf();
-    let src_dir = project_dir.join("src");
-    fs::create_dir_all(&src_dir).expect("failed to create src directory");
-    fs::write(project_dir.join("Cargo.toml"), cargo_toml).expect("failed to write Cargo.toml");
-    fs::write(src_dir.join("lib.rs"), lib_rs).expect("failed to write lib.rs");
+    let cargo_proj = project(name)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", &lib_rs)
+        .build();
 
-    CompilerTest::rust_source_cargo_miden(project_dir, config, ["--test-harness".into()])
+    CompilerTest::rust_source_cargo_miden(cargo_proj.root(), config, ["--test-harness".into()])
 }
