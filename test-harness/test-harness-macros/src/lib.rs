@@ -201,9 +201,21 @@ pub fn miden_test_suite(
 
     let main_function = {
         quote! {
+
+            #[cfg(test)]
+            fn build_package() -> std::vec::Vec<u8> {
+                let package_path = ::miden_test_harness::reexports::build_package();
+                let package_bytes = std::fs::read(package_path.clone()).unwrap_or_else(|err| {
+                    panic!("failed to read .masp Package file {} logger: {err}", package_path.display())
+                });
+                package_bytes
+            }
+
+            #[cfg(test)]
+            extern crate std;
+
             #[cfg(test)]
             fn main() {
-                let package_path = ::miden_test_harness::reexports::build_package();
             }
         }
     };

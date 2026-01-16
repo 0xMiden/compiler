@@ -20,7 +20,11 @@ pub fn build_package() -> std::path::PathBuf {
 
     let stdout = std::string::String::from_utf8_lossy(&output.stdout);
 
-    let path_str = stdout.lines().last().expect("'cargo miden build' produced no output");
+    let path_str = stdout
+        .split(" ")
+        .last()
+        .map(|path| path.trim())
+        .expect("'cargo miden build' produced no output");
 
     path_str.into()
 }
