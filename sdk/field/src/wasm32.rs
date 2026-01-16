@@ -76,7 +76,7 @@ unsafe extern "C" {
     pub(crate) fn extern_add(a: Felt, b: Felt) -> Felt;
 }
 
-// Note: inherent `Felt` methods live in `sdk/felt/src/lib.rs` and delegate to the crate-local
+// Note: inherent `Felt` methods live in `sdk/field/src/lib.rs` and delegate to the crate-local
 // `FeltImpl` trait to ensure the on-chain/off-chain APIs don't drift.
 
 impl FeltImpl for Felt {
@@ -277,7 +277,7 @@ impl Ord for Felt {
     }
 }
 
-// Note: public `assert` helpers live in `sdk/felt/src/lib.rs` to preserve their stable paths in
+// Note: public `assert` helpers live in `sdk/field/src/lib.rs` to preserve their stable paths in
 // emitted WASM and expected-file tests.
 
 impl core::fmt::Display for Felt {

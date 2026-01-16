@@ -3,8 +3,8 @@
 //! These tests verify the correctness of `ToFeltRepr` and `FromFeltRepr` implementations without
 //! involving on-chain execution.
 
-use miden_felt::Felt;
 use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+use miden_field::Felt;
 
 /// Serializes `value` off-chain and deserializes it back, asserting equality.
 fn assert_roundtrip<T>(value: &T)

@@ -94,7 +94,7 @@ proc miden:storage-example/foo@1.0.0#get-asset-qty(
     push.1
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
+    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     push.16
@@ -265,7 +265,7 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
     push.0
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
+    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     dup.1
@@ -489,13 +489,13 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
                     swap.1
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::wasm32::Felt>>::from
+                    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
                     trace.252
                     nop
                     push.1
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
+                    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
                     trace.252
                     nop
                     push.44
@@ -1120,7 +1120,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
 end
 
 @callconv("C")
-proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt::wasm32::Felt>>::from(
+proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from(
     i32,
     felt
 )
@@ -1199,7 +1199,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_felt
 end
 
 @callconv("C")
-proc <miden_felt::wasm32::Felt as core::convert::From<u8>>::from(
+proc <miden_field::wasm32::Felt as core::convert::From<u8>>::from(
     i32
 ) -> felt
     push.255

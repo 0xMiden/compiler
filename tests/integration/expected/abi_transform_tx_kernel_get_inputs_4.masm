@@ -271,7 +271,7 @@ pub proc entrypoint(
     dup.0
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_felt::wasm32::Felt as core::convert::From<u32>>::from
+    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_field::wasm32::Felt as core::convert::From<u32>>::from
     trace.252
     nop
     push.4
@@ -415,7 +415,7 @@ pub proc entrypoint(
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::vec::Vec<miden_felt::wasm32::Felt> as core::ops::drop::Drop>::drop
+                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     push.4
@@ -423,7 +423,7 @@ pub proc entrypoint(
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVec<miden_felt::wasm32::Felt> as core::ops::drop::Drop>::drop
+                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     push.16
@@ -825,7 +825,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
 end
 
 @callconv("C")
-proc <alloc::raw_vec::RawVec<miden_felt::wasm32::Felt> as core::ops::drop::Drop>::drop(
+proc <alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
     push.4
@@ -978,14 +978,14 @@ proc miden_base_sys::bindings::active_note::get_inputs(
 end
 
 @callconv("C")
-proc <alloc::vec::Vec<miden_felt::wasm32::Felt> as core::ops::drop::Drop>::drop(
+proc <alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
     drop
 end
 
 @callconv("C")
-proc <miden_felt::wasm32::Felt as core::convert::From<u32>>::from(
+proc <miden_field::wasm32::Felt as core::convert::From<u32>>::from(
     i32
 ) -> felt
     nop

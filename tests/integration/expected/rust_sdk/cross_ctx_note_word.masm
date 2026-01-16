@@ -1018,7 +1018,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         assert_eq
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_felt::wasm32::Felt as core::convert::From<u32>>::from
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_field::wasm32::Felt as core::convert::From<u32>>::from
         trace.252
         nop
         push.4294967295
@@ -1027,7 +1027,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         assert_eq
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
         trace.252
         nop
         push.122
@@ -1041,7 +1041,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         assert_eq
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_felt::wasm32::Felt as core::convert::From<u16>>::from
+        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word::<miden_field::wasm32::Felt as core::convert::From<u16>>::from
         trace.252
         nop
         push.12
@@ -1206,14 +1206,14 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc <miden_felt::wasm32::Felt as core::convert::From<u32>>::from(
+proc <miden_field::wasm32::Felt as core::convert::From<u32>>::from(
     i32
 ) -> felt
     nop
 end
 
 @callconv("C")
-proc <miden_felt::wasm32::Felt as core::convert::From<u16>>::from(
+proc <miden_field::wasm32::Felt as core::convert::From<u16>>::from(
     i32
 ) -> felt
     push.65535
@@ -1221,7 +1221,7 @@ proc <miden_felt::wasm32::Felt as core::convert::From<u16>>::from(
 end
 
 @callconv("C")
-proc <miden_felt::wasm32::Felt as core::convert::From<u8>>::from(
+proc <miden_field::wasm32::Felt as core::convert::From<u8>>::from(
     i32
 ) -> felt
     push.255

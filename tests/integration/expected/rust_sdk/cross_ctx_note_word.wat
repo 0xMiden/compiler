@@ -256,7 +256,7 @@
       call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 15
-      call $<miden_felt::wasm32::Felt as core::convert::From<u32>>::from
+      call $<miden_field::wasm32::Felt as core::convert::From<u32>>::from
       i32.const -1
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
@@ -265,7 +265,7 @@
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
       local.get 14
-      call $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
+      call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
       i32.const 122
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
@@ -279,7 +279,7 @@
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
       local.get 12
-      call $<miden_felt::wasm32::Felt as core::convert::From<u16>>::from
+      call $<miden_field::wasm32::Felt as core::convert::From<u16>>::from
       i32.const 12
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::assert_eq
@@ -344,17 +344,17 @@
     (func $intrinsics::felt::from_u64_unchecked (;13;) (type 9) (param i64) (result f32)
       unreachable
     )
-    (func $<miden_felt::wasm32::Felt as core::convert::From<u32>>::from (;14;) (type 8) (param i32) (result f32)
+    (func $<miden_field::wasm32::Felt as core::convert::From<u32>>::from (;14;) (type 8) (param i32) (result f32)
       local.get 0
       f32.reinterpret_i32
     )
-    (func $<miden_felt::wasm32::Felt as core::convert::From<u16>>::from (;15;) (type 8) (param i32) (result f32)
+    (func $<miden_field::wasm32::Felt as core::convert::From<u16>>::from (;15;) (type 8) (param i32) (result f32)
       local.get 0
       i32.const 65535
       i32.and
       f32.reinterpret_i32
     )
-    (func $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from (;16;) (type 8) (param i32) (result f32)
+    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;16;) (type 8) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and

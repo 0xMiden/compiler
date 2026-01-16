@@ -65,7 +65,7 @@
       local.get 0
       i32.const 16
       i32.add
-      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::wasm32::Felt; 4]>>::from
+      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
       local.get 0
       i32.const 16
       i32.add
@@ -141,7 +141,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_felt::wasm32::Felt; 4]>>::from (;5;) (type 2) (param i32 i32)
+    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from (;5;) (type 2) (param i32 i32)
       local.get 0
       local.get 1
       i64.load offset=8 align=4

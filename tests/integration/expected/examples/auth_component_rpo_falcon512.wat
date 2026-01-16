@@ -210,7 +210,7 @@
       i32.const 4
       call $miden_stdlib_sys::intrinsics::advice::adv_insert
       i32.const 0
-      call $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from
+      call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
       local.get 4
       i32.const 128
       i32.add
@@ -465,7 +465,7 @@
     (func $std::crypto::hashes::rpo::hash_memory_words (;15;) (type 4) (param i32 i32 i32)
       unreachable
     )
-    (func $<miden_felt::wasm32::Felt as core::convert::From<u8>>::from (;16;) (type 9) (param i32) (result f32)
+    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;16;) (type 9) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
