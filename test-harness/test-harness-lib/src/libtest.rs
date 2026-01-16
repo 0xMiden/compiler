@@ -1,5 +1,3 @@
-use alloc::vec::Vec;
-
 // ============================= Test function ================================
 
 /// Struct that represents a function marked with #[miden_test].
