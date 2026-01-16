@@ -157,36 +157,12 @@ pub fn miden_test(
 ) -> proc_macro::TokenStream {
     let mut input_fn = parse_macro_input!(item as ItemFn);
 
-    let fn_ident = input_fn.sig.ident.clone();
-
-    // When running a test function via an IDE*'s rust-analyzer's lens,
-    // source_text() returns None. In those cases, we fallback to a default name
-    // in order for the test to still be executable.
-    //
-    // *: List of IDEs where this has been tested on:
-    // - [VSCode](https://code.visualstudio.com/)
-
-    let fn_name = fn_ident.clone().span().source_text().unwrap_or(String::from("test_function"));
-
     load_package(&mut input_fn);
     load_mock_chain(&mut input_fn);
 
     let function = quote! {
-        ::miden_test_harness::reexports::cfg_if! {
-            if #[cfg(test)] {
-
-                ::miden_test_harness::reexports::miden_test_submit!(
-                    ::miden_test_harness::reexports::MidenTest {
-                        name: #fn_name,
-                        test_fn: #fn_ident,
-                    }
-                );
-
-                // #[test]
-                #input_fn
-            } else {
-            }
-        }
+        #[test]
+        #input_fn
     };
 
     TokenStream::from(function)
