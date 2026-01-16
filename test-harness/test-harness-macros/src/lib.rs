@@ -106,17 +106,16 @@ fn load_package(function: &mut syn::ItemFn) {
         return;
     };
 
-    let package_path = get_package_path();
-
-    let package_bytes = std::fs::read(&package_path).unwrap_or_else(|err| {
-        panic!("failed to read .masp Package file {} logger: {err}", package_path.display())
-    });
-
     let load_package: Vec<syn::Stmt> = syn::parse_quote! {
-        // Inserts every byte from the package_bytes vector separated by a
-        // comma.  For more information see:
-        // https://docs.rs/quote/latest/quote/macro.quote.html#interpolation
-        let bytes = [#(#package_bytes),*];
+        // Since we rely on the standard libtest function registration mechanism
+        // We currently rely on rustc's standard libtest function registration
+        // mechanism. This is because IDEs, like VSCode, rely on rust-analyzer's
+        // #[test] detection attribute to display the "Run Test" icon.
+        // As far as I've seen, using #[test] on a function generates the
+        // *default* registration code, even when a custom test harness is being
+        // used. This restricts what we can do as "setup code", since we can not
+        // control the order in which tests are executed.
+        let bytes = crate::PACKAGE_BYTES.get_or_init(|| crate::build_package());
 
         let #package_binding_name =
             <::miden_objects::vm::Package as ::miden_objects::utils::Deserializable>::read_from_bytes(&bytes).unwrap();
@@ -213,6 +212,9 @@ pub fn miden_test_suite(
 
             #[cfg(test)]
             extern crate std;
+
+            #[cfg(test)]
+            static PACKAGE_BYTES: std::sync::OnceLock<std::vec::Vec<u8>> = std::sync::OnceLock::new();
 
             #[cfg(test)]
             fn main() {
