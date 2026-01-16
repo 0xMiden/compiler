@@ -1,5 +1,30 @@
 use alloc::vec::Vec;
 
+
+extern crate std;
+
+// ================================ Build ======================================
+
+/// Runs `cargo miden build` to build the .masp Package and returns the path
+/// where it is stored.
+pub fn build_package() -> std::path::PathBuf {
+    let output = std::process::Command::new("cargo")
+        .args(["miden", "build"])
+        .output()
+        .expect("Failed to execute 'cargo miden build'");
+
+    if !output.status.success() {
+        let stderr = std::string::String::from_utf8_lossy(&output.stderr);
+        panic!("'cargo miden build' failed with status: {}\n{}", output.status, stderr);
+    }
+
+    let stdout = std::string::String::from_utf8_lossy(&output.stdout);
+
+    let path_str = stdout.lines().last().expect("'cargo miden build' produced no output");
+
+    path_str.into()
+}
+
 // ============================= Test function ================================
 
 /// Struct that represents a function marked with #[miden_test].

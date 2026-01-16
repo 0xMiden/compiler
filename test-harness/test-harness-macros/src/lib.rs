@@ -203,9 +203,7 @@ pub fn miden_test_suite(
         quote! {
             #[cfg(test)]
             fn main() {
-                let args = ::miden_test_harness::reexports::MidenTestArguments::from_args();
-
-                ::miden_test_harness::reexports::run(args);
+                let package_path = ::miden_test_harness::reexports::build_package();
             }
         }
     };
