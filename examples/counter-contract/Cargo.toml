@@ -11,12 +11,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 miden = { path = "../../sdk/sdk" }
-miden-test-harness-macros = { path = "../../test-harness/test-harness-macros"}
-miden-test-harness = { path = "../../test-harness/test-harness-lib"}
-
-[dev-dependencies]
-miden-objects = { version = "0.12", default-features = false }
-miden-lib = { version = "0.12", default-features = false }
 
 [package.metadata.component]
 package = "miden:counter-contract"
@@ -24,8 +18,3 @@ package = "miden:counter-contract"
 [package.metadata.miden]
 project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
-
-[[test]]
-name = "lib"
-path = "src/lib.rs"
-harness = false
