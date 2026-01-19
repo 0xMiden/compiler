@@ -2,7 +2,7 @@ use miden_mast_package::Package;
 use miden_testing::MockChainBuilder;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn};
+use syn::{ItemFn, parse_macro_input};
 
 // Returns the identifier for a specific FnArg
 fn get_binding_and_type(fn_arg: &syn::FnArg) -> Option<(&syn::PatIdent, &syn::PathSegment)> {
@@ -217,24 +217,24 @@ pub fn miden_test_suite(
 
     let main_function = {
         quote! {
+            miden_test_harness::cfg_if! {
+                if #[cfg(test)] {
+                    fn build_package() -> std::vec::Vec<u8> {
+                        let package_path = ::miden_test_harness::reexports::build_package();
+                        let package_bytes = std::fs::read(package_path.clone()).unwrap_or_else(|err| {
+                            panic!("failed to read .masp Package file {} logger: {err}", package_path.display())
+                        });
+                        package_bytes
+                    }
 
-            #[cfg(test)]
-            fn build_package() -> std::vec::Vec<u8> {
-                let package_path = ::miden_test_harness::reexports::build_package();
-                let package_bytes = std::fs::read(package_path.clone()).unwrap_or_else(|err| {
-                    panic!("failed to read .masp Package file {} logger: {err}", package_path.display())
-                });
-                package_bytes
-            }
+                    extern crate std;
 
-            #[cfg(test)]
-            extern crate std;
+                    static PACKAGE_BYTES: std::sync::OnceLock<std::vec::Vec<u8>> = std::sync::OnceLock::new();
 
-            #[cfg(test)]
-            static PACKAGE_BYTES: std::sync::OnceLock<std::vec::Vec<u8>> = std::sync::OnceLock::new();
-
-            #[cfg(test)]
-            fn main() {
+                    fn main() {
+                    }
+                } else {
+                }
             }
         }
     };

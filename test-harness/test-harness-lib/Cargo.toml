@@ -15,7 +15,7 @@ edition.workspace = true
 path = "src/mod.rs"
 
 [dependencies]
-cfg-if = "0.1"
+cfg-if = "1.0"
 
 # Miden dependencies
 miden-test-harness-macros.workspace = true
