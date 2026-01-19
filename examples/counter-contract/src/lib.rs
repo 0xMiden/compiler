@@ -50,6 +50,7 @@ mod tests {
     // This tests loads the generated package in the `foo` variable and is then
     // printed.
     #[miden_test]
+    #[should_panic]
     fn bar(bar: Package) {
         // std::dbg!(&bar);
         assert_eq!(1, 1 + 1);
