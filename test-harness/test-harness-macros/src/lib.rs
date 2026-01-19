@@ -1,10 +1,8 @@
-use std::path::PathBuf;
-
 use miden_mast_package::Package;
 use miden_testing::MockChainBuilder;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn};
+use syn::{ItemFn, parse_macro_input};
 
 // Returns the identifier for a specific FnArg
 fn get_binding_and_type(fn_arg: &syn::FnArg) -> Option<(&syn::PatIdent, &syn::PathSegment)> {
@@ -78,14 +76,6 @@ Detected that all of the following variables are `{struct_name}`s: {identifiers}
     }
 
     Ok(found_vars)
-}
-
-/// Returns the PathBuf containing the `.masp` file of the generated Package.
-fn get_package_path() -> PathBuf {
-    // This env var is set by `cargo miden test`.
-    std::env::var("CARGO_MIDEN_TEST_PACKAGE_PATH")
-        .expect("Failed to obtain CARGO_MIDEN_TEST_PACKAGE_PATH environment variable.")
-        .into()
 }
 
 /// Parse the arguments of a `#[miden-test]` function and check for `Package`s.

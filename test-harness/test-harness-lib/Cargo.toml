@@ -24,3 +24,4 @@ cfg-if = "0.1"
 miden-test-harness-macros.workspace = true
 miden-testing = "0.12.4"
 miden-objects = "0.12.4"
+cargo-miden.workspace = true

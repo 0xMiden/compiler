@@ -2778,6 +2778,7 @@ dependencies = [
 name = "miden-test-harness"
 version = "0.6.0"
 dependencies = [
+ "cargo-miden",
  "cfg-if 0.1.10",
  "clap",
  "inventory",
