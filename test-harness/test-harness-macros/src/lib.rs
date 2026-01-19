@@ -2,7 +2,7 @@ use miden_mast_package::Package;
 use miden_testing::MockChainBuilder;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{ItemFn, parse_macro_input};
+use syn::{parse_macro_input, ItemFn};
 
 // Returns the identifier for a specific FnArg
 fn get_binding_and_type(fn_arg: &syn::FnArg) -> Option<(&syn::PatIdent, &syn::PathSegment)> {
@@ -139,6 +139,7 @@ fn load_mock_chain(function: &mut syn::ItemFn) {
     }
 }
 
+/// Used to mark a function as a test that runs under miden's test-harness.
 #[proc_macro_attribute]
 pub fn miden_test(
     _attr: proc_macro::TokenStream,
@@ -149,14 +150,40 @@ pub fn miden_test(
     load_package(&mut input_fn);
     load_mock_chain(&mut input_fn);
 
+    let fn_ident = input_fn.sig.ident.clone();
+    let fn_name = fn_ident.clone().span().source_text().unwrap_or(String::from("test_function"));
+    let fn_block = input_fn.block.clone();
+
+    let inner_ident =
+        syn::Ident::new(format!("inner_{}", fn_name.as_str()).as_str(), fn_ident.span());
+
+    // We create a wrapping inner_ident function in order to both register the
+    // function and use #[test].  If we try to register the original function
+    // identifier with [miden_test_submit], we get a compilation error stating
+    // that the symbol does exist.
     let function = quote! {
         #[test]
-        #input_fn
+        fn #fn_ident() {
+            #inner_ident()
+        }
+
+        fn #inner_ident() {
+            #fn_block
+        }
+
+        ::miden_test_harness::reexports::miden_test_submit!(
+            ::miden_test_harness::reexports::MidenTest {
+                name: #fn_name,
+                test_fn: #inner_ident,
+            }
+        );
+
     };
 
     TokenStream::from(function)
 }
 
+/// Used to wrap the `mod tests` declaration.
 #[proc_macro_attribute]
 pub fn miden_test_suite(
     _attr: proc_macro::TokenStream,

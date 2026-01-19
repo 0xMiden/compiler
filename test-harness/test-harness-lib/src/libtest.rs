@@ -72,15 +72,20 @@ fn runner(test: fn() -> ()) -> impl FnOnce() -> Result<(), libtest_mimic::Failed
     }
 }
 
-// ============================ Executing tests ===============================
+// =========================== Querying functions ==============================
 
-pub fn run(args: MidenTestArguments) {
-    let args = args.into();
-
-    let tests: Vec<libtest_mimic::Trial> =
-        inventory::iter::<MidenTest>.into_iter().map(|test| test.into()).collect();
-
-    let conclusion = libtest_mimic::run(&args, tests);
-
-    conclusion.exit()
+/// Access all functions tagged with #[miden_test].
+///
+/// NOTE: currently we don't use `inventory`'s vector to execute tests, since we
+/// rely on cargo's default registration mechanism. This stems from the fact
+/// that we rely on the #[test] attribute for execution, since it enables
+/// specific test execution from IDEs, like VSCode.  Using #[test], however,
+/// generates the libtest related code, *even when libtest harness is off*. This
+/// means that if both `inventory` and `#[test]` are used, every test gets run
+/// run twice, once in [libtest_mimic::run] and another time in rust's libtest
+/// harness.
+///
+/// Currently, this list is not used.
+pub fn registered_test_function() -> impl Iterator<Item = &'static MidenTest> {
+    inventory::iter::<MidenTest>.into_iter()
 }
