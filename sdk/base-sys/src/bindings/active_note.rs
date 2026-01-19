@@ -40,7 +40,7 @@ unsafe extern "C" {
 /// let target = AccountId::from(inputs[0], inputs[1]);
 /// ```
 pub fn get_inputs() -> Vec<Felt> {
-    const MAX_INPUTS: usize = 256;
+    const MAX_INPUTS: usize = 1024;
     let mut inputs: Vec<Felt> = Vec::with_capacity(MAX_INPUTS);
     let num_inputs = unsafe {
         // Ensure the pointer is a valid Miden pointer
