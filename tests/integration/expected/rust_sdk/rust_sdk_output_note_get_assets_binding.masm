@@ -540,10 +540,12 @@ proc <alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(
     trace.252
     nop
     push.16
+    push.256
     push.8
-    dup.2
+    dup.3
     u32wrapping_add
-    dup.1
+    dup.2
+    swap.3
     swap.2
     swap.1
     trace.240
@@ -620,6 +622,7 @@ end
 proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     i32,
     i32,
+    i32,
     i32
 )
     push.1114144
@@ -643,23 +646,24 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     trace.252
     nop
     push.0
-    push.256
     push.4
-    dup.3
+    dup.2
     u32wrapping_add
-    movup.4
-    swap.6
-    movdn.4
     movup.3
     swap.5
     movdn.3
+    swap.1
+    swap.2
+    swap.6
+    swap.4
+    swap.1
     trace.240
     nop
     exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::try_allocate_in
     trace.252
     nop
     push.8
-    dup.1
+    dup.2
     add
     u32assert
     push.4
@@ -676,7 +680,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     trace.252
     nop
     push.4
-    dup.2
+    dup.3
     add
     u32assert
     push.4
@@ -699,7 +703,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     neq
     if.true
         push.12
-        dup.2
+        dup.3
         add
         u32assert
         push.4
@@ -716,7 +720,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
         trace.252
         nop
         push.4
-        dup.4
+        dup.3
         add
         u32assert
         push.4
@@ -732,7 +736,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
         exec.::intrinsics::mem::store_sw
         trace.252
         nop
-        movup.2
+        swap.1
         push.4
         dup.1
         swap.1
@@ -757,7 +761,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
         trace.252
         nop
     else
-        movup.2
+        swap.1
         drop
         push.12
         movup.2
