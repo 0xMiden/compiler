@@ -1,7 +1,7 @@
 use core::{
     any::{Any, TypeId},
     marker::Unsize,
-    ptr::{null, DynMetadata, Pointee},
+    ptr::{DynMetadata, Pointee, null},
 };
 
 #[doc(hidden)]
@@ -53,7 +53,7 @@ impl TraitInfo {
         Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
     {
         debug_assert!(self.type_id == TypeId::of::<Trait>());
-        core::mem::transmute(self.metadata)
+        unsafe { core::mem::transmute(self.metadata) }
     }
 }
 impl Eq for TraitInfo {}

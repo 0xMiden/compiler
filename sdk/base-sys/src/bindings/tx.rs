@@ -1,7 +1,7 @@
 use miden_stdlib_sys::{Felt, Word};
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::tx::get_block_number"]
     pub fn extern_tx_get_block_number() -> Felt;
 

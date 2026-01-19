@@ -17,7 +17,7 @@ ABI _transformation strategies_.
 
 ## Summary
 
-The gist of the problem is that in Miden, the size and number of procedure results is only constrained
+The gist of the problem is that in Miden, the size and number of procedure results are only constrained
 by the maximum addressable operand stack depth. In most programming languages, particularly those in
 which interop is typically performed using some variant of the C ABI (commonly the one described
 in the System V specification), the number of results is almost always limited to a single result,
@@ -174,7 +174,7 @@ adapter_function.store(tx_kernel_func_val, ptr);
 adapter_function.build();
 ```
 
-Here is how the adapter might look like in a pseudo-code for the `add_asset` function:
+Here is how the adapter might look in pseudo-code for the `add_asset` function:
 
 ```wat
 /// Takes an Asset as an argument and returns a new Asset
@@ -237,7 +237,7 @@ the return value is a list, expect the last argument in the Wasm core(HIR) signa
 The adapter function calls allocates `asset_count * item_size` memory via the `realloc` call and
 passes the pointer to the newly allocated memory to the tx kernel function.
 
-Here is how the adapter function might look like in a pseudo-code for the `get_assets` function:
+Here is how the adapter function might look in pseudo-code for the `get_assets` function:
 
 ```rust
 func wasm_core_get_assets(asset_count: u32, ptr_ptr: i32) {
@@ -254,12 +254,12 @@ func wasm_core_get_assets(asset_count: u32, ptr_ptr: i32) {
 
 Since the `get_assets` tx kernel function in the current form can trash the provided memory if
 the actual assets count differs from the returned by `get_assets_count`, we can introduce the
-asset count parameter to the `get_assets` tx kernel function and check that it the same as the
+asset count parameter to the `get_assets` tx kernel function and check that it's the same as the
 actual assets count written to memory.
 
 :::
 
-## The example of some functions signatures
+## The example of some function signatures
 
 ### `add_asset` (return-via-pointer Miden ABI pattern)
 

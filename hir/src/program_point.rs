@@ -1,9 +1,9 @@
 use core::fmt;
 
 use crate::{
-    entity::{EntityProjection, EntityProjectionMut},
     Block, BlockRef, EntityCursor, EntityCursorMut, EntityMut, EntityRef, Operation, OperationRef,
     Spanned,
+    entity::{EntityProjection, EntityProjectionMut},
 };
 
 /// [ProgramPoint] represents a specific location in the execution of a program.
@@ -147,12 +147,10 @@ impl ProgramPoint {
         match &mut pp {
             Self::Invalid => (),
             Self::Op {
-                position: ref mut point,
-                ..
+                position: point, ..
             }
             | Self::Block {
-                position: ref mut point,
-                ..
+                position: point, ..
             } => {
                 *point = Position::After;
             }

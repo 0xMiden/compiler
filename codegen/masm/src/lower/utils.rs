@@ -2,7 +2,7 @@ use midenc_dialect_scf as scf;
 use midenc_hir::{Op, Operation, Region, Report, Spanned, ValueRef};
 use smallvec::SmallVec;
 
-use crate::{emitter::BlockEmitter, masm, Constraint};
+use crate::{Constraint, emitter::BlockEmitter, masm};
 
 /// Emit a conditonal branch-like region, e.g. `scf.if`.
 ///
@@ -181,7 +181,7 @@ pub fn emit_binary_search(
                         (then_emitter.into_emitted_block(span), then_stack)
                     };
 
-                    let (else_blk, else_stack) = {
+                    let else_blk = {
                         let default_region = op.default_region();
                         let is_live_after = emitter
                             .liveness
@@ -197,19 +197,31 @@ pub fn emit_binary_search(
                         for (index, result) in op.results().all().into_iter().enumerate() {
                             else_stack.rename(index, *result as ValueRef);
                         }
-                        (else_emitter.into_emitted_block(span), else_stack)
-                    };
 
-                    if then_stack != else_stack {
-                        panic!(
-                            "unexpected observable stack effect leaked from regions of {}
+                        // Schedule realignment of the stack if needed
+                        if then_stack != else_stack {
+                            schedule_stack_realignment(&then_stack, &else_stack, &mut else_emitter);
+                        }
+
+                        if cfg!(debug_assertions) {
+                            let mut else_stack = else_emitter.stack.clone();
+                            for (index, result) in op.results().all().into_iter().enumerate() {
+                                else_stack.rename(index, *result as ValueRef);
+                            }
+                            if then_stack != else_stack {
+                                panic!(
+                                    "unexpected observable stack effect leaked from regions of {}
 
 stack on exit from 'then': {then_stack:#?}
 stack on exit from 'else': {else_stack:#?}
-                        ",
-                            op.as_operation()
-                        );
-                    }
+",
+                                    op.as_operation()
+                                );
+                            }
+                        }
+
+                        else_emitter.into_emitted_block(span)
+                    };
 
                     emitter.emit_op(masm::Op::If {
                         span,
@@ -493,16 +505,16 @@ mod tests {
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
+        AbiParam, Context, Ident, OpBuilder, Signature, Type,
         dialects::builtin::{self, BuiltinOpBuilder, FunctionBuilder, FunctionRef},
         formatter::PrettyPrint,
         pass::AnalysisManager,
         version::Version,
-        AbiParam, Context, Ident, OpBuilder, Signature, Type,
     };
     use midenc_hir_analysis::analyses::LivenessAnalysis;
 
     use super::*;
-    use crate::{linker::LinkInfo, OperandStack};
+    use crate::{OperandStack, linker::LinkInfo};
 
     #[test]
     fn util_emit_if_test() -> Result<(), Report> {

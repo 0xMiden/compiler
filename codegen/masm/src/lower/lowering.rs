@@ -4,15 +4,15 @@ use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_hir::{
+    Op, OpExt, Span, SymbolTable, Value, ValueRange, ValueRef,
     dialects::builtin,
     traits::{BinaryOp, Commutative},
-    Op, OpExt, Span, SymbolTable, Value, ValueRange, ValueRef,
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use super::*;
-use crate::{emitter::BlockEmitter, masm, opt::operands::SolverOptions, Constraint};
+use crate::{Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
 
 /// This trait is registered with all ops, of all dialects, which are legal for lowering to MASM.
 ///

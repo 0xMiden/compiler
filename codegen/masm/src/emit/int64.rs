@@ -1,7 +1,7 @@
 use miden_core::{Felt, FieldElement};
 use midenc_hir::{Overflow, SourceSpan, Span};
 
-use super::{dup_from_offset, masm, movup_from_offset, OpEmitter, P};
+use super::{OpEmitter, P, dup_from_offset, masm, movup_from_offset};
 
 #[allow(unused)]
 impl OpEmitter<'_> {

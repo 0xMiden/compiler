@@ -3,9 +3,9 @@ use alloc::{boxed::Box, vec, vec::Vec};
 use midenc_session::diagnostics::Severity;
 
 use crate::{
-    traits::Terminator, AsCallableSymbolRef, AsSymbolRef, AttributeValue, BlockRef, Builder,
-    KeyedSuccessor, Op, OpBuilder, OperationRef, Region, Report, Spanned, SuccessorInfo, Type,
-    UnsafeIntrusiveEntityRef, ValueRef,
+    AsCallableSymbolRef, AsSymbolRef, AttributeValue, BlockRef, Builder, KeyedSuccessor, Op,
+    OpBuilder, OperationRef, Region, Report, Spanned, SuccessorInfo, Type,
+    UnsafeIntrusiveEntityRef, ValueRef, traits::Terminator,
 };
 
 /// The [OperationBuilder] is a primitive for imperatively constructing an [Operation].

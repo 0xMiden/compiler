@@ -207,12 +207,11 @@ impl Foldable for Bitcast {
     #[inline]
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         if let Some(value) = matchers::foldable_operand().matches(&self.operand().as_operand_ref())
+            && (value.is::<Immediate>() || value.is::<PointerAttr>())
         {
-            if value.is::<Immediate>() || value.is::<PointerAttr>() {
-                // Lean on materialize_constant to handle the conversion details
-                results.push(OpFoldResult::Attribute(value));
-                return FoldResult::Ok(());
-            }
+            // Lean on materialize_constant to handle the conversion details
+            results.push(OpFoldResult::Attribute(value));
+            return FoldResult::Ok(());
         }
 
         FoldResult::Failed

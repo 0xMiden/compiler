@@ -1,14 +1,18 @@
 use midenc_hir::{
-    dialects::builtin::{ModuleBuilder, WorldBuilder},
+    AbiParam, CallConv, FunctionType, FxHashMap, Signature, SymbolNameComponent, SymbolPath,
+    Visibility,
+    diagnostics::WrapErr,
+    dialects::builtin::{FunctionRef, ModuleBuilder, WorldBuilder},
     interner::Symbol,
-    smallvec, CallConv, FxHashMap, Signature, SymbolNameComponent, SymbolPath, Visibility,
+    smallvec,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
-use super::{instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder, FuncIndex, Module};
+use super::{FuncIndex, Module, instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder};
 use crate::{
     callable::CallableFunction, component::lower_imports::generate_import_lowering_function,
-    error::WasmResult, translation_utils::sig_from_func_type,
+    error::WasmResult, intrinsics::Intrinsic, miden_abi::miden_abi_function_type,
+    translation_utils::sig_from_func_type,
 };
 
 pub struct ModuleTranslationState<'a> {
@@ -97,6 +101,82 @@ impl<'a> ModuleTranslationState<'a> {
     pub(crate) fn get_direct_func(&mut self, index: FuncIndex) -> WasmResult<CallableFunction> {
         let defined_func = self.functions[&index].clone();
         Ok(defined_func)
+    }
+
+    /// Register a linker stub function as an intrinsic so that calls to it will be inlined.
+    ///
+    /// This updates the function's entry in the functions map from `CallableFunction::Function`
+    /// to either `CallableFunction::Instruction` (for inline operations) or
+    /// `CallableFunction::Intrinsic` (for MASM function calls).
+    ///
+    /// Returns the FunctionRef if the stub was registered (so it can be removed from the module),
+    /// or None if the function wasn't found or isn't a valid intrinsic stub.
+    pub(crate) fn register_linker_stub(
+        &mut self,
+        func_index: FuncIndex,
+        intrinsic: Intrinsic,
+    ) -> WasmResult<Option<FunctionRef>> {
+        let Some(callable) = self.functions.get(&func_index) else {
+            return Ok(None);
+        };
+
+        let CallableFunction::Function {
+            function_ref,
+            signature,
+            ..
+        } = callable
+        else {
+            return Ok(None);
+        };
+
+        let function_ref = *function_ref;
+        let signature = signature.clone();
+
+        // Determine if this intrinsic is inlined as an op or needs a function call
+        let Some(conv) = intrinsic.conversion_result() else {
+            return Ok(None);
+        };
+
+        if conv.is_function() {
+            // Create import function reference for the intrinsic
+            let import_path = intrinsic.into_symbol_path();
+            let import_ft: FunctionType = intrinsic
+                .function_type()
+                .unwrap_or_else(|| miden_abi_function_type(&import_path));
+            let import_sig = Signature::new(
+                import_ft.params.into_iter().map(AbiParam::new),
+                import_ft.results.into_iter().map(AbiParam::new),
+            );
+
+            let import_module_ref = self
+                .world_builder
+                .declare_module_tree(&import_path.without_leaf())
+                .wrap_err("failed to create module for intrinsic imports")?;
+            let mut import_module_builder = ModuleBuilder::new(import_module_ref);
+            let intrinsic_func_ref = import_module_builder
+                .define_function(import_path.name().into(), import_sig)
+                .wrap_err("failed to create intrinsic function ref")?;
+
+            self.functions.insert(
+                func_index,
+                CallableFunction::Intrinsic {
+                    intrinsic,
+                    function_ref: intrinsic_func_ref,
+                    signature,
+                },
+            );
+        } else {
+            // Inline as an operation
+            self.functions.insert(
+                func_index,
+                CallableFunction::Instruction {
+                    intrinsic,
+                    signature,
+                },
+            );
+        }
+
+        Ok(Some(function_ref))
     }
 }
 

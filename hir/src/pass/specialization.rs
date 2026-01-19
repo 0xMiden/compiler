@@ -1,6 +1,6 @@
 use crate::{
-    traits::BranchOpInterface, Context, EntityMut, EntityRef, Op, Operation, OperationName,
-    OperationRef, Symbol, SymbolTable,
+    Context, EntityMut, EntityRef, Op, Operation, OperationName, OperationRef, Symbol, SymbolTable,
+    traits::BranchOpInterface,
 };
 
 pub trait PassTarget {

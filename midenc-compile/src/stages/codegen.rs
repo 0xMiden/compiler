@@ -1,14 +1,13 @@
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 
-use miden_assembly::{ast::Module, Library};
+use miden_assembly::{Library, ast::Module};
 use miden_mast_package::Package;
 use midenc_codegen_masm::{
-    self as masm,
+    self as masm, MasmComponent, ToMasmComponent,
     intrinsics::{
-        ADVICE_INTRINSICS_MODULE_NAME, CRYPTO_INTRINSICS_MODULE_NAME, I128_INTRINSICS_MODULE_NAME,
-        I32_INTRINSICS_MODULE_NAME, I64_INTRINSICS_MODULE_NAME, MEM_INTRINSICS_MODULE_NAME,
+        ADVICE_INTRINSICS_MODULE_NAME, CRYPTO_INTRINSICS_MODULE_NAME, I32_INTRINSICS_MODULE_NAME,
+        I64_INTRINSICS_MODULE_NAME, I128_INTRINSICS_MODULE_NAME, MEM_INTRINSICS_MODULE_NAME,
     },
-    MasmComponent, ToMasmComponent,
 };
 use midenc_hir::{interner::Symbol, pass::AnalysisManager};
 use midenc_session::OutputType;
@@ -54,11 +53,6 @@ impl Stage for CodegenStage {
             component.borrow().to_masm_component(analysis_manager).map(Box::new)?;
 
         let session = context.session();
-        if session.should_emit(OutputType::Masm) {
-            for module in masm_component.modules.iter() {
-                session.emit(OutputMode::Text, module).into_diagnostic()?;
-            }
-        }
 
         // Ensure intrinsics modules are linked
         for intrinsics_module in required_intrinsics_modules(session) {
@@ -73,6 +67,10 @@ impl Stage for CodegenStage {
         for module in masm_modules {
             log::debug!("adding external masm module '{}' to masm program", module.path());
             masm_component.modules.push(module);
+        }
+
+        if session.should_emit(OutputType::Masm) {
+            session.emit(OutputMode::Text, masm_component.as_ref()).into_diagnostic()?;
         }
 
         Ok(CodegenOutput {

@@ -80,11 +80,6 @@ proc miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-bindi
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.0
     movup.2
     swap.1
@@ -162,37 +157,16 @@ proc miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-bindi
     dup.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
+    dup.0
+    dup.1
+    dup.2
     dup.4
     swap.1
     swap.3
-    swap.2
     swap.1
     swap.4
     trace.240
@@ -376,7 +350,7 @@ proc miden_base_sys::bindings::output_note::create(
 end
 
 @callconv("C")
-proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(
+proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from(
     i32,
     i32
 )
@@ -397,6 +371,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -409,6 +384,8 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -428,6 +405,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -437,15 +415,12 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

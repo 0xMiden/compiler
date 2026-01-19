@@ -5,13 +5,12 @@ use alloc::{string::String, sync::Arc, vec::Vec};
 use std::ffi::OsString;
 
 #[cfg(feature = "std")]
-use clap::{builder::ArgPredicate, Parser};
+use clap::{Parser, builder::ArgPredicate};
 use midenc_session::{
-    add_target_link_libraries,
-    diagnostics::{DefaultSourceManager, Emitter},
     ColorChoice, DebugInfo, InputFile, LinkLibrary, OptLevel, Options, OutputFile, OutputType,
     OutputTypeSpec, OutputTypes, Path, PathBuf, ProjectType, Session, TargetEnv, Verbosity,
-    Warnings,
+    Warnings, add_target_link_libraries,
+    diagnostics::{DefaultSourceManager, Emitter},
 };
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.
@@ -538,7 +537,10 @@ impl Compiler {
 
         // Initialize output types
         let mut output_types = OutputTypes::new(self.output_types).unwrap_or_else(|err| err.exit());
-        if output_types.is_empty() {
+        let has_final_output =
+            output_types.keys().any(|ty| matches!(ty, OutputType::Mast | OutputType::Masp));
+        if !has_final_output {
+            // By default, we always produce a final artifact; `--emit` selects additional outputs.
             output_types.insert(OutputType::Masp, output_file.clone());
         } else if output_file.is_some() && output_types.get(&OutputType::Masp).is_some() {
             // The -o flag overrides --emit

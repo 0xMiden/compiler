@@ -105,11 +105,6 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.8
     dup.2
     u32wrapping_add
@@ -145,6 +140,7 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -154,6 +150,8 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -297,6 +295,7 @@ proc miden_base_sys::bindings::input_note::get_sender(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.3
     push.8
     dup.1
@@ -306,6 +305,8 @@ proc miden_base_sys::bindings::input_note::get_sender(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -320,11 +321,6 @@ proc miden_base_sys::bindings::input_note::get_sender(
     nop
     exec.::intrinsics::mem::store_sw
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

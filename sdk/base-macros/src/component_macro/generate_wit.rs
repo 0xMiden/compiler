@@ -10,8 +10,8 @@ use semver::Version;
 use syn::spanned::Spanned;
 
 use crate::{
-    component_macro::{to_kebab_case, ComponentMethod, MethodReturn, CORE_TYPES_PACKAGE},
-    types::{ensure_custom_type_defined, ExportedTypeDef, ExportedTypeKind},
+    component_macro::{CORE_TYPES_PACKAGE, ComponentMethod, MethodReturn, to_kebab_case},
+    types::{ExportedTypeDef, ExportedTypeKind, ensure_custom_type_defined},
     util::generated_wit_folder,
 };
 

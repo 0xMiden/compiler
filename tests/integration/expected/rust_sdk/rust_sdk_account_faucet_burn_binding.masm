@@ -135,11 +135,6 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.0
     movup.2
     swap.1
@@ -225,7 +220,7 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     dup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
     trace.252
     nop
     push.16
@@ -257,6 +252,7 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -269,6 +265,8 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -291,6 +289,7 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -300,6 +299,8 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -506,6 +507,7 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.24
     dup.3
     add
@@ -518,6 +520,8 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -537,6 +541,7 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.16
     dup.3
     add
@@ -549,6 +554,8 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -560,7 +567,7 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     movup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
     trace.252
     nop
     push.32
@@ -576,7 +583,7 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
 end
 
 @callconv("C")
-proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(
+proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from(
     i32,
     i32
 )
@@ -597,6 +604,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -609,6 +617,8 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -628,6 +638,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -637,6 +648,8 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -645,7 +658,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -676,6 +689,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -688,6 +702,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -707,6 +723,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -716,6 +733,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -863,6 +882,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.4
     add
@@ -875,6 +895,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -893,6 +915,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -902,15 +925,12 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
     trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
     nop
 end
 

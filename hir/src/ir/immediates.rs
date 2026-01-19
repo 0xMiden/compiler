@@ -5,7 +5,7 @@ use core::{
 
 pub use miden_core::{Felt, FieldElement, StarkField};
 
-use crate::{formatter::PrettyPrint, Type};
+use crate::{Type, formatter::PrettyPrint};
 
 #[derive(Debug, Copy, Clone)]
 pub enum Immediate {
@@ -816,7 +816,7 @@ impl FloatToInt<i8> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> i8 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 impl FloatToInt<u8> for f64 {
@@ -835,7 +835,7 @@ impl FloatToInt<u8> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> u8 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 impl FloatToInt<i16> for f64 {
@@ -854,7 +854,7 @@ impl FloatToInt<i16> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> i16 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 impl FloatToInt<u16> for f64 {
@@ -873,7 +873,7 @@ impl FloatToInt<u16> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> u16 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 impl FloatToInt<i32> for f64 {
@@ -892,7 +892,7 @@ impl FloatToInt<i32> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> i32 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 impl FloatToInt<u32> for f64 {
@@ -911,7 +911,7 @@ impl FloatToInt<u32> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> u32 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 impl FloatToInt<i64> for f64 {
@@ -930,7 +930,7 @@ impl FloatToInt<i64> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> i64 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 impl FloatToInt<u64> for f64 {
@@ -949,7 +949,7 @@ impl FloatToInt<u64> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> u64 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 impl FloatToInt<Felt> for f64 {
@@ -968,7 +968,7 @@ impl FloatToInt<Felt> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> Felt {
-        Felt::new(f64::to_int_unchecked::<u64>(self))
+        Felt::new(unsafe { f64::to_int_unchecked::<u64>(self) })
     }
 }
 impl FloatToInt<u128> for f64 {
@@ -987,7 +987,7 @@ impl FloatToInt<u128> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> u128 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 impl FloatToInt<i128> for f64 {
@@ -1006,7 +1006,7 @@ impl FloatToInt<i128> for f64 {
     }
 
     unsafe fn to_int_unchecked(self) -> i128 {
-        f64::to_int_unchecked(self)
+        unsafe { f64::to_int_unchecked(self) }
     }
 }
 

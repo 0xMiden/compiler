@@ -3,7 +3,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::types::Asset;
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::faucet::create_fungible_asset"]
     pub fn extern_faucet_create_fungible_asset(amount: Felt, ptr: *mut Asset);
 

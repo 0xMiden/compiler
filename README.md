@@ -50,6 +50,15 @@ To run the compiler test suite:
 
 This will run all of the unit tests in the workspace, as well as all of our `lit` tests.
 
+## Debugging
+
+### Emitting internal sources/artifacts
+
+- `MIDENC_EMIT`: Environment-variable equivalent of `--emit`. Accepts the same `KIND[=PATH]` syntax
+  (comma-delimited), where `PATH` is treated either as folder e.g. `MIDENC_EMIT=ir=target/emit` or file `MIDENC_EMIT=hir=my_name.hir`.
+- `MIDENC_EMIT_MACRO_EXPAND[=<dir>]`: When set, integration tests dump `cargo expand`
+  output for Rust fixtures to `<fixture>.expanded.rs` files in `<dir>` (or the CWD if empty/`1`).
+
 ## Docs
 
 The documentation in the `docs/external` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://github.com/0xMiden/miden-docs) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.

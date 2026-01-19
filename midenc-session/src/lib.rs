@@ -51,8 +51,8 @@ pub use self::{
     flags::{ArgMatches, CompileFlag, CompileFlags, FlagAction},
     inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
     libs::{
-        add_target_link_libraries, LibraryKind, LibraryNamespace, LibraryPath,
-        LibraryPathComponent, LinkLibrary, STDLIB,
+        LibraryKind, LibraryNamespace, LibraryPath, LibraryPathComponent, LinkLibrary, STDLIB,
+        add_target_link_libraries,
     },
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},
@@ -203,7 +203,7 @@ impl Session {
                 log::debug!(target: "driver", "unable to derive name from output file, deriving from input");
                 match inputs.first() {
                     Some(InputFile {
-                        file: InputType::Real(ref path),
+                        file: InputType::Real(path),
                         ..
                     }) => path
                         .file_stem()
@@ -218,7 +218,7 @@ impl Session {
                         .to_string(),
                     Some(
                         input @ InputFile {
-                            file: InputType::Stdin { ref name, .. },
+                            file: InputType::Stdin { name, .. },
                             ..
                         },
                     ) => {
@@ -304,7 +304,7 @@ impl Session {
 
     /// Get the [OutputFile] to write the assembled MAST output to
     pub fn out_file(&self) -> OutputFile {
-        let out_file = self.output_files.output_file(OutputType::Masl, None);
+        let out_file = self.output_files.output_file(OutputType::Masp, None);
 
         if let OutputFile::Real(ref path) = out_file {
             self.check_file_is_writeable(path);
@@ -324,13 +324,10 @@ impl Session {
 
     #[cfg(feature = "std")]
     fn check_file_is_writeable(&self, file: &Path) {
-        if let Ok(m) = file.metadata() {
-            if m.permissions().readonly() {
-                panic!(
-                    "Compiler exited with a fatal error: file is not writeable: {}",
-                    file.display()
-                );
-            }
+        if let Ok(m) = file.metadata()
+            && m.permissions().readonly()
+        {
+            panic!("Compiler exited with a fatal error: file is not writeable: {}", file.display());
         }
     }
 
@@ -396,6 +393,9 @@ impl Session {
         if self.should_emit(ty) {
             match self.output_files.output_file(ty, name.map(|n| n.as_str())) {
                 OutputFile::Real(path) => Some(path),
+                OutputFile::Directory(_) => {
+                    unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
+                }
                 OutputFile::Stdout => None,
             }
         } else {
@@ -412,6 +412,9 @@ impl Session {
             match self.output_files.output_file(output_type, name) {
                 OutputFile::Real(path) => {
                     item.write_to_file(&path, mode, self)?;
+                }
+                OutputFile::Directory(_) => {
+                    unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
                 }
                 OutputFile::Stdout => {
                     let stdout = std::io::stdout().lock();

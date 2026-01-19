@@ -10,9 +10,9 @@ use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_hir::{
-    dialects::builtin, AttributeValue, Felt, Immediate, Op, OperationRef, Overflow,
-    RegionBranchPoint, RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned,
-    SuccessorInfo, Type, Value as _, ValueRange,
+    AttributeValue, Felt, Immediate, Op, OperationRef, Overflow, RegionBranchPoint,
+    RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorInfo, Type,
+    Value as _, ValueRange, dialects::builtin,
 };
 use midenc_session::diagnostics::Severity;
 
@@ -735,9 +735,7 @@ impl Eval for arith::Constant {
 }
 
 macro_rules! binop {
-    ($op:ident, $evaluator:ident, $operator:ident) => {{
-        binop!($op, $evaluator, $operator, $operator)
-    }};
+    ($op:ident, $evaluator:ident, $operator:ident) => {{ binop!($op, $evaluator, $operator, $operator) }};
 
     ($op:ident, $evaluator:ident, $operator:ident, $felt_operator:ident) => {{
         let lhs = $op.lhs();
@@ -1670,9 +1668,7 @@ impl Eval for arith::Sext {
 }
 
 macro_rules! unaryop {
-    ($op:ident, $evaluator:ident, $operator:ident) => {{
-        unaryop!($op, $evaluator, $operator, $operator)
-    }};
+    ($op:ident, $evaluator:ident, $operator:ident) => {{ unaryop!($op, $evaluator, $operator, $operator) }};
 
     ($op:ident, $evaluator:ident, $operator:ident, $felt_operator:ident) => {{
         let lhs = $op.operand();

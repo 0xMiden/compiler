@@ -1,7 +1,7 @@
 use midenc_hir::{
-    interner::{symbols, Symbol},
     CallConv, FunctionType, SymbolNameComponent, SymbolPath,
     Type::*,
+    interner::{Symbol, symbols},
 };
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};

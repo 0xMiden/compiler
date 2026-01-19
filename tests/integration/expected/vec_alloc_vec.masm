@@ -13,6 +13,25 @@ end
 # mod root_ns:root@1.0.0::vec_alloc_vec
 
 @callconv("C")
+proc __rustc::__rust_alloc(i32, i32) -> i32
+    push.1048576
+    movup.2
+    swap.1
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::vec_alloc_vec::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc __rustc::__rust_dealloc(i32, i32, i32)
+    drop
+    drop
+    drop
+end
+
+@callconv("C")
 pub proc entrypoint(i32) -> felt
     push.1114112
     u32divmod.4
@@ -65,26 +84,8 @@ pub proc entrypoint(i32) -> felt
         push.0
         push.3735929054
     else
-        push.1
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::intrinsics::felt::from_u32
-        trace.252
-        nop
-        push.2
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::intrinsics::felt::from_u32
-        trace.252
-        nop
-        push.3
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::intrinsics::felt::from_u32
-        trace.252
-        nop
         push.8
-        dup.4
+        dup.1
         add
         u32assert
         push.4
@@ -93,6 +94,8 @@ pub proc entrypoint(i32) -> felt
         u32mod
         u32assert
         assertz
+        push.3
+        swap.1
         u32divmod.4
         swap.1
         trace.240
@@ -101,7 +104,7 @@ pub proc entrypoint(i32) -> felt
         trace.252
         nop
         push.4
-        dup.3
+        dup.1
         add
         u32assert
         push.4
@@ -110,6 +113,8 @@ pub proc entrypoint(i32) -> felt
         u32mod
         u32assert
         assertz
+        push.2
+        swap.1
         u32divmod.4
         swap.1
         trace.240
@@ -117,13 +122,15 @@ pub proc entrypoint(i32) -> felt
         exec.::intrinsics::mem::store_felt
         trace.252
         nop
-        dup.1
+        dup.0
         push.4
         dup.1
         swap.1
         u32mod
         u32assert
         assertz
+        push.1
+        swap.1
         u32divmod.4
         swap.1
         trace.240
@@ -230,7 +237,7 @@ pub proc entrypoint(i32) -> felt
             swap.1
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::vec_alloc_vec::alloc::raw_vec::RawVecInner<A>::deallocate
+            exec.::root_ns:root@1.0.0::vec_alloc_vec::<alloc::raw_vec::RawVecInner>::deallocate
             trace.252
             nop
             push.16
@@ -261,25 +268,6 @@ pub proc entrypoint(i32) -> felt
     else
         nop
     end
-end
-
-@callconv("C")
-proc __rustc::__rust_alloc(i32, i32) -> i32
-    push.1048576
-    movup.2
-    swap.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::vec_alloc_vec::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc __rustc::__rust_dealloc(i32, i32, i32)
-    drop
-    drop
-    drop
 end
 
 @callconv("C")
@@ -320,7 +308,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::core::ptr::alignment::Alignment::max
+        exec.::root_ns:root@1.0.0::vec_alloc_vec::<core::ptr::alignment::Alignment>::max
         trace.252
         nop
         push.0
@@ -481,12 +469,15 @@ proc intrinsics::mem::heap_base(
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
+proc alloc::alloc::handle_alloc_error(i32, i32)
+    drop
+    drop
+    push.0
+    assert
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::deallocate(
+proc <alloc::raw_vec::RawVecInner>::deallocate(
     i32,
     i32,
     i32
@@ -521,7 +512,7 @@ proc alloc::raw_vec::RawVecInner<A>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::vec_alloc_vec::alloc::raw_vec::RawVecInner<A>::current_memory
+    exec.::root_ns:root@1.0.0::vec_alloc_vec::<alloc::raw_vec::RawVecInner>::current_memory
     trace.252
     nop
     push.8
@@ -603,7 +594,7 @@ proc alloc::raw_vec::RawVecInner<A>::deallocate(
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::current_memory(
+proc <alloc::raw_vec::RawVecInner>::current_memory(
     i32,
     i32,
     i32,
@@ -761,15 +752,10 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
 end
 
 @callconv("C")
-proc alloc::alloc::handle_alloc_error(i32, i32)
-    drop
-    drop
-    push.0
-    assert
-end
-
-@callconv("C")
-proc core::ptr::alignment::Alignment::max(i32, i32) -> i32
+proc <core::ptr::alignment::Alignment>::max(
+    i32,
+    i32
+) -> i32
     push.0
     dup.2
     dup.2

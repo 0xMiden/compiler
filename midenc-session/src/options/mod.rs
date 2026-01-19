@@ -3,8 +3,8 @@ use alloc::{fmt, str::FromStr, string::String, sync::Arc, vec, vec::Vec};
 #[cfg(feature = "std")]
 use crate::Path;
 use crate::{
-    diagnostics::{DiagnosticsConfig, Emitter},
     ColorChoice, CompileFlags, LinkLibrary, OutputTypes, PathBuf, ProjectType, TargetEnv,
+    diagnostics::{DiagnosticsConfig, Emitter},
 };
 
 /// This struct contains all of the configuration options for the compiler

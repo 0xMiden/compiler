@@ -3,14 +3,15 @@
 use std::{borrow::Borrow, collections::BTreeSet, path::Path, sync::Arc};
 
 use miden_client::{
+    Client, ClientError,
     account::{
-        component::{AuthRpoFalcon512, BasicFungibleFaucet, BasicWallet},
         Account, AccountId, AccountStorageMode, AccountType, StorageSlot,
+        component::{AuthRpoFalcon512, BasicFungibleFaucet, BasicWallet},
     },
     asset::{FungibleAsset, TokenSymbol},
     auth::{AuthSecretKey, PublicKeyCommitment},
     builder::ClientBuilder,
-    crypto::{rpo_falcon512::SecretKey, FeltRng, RpoRandomCoin},
+    crypto::{FeltRng, RpoRandomCoin, rpo_falcon512::SecretKey},
     keystore::FilesystemKeyStore,
     note::{
         Note, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag,
@@ -19,10 +20,10 @@ use miden_client::{
     rpc::{Endpoint, GrpcClient},
     transaction::{TransactionRequestBuilder, TransactionScript},
     utils::Deserializable,
-    Client, ClientError,
 };
 use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_core::{Felt, FieldElement, Word};
+use miden_felt_repr::ToFeltRepr;
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::{Package, SectionId};
 use miden_objects::{
@@ -33,7 +34,7 @@ use miden_objects::{
     transaction::TransactionId,
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
-use rand::{rngs::StdRng, RngCore};
+use rand::{RngCore, rngs::StdRng};
 
 /// Test setup configuration
 pub struct TestSetup {
@@ -67,6 +68,11 @@ pub async fn setup_test_infrastructure(
     let client = builder.build().await?;
 
     Ok(TestSetup { client, keystore })
+}
+
+/// Converts an [`AccountId`] into a `Vec<Felt>` suitable for note inputs.
+pub fn account_id_inputs(account_id: &AccountId) -> Vec<Felt> {
+    account_id.to_felt_repr().into_iter().map(Into::into).collect()
 }
 
 /// Configuration for creating an account with a custom component
@@ -449,7 +455,7 @@ pub async fn send_asset_to_account(
         sender_account_id,
         NoteCreationConfig {
             assets: miden_client::note::NoteAssets::new(vec![asset.into()]).unwrap(),
-            inputs: vec![recipient_account_id.prefix().as_felt(), recipient_account_id.suffix()],
+            inputs: account_id_inputs(&recipient_account_id),
             note_type: config.note_type,
             tag: config.tag,
             execution_hint: config.execution_hint,
@@ -466,11 +472,7 @@ pub async fn send_asset_to_account(
     // Prepare note recipient
     let program_hash = tx_script_program.hash();
     let serial_num = RpoRandomCoin::new(program_hash).draw_word();
-    let inputs = NoteInputs::new(vec![
-        recipient_account_id.prefix().as_felt(),
-        recipient_account_id.suffix(),
-    ])
-    .unwrap();
+    let inputs = NoteInputs::new(account_id_inputs(&recipient_account_id)).unwrap();
     let note_recipient = NoteRecipient::new(serial_num, p2id_note.script().clone(), inputs);
 
     // Prepare commitment data

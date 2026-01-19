@@ -1,3 +1,5 @@
+#![expect(unused_assignments)]
+
 mod name;
 mod path;
 mod symbol;
@@ -6,7 +8,7 @@ mod table;
 
 use alloc::{collections::VecDeque, format, vec};
 
-use midenc_session::diagnostics::{miette, Diagnostic};
+use midenc_session::diagnostics::{Diagnostic, miette};
 use smallvec::SmallVec;
 
 pub use self::{
@@ -159,10 +161,10 @@ impl Operation {
     ///
     /// Returns `None` if the symbol is not found.
     pub fn nearest_symbol(&self, symbol: SymbolName) -> Option<SymbolRef> {
-        if let Some(sym) = self.as_symbol() {
-            if sym.name() == symbol {
-                return Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(sym) });
-            }
+        if let Some(sym) = self.as_symbol()
+            && sym.name() == symbol
+        {
+            return Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(sym) });
         }
         let symbol_table_op = self.nearest_symbol_table()?;
         let op = symbol_table_op.borrow();

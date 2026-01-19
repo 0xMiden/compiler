@@ -1,6 +1,6 @@
 use midenc_hir::{
-    adt::SmallDenseMap, AsValueRange, BlockRef, OpBuilder, Report, SmallVec, SourceSpan, Type,
-    ValueRef,
+    AsValueRange, BlockRef, OpBuilder, Report, SmallVec, SourceSpan, Type, ValueRef,
+    adt::SmallDenseMap,
 };
 
 use super::*;

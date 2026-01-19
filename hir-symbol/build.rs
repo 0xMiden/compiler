@@ -13,7 +13,7 @@ use std::{
 };
 
 use inflector::Inflector;
-use toml::{value::Table, Value};
+use toml::{Value, value::Table};
 
 type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;
 

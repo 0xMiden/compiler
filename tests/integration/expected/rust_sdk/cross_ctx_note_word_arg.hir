@@ -19,42 +19,24 @@ builtin.component miden:base/note-script@1.0.0 {
         private builtin.function @miden:base/note-script@1.0.0#run(v17: felt, v18: felt, v19: felt, v20: felt) {
         ^block12(v17: felt, v18: felt, v19: felt, v20: felt):
             hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/wit_bindgen::rt::run_ctors_once()
-            v21 = arith.constant 1 : i32;
-            v22 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v21) : felt
-            v23 = arith.constant 2 : i32;
-            v24 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v23) : felt
-            v25 = arith.constant 3 : i32;
-            v26 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v25) : felt
-            v27 = arith.constant 4 : i32;
-            v28 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v27) : felt
-            v29 = arith.constant 5 : i32;
-            v30 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v29) : felt
-            v31 = arith.constant 6 : i32;
-            v32 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v31) : felt
-            v33 = arith.constant 7 : i32;
-            v34 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v33) : felt
-            v35 = arith.constant 8 : i32;
-            v36 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v35) : felt
-            v37 = arith.constant 9 : i32;
-            v38 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v37) : felt
-            v39 = arith.constant 10 : i32;
-            v40 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v39) : felt
-            v41 = arith.constant 11 : i32;
-            v42 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v41) : felt
-            v43 = arith.constant 12 : i32;
-            v44 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v43) : felt
-            v45 = arith.constant 13 : i32;
-            v46 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v45) : felt
-            v47 = arith.constant 14 : i32;
-            v48 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v47) : felt
-            v49 = arith.constant 15 : i32;
-            v50 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v49) : felt
-            v88 = arith.constant 7 : i32;
-            v52 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v88) : felt
-            v53 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(v22, v24, v26, v28, v30, v32, v34, v36, v38, v40, v42, v44, v46, v48, v50, v52) : felt
-            v54 = arith.constant 458760 : i32;
-            v55 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::from_u32(v54) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/intrinsics::felt::assert_eq(v53, v55)
+            v93 = arith.constant 7 : felt;
+            v85 = arith.constant 15 : felt;
+            v86 = arith.constant 14 : felt;
+            v87 = arith.constant 13 : felt;
+            v88 = arith.constant 12 : felt;
+            v89 = arith.constant 11 : felt;
+            v90 = arith.constant 10 : felt;
+            v91 = arith.constant 9 : felt;
+            v92 = arith.constant 8 : felt;
+            v94 = arith.constant 6 : felt;
+            v95 = arith.constant 5 : felt;
+            v96 = arith.constant 4 : felt;
+            v97 = arith.constant 3 : felt;
+            v98 = arith.constant 2 : felt;
+            v99 = arith.constant 1 : felt;
+            v53 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(v99, v98, v97, v96, v95, v94, v93, v92, v91, v90, v89, v88, v87, v86, v85, v93) : felt
+            v83 = arith.constant 458760 : felt;
+            hir.assert_eq v53, v83;
             builtin.ret ;
         };
 
@@ -81,26 +63,14 @@ builtin.component miden:base/note-script@1.0.0 {
                 v70 = hir.bitcast v69 : ptr<byte, i32>;
                 v71 = hir.load v70 : i32;
                 hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/__wasm_call_ctors()
-                v90 = arith.constant 1 : u8;
-                v92 = arith.constant 1048588 : i32;
-                v73 = arith.add v71, v92 : i32 #[overflow = wrapping];
+                v101 = arith.constant 1 : u8;
+                v103 = arith.constant 1048588 : i32;
+                v73 = arith.add v71, v103 : i32 #[overflow = wrapping];
                 v77 = hir.bitcast v73 : u32;
                 v78 = hir.int_to_ptr v77 : ptr<byte, u8>;
-                hir.store v78, v90;
+                hir.store v78, v101;
                 scf.yield ;
             };
-            builtin.ret ;
-        };
-
-        private builtin.function @intrinsics::felt::from_u32(v79: i32) -> felt {
-        ^block18(v79: i32):
-            v80 = hir.bitcast v79 : felt;
-            builtin.ret v80;
-        };
-
-        private builtin.function @intrinsics::felt::assert_eq(v82: felt, v83: felt) {
-        ^block20(v82: felt, v83: felt):
-            hir.assert_eq v82, v83;
             builtin.ret ;
         };
 
@@ -115,9 +85,9 @@ builtin.component miden:base/note-script@1.0.0 {
         builtin.segment @1048576 = 0x000000010000000100000001;
     };
 
-    public builtin.function @run(v84: felt, v85: felt, v86: felt, v87: felt) {
-    ^block22(v84: felt, v85: felt, v86: felt, v87: felt):
-        hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/miden:base/note-script@1.0.0#run(v84, v85, v86, v87)
+    public builtin.function @run(v79: felt, v80: felt, v81: felt, v82: felt) {
+    ^block18(v79: felt, v80: felt, v81: felt, v82: felt):
+        hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/miden:base/note-script@1.0.0#run(v79, v80, v81, v82)
         builtin.ret ;
     };
 };

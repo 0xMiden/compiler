@@ -7,6 +7,7 @@
 //
 // extern crate alloc;
 
+use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
 use miden_test_harness::miden_test_suite;
 
 #[cfg(target_family = "wasm")]
@@ -30,7 +31,7 @@ mod component {
         }
 
         /// Increments the counter value stored in the contract's storage map by one.
-        pub fn increment_count(&self) -> Felt {
+        pub fn increment_count(&mut self) -> Felt {
             let key = Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]);
             let current_value: Felt = self.count_map.get(&key);
             let new_value = current_value + felt!(1);

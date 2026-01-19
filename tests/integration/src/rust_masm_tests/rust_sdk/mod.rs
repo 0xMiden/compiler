@@ -1,38 +1,25 @@
-use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, env, path::PathBuf};
 
 use miden_core::{
-    utils::{Deserializable, Serializable},
     Felt, FieldElement, Word,
+    utils::{Deserializable, Serializable},
 };
-use miden_debug::Executor;
-use miden_lib::MidenLib;
-use miden_mast_package::Package;
 use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_hir::{interner::Symbol, FunctionIdent, Ident, SourceSpan};
+use midenc_hir::{FunctionIdent, Ident, SourceSpan, interner::Symbol};
 use midenc_session::STDLIB;
 
 use crate::{
+    CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
-    CompilerTest, CompilerTestBuilder,
+    testing::executor_with_std,
 };
 
 mod base;
 mod macros;
 mod stdlib;
-
-fn executor_with_std(args: Vec<Felt>) -> Executor {
-    let mut exec = Executor::new(args);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
-    exec
-}
 
 #[test]
 #[ignore = "until https://github.com/0xMiden/compiler/issues/439 is fixed"]
@@ -66,7 +53,7 @@ fn rust_sdk_swapp_note_bindings() {
 [package]
 name = "{name}"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 authors = []
 
 [lib]
@@ -94,6 +81,7 @@ debug = false
     );
 
     let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
 
 use miden::*;
 
@@ -133,6 +121,24 @@ fn run(_arg: Word) {
     )]);
     // Ensure the crate compiles all the way to a package, exercising the bindings.
     test.compiled_package();
+}
+
+/// Regression test for https://github.com/0xMiden/compiler/issues/831
+///
+/// Previously, compilation could panic during MASM codegen with:
+/// `invalid stack offset for movup: 16 is out of range`.
+#[test]
+fn rust_sdk_invalid_stack_offset_movup_16_issue_831() {
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/issue-invalid-stack-offset-movup",
+        config,
+        [],
+    );
+
+    // Ensure the crate compiles all the way to a package. This previously triggered the #831
+    // panic in MASM codegen.
+    let package = test.compiled_package();
 }
 
 #[test]
@@ -180,7 +186,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note.masm")]);
     let package = test.compiled_package();
     let program = package.unwrap_program();
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())
@@ -237,7 +243,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.hir")]);
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.masm")]);
     let package = test.compiled_package();
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())
@@ -309,7 +315,7 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     )]);
     let package = test.compiled_package();
     assert!(package.is_program());
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())

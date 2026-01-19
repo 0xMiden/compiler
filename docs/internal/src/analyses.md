@@ -67,7 +67,7 @@ The loop forest represents the set of loops identified in a given CFG, as well a
 
 Each block may only be the header for a single loop, and thus you can identify a loop by the header block.
 
-See [LLVM Loop Terminology (and Canonical Forms)](https://llvm.org/docs/LoopTerminology.html) for a more comprehensive description of how loops are treated analyzed by the compiler, as we base our implementation on LLVM's.
+See [LLVM Loop Terminology (and Canonical Forms)](https://llvm.org/docs/LoopTerminology.html) for a more comprehensive description of how loops are treated and analyzed by the compiler, as we base our implementation on LLVM's.
 
 The loop forest can be queried for info about a particular loop, whether a block is part of a loop, and if it is a loop header. The information for a particular loop lets you query what blocks are part of the loop, what their role(s) in the loop are, and the relationship to other loops (i.e. whether the loop is a child of another loop).
 

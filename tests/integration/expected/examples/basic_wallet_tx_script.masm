@@ -57,138 +57,6 @@ proc __wasm_call_ctors(
 end
 
 @callconv("C")
-proc core::slice::index::slice_end_index_len_fail(
-    i32,
-    i32
-)
-    push.1114180
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.1048600
-    u32wrapping_add
-    movdn.2
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime
-    trace.252
-    nop
-    push.0
-    assert
-end
-
-@callconv("C")
-proc <alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index(
-    i32,
-    i32,
-    i32,
-    i32
-)
-    push.8
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.0
-    dup.1
-    dup.6
-    swap.1
-    u32lte
-    neq
-    if.true
-        drop
-        push.4
-        dup.1
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        movup.4
-        dup.4
-        u32wrapping_sub
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_sw
-        trace.252
-        nop
-        push.4
-        movup.2
-        add
-        u32assert
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
-        swap.1
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        push.2
-        movup.3
-        swap.1
-        u32shl
-        movup.2
-        u32wrapping_add
-        swap.1
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::store_sw
-        trace.252
-        nop
-    else
-        movdn.3
-        drop
-        drop
-        drop
-        swap.1
-        trace.240
-        nop
-        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::slice::index::slice_end_index_len_fail
-        trace.252
-        nop
-        push.0
-        assert
-    end
-end
-
-@callconv("C")
 proc __rustc::__rust_alloc(i32, i32) -> i32
     push.1114180
     u32divmod.4
@@ -309,6 +177,187 @@ proc basic_wallet_tx_script::bindings::__link_custom_section_describing_imports(
 end
 
 @callconv("C")
+proc core::slice::index::slice_index_fail(i32, i32, i32)
+    push.0
+    dup.3
+    dup.2
+    swap.1
+    u32gt
+    neq
+    if.true
+        swap.1
+        drop
+        push.1114180
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.1048600
+        u32wrapping_add
+        movdn.2
+        trace.240
+        nop
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::slice::index::slice_index_fail::do_panic::runtime
+        trace.252
+        nop
+    else
+        drop
+        push.0
+        dup.2
+        dup.2
+        swap.1
+        u32gt
+        neq
+        if.true
+            push.1114180
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
+            push.1048600
+            u32wrapping_add
+            movdn.2
+            trace.240
+            nop
+            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::slice::index::slice_index_fail::do_panic::runtime
+            trace.252
+            nop
+        else
+            push.1114180
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
+            push.1048600
+            u32wrapping_add
+            movdn.2
+            trace.240
+            nop
+            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::slice::index::slice_index_fail::do_panic::runtime
+            trace.252
+            nop
+        end
+    end
+    push.0
+    assert
+end
+
+@callconv("C")
+proc <alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index(
+    i32,
+    i32,
+    i32,
+    i32
+)
+    push.8
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.0
+    dup.1
+    dup.6
+    swap.1
+    u32lte
+    neq
+    if.true
+        drop
+        push.4
+        dup.1
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        movup.4
+        dup.4
+        u32wrapping_sub
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+        push.4
+        movup.2
+        add
+        u32assert
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        swap.1
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        push.2
+        movup.3
+        swap.1
+        u32shl
+        movup.2
+        u32wrapping_add
+        swap.1
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+    else
+        movdn.2
+        drop
+        drop
+        movdn.2
+        trace.240
+        nop
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::slice::index::slice_index_fail
+        trace.252
+        nop
+        push.0
+        assert
+    end
+end
+
+@callconv("C")
 proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     push.1114176
     u32divmod.4
@@ -344,33 +393,14 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::advice::adv_push_mapvaln
     trace.252
     nop
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::as_u64
-    trace.252
-    nop
+    u32split
+    push.0
     push.3
-    dup.2
-    dup.2
+    dup.3
+    dup.3
     drop
     u32and
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::from_u32
-    trace.252
-    nop
-    swap.1
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::assert_eq
-    trace.252
-    nop
+    assert_eq
     push.2
     push.0
     dup.0
@@ -390,19 +420,21 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::std::math::u64::shr
     trace.252
     nop
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::from_u64_unchecked
+    exec.::std::math::u64::lt
     trace.252
     nop
-    dup.0
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::intrinsics::felt::as_u64
-    trace.252
-    nop
+    assert
+    mul.4294967296
+    add
     push.2
-    movdn.2
+    dup.1
+    u32split
     drop
     swap.1
     u32shl
@@ -418,7 +450,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     swap.2
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::RawVecInner<A>::try_allocate_in
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::raw_vec::RawVecInner>::try_allocate_in
     trace.252
     nop
     push.68
@@ -472,16 +504,8 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         drop
         movup.2
         drop
-        push.1114180
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
         push.72
-        movup.3
+        movup.2
         add
         u32assert
         push.4
@@ -497,10 +521,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        push.1048600
-        movup.2
-        u32wrapping_add
-        swap.2
+        swap.1
         trace.240
         nop
         exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::handle_error
@@ -689,7 +710,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
             u32wrapping_add
             trace.240
             nop
-            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
+            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
             trace.252
             nop
             push.12
@@ -736,22 +757,8 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 exec.::intrinsics::mem::load_sw
                 trace.252
                 nop
-                dup.0
-                push.4
-                dup.1
-                swap.1
-                u32mod
-                u32assert
-                assertz
-                u32divmod.4
-                swap.1
-                trace.240
-                nop
-                exec.::intrinsics::mem::load_dw
-                trace.252
-                nop
                 push.8
-                movup.3
+                dup.1
                 u32wrapping_add
                 push.4
                 dup.1
@@ -766,9 +773,10 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 exec.::intrinsics::mem::load_dw
                 trace.252
                 nop
+                swap.1
                 push.8
                 push.32
-                dup.10
+                dup.9
                 u32wrapping_add
                 u32wrapping_add
                 push.8
@@ -779,11 +787,27 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 assertz
                 u32divmod.4
                 swap.1
+                movup.2
+                movdn.3
                 trace.240
                 nop
                 exec.::intrinsics::mem::store_dw
                 trace.252
                 nop
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::load_dw
+                trace.252
+                nop
+                swap.1
                 push.32
                 dup.7
                 add
@@ -796,6 +820,8 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 assertz
                 u32divmod.4
                 swap.1
+                movup.2
+                movdn.3
                 trace.240
                 nop
                 exec.::intrinsics::mem::store_dw
@@ -809,7 +835,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
                 trace.252
                 nop
                 push.64
@@ -829,7 +855,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 dup.4
                 trace.240
                 nop
-                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index
+                exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
                 trace.252
                 nop
                 push.4
@@ -874,22 +900,8 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     exec.::intrinsics::mem::load_sw
                     trace.252
                     nop
-                    dup.0
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::load_dw
-                    trace.252
-                    nop
                     push.8
-                    movup.3
+                    dup.1
                     u32wrapping_add
                     push.4
                     dup.1
@@ -904,9 +916,10 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     exec.::intrinsics::mem::load_dw
                     trace.252
                     nop
+                    swap.1
                     push.8
                     push.48
-                    dup.8
+                    dup.7
                     u32wrapping_add
                     u32wrapping_add
                     push.8
@@ -917,11 +930,27 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     assertz
                     u32divmod.4
                     swap.1
+                    movup.2
+                    movdn.3
                     trace.240
                     nop
                     exec.::intrinsics::mem::store_dw
                     trace.252
                     nop
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::load_dw
+                    trace.252
+                    nop
+                    swap.1
                     push.48
                     dup.5
                     add
@@ -934,6 +963,8 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     assertz
                     u32divmod.4
                     swap.1
+                    movup.2
+                    movdn.3
                     trace.240
                     nop
                     exec.::intrinsics::mem::store_dw
@@ -947,7 +978,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
                     trace.252
                     nop
                     push.64
@@ -1030,16 +1061,20 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
                     trace.252
                     nop
-                    push.4
                     push.20
-                    dup.3
+                    dup.2
                     u32wrapping_add
-                    dup.1
-                    swap.2
-                    swap.1
                     trace.240
                     nop
-                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::RawVecInner<A>::deallocate
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+                    trace.252
+                    nop
+                    push.20
+                    dup.2
+                    u32wrapping_add
+                    trace.240
+                    nop
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     push.80
@@ -1183,7 +1218,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::core::ptr::alignment::Alignment::max
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<core::ptr::alignment::Alignment>::max
         trace.252
         nop
         push.0
@@ -1344,6 +1379,20 @@ proc intrinsics::mem::heap_base(
 end
 
 @callconv("C")
+proc <alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(
+    i32
+)
+    push.4
+    dup.0
+    swap.2
+    trace.240
+    nop
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::raw_vec::RawVecInner>::deallocate
+    trace.252
+    nop
+end
+
+@callconv("C")
 proc miden_base_sys::bindings::output_note::create(
     felt,
     felt,
@@ -1432,7 +1481,7 @@ proc miden_base_sys::bindings::output_note::create(
 end
 
 @callconv("C")
-proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(
+proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from(
     i32,
     i32
 )
@@ -1453,6 +1502,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -1465,6 +1515,8 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -1484,6 +1536,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -1493,6 +1546,8 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -1501,34 +1556,10 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdli
 end
 
 @callconv("C")
-proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::as_u64(felt) -> [u32; 2]
-    u32split
-end
-
-@callconv("C")
-proc intrinsics::felt::assert_eq(felt, felt)
-    assert_eq
+proc <alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(
+    i32
+)
+    drop
 end
 
 @callconv("C")
@@ -1550,7 +1581,85 @@ proc std::mem::pipe_preimage_to_memory(felt, i32, felt, felt, felt, felt) -> i32
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::deallocate(
+proc <alloc::alloc::Global>::alloc_impl(
+    i32,
+    i32,
+    i32,
+    i32
+)
+    push.0
+    push.0
+    dup.4
+    eq
+    neq
+    if.true
+        movup.3
+        drop
+        swap.1
+    else
+        trace.240
+        nop
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        trace.252
+        nop
+        push.0
+        movup.4
+        neq
+        if.true
+            swap.1
+            dup.2
+            trace.240
+            nop
+            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_alloc_zeroed
+            trace.252
+            nop
+        else
+            swap.1
+            dup.2
+            trace.240
+            nop
+            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_alloc
+            trace.252
+            nop
+        end
+    end
+    push.4
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.3
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    swap.1
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc <alloc::raw_vec::RawVecInner>::deallocate(
     i32,
     i32,
     i32
@@ -1585,7 +1694,7 @@ proc alloc::raw_vec::RawVecInner<A>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::raw_vec::RawVecInner<A>::current_memory
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::raw_vec::RawVecInner>::current_memory
     trace.252
     nop
     push.8
@@ -1667,7 +1776,284 @@ proc alloc::raw_vec::RawVecInner<A>::deallocate(
 end
 
 @callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
+proc <alloc::raw_vec::RawVecInner>::current_memory(
+    i32,
+    i32,
+    i32,
+    i32
+)
+    push.0
+    push.0
+    dup.5
+    eq
+    neq
+    if.true
+        movdn.3
+        drop
+        drop
+        drop
+        push.0
+        push.4
+    else
+        dup.1
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.0
+        push.0
+        dup.2
+        eq
+        neq
+        dup.0
+        if.true
+            swap.1
+            drop
+            movup.2
+            drop
+            movup.2
+            drop
+            movup.2
+            drop
+            push.0
+        else
+            push.4
+            dup.3
+            add
+            u32assert
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            movup.5
+            swap.1
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_sw
+            trace.252
+            nop
+            push.4
+            movup.4
+            add
+            u32assert
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
+            dup.3
+            push.4
+            dup.1
+            swap.1
+            u32mod
+            u32assert
+            assertz
+            u32divmod.4
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_sw
+            trace.252
+            nop
+            swap.3
+            trace.240
+            nop
+            exec.::intrinsics::i32::wrapping_mul
+            trace.252
+            nop
+            movup.2
+            swap.1
+        end
+        push.8
+        push.4
+        movup.3
+        cdrop
+    end
+    movup.2
+    u32wrapping_add
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
+    i32,
+    i32,
+    i32
+)
+    push.0
+    push.0
+    dup.4
+    eq
+    neq
+    if.true
+        drop
+        drop
+        drop
+    else
+        movup.2
+        swap.1
+        trace.240
+        nop
+        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_dealloc
+        trace.252
+        nop
+    end
+end
+
+@callconv("C")
+proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
+    i32,
+    i32,
+    i32
+)
+    push.1114176
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_sub
+    push.1114176
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.0
+    push.8
+    dup.2
+    u32wrapping_add
+    movup.2
+    swap.5
+    movdn.2
+    swap.1
+    swap.3
+    swap.4
+    swap.1
+    trace.240
+    nop
+    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::alloc::Global>::alloc_impl
+    trace.252
+    nop
+    push.12
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    dup.3
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    dup.2
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.4
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_add
+    push.1114176
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
     i32,
     i32,
     i32,
@@ -1778,7 +2164,7 @@ proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::alloc::Global::alloc_impl
+                    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::<alloc::alloc::Global>::alloc_impl
                     trace.252
                     nop
                     dup.2
@@ -1826,55 +2212,10 @@ proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
                     nop
                 end
                 push.0
-                push.0
-                dup.2
-                eq
+                dup.1
                 neq
                 dup.0
                 if.true
-                    movup.6
-                    movup.2
-                    drop
-                    drop
-                    push.8
-                    dup.5
-                    add
-                    u32assert
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    movup.3
-                    swap.1
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::store_sw
-                    trace.252
-                    nop
-                    push.4
-                    dup.4
-                    add
-                    u32assert
-                    push.4
-                    dup.1
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
-                    movup.5
-                    swap.1
-                    u32divmod.4
-                    swap.1
-                    trace.240
-                    nop
-                    exec.::intrinsics::mem::store_sw
-                    trace.252
-                    nop
-                else
                     movup.7
                     movup.4
                     drop
@@ -1917,9 +2258,52 @@ proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
                     exec.::intrinsics::mem::store_sw
                     trace.252
                     nop
+                else
+                    movup.6
+                    movup.2
+                    drop
+                    drop
+                    push.8
+                    dup.5
+                    add
+                    u32assert
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    movup.3
+                    swap.1
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::store_sw
+                    trace.252
+                    nop
+                    push.4
+                    dup.4
+                    add
+                    u32assert
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
+                    movup.5
+                    swap.1
+                    u32divmod.4
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::store_sw
+                    trace.252
+                    nop
                 end
-                push.0
                 push.1
+                push.0
                 movup.2
                 cdrop
             else
@@ -2080,363 +2464,7 @@ proc alloc::raw_vec::RawVecInner<A>::try_allocate_in(
 end
 
 @callconv("C")
-proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
-    i32,
-    i32,
-    i32
-)
-    push.1114176
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_sub
-    push.1114176
-    dup.1
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.0
-    push.8
-    dup.2
-    u32wrapping_add
-    movup.2
-    swap.5
-    movdn.2
-    swap.1
-    swap.3
-    swap.4
-    swap.1
-    trace.240
-    nop
-    exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::alloc::alloc::Global::alloc_impl
-    trace.252
-    nop
-    push.12
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.8
-    dup.3
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    dup.2
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.4
-    movup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_add
-    push.1114176
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc alloc::alloc::Global::alloc_impl(
-    i32,
-    i32,
-    i32,
-    i32
-)
-    push.0
-    push.0
-    dup.4
-    eq
-    neq
-    if.true
-        movup.3
-        drop
-        swap.1
-    else
-        trace.240
-        nop
-        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_no_alloc_shim_is_unstable_v2
-        trace.252
-        nop
-        push.0
-        movup.4
-        neq
-        if.true
-            swap.1
-            dup.2
-            trace.240
-            nop
-            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_alloc_zeroed
-            trace.252
-            nop
-        else
-            swap.1
-            dup.2
-            trace.240
-            nop
-            exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_alloc
-            trace.252
-            nop
-        end
-    end
-    push.4
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.3
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    swap.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc alloc::raw_vec::RawVecInner<A>::current_memory(
-    i32,
-    i32,
-    i32,
-    i32
-)
-    push.0
-    push.0
-    dup.5
-    eq
-    neq
-    if.true
-        movdn.3
-        drop
-        drop
-        drop
-        push.0
-        push.4
-    else
-        dup.1
-        push.4
-        dup.1
-        swap.1
-        u32mod
-        u32assert
-        assertz
-        u32divmod.4
-        swap.1
-        trace.240
-        nop
-        exec.::intrinsics::mem::load_sw
-        trace.252
-        nop
-        push.0
-        push.0
-        dup.2
-        eq
-        neq
-        dup.0
-        if.true
-            swap.1
-            drop
-            movup.2
-            drop
-            movup.2
-            drop
-            movup.2
-            drop
-            push.0
-        else
-            push.4
-            dup.3
-            add
-            u32assert
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            movup.5
-            swap.1
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_sw
-            trace.252
-            nop
-            push.4
-            movup.4
-            add
-            u32assert
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_sw
-            trace.252
-            nop
-            dup.3
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_sw
-            trace.252
-            nop
-            swap.3
-            trace.240
-            nop
-            exec.::intrinsics::i32::wrapping_mul
-            trace.252
-            nop
-            movup.2
-            swap.1
-        end
-        push.8
-        push.4
-        movup.3
-        cdrop
-    end
-    movup.2
-    u32wrapping_add
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
-    i32,
-    i32,
-    i32
-)
-    push.0
-    push.0
-    dup.4
-    eq
-    neq
-    if.true
-        drop
-        drop
-        drop
-    else
-        movup.2
-        swap.1
-        trace.240
-        nop
-        exec.::miden:base/transaction-script@1.0.0::basic_wallet_tx_script::__rustc::__rust_dealloc
-        trace.252
-        nop
-    end
-end
-
-@callconv("C")
-proc alloc::raw_vec::handle_error(i32, i32, i32)
-    drop
+proc alloc::raw_vec::handle_error(i32, i32)
     drop
     drop
     push.0
@@ -2444,7 +2472,7 @@ proc alloc::raw_vec::handle_error(i32, i32, i32)
 end
 
 @callconv("C")
-proc core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runtime(
+proc core::slice::index::slice_index_fail::do_panic::runtime(
     i32,
     i32,
     i32
@@ -2457,7 +2485,10 @@ proc core::slice::<impl [T]>::copy_from_slice::len_mismatch_fail::do_panic::runt
 end
 
 @callconv("C")
-proc core::ptr::alignment::Alignment::max(i32, i32) -> i32
+proc <core::ptr::alignment::Alignment>::max(
+    i32,
+    i32
+) -> i32
     push.0
     dup.2
     dup.2

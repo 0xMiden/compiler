@@ -13,11 +13,9 @@ builtin.component miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-ac
         private builtin.function @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1#binding() -> felt {
         ^block9:
             hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/wit_bindgen::rt::run_ctors_once()
-            v1 = arith.constant 1 : i32;
-            v2 = hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/intrinsics::felt::from_u32(v1) : felt
-            v3 = arith.constant 0 : i32;
-            v4 = hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/intrinsics::felt::from_u32(v3) : felt
-            v5 = hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/miden::active_account::get_initial_balance(v2, v4) : felt
+            v34 = arith.constant 0 : felt;
+            v35 = arith.constant 1 : felt;
+            v5 = hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/miden::active_account::get_initial_balance(v35, v34) : felt
             builtin.ret v5;
         };
 
@@ -44,27 +42,21 @@ builtin.component miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-ac
                 v20 = hir.bitcast v19 : ptr<byte, i32>;
                 v21 = hir.load v20 : i32;
                 hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/__wasm_call_ctors()
-                v38 = arith.constant 1 : u8;
-                v40 = arith.constant 1048584 : i32;
-                v23 = arith.add v21, v40 : i32 #[overflow = wrapping];
+                v37 = arith.constant 1 : u8;
+                v39 = arith.constant 1048584 : i32;
+                v23 = arith.add v21, v39 : i32 #[overflow = wrapping];
                 v27 = hir.bitcast v23 : u32;
                 v28 = hir.int_to_ptr v27 : ptr<byte, u8>;
-                hir.store v28, v38;
+                hir.store v28, v37;
                 scf.yield ;
             };
             builtin.ret ;
         };
 
-        private builtin.function @intrinsics::felt::from_u32(v29: i32) -> felt {
-        ^block15(v29: i32):
-            v30 = hir.bitcast v29 : felt;
-            builtin.ret v30;
-        };
-
-        private builtin.function @miden::active_account::get_initial_balance(v32: felt, v33: felt) -> felt {
-        ^block17(v32: felt, v33: felt):
-            v34 = hir.exec @miden/active_account/get_initial_balance(v32, v33) : felt
-            builtin.ret v34;
+        private builtin.function @miden::active_account::get_initial_balance(v29: felt, v30: felt) -> felt {
+        ^block15(v29: felt, v30: felt):
+            v31 = hir.exec @miden/active_account/get_initial_balance(v29, v30) : felt
+            builtin.ret v31;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -79,8 +71,8 @@ builtin.component miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-ac
     };
 
     public builtin.function @binding() -> felt {
-    ^block21:
-        v36 = hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1#binding() : felt
-        builtin.ret v36;
+    ^block19:
+        v33 = hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1#binding() : felt
+        builtin.ret v33;
     };
 };

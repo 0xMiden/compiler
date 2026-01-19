@@ -14,6 +14,7 @@ mod callable;
 mod code_translator;
 mod component;
 mod config;
+mod emit;
 mod error;
 mod intrinsics;
 mod miden_abi;
@@ -25,11 +26,13 @@ use alloc::rc::Rc;
 
 use component::build_ir::translate_component;
 use error::WasmResult;
-use midenc_hir::{dialects::builtin, Context};
+use midenc_hir::{Context, dialects::builtin};
 use module::build_ir::translate_module_as_component;
 use wasmparser::WasmFeatures;
 
-pub use self::{config::*, error::WasmError};
+#[cfg(feature = "std")]
+pub use self::emit::wasm_to_wat;
+pub use self::{config::*, emit::WatEmit, error::WasmError};
 
 /// The output of the frontend Wasm translation stage
 pub struct FrontendOutput {

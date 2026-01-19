@@ -4,9 +4,9 @@ use core::ops::{Deref, DerefMut};
 use smallvec::SmallVec;
 
 use crate::{
-    patterns::Pattern, BlockRef, Builder, Context, InsertionGuard, Listener, ListenerType,
-    OpBuilder, OpOperandImpl, OperationRef, PostOrderBlockIter, ProgramPoint, RegionRef, Report,
-    SourceSpan, Usable, ValueRef,
+    BlockRef, Builder, Context, InsertionGuard, Listener, ListenerType, OpBuilder, OpOperandImpl,
+    OperationRef, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan, Usable,
+    ValueRef, patterns::Pattern,
 };
 
 /// A [Rewriter] is a [Builder] extended with additional functionality that is of primary use when
@@ -66,13 +66,10 @@ pub trait Rewriter: Builder + RewriterListener {
                 // All nested ops should have been erased already
                 assert!(op.regions().iter().all(|r| r.is_empty()), "expected empty regions");
                 // All users should have been erased already if the op is in a region with SSA dominance
-                if op.is_used() {
-                    if let Some(region) = op.parent_region() {
-                        assert!(
-                            region.borrow().may_be_graph_region(),
-                            "expected that op has no uses"
-                        );
-                    }
+                if op.is_used()
+                    && let Some(region) = op.parent_region()
+                {
+                    assert!(region.borrow().may_be_graph_region(), "expected that op has no uses");
                 }
             }
 

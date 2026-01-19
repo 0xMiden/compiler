@@ -6,7 +6,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::{AccountId, Asset, Recipient};
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::active_note::get_inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
     #[link_name = "miden::active_note::get_assets"]
@@ -26,6 +26,19 @@ extern "C" {
 }
 
 /// Get the inputs of the currently executing note.
+///
+/// # Examples
+///
+/// Parse a note input layout into domain types:
+///
+/// ```rust,ignore
+/// use miden::{active_note, AccountId, Asset};
+///
+/// let inputs = active_note::get_inputs();
+///
+/// // Example layout: first two inputs store a target `AccountId`.
+/// let target = AccountId::from(inputs[0], inputs[1]);
+/// ```
 pub fn get_inputs() -> Vec<Felt> {
     const MAX_INPUTS: usize = 256;
     let mut inputs: Vec<Felt> = Vec::with_capacity(MAX_INPUTS);

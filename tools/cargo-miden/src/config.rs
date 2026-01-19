@@ -2,7 +2,7 @@
 
 use std::{fmt, str::FromStr};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use semver::Version;
 
 /// Represents a cargo package specifier.

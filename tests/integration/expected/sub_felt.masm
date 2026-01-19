@@ -14,15 +14,6 @@ end
 
 @callconv("C")
 pub proc entrypoint(felt, felt) -> felt
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::sub_felt::intrinsics::felt::sub
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::sub(felt, felt) -> felt
     swap.1
     sub
 end

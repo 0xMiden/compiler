@@ -18,6 +18,12 @@
 use std::{env, path::PathBuf, process::Command};
 
 fn main() {
+    println!("cargo::rerun-if-env-changed=MIDENC_TARGET_IS_MIDEN_VM");
+    println!("cargo::rustc-check-cfg=cfg(miden)");
+    if env::var_os("MIDENC_TARGET_IS_MIDEN_VM").is_some() {
+        println!("cargo::rustc-cfg=miden");
+    }
+
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let target = env::var("TARGET").unwrap_or_else(|_| "wasm32-wasip1".to_string());
@@ -84,14 +90,12 @@ fn main() {
     let status = Command::new("rustc")
         .arg("--crate-name")
         .arg("miden_stdlib_sys_intrinsics_stubs")
-        .arg("--edition=2021")
+        .arg("--edition=2024")
         .arg("--crate-type=rlib")
         .arg("--target")
         .arg(&target)
         .arg("-C")
         .arg("opt-level=1")
-        .arg("-C")
-        .arg("panic=abort")
         .arg("-C")
         .arg("codegen-units=1")
         .arg("-C")
@@ -113,14 +117,12 @@ fn main() {
     let status = Command::new("rustc")
         .arg("--crate-name")
         .arg("miden_stdlib_sys_stdlib_stubs")
-        .arg("--edition=2021")
+        .arg("--edition=2024")
         .arg("--crate-type=rlib")
         .arg("--target")
         .arg(&target)
         .arg("-C")
         .arg("opt-level=1")
-        .arg("-C")
-        .arg("panic=abort")
         .arg("-C")
         .arg("codegen-units=1")
         .arg("-C")

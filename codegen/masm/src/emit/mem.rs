@@ -1,10 +1,10 @@
 use miden_core::{Felt, FieldElement};
 use midenc_hir::{
-    dialects::builtin::LocalVariable, AddressSpace, ArrayType, PointerType, SourceSpan, StructType,
-    Type,
+    AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type,
+    dialects::builtin::LocalVariable,
 };
 
-use super::{masm, OpEmitter};
+use super::{OpEmitter, masm};
 use crate::lower::NativePtr;
 
 /// Allocation
@@ -62,7 +62,7 @@ impl OpEmitter<'_> {
                 );
                 match &ty {
                     Type::I128 => self.load_quad_word(None, span),
-                    Type::I64 | Type::U64 => self.load_double_word(None, span),
+                    Type::I64 | Type::U64 => self.load_double_word_int(None, span),
                     Type::Felt => self.load_felt(None, span),
                     Type::I32 | Type::U32 => self.load_word(None, span),
                     ty @ (Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1) => {
@@ -87,7 +87,7 @@ impl OpEmitter<'_> {
         let ptr = NativePtr::from_ptr(addr);
         match &ty {
             Type::I128 => self.load_quad_word(Some(ptr), span),
-            Type::I64 | Type::U64 => self.load_double_word(Some(ptr), span),
+            Type::I64 | Type::U64 => self.load_double_word_int(Some(ptr), span),
             Type::Felt => self.load_felt(Some(ptr), span),
             Type::I32 | Type::U32 => self.load_word(Some(ptr), span),
             Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1 => {
@@ -130,7 +130,8 @@ impl OpEmitter<'_> {
 
     /// Load a field element from a naturally aligned address, either immediate or dynamic
     ///
-    /// A native pointer triplet is expected on the stack if an immediate is not given.
+    /// A native pointer pair `(element_addr, byte_offset)` is expected on the stack if an
+    /// immediate is not given.
     fn load_felt(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.load_felt_imm(imm, span);
@@ -147,7 +148,8 @@ impl OpEmitter<'_> {
     /// Loads a single 32-bit machine word, i.e. a single field element, not the Miden notion of a
     /// word
     ///
-    /// Expects a native pointer triplet on the stack if an immediate address is not given.
+    /// Expects a native pointer pair `(element_addr, byte_offset)` on the stack if an immediate
+    /// address is not given.
     fn load_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.load_word_imm(imm, span);
@@ -170,13 +172,17 @@ impl OpEmitter<'_> {
         }
     }
 
-    /// Load a pair of machine words (32-bit elements) to the operand stack
-    fn load_double_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
+    /// Load a 64-bit word from the given address.
+    fn load_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
-            return self.load_double_word_imm(imm, span);
+            self.load_double_word_imm(imm, span);
+        } else {
+            self.raw_exec("intrinsics::mem::load_dw", span);
         }
 
-        self.raw_exec("intrinsics::mem::load_dw", span);
+        // The mem::intrinsic loads two 32-bit words with the first at the top of the stack.  Swap
+        // them to make a big-endian-limbed stack value.
+        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Load a sub-word value (u8, u16, etc.) from memory
@@ -538,7 +544,7 @@ impl OpEmitter<'_> {
                 );
                 match value_ty {
                     Type::I128 => self.store_quad_word(None, span),
-                    Type::I64 | Type::U64 => self.store_double_word(None, span),
+                    Type::I64 | Type::U64 => self.store_double_word_int(None, span),
                     Type::Felt => self.store_felt(None, span),
                     Type::I32 | Type::U32 => self.store_word(None, span),
                     ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, None, span),
@@ -566,7 +572,7 @@ impl OpEmitter<'_> {
         let ptr = NativePtr::from_ptr(addr);
         match value_ty {
             Type::I128 => self.store_quad_word(Some(ptr), span),
-            Type::I64 | Type::U64 => self.store_double_word(Some(ptr), span),
+            Type::I64 | Type::U64 => self.store_double_word_int(Some(ptr), span),
             Type::Felt => self.store_felt(Some(ptr), span),
             Type::I32 | Type::U32 => self.store_word(Some(ptr), span),
             ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, Some(ptr), span),
@@ -853,36 +859,52 @@ impl OpEmitter<'_> {
         }
     }
 
-    /// Store a pair of machine words (32-bit elements) to the operand stack
-    fn store_double_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
-        if let Some(imm) = ptr {
-            return self.store_double_word_imm(imm, span);
-        }
-
-        self.raw_exec("intrinsics::mem::store_dw", span);
-    }
-
-    fn store_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        if ptr.is_element_aligned() {
-            self.emit_all(
-                [
-                    masm::Instruction::U32Assert2,
-                    masm::Instruction::MemStoreImm(ptr.addr.into()),
-                    masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
-                ],
-                span,
-            );
-        } else {
-            // Delegate to `store_dw` to handle unaligned stores
-            self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::store_dw", span);
+    /// Store a 64-bit integer in linear memory.
+    ///
+    /// Values are represented as two 32-bit limbs on the operand stack in big-endian order
+    /// (`[hi, lo]`).
+    fn store_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
+        match ptr {
+            // When storing to an immediate address, the operand stack only contains the value
+            // limbs. We must swap them so that the low limb is stored at the lower address.
+            Some(ptr) if ptr.is_element_aligned() => {
+                // Stack: [value_hi, value_lo]
+                self.emit_all(
+                    [
+                        masm::Instruction::Swap1,
+                        masm::Instruction::U32Assert2,
+                        masm::Instruction::MemStoreImm(ptr.addr.into()),
+                        masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
+                    ],
+                    span,
+                );
+            }
+            // When storing to a dynamic address, or an unaligned immediate address, the operand
+            // stack contains (or must contain) the native pointer pair `(element_addr, byte_offset)`
+            // above the value limbs. This is derived from the 32-bit byte pointer via `divmod 4`.
+            // Swap the limbs underneath the pointer pair before delegating to the mem intrinsic.
+            Some(ptr) => {
+                // Stack: [value_hi, value_lo]
+                self.push_native_ptr(ptr, span);
+                // Stack: [addr, offset, value_hi, value_lo]
+                self.emit(masm::Instruction::MovUp2, span);
+                self.emit(masm::Instruction::MovDn3, span);
+                self.raw_exec("intrinsics::mem::store_dw", span);
+            }
+            None => {
+                // Stack: [addr, offset, value_hi, value_lo]
+                self.emit(masm::Instruction::MovUp2, span);
+                self.emit(masm::Instruction::MovDn3, span);
+                self.raw_exec("intrinsics::mem::store_dw", span);
+            }
         }
     }
 
     /// Stores a single 32-bit machine word, i.e. a single field element, not the Miden notion of a
     /// word
     ///
-    /// Expects a native pointer triplet on the stack if an immediate address is not given.
+    /// Expects a native pointer pair `(element_addr, byte_offset)` on the stack if an immediate
+    /// address is not given.
     fn store_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.store_word_imm(imm, span);
@@ -907,7 +929,8 @@ impl OpEmitter<'_> {
 
     /// Store a field element to a naturally aligned address, either immediate or dynamic
     ///
-    /// A native pointer triplet is expected on the stack if an immediate is not given.
+    /// A native pointer pair `(element_addr, byte_offset)` is expected on the stack if an
+    /// immediate is not given.
     fn store_felt(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.store_felt_imm(imm, span);

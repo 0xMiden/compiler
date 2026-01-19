@@ -24,7 +24,7 @@ unimplemented or a known limitation, please let us know by reporting an issue on
 
 The compiler toolchain consists of the following primary components:
 
-- An intermediate representation (IR), which can be lowered to by compiler backends wishing to
+- An intermediate representation (IR), which can be lowered by compiler backends wishing to
   support Miden as a target. The Miden IR is an SSA IR, much like Cranelift or LLVM, providing a
   much simpler path from any given source language (e.g. Rust), to Miden Assembly. It is used
   internally by the rest of the Miden compiler suite.
@@ -45,7 +45,7 @@ The compiler toolchain consists of the following primary components:
 - A terminal-based interactive debugger, available via `midenc debug`, which provides a UI very
   similar to `lldb` or `gdb` when using the TUI mode. You can use this to run a program, or step
   through it cycle-by-cycle. You can set various types of breakpoints; see the source code, call
-  stack, and contents of the operand stack at the current program point; as well as interatively
+  stack, and contents of the operand stack at the current program point; as well as interactively
   read memory and format it in various ways for display.
 - A Miden SDK for Rust, which provides types and bindings to functionality exported from the Miden
   standard library, as well as the Miden transaction kernel API. You can use this to access native

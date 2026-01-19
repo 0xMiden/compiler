@@ -10,7 +10,7 @@ via the `midenc debug` command.
 
 :::warning
 
-The debugger is still quite new, and while very useful already, still has a fair number of
+The debugger is still quite new, and while very useful already, it still has a fair number of
 UX annoyances. Please report any bugs you encounter, and we'll try to get them patched ASAP!
 
 :::
@@ -27,10 +27,10 @@ The debugger may also be used as a library, but that is left as an exercise for 
 
 ```shell
 # Compile a program to MAST from a rustc-generated Wasm module
-midenc compile foo.wasm -o foo.masl
+midenc compile foo.wasm -o foo.masp
 
 # Load that program into the debugger and start executing it
-midenc debug foo.masl
+midenc debug foo.masp
 ```
 
 ## Program inputs
@@ -44,11 +44,11 @@ options, depending on the needs of the program:
 
 ### Via command line
 
-To specify the contents of the operand stack, you can do so following the raw arguments separator `--`.
+To specify the contents of the operand stack, you can do so by following the raw arguments separator `--`.
 Each operand must be a valid field element value, in either decimal or hexadecimal format. For example:
 
 ```shell
-midenc debug foo.masl -- 1 2 0xdeadbeef
+midenc debug foo.masp -- 1 2 0xdeadbeef
 ```
 
 If you pass arguments via the command line in conjunction with `--inputs`, then the command line arguments
@@ -168,7 +168,7 @@ The syntax for each of these can be found below, in the same order (shown using 
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `b FILE[:LINE]` | Break when an instruction with a source location in `FILE` (a glob pattern) <br />_and_ that occur on `LINE` (literal, if provided) are hit. |
 | `b in NAME`     | Break when the glob pattern `NAME` matches the fully-qualified procedure name<br /> containing the current instruction                       |
-| `b for OPCODE`  | Break when the an instruction with opcode `OPCODE` is exactly matched <br />(including immediate values)                                     |
+| `b for OPCODE`  | Break when an instruction with opcode `OPCODE` is exactly matched <br />(including immediate values)                                     |
 | `b next`        | Break on the next instruction                                                                                                                |
 | `b after N`     | Break after `N` cycles                                                                                                                       |
 | `b at CYCLE`    | Break when the cycle count reaches `CYCLE`. <br />If `CYCLE` has already occurred, this has no effect                                        |

@@ -1,6 +1,0 @@
-//! Integration tests that are deploying code and runnning test scenarior on a local Miden node instance or testnet
-
-pub mod local_node;
-
-#[cfg(test)]
-mod node_tests;

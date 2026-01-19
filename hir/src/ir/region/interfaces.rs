@@ -2,8 +2,8 @@ use alloc::boxed::Box;
 
 use super::*;
 use crate::{
-    attributes::AttributeValue, traits::Terminator, Op, SuccessorOperandRange,
-    SuccessorOperandRangeMut, Type,
+    Op, SuccessorOperandRange, SuccessorOperandRangeMut, Type, attributes::AttributeValue,
+    traits::Terminator,
 };
 
 /// An op interface that indicates what types of regions it holds
@@ -376,10 +376,6 @@ impl dyn LoopLikeOpInterface {
     /// Return the single step value or attribute if it exists, otherwise return `None`
     pub fn get_single_step(&self) -> Option<OpFoldResult> {
         let mut steps = self.get_loop_steps()?;
-        if steps.len() == 1 {
-            steps.pop()
-        } else {
-            None
-        }
+        if steps.len() == 1 { steps.pop() } else { None }
     }
 }

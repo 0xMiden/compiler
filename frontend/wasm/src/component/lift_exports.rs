@@ -4,11 +4,11 @@ use core::cell::RefCell;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, ModuleBuilder},
     CallConv, FunctionType, Ident, Op, Signature, SmallVec, SourceSpan, SymbolPath, ValueRange,
     ValueRef, Visibility,
+    dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, ModuleBuilder},
 };
-use midenc_session::{diagnostics::Severity, DiagnosticsHandler};
+use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
 
 use super::{
     canon_abi_utils::load,

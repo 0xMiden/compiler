@@ -2,7 +2,7 @@
 name = "counter-contract"
 description = "A simple example of a Miden counter contract using the Account Storage API"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 # Build this crate as a self-contained, C-style dynamic library

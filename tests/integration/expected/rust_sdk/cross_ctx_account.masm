@@ -79,31 +79,17 @@ proc miden:cross-ctx-account/foo@1.0.0#process-felt(felt) -> felt
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    trace.240
-    nop
-    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::intrinsics::felt::from_u32
-    trace.252
-    nop
     movup.2
-    trace.240
-    nop
-    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::intrinsics::felt::add
-    trace.252
-    nop
-    dup.0
-    trace.240
-    nop
-    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::intrinsics::felt::as_u64
-    trace.252
-    nop
-    movup.3
+    add
+    swap.1
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    movdn.2
+    dup.1
+    u32split
     drop
     swap.1
     u32divmod.4
@@ -187,20 +173,5 @@ proc wit_bindgen::rt::run_ctors_once(
         swap.1
         mem_store
     end
-end
-
-@callconv("C")
-proc intrinsics::felt::add(felt, felt) -> felt
-    add
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::as_u64(felt) -> [u32; 2]
-    u32split
 end
 

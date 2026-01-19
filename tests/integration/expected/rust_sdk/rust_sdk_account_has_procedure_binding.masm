@@ -80,11 +80,6 @@ proc miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure
     trace.252
     nop
     push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1::rust_sdk_account_has_procedure_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.0
     movup.2
     swap.1
@@ -226,25 +221,6 @@ proc miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure
     exec.::miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1::rust_sdk_account_has_procedure_binding::miden::active_account::has_procedure
     trace.252
     nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1::rust_sdk_account_has_procedure_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
-    swap.1
-    trace.240
-    nop
-    exec.::miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1::rust_sdk_account_has_procedure_binding::intrinsics::felt::eq
-    trace.252
-    nop
-    push.1
-    neq
-    trace.240
-    nop
-    exec.::miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1::rust_sdk_account_has_procedure_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
     push.16
     movup.2
     u32wrapping_add
@@ -256,6 +232,11 @@ proc miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    push.1
+    push.0
+    movup.2
+    eq
+    neq
 end
 
 @callconv("C")
@@ -330,16 +311,6 @@ proc wit_bindgen::rt::run_ctors_once(
         swap.1
         mem_store
     end
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
 end
 
 @callconv("C")

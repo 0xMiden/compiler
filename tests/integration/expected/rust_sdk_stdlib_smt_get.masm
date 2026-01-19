@@ -45,15 +45,11 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    swap.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::intrinsics::felt::eq
-    trace.252
-    nop
     push.0
     push.1
-    movup.2
+    movup.3
+    movup.3
+    eq
     neq
     neq
     if.true
@@ -95,15 +91,11 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        swap.1
-        trace.240
-        nop
-        exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::intrinsics::felt::eq
-        trace.252
-        nop
         push.0
         push.1
-        movup.2
+        movup.3
+        movup.3
+        eq
         neq
         neq
         if.true
@@ -145,15 +137,11 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
             exec.::intrinsics::mem::load_felt
             trace.252
             nop
-            swap.1
-            trace.240
-            nop
-            exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::intrinsics::felt::eq
-            trace.252
-            nop
             push.0
             push.1
-            movup.2
+            movup.3
+            movup.3
+            eq
             neq
             neq
             if.true
@@ -195,13 +183,9 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
                 exec.::intrinsics::mem::load_felt
                 trace.252
                 nop
-                swap.1
-                trace.240
-                nop
-                exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::intrinsics::felt::eq
-                trace.252
-                nop
                 push.1
+                movdn.2
+                eq
                 eq
             end
         end
@@ -219,7 +203,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     push.4294967264
-    push.128
+    push.160
     dup.2
     swap.1
     u32wrapping_sub
@@ -345,7 +329,8 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
-    push.104
+    swap.1
+    push.120
     dup.3
     add
     u32assert
@@ -357,6 +342,8 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -379,7 +366,8 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
-    push.96
+    swap.1
+    push.112
     dup.3
     add
     u32assert
@@ -391,6 +379,8 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -413,7 +403,8 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
-    push.120
+    swap.1
+    push.136
     dup.3
     add
     u32assert
@@ -425,6 +416,8 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -447,8 +440,50 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
-    push.112
+    swap.1
+    push.128
     dup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    push.112
+    dup.1
+    u32wrapping_add
+    push.32
+    dup.2
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::<miden_stdlib_sys::intrinsics::word::Word>::reverse
+    trace.252
+    nop
+    push.128
+    dup.1
+    u32wrapping_add
+    push.144
+    dup.2
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::<miden_stdlib_sys::intrinsics::word::Word>::reverse
+    trace.252
+    nop
+    push.152
+    dup.1
     add
     u32assert
     push.8
@@ -461,62 +496,67 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     swap.1
     trace.240
     nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    push.56
+    dup.3
+    u32wrapping_add
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    push.96
+    push.144
     dup.1
-    u32wrapping_add
-    push.32
-    dup.2
-    u32wrapping_add
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::miden_stdlib_sys::intrinsics::word::Word::reverse
+    exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.48
+    dup.3
+    add
+    u32assert
+    push.8
     dup.1
-    u32wrapping_add
-    push.112
-    dup.2
-    u32wrapping_add
-    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::miden_stdlib_sys::intrinsics::word::Word::reverse
-    trace.252
-    nop
-    push.10
-    push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::intrinsics::felt::from_u64_unchecked
-    trace.252
-    nop
-    push.11
-    push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::intrinsics::felt::from_u64_unchecked
-    trace.252
-    nop
-    push.12
-    push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::intrinsics::felt::from_u64_unchecked
-    trace.252
-    nop
-    push.13
-    push.0
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::intrinsics::felt::from_u64_unchecked
+    exec.::intrinsics::mem::store_dw
     trace.252
     nop
     push.76
-    dup.6
+    dup.1
     add
     u32assert
     push.4
@@ -525,6 +565,21 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
+    push.13
+    push.0
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -533,7 +588,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     push.72
-    dup.5
+    dup.1
     add
     u32assert
     push.4
@@ -542,6 +597,21 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
+    push.12
+    push.0
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -550,7 +620,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     push.68
-    dup.4
+    dup.1
     add
     u32assert
     push.4
@@ -559,6 +629,21 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
+    push.11
+    push.0
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -567,7 +652,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     push.64
-    dup.3
+    dup.1
     add
     u32assert
     push.4
@@ -576,6 +661,21 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
+    push.10
+    push.0
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -584,10 +684,10 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     push.64
-    dup.2
+    dup.1
     u32wrapping_add
     push.32
-    dup.3
+    dup.2
     u32wrapping_add
     trace.240
     nop
@@ -602,13 +702,14 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     if.true
         drop
         drop
-        drop
         push.0
     else
         push.16
+        dup.1
+        u32wrapping_add
+        push.48
         movup.2
         u32wrapping_add
-        swap.1
         trace.240
         nop
         exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
@@ -651,7 +752,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
 end
 
 @callconv("C")
-proc miden_stdlib_sys::intrinsics::word::Word::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     i32,
     i32
 )
@@ -682,6 +783,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.3
     add
@@ -694,6 +796,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -713,6 +817,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     dup.2
     push.4
     dup.1
@@ -722,6 +827,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -869,6 +976,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.8
     dup.4
     add
@@ -881,6 +989,8 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
@@ -899,6 +1009,7 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     movup.2
     push.8
     dup.1
@@ -908,32 +1019,13 @@ proc miden_stdlib_sys::intrinsics::word::Word::reverse(
     assertz
     u32divmod.4
     swap.1
+    movup.2
+    movdn.3
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u64_unchecked([u32; 2]) -> felt
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
-end
-
-@callconv("C")
-proc intrinsics::felt::eq(felt, felt) -> i32
-    eq
 end
 
 @callconv("C")

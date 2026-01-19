@@ -986,10 +986,12 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 
 [[package]]
 name = "miden"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "miden-base",
  "miden-base-sys",
+ "miden-felt-repr",
+ "miden-field",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
  "wit-bindgen",
@@ -1046,7 +1048,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
@@ -1055,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "heck",
  "miden-objects",
@@ -1064,12 +1066,15 @@ dependencies = [
  "semver 1.0.26",
  "syn",
  "toml 0.8.23",
+ "wit-bindgen-core",
+ "wit-bindgen-rust",
 ]
 
 [[package]]
 name = "miden-base-sys"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
+ "miden-felt-repr",
  "miden-stdlib-sys",
 ]
 
@@ -1147,6 +1152,32 @@ dependencies = [
  "serde",
  "serde_spanned 1.0.0",
  "thiserror",
+]
+
+[[package]]
+name = "miden-felt-repr"
+version = "0.7.1"
+dependencies = [
+ "miden-core",
+ "miden-felt-repr-derive",
+ "miden-field",
+ "miden-objects",
+]
+
+[[package]]
+name = "miden-felt-repr-derive"
+version = "0.7.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "miden-field"
+version = "0.8.0"
+dependencies = [
+ "miden-core",
 ]
 
 [[package]]
@@ -1256,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.7.0"
+version = "0.8.0"
 
 [[package]]
 name = "miden-stdlib"
@@ -1276,7 +1307,10 @@ dependencies = [
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.7.1"
+version = "0.8.0"
+dependencies = [
+ "miden-field",
+]
 
 [[package]]
 name = "miden-utils-diagnostics"

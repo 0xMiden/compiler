@@ -6,7 +6,7 @@ use miden_stdlib_sys::{Felt, Word};
 use super::types::{Asset, NoteIdx, NoteType, Recipient, Tag};
 
 #[allow(improper_ctypes)]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "miden::output_note::create"]
     pub fn extern_output_note_create(
         tag: Tag,
@@ -42,6 +42,32 @@ extern "C" {
 }
 
 /// Creates a new output note and returns its index.
+///
+/// # Examples
+///
+/// Create a note and add a single asset to it:
+///
+/// ```rust,ignore
+/// // before using `Vec`/`vec!`.
+/// extern crate alloc;
+///
+/// use miden::{felt, output_note, Asset, Digest, NoteType, Recipient, Tag, Word};
+///
+/// // Values used to derive the note recipient.
+/// let serial_num = Word::from([felt!(1), felt!(2), felt!(3), felt!(4)]);
+/// let note_script_root = Digest::from_word(Word::from([felt!(0), felt!(0), felt!(0), felt!(0)]));
+///
+/// // Note inputs must be padded to a multiple of 8 felts (2 words).
+/// let padded_inputs = alloc::vec![felt!(0); 8];
+/// let recipient = Recipient::compute(serial_num, note_script_root, padded_inputs);
+///
+/// let tag = Tag::from(felt!(0));
+/// let note_type = NoteType::from(felt!(0));
+/// let execution_hint = felt!(0);
+///
+/// let note_idx = output_note::create(tag, felt!(0), note_type, execution_hint, recipient);
+/// output_note::add_asset(Asset::new([felt!(0), felt!(0), felt!(0), felt!(1)]), note_idx);
+/// ```
 pub fn create(
     tag: Tag,
     aux: Felt,
@@ -64,6 +90,18 @@ pub fn create(
 }
 
 /// Adds the asset to the output note specified by `note_idx`.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use miden::{felt, output_note, Asset, NoteIdx};
+///
+/// // `note_idx` is returned by `output_note::create(...)`.
+/// let note_idx: NoteIdx = /* ... */
+///
+/// let asset = Asset::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+/// output_note::add_asset(asset, note_idx);
+/// ```
 pub fn add_asset(asset: Asset, note_idx: NoteIdx) {
     unsafe {
         extern_output_note_add_asset(

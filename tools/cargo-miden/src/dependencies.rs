@@ -4,11 +4,11 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
-use cargo_metadata::{camino, Package};
+use anyhow::{Context, Result, anyhow, bail};
+use cargo_metadata::{Package, camino};
 use serde::Deserialize;
 
-use crate::{commands::CargoOptions, BuildOutput, OutputType};
+use crate::{BuildOutput, OutputType, commands::CargoOptions};
 
 /// Defines dependency (the rhs of the dependency `"ns:package" = { path = "..." }` pair)
 #[derive(Deserialize, Debug, Clone)]
@@ -140,8 +140,6 @@ pub fn process_miden_dependencies(
                     if cargo_opts.release {
                         dep_build_args.push("--release".to_string());
                     }
-                    // Dependencies should always be built as libraries
-                    dep_build_args.push("--lib".to_string());
 
                     // We expect dependencies to *always* produce Masm libraries (.masp)
                     let command_output = crate::run(dep_build_args.into_iter(), OutputType::Masm)

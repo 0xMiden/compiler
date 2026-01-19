@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use midenc_hir::{formatter, AttributeValue, Felt, Immediate, Type};
+use midenc_hir::{AttributeValue, Felt, Immediate, Type, formatter};
 
 /// Represents the constant value of the 'hir.poison' operation
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

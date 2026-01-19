@@ -1,6 +1,6 @@
 # Miden Standard Library
 
-The `miden-stdlib-sys` crate provides a `Felt` type that represents field element in the Miden VM and a standard library for developing Miden programs.
+The `miden-stdlib-sys` crate provides low-level bindings for the Miden standard library, and re-exports the unified `Felt` type from the `miden-field` crate.
 
 ## Miden VM instructions
 

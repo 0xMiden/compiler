@@ -7,9 +7,9 @@ static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
 
 use heck::ToKebabCase;
 use proc_macro2::Span;
-use syn::{spanned::Spanned, ItemStruct, Type};
+use syn::{ItemStruct, Type, spanned::Spanned};
 
-use crate::generate::SDK_WIT_SOURCE;
+use crate::manifest_paths::SDK_WIT_SOURCE;
 
 #[derive(Clone, Debug)]
 pub(crate) struct TypeRef {
@@ -178,11 +178,7 @@ fn extract_wit_type_name(line: &str, keyword: &str) -> Option<String> {
             break;
         }
     }
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
-    }
+    if name.is_empty() { None } else { Some(name) }
 }
 
 pub(crate) fn exported_type_from_struct(

@@ -1,20 +1,18 @@
-use std::{borrow::Borrow, collections::VecDeque, sync::Arc};
+use std::{borrow::Borrow, collections::VecDeque};
 
 use miden_core::utils::{Deserializable, Serializable};
-use miden_debug::{Executor, ToMidenRepr};
-use miden_lib::MidenLib;
-use miden_mast_package::{Package, SectionId};
+use miden_debug::ToMidenRepr;
+use miden_mast_package::SectionId;
 use miden_objects::account::AccountComponentMetadata;
 use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
-    interner::Symbol, Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable,
+    Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable, interner::Symbol,
 };
-use midenc_session::STDLIB;
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
-use crate::{cargo_proj::project, CompilerTest, CompilerTestBuilder};
+use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project, testing::executor_with_std};
 
 #[test]
 fn storage_example() {
@@ -63,19 +61,6 @@ fn storage_example() {
     .assert_eq(&toml);
 }
 
-fn executor_with_std(package: &Package, args: Vec<Felt>) -> Result<Executor, TestCaseError> {
-    let mut exec = Executor::new(args);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
-    exec.with_dependencies(package.manifest.dependencies())
-        .map_err(|err| TestCaseError::fail(err.to_string()))?;
-    Ok(exec)
-}
-
 #[test]
 fn fibonacci() {
     fn expected_fib(n: u32) -> u32 {
@@ -100,7 +85,7 @@ fn fibonacci() {
     TestRunner::default()
         .run(&(1u32..30), move |a| {
             let rust_out = expected_fib(a);
-            let exec = executor_with_std(&package, vec![Felt::new(a as u64)])?;
+            let exec = executor_with_std(vec![Felt::new(a as u64)], Some(&package));
             let output: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
@@ -143,7 +128,7 @@ fn collatz() {
         .run(&(1u32..30), move |a| {
             let rust_out = expected(a);
             let args = a.to_felts().to_vec();
-            let exec = executor_with_std(&package, args)?;
+            let exec = executor_with_std(args, Some(&package));
             let output: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
@@ -223,7 +208,7 @@ fn is_prime() {
             prop_assert_eq!(rust_out as i32, result);
 
             let args = a.to_felts().to_vec();
-            let exec = executor_with_std(&package, args)?;
+            let exec = executor_with_std(args, Some(&package));
             let output: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
@@ -360,7 +345,6 @@ fn auth_component_no_auth() {
     test.expect_masm(expect_file![format!("../../expected/examples/auth_component_no_auth.masm")]);
     let auth_comp_package = test.compiled_package();
     let lib = auth_comp_package.unwrap_library();
-    let expected_module = "miden:base/authentication-component@1.0.0";
     let expected_function = "auth__procedure";
     let exports = lib
         .exports()
@@ -368,12 +352,8 @@ fn auth_component_no_auth() {
         .collect::<Vec<_>>();
     // dbg!(&exports);
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}'"
+        lib.exports().any(|export| { export.name.name.as_str() == expected_function }),
+        "expected one of the exports to contain function '{expected_function}'"
     );
 
     // Test that the package loads
@@ -400,15 +380,11 @@ fn auth_component_rpo_falcon512() {
     )]);
     let auth_comp_package = test.compiled_package();
     let lib = auth_comp_package.unwrap_library();
-    let expected_module = "miden:base/authentication-component@1.0.0";
     let expected_function = "auth__procedure";
+
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}'"
+        lib.exports().any(|export| { export.name.name.as_str() == expected_function }),
+        "expected one of the exports to contain function '{expected_function}'"
     );
 
     // Test that the package loads

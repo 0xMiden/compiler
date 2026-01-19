@@ -2,17 +2,17 @@ use alloc::boxed::Box;
 
 use bitvec::bitvec;
 use midenc_hir::{
-    traits::{BranchOpInterface, ReturnLike},
     AttributeValue, Backward, CallOpInterface, CallableOpInterface, EntityWithId, OpOperandImpl,
     OpOperandRange, OpResultRange, Operation, OperationRef, ProgramPoint, RegionBranchOpInterface,
     RegionBranchTerminatorOpInterface, RegionSuccessorIter, Report, SmallVec, StorableEntity,
     SuccessorOperands, ValueRef,
+    traits::{BranchOpInterface, ReturnLike},
 };
 
 use super::{SparseDataFlowAnalysis, SparseLattice};
 use crate::{
-    analyses::dce::{Executable, PredecessorState},
     AnalysisStateGuard, AnalysisStateGuardMut, BuildableAnalysisState, DataFlowSolver,
+    analyses::dce::{Executable, PredecessorState},
 };
 
 /// A sparse (backward) data-flow analysis for propagating SSA value lattices backwards across the

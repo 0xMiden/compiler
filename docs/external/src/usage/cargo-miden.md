@@ -17,7 +17,7 @@ Currently, `midenc` (and as a result, `cargo-miden`), requires the nightly Rust 
 make sure you have it installed first:
 
 ```bash
-rustup toolchain install nightly-2025-07-20
+rustup toolchain install nightly-2025-12-10
 ```
 
 NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
@@ -25,16 +25,11 @@ work.
 
 :::
 
-To install the extension, clone the compiler repo first:
+To install the extension:
 
 ```bash
-git clone https://github.com/0xMiden/compiler
-```
+cargo +nightly-2025-12-10 install cargo-miden --locked
 
-Then, run the following in your shell in the cloned repo folder:
-
-```bash
-cargo install --path tools/cargo-miden --locked
 ```
 
 This will take a minute to compile, but once complete, you can run `cargo help miden` or just

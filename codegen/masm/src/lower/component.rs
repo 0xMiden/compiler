@@ -1,30 +1,31 @@
 use alloc::{collections::BTreeSet, sync::Arc};
 
-use miden_assembly::{ast::InvocationTarget, LibraryPath};
+use miden_assembly::{LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::parser::WordValue;
 use miden_mast_package::ProcedureName;
 use midenc_hir::{
-    diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager, CallConv, FunctionIdent,
-    Op, SourceSpan, Span, Symbol, ValueRef,
+    CallConv, FunctionIdent, Op, SourceSpan, Span, Symbol, ValueRef, diagnostics::IntoDiagnostic,
+    dialects::builtin, pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::{
-    diagnostics::{Report, Spanned},
     TargetEnv,
+    diagnostics::{Report, Spanned},
 };
 use smallvec::SmallVec;
 
 use crate::{
+    TraceEvent,
     artifact::MasmComponent,
     emitter::BlockEmitter,
     linker::{LinkInfo, Linker},
-    masm, TraceEvent,
+    masm,
 };
 
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
 pub trait ToMasmComponent {
     fn to_masm_component(&self, analysis_manager: AnalysisManager)
-        -> Result<MasmComponent, Report>;
+    -> Result<MasmComponent, Report>;
 }
 
 /// 1:1 conversion from HIR component to MASM component
@@ -138,7 +139,7 @@ impl ToMasmComponent for builtin::Component {
 fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, Report> {
     use midenc_hir::constants::ConstantData;
 
-    use crate::data_segments::{merge_data_segments, ResolvedDataSegment};
+    use crate::data_segments::{ResolvedDataSegment, merge_data_segments};
     let mut resolved = SmallVec::<[ResolvedDataSegment; 2]>::new();
     for sref in link_info.segment_layout().iter() {
         let s = sref.borrow();

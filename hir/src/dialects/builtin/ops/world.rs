@@ -1,12 +1,12 @@
 use crate::{
+    Operation, RegionKind, RegionKindInterface, SymbolManager, SymbolManagerMut, SymbolMap,
+    SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
     derive::operation,
     dialects::builtin::BuiltinDialect,
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
     },
-    Operation, RegionKind, RegionKindInterface, SymbolManager, SymbolManagerMut, SymbolMap,
-    SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
 };
 
 pub type WorldRef = UnsafeIntrusiveEntityRef<World>;
