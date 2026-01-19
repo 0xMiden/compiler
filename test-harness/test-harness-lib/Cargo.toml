@@ -15,13 +15,16 @@ edition.workspace = true
 path = "src/mod.rs"
 
 [dependencies]
-libtest-mimic = "0.8.1"
-inventory.workspace = true
-clap.workspace = true
 cfg-if = "0.1"
 
 # Miden dependencies
 miden-test-harness-macros.workspace = true
+
+# Host-only dependencies (used for testing)
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+libtest-mimic = "0.8.1"
+inventory.workspace = true
+clap.workspace = true
 miden-testing = "0.12.4"
 miden-objects = "0.12.4"
 cargo-miden.workspace = true
