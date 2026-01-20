@@ -5,10 +5,10 @@
   (type (;3;) (func))
   (type (;4;) (func (param i32 i32 i32) (result i32)))
   (type (;5;) (func (result i32)))
-  (type (;6;) (func (param i32)))
-  (type (;7;) (func (param f32 f32)))
-  (type (;8;) (func (param i32) (result f32)))
-  (type (;9;) (func (param i32 i32 i32 i32)))
+  (type (;6;) (func (param i32 i32 i32 i32)))
+  (type (;7;) (func (param i32)))
+  (type (;8;) (func (param f32 f32)))
+  (type (;9;) (func (param i32) (result f32)))
   (type (;10;) (func (param i32 i32 i32 i32 i32)))
   (type (;11;) (func (param i32 i32)))
   (type (;12;) (func (param i32) (result i32)))
@@ -221,55 +221,55 @@
   (func $intrinsics::mem::heap_base (;7;) (type 5) (result i32)
     unreachable
   )
-  (func $<alloc::raw_vec::RawVecInner>::with_capacity_in (;8;) (type 1) (param i32 i32 i32)
+  (func $<alloc::raw_vec::RawVecInner>::with_capacity_in (;8;) (type 6) (param i32 i32 i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
     i32.sub
-    local.tee 3
+    local.tee 4
     global.set $__stack_pointer
-    local.get 3
+    local.get 4
     i32.const 4
     i32.add
-    i32.const 256
-    i32.const 0
     local.get 1
+    i32.const 0
     local.get 2
-    call $<alloc::raw_vec::RawVecInner>::try_allocate_in
     local.get 3
+    call $<alloc::raw_vec::RawVecInner>::try_allocate_in
+    local.get 4
     i32.load offset=8
-    local.set 2
+    local.set 3
     block ;; label = @1
-      local.get 3
+      local.get 4
       i32.load offset=4
       i32.const 1
       i32.ne
       br_if 0 (;@1;)
-      local.get 2
       local.get 3
+      local.get 4
       i32.load offset=12
       call $alloc::raw_vec::handle_error
       unreachable
     end
     local.get 0
-    local.get 3
+    local.get 4
     i32.load offset=12
     i32.store offset=4
     local.get 0
-    local.get 2
-    i32.store
     local.get 3
+    i32.store
+    local.get 4
     i32.const 16
     i32.add
     global.set $__stack_pointer
   )
-  (func $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;9;) (type 6) (param i32)
+  (func $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;9;) (type 7) (param i32)
     local.get 0
     i32.const 4
     i32.const 4
     call $<alloc::raw_vec::RawVecInner>::deallocate
   )
-  (func $miden_base_sys::bindings::active_note::get_inputs (;10;) (type 6) (param i32)
+  (func $miden_base_sys::bindings::active_note::get_inputs (;10;) (type 7) (param i32)
     (local i32 i32 i32)
     global.get $__stack_pointer
     i32.const 16
@@ -279,6 +279,7 @@
     local.get 1
     i32.const 8
     i32.add
+    i32.const 1024
     i32.const 4
     i32.const 4
     call $<alloc::raw_vec::RawVecInner>::with_capacity_in
@@ -304,18 +305,18 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;11;) (type 6) (param i32))
-  (func $intrinsics::felt::assert_eq (;12;) (type 7) (param f32 f32)
+  (func $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;11;) (type 7) (param i32))
+  (func $intrinsics::felt::assert_eq (;12;) (type 8) (param f32 f32)
     unreachable
   )
-  (func $intrinsics::felt::from_u32 (;13;) (type 8) (param i32) (result f32)
+  (func $intrinsics::felt::from_u32 (;13;) (type 9) (param i32) (result f32)
     unreachable
   )
-  (func $<miden_field::wasm32::Felt as core::convert::From<u32>>::from (;14;) (type 8) (param i32) (result f32)
+  (func $<miden_field::wasm32::Felt as core::convert::From<u32>>::from (;14;) (type 9) (param i32) (result f32)
     local.get 0
     f32.reinterpret_i32
   )
-  (func $<alloc::alloc::Global>::alloc_impl (;15;) (type 9) (param i32 i32 i32 i32)
+  (func $<alloc::alloc::Global>::alloc_impl (;15;) (type 6) (param i32 i32 i32 i32)
     block ;; label = @1
       local.get 2
       i32.eqz
@@ -374,7 +375,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $<alloc::raw_vec::RawVecInner>::current_memory (;17;) (type 9) (param i32 i32 i32 i32)
+  (func $<alloc::raw_vec::RawVecInner>::current_memory (;17;) (type 6) (param i32 i32 i32 i32)
     (local i32 i32 i32)
     i32.const 0
     local.set 4
