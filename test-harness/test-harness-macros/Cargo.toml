@@ -1,6 +1,7 @@
 [package]
 name = "miden-test-harness-macros"
 description = "Macros used to aid in test writing."
+publish = false
 version.workspace = true
 rust-version.workspace = true
 authors.workspace = true
