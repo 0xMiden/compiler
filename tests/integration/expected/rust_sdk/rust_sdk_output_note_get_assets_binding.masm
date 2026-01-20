@@ -1467,6 +1467,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         push.3735929054
         dup.0
         dup.1
+        swap.1
         swap.4
         swap.1
         swap.3
@@ -1492,10 +1493,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                 neq
                 if.true
                     push.1
-                    dup.3
-                    dup.7
+                    dup.6
+                    dup.4
                     dup.4
                     swap.2
+                    swap.1
                     trace.240
                     nop
                     exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::alloc::Global>::alloc_impl
@@ -1641,11 +1643,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                 movup.2
                 cdrop
             else
+                swap.4
+                swap.1
                 movup.2
                 swap.5
                 movdn.2
-                swap.4
-                swap.1
                 drop
                 drop
                 drop
@@ -1709,14 +1711,12 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         dup.3
         cdrop
         push.3735929054
-        dup.3
-        dup.5
-        swap.1
-        cdrop
-        push.3735929054
         dup.4
-        dup.7
-        swap.1
+        dup.4
+        cdrop
+        push.3735929054
+        dup.6
+        dup.5
         cdrop
         push.3735929054
         dup.5
@@ -1725,11 +1725,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         movdn.2
         cdrop
         push.3735929054
-        movup.2
-        swap.7
-        movdn.2
         swap.1
         swap.5
+        movup.2
+        swap.7
+        movdn.2
         cdrop
         swap.1
         swap.5
