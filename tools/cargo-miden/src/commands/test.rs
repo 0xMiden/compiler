@@ -30,9 +30,6 @@ impl TestCommand {
 fn test_cargo_args(cli_args: Vec<String>) -> Vec<String> {
     let mut args = vec!["test".to_string()];
 
-    // Add build-std flags required for Miden compilation
-    args.extend(["-Z", "build-std=std,core,alloc"].into_iter().map(|s| s.to_string()));
-
     args.extend(["--".into()]);
     args.extend(cli_args);
 
