@@ -363,26 +363,7 @@ proc miden_base_sys::bindings::output_note::get_recipient(
     u32mod
     u32assert
     assertz
-    push.32
-    push.0
-    dup.0
-    push.2147483648
-    u32and
-    eq.2147483648
-    assertz
-    assertz
-    dup.0
-    push.4294967295
-    u32lte
-    assert
-    movup.3
-    movup.3
-    movup.2
-    trace.240
-    nop
-    exec.::std::math::u64::rotl
-    trace.252
-    nop
+    swap.2
     movup.2
     u32divmod.4
     swap.1
@@ -418,26 +399,7 @@ proc miden_base_sys::bindings::output_note::get_recipient(
     u32mod
     u32assert
     assertz
-    push.32
-    push.0
-    dup.0
-    push.2147483648
-    u32and
-    eq.2147483648
-    assertz
-    assertz
-    dup.0
-    push.4294967295
-    u32lte
-    assert
-    movup.3
-    movup.3
-    movup.2
-    trace.240
-    nop
-    exec.::std::math::u64::rotl
-    trace.252
-    nop
+    swap.2
     movup.2
     u32divmod.4
     swap.1
