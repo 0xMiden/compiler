@@ -1229,23 +1229,31 @@ impl SpillAnalysis {
         let mut cand = SmallSet::<ValueOrAlias, 4>::default();
 
         // Block arguments are always in w_entry by definition
-        for arg in block.arguments().iter().copied() {
-            take.insert(ValueOrAlias::new(arg as ValueRef));
-        }
-
-        // TODO(pauls): We likely need to account for the implicit spilling that occurs when the
-        // operand stack space required by the function arguments exceeds K. In such cases, the W set
-        // contains the function parameters up to the first parameter that would cause the operand
-        // stack to overflow, all subsequent parameters are placed on the advice stack, and are assumed
-        // to be moved from the advice stack to locals in the same order as they appear in the function
-        // signature as part of the function prologue. Thus, the S set is preloaded with those values
-        // which were spilled in this manner.
         //
-        // NOTE: It should never be the case that the set of block arguments consumes more than K
-        assert!(
-            take.iter().map(|o| o.stack_size()).sum::<usize>() <= K,
-            "unhandled spills implied by function/block parameter list"
-        );
+        // However, it is possible for a block to have more than K stack slots' worth of arguments.
+        // When this occurs, we proactively spill as many of the highest-indexed block arguments as
+        // needed to ensure W^entry fits within K, inserting those spills at the start of the block.
+        let start_of_block = ProgramPoint::at_start_of(block);
+        let mut block_args = SmallVec::<[ValueOrAlias; 4]>::default();
+        for arg in block.arguments().iter().copied() {
+            let arg = ValueOrAlias::new(arg as ValueRef);
+            take.insert(arg);
+            block_args.push(arg);
+        }
+        let mut w_entry_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        if w_entry_usage > K {
+            let place = Placement::At(start_of_block);
+            while w_entry_usage > K {
+                let arg = block_args
+                    .pop()
+                    .expect("expected at least one block argument when spilling entry args");
+                take.remove(&arg);
+                w_entry_usage = w_entry_usage.saturating_sub(arg.stack_size());
+                if !self.is_spilled_at(arg.value(), start_of_block) {
+                    self.spill(place, arg.value(), arg.value().borrow().span());
+                }
+            }
+        }
 
         // If this is the entry block to an IsolatedFromAbove region, the operands in w_entry are
         // guaranteed to be equal to the set of region arguments, so we're done.
@@ -1383,14 +1391,27 @@ impl SpillAnalysis {
         let mut cand = SmallSet::<ValueOrAlias, 4>::default();
 
         // Op results are always in W^exit by definition
+        let after_branch = ProgramPoint::after(branch.as_operation());
+        let mut results = SmallVec::<[ValueOrAlias; 4]>::default();
         for result in branch.results().iter().copied() {
-            take.insert(ValueOrAlias::new(result as ValueRef));
+            let result = ValueOrAlias::new(result as ValueRef);
+            take.insert(result);
+            results.push(result);
         }
-
-        assert!(
-            take.iter().map(|o| o.stack_size()).sum::<usize>() <= K,
-            "unhandled spills implied by results of region branch op"
-        );
+        let mut w_exit_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        if w_exit_usage > K {
+            let place = Placement::At(after_branch);
+            while w_exit_usage > K {
+                let result = results
+                    .pop()
+                    .expect("expected at least one result when spilling branch results");
+                take.remove(&result);
+                w_exit_usage = w_exit_usage.saturating_sub(result.stack_size());
+                if !self.is_spilled_at(result.value(), after_branch) {
+                    self.spill(place, result.value(), result.value().borrow().span());
+                }
+            }
+        }
 
         // If this block is the entry block of a RegionBranchOpInterface op, then we compute the
         // set of predecessors differently than unstructured CFG ops.
@@ -2077,11 +2098,24 @@ impl SpillAnalysis {
             return;
         }
 
-        // Otherwise, we need to split the edge from P to B, and place any spills/reloads in the split,
-        // S, moving any block arguments for B, to the unconditional branch in S.
-        let split = self.split(info.point, *pred);
-        let place = Placement::Split(split);
-        let span = pred.operation(info.point).span();
+        // If spills/reloads are needed on this edge, we need a placement for those instructions.
+        //
+        // For unstructured control flow (i.e. an explicit branch op), we split the edge and insert
+        // spills/reloads in the split block so they are executed only along that predecessor edge.
+        //
+        // For structured control flow edges (i.e. predecessor is `Parent` or `Region`), we insert
+        // spills/reloads directly before the predecessor operation, as we do not currently support
+        // splitting such edges during transformation.
+        let (place, span) = match pred {
+            Predecessor::Block { .. } => {
+                let split = self.split(info.point, *pred);
+                (Placement::Split(split), pred.operation(info.point).span())
+            }
+            Predecessor::Parent | Predecessor::Region(_) => {
+                let predecessor = pred.operation(info.point);
+                (Placement::At(ProgramPoint::before(predecessor)), predecessor.span())
+            }
+        };
 
         // Insert spills first, to end the live ranges of as many variables as possible
         for spill in to_spill {
