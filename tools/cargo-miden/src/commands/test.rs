@@ -2,8 +2,6 @@ use std::{path::PathBuf, process::Command};
 
 use clap::Args;
 
-use crate::commands::build;
-
 /// Command-line arguments accepted by `cargo miden build`.
 ///
 /// All arguments following `build` are parsed by the `midenc` compiler's argument parser.
@@ -51,7 +49,7 @@ fn run_cargo_test(spawn_args: &[String]) -> anyhow::Result<()> {
 
     cargo.args(spawn_args);
 
-    let _artifacts = build::spawn_cargo(cargo, &cargo_path)?;
+    let _artifacts = crate::utils::spawn_cargo(cargo, &cargo_path)?;
 
     Ok(())
 }

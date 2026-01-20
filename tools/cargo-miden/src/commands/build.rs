@@ -1,11 +1,10 @@
 use std::{
-    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
 use anyhow::{Context, Result, bail};
-use cargo_metadata::{Artifact, Message, Metadata, MetadataCommand, Package, camino};
+use cargo_metadata::{Metadata, MetadataCommand, Package, camino};
 use clap::Args;
 use midenc_compile::Compiler;
 use midenc_session::TargetEnv;
@@ -269,7 +268,7 @@ where
     cargo.arg("--message-format").arg("json-render-diagnostics");
     cargo.stdout(Stdio::piped());
 
-    let artifacts = spawn_cargo(cargo, &cargo_path)?;
+    let artifacts = crate::utils::spawn_cargo(cargo, &cargo_path)?;
 
     let outputs: Vec<PathBuf> = artifacts
         .into_iter()
@@ -284,51 +283,6 @@ where
         .collect();
 
     Ok(outputs)
-}
-
-pub(crate) fn spawn_cargo(mut cmd: Command, cargo: &Path) -> Result<Vec<Artifact>> {
-    log::debug!("spawning command {cmd:?}");
-
-    let mut child = cmd
-        .spawn()
-        .context(format!("failed to spawn `{cargo}`", cargo = cargo.display()))?;
-
-    let mut artifacts = Vec::new();
-    let stdout = child.stdout.take().expect("no stdout");
-    let reader = BufReader::new(stdout);
-    for line in reader.lines() {
-        let line = line.context("failed to read output from `cargo`")?;
-
-        if line.is_empty() {
-            continue;
-        }
-
-        for message in Message::parse_stream(line.as_bytes()) {
-            if let Message::CompilerArtifact(artifact) =
-                message.context("unexpected JSON message from cargo")?
-            {
-                for path in &artifact.filenames {
-                    match path.extension() {
-                        Some("wasm") => {
-                            artifacts.push(artifact);
-                            break;
-                        }
-                        _ => continue,
-                    }
-                }
-            }
-        }
-    }
-
-    let status = child
-        .wait()
-        .context(format!("failed to wait for `{cargo}` to finish", cargo = cargo.display()))?;
-
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-
-    Ok(artifacts)
 }
 
 fn determine_cargo_package<'a>(
