@@ -721,5 +721,10 @@ mod tests {
         fn operand_movement_constraint_solver_copy_some(problem in testing::generate_copy_some_problem()) {
             testing::solve_problem(problem)?
         }
+
+        #[test]
+        fn operand_tactics_linear_proptest(problem in testing::generate_linear_problem()) {
+            testing::solve_problem(problem)?
+        }
     }
 }

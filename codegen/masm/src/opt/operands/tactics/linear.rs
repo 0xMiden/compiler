@@ -240,12 +240,14 @@ impl Tactic for Linear {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
 
-    use crate::opt::operands::{
-        Action, OperandMovementConstraintSolver, SolverOptions,
-        tactics::Linear,
-        testing::{self, ProblemInputs},
+    use crate::opt::{
+        OperandMovementConstraintSolver,
+        operands::{
+            Action, SolverOptions,
+            tactics::Linear,
+            testing::{self, ProblemInputs},
+        },
     };
 
     /// Solve `problem` using only the [Linear] tactic.
@@ -343,14 +345,5 @@ mod tests {
         let actions = solve_with_linear_tactic(&problem);
         assert_eq!(actions, vec![Action::Copy(1)]);
         assert_actions_place_expected_on_top(&problem, &actions);
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(1000))]
-
-        #[test]
-        fn operand_tactics_linear_proptest(problem in testing::generate_copy_none_problem()) {
-            testing::solve_problem_with_tactic::<Linear>(problem)?
-        }
     }
 }

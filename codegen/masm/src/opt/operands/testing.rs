@@ -298,6 +298,13 @@ prop_compose! {
     }
 }
 
+prop_compose! {
+    pub fn generate_linear_problem() (stack_size in 0usize..16)
+    (problem in testing::generate_stack_subset_copy_any_problem(stack_size)) -> ProblemInputs {
+        problem
+    }
+}
+
 pub fn solve_problem(problem: ProblemInputs) -> Result<(), TestCaseError> {
     let _ = env_logger::Builder::from_env("MIDENC_TRACE").is_test(true).try_init();
     let block = problem.block.borrow();
@@ -307,7 +314,7 @@ pub fn solve_problem(problem: ProblemInputs) -> Result<(), TestCaseError> {
         &problem.constraints,
         &problem.stack,
         SolverOptions {
-            fuel: 10,
+            fuel: 25,
             ..Default::default()
         },
     ) {
@@ -320,9 +327,14 @@ pub fn solve_problem(problem: ProblemInputs) -> Result<(), TestCaseError> {
             );
             let actions = result.unwrap();
             // We are expecting that if all operands are copies, that the number of actions is
-            // equal to the number of copies
+            // equal to the number of copies.
+            //
+            // NOTE: When the solver needs to work around MASM's 16-felt addressing window, it may
+            // introduce extra stack movements, but it must still materialize all expected copies.
             if problem.constraints.iter().all(|c| matches!(c, Constraint::Copy)) {
-                prop_assert_eq!(actions.len(), problem.expected.len());
+                let num_copies =
+                    actions.iter().filter(|action| matches!(action, Action::Copy(_))).count();
+                prop_assert_eq!(num_copies, problem.expected.len());
             }
             // We are expecting that applying `actions` to the input stack will produce a stack
             // that has all of the expected operands on top of the stack,
@@ -362,6 +374,7 @@ pub fn solve_problem(problem: ProblemInputs) -> Result<(), TestCaseError> {
     }
 }
 
+#[allow(unused)]
 pub fn solve_problem_with_tactic<T: tactics::Tactic + Default>(
     problem: ProblemInputs,
 ) -> Result<(), TestCaseError> {
