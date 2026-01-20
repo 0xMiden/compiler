@@ -44,7 +44,6 @@ proc <[u8]>::reverse(
             push.3735929054
             dup.0
             dup.1
-            swap.1
             swap.2
         else
             dup.2
@@ -610,23 +609,20 @@ pub proc entrypoint(i32, i32)
             nop
         end
         push.3735929054
-        dup.4
+        dup.1
+        dup.5
+        swap.2
+        swap.1
+        cdrop
+        push.3735929054
         dup.2
-        swap.1
+        dup.5
         swap.2
         swap.1
         cdrop
         push.3735929054
-        dup.4
         dup.3
-        swap.1
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.4
-        swap.1
+        dup.5
         swap.2
         swap.1
         cdrop
@@ -1101,23 +1097,20 @@ pub proc entrypoint(i32, i32)
             nop
         end
         push.3735929054
-        dup.4
+        dup.1
+        dup.5
+        swap.2
+        swap.1
+        cdrop
+        push.3735929054
         dup.2
-        swap.1
+        dup.5
         swap.2
         swap.1
         cdrop
         push.3735929054
-        dup.4
         dup.3
-        swap.1
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.4
-        swap.1
+        dup.5
         swap.2
         swap.1
         cdrop

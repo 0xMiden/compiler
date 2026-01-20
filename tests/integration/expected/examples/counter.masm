@@ -160,13 +160,13 @@ proc miden_base_sys::bindings::storage::get_map_item(
     trace.252
     nop
     dup.5
-    swap.5
     movup.2
     swap.3
     movdn.2
     swap.1
     swap.4
     swap.1
+    swap.5
     trace.240
     nop
     exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden::active_account::get_map_item
@@ -1072,16 +1072,14 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
             u32wrapping_add
         end
         push.3735929054
-        dup.5
-        dup.4
-        swap.1
+        dup.3
+        dup.6
         swap.2
         swap.1
         cdrop
         push.3735929054
-        dup.5
-        dup.5
-        swap.1
+        dup.4
+        dup.6
         swap.2
         swap.1
         cdrop

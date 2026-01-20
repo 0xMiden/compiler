@@ -222,11 +222,13 @@ impl OperandMovementConstraintSolver {
             if is_binary {
                 self.tactics.push(Box::new(TwoArgs));
             } else if self.context.copies().is_empty() {
+                self.tactics.push(Box::new(LinearStackWindow));
                 self.tactics.push(Box::new(Linear));
                 self.tactics.push(Box::new(SwapAndMoveUp));
                 self.tactics.push(Box::new(MoveUpAndSwap));
                 self.tactics.push(Box::new(MoveDownAndSwap));
             } else {
+                self.tactics.push(Box::new(LinearStackWindow));
                 self.tactics.push(Box::new(Linear));
                 self.tactics.push(Box::new(CopyAll));
             }

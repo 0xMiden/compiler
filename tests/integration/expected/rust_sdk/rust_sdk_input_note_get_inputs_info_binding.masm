@@ -520,16 +520,14 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
             u32wrapping_add
         end
         push.3735929054
-        dup.5
-        dup.4
-        swap.1
+        dup.3
+        dup.6
         swap.2
         swap.1
         cdrop
         push.3735929054
-        dup.5
-        dup.5
-        swap.1
+        dup.4
+        dup.6
         swap.2
         swap.1
         cdrop

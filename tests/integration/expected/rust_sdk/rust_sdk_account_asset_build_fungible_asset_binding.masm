@@ -336,13 +336,13 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     trace.252
     nop
     dup.0
-    swap.3
-    swap.1
-    swap.4
-    swap.1
     movup.2
     swap.5
     movdn.2
+    swap.1
+    swap.4
+    swap.1
+    swap.3
     trace.240
     nop
     exec.::miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::miden::asset::build_fungible_asset
@@ -612,16 +612,14 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
             u32wrapping_add
         end
         push.3735929054
-        dup.5
-        dup.4
-        swap.1
+        dup.3
+        dup.6
         swap.2
         swap.1
         cdrop
         push.3735929054
-        dup.5
-        dup.5
-        swap.1
+        dup.4
+        dup.6
         swap.2
         swap.1
         cdrop

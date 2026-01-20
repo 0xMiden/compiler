@@ -127,9 +127,8 @@ proc miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-
         movdn.2
         cdrop
         push.3735929054
-        dup.3
-        dup.3
-        swap.1
+        dup.2
+        dup.4
         swap.2
         swap.1
         cdrop

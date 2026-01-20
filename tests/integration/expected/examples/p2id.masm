@@ -528,23 +528,20 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                         u32wrapping_add
                     end
                     push.3735929054
-                    dup.6
+                    dup.3
+                    dup.7
+                    swap.2
+                    swap.1
+                    cdrop
+                    push.3735929054
                     dup.4
-                    swap.1
+                    dup.7
                     swap.2
                     swap.1
                     cdrop
                     push.3735929054
-                    dup.6
                     dup.5
-                    swap.1
-                    swap.2
-                    swap.1
-                    cdrop
-                    push.3735929054
-                    dup.6
-                    dup.6
-                    swap.1
+                    dup.7
                     swap.2
                     swap.1
                     cdrop
@@ -2129,7 +2126,6 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         push.3735929054
         dup.0
         dup.1
-        swap.1
         swap.4
         swap.1
         swap.3
@@ -2155,11 +2151,10 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                 neq
                 if.true
                     push.1
-                    dup.6
-                    dup.4
+                    dup.3
+                    dup.7
                     dup.4
                     swap.2
-                    swap.1
                     trace.240
                     nop
                     exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global>::alloc_impl
@@ -2305,11 +2300,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                 movup.2
                 cdrop
             else
-                swap.4
-                swap.1
                 movup.2
                 swap.5
                 movdn.2
+                swap.4
+                swap.1
                 drop
                 drop
                 drop
@@ -2387,11 +2382,11 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         movdn.2
         cdrop
         push.3735929054
-        swap.1
-        swap.5
         movup.2
         swap.7
         movdn.2
+        swap.1
+        swap.5
         cdrop
         swap.1
         swap.5
