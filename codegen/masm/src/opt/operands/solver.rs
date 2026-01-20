@@ -40,7 +40,7 @@ impl Default for SolverOptions {
     fn default() -> Self {
         Self {
             strict: true,
-            fuel: 25,
+            fuel: 40,
         }
     }
 }

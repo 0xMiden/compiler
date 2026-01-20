@@ -313,10 +313,7 @@ pub fn solve_problem(problem: ProblemInputs) -> Result<(), TestCaseError> {
         &problem.expected,
         &problem.constraints,
         &problem.stack,
-        SolverOptions {
-            fuel: 25,
-            ..Default::default()
-        },
+        Default::default(),
     ) {
         Ok(solver) => {
             let result = solver.solve();
