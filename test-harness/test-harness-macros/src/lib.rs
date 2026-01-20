@@ -152,20 +152,27 @@ pub fn miden_test(
 
     let fn_ident = input_fn.sig.ident.clone();
     let fn_name = fn_ident.clone().span().source_text().unwrap_or(String::from("test_function"));
-    let fn_block = input_fn.block.clone();
+    let fn_block = input_fn.block;
 
     let inner_ident =
         syn::Ident::new(format!("inner_{}", fn_name.as_str()).as_str(), fn_ident.span());
 
-    // We create a wrapping inner_ident function in order to both register the
-    // function and use #[test].  If we try to register the original function
-    // identifier with [miden_test_submit], we get a compilation error stating
-    // that the symbol does exist.
+    {
+        // We create a wrapping inner_ident function in order to both register the
+        // function and use #[test].  If we try to register the original function
+        // identifier with [miden_test_submit], we get a compilation error stating
+        // that the symbol does exist.
+        let block: syn::Block = syn::parse_quote! {
+            {
+                #inner_ident()
+            }
+        };
+        input_fn.block = Box::new(block);
+    }
+
     let function = quote! {
         #[test]
-        fn #fn_ident() {
-            #inner_ident()
-        }
+        #input_fn
 
         fn #inner_ident() {
             #fn_block
