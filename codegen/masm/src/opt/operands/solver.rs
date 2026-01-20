@@ -426,6 +426,107 @@ mod tests {
 
     use super::{super::testing, *};
 
+    /// Apply `actions` to `stack` and return the resulting stack.
+    fn apply_actions(mut stack: crate::OperandStack, actions: &[Action]) -> crate::OperandStack {
+        for action in actions.iter().copied() {
+            match action {
+                Action::Copy(index) => stack.dup(index as usize),
+                Action::Swap(index) => stack.swap(index as usize),
+                Action::MoveUp(index) => stack.movup(index as usize),
+                Action::MoveDown(index) => stack.movdn(index as usize),
+            }
+        }
+        stack
+    }
+
+    /// Regression test: copy materialization can increase stack depth in field elements, and the
+    /// solver must fall back to a tactic that avoids producing unsupported stack accesses.
+    #[test]
+    fn operand_movement_constraint_solver_stack_window_fallback_full_window_top_copy() {
+        let problem = testing::make_problem_inputs((0..16).collect(), 16, 0b0000_0000_0000_0001);
+        let context = SolverContext::new(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid");
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve()
+        .expect("expected solver to find a supported solution via fallback");
+
+        let pending = apply_actions(problem.stack.clone(), &actions);
+        for (index, expected) in problem.expected.iter().copied().enumerate() {
+            assert_eq!(&pending[index], &expected);
+        }
+        assert!(
+            !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                &actions,
+                context.stack(),
+            ),
+            "solver produced a solution requiring unsupported stack access: {problem:#?}"
+        );
+    }
+
+    /// Regression test: ensure solver fallback avoids 16-felt addressing violations during copy
+    /// materialization when a copy source would otherwise be pushed out of the addressable window.
+    #[test]
+    fn operand_movement_constraint_solver_stack_window_fallback_regression_case() {
+        let problem = testing::make_problem_inputs(
+            vec![0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 2],
+            4,
+            0b0111,
+        );
+        let solver_context = SolverContext::new(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid");
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve()
+        .expect("expected solver to find a supported solution via fallback");
+
+        let pending = apply_actions(problem.stack.clone(), &actions);
+        for (index, expected) in problem.expected.iter().copied().enumerate() {
+            assert_eq!(&pending[index], &expected);
+        }
+        assert!(
+            !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                &actions,
+                solver_context.stack(),
+            ),
+            "solver produced a solution requiring unsupported stack access: {problem:#?}"
+        );
+    }
+
     #[test]
     fn operand_movement_constraint_solver_example() {
         use hir::Context;
