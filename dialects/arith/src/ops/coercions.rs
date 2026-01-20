@@ -1,4 +1,4 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, format};
 
 use midenc_hir::{
     derive::operation, effects::MemoryEffectOpInterface, matchers::Matcher, traits::*, *,
@@ -230,56 +230,95 @@ impl Foldable for Sext {
     }
 }
 
-/// Join two 64bit integers into one 128 bit integer.
+/// Join two limbs into an integer value.
 #[operation(
     dialect = ArithDialect,
-    traits(BinaryOp, SameTypeOperands),
+    traits(SameTypeOperands),
     implements(InferTypeOpInterface, MemoryEffectOpInterface)
 )]
 pub struct Join {
+    /// The high limb, i.e. the most-significant limb.
     #[operand]
-    high_limb: Int64,
+    high_limb: AnyInteger,
+    /// The low limb, i.e. the least-significant limb.
     #[operand]
-    low_limb: Int64,
+    low_limb: AnyInteger,
+    #[attr(hidden)]
+    ty: Type,
     #[result]
-    result: Int128,
+    result: AnyInteger,
 }
 
 has_no_effects!(Join);
 
 impl InferTypeOpInterface for Join {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        self.result_mut().set_type(Type::I128);
+        let ty = self.ty().clone();
+        self.result_mut().set_type(ty.clone());
+
+        let limb_ty = self.high_limb().ty().clone();
+
+        let is_32bit_limb = matches!(limb_ty, Type::Felt | Type::I32 | Type::U32);
+        let is_64bit_limb = matches!(limb_ty, Type::I64 | Type::U64);
+        let is_valid = matches!(
+            (ty.clone(), is_32bit_limb, is_64bit_limb),
+            (Type::I64 | Type::U64, true, _) | (Type::I128 | Type::U128, _, true)
+        );
+        if !is_valid {
+            return Err(Report::msg(format!(
+                "invalid operation arith.join: cannot join 2 limb(s) of type '{limb_ty}' into \
+                 '{ty}'"
+            )));
+        }
+
         Ok(())
     }
 }
 
-/// Split a 128bit integer into two 64 bit integers.
+/// Split an integer into a sequence of limbs.
 ///
-/// The result is a pair of 64bit integers, e.g., `v1, v2 = arith.split v0 : i64, i64;` where `v1`
-/// is the high limb and `v2` is the low limb.
-///
-/// It also will leave the high limb on the top of the working stack during codegen.
+/// The limbs are returned in most-significant to least-significant order. During codegen, the
+/// most-significant limb is left on the top of the stack.
 #[operation(
     dialect = ArithDialect,
-    traits(UnaryOp, SameTypeOperands),
+    traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface)
 )]
 pub struct Split {
     #[operand]
-    operand: Int128,
+    operand: AnyInteger,
+    #[attr(hidden)]
+    limb_ty: Type,
     #[result]
-    result_high: Int64,
+    result_high: AnyInteger,
     #[result]
-    result_low: Int64,
+    result_low: AnyInteger,
 }
 
 has_no_effects!(Split);
 
 impl InferTypeOpInterface for Split {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        self.result_low_mut().set_type(Type::I64);
-        self.result_high_mut().set_type(Type::I64);
+        let operand_ty = self.operand().as_value_ref().borrow().ty().clone();
+        let limb_ty = self.limb_ty().clone();
+
+        let is_32bit_limb = matches!(limb_ty, Type::Felt | Type::I32 | Type::U32);
+        let is_64bit_limb = matches!(limb_ty, Type::I64 | Type::U64);
+        let is_valid = match operand_ty {
+            Type::I64 | Type::U64 => is_32bit_limb,
+            Type::I128 | Type::U128 => is_64bit_limb,
+            _ => false,
+        };
+        if !is_valid {
+            return Err(Report::msg(format!(
+                "invalid operation arith.split: cannot split '{operand_ty}' into limb type \
+                 '{limb_ty}'"
+            )));
+        }
+
+        self.result_high_mut().set_type(limb_ty.clone());
+        self.result_low_mut().set_type(limb_ty);
+
         Ok(())
     }
 }

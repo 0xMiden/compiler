@@ -1,5 +1,5 @@
 use midenc_hir::{
-    Builder, BuilderExt, Felt, OpBuilder, Overflow, Report, SourceSpan, ValueRef,
+    Builder, BuilderExt, Felt, OpBuilder, Overflow, Report, SourceSpan, Type, ValueRef,
     dialects::builtin::FunctionBuilder,
 };
 
@@ -499,15 +499,30 @@ pub trait ArithOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn join(&mut self, hi: ValueRef, lo: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::Join, _>(span);
-        let op = op_builder(hi, lo)?;
+    /// Join `hi` and `lo` into a single value of type `ty`.
+    fn join(
+        &mut self,
+        hi: ValueRef,
+        lo: ValueRef,
+        ty: Type,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder =
+            self.builder_mut().create::<crate::ops::Join, (ValueRef, ValueRef, Type)>(span);
+        let op = op_builder(hi, lo, ty)?;
         Ok(op.borrow().result().as_value_ref())
     }
 
-    fn split(&mut self, n: ValueRef, span: SourceSpan) -> Result<(ValueRef, ValueRef), Report> {
+    /// Split `n` into limbs of type `limb_ty`, ordered from most-significant to least-significant.
+    fn split(
+        &mut self,
+        n: ValueRef,
+        limb_ty: Type,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Split, _>(span);
-        let op = op_builder(n)?.borrow();
+        let op = op_builder(n, limb_ty)?;
+        let op = op.borrow();
         let lo = op.result_low().as_value_ref();
         let hi = op.result_high().as_value_ref();
         Ok((hi, lo))

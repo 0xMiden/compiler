@@ -15,6 +15,7 @@ extern crate std;
 use alloc::boxed::Box;
 
 mod builders;
+mod canonicalization;
 mod ops;
 
 use midenc_hir::{
