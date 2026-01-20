@@ -17,9 +17,9 @@ pub struct Digest {
 impl Digest {
     /// Creates a new `Digest` from a `[Felt; 4]` array.
     #[inline]
-    pub fn new(felts: [Felt; 4]) -> Self {
+    pub const fn new(felts: [Felt; 4]) -> Self {
         Self {
-            inner: Word::from(felts),
+            inner: Word::new(felts),
         }
     }
 
