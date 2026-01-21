@@ -4,10 +4,11 @@ use std::string::ToString;
 use midenc_dialect_arith::ArithOpBuilder as Arith;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_scf::StructuredControlFlowOpBuilder as Scf;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AbiParam, AddressSpace, BlockRef, Builder, Context, Ident, Op, OpBuilder, PointerType,
-    ProgramPoint, Report, Signature, SourceSpan, SymbolTable, Type, ValueRef,
+    AbiParam, AddressSpace, BlockRef, Builder, Context, Ident, Op, OpBuilder, OperationRef,
+    PointerType, ProgramPoint, Report, Signature, SourceSpan, SymbolTable, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     pass::AnalysisManager,
 };
@@ -673,6 +674,93 @@ fn spills_entry_block_args_over_k() -> AnalysisResult<()> {
     // Regression check: the spill should be recorded at the start-of-block program point (not
     // remapped to end-of-block).
     assert!(spills.is_spilled_at(spilled_arg, entry));
+
+    Ok(())
+}
+
+#[test]
+fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .format_timestamp(None)
+        .is_test(true)
+        .try_init();
+
+    let span = SourceSpan::UNKNOWN;
+    let context = Rc::new(Context::default());
+    let mut ob = OpBuilder::new(context.clone());
+
+    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
+    let module_body = module.borrow().body().as_region_ref();
+    ob.create_block(module_body, None, &[]);
+
+    // Construct a function which returns an `scf.if` result set which alone exceeds K=16 stack slots.
+    //
+    // Each `u64` occupies 2 felts on the Miden stack, so 9×`u64` => 18 felts, which forces at least
+    // one spill at `ProgramPoint::after(if_op)`.
+    let func = ob.create_function(
+        Ident::with_empty_span("test::spill_region_branch_results_over_k".into()),
+        Signature::new([], [AbiParam::new(Type::U64)]),
+    )?;
+    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
+
+    let if_op: OperationRef;
+    let if_results: alloc::vec::Vec<ValueRef>;
+    {
+        let mut b = FunctionBuilder::new(func, &mut ob);
+        let entry = b.current_block();
+
+        let cond = b.i1(true, span);
+        let result_tys = alloc::vec![Type::U64; 9];
+        let scf_if = b.r#if(cond, &result_tys, span)?;
+        if_op = scf_if.as_operation_ref();
+        if_results = if_op
+            .borrow()
+            .results()
+            .all()
+            .iter()
+            .map(|r| r.borrow().as_value_ref())
+            .collect();
+
+        // Populate the `then` and `else` regions with yields for all results.
+        let (then_region, else_region) = {
+            let if_op = scf_if.borrow();
+            (if_op.then_body().as_region_ref(), if_op.else_body().as_region_ref())
+        };
+
+        let then_block = b.create_block_in_region(then_region);
+        b.switch_to_block(then_block);
+        let then_values = (0..result_tys.len())
+            .map(|_| b.u64(0, span))
+            .collect::<alloc::vec::Vec<_>>();
+        b.r#yield(then_values, span)?;
+
+        let else_block = b.create_block_in_region(else_region);
+        b.switch_to_block(else_block);
+        let else_values = (0..result_tys.len())
+            .map(|_| b.u64(1, span))
+            .collect::<alloc::vec::Vec<_>>();
+        b.r#yield(else_values, span)?;
+
+        // Return the first result so the `scf.if` is reachable and well-formed.
+        b.switch_to_block(entry);
+        let first = *if_results.first().expect("expected at least one `scf.if` result");
+        b.ret(Some(first), span)?;
+    }
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
+
+    assert!(
+        spills.has_spills(),
+        "expected spills when region branch results exceed K"
+    );
+
+    let after_if = ProgramPoint::after(if_op);
+    let spilled_result = *if_results
+        .last()
+        .expect("expected at least one `scf.if` result in over-K test");
+    assert!(spills.is_spilled(&spilled_result));
+    assert!(spills.is_spilled_at(spilled_result, after_if));
 
     Ok(())
 }

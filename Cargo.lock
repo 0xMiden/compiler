@@ -3112,6 +3112,7 @@ dependencies = [
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-hir",
+ "midenc-dialect-scf",
  "midenc-expect-test",
  "midenc-hir",
 ]

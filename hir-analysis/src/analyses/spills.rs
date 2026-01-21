@@ -2187,9 +2187,32 @@ impl SpillAnalysis {
         log::trace!(target: "spills", "  W^entry = {w:?}");
         log::trace!(target: "spills", "  S^entry = {s:?}");
 
-        let is_terminator = op.implements::<dyn Terminator>()
-            && !(op.implements::<dyn RegionBranchTerminatorOpInterface>()
-                || op.implements::<dyn BranchOpInterface>());
+        if op.implements::<dyn RegionBranchTerminatorOpInterface>() {
+            log::trace!(target: "spills", "  region terminator = true");
+            // Region branch terminators forward successor operands across region boundaries.
+            //
+            // These operands can exceed K, but since control flow transfers immediately, we do not
+            // need to keep the entire set addressable for subsequent instructions in the current
+            // block. Instead, we ensure that any required operands are present in W and leave edge
+            // reconciliation to the normal mechanisms (e.g. spills inserted at join points).
+            w.retain(|o| liveness.is_live_before(o, op));
+            let to_reload = ValueRange::<4>::from(op.operands().all());
+            for reload in to_reload.into_iter().map(ValueOrAlias::new) {
+                if w.insert(reload) {
+                    log::trace!(target: "spills", "  emitting reload for {reload}");
+                    // By definition, if we are emitting a reload, the value must have been spilled
+                    s.insert(reload);
+                    self.reload(place, reload.value(), span);
+                }
+            }
+
+            log::trace!(target: "spills", "  W^exit = {w:?}");
+            log::trace!(target: "spills", "  S^exit = {s:?}");
+            return;
+        }
+
+        let is_terminator =
+            op.implements::<dyn Terminator>() && !op.implements::<dyn BranchOpInterface>();
 
         if is_terminator {
             log::trace!(target: "spills", "  terminator = true");
