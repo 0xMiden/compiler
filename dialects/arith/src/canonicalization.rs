@@ -42,18 +42,18 @@ impl RewritePattern for CanonicalizeI64RotateBy32ToSwap {
         operation: OperationRef,
         rewriter: &mut dyn Rewriter,
     ) -> Result<bool, Report> {
-        /// Try to recover a `u32` constant value from `value`, allowing a small set of
-        /// passthrough casts/conversions, e.g. `hir.cast(arith.constant 32 : i64) : u32`.
-        fn constant_u32(value: ValueRef) -> Option<u32> {
-            let hir = Symbol::intern("hir");
-            let arith = Symbol::intern("arith");
-            let cast = Symbol::intern("cast");
-            let bitcast = Symbol::intern("bitcast");
-            let trunc = Symbol::intern("trunc");
-            let sext = Symbol::intern("sext");
-            let zext = Symbol::intern("zext");
-            let max_depth = 4usize;
+        let hir = Symbol::intern("hir");
+        let arith = Symbol::intern("arith");
+        let cast = Symbol::intern("cast");
+        let bitcast = Symbol::intern("bitcast");
+        let trunc = Symbol::intern("trunc");
+        let sext = Symbol::intern("sext");
+        let zext = Symbol::intern("zext");
+        let max_depth = 4usize;
 
+        // Try to recover a `u32` constant value from `value`, allowing a small set of passthrough
+        // casts/conversions, e.g. `hir.cast(arith.constant 32 : i64) : u32`.
+        let constant_u32 = |value: ValueRef| -> Option<u32> {
             let mut current = value;
             for _ in 0..max_depth {
                 let defining_op = current.borrow().get_defining_op()?;
@@ -81,7 +81,7 @@ impl RewritePattern for CanonicalizeI64RotateBy32ToSwap {
             }
 
             None
-        }
+        };
 
         let (span, lhs, lhs_ty, is_rotate_by_32) = {
             let op = operation.borrow();
