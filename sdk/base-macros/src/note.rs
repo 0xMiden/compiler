@@ -350,6 +350,13 @@ fn parse_entrypoint_signature(
         ));
     }
 
+    if receiver.mutability.is_some() {
+        return Err(syn::Error::new(
+            receiver.span(),
+            "entrypoint receiver must be `self` (non-mutable); `mut self` is not supported",
+        ));
+    }
+
     let non_receiver_args: Vec<_> =
         sig.inputs.iter().filter(|arg| !matches!(arg, FnArg::Receiver(_))).collect();
 
