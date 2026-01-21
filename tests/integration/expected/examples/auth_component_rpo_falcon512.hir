@@ -233,11 +233,6 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
                     hir.store_local v872 #[local = lv2];
                     hir.store_local v873 #[local = lv3];
                     hir.store_local v874 #[local = lv4];
-                    hir.store_local v870 #[local = lv0];
-                    hir.store_local v871 #[local = lv1];
-                    hir.store_local v872 #[local = lv2];
-                    hir.store_local v873 #[local = lv3];
-                    hir.store_local v874 #[local = lv4];
                     v801, v802, v803, v804, v805, v806, v807, v808, v809, v810, v811, v812, v813, v814, v815, v816, v817 = scf.while v928, v868, v869, v867, v870, v871, v872, v873, v874 : i32, i32, i32, i32, i32, felt, felt, felt, felt, i32, i32, i32, i32, felt, felt, felt, felt {
                     ^block80(v818: i32, v819: i32, v820: i32, v821: i32, v822: i32, v823: felt, v824: felt, v825: felt, v826: felt):
                         v926 = arith.constant 0 : i32;

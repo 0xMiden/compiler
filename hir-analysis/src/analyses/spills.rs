@@ -1164,6 +1164,15 @@ impl SpillAnalysis {
     }
 
     fn spill(&mut self, place: Placement, value: ValueRef, span: SourceSpan) -> Spill {
+        // Spills are computed by multiple routines (MIN, edge reconciliation, over-K entry/results
+        // handling). Deduplicate globally to avoid materializing the same spill multiple times when
+        // distinct control-flow edges are forced to share a single insertion point.
+        if let Some(existing) =
+            self.spills.iter().find(|info| info.value == value && info.place == place)
+        {
+            self.spilled.insert(value);
+            return existing.id;
+        }
         let id = Spill::new(self.spills.len());
         self.spilled.insert(value);
         self.spills.push(SpillInfo {
@@ -1177,6 +1186,12 @@ impl SpillAnalysis {
     }
 
     fn reload(&mut self, place: Placement, value: ValueRef, span: SourceSpan) -> Reload {
+        // See `spill` for details on why reloads are globally deduplicated.
+        if let Some(existing) =
+            self.reloads.iter().find(|info| info.value == value && info.place == place)
+        {
+            return existing.id;
+        }
         let id = Reload::new(self.reloads.len());
         self.reloads.push(ReloadInfo {
             id,
@@ -2119,6 +2134,9 @@ impl SpillAnalysis {
             }
             Predecessor::Parent | Predecessor::Region(_) => {
                 let predecessor = pred.operation(info.point);
+                // NOTE: This placement is not edge-specific. Multiple distinct structured edges may map
+                // to the same insertion point, so we rely on spill/reload deduplication to avoid
+                // materializing duplicates.
                 (Placement::At(ProgramPoint::before(predecessor)), predecessor.span())
             }
         };
