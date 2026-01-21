@@ -314,11 +314,15 @@ impl OperandMovementConstraintSolver {
                 }
             }
             let remaining_fuel = self.fuel.saturating_sub(tactic.cost(&self.context));
-            if remaining_fuel == 0 {
+            self.fuel = remaining_fuel;
+
+            // If we have no optimization fuel, we should still exhaust tactics until we find a
+            // supported solution. However, once we have a candidate solution, we stop searching
+            // for better ones.
+            if remaining_fuel == 0 && best_solution.is_some() {
                 log::trace!("no more optimization fuel, using the best solution found so far");
                 break;
             }
-            self.fuel = remaining_fuel;
         }
 
         best_solution.take().ok_or(SolverError::NoSolution)
@@ -572,6 +576,32 @@ mod tests {
             ),
             "solver produced a solution requiring unsupported stack access: {problem:#?}"
         );
+    }
+
+    /// Regression test: ensure we still try all tactics even when we have no optimization fuel.
+    #[test]
+    fn operand_movement_constraint_solver_exhausts_tactics_when_out_of_fuel() {
+        // A mixed copy/move problem: the `CopyAll` tactic will fail its precondition, but `Linear`
+        // can still find a solution.
+        let problem = testing::make_problem_inputs(vec![0, 1, 2], 3, 0b0000_0000_0000_0001);
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 0,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve()
+        .expect("expected solver to find a solution even with no optimization fuel");
+
+        let pending = apply_actions(problem.stack.clone(), &actions);
+        for (index, expected) in problem.expected.iter().copied().enumerate() {
+            assert_eq!(&pending[index], &expected);
+        }
     }
 
     #[test]
