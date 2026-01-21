@@ -729,16 +729,14 @@ fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
 
         let then_block = b.create_block_in_region(then_region);
         b.switch_to_block(then_block);
-        let then_values = (0..result_tys.len())
-            .map(|_| b.u64(0, span))
-            .collect::<alloc::vec::Vec<_>>();
+        let then_values =
+            (0..result_tys.len()).map(|_| b.u64(0, span)).collect::<alloc::vec::Vec<_>>();
         b.r#yield(then_values, span)?;
 
         let else_block = b.create_block_in_region(else_region);
         b.switch_to_block(else_block);
-        let else_values = (0..result_tys.len())
-            .map(|_| b.u64(1, span))
-            .collect::<alloc::vec::Vec<_>>();
+        let else_values =
+            (0..result_tys.len()).map(|_| b.u64(1, span)).collect::<alloc::vec::Vec<_>>();
         b.r#yield(else_values, span)?;
 
         // Return the first result so the `scf.if` is reachable and well-formed.
@@ -750,15 +748,11 @@ fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
     let am = AnalysisManager::new(func.as_operation_ref(), None);
     let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
 
-    assert!(
-        spills.has_spills(),
-        "expected spills when region branch results exceed K"
-    );
+    assert!(spills.has_spills(), "expected spills when region branch results exceed K");
 
     let after_if = ProgramPoint::after(if_op);
-    let spilled_result = *if_results
-        .last()
-        .expect("expected at least one `scf.if` result in over-K test");
+    let spilled_result =
+        *if_results.last().expect("expected at least one `scf.if` result in over-K test");
     assert!(spills.is_spilled(&spilled_result));
     assert!(spills.is_spilled_at(spilled_result, after_if));
 

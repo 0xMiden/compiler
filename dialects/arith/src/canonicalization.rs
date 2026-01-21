@@ -145,8 +145,8 @@ mod tests {
         AbiParam, BuilderExt, Context, Ident, OpBuilder, Report, Signature, SourceSpan, Type,
         dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
         patterns::{
-            FrozenRewritePatternSet, GreedyRewriteConfig, RegionSimplificationLevel, RewritePatternSet,
-            apply_patterns_and_fold_greedily,
+            FrozenRewritePatternSet, GreedyRewriteConfig, RegionSimplificationLevel,
+            RewritePatternSet, apply_patterns_and_fold_greedily,
         },
         traits::Canonicalizable,
     };
@@ -166,7 +166,8 @@ mod tests {
         let function = {
             let builder = builder.create::<Function, (_, _)>(span);
             let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(ty.clone())], [AbiParam::new(ty.clone())]);
+            let signature =
+                Signature::new([AbiParam::new(ty.clone())], [AbiParam::new(ty.clone())]);
             builder(name, signature)?
         };
 
@@ -243,22 +244,14 @@ mod tests {
         let (hi, lo) = {
             let split = split.borrow();
             let split = split.downcast_ref::<Split>().unwrap();
-            assert_eq!(
-                split.limb_ty(),
-                &Type::Felt,
-                "expected split to use `felt` limbs"
-            );
+            assert_eq!(split.limb_ty(), &Type::Felt, "expected split to use `felt` limbs");
             (split.result_high().as_value_ref(), split.result_low().as_value_ref())
         };
 
         let (high, low) = {
             let join = join.borrow();
             let join = join.downcast_ref::<Join>().unwrap();
-            assert_eq!(
-                join.ty(),
-                &ty,
-                "expected join to reconstruct the original rotate type"
-            );
+            assert_eq!(join.ty(), &ty, "expected join to reconstruct the original rotate type");
             (join.high_limb().as_value_ref(), join.low_limb().as_value_ref())
         };
 
@@ -271,7 +264,7 @@ mod tests {
         let context = Rc::new(Context::default());
         let function = build_rotate_by_32(context.clone(), Type::U64, false)?;
 
-        assert_eq!(apply_rotate_canonicalization(context.clone(), function), true);
+        assert!(apply_rotate_canonicalization(context.clone(), function));
         assert_rotate_by_32_rewritten(function, Type::U64);
 
         Ok(())
@@ -282,7 +275,7 @@ mod tests {
         let context = Rc::new(Context::default());
         let function = build_rotate_by_32(context.clone(), Type::I64, true)?;
 
-        assert_eq!(apply_rotate_canonicalization(context.clone(), function), true);
+        assert!(apply_rotate_canonicalization(context.clone(), function));
         assert_rotate_by_32_rewritten(function, Type::I64);
 
         Ok(())
