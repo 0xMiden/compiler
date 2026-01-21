@@ -608,3 +608,71 @@ fn spills_loop_nest() -> AnalysisResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn spills_entry_block_args_over_k() -> AnalysisResult<()> {
+    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        .format_timestamp(None)
+        .is_test(true)
+        .try_init();
+
+    let span = SourceSpan::UNKNOWN;
+    let context = Rc::new(Context::default());
+    let mut ob = OpBuilder::new(context.clone());
+
+    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
+    let module_body = module.borrow().body().as_region_ref();
+    ob.create_block(module_body, None, &[]);
+
+    // Construct a function whose entry block arguments alone exceed K=16 stack slots.
+    //
+    // Each `u64` occupies 2 felts on the Miden stack, so 9×`u64` => 18 felts, which forces at least
+    // one spill at the start of the entry block.
+    let params = (0..9).map(|_| AbiParam::new(Type::U64)).collect::<alloc::vec::Vec<_>>();
+    let func = ob.create_function(
+        Ident::with_empty_span("test::spill_entry_args_over_k".into()),
+        Signature::new(params, [AbiParam::new(Type::U32)]),
+    )?;
+    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
+
+    let entry_block: BlockRef;
+    let block_args: alloc::vec::Vec<ValueRef>;
+    {
+        let mut b = FunctionBuilder::new(func, &mut ob);
+        entry_block = b.current_block();
+        // Capture the entry block arguments so we can assert which one is spilled, and where.
+        block_args = entry_block
+            .borrow()
+            .arguments()
+            .iter()
+            .copied()
+            .map(|v| v as ValueRef)
+            .collect();
+
+        // Keep the function body minimal so the only stack pressure comes from the entry arguments.
+        let zero = b.u32(0, span);
+        b.ret(Some(zero), span)?;
+    }
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
+
+    // If entry args exceed K, SpillAnalysis must proactively spill enough args at block start so
+    // W^entry fits in the working stack.
+    assert!(spills.has_spills(), "expected spills when entry args exceed K");
+
+    let entry = ProgramPoint::at_start_of(entry_block);
+    let w_entry_usage = spills.w_entry(&entry).iter().map(|o| o.stack_size()).sum::<usize>();
+    // Regression check: after inserting entry spills, the live working set on entry must be <= K.
+    assert!(w_entry_usage <= 16, "expected W^entry to fit within K=16, got {w_entry_usage}");
+
+    // We expect the highest-index argument(s) to be the first spill candidates.
+    let spilled_arg =
+        *block_args.last().expect("expected at least one block argument in over-K test");
+    assert!(spills.is_spilled(&spilled_arg));
+    // Regression check: the spill should be recorded at the start-of-block program point (not
+    // remapped to end-of-block).
+    assert!(spills.is_spilled_at(spilled_arg, entry));
+
+    Ok(())
+}
