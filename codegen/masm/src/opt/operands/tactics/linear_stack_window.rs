@@ -218,3 +218,149 @@ impl Tactic for LinearStackWindow {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use midenc_hir::{self as hir, Type};
+
+    use super::*;
+    use crate::{
+        Constraint, OperandStack,
+        opt::{
+            OperandMovementConstraintSolver,
+            operands::{Action, SolverOptions},
+        },
+    };
+
+    /// Apply `actions` to the operand stack and assert that the expected prefix matches.
+    fn assert_actions_place_expected_on_top(
+        stack: &OperandStack,
+        expected: &[hir::ValueRef],
+        actions: &[Action],
+    ) {
+        let mut stack = stack.clone();
+        for action in actions.iter().copied() {
+            match action {
+                Action::Copy(index) => stack.dup(index as usize),
+                Action::Swap(index) => stack.swap(index as usize),
+                Action::MoveUp(index) => stack.movup(index as usize),
+                Action::MoveDown(index) => stack.movdn(index as usize),
+            }
+        }
+
+        for (index, expected) in expected.iter().copied().enumerate() {
+            assert_eq!(
+                &stack[index], &expected,
+                "solution did not place {} at the correct location on the stack",
+                expected
+            );
+        }
+    }
+
+    /// Demonstrates the full-window copy materialization pattern.
+    ///
+    /// When the expected operands occupy the entire 16-felt MASM stack window, copy
+    /// materialization can push operands out of the addressable window. The tactic avoids this by
+    /// moving the copy source to the deepest addressable position before duplicating.
+    #[test]
+    fn linear_stack_window_full_window_copy_materialization_moves_source_to_deepest_before_dup() {
+        let hir_ctx = Rc::new(hir::Context::default());
+        let block = hir_ctx.create_block_with_params(core::iter::repeat_n(Type::I128, 4));
+        let block = block.borrow();
+        let block_args = block.arguments();
+
+        let mut stack = OperandStack::default();
+        // Stack top is `[v1, v2, v3, v0]`.
+        for value in [
+            block_args[0] as hir::ValueRef,
+            block_args[3] as hir::ValueRef,
+            block_args[2] as hir::ValueRef,
+            block_args[1] as hir::ValueRef,
+        ] {
+            stack.push(value);
+        }
+
+        let expected = vec![
+            block_args[0] as hir::ValueRef,
+            block_args[1] as hir::ValueRef,
+            block_args[2] as hir::ValueRef,
+            block_args[3] as hir::ValueRef,
+        ];
+        let constraints =
+            vec![Constraint::Copy, Constraint::Move, Constraint::Move, Constraint::Move];
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &expected,
+            &constraints,
+            &stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve_with_tactic::<LinearStackWindow>()
+        .expect("expected tactic to be applicable")
+        .expect("expected tactic to produce a full solution");
+
+        assert_eq!(actions, vec![Action::MoveUp(3), Action::MoveDown(3), Action::Copy(3)]);
+        assert_actions_place_expected_on_top(&stack, &expected, &actions);
+    }
+
+    /// Demonstrates how the tactic preemptively moves endangered move-constrained operands.
+    ///
+    /// Here, the copy source starts on top of the stack, but materializing it would push the
+    /// deepest move-constrained expected operand out of MASM's 16-felt addressing window. The
+    /// tactic moves endangered operands to the top before materializing the copy.
+    #[test]
+    fn linear_stack_window_full_window_preemptively_moves_endangered_operands() {
+        let hir_ctx = Rc::new(hir::Context::default());
+        let block = hir_ctx.create_block_with_params(core::iter::repeat_n(Type::I128, 4));
+        let block = block.borrow();
+        let block_args = block.arguments();
+
+        let mut stack = OperandStack::default();
+        // Stack top is `[v0, v1, v2, v3]`.
+        for value in block_args.iter().copied().rev() {
+            stack.push(value as hir::ValueRef);
+        }
+
+        let expected = vec![
+            block_args[0] as hir::ValueRef,
+            block_args[1] as hir::ValueRef,
+            block_args[2] as hir::ValueRef,
+            block_args[3] as hir::ValueRef,
+        ];
+        let constraints =
+            vec![Constraint::Copy, Constraint::Move, Constraint::Move, Constraint::Move];
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &expected,
+            &constraints,
+            &stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve_with_tactic::<LinearStackWindow>()
+        .expect("expected tactic to be applicable")
+        .expect("expected tactic to produce a full solution");
+
+        assert_eq!(
+            actions,
+            vec![
+                Action::MoveUp(3),
+                Action::MoveUp(3),
+                Action::MoveUp(3),
+                Action::MoveUp(3),
+                Action::MoveDown(3),
+                Action::Copy(3),
+            ]
+        );
+        assert_actions_place_expected_on_top(&stack, &expected, &actions);
+    }
+}
