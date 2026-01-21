@@ -1,6 +1,37 @@
 use super::*;
 use crate::opt::operands::MASM_STACK_WINDOW_FELTS;
 
+/// Represents the portion of the operand stack which is directly addressable by MASM stack
+/// manipulation instructions.
+#[derive(Debug, Copy, Clone)]
+struct AddressableStackWindow {
+    /// The deepest stack operand index (0-based from the top) which remains addressable.
+    deepest_index: u8,
+    /// The total number of field elements contained in the addressable portion of the stack.
+    depth_felts: usize,
+}
+impl AddressableStackWindow {
+    /// Compute the addressable window for `stack`.
+    ///
+    /// Returns `None` if the top operand itself exceeds the MASM stack window.
+    fn for_stack(stack: &Stack) -> Option<Self> {
+        let mut depth_felts = 0usize;
+        let mut deepest_index = None;
+        for (pos, operand) in stack.iter().rev().enumerate() {
+            depth_felts += operand.stack_size();
+            if depth_felts > MASM_STACK_WINDOW_FELTS {
+                break;
+            }
+            deepest_index = Some(pos as u8);
+        }
+
+        deepest_index.map(|deepest_index| Self {
+            deepest_index,
+            depth_felts,
+        })
+    }
+}
+
 /// Returns the deepest addressable source index for materializing a copy of `value`.
 ///
 /// MASM stack manipulation instructions can only directly access the first 16 field elements on
@@ -92,6 +123,35 @@ fn has_missing_expected_copies(builder: &SolutionBuilder) -> bool {
         .any(|value| value.is_alias() && builder.get_current_position(value).is_none())
 }
 
+/// Materialize a missing expected copy with a bias towards keeping the top-of-stack window
+/// addressable.
+fn materialize_copy(builder: &mut SolutionBuilder, source_at: u8, expected: ValueOrAlias) {
+    let expected_felts: usize =
+        builder.context().expected().iter().map(|value| value.stack_size()).sum();
+
+    // When the expected operands occupy the full MASM stack window, any materialized copy implies
+    // that at least one preserved source operand must be pushed out of the addressable window.
+    //
+    // We do this by moving the chosen source operand to the deepest addressable position before
+    // duplicating it. This ensures the source is pushed below the 16-felt window by the dup itself
+    // and avoids emitting `movdn(16)` / `movup(16)` patterns which MASM cannot encode.
+    if expected_felts == MASM_STACK_WINDOW_FELTS
+        && let Some(window) = AddressableStackWindow::for_stack(builder.stack())
+        && window.depth_felts == MASM_STACK_WINDOW_FELTS
+    {
+        if source_at > 0 {
+            builder.movup(source_at);
+        }
+        if window.deepest_index > 0 {
+            builder.movdn(window.deepest_index);
+        }
+        builder.dup(window.deepest_index, expected.unwrap_alias());
+        return;
+    }
+
+    builder.dup(source_at, expected.unwrap_alias());
+}
+
 /// Materialize missing copies in a way which preserves addressability within the MASM stack window.
 ///
 /// Returns `true` if any actions were emitted.
@@ -122,24 +182,7 @@ fn materialize_missing_expected_copies(builder: &mut SolutionBuilder) -> Result<
 
         log::trace!("materializing copy of {expected:?} from index {source_at} to top of stack",);
 
-        // When the stack contains exactly 16 field elements, we cannot emit stack manipulation
-        // instructions that address index 16+.
-        //
-        // If the only missing piece is a copy of the operand already on top of the stack, we can
-        // safely materialize it by first pushing the original below the 16-field-element addressing
-        // window and then duplicating it back to the top.
-        if builder.arity() == MASM_STACK_WINDOW_FELTS
-            && builder.stack().iter().map(|operand| operand.stack_size()).sum::<usize>()
-                == MASM_STACK_WINDOW_FELTS
-            && builder.unwrap_expected_position(&expected) == 0
-            && source_at == 0
-            && (1..builder.arity()).all(|i| builder.is_expected(i as u8))
-        {
-            builder.movdn(15);
-            builder.dup(15, expected.unwrap_alias());
-        } else {
-            builder.dup(source_at, expected.unwrap_alias());
-        }
+        materialize_copy(builder, source_at, expected);
 
         changed = true;
     }

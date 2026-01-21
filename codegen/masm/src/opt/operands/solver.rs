@@ -527,6 +527,53 @@ mod tests {
         );
     }
 
+    /// Regression test: ensure fallback works even when the full-window stack is not already in the
+    /// expected order.
+    #[test]
+    fn operand_movement_constraint_solver_stack_window_fallback_full_window_nontrivial_permutation()
+    {
+        let problem = testing::make_problem_inputs(
+            vec![0, 2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            16,
+            0b0000_0000_0000_0001,
+        );
+        let solver_context = SolverContext::new(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid");
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve()
+        .expect("expected solver to find a supported solution via fallback");
+
+        let pending = apply_actions(problem.stack.clone(), &actions);
+        for (index, expected) in problem.expected.iter().copied().enumerate() {
+            assert_eq!(&pending[index], &expected);
+        }
+        assert!(
+            !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                &actions,
+                solver_context.stack(),
+            ),
+            "solver produced a solution requiring unsupported stack access: {problem:#?}"
+        );
+    }
+
     #[test]
     fn operand_movement_constraint_solver_example() {
         use hir::Context;
