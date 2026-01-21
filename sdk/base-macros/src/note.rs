@@ -176,7 +176,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         Err(err) => return err.into_compile_error(),
     };
 
-    let (receiver, arg_idx, account_param) = match parse_entrypoint_signature(&entrypoint_fn) {
+    let (arg_idx, account_param) = match parse_entrypoint_signature(&entrypoint_fn) {
         Ok(val) => val,
         Err(err) => return err.into_compile_error(),
     };
@@ -205,7 +205,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     let entrypoint_ident = &entrypoint_fn.sig.ident;
     let guest_struct_ident = quote::format_ident!("Struct");
 
-    let note_init = note_instantiation(receiver, &note_ty);
+    let note_init = note_instantiation(&note_ty);
     let (account_instantiation, account_arg, account_trait_impl) = match account_param {
         Some(AccountParam { ty, mut_ref }) => {
             let account_ident = quote::format_ident!("__miden_account");
@@ -256,36 +256,20 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-enum ReceiverKind {
-    /// `self`
-    Value,
-    /// `&self`
-    Ref,
-    /// `&mut self`
-    MutRef,
-}
-
 #[derive(Clone)]
 struct AccountParam {
     ty: Type,
     mut_ref: bool,
 }
 
-fn note_instantiation(receiver: ReceiverKind, note_ty: &syn::TypePath) -> TokenStream2 {
+fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
     let create = quote! {
         let note: #note_ty = <#note_ty>::__miden_load_from_active_note();
     };
 
-    match receiver {
-        ReceiverKind::MutRef => quote! {
-            #create
-            let mut __miden_note = note;
-        },
-        _ => quote! {
-            #create
-            let __miden_note = note;
-        },
+    quote! {
+        #create
+        let __miden_note = note;
     }
 }
 
@@ -333,12 +317,11 @@ fn extract_entrypoint(mut item_impl: ItemImpl) -> syn::Result<(ImplItemFn, ItemI
 /// Parses the entrypoint signature.
 ///
 /// Returns:
-/// - receiver kind
 /// - index of the Word argument among the non-receiver arguments (0 or 1)
 /// - optional injected account parameter
 fn parse_entrypoint_signature(
     entrypoint: &ImplItemFn,
-) -> syn::Result<(ReceiverKind, usize, Option<AccountParam>)> {
+) -> syn::Result<(usize, Option<AccountParam>)> {
     let sig = &entrypoint.sig;
 
     if sig.ident != "run" {
@@ -352,11 +335,13 @@ fn parse_entrypoint_signature(
         syn::Error::new(sig.span(), "`#[entrypoint]` cannot target free functions")
     })?;
 
-    let receiver_kind = match (&receiver.reference, receiver.mutability.is_some()) {
-        (None, _) => ReceiverKind::Value,
-        (Some(_), false) => ReceiverKind::Ref,
-        (Some(_), true) => ReceiverKind::MutRef,
-    };
+    if receiver.reference.is_some() {
+        return Err(syn::Error::new(
+            receiver.span(),
+            "entrypoint receiver must be `self` (by value); `&self` / `&mut self` are not \
+             supported",
+        ));
+    }
 
     let non_receiver_args: Vec<_> =
         sig.inputs.iter().filter(|arg| !matches!(arg, FnArg::Receiver(_))).collect();
@@ -413,7 +398,7 @@ fn parse_entrypoint_signature(
         ));
     }
 
-    Ok((receiver_kind, *word_idx, account))
+    Ok((*word_idx, account))
 }
 
 fn build_entrypoint_call_args(arg_word_idx: usize, account_arg: TokenStream2) -> Vec<TokenStream2> {

@@ -14,7 +14,7 @@ struct P2idNote {
 #[note]
 impl P2idNote {
     #[entrypoint]
-    pub fn run(&self, _arg: Word, account: &mut Account) {
+    pub fn run(self, _arg: Word, account: &mut Account) {
         let current_account = account.get_id();
         assert_eq!(current_account, self.target_account_id);
 

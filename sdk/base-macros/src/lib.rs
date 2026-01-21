@@ -160,7 +160,7 @@ pub fn note_script(
 /// #[note]
 /// impl MyNote {
 ///     #[entrypoint]
-///     pub fn run(&self, _arg: Word, account: &mut Account) {
+///     pub fn run(self, _arg: Word, account: &mut Account) {
 ///         assert_eq!(account.get_id(), self.recipient);
 ///     }
 /// }
