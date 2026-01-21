@@ -228,6 +228,10 @@ pub struct SpillAnalysis {
     pub spills: SmallVec<[SpillInfo; 4]>,
     // The set of instructions corresponding to the reload of a spilled value
     pub reloads: SmallVec<[ReloadInfo; 4]>,
+    // Index spills by (placement, spilled value) for fast global deduplication.
+    spill_ids: FxHashMap<(Placement, ValueRef), Spill>,
+    // Index reloads by (placement, spilled value) for fast global deduplication.
+    reload_ids: FxHashMap<(Placement, ValueRef), Reload>,
     // The set of operands in registers on entry to a given program point
     w_entries: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
     // The set of operands that have been spilled upon entry to a given program point
@@ -1167,11 +1171,10 @@ impl SpillAnalysis {
         // Spills are computed by multiple routines (MIN, edge reconciliation, over-K entry/results
         // handling). Deduplicate globally to avoid materializing the same spill multiple times when
         // distinct control-flow edges are forced to share a single insertion point.
-        if let Some(existing) =
-            self.spills.iter().find(|info| info.value == value && info.place == place)
-        {
+        let key = (place, value);
+        if let Some(existing) = self.spill_ids.get(&key).copied() {
             self.spilled.insert(value);
-            return existing.id;
+            return existing;
         }
         let id = Spill::new(self.spills.len());
         self.spilled.insert(value);
@@ -1182,15 +1185,15 @@ impl SpillAnalysis {
             span,
             inst: None,
         });
+        self.spill_ids.insert(key, id);
         id
     }
 
     fn reload(&mut self, place: Placement, value: ValueRef, span: SourceSpan) -> Reload {
         // See `spill` for details on why reloads are globally deduplicated.
-        if let Some(existing) =
-            self.reloads.iter().find(|info| info.value == value && info.place == place)
-        {
-            return existing.id;
+        let key = (place, value);
+        if let Some(existing) = self.reload_ids.get(&key).copied() {
+            return existing;
         }
         let id = Reload::new(self.reloads.len());
         self.reloads.push(ReloadInfo {
@@ -1200,6 +1203,7 @@ impl SpillAnalysis {
             span,
             inst: None,
         });
+        self.reload_ids.insert(key, id);
         id
     }
 
