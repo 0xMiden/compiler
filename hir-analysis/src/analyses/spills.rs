@@ -1270,9 +1270,7 @@ impl SpillAnalysis {
                     .expect("expected at least one block argument when spilling entry args");
                 take.remove(&arg);
                 w_entry_usage = w_entry_usage.saturating_sub(arg.stack_size());
-                if !self.is_spilled_at(arg.value(), start_of_block) {
-                    self.spill(place, arg.value(), arg.value().borrow().span());
-                }
+                self.spill(place, arg.value(), arg.value().borrow().span());
             }
         }
 
@@ -1428,9 +1426,7 @@ impl SpillAnalysis {
                     .expect("expected at least one result when spilling branch results");
                 take.remove(&result);
                 w_exit_usage = w_exit_usage.saturating_sub(result.stack_size());
-                if !self.is_spilled_at(result.value(), after_branch) {
-                    self.spill(place, result.value(), result.value().borrow().span());
-                }
+                self.spill(place, result.value(), result.value().borrow().span());
             }
         }
 
