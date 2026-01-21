@@ -2125,19 +2125,26 @@ impl SpillAnalysis {
         // spills/reloads in the split block so they are executed only along that predecessor edge.
         //
         // For structured control flow edges (i.e. predecessor is `Parent` or `Region`), we insert
-        // spills/reloads directly before the predecessor operation, as we do not currently support
-        // splitting such edges during transformation.
+        // spills/reloads at the destination when it has a single live predecessor, otherwise we
+        // fall back to placing them before the predecessor operation, as we do not currently
+        // support splitting such edges during transformation.
         let (place, span) = match pred {
             Predecessor::Block { .. } => {
                 let split = self.split(info.point, *pred);
                 (Placement::Split(split), pred.operation(info.point).span())
             }
             Predecessor::Parent | Predecessor::Region(_) => {
-                let predecessor = pred.operation(info.point);
-                // NOTE: This placement is not edge-specific. Multiple distinct structured edges may map
-                // to the same insertion point, so we rely on spill/reload deduplication to avoid
-                // materializing duplicates.
-                (Placement::At(ProgramPoint::before(predecessor)), predecessor.span())
+                // If the destination has a single live predecessor, placing at the destination is
+                // effectively edge-specific.
+                if info.live_predecessors.len() == 1 {
+                    (Placement::At(info.point), pred.operation(info.point).span())
+                } else {
+                    let predecessor = pred.operation(info.point);
+                    // NOTE: This placement is not edge-specific. Multiple distinct structured edges
+                    // may map to the same insertion point, so we rely on spill/reload deduplication
+                    // to avoid materializing duplicates.
+                    (Placement::At(ProgramPoint::before(predecessor)), predecessor.span())
+                }
             }
         };
 
