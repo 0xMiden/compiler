@@ -489,12 +489,15 @@ impl SpillAnalysis {
     /// Returns true if `value` is spilled at the given program point (i.e. inserted before)
     pub fn is_spilled_at(&self, value: ValueRef, pp: ProgramPoint) -> bool {
         let place = match pp {
-            ProgramPoint::Block {
-                block: split_block, ..
-            } => match self.splits.iter().find(|split| split.split == Some(split_block)) {
-                Some(split) => Placement::Split(split.id),
-                None => Placement::At(ProgramPoint::at_end_of(split_block)),
-            },
+            ProgramPoint::Block { block, .. } => {
+                match self.splits.iter().find(|split| split.split == Some(block)) {
+                    // Treat a query using the materialized split block as a query on the
+                    // corresponding edge split placement.
+                    Some(split) => Placement::Split(split.id),
+                    // Preserve the original program point (including before/after) for non-split blocks.
+                    None => Placement::At(pp),
+                }
+            }
             point => Placement::At(point),
         };
         self.spills.iter().any(|info| info.value == value && info.place == place)
@@ -525,12 +528,15 @@ impl SpillAnalysis {
     /// Returns true if `value` is reloaded at the given program point (i.e. inserted before)
     pub fn is_reloaded_at(&self, value: ValueRef, pp: ProgramPoint) -> bool {
         let place = match pp {
-            ProgramPoint::Block {
-                block: split_block, ..
-            } => match self.splits.iter().find(|split| split.split == Some(split_block)) {
-                Some(split) => Placement::Split(split.id),
-                None => Placement::At(ProgramPoint::at_end_of(split_block)),
-            },
+            ProgramPoint::Block { block, .. } => {
+                match self.splits.iter().find(|split| split.split == Some(block)) {
+                    // Treat a query using the materialized split block as a query on the
+                    // corresponding edge split placement.
+                    Some(split) => Placement::Split(split.id),
+                    // Preserve the original program point (including before/after) for non-split blocks.
+                    None => Placement::At(pp),
+                }
+            }
             point => Placement::At(point),
         };
         self.reloads.iter().any(|info| info.value == value && info.place == place)
