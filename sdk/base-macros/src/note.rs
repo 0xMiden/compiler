@@ -203,7 +203,14 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     let runtime_boilerplate = runtime_boilerplate();
 
     let entrypoint_ident = &entrypoint_fn.sig.ident;
-    let guest_struct_ident = quote::format_ident!("Struct");
+    let note_ident = note_ty
+        .path
+        .segments
+        .last()
+        .expect("type path must have at least one segment")
+        .ident
+        .clone();
+    let guest_struct_ident = quote::format_ident!("__MidenNoteScript_{note_ident}");
 
     let note_init = note_instantiation(&note_ty);
     let (account_instantiation, account_arg, account_trait_impl) = match account_param {
