@@ -231,7 +231,8 @@ fn is_type_named(ty: &syn::Type, name: &str) -> bool {
         .is_some_and(|seg| seg.ident == name && seg.arguments.is_empty())
 }
 
-fn build_script_wit(
+/// Builds an inlined WIT world definition for a script crate.
+pub(crate) fn build_script_wit(
     error_span: Span,
     export_interface: &'static str,
 ) -> Result<String, syn::Error> {

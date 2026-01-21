@@ -56,6 +56,7 @@ mod component_macro;
 mod export_type;
 mod generate;
 mod manifest_paths;
+mod note;
 mod script;
 mod types;
 mod util;
@@ -136,6 +137,51 @@ pub fn note_script(
             guest_trait_path: "self::bindings::exports::miden::base::note_script::Guest",
         },
     )
+}
+
+/// Marks a type/impl as a note script definition.
+///
+/// This attribute is intended to be used on:
+/// - a note input type definition (`struct MyNote { ... }`)
+/// - the associated inherent `impl` block that contains an entrypoint method annotated with
+///   `#[entrypoint]`
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use miden::*;
+/// use crate::bindings::Account;
+///
+/// #[note]
+/// struct MyNote {
+///     recipient: AccountId,
+/// }
+///
+/// #[note]
+/// impl MyNote {
+///     #[entrypoint]
+///     pub fn run(&self, _arg: Word, account: &mut Account) {
+///         assert_eq!(account.get_id(), self.recipient);
+///     }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn note(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    note::expand_note(attr, item)
+}
+
+/// Marks a method as the note script entrypoint.
+///
+/// The method must be contained within an inherent `impl` block annotated with `#[note]`.
+#[proc_macro_attribute]
+pub fn entrypoint(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    note::expand_entrypoint(attr, item)
 }
 
 /// Marks the function as a transaction script

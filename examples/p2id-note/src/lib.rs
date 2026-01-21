@@ -6,16 +6,21 @@ use miden::*;
 
 use crate::bindings::Account;
 
-#[note_script]
-fn run(_arg: Word, account: &mut Account) {
-    let inputs = active_note::get_inputs();
-    let target_account_id: AccountId = inputs.as_slice().into();
+#[note]
+struct P2idNote {
+    target_account_id: AccountId,
+}
 
-    let current_account = account.get_id();
-    assert_eq!(current_account, target_account_id);
+#[note]
+impl P2idNote {
+    #[entrypoint]
+    pub fn run(&self, _arg: Word, account: &mut Account) {
+        let current_account = account.get_id();
+        assert_eq!(current_account, self.target_account_id);
 
-    let assets = active_note::get_assets();
-    for asset in assets {
-        account.receive_asset(asset);
+        let assets = active_note::get_assets();
+        for asset in assets {
+            account.receive_asset(asset);
+        }
     }
 }
