@@ -1233,6 +1233,26 @@ impl SpillAnalysis {
         self.compute_w_entry_normal(op, block, liveness);
     }
 
+    /// Spill values from the end of `ordered` until `usage` fits within `K`.
+    ///
+    /// Returns the updated stack usage after inserting spill records.
+    fn spill_trailing_until_fits(
+        &mut self,
+        take: &mut SmallSet<ValueOrAlias, 4>,
+        ordered: &mut SmallVec<[ValueOrAlias; 4]>,
+        mut usage: usize,
+        place: Placement,
+    ) -> usize {
+        while usage > K {
+            let value =
+                ordered.pop().expect("expected at least one value when spilling over-K usage");
+            take.remove(&value);
+            usage = usage.checked_sub(value.stack_size()).expect("spill usage underflow");
+            self.spill(place, value.value(), value.value().borrow().span());
+        }
+        usage
+    }
+
     fn compute_w_entry_normal(
         &mut self,
         op: &Operation,
@@ -1258,16 +1278,8 @@ impl SpillAnalysis {
         let mut w_entry_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
         if w_entry_usage > K {
             let place = Placement::At(start_of_block);
-            while w_entry_usage > K {
-                let arg = block_args
-                    .pop()
-                    .expect("expected at least one block argument when spilling entry args");
-                take.remove(&arg);
-                w_entry_usage = w_entry_usage
-                    .checked_sub(arg.stack_size())
-                    .expect("w_entry_usage underflow when spilling entry args");
-                self.spill(place, arg.value(), arg.value().borrow().span());
-            }
+            w_entry_usage =
+                self.spill_trailing_until_fits(&mut take, &mut block_args, w_entry_usage, place);
         }
 
         // If this is the entry block to an IsolatedFromAbove region, the operands in w_entry are
@@ -1416,16 +1428,8 @@ impl SpillAnalysis {
         let mut w_exit_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
         if w_exit_usage > K {
             let place = Placement::At(after_branch);
-            while w_exit_usage > K {
-                let result = results
-                    .pop()
-                    .expect("expected at least one result when spilling branch results");
-                take.remove(&result);
-                w_exit_usage = w_exit_usage
-                    .checked_sub(result.stack_size())
-                    .expect("w_exit_usage underflow when spilling branch results");
-                self.spill(place, result.value(), result.value().borrow().span());
-            }
+            w_exit_usage =
+                self.spill_trailing_until_fits(&mut take, &mut results, w_exit_usage, place);
         }
 
         // If this block is the entry block of a RegionBranchOpInterface op, then we compute the
