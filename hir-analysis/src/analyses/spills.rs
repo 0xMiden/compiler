@@ -519,11 +519,6 @@ impl SpillAnalysis {
         self.spills.as_slice()
     }
 
-    /// Same as [SpillAnalysis::spills], but as a mutable reference
-    pub fn spills_mut(&mut self) -> &mut [SpillInfo] {
-        self.spills.as_mut_slice()
-    }
-
     /// Returns true if `value` is reloaded at some point
     pub fn is_reloaded(&self, value: &ValueRef) -> bool {
         self.reloads.iter().any(|info| &info.value == value)
@@ -556,11 +551,6 @@ impl SpillAnalysis {
     /// Returns the set of computed reloads
     pub fn reloads(&self) -> &[ReloadInfo] {
         self.reloads.as_slice()
-    }
-
-    /// Same as [SpillAnalysis::reloads], but as a mutable reference
-    pub fn reloads_mut(&mut self) -> &mut [ReloadInfo] {
-        self.reloads.as_mut_slice()
     }
 
     /// Returns the operands in W upon entry to `point`
