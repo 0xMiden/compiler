@@ -2,7 +2,7 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::*;
+use miden::{AccountId, Word, active_note, entrypoint, note};
 
 use crate::bindings::Account;
 
