@@ -57,6 +57,7 @@ mod export_type;
 mod generate;
 mod manifest_paths;
 mod note;
+mod note_script;
 mod script;
 mod types;
 mod util;
@@ -92,51 +93,22 @@ pub fn export_type(
     export_type::expand(attr, item)
 }
 
-/// Marks the function as a note script.
+/// Marks a free function as a note script.
 ///
-/// The annotated function must be named `run` and take either:
-/// - `fn run(arg: Word)`
-/// - `fn run(arg: Word, account: &mut Account)`
-///
-/// The optional `account` parameter is an injected wrapper around an imported account components
-/// (e.g. a basic wallet), and lets the note script call methods such as `get_id()` and
-/// `receive_asset(...)`.
-///
-/// # Examples
-///
-/// A pay-to-id note script that validates the consuming account and forwards all note assets to a
-/// basic wallet by calling `receive_asset`:
+/// This is a compatibility shim for the legacy note-script syntax:
 ///
 /// ```rust,ignore
-/// use miden::*;
-///
-/// // `Account` is generated from the imported account component dependency (e.g. `miden:basic-wallet`).
-/// use crate::bindings::Account;
-///
 /// #[note_script]
-/// fn run(_arg: Word, account: &mut Account) {
-///     let inputs = active_note::get_inputs();
-///     let target_account = AccountId::from(inputs[0], inputs[1]);
-///     assert_eq!(account.get_id(), target_account);
-///
-///     for asset in active_note::get_assets() {
-///         account.receive_asset(asset);
-///     }
-/// }
+/// fn run(arg: Word) { /* ... */ }
 /// ```
+///
+/// Prefer using `#[note]` + `#[entrypoint]` directly for new code.
 #[proc_macro_attribute]
 pub fn note_script(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    script::expand(
-        attr,
-        item,
-        ScriptConfig {
-            export_interface: "miden:base/note-script@1.0.0",
-            guest_trait_path: "self::bindings::exports::miden::base::note_script::Guest",
-        },
-    )
+    note_script::expand_note_script(attr, item)
 }
 
 /// Marks a type/impl as a note script definition.

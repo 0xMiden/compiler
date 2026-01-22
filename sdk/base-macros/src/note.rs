@@ -7,6 +7,7 @@ use syn::{
 
 use crate::{boilerplate::runtime_boilerplate, script::build_script_wit};
 
+const ENTRYPOINT_ATTR: &str = "entrypoint";
 const ENTRYPOINT_DOC_MARKER: &str = "__miden_entrypoint_marker";
 
 /// Expands `#[note]` for either a note input `struct` or an inherent `impl` block.
@@ -116,32 +117,9 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
         }
     };
 
-    let load_impl = match &item_struct.fields {
-        syn::Fields::Unit => quote! {
-            impl #struct_ident {
-                #[doc(hidden)]
-                #[inline(always)]
-                pub(crate) fn __miden_load_from_active_note() -> Self {
-                    Self
-                }
-            }
-        },
-        _ => quote! {
-            impl #struct_ident {
-                #[doc(hidden)]
-                #[inline(always)]
-                pub(crate) fn __miden_load_from_active_note() -> Self {
-                    let inputs = ::miden::active_note::get_inputs();
-                    inputs.as_slice().into()
-                }
-            }
-        },
-    };
-
     quote! {
         #item_struct
         #from_impl
-        #load_impl
     }
 }
 
@@ -272,28 +250,23 @@ struct AccountParam {
 }
 
 fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
-    let create = quote! {
-        let note: #note_ty = <#note_ty>::__miden_load_from_active_note();
-    };
-
     quote! {
-        #create
-        let __miden_note = note;
+        let __miden_note: #note_ty = if ::core::mem::size_of::<#note_ty>() == 0 {
+            (&[] as &[::miden::Felt]).into()
+        } else {
+            let inputs = ::miden::active_note::get_inputs();
+            inputs.as_slice().into()
+        };
     }
 }
 
 fn extract_entrypoint(mut item_impl: ItemImpl) -> syn::Result<(ImplItemFn, ItemImpl)> {
-    let mut run_fns = Vec::new();
     let mut entrypoints = Vec::new();
 
     for item in &mut item_impl.items {
         let ImplItem::Fn(item_fn) = item else {
             continue;
         };
-
-        if item_fn.sig.ident == "run" {
-            run_fns.push(item_fn.clone());
-        }
 
         if has_entrypoint_marker_attr(&item_fn.attrs) {
             entrypoints.push(item_fn.clone());
@@ -302,29 +275,16 @@ fn extract_entrypoint(mut item_impl: ItemImpl) -> syn::Result<(ImplItemFn, ItemI
         }
     }
 
-    if !entrypoints.is_empty() {
-        return match entrypoints.as_slice() {
-            [only] => Ok((only.clone(), item_impl)),
-            _ => Err(syn::Error::new(
-                item_impl.span(),
-                "`#[note]` requires a single entrypoint method (only one `#[entrypoint]` method \
-                 is allowed)",
-            )),
-        };
-    }
-
-    // If no entrypoint markers are present, fall back to a conventional `fn run` method to allow
-    // users to omit `#[entrypoint]` when unambiguous.
-    match run_fns.as_slice() {
+    match entrypoints.as_slice() {
         [only] => Ok((only.clone(), item_impl)),
         [] => Err(syn::Error::new(
             item_impl.span(),
-            "`#[note]` requires an entrypoint method (annotate a method with `#[entrypoint]`)",
+            "`#[note]` requires an entrypoint method annotated with `#[entrypoint]`",
         )),
         _ => Err(syn::Error::new(
             item_impl.span(),
-            "`#[note]` requires a single entrypoint method (annotate exactly one method with \
-             `#[entrypoint]`)",
+            "`#[note]` requires a single entrypoint method (only one `#[entrypoint]` method is \
+             allowed)",
         )),
     }
 }
@@ -473,12 +433,15 @@ fn has_entrypoint_marker_attr(attrs: &[Attribute]) -> bool {
 }
 
 fn is_attr_named(attr: &Attribute, name: &str) -> bool {
-    attr.path().is_ident(name)
+    attr.path()
+        .segments
+        .last()
+        .is_some_and(|seg| seg.ident == name && matches!(seg.arguments, PathArguments::None))
 }
 
 /// Returns true if an attribute marks a method as the note entrypoint.
 fn is_entrypoint_marker_attr(attr: &Attribute) -> bool {
-    is_attr_named(attr, "entrypoint") || is_doc_marker_attr(attr, ENTRYPOINT_DOC_MARKER)
+    is_attr_named(attr, ENTRYPOINT_ATTR) || is_doc_marker_attr(attr, ENTRYPOINT_DOC_MARKER)
 }
 
 /// Returns true if `attr` is `#[doc = "..."]` with `marker` as the string value.
@@ -532,9 +495,10 @@ mod tests {
 
     #[test]
     fn extract_entrypoint_accepts_doc_marker() {
+        let marker = syn::LitStr::new(ENTRYPOINT_DOC_MARKER, Span::call_site());
         let item_impl: ItemImpl = parse_quote! {
             impl MyNote {
-                #[doc = "__miden_entrypoint_marker"]
+                #[doc = #marker]
                 pub fn execute(self, _arg: Word) {}
             }
         };
@@ -547,6 +511,27 @@ mod tests {
         };
         assert!(
             method.attrs.iter().all(|attr| !is_doc_marker_attr(attr, ENTRYPOINT_DOC_MARKER)),
+            "entrypoint markers must be removed from output"
+        );
+    }
+
+    #[test]
+    fn extract_entrypoint_accepts_qualified_entrypoint_attr() {
+        let item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[miden::entrypoint]
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+
+        let (entrypoint_fn, item_impl) = extract_entrypoint(item_impl).unwrap();
+        assert_eq!(entrypoint_fn.sig.ident, "execute");
+
+        let ImplItem::Fn(method) = item_impl.items.first().expect("method must exist") else {
+            panic!("expected function method");
+        };
+        assert!(
+            method.attrs.iter().all(|attr| !is_entrypoint_marker_attr(attr)),
             "entrypoint markers must be removed from output"
         );
     }

@@ -20,7 +20,7 @@ pub(crate) struct ScriptConfig {
     pub guest_trait_path: &'static str,
 }
 
-/// Shared expansion logic used by both `#[note_script]` and `#[tx_script]`.
+/// Expansion logic used by `#[tx_script]`.
 pub(crate) fn expand(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
