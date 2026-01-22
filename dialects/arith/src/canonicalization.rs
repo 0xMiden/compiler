@@ -1,3 +1,8 @@
+//! Canonicalization patterns for the `arith` dialect.
+//!
+//! Currently includes a rewrite for 32-bit rotates of `i64`/`u64` to preserve the full 64-bit
+//! payload when values represent felt values
+
 use alloc::rc::Rc;
 
 use midenc_hir::{
@@ -11,7 +16,7 @@ use crate::*;
 /// Canonicalizes 32-bit rotations of `i64`/`u64` values into a swap of the 32-bit limbs.
 ///
 /// This is used to preserve the "extra" bits that may be present when `i64` values are actually
-/// being used to operate over two packed `f32` values in memory.
+/// being used to operate over two felt values in memory.
 pub(crate) struct CanonicalizeI64RotateBy32ToSwap {
     info: PatternInfo,
 }
