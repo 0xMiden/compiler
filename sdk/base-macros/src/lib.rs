@@ -57,7 +57,6 @@ mod export_type;
 mod generate;
 mod manifest_paths;
 mod note;
-mod note_script;
 mod script;
 mod types;
 mod util;
@@ -91,24 +90,6 @@ pub fn export_type(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     export_type::expand(attr, item)
-}
-
-/// Marks a free function as a note script.
-///
-/// This is a compatibility shim for the legacy note-script syntax:
-///
-/// ```rust,ignore
-/// #[note_script]
-/// fn run(arg: Word) { /* ... */ }
-/// ```
-///
-/// Prefer using `#[note]` + `#[entrypoint]` directly for new code.
-#[proc_macro_attribute]
-pub fn note_script(
-    attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    note_script::expand_note_script(attr, item)
 }
 
 /// Marks a type/impl as a note script definition.
