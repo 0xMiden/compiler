@@ -1278,7 +1278,7 @@ impl SpillAnalysis {
         let mut w_entry_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
         if w_entry_usage > K {
             let place = Placement::At(start_of_block);
-            w_entry_usage =
+            let _ =
                 self.spill_trailing_until_fits(&mut take, &mut block_args, w_entry_usage, place);
         }
 
@@ -1428,8 +1428,7 @@ impl SpillAnalysis {
         let mut w_exit_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
         if w_exit_usage > K {
             let place = Placement::At(after_branch);
-            w_exit_usage =
-                self.spill_trailing_until_fits(&mut take, &mut results, w_exit_usage, place);
+            let _ = self.spill_trailing_until_fits(&mut take, &mut results, w_exit_usage, place);
         }
 
         // If this block is the entry block of a RegionBranchOpInterface op, then we compute the
