@@ -1,5 +1,5 @@
 use midenc_hir::{
-    Builder, BuilderExt, Felt, OpBuilder, Overflow, Report, SourceSpan, Type, ValueRef,
+    Builder, BuilderExt, Felt, OpBuilder, Overflow, Report, SmallVec, SourceSpan, Type, ValueRef,
     dialects::builtin::FunctionBuilder,
 };
 
@@ -499,17 +499,14 @@ pub trait ArithOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
-    /// Join `hi` and `lo` into a single value of type `ty`.
-    fn join(
-        &mut self,
-        hi: ValueRef,
-        lo: ValueRef,
-        ty: Type,
-        span: SourceSpan,
-    ) -> Result<ValueRef, Report> {
-        let op_builder =
-            self.builder_mut().create::<crate::ops::Join, (ValueRef, ValueRef, Type)>(span);
-        let op = op_builder(hi, lo, ty)?;
+    /// Join `limbs` into a single value of type `ty`, where limbs are ordered from
+    /// most-significant to least-significant.
+    fn join<A>(&mut self, limbs: A, ty: Type, span: SourceSpan) -> Result<ValueRef, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::Join, (A, Type)>(span);
+        let op = op_builder(limbs, ty)?;
         Ok(op.borrow().result().as_value_ref())
     }
 
@@ -519,13 +516,11 @@ pub trait ArithOpBuilder<'f, B: ?Sized + Builder> {
         n: ValueRef,
         limb_ty: Type,
         span: SourceSpan,
-    ) -> Result<(ValueRef, ValueRef), Report> {
+    ) -> Result<SmallVec<[ValueRef; 4]>, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Split, _>(span);
         let op = op_builder(n, limb_ty)?;
         let op = op.borrow();
-        let lo = op.result_low().as_value_ref();
-        let hi = op.result_high().as_value_ref();
-        Ok((hi, lo))
+        Ok(op.limbs().iter().map(|limb| limb.borrow().as_value_ref()).collect())
     }
 
     #[allow(clippy::wrong_self_convention)]

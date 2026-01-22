@@ -124,11 +124,14 @@ impl RewritePattern for CanonicalizeI64RotateBy32ToSwap {
         };
         let (hi, lo) = {
             let split = split.borrow();
-            (split.result_high().as_value_ref(), split.result_low().as_value_ref())
+            let [hi, lo] = split.limbs().as_slice() else {
+                unreachable!("expected arith.split to produce 2 limbs for i64/u64");
+            };
+            (hi.borrow().as_value_ref(), lo.borrow().as_value_ref())
         };
         let joined = {
-            let op_builder = guard.create::<Join, (ValueRef, ValueRef, Type)>(span);
-            let join = op_builder(lo, hi, lhs_ty)?;
+            let op_builder = guard.create::<Join, ([ValueRef; 2], Type)>(span);
+            let join = op_builder([lo, hi], lhs_ty)?;
             join.borrow().result().as_value_ref()
         };
 
@@ -245,14 +248,20 @@ mod tests {
             let split = split.borrow();
             let split = split.downcast_ref::<Split>().unwrap();
             assert_eq!(split.limb_ty(), &Type::Felt, "expected split to use `felt` limbs");
-            (split.result_high().as_value_ref(), split.result_low().as_value_ref())
+            let [hi, lo] = split.limbs().as_slice() else {
+                panic!("expected arith.split to produce 2 limbs for i64/u64");
+            };
+            (hi.borrow().as_value_ref(), lo.borrow().as_value_ref())
         };
 
         let (high, low) = {
             let join = join.borrow();
             let join = join.downcast_ref::<Join>().unwrap();
             assert_eq!(join.ty(), &ty, "expected join to reconstruct the original rotate type");
-            (join.high_limb().as_value_ref(), join.low_limb().as_value_ref())
+            let [high, low] = join.limbs().as_slice() else {
+                panic!("expected arith.join to consume 2 limbs for i64/u64");
+            };
+            (high.borrow().as_value_ref(), low.borrow().as_value_ref())
         };
 
         assert_eq!(high, lo, "expected join high limb to use split low limb");

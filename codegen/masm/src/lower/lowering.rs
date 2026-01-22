@@ -1221,9 +1221,11 @@ impl HirLowering for arith::Join {
         let mut constraints = emitter.constraints_for(op, &args);
         let mut args = args.into_smallvec();
 
-        // For `i128`/`u128`, we use different stack order for 64-bit limbs.
-        // For other join widths, the operand ordering must be preserved as specified in the IR.
-        if matches!(self.ty(), Type::I128 | Type::U128) {
+        // For `i128`/`u128` we use a different stack order for 64-bit limbs.
+        //
+        // The IR specifies limbs most-significant to least-significant, but the runtime stack
+        // representation for two 64-bit limbs is (lo, hi).
+        if args.len() == 2 && matches!(self.ty(), Type::I128 | Type::U128) {
             args.swap(0, 1);
             constraints.swap(0, 1);
         }
@@ -1252,8 +1254,9 @@ impl HirLowering for arith::Join {
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        inst_emitter.pop().expect("operand stack is empty");
-        inst_emitter.pop().expect("operand stack is empty");
+        for _ in 0..self.num_operands() {
+            inst_emitter.pop().expect("operand stack is empty");
+        }
         inst_emitter.push(self.result().as_value_ref());
         Ok(())
     }
@@ -1263,8 +1266,9 @@ impl HirLowering for arith::Split {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
         inst_emitter.pop().expect("operand stack is empty");
-        inst_emitter.push(self.result_low().as_value_ref());
-        inst_emitter.push(self.result_high().as_value_ref());
+        for limb in self.limbs().iter().rev() {
+            inst_emitter.push(limb.borrow().as_value_ref());
+        }
         Ok(())
     }
 }
