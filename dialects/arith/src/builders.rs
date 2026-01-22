@@ -510,6 +510,31 @@ pub trait ArithOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    /// Join 2 limbs into a single value of type `ty`.
+    ///
+    /// Limbs are ordered from most-significant to least-significant.
+    fn join2(
+        &mut self,
+        high: ValueRef,
+        low: ValueRef,
+        ty: Type,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        self.join([high, low], ty, span)
+    }
+
+    /// Join 4 limbs into a single value of type `ty`.
+    ///
+    /// Limbs are ordered from most-significant to least-significant.
+    fn join4(
+        &mut self,
+        limbs: [ValueRef; 4],
+        ty: Type,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        self.join(limbs, ty, span)
+    }
+
     /// Split `n` into limbs of type `limb_ty`, ordered from most-significant to least-significant.
     fn split(
         &mut self,
@@ -521,6 +546,38 @@ pub trait ArithOpBuilder<'f, B: ?Sized + Builder> {
         let op = op_builder(n, limb_ty)?;
         let op = op.borrow();
         Ok(op.limbs().iter().map(|limb| limb.borrow().as_value_ref()).collect())
+    }
+
+    /// Split `n` into 2 limbs of type `limb_ty`.
+    ///
+    /// Returns limbs ordered from most-significant to least-significant.
+    fn split2(
+        &mut self,
+        n: ValueRef,
+        limb_ty: Type,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let limbs = self.split(n, limb_ty, span)?;
+        match limbs.as_slice() {
+            [high, low] => Ok((*high, *low)),
+            _ => Err(Report::msg("invalid arith.split: expected 2 result limb values")),
+        }
+    }
+
+    /// Split `n` into 4 limbs of type `limb_ty`.
+    ///
+    /// Returns limbs ordered from most-significant to least-significant.
+    fn split4(
+        &mut self,
+        n: ValueRef,
+        limb_ty: Type,
+        span: SourceSpan,
+    ) -> Result<[ValueRef; 4], Report> {
+        let limbs = self.split(n, limb_ty, span)?;
+        match limbs.as_slice() {
+            [a, b, c, d] => Ok([*a, *b, *c, *d]),
+            _ => Err(Report::msg("invalid arith.split: expected 4 result limb values")),
+        }
     }
 
     #[allow(clippy::wrong_self_convention)]
