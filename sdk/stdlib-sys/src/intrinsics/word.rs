@@ -15,6 +15,17 @@ impl Word {
         }
     }
 
+    pub const fn new_const(a: u32, b: u32, c: u32, d: u32) -> Self {
+        Self {
+            inner: (
+                Felt::from_u32_const(a),
+                Felt::from_u32_const(b),
+                Felt::from_u32_const(c),
+                Felt::from_u32_const(d),
+            ),
+        }
+    }
+
     pub fn reverse(&self) -> Word {
         // This is workaround for the https://github.com/0xMiden/compiler/issues/596 to avoid
         // i64.rotl op in the compiled Wasm

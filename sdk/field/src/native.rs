@@ -9,6 +9,13 @@ use crate::FeltImpl;
 /// A `Felt` represented as a felt (`miden_core::Felt`).
 pub struct Felt(pub miden_core::Felt);
 
+impl Felt {
+    #[inline(always)]
+    pub const fn from_u32_const(value: u32) -> Self {
+        Self(CoreFelt::new(value as u64))
+    }
+}
+
 impl FeltImpl for Felt {
     #[inline(always)]
     fn from_u64_unchecked(value: u64) -> Self {

@@ -79,6 +79,13 @@ unsafe extern "C" {
 // Note: inherent `Felt` methods live in `sdk/field/src/lib.rs` and delegate to the crate-local
 // `FeltImpl` trait to ensure the on-chain/off-chain APIs don't drift.
 
+impl Felt {
+    #[inline(always)]
+    pub const fn from_u32_const(value: u32) -> Self {
+        unsafe { extern_from_u32(value) }
+    }
+}
+
 impl FeltImpl for Felt {
     #[inline(always)]
     fn from_u64_unchecked(value: u64) -> Self {
