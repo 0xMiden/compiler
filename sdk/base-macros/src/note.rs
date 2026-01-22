@@ -7,6 +7,8 @@ use syn::{
 
 use crate::{boilerplate::runtime_boilerplate, script::build_script_wit};
 
+const ENTRYPOINT_DOC_MARKER: &str = "__miden_entrypoint_marker";
+
 /// Expands `#[note]` for either a note input `struct` or an inherent `impl` block.
 pub(crate) fn expand_note(
     attr: proc_macro::TokenStream,
@@ -45,8 +47,12 @@ pub(crate) fn expand_entrypoint(
             .into();
     }
 
-    // No transformation is required here; `#[note]` uses this attribute as a marker.
-    item
+    // `#[note]` uses `#[entrypoint]` as a marker. Since proc-macro attributes are consumed during
+    // expansion, we also attach a stable marker attribute that `#[note]` can reliably detect.
+    let mut item_fn = parse_macro_input!(item as ImplItemFn);
+    let marker = syn::LitStr::new(ENTRYPOINT_DOC_MARKER, Span::call_site());
+    item_fn.attrs.push(syn::parse_quote!(#[doc = #marker]));
+    quote!(#item_fn).into()
 }
 
 fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
@@ -65,11 +71,7 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
             quote! {
                 impl ::core::convert::From<&[::miden::Felt]> for #struct_ident {
                     #[inline(always)]
-                    fn from(felts: &[::miden::Felt]) -> Self {
-                        debug_assert!(
-                            felts.is_empty(),
-                            "unit note input struct must be decoded from an empty slice"
-                        );
+                    fn from(_felts: &[::miden::Felt]) -> Self {
                         Self
                     }
                 }
@@ -281,8 +283,8 @@ fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
 }
 
 fn extract_entrypoint(mut item_impl: ItemImpl) -> syn::Result<(ImplItemFn, ItemImpl)> {
-    let mut entrypoints = Vec::new();
     let mut run_fns = Vec::new();
+    let mut entrypoints = Vec::new();
 
     for item in &mut item_impl.items {
         let ImplItem::Fn(item_fn) = item else {
@@ -293,30 +295,36 @@ fn extract_entrypoint(mut item_impl: ItemImpl) -> syn::Result<(ImplItemFn, ItemI
             run_fns.push(item_fn.clone());
         }
 
-        if has_marker_attr(&item_fn.attrs, "entrypoint") {
+        if has_entrypoint_marker_attr(&item_fn.attrs) {
             entrypoints.push(item_fn.clone());
-            // Remove the marker to avoid requiring it to expand after `#[note]`.
-            item_fn.attrs.retain(|attr| !is_attr_named(attr, "entrypoint"));
+            // Remove entrypoint markers so they don't reach the output.
+            item_fn.attrs.retain(|attr| !is_entrypoint_marker_attr(attr));
         }
     }
 
-    // Robustness: if `#[entrypoint]` expanded before `#[note]`, the marker may have already been
-    // removed. In that case we fall back to selecting `fn run` as long as it is unambiguous.
-    let candidates = if entrypoints.is_empty() {
-        run_fns
-    } else {
-        entrypoints
-    };
+    if !entrypoints.is_empty() {
+        return match entrypoints.as_slice() {
+            [only] => Ok((only.clone(), item_impl)),
+            _ => Err(syn::Error::new(
+                item_impl.span(),
+                "`#[note]` requires a single entrypoint method (only one `#[entrypoint]` method \
+                 is allowed)",
+            )),
+        };
+    }
 
-    match candidates.as_slice() {
+    // If no entrypoint markers are present, fall back to a conventional `fn run` method to allow
+    // users to omit `#[entrypoint]` when unambiguous.
+    match run_fns.as_slice() {
         [only] => Ok((only.clone(), item_impl)),
         [] => Err(syn::Error::new(
             item_impl.span(),
-            "`#[note]` requires an entrypoint method (annotate `fn run` with `#[entrypoint]`)",
+            "`#[note]` requires an entrypoint method (annotate a method with `#[entrypoint]`)",
         )),
         _ => Err(syn::Error::new(
             item_impl.span(),
-            "`#[note]` requires a single entrypoint method (only one `fn run` is allowed)",
+            "`#[note]` requires a single entrypoint method (annotate exactly one method with \
+             `#[entrypoint]`)",
         )),
     }
 }
@@ -331,16 +339,9 @@ fn parse_entrypoint_signature(
 ) -> syn::Result<(usize, Option<AccountParam>)> {
     let sig = &entrypoint.sig;
 
-    if sig.ident != "run" {
-        return Err(syn::Error::new(
-            sig.ident.span(),
-            "`#[entrypoint]` must be applied to `fn run`",
-        ));
-    }
-
-    let receiver = sig.receiver().ok_or_else(|| {
-        syn::Error::new(sig.span(), "`#[entrypoint]` cannot target free functions")
-    })?;
+    let receiver = sig
+        .receiver()
+        .ok_or_else(|| syn::Error::new(sig.span(), "entrypoint method must accept `self`"))?;
 
     if receiver.reference.is_some() {
         return Err(syn::Error::new(
@@ -355,6 +356,10 @@ fn parse_entrypoint_signature(
             receiver.span(),
             "entrypoint receiver must be `self` (non-mutable); `mut self` is not supported",
         ));
+    }
+
+    if !is_unit_return_type(&sig.output) {
+        return Err(syn::Error::new(sig.output.span(), "entrypoint method must return `()`"));
     }
 
     let non_receiver_args: Vec<_> =
@@ -408,7 +413,8 @@ fn parse_entrypoint_signature(
     if non_receiver_args.len() == 2 && account.is_none() {
         return Err(syn::Error::new(
             sig.span(),
-            "entrypoint with two parameters must include an account reference (`&T` or `&mut T`)",
+            "entrypoint with two parameters must include an account reference (`&Account` or \
+             `&mut Account`)",
         ));
     }
 
@@ -433,7 +439,18 @@ fn parse_account_ref_type(ty: &Type) -> Option<(Type, bool)> {
     let Type::Reference(type_ref) = ty else {
         return None;
     };
+    if !is_type_named(type_ref.elem.as_ref(), "Account") {
+        return None;
+    }
     Some(((*type_ref.elem).clone(), type_ref.mutability.is_some()))
+}
+
+/// Returns true if the entrypoint return type is unit.
+fn is_unit_return_type(output: &syn::ReturnType) -> bool {
+    match output {
+        syn::ReturnType::Default => true,
+        syn::ReturnType::Type(_, ty) => matches!(ty.as_ref(), Type::Tuple(t) if t.elems.is_empty()),
+    }
 }
 
 fn is_type_named(ty: &Type, name: &str) -> bool {
@@ -450,10 +467,87 @@ fn is_type_named(ty: &Type, name: &str) -> bool {
         .is_some_and(|seg| seg.ident == name && matches!(seg.arguments, PathArguments::None))
 }
 
-fn has_marker_attr(attrs: &[Attribute], name: &str) -> bool {
-    attrs.iter().any(|attr| is_attr_named(attr, name))
+/// Returns true if any entrypoint marker attribute is present.
+fn has_entrypoint_marker_attr(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(is_entrypoint_marker_attr)
 }
 
 fn is_attr_named(attr: &Attribute, name: &str) -> bool {
     attr.path().is_ident(name)
+}
+
+/// Returns true if an attribute marks a method as the note entrypoint.
+fn is_entrypoint_marker_attr(attr: &Attribute) -> bool {
+    is_attr_named(attr, "entrypoint") || is_doc_marker_attr(attr, ENTRYPOINT_DOC_MARKER)
+}
+
+/// Returns true if `attr` is `#[doc = "..."]` with `marker` as the string value.
+fn is_doc_marker_attr(attr: &Attribute, marker: &str) -> bool {
+    if !attr.path().is_ident("doc") {
+        return false;
+    }
+
+    let syn::Meta::NameValue(meta) = &attr.meta else {
+        return false;
+    };
+
+    let syn::Expr::Lit(expr) = &meta.value else {
+        return false;
+    };
+
+    let syn::Lit::Str(value) = &expr.lit else {
+        return false;
+    };
+
+    value.value() == marker
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::parse_quote;
+
+    use super::*;
+
+    #[test]
+    fn entrypoint_signature_allows_non_run_name() {
+        let item_fn: ImplItemFn = parse_quote! {
+            pub fn execute(self, _arg: Word) {}
+        };
+
+        assert!(parse_entrypoint_signature(&item_fn).is_ok());
+    }
+
+    #[test]
+    fn entrypoint_signature_requires_unit_return() {
+        let item_fn: ImplItemFn = parse_quote! {
+            pub fn run(self, arg: Word) -> Word { arg }
+        };
+
+        let err = match parse_entrypoint_signature(&item_fn) {
+            Ok(_) => panic!("expected signature validation to fail"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("must return `()`"));
+    }
+
+    #[test]
+    fn extract_entrypoint_accepts_doc_marker() {
+        let item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[doc = "__miden_entrypoint_marker"]
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+
+        let (entrypoint_fn, item_impl) = extract_entrypoint(item_impl).unwrap();
+        assert_eq!(entrypoint_fn.sig.ident, "execute");
+
+        let ImplItem::Fn(method) = item_impl.items.first().expect("method must exist") else {
+            panic!("expected function method");
+        };
+        assert!(
+            method.attrs.iter().all(|attr| !is_doc_marker_attr(attr, ENTRYPOINT_DOC_MARKER)),
+            "entrypoint markers must be removed from output"
+        );
+    }
 }
