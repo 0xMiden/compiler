@@ -1275,7 +1275,7 @@ impl SpillAnalysis {
             take.insert(arg);
             block_args.push(arg);
         }
-        let mut w_entry_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        let w_entry_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
         if w_entry_usage > K {
             let place = Placement::At(start_of_block);
             let _ =
@@ -1425,7 +1425,7 @@ impl SpillAnalysis {
             take.insert(result);
             results.push(result);
         }
-        let mut w_exit_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        let w_exit_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
         if w_exit_usage > K {
             let place = Placement::At(after_branch);
             let _ = self.spill_trailing_until_fits(&mut take, &mut results, w_exit_usage, place);
