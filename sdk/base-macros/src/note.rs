@@ -299,9 +299,31 @@ fn parse_entrypoint_signature(
 ) -> syn::Result<(usize, Option<AccountParam>)> {
     let sig = &entrypoint.sig;
 
+    if let Some(asyncness) = sig.asyncness {
+        return Err(syn::Error::new(
+            asyncness.span(),
+            "entrypoint method must not be `async`",
+        ));
+    }
+
+    if !sig.generics.params.is_empty() || sig.generics.where_clause.is_some() {
+        return Err(syn::Error::new(
+            sig.generics.span(),
+            "entrypoint method must not be generic",
+        ));
+    }
+
     let receiver = sig
         .receiver()
         .ok_or_else(|| syn::Error::new(sig.span(), "entrypoint method must accept `self`"))?;
+
+    if receiver.colon_token.is_some() {
+        return Err(syn::Error::new(
+            receiver.span(),
+            "entrypoint receiver must be `self` (by value); typed receivers (e.g. `self: \
+             Box<Self>`) are not supported",
+        ));
+    }
 
     if receiver.reference.is_some() {
         return Err(syn::Error::new(
@@ -491,6 +513,45 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.to_string().contains("must return `()`"));
+    }
+
+    #[test]
+    fn entrypoint_signature_rejects_async() {
+        let item_fn: ImplItemFn = parse_quote! {
+            pub async fn execute(self, _arg: Word) {}
+        };
+
+        let err = match parse_entrypoint_signature(&item_fn) {
+            Ok(_) => panic!("expected signature validation to fail"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("must not be `async`"));
+    }
+
+    #[test]
+    fn entrypoint_signature_rejects_typed_receiver() {
+        let item_fn: ImplItemFn = parse_quote! {
+            pub fn execute(self: Box<Self>, _arg: Word) {}
+        };
+
+        let err = match parse_entrypoint_signature(&item_fn) {
+            Ok(_) => panic!("expected signature validation to fail"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("typed receivers"));
+    }
+
+    #[test]
+    fn entrypoint_signature_rejects_generics() {
+        let item_fn: ImplItemFn = parse_quote! {
+            pub fn execute<T>(self, _arg: Word) {}
+        };
+
+        let err = match parse_entrypoint_signature(&item_fn) {
+            Ok(_) => panic!("expected signature validation to fail"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("must not be generic"));
     }
 
     #[test]

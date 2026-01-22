@@ -7,7 +7,7 @@
 //!    signature.
 //!
 //! Example:
-//! ```rust
+//! ```rust,ignore
 //!
 //! #[export_type]
 //! pub struct StructA {
@@ -26,7 +26,7 @@
 //!
 //! #[component]
 //! impl MyAccount {
-//!     pub fn (&self, a: StructA) -> StructB {
+//!     pub fn foo(&self, a: StructA) -> StructB {
 //!         ...
 //!     }
 //! }
@@ -117,7 +117,7 @@ pub fn export_type(
 ///         assert_eq!(account.get_id(), self.recipient);
 ///     }
 /// }
-/// ```
+/// ```rust,ignore
 #[proc_macro_attribute]
 pub fn note(
     attr: proc_macro::TokenStream,
@@ -129,6 +129,16 @@ pub fn note(
 /// Marks a method as the note script entrypoint.
 ///
 /// The method must be contained within an inherent `impl` block annotated with `#[note]`.
+///
+/// # Supported entrypoint signature
+///
+/// - Receiver must be plain `self` (by value); `&self`, `&mut self`, `mut self`, and typed
+///   receivers (e.g. `self: Box<Self>`) are not supported.
+/// - The method must return `()`.
+/// - Excluding `self`, the method must accept:
+///   - exactly one `Word` argument, and
+///   - optionally a single `&Account` or `&mut Account` argument (in either order).
+/// - Generic methods and `async fn` are not supported.
 #[proc_macro_attribute]
 pub fn entrypoint(
     attr: proc_macro::TokenStream,
@@ -201,7 +211,7 @@ pub fn tx_script(
 /// The macro's first argument is the name of a type that implements the traits
 /// generated:
 ///
-/// ```
+/// ```rust,ignore
 /// use miden::generate;
 ///
 /// generate!({
@@ -225,7 +235,7 @@ pub fn tx_script(
 /// export!(MyComponent);
 /// #
 /// # fn main() {}
-/// ```
+/// ```rust,ignore
 ///
 /// This argument is a Rust type which implements the `Guest` traits generated
 /// by `generate!`. Note that all `Guest` traits must be implemented for the
@@ -238,7 +248,7 @@ pub fn tx_script(
 /// values.
 ///
 ///
-/// ```
+/// ```rust,ignore
 /// use miden::generate;
 /// # macro_rules! generate { ($($t:tt)*) => () }
 ///
