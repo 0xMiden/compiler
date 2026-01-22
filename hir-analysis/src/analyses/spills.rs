@@ -504,7 +504,7 @@ impl SpillAnalysis {
             }
             point => Placement::At(point),
         };
-        self.spills.iter().any(|info| info.value == value && info.place == place)
+        self.spill_ids.contains_key(&(place, value))
     }
 
     /// Returns true if `value` will be spilled in the given split
@@ -543,7 +543,7 @@ impl SpillAnalysis {
             }
             point => Placement::At(point),
         };
-        self.reloads.iter().any(|info| info.value == value && info.place == place)
+        self.reload_ids.contains_key(&(place, value))
     }
 
     /// Returns true if `value` will be reloaded in the given split
@@ -1273,7 +1273,9 @@ impl SpillAnalysis {
                     .pop()
                     .expect("expected at least one block argument when spilling entry args");
                 take.remove(&arg);
-                w_entry_usage = w_entry_usage.saturating_sub(arg.stack_size());
+                w_entry_usage = w_entry_usage
+                    .checked_sub(arg.stack_size())
+                    .expect("w_entry_usage underflow when spilling entry args");
                 self.spill(place, arg.value(), arg.value().borrow().span());
             }
         }
@@ -1429,7 +1431,9 @@ impl SpillAnalysis {
                     .pop()
                     .expect("expected at least one result when spilling branch results");
                 take.remove(&result);
-                w_exit_usage = w_exit_usage.saturating_sub(result.stack_size());
+                w_exit_usage = w_exit_usage
+                    .checked_sub(result.stack_size())
+                    .expect("w_exit_usage underflow when spilling branch results");
                 self.spill(place, result.value(), result.value().borrow().span());
             }
         }
