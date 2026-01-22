@@ -82,6 +82,7 @@ unsafe extern "C" {
 impl FeltImpl for Felt {
     #[inline(always)]
     fn from_u64_unchecked(value: u64) -> Self {
+        assert!(value <= Felt::M, "value {value} is larger than field modulus {}", Felt::M);
         unsafe { extern_from_u64_unchecked(value) }
     }
 

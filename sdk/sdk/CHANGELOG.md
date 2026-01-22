@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### BREAKING
 - Require `&mut` in mutating methods of the account storage;
+- Raise a panic in `Felt::from_u64_unchecked` if the value is larger than `Felt::M` #891
 
 ### Added
 
