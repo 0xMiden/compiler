@@ -418,10 +418,7 @@ fn build_entrypoint_call_args(
     match arg_word_idx {
         0 => Ok(vec![arg, account_arg]),
         1 => Ok(vec![account_arg, arg]),
-        _ => Err(syn::Error::new(
-            error_span,
-            "internal error: invalid entrypoint argument index",
-        )),
+        _ => Err(syn::Error::new(error_span, "internal error: invalid entrypoint argument index")),
     }
 }
 
