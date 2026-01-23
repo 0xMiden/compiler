@@ -15,6 +15,22 @@ impl Word {
         }
     }
 
+    /// Converts each of the `values` to `Felt`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a value is larger than `Felt::M`.
+    pub fn from_u64_unchecked(values: [u64; 4]) -> Self {
+        Self {
+            inner: (
+                Felt::from_u64_unchecked(values[0]),
+                Felt::from_u64_unchecked(values[1]),
+                Felt::from_u64_unchecked(values[2]),
+                Felt::from_u64_unchecked(values[3]),
+            ),
+        }
+    }
+
     pub fn reverse(&self) -> Word {
         // This is workaround for the https://github.com/0xMiden/compiler/issues/596 to avoid
         // i64.rotl op in the compiled Wasm
