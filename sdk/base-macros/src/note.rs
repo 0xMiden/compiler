@@ -192,7 +192,10 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         None => (quote! {}, quote! {}, quote! {}),
     };
 
-    let args = build_entrypoint_call_args(arg_idx, account_arg);
+    let args = match build_entrypoint_call_args(entrypoint_fn.sig.span(), arg_idx, account_arg) {
+        Ok(args) => args,
+        Err(err) => return err.into_compile_error(),
+    };
     let call = quote! { __miden_note.#entrypoint_ident(#(#args),*); };
 
     match expand_guest_wrapper(
@@ -370,17 +373,25 @@ fn parse_entrypoint_signature(
     Ok((*word_idx, account))
 }
 
-fn build_entrypoint_call_args(arg_word_idx: usize, account_arg: TokenStream2) -> Vec<TokenStream2> {
+/// Builds the arguments passed to the user's entrypoint method call.
+fn build_entrypoint_call_args(
+    error_span: Span,
+    arg_word_idx: usize,
+    account_arg: TokenStream2,
+) -> syn::Result<Vec<TokenStream2>> {
     let arg = quote! { arg };
 
     if account_arg.is_empty() {
-        return vec![arg];
+        return Ok(vec![arg]);
     }
 
     match arg_word_idx {
-        0 => vec![arg, account_arg],
-        1 => vec![account_arg, arg],
-        _ => vec![arg],
+        0 => Ok(vec![arg, account_arg]),
+        1 => Ok(vec![account_arg, arg]),
+        _ => Err(syn::Error::new(
+            error_span,
+            "internal error: invalid entrypoint argument index",
+        )),
     }
 }
 
