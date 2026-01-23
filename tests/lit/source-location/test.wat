@@ -21,3 +21,9 @@
 ;; HIR: hir.bitcast {{.*}} #loc("/{{.*}}test-project/src/lib.rs":{{.*}})
 ;; HIR: arith.gt {{.*}} #loc("/{{.*}}test-project/src/lib.rs":{{.*}})
 ;; HIR: builtin.ret {{.*}} #loc("/{{.*}}test-project/src/lib.rs":{{.*}})
+
+;; Verify that unreachable instructions following panic calls inherit source locations
+;; This tests the fix where unreachable instructions without DWARF debug info
+;; inherit the span from the previous valid instruction (the panic call).
+;; HIR: hir.exec @{{.*}}panic_fmt
+;; HIR-NEXT: ub.unreachable{{.*}}#loc("/{{.*}}test-project/src/lib.rs":11:
