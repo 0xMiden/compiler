@@ -117,7 +117,7 @@ pub fn export_type(
 ///         assert_eq!(account.get_id(), self.recipient);
 ///     }
 /// }
-/// ```rust,ignore
+/// ```
 #[proc_macro_attribute]
 pub fn note(
     attr: proc_macro::TokenStream,
@@ -235,7 +235,7 @@ pub fn tx_script(
 /// export!(MyComponent);
 /// #
 /// # fn main() {}
-/// ```rust,ignore
+/// ```
 ///
 /// This argument is a Rust type which implements the `Guest` traits generated
 /// by `generate!`. Note that all `Guest` traits must be implemented for the

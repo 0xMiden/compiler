@@ -256,6 +256,8 @@ struct AccountParam {
 }
 
 fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
+    // NOTE: Avoid calling `active_note::get_inputs()` for zero-sized note types so that "no input"
+    // notes can execute without requiring a full active-note runtime context.
     quote! {
         let __miden_note: #note_ty = if ::core::mem::size_of::<#note_ty>() == 0 {
             (&[] as &[::miden::Felt]).into()
