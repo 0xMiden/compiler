@@ -16,6 +16,7 @@ mod target;
 mod template;
 mod utils;
 
+pub use commands::BuildCommand;
 pub use outputs::{BuildOutput, CommandOutput};
 pub use target::{
     detect_project_type, detect_target_environment, target_environment_to_project_type,
@@ -53,6 +54,10 @@ where
             Ok(Some(CommandOutput::NewCommandOutput { project_path }))
         }
         cli::CargoMidenCommand::Build(cmd) => cmd.exec(build_output_type),
+        cli::CargoMidenCommand::Test(cmd) => {
+            cmd.exec()?;
+            Ok(None)
+        }
     }
 }
 
