@@ -48,9 +48,39 @@ pub(crate) fn expand_entrypoint(
             .into();
     }
 
+    let item_tokens: TokenStream2 = item.clone().into();
+    let mut item_fn: ImplItemFn = match syn::parse2(item_tokens.clone()) {
+        Ok(item_fn) => item_fn,
+        Err(_) => {
+            if let Ok(item_fn) = syn::parse2::<syn::ItemFn>(item_tokens.clone()) {
+                return syn::Error::new(
+                    item_fn.sig.span(),
+                    "`#[entrypoint]` must be applied to a method inside a `#[note]` `impl` block",
+                )
+                .into_compile_error()
+                .into();
+            }
+
+            if let Ok(item_fn) = syn::parse2::<syn::TraitItemFn>(item_tokens.clone()) {
+                return syn::Error::new(
+                    item_fn.sig.span(),
+                    "`#[entrypoint]` must be applied to a method inside a `#[note]` `impl` block",
+                )
+                .into_compile_error()
+                .into();
+            }
+
+            return syn::Error::new(
+                Span::call_site(),
+                "`#[entrypoint]` must be applied to a method inside a `#[note]` `impl` block",
+            )
+            .into_compile_error()
+            .into();
+        }
+    };
+
     // `#[note]` uses `#[entrypoint]` as a marker. Since proc-macro attributes are consumed during
     // expansion, we also attach a stable marker attribute that `#[note]` can reliably detect.
-    let mut item_fn = parse_macro_input!(item as ImplItemFn);
     let marker = syn::LitStr::new(ENTRYPOINT_DOC_MARKER, Span::call_site());
     item_fn.attrs.push(syn::parse_quote!(#[doc = #marker]));
     quote!(#item_fn).into()
