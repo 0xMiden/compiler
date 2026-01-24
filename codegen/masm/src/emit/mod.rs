@@ -476,7 +476,7 @@ impl<'a> OpEmitter<'a> {
             let raw_size = self.stack.raw_len();
             self.stack.dropn(num_to_drop);
             self.emit_n(raw_size / 4, masm::Instruction::DropW, span);
-            self.emit_n(raw_size % 4, masm::Instruction::DropW, span);
+            self.emit_n(raw_size % 4, masm::Instruction::Drop, span);
             return;
         }
 
@@ -2079,5 +2079,35 @@ mod tests {
         assert_eq!(emitter.stack_len(), 2);
         assert_eq!(emitter.stack()[0], Type::I32);
         assert_eq!(emitter.stack()[1], Type::U32);
+    }
+
+    #[test]
+    fn op_emitter_truncate_stack_drops_all_with_remainder() {
+        let mut block = Vec::default();
+        let mut stack = OperandStack::default();
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        let span = SourceSpan::default();
+
+        // Push 5 elements (raw_size = 5, so 5 / 4 = 1 DropW, 5 % 4 = 1 Drop)
+        emitter.push(Type::U32);
+        emitter.push(Type::U32);
+        emitter.push(Type::U32);
+        emitter.push(Type::U32);
+        emitter.push(Type::U32);
+        assert_eq!(emitter.stack_len(), 5);
+
+        // truncate_stack(0) should drop all 5 elements
+        emitter.truncate_stack(0, span);
+        assert_eq!(emitter.stack_len(), 0);
+
+        {
+            let ops = emitter.current_block();
+            // Should emit 1 DropW (for 4 elements) + 1 Drop (for remainder 1 element)
+            assert_eq!(ops.len(), 2);
+            assert_eq!(&ops[0], &Op::Inst(Span::new(span, masm::Instruction::DropW)));
+            assert_eq!(&ops[1], &Op::Inst(Span::new(span, masm::Instruction::Drop)));
+        }
     }
 }
