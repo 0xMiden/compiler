@@ -1,6 +1,9 @@
 use super::*;
 use crate::opt::operands::MASM_STACK_WINDOW_FELTS;
 
+/// Log target for this tactic and its helpers.
+const LOG_TARGET: &str = "codegen:scheduling:linear-windowed";
+
 /// Represents the portion of the operand stack which is directly addressable by MASM stack
 /// manipulation instructions.
 #[derive(Debug, Copy, Clone)]
@@ -69,13 +72,18 @@ fn preemptively_move_endangered_operands_to_top(builder: &mut SolutionBuilder) -
         return false;
     }
 
+    log::trace!(
+        target: LOG_TARGET,
+        "preemptively moving endangered operands to preserve addressability: missing_copy_felts={missing_copy_felts}",
+    );
+
     let mut changed = false;
 
     // Repeatedly move the deepest move-constrained operand that would fall out of the addressable
     // window to the top. This avoids generating solutions that require unsupported stack access
     // when copies are materialized.
     loop {
-        let mut worst: Option<(u8, usize)> = None;
+        let mut worst: Option<(u8, usize, ValueOrAlias)> = None;
         for value in builder.context().expected().iter() {
             if value.is_alias() {
                 continue;
@@ -93,21 +101,25 @@ fn preemptively_move_endangered_operands_to_top(builder: &mut SolutionBuilder) -
             let projected_depth = current_depth + missing_copy_felts;
             if projected_depth > MASM_STACK_WINDOW_FELTS {
                 match worst {
-                    None => worst = Some((pos, current_depth)),
-                    Some((_, best_depth)) if current_depth > best_depth => {
-                        worst = Some((pos, current_depth))
+                    None => worst = Some((pos, current_depth, *value)),
+                    Some((_, best_depth, _)) if current_depth > best_depth => {
+                        worst = Some((pos, current_depth, *value))
                     }
                     _ => {}
                 }
             }
         }
 
-        let Some((pos, _)) = worst else {
+        let Some((pos, current_depth, value)) = worst else {
             break;
         };
         if pos == 0 {
             break;
         }
+        log::trace!(
+            target: LOG_TARGET,
+            "moving endangered operand {value:?} at index {pos} (depth_felts={current_depth}) to top",
+        );
         builder.movup(pos);
         changed = true;
     }
@@ -115,6 +127,7 @@ fn preemptively_move_endangered_operands_to_top(builder: &mut SolutionBuilder) -
     changed
 }
 
+/// Returns `true` if any expected copies are missing from the current stack.
 fn has_missing_expected_copies(builder: &SolutionBuilder) -> bool {
     builder
         .context()
@@ -139,6 +152,10 @@ fn materialize_copy(builder: &mut SolutionBuilder, source_at: u8, expected: Valu
         && let Some(window) = AddressableStackWindow::for_stack(builder.stack())
         && window.depth_felts == MASM_STACK_WINDOW_FELTS
     {
+        log::trace!(
+            target: LOG_TARGET,
+            "materializing copy of {expected:?} from index {source_at} using window-preserving strategy (expected_felts={expected_felts})",
+        );
         if source_at > 0 {
             builder.movup(source_at);
         }
@@ -149,6 +166,10 @@ fn materialize_copy(builder: &mut SolutionBuilder, source_at: u8, expected: Valu
         return;
     }
 
+    log::trace!(
+        target: LOG_TARGET,
+        "materializing copy of {expected:?} from index {source_at} to top of stack (expected_felts={expected_felts})",
+    );
     builder.dup(source_at, expected.unwrap_alias());
 }
 
@@ -180,8 +201,6 @@ fn materialize_missing_expected_copies(builder: &mut SolutionBuilder) -> Result<
             break;
         };
 
-        log::trace!("materializing copy of {expected:?} from index {source_at} to top of stack",);
-
         materialize_copy(builder, source_at, expected);
 
         changed = true;
@@ -207,12 +226,22 @@ impl Tactic for LinearStackWindow {
             return Err(TacticError::NotApplicable);
         }
 
-        preemptively_move_endangered_operands_to_top(builder);
-        materialize_missing_expected_copies(builder)?;
+        let moved = preemptively_move_endangered_operands_to_top(builder);
+        let materialized = materialize_missing_expected_copies(builder)?;
+        if moved || materialized {
+            log::trace!(
+                target: LOG_TARGET,
+                "applied LinearStackWindow tactic: moved_endangered={moved} materialized_missing_copies={materialized}",
+            );
+        }
 
         if builder.is_valid() {
             Ok(())
         } else {
+            log::trace!(
+                target: LOG_TARGET,
+                "LinearStackWindow produced invalid solution, falling back to Linear tactic",
+            );
             let mut linear = Linear;
             linear.apply(builder)
         }
