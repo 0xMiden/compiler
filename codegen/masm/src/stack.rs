@@ -327,7 +327,6 @@ impl OperandStack {
     /// Renames the `n`th operand from the top of the stack to `value`
     ///
     /// The type is assumed to remain unchanged
-    /// NOTE: `n` can be > 16
     pub fn rename(&mut self, n: usize, value: ValueRef) {
         let len = self.stack.len();
         assert!(n < len, "invalid operand stack index ({n}), only {len} operands are available");
