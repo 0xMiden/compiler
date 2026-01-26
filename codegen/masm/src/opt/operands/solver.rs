@@ -40,7 +40,7 @@ impl Default for SolverOptions {
     fn default() -> Self {
         Self {
             strict: true,
-            fuel: 25,
+            fuel: 40,
         }
     }
 }
@@ -124,6 +124,50 @@ pub struct OperandMovementConstraintSolver {
     fuel: usize,
 }
 impl OperandMovementConstraintSolver {
+    /// Returns true if `solution` would require accessing stack slots beyond what MASM supports.
+    ///
+    /// MASM stack manipulation instructions can only directly access the first 16 *field elements*
+    /// on the operand stack (indices `0..=15`). Since a single operand may consist of multiple
+    /// field elements, an operand index `< 16` can still map to an invalid MASM stack offset.
+    pub(crate) fn solution_requires_unsupported_stack_access(
+        solution: &[Action],
+        stack: &Stack,
+    ) -> bool {
+        let mut pending = stack.clone();
+        for action in solution.iter().copied() {
+            let index = match action {
+                Action::Copy(index)
+                | Action::Swap(index)
+                | Action::MoveUp(index)
+                | Action::MoveDown(index) => index as usize,
+            };
+
+            let required_stack_depth: usize =
+                pending.iter().rev().take(index + 1).map(|v| v.stack_size()).sum();
+            if required_stack_depth > MASM_STACK_WINDOW_FELTS {
+                return true;
+            }
+
+            match action {
+                Action::Copy(index) => {
+                    let value = pending[index as usize];
+                    pending.push(value);
+                }
+                Action::Swap(index) => {
+                    pending.swap(index as usize);
+                }
+                Action::MoveUp(index) => {
+                    pending.movup(index as usize);
+                }
+                Action::MoveDown(index) => {
+                    pending.movdn(index as usize);
+                }
+            }
+        }
+
+        false
+    }
+
     /// Construct a new solver for the given expected operands, constraints, and operand stack
     /// state.
     pub fn new(
@@ -178,11 +222,13 @@ impl OperandMovementConstraintSolver {
             if is_binary {
                 self.tactics.push(Box::new(TwoArgs));
             } else if self.context.copies().is_empty() {
+                self.tactics.push(Box::new(LinearStackWindow));
                 self.tactics.push(Box::new(Linear));
                 self.tactics.push(Box::new(SwapAndMoveUp));
                 self.tactics.push(Box::new(MoveUpAndSwap));
                 self.tactics.push(Box::new(MoveDownAndSwap));
             } else {
+                self.tactics.push(Box::new(LinearStackWindow));
                 self.tactics.push(Box::new(Linear));
                 self.tactics.push(Box::new(CopyAll));
             }
@@ -214,32 +260,43 @@ impl OperandMovementConstraintSolver {
                 Ok(_) => {
                     if builder.is_valid() {
                         let solution = builder.take();
-                        let solution_size = solution.len();
-                        let best_size = best_solution.as_ref().map(|best| best.len());
-                        match best_size {
-                            Some(best_size) if best_size > solution_size => {
-                                best_solution = Some(solution);
-                                log::trace!(
-                                    "a better solution ({solution_size} vs {best_size}) was found \
-                                     using tactic {}",
-                                    tactic.name()
-                                );
-                            }
-                            Some(best_size) => {
-                                log::trace!(
-                                    "a solution of size {solution_size} was found using tactic \
-                                     {}, but it is no better than the best found so far \
-                                     ({best_size})",
-                                    tactic.name()
-                                );
-                            }
-                            None => {
-                                best_solution = Some(solution);
-                                log::trace!(
-                                    "an initial solution of size {solution_size} was found using \
-                                     tactic {}",
-                                    tactic.name()
-                                );
+                        if Self::solution_requires_unsupported_stack_access(
+                            &solution,
+                            self.context.stack(),
+                        ) {
+                            log::trace!(
+                                "a solution was found using tactic {}, but it requires stack \
+                                 access deeper than supported by MASM; rejecting it",
+                                tactic.name()
+                            );
+                        } else {
+                            let solution_size = solution.len();
+                            let best_size = best_solution.as_ref().map(|best| best.len());
+                            match best_size {
+                                Some(best_size) if best_size > solution_size => {
+                                    best_solution = Some(solution);
+                                    log::trace!(
+                                        "a better solution ({solution_size} vs {best_size}) was \
+                                         found using tactic {}",
+                                        tactic.name()
+                                    );
+                                }
+                                Some(best_size) => {
+                                    log::trace!(
+                                        "a solution of size {solution_size} was found using \
+                                         tactic {}, but it is no better than the best found so \
+                                         far ({best_size})",
+                                        tactic.name()
+                                    );
+                                }
+                                None => {
+                                    best_solution = Some(solution);
+                                    log::trace!(
+                                        "an initial solution of size {solution_size} was found \
+                                         using tactic {}",
+                                        tactic.name()
+                                    );
+                                }
                             }
                         }
                     } else {
@@ -257,11 +314,15 @@ impl OperandMovementConstraintSolver {
                 }
             }
             let remaining_fuel = self.fuel.saturating_sub(tactic.cost(&self.context));
-            if remaining_fuel == 0 {
+            self.fuel = remaining_fuel;
+
+            // If we have no optimization fuel, we should still exhaust tactics until we find a
+            // supported solution. However, once we have a candidate solution, we stop searching
+            // for better ones.
+            if remaining_fuel == 0 && best_solution.is_some() {
                 log::trace!("no more optimization fuel, using the best solution found so far");
                 break;
             }
-            self.fuel = remaining_fuel;
         }
 
         best_solution.take().ok_or(SolverError::NoSolution)
@@ -279,7 +340,15 @@ impl OperandMovementConstraintSolver {
             // The tactic was applied successfully
             Ok(_) => {
                 if builder.is_valid() {
-                    Ok(Some(builder.take()))
+                    let solution = builder.take();
+                    if Self::solution_requires_unsupported_stack_access(
+                        &solution,
+                        self.context.stack(),
+                    ) {
+                        Ok(None)
+                    } else {
+                        Ok(Some(solution))
+                    }
                 } else {
                     log::trace!(
                         "a partial solution was found using tactic {}, but is not sufficient on \
@@ -360,6 +429,180 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{super::testing, *};
+
+    /// Apply `actions` to `stack` and return the resulting stack.
+    fn apply_actions(mut stack: crate::OperandStack, actions: &[Action]) -> crate::OperandStack {
+        for action in actions.iter().copied() {
+            match action {
+                Action::Copy(index) => stack.dup(index as usize),
+                Action::Swap(index) => stack.swap(index as usize),
+                Action::MoveUp(index) => stack.movup(index as usize),
+                Action::MoveDown(index) => stack.movdn(index as usize),
+            }
+        }
+        stack
+    }
+
+    /// Regression test: copy materialization can increase stack depth in field elements, and the
+    /// solver must fall back to a tactic that avoids producing unsupported stack accesses.
+    #[test]
+    fn operand_movement_constraint_solver_stack_window_fallback_full_window_top_copy() {
+        let problem = testing::make_problem_inputs((0..16).collect(), 16, 0b0000_0000_0000_0001);
+        let context = SolverContext::new(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid");
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve()
+        .expect("expected solver to find a supported solution via fallback");
+
+        let pending = apply_actions(problem.stack.clone(), &actions);
+        for (index, expected) in problem.expected.iter().copied().enumerate() {
+            assert_eq!(&pending[index], &expected);
+        }
+        assert!(
+            !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                &actions,
+                context.stack(),
+            ),
+            "solver produced a solution requiring unsupported stack access: {problem:#?}"
+        );
+    }
+
+    /// Regression test: ensure solver fallback avoids 16-felt addressing violations during copy
+    /// materialization when a copy source would otherwise be pushed out of the addressable window.
+    #[test]
+    fn operand_movement_constraint_solver_stack_window_fallback_regression_case() {
+        let problem = testing::make_problem_inputs(
+            vec![0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 2],
+            4,
+            0b0111,
+        );
+        let solver_context = SolverContext::new(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid");
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve()
+        .expect("expected solver to find a supported solution via fallback");
+
+        let pending = apply_actions(problem.stack.clone(), &actions);
+        for (index, expected) in problem.expected.iter().copied().enumerate() {
+            assert_eq!(&pending[index], &expected);
+        }
+        assert!(
+            !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                &actions,
+                solver_context.stack(),
+            ),
+            "solver produced a solution requiring unsupported stack access: {problem:#?}"
+        );
+    }
+
+    /// Regression test: ensure fallback works even when the full-window stack is not already in the
+    /// expected order.
+    #[test]
+    fn operand_movement_constraint_solver_stack_window_fallback_full_window_nontrivial_permutation()
+    {
+        let problem = testing::make_problem_inputs(
+            vec![0, 2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            16,
+            0b0000_0000_0000_0001,
+        );
+        let solver_context = SolverContext::new(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid");
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 10,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve()
+        .expect("expected solver to find a supported solution via fallback");
+
+        let pending = apply_actions(problem.stack.clone(), &actions);
+        for (index, expected) in problem.expected.iter().copied().enumerate() {
+            assert_eq!(&pending[index], &expected);
+        }
+        assert!(
+            !OperandMovementConstraintSolver::solution_requires_unsupported_stack_access(
+                &actions,
+                solver_context.stack(),
+            ),
+            "solver produced a solution requiring unsupported stack access: {problem:#?}"
+        );
+    }
+
+    /// Regression test: ensure we still try all tactics even when we have no optimization fuel.
+    #[test]
+    fn operand_movement_constraint_solver_exhausts_tactics_when_out_of_fuel() {
+        // A mixed copy/move problem: the `CopyAll` tactic will fail its precondition, but `Linear`
+        // can still find a solution.
+        let problem = testing::make_problem_inputs(vec![0, 1, 2], 3, 0b0000_0000_0000_0001);
+
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions {
+                fuel: 0,
+                ..Default::default()
+            },
+        )
+        .expect("expected solver context to be valid")
+        .solve()
+        .expect("expected solver to find a solution even with no optimization fuel");
+
+        let pending = apply_actions(problem.stack.clone(), &actions);
+        for (index, expected) in problem.expected.iter().copied().enumerate() {
+            assert_eq!(&pending[index], &expected);
+        }
+    }
 
     #[test]
     fn operand_movement_constraint_solver_example() {
@@ -553,6 +796,11 @@ mod tests {
 
         #[test]
         fn operand_movement_constraint_solver_copy_some(problem in testing::generate_copy_some_problem()) {
+            testing::solve_problem(problem)?
+        }
+
+        #[test]
+        fn operand_tactics_linear_proptest(problem in testing::generate_linear_problem()) {
             testing::solve_problem(problem)?
         }
     }
