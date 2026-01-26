@@ -279,7 +279,7 @@ builtin.component root_ns:root@1.0.0 {
             v230 = arith.mod v228, v450 : u32;
             hir.assertz v230 #[code = 250];
             v224 = arith.constant 13 : i64;
-            v225 = hir.cast v224 : felt;
+            v225 = arith.trunc v224 : felt;
             v231 = hir.int_to_ptr v228 : ptr<byte, felt>;
             hir.store v231, v225;
             v449 = arith.constant 72 : u32;
@@ -289,7 +289,7 @@ builtin.component root_ns:root@1.0.0 {
             v236 = arith.mod v234, v448 : u32;
             hir.assertz v236 #[code = 250];
             v222 = arith.constant 12 : i64;
-            v223 = hir.cast v222 : felt;
+            v223 = arith.trunc v222 : felt;
             v237 = hir.int_to_ptr v234 : ptr<byte, felt>;
             hir.store v237, v223;
             v239 = arith.constant 68 : u32;
@@ -299,7 +299,7 @@ builtin.component root_ns:root@1.0.0 {
             v242 = arith.mod v240, v447 : u32;
             hir.assertz v242 #[code = 250];
             v220 = arith.constant 11 : i64;
-            v221 = hir.cast v220 : felt;
+            v221 = arith.trunc v220 : felt;
             v243 = hir.int_to_ptr v240 : ptr<byte, felt>;
             hir.store v243, v221;
             v446 = arith.constant 64 : u32;
@@ -309,7 +309,7 @@ builtin.component root_ns:root@1.0.0 {
             v248 = arith.mod v246, v445 : u32;
             hir.assertz v248 #[code = 250];
             v218 = arith.constant 10 : i64;
-            v219 = hir.cast v218 : felt;
+            v219 = arith.trunc v218 : felt;
             v249 = hir.int_to_ptr v246 : ptr<byte, felt>;
             hir.store v249, v219;
             v443 = arith.constant 64 : i32;

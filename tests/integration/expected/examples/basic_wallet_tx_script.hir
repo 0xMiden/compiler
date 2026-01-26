@@ -200,7 +200,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
             v143 = hir.bitcast v133 : u64;
             v145 = arith.shr v143, v144 : u64;
             v146 = hir.bitcast v145 : i64;
-            v147 = hir.cast v146 : felt;
+            v147 = arith.trunc v146 : felt;
             v931 = arith.constant 2 : u32;
             v148 = hir.cast v147 : i64;
             v149 = arith.trunc v148 : i32;

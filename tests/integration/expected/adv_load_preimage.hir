@@ -68,7 +68,7 @@ builtin.component root_ns:root@1.0.0 {
             v55 = hir.bitcast v45 : u64;
             v57 = arith.shr v55, v56 : u64;
             v58 = hir.bitcast v57 : i64;
-            v59 = hir.cast v58 : felt;
+            v59 = arith.trunc v58 : felt;
             v511 = arith.constant 2 : u32;
             v60 = hir.cast v59 : i64;
             v61 = arith.trunc v60 : i32;
