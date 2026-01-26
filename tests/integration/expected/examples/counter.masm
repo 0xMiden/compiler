@@ -634,7 +634,6 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     movup.5
     swap.8
     movdn.5
-    swap.1
     swap.3
     swap.2
     swap.1

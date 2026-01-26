@@ -1709,14 +1709,12 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
         dup.3
         cdrop
         push.3735929054
-        dup.3
-        dup.5
-        swap.1
+        dup.4
+        dup.4
         cdrop
         push.3735929054
-        dup.4
-        dup.7
-        swap.1
+        dup.6
+        dup.5
         cdrop
         push.3735929054
         dup.5

@@ -10,6 +10,9 @@ pub use midenc_hir::{StackOperand as Operand, ValueOrAlias};
 pub use self::solver::{OperandMovementConstraintSolver, SolverError, SolverOptions};
 use self::{context::SolverContext, stack::Stack};
 
+/// The number of field elements addressable by MASM stack manipulation instructions.
+pub(crate) const MASM_STACK_WINDOW_FELTS: usize = 16;
+
 /// This represents a specific action that should be taken by
 /// the code generator with regard to an operand on the stack.
 ///
@@ -17,7 +20,7 @@ use self::{context::SolverContext, stack::Stack};
 /// the effect of which is to place all of the current instruction's
 /// operands exactly where they need to be, just when they are
 /// needed.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Action {
     /// Copy the operand at the given index to the top of the stack
     Copy(u8),

@@ -4,14 +4,16 @@ use super::{Action, Operand, SolverContext, Stack, ValueOrAlias};
 
 mod copy_all;
 mod linear;
+mod linear_stack_window;
 mod move_down_and_swap;
 mod move_up_and_swap;
 mod swap_and_move_up;
 mod two_args;
 
 pub use self::{
-    copy_all::CopyAll, linear::Linear, move_down_and_swap::MoveDownAndSwap,
-    move_up_and_swap::MoveUpAndSwap, swap_and_move_up::SwapAndMoveUp, two_args::TwoArgs,
+    copy_all::CopyAll, linear::Linear, linear_stack_window::LinearStackWindow,
+    move_down_and_swap::MoveDownAndSwap, move_up_and_swap::MoveUpAndSwap,
+    swap_and_move_up::SwapAndMoveUp, two_args::TwoArgs,
 };
 
 /// An error returned by an [OperandMovementConstraintSolver] tactic

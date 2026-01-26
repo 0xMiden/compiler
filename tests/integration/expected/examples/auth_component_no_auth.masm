@@ -449,9 +449,8 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
                 dup.2
                 cdrop
                 push.3735929054
-                dup.2
-                dup.4
-                swap.1
+                dup.3
+                dup.3
                 cdrop
                 push.3735929054
                 movup.2
