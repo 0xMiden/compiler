@@ -29,7 +29,7 @@ pub proc entrypoint(i32) -> felt
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.48
+    push.16
     u32wrapping_sub
     push.1114112
     dup.1
@@ -92,122 +92,30 @@ pub proc entrypoint(i32) -> felt
     eq
     neq
     if.true
-        push.16
-        dup.3
-        u32wrapping_add
+        dup.0
         movup.2
+        u32wrapping_add
         dup.2
-        u32wrapping_add
-        movup.2
+        swap.2
         trace.240
         nop
         exec.::root_ns:root@1.0.0::hash_elements::std::crypto::hashes::rpo::hash_memory_words
         trace.252
         nop
     else
-        push.16
-        dup.3
-        u32wrapping_add
-        movdn.2
+        dup.2
+        swap.2
+        swap.1
         trace.240
         nop
         exec.::root_ns:root@1.0.0::hash_elements::std::crypto::hashes::rpo::hash_memory
         trace.252
         nop
     end
-    push.24
+    push.12
     dup.1
     add
     u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.40
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.16
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.32
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.32
-    dup.1
-    u32wrapping_add
-    dup.1
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::hash_elements::<miden_stdlib_sys::intrinsics::word::Word>::reverse
-    trace.252
-    nop
-    push.4
-    dup.0
-    swap.2
-    swap.3
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::hash_elements::<alloc::raw_vec::RawVecInner>::deallocate
-    trace.252
-    nop
-    dup.0
     push.4
     dup.1
     swap.1
@@ -221,8 +129,16 @@ pub proc entrypoint(i32) -> felt
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.48
-    movup.2
+    push.4
+    dup.0
+    swap.2
+    swap.4
+    trace.240
+    nop
+    exec.::root_ns:root@1.0.0::hash_elements::<alloc::raw_vec::RawVecInner>::deallocate
+    trace.252
+    nop
+    push.16
     u32wrapping_add
     push.1114112
     u32divmod.4
@@ -230,283 +146,6 @@ pub proc entrypoint(i32) -> felt
     trace.240
     nop
     exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
-    i32,
-    i32
-)
-    push.1114112
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_sub
-    push.8
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.8
-    dup.3
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    movup.2
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    dup.2
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.12
-    dup.1
-    u32wrapping_add
-    push.0
-    movup.2
-    swap.1
-    push.1
-    while.true
-        push.0
-        push.8
-        dup.2
-        eq
-        neq
-        dup.0
-        if.true
-            movup.3
-            movup.2
-            drop
-            drop
-            push.3735929054
-            dup.0
-        else
-            dup.2
-            dup.2
-            u32wrapping_add
-            dup.0
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            dup.5
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_sw
-            trace.252
-            nop
-            movup.2
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_sw
-            trace.252
-            nop
-            dup.4
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_felt
-            trace.252
-            nop
-            push.4294967292
-            movup.4
-            u32wrapping_add
-            push.4
-            movup.3
-            u32wrapping_add
-        end
-        push.3735929054
-        dup.3
-        dup.6
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.6
-        swap.2
-        swap.1
-        cdrop
-        push.1
-        push.0
-        movup.6
-        cdrop
-        push.1
-        u32and
-        swap.1
-        swap.2
-        swap.4
-        swap.3
-        swap.1
-        if.true
-            movup.4
-            drop
-            movup.4
-            drop
-            push.1
-        else
-            push.0
-        end
-    end
-    drop
-    drop
-    drop
-    drop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.8
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    movup.2
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
     trace.252
     nop
 end

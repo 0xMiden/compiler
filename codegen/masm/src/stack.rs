@@ -328,7 +328,10 @@ impl OperandStack {
     ///
     /// The type is assumed to remain unchanged
     pub fn rename(&mut self, n: usize, value: ValueRef) {
-        match &mut self[n].operand {
+        let len = self.stack.len();
+        assert!(n < len, "invalid operand stack index ({n}), only {len} operands are available");
+        let index = len - n - 1;
+        match &mut self.stack[index].operand {
             OperandType::Value(prev_value) => {
                 *prev_value = value;
             }
