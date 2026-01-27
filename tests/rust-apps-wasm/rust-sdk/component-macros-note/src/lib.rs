@@ -12,7 +12,7 @@ struct MyNote;
 
 #[note]
 impl MyNote {
-    #[entrypoint]
+    #[note_script]
     pub fn execute(self, _arg: Word) {
         let foo_val = Word::from([felt!(11), felt!(22), felt!(33), felt!(44)]);
         let asset = Asset::new([felt!(99), felt!(88), felt!(77), felt!(66)]);

@@ -19,7 +19,7 @@ impl InvalidStackOffsetMovupNote {
     /// Note-script entrypoint used to reproduce issue #831.
     ///
     /// The `create_swapp_note` call uses a flattened argument size of 15 felts.
-    #[entrypoint]
+    #[note_script]
     pub fn run(self, arg: Word) {
         // NOTE: Guard the reproduction logic behind a runtime condition so that once #831 is fixed,
         // this note can execute without requiring a full `active_note`/`output_note` runtime context.

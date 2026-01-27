@@ -90,7 +90,7 @@ struct Note;
 
 #[note]
 impl Note {
-    #[entrypoint]
+    #[note_script]
     pub fn run(self, _arg: Word) {
         let sender = active_note::get_sender();
         let script_root = active_note::get_script_root();

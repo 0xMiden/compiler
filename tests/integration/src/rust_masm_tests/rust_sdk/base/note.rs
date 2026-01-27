@@ -13,7 +13,7 @@ struct Note;
 
 #[note]
 impl Note {{
-    #[entrypoint]
+    #[note_script]
     pub fn run(self, _arg: Word) {{
         {body}
     }}

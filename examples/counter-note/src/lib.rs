@@ -17,7 +17,7 @@ struct CounterNote;
 
 #[note]
 impl CounterNote {
-    #[entrypoint]
+    #[note_script]
     pub fn run(self, _arg: Word) {
         let initial_value = counter_contract::get_count();
         counter_contract::increment_count();

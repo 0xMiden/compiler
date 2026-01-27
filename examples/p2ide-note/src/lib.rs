@@ -34,7 +34,7 @@ struct P2ideNote;
 
 #[note]
 impl P2ideNote {
-    #[entrypoint]
+    #[note_script]
     pub fn run(self, _arg: Word, account: &mut Account) {
         let inputs = active_note::get_inputs();
 

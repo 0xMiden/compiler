@@ -7,8 +7,8 @@ use syn::{
 
 use crate::script::{GuestWrapperConfig, expand_guest_wrapper};
 
-const ENTRYPOINT_ATTR: &str = "entrypoint";
-const ENTRYPOINT_DOC_MARKER: &str = "__miden_entrypoint_marker";
+const NOTE_SCRIPT_ATTR: &str = "note_script";
+const NOTE_SCRIPT_DOC_MARKER: &str = "__miden_note_script_marker";
 
 /// Expands `#[note]` for either a note input `struct` or an inherent `impl` block.
 pub(crate) fn expand_note(
@@ -34,11 +34,11 @@ pub(crate) fn expand_note(
     }
 }
 
-/// Expands `#[entrypoint]`.
+/// Expands `#[note_script]`.
 ///
-/// This macro intentionally performs minimal validation: the associated `#[note]` macro is
-/// responsible for enforcing the supported entrypoint signature and generating the guest wrapper.
-pub(crate) fn expand_entrypoint(
+/// This attribute must be applied to a method inside an inherent `impl` block annotated with
+/// `#[note]`. It acts as a marker for `#[note]` to locate the entrypoint method.
+pub(crate) fn expand_note_script(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
@@ -55,7 +55,7 @@ pub(crate) fn expand_entrypoint(
             if let Ok(item_fn) = syn::parse2::<syn::ItemFn>(item_tokens.clone()) {
                 return syn::Error::new(
                     item_fn.sig.span(),
-                    "`#[entrypoint]` must be applied to a method inside a `#[note]` `impl` block",
+                    "`#[note_script]` must be applied to a method inside a `#[note]` `impl` block",
                 )
                 .into_compile_error()
                 .into();
@@ -64,7 +64,7 @@ pub(crate) fn expand_entrypoint(
             if let Ok(item_fn) = syn::parse2::<syn::TraitItemFn>(item_tokens.clone()) {
                 return syn::Error::new(
                     item_fn.sig.span(),
-                    "`#[entrypoint]` must be applied to a method inside a `#[note]` `impl` block",
+                    "`#[note_script]` must be applied to a method inside a `#[note]` `impl` block",
                 )
                 .into_compile_error()
                 .into();
@@ -72,16 +72,16 @@ pub(crate) fn expand_entrypoint(
 
             return syn::Error::new(
                 Span::call_site(),
-                "`#[entrypoint]` must be applied to a method inside a `#[note]` `impl` block",
+                "`#[note_script]` must be applied to a method inside a `#[note]` `impl` block",
             )
             .into_compile_error()
             .into();
         }
     };
 
-    // `#[note]` uses `#[entrypoint]` as a marker. Since proc-macro attributes are consumed during
+    // `#[note]` uses `#[note_script]` as a marker. Since proc-macro attributes are consumed during
     // expansion, we also attach a stable marker attribute that `#[note]` can reliably detect.
-    let marker = syn::LitStr::new(ENTRYPOINT_DOC_MARKER, Span::call_site());
+    let marker = syn::LitStr::new(NOTE_SCRIPT_DOC_MARKER, Span::call_site());
     item_fn.attrs.push(syn::parse_quote!(#[doc = #marker]));
     quote!(#item_fn).into()
 }
@@ -287,11 +287,11 @@ fn extract_entrypoint(mut item_impl: ItemImpl) -> syn::Result<(ImplItemFn, ItemI
         [only] => Ok((only.clone(), item_impl)),
         [] => Err(syn::Error::new(
             item_impl.span(),
-            "`#[note]` requires an entrypoint method annotated with `#[entrypoint]`",
+            "`#[note]` requires an entrypoint method annotated with `#[note_script]`",
         )),
         _ => Err(syn::Error::new(
             item_impl.span(),
-            "`#[note]` requires a single entrypoint method (only one `#[entrypoint]` method is \
+            "`#[note]` requires a single entrypoint method (only one `#[note_script]` method is \
              allowed)",
         )),
     }
@@ -470,7 +470,7 @@ fn is_attr_named(attr: &Attribute, name: &str) -> bool {
 
 /// Returns true if an attribute marks a method as the note entrypoint.
 fn is_entrypoint_marker_attr(attr: &Attribute) -> bool {
-    is_attr_named(attr, ENTRYPOINT_ATTR) || is_doc_marker_attr(attr, ENTRYPOINT_DOC_MARKER)
+    is_attr_named(attr, NOTE_SCRIPT_ATTR) || is_doc_marker_attr(attr, NOTE_SCRIPT_DOC_MARKER)
 }
 
 /// Returns true if `attr` is `#[doc = "..."]` with `marker` as the string value.
@@ -563,7 +563,7 @@ mod tests {
 
     #[test]
     fn extract_entrypoint_accepts_doc_marker() {
-        let marker = syn::LitStr::new(ENTRYPOINT_DOC_MARKER, Span::call_site());
+        let marker = syn::LitStr::new(NOTE_SCRIPT_DOC_MARKER, Span::call_site());
         let item_impl: ItemImpl = parse_quote! {
             impl MyNote {
                 #[doc = #marker]
@@ -578,16 +578,19 @@ mod tests {
             panic!("expected function method");
         };
         assert!(
-            method.attrs.iter().all(|attr| !is_doc_marker_attr(attr, ENTRYPOINT_DOC_MARKER)),
+            method
+                .attrs
+                .iter()
+                .all(|attr| !is_doc_marker_attr(attr, NOTE_SCRIPT_DOC_MARKER)),
             "entrypoint markers must be removed from output"
         );
     }
 
     #[test]
-    fn extract_entrypoint_accepts_qualified_entrypoint_attr() {
+    fn extract_entrypoint_accepts_qualified_note_script_attr() {
         let item_impl: ItemImpl = parse_quote! {
             impl MyNote {
-                #[miden::entrypoint]
+                #[miden::note_script]
                 pub fn execute(self, _arg: Word) {}
             }
         };

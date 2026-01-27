@@ -97,7 +97,7 @@ pub fn export_type(
 /// This attribute is intended to be used on:
 /// - a note input type definition (`struct MyNote { ... }`)
 /// - the associated inherent `impl` block that contains an entrypoint method annotated with
-///   `#[entrypoint]`
+///   `#[note_script]`
 ///
 /// # Example
 ///
@@ -112,7 +112,7 @@ pub fn export_type(
 ///
 /// #[note]
 /// impl MyNote {
-///     #[entrypoint]
+///     #[note_script]
 ///     pub fn run(self, _arg: Word, account: &mut Account) {
 ///         assert_eq!(account.get_id(), self.recipient);
 ///     }
@@ -126,7 +126,7 @@ pub fn note(
     note::expand_note(attr, item)
 }
 
-/// Marks a method as the note script entrypoint.
+/// Marks a method as the note script entrypoint (`#[note_script]`).
 ///
 /// The method must be contained within an inherent `impl` block annotated with `#[note]`.
 ///
@@ -140,11 +140,11 @@ pub fn note(
 ///   - optionally a single `&Account` or `&mut Account` argument (in either order).
 /// - Generic methods and `async fn` are not supported.
 #[proc_macro_attribute]
-pub fn entrypoint(
+pub fn note_script(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    note::expand_entrypoint(attr, item)
+    note::expand_note_script(attr, item)
 }
 
 /// Marks the function as a transaction script
