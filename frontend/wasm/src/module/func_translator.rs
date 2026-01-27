@@ -21,8 +21,9 @@ use midenc_session::{
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
 use super::{
-    function_builder_ext::SSABuilderListener, module_env::ParsedModule,
-    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
+    debug_info::FunctionDebugInfo, function_builder_ext::SSABuilderListener,
+    module_env::ParsedModule, module_translation_state::ModuleTranslationState,
+    types::ModuleTypesBuilder,
 };
 use crate::{
     code_translator::translate_operator,
@@ -70,11 +71,18 @@ impl FuncTranslator {
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
         config: &crate::WasmTranslationConfig,
+        debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
     ) -> WasmResult<()> {
         let context = func.borrow().as_operation().context_rc();
         let mut op_builder = midenc_hir::OpBuilder::new(context)
             .with_listener(SSABuilderListener::new(self.func_ctx.clone()));
         let mut builder = FunctionBuilderExt::new(func, &mut op_builder);
+
+        if let Some(info) = debug_info.clone() {
+            builder.set_debug_metadata(info);
+        }
+
+        self.state.set_debug_info(debug_info);
 
         let entry_block = builder.current_block();
         builder.seal_block(entry_block); // Declare all predecessors known.
@@ -135,6 +143,7 @@ fn declare_parameters<B: ?Sized + Builder>(
         next_local += 1;
 
         let param_value = entry_block.borrow().arguments()[i];
+        builder.register_parameter(local, param_value);
         builder.def_var(local, param_value);
     }
     next_local
@@ -287,6 +296,10 @@ fn parse_function_body<B: ?Sized + Builder>(
             end_span = span;
         }
 
+        // Record the debug span to trigger parameter debug emission and update
+        // compile unit/subprogram metadata
+        builder.record_debug_span(span);
+
         translate_operator(
             &op,
             builder,
@@ -297,6 +310,8 @@ fn parse_function_body<B: ?Sized + Builder>(
             &session.diagnostics,
             span,
         )?;
+
+        builder.apply_location_schedule(offset, span);
     }
     let pos = reader.original_position();
     func_validator.finish(pos).into_diagnostic()?;

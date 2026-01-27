@@ -1,4 +1,4 @@
-use alloc::{string::ToString, vec, vec::Vec};
+use alloc::{string::ToString, vec::Vec};
 
 use miden_assembly::ast::QualifiedProcedureName;
 use miden_mast_package::{Dependency, MastArtifact, Package, PackageExport};
@@ -90,16 +90,26 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
         miden_mast_package::PackageManifest::new(exports).with_dependencies(dependencies);
 
     let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
+    let debug_info_bytes = outputs.debug_info_bytes.clone();
 
-    let sections = match account_component_metadata_bytes {
-        Some(bytes) => {
-            vec![miden_mast_package::Section::new(
-                miden_mast_package::SectionId::ACCOUNT_COMPONENT_METADATA,
-                bytes,
-            )]
-        }
-        None => vec![],
-    };
+    let mut sections = Vec::new();
+
+    // Add account component metadata section if present
+    if let Some(bytes) = account_component_metadata_bytes {
+        sections.push(miden_mast_package::Section::new(
+            miden_mast_package::SectionId::ACCOUNT_COMPONENT_METADATA,
+            bytes,
+        ));
+    }
+
+    // Add debug info section if present
+    if let Some(bytes) = debug_info_bytes {
+        log::debug!("adding .debug_info section to package ({} bytes)", bytes.len());
+        sections.push(miden_mast_package::Section::new(
+            miden_mast_package::SectionId::DEBUG_INFO,
+            bytes,
+        ));
+    }
 
     miden_mast_package::Package {
         name,

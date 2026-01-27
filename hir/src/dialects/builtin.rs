@@ -43,6 +43,8 @@ impl DialectRegistration for BuiltinDialect {
         info.register_operation::<ops::UnrealizedConversionCast>();
         info.register_operation::<ops::Ret>();
         info.register_operation::<ops::RetImm>();
+        info.register_operation::<ops::DbgValue>();
+        info.register_operation::<ops::DbgDeclare>();
     }
 }
 

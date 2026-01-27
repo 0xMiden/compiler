@@ -1,0 +1,47 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_abc71f0181dc4e2804cd5c8e0cf50175a2515fac3096a395915f9b0604eb287b {
+        public builtin.function @entrypoint(v0: i32) -> i32 {
+        ^block6(v0: i32):
+            v2 = arith.constant 0 : i32;
+            v3 = arith.constant 0 : i32;
+            builtin.dbg_value v3 #[expression = di.expression()] #[variable = di.local_variable(name = local1, file = unknown, line = 0, ty = i32)];
+            v4 = arith.constant 0 : i32;
+            builtin.dbg_value v4 #[expression = di.expression()] #[variable = di.local_variable(name = local2, file = unknown, line = 0, ty = i32)];
+            cf.br ^block8(v3, v0, v4);
+        ^block7(v1: i32):
+
+        ^block8(v6: i32, v7: i32, v15: i32):
+            v8 = hir.bitcast v6 : u32;
+            v9 = hir.bitcast v7 : u32;
+            v10 = arith.lte v8, v9 : i1;
+            v11 = arith.zext v10 : u32;
+            v12 = hir.bitcast v11 : i32;
+            v13 = arith.constant 0 : i32;
+            v14 = arith.neq v12, v13 : i1;
+            cf.cond_br v14 ^block10, ^block11;
+        ^block9(v5: i32):
+
+        ^block10:
+            v16 = arith.add v15, v6 : i32 #[overflow = wrapping];
+            builtin.dbg_value v16 #[expression = di.expression()] #[variable = di.local_variable(name = local2, file = unknown, line = 0, ty = i32)];
+            v17 = arith.constant 1 : i32;
+            v18 = arith.add v6, v17 : i32 #[overflow = wrapping];
+            builtin.dbg_value v18 #[expression = di.expression()] #[variable = di.local_variable(name = local1, file = unknown, line = 0, ty = i32)];
+            cf.br ^block8(v18, v7, v16);
+        ^block11:
+            builtin.ret v15;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable public @#gv1 : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable public @#gv2 : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

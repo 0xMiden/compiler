@@ -19,3 +19,5 @@ node_modules/
 *.iml
 book/
 
+**/src/bindings.rs
+*.lit_test_times.txt*

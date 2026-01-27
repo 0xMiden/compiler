@@ -83,7 +83,8 @@ pub use midenc_session::diagnostics;
 
 pub use self::{
     attributes::{
-        ArrayAttr, Attribute, AttributeSet, AttributeValue, DictAttr, Overflow, SetAttr,
+        ArrayAttr, Attribute, AttributeSet, AttributeValue, DICompileUnitAttr, DIExpressionAttr,
+        DIExpressionOp, DILocalVariableAttr, DISubprogramAttr, DictAttr, Overflow, SetAttr,
         Visibility, markers::*,
     },
     direction::{Backward, Direction, Forward},

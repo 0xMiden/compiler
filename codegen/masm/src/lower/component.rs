@@ -1,7 +1,8 @@
-use alloc::{collections::BTreeSet, sync::Arc};
+use alloc::{collections::BTreeSet, sync::Arc, vec::Vec};
 
 use miden_assembly::{LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::parser::WordValue;
+use miden_core::DebugVarLocation;
 use miden_mast_package::ProcedureName;
 use midenc_hir::{
     CallConv, FunctionIdent, Op, SourceSpan, Span, Symbol, ValueRef, diagnostics::IntoDiagnostic,
@@ -619,10 +620,73 @@ impl MasmFunctionBuilder {
             num_locals,
         } = self;
 
+        // Compute total WASM locals count for FMP offset calculation.
+        // WASM locals = params (in felts) + local variables (in felts).
+        // This is needed because DWARF's WasmLocal(idx) uses WASM indexing where
+        // params come first, while num_locals only counts HIR spilled values.
+        let num_params_in_felts: u16 = function
+            .signature()
+            .params
+            .iter()
+            .map(|p| p.ty.size_in_felts() as u16)
+            .sum();
+        let num_wasm_locals = num_params_in_felts + num_locals;
+
+        // Patch DebugVar Local locations to compute FMP offset.
+        // During lowering, Local(idx) stores the raw WASM local index.
+        // Now convert to FMP offset: idx - num_wasm_locals
+        patch_debug_var_locals_in_block(&mut body, num_wasm_locals);
+
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
         procedure.extend_invoked(invoked);
 
         Ok(procedure)
+    }
+}
+
+/// Recursively patch DebugVar Local locations in a block.
+///
+/// Converts `Local(idx)` where idx is the raw WASM local index to `Local(offset)`
+/// where offset = idx - num_locals (the FMP offset, typically negative).
+fn patch_debug_var_locals_in_block(block: &mut masm::Block, num_locals: u16) {
+    for op in block.iter_mut() {
+        match op {
+            masm::Op::Inst(span_inst) => {
+                // Use DerefMut to get mutable access to the inner Instruction
+                if let masm::Instruction::DebugVar(info) = &mut **span_inst {
+                    if let DebugVarLocation::Local(idx) = info.value_location() {
+                        // Convert raw WASM local index to FMP offset
+                        let fmp_offset = *idx - (num_locals as i16);
+
+                        // Create new info with patched location, preserving all fields
+                        let mut new_info = miden_core::DebugVarInfo::new(
+                            info.name(),
+                            DebugVarLocation::Local(fmp_offset),
+                        );
+                        if let Some(type_id) = info.type_id() {
+                            new_info.set_type_id(type_id);
+                        }
+                        if let Some(arg_index) = info.arg_index() {
+                            new_info.set_arg_index(arg_index.get());
+                        }
+                        if let Some(loc) = info.location() {
+                            new_info.set_location(loc.clone());
+                        }
+                        *info = new_info;
+                    }
+                }
+            }
+            masm::Op::If { then_blk, else_blk, .. } => {
+                patch_debug_var_locals_in_block(then_blk, num_locals);
+                patch_debug_var_locals_in_block(else_blk, num_locals);
+            }
+            masm::Op::While { body: while_body, .. } => {
+                patch_debug_var_locals_in_block(while_body, num_locals);
+            }
+            masm::Op::Repeat { body: repeat_body, .. } => {
+                patch_debug_var_locals_in_block(repeat_body, num_locals);
+            }
+        }
     }
 }

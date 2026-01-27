@@ -1,9 +1,9 @@
-use alloc::sync::Arc;
+use alloc::{rc::Rc, sync::Arc};
 use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
-use midenc_hir::{Ident, interner::Symbol};
+use midenc_hir::{FxHashMap, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
     CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding, ExternalKind,
@@ -66,6 +66,10 @@ pub struct ParsedModule<'data> {
     /// DWARF debug information, if enabled, parsed from the module.
     pub debuginfo: DebugInfoData<'data>,
 
+    /// Precomputed debug metadata for functions
+    pub function_debug:
+        FxHashMap<FuncIndex, Rc<core::cell::RefCell<crate::module::debug_info::FunctionDebugInfo>>>,
+
     /// Set if debuginfo was found but it was not parsed due to `Tunables`
     /// configuration.
     pub has_unparsed_debuginfo: bool,
@@ -87,6 +91,8 @@ pub struct FunctionBodyData<'a> {
     pub body: FunctionBody<'a>,
     /// Validator for the function body
     pub validator: FuncToValidate<ValidatorResources>,
+    /// Offset in the original wasm binary where this function body starts
+    pub body_offset: u64,
 }
 
 #[derive(Default)]
@@ -581,7 +587,12 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 params: sig.params().into(),
             });
         }
-        self.result.function_body_inputs.push(FunctionBodyData { validator, body });
+        let body_offset = body.range().start as u64;
+        self.result.function_body_inputs.push(FunctionBodyData {
+            validator,
+            body,
+            body_offset,
+        });
         self.result.code_index += 1;
         Ok(())
     }

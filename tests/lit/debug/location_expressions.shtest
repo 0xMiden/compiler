@@ -1,0 +1,9 @@
+# Test that debug info with source locations is properly represented in HIR
+# This test verifies that operations include source location annotations
+# RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && rustc 'tests/lit/debug/location_expressions.rs' --crate-type=cdylib --target wasm32-unknown-unknown -C opt-level=0 -C panic=abort -C debuginfo=2 -o \"\$TMPDIR/location_expressions.wasm\" && bin/midenc \"\$TMPDIR/location_expressions.wasm\" --entrypoint=test_expressions -Z print-hir-source-locations --emit hir=- 2>&1" | filecheck %s
+
+# Test that the function exists with 4 parameters
+# CHECK-LABEL: builtin.function @test_expressions({{.*}}: i32, {{.*}}: i32, {{.*}}: i32, {{.*}}: i32) -> i32
+
+# Test that operations have source location annotations
+# CHECK: #loc("{{.*}}location_expressions.rs":{{[0-9]+}}

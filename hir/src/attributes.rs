@@ -1,10 +1,11 @@
+mod debug;
 mod overflow;
 mod visibility;
 
 use alloc::{boxed::Box, collections::BTreeMap, vec, vec::Vec};
 use core::{any::Any, borrow::Borrow, fmt};
 
-pub use self::{overflow::Overflow, visibility::Visibility};
+pub use self::{debug::*, overflow::Overflow, visibility::Visibility};
 use crate::{Immediate, interner::Symbol};
 
 pub mod markers {

@@ -1,20 +1,26 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, vec::Vec};
 use core::cell::RefCell;
+use std::path::Path;
 
-use cranelift_entity::SecondaryMap;
+use cranelift_entity::{EntityRef as _, SecondaryMap};
+use log::warn;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
-    BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
+    BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
     OpBuilder, OperationRef, ProgramPoint, RegionRef, Signature, SmallVec, SourceSpan, Type,
     ValueRef,
     dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, FunctionRef},
+    interner::Symbol,
     traits::{BranchOpInterface, Terminator},
 };
 
-use crate::ssa::{SSABuilder, SideEffects, Variable};
+use crate::{
+    module::debug_info::{FunctionDebugInfo, LocationScheduleEntry},
+    ssa::{SSABuilder, SideEffects, Variable},
+};
 
 /// Tracking variables and blocks for SSA construction.
 pub struct FunctionBuilderContext {
@@ -122,6 +128,9 @@ impl Listener for SSABuilderListener {
 pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
     inner: FunctionBuilder<'c, B>,
     func_ctx: Rc<RefCell<FunctionBuilderContext>>,
+    debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
+    param_values: Vec<(Variable, ValueRef)>,
+    param_dbg_emitted: bool,
 }
 
 impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
@@ -131,11 +140,153 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
 
         let inner = FunctionBuilder::new(func, builder);
 
-        Self { inner, func_ctx }
+        Self {
+            inner,
+            func_ctx,
+            debug_info: None,
+            param_values: Vec::new(),
+            param_dbg_emitted: false,
+        }
     }
 }
 
 impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
+    const DI_COMPILE_UNIT_ATTR: &'static str = "di.compile_unit";
+    const DI_SUBPROGRAM_ATTR: &'static str = "di.subprogram";
+
+    pub fn set_debug_metadata(&mut self, info: Rc<RefCell<FunctionDebugInfo>>) {
+        self.debug_info = Some(info);
+        self.param_dbg_emitted = false;
+        self.refresh_function_debug_attrs();
+    }
+
+    fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
+        let Some(info) = self.debug_info.as_ref() else {
+            return;
+        };
+        let idx = var.index();
+        let (attr_opt, expr_opt) = {
+            let info = info.borrow();
+            let local_info = info.locals.get(idx).and_then(|l| l.as_ref());
+            match local_info {
+                Some(l) => (Some(l.attr.clone()), l.expression.clone()),
+                None => (None, None),
+            }
+        };
+        let Some(mut attr) = attr_opt else {
+            return;
+        };
+
+        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+            attr.file = file_symbol;
+            if line != 0 {
+                attr.line = line;
+            }
+            attr.column = column;
+        }
+
+        if let Err(err) =
+            BuiltinOpBuilder::builder_mut(self).dbg_value_with_expr(value, attr, expr_opt, span)
+        {
+            warn!("failed to emit dbg.value for local {idx}: {err:?}");
+        }
+    }
+
+    pub fn def_var_with_dbg(&mut self, var: Variable, val: ValueRef, span: SourceSpan) {
+        self.def_var(var, val);
+        self.emit_dbg_value_for_var(var, val, span);
+    }
+
+    pub fn register_parameter(&mut self, var: Variable, value: ValueRef) {
+        self.param_values.push((var, value));
+    }
+
+    pub fn record_debug_span(&mut self, span: SourceSpan) {
+        if span == SourceSpan::UNKNOWN {
+            return;
+        }
+        let Some(info_rc) = self.debug_info.as_ref() else {
+            return;
+        };
+
+        if let Some((file_symbol, directory_symbol, line, column)) = self.span_to_location(span) {
+            {
+                let mut info = info_rc.borrow_mut();
+                info.compile_unit.file = file_symbol;
+                info.compile_unit.directory = directory_symbol;
+                info.subprogram.file = file_symbol;
+                info.subprogram.line = line;
+                info.subprogram.column = column;
+                info.function_span.get_or_insert(span);
+            }
+            self.refresh_function_debug_attrs();
+            self.emit_parameter_dbg_if_needed(span);
+        }
+    }
+
+    pub fn apply_location_schedule(&mut self, offset: u64, span: SourceSpan) {
+        let Some(info_rc) = self.debug_info.as_ref() else {
+            return;
+        };
+
+        let updates = {
+            let mut info = info_rc.borrow_mut();
+            let mut pending = Vec::new();
+            while info.next_location_event < info.location_schedule.len() {
+                let entry = &info.location_schedule[info.next_location_event];
+                if entry.offset > offset {
+                    break;
+                }
+                pending.push(entry.clone());
+                info.next_location_event += 1;
+            }
+            pending
+        };
+
+        for entry in updates {
+            self.emit_scheduled_dbg_value(entry, span);
+        }
+    }
+
+    fn emit_scheduled_dbg_value(&mut self, entry: LocationScheduleEntry, span: SourceSpan) {
+        let var = Variable::new(entry.var_index);
+        let Ok(value) = self.try_use_var(var) else {
+            return;
+        };
+
+        // Create expression from the scheduled location
+        let expression = {
+            let ops = vec![entry.storage.to_expression_op()];
+            Some(midenc_hir::DIExpressionAttr::with_ops(ops))
+        };
+
+        let Some(info) = self.debug_info.as_ref() else {
+            return;
+        };
+        let idx = entry.var_index;
+        let attr_opt = {
+            let info = info.borrow();
+            info.local_attr(idx).cloned()
+        };
+        let Some(mut attr) = attr_opt else {
+            return;
+        };
+
+        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+            attr.file = file_symbol;
+            if line != 0 {
+                attr.line = line;
+            }
+            attr.column = column;
+        }
+
+        if let Err(err) =
+            BuiltinOpBuilder::builder_mut(self).dbg_value_with_expr(value, attr, expression, span)
+        {
+            warn!("failed to emit scheduled dbg.value for local {idx}: {err:?}");
+        }
+    }
+
     pub fn name(&self) -> Ident {
         *self.inner.func.borrow().name()
     }
@@ -413,6 +564,61 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         };
         inst_branch.change_branch_destination(old_block, new_block);
         self.func_ctx.borrow_mut().ssa.declare_block_predecessor(new_block, branch_inst);
+    }
+
+    fn refresh_function_debug_attrs(&mut self) {
+        let Some(info) = self.debug_info.as_ref() else {
+            return;
+        };
+        let info = info.borrow();
+        let mut func = self.inner.func.borrow_mut();
+        let op = func.as_operation_mut();
+        op.set_intrinsic_attribute(Self::DI_COMPILE_UNIT_ATTR, Some(info.compile_unit.clone()));
+        op.set_intrinsic_attribute(Self::DI_SUBPROGRAM_ATTR, Some(info.subprogram.clone()));
+    }
+
+    fn emit_parameter_dbg_if_needed(&mut self, span: SourceSpan) {
+        if self.param_dbg_emitted {
+            return;
+        }
+        self.param_dbg_emitted = true;
+        let params: Vec<_> = self.param_values.to_vec();
+        for (var, value) in params {
+            let skip_due_to_schedule = if let Some(info_rc) = self.debug_info.as_ref() {
+                let info = info_rc.borrow();
+                info.locals
+                    .get(var.index())
+                    .and_then(|entry| entry.as_ref())
+                    .is_some_and(|entry| !entry.locations.is_empty())
+            } else {
+                false
+            };
+            if skip_due_to_schedule {
+                continue;
+            }
+            self.emit_dbg_value_for_var(var, value, span);
+        }
+    }
+
+    fn span_to_location(
+        &self,
+        span: SourceSpan,
+    ) -> Option<(Symbol, Option<Symbol>, u32, Option<u32>)> {
+        if span == SourceSpan::UNKNOWN {
+            return None;
+        }
+
+        let context = self.inner.builder().context();
+        let session = context.session();
+        let source_file = session.source_manager.get(span.source_id()).ok()?;
+        let uri = source_file.uri().as_str();
+        let path = Path::new(uri);
+        let file_symbol = Symbol::intern(uri);
+        let directory_symbol = path.parent().and_then(|parent| parent.to_str()).map(Symbol::intern);
+        let location = source_file.location(span);
+        let line = location.line.to_u32();
+        let column = location.column.to_u32();
+        Some((file_symbol, directory_symbol, line, Some(column)))
     }
 }
 
