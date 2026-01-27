@@ -526,7 +526,7 @@ impl OpEmitter<'_> {
                 // otherwise we take just the high bit count.
                 //
                 // Count leading zeros in the high bits
-                self.raw_exec("std::math::u64::clz", span);
+                self.raw_exec("miden::core::math::u64::clz", span);
                 self.emit_all(
                     [
                         // [hi_clz, lo_hi, lo_lo]
@@ -536,7 +536,7 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::math::u64::clz", span); // [lo_clz, hi_clz]
+                self.raw_exec("miden::core::math::u64::clz", span); // [lo_clz, hi_clz]
                 // Add the low bit leading zeros to those of the high bits, if the high
                 // bits are all zeros; otherwise return only the
                 // high bit count
@@ -553,7 +553,7 @@ impl OpEmitter<'_> {
                 );
             }
             Type::I64 | Type::U64 => {
-                self.raw_exec("std::math::u64::clz", span);
+                self.raw_exec("miden::core::math::u64::clz", span);
             }
             Type::I32 | Type::U32 => {
                 self.emit(masm::Instruction::U32Clz, span);
@@ -611,7 +611,7 @@ impl OpEmitter<'_> {
                 // otherwise we take just the high bit count.
                 //
                 // Count leading ones in the high bits
-                self.raw_exec("std::math::u64::clo", span); // [hi_clo, lo_hi, lo_lo]
+                self.raw_exec("miden::core::math::u64::clo", span); // [hi_clo, lo_hi, lo_lo]
                 self.emit_all(
                     [
                         // Count leading ones in the low bits
@@ -620,7 +620,7 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::math::u64::clo", span); // [lo_clo, hi_clo]
+                self.raw_exec("miden::core::math::u64::clo", span); // [lo_clo, hi_clo]
                 // Add the low bit leading ones to those of the high bits, if the high bits
                 // are all one; otherwise return only the high bit count
                 self.emit_push(0u32, span); // [0, lo_clo, hi_clo]
@@ -635,7 +635,7 @@ impl OpEmitter<'_> {
                     span,
                 );
             }
-            Type::I64 | Type::U64 => self.raw_exec("std::math::u64::clo", span),
+            Type::I64 | Type::U64 => self.raw_exec("miden::core::math::u64::clo", span),
             Type::I32 | Type::U32 => {
                 self.emit(masm::Instruction::U32Clo, span);
             }
@@ -703,7 +703,7 @@ impl OpEmitter<'_> {
                 // otherwise we take just the high bit count.
                 //
                 // Count trailing zeros in the high bits
-                self.raw_exec("std::math::u64::ctz", span); // [hi_ctz, lo_hi, lo_lo]
+                self.raw_exec("miden::core::math::u64::ctz", span); // [hi_ctz, lo_hi, lo_lo]
                 self.emit_all(
                     [
                         // Count trailing zeros in the low bits
@@ -712,7 +712,7 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::math::u64::ctz", span); // [lo_ctz, hi_ctz]
+                self.raw_exec("miden::core::math::u64::ctz", span); // [lo_ctz, hi_ctz]
                 // Add the high bit trailing zeros to those of the low bits, if the low
                 // bits are all zero; otherwise return only the low
                 // bit count
@@ -729,7 +729,7 @@ impl OpEmitter<'_> {
                     span,
                 );
             }
-            Type::I64 | Type::U64 => self.raw_exec("std::math::u64::ctz", span),
+            Type::I64 | Type::U64 => self.raw_exec("miden::core::math::u64::ctz", span),
             Type::I32 | Type::U32 => self.emit(masm::Instruction::U32Ctz, span),
             Type::I16 | Type::U16 => {
                 // Clamp the total number of trailing zeros to 16
@@ -799,7 +799,7 @@ impl OpEmitter<'_> {
                 // otherwise we take just the high bit count.
                 //
                 // Count trailing ones in the high bits
-                self.raw_exec("std::math::u64::cto", span); // [hi_cto, lo_hi, lo_lo]
+                self.raw_exec("miden::core::math::u64::cto", span); // [hi_cto, lo_hi, lo_lo]
                 self.emit_all(
                     [
                         // Count trailing ones in the low bits
@@ -808,7 +808,7 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::math::u64::cto", span); // [lo_cto, hi_cto]
+                self.raw_exec("miden::core::math::u64::cto", span); // [lo_cto, hi_cto]
                 // Add the high bit trailing ones to those of the low bits, if the low bits
                 // are all one; otherwise return only the low bit count
                 self.emit(masm::Instruction::Swap1, span);
@@ -824,7 +824,7 @@ impl OpEmitter<'_> {
                     span,
                 );
             }
-            Type::I64 | Type::U64 => self.raw_exec("std::math::u64::cto", span),
+            Type::I64 | Type::U64 => self.raw_exec("miden::core::math::u64::cto", span),
             Type::I32 | Type::U32 | Type::I16 | Type::U16 | Type::I8 | Type::U8 => {
                 // The number of trailing ones is de-facto clamped by the bitwidth of
                 // the value, since all of the padding bits are leading zeros.

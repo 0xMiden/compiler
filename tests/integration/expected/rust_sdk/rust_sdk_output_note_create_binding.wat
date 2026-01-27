@@ -114,7 +114,7 @@
       f32.load offset=4
       local.get 4
       f32.load
-      call $miden::output_note::create
+      call $miden::protocol::output_note::create
     )
     (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from (;5;) (type 3) (param i32 i32)
       local.get 0
@@ -129,11 +129,11 @@
     (func $intrinsics::felt::from_u32 (;6;) (type 4) (param i32) (result f32)
       unreachable
     )
-    (func $miden::output_note::create (;7;) (type 5) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
+    (func $miden::protocol::output_note::create (;7;) (type 5) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "Grust_sdk_output_note_create_binding\01\0b0.0.1\03\01\01\00\00")
+    (@custom "rodata,miden_account" (after data) "Grust_sdk_output_note_create_binding\01\0b0.0.1\03\01\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "note-idx" (type $note-idx (;1;)))
   (core instance $main (;0;) (instantiate $main))

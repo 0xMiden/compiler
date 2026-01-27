@@ -39,14 +39,14 @@
       local.tee 4
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 1
+      i32.const 0
       call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
       local.get 3
       local.get 2
       local.get 1
       local.get 0
       local.get 4
-      call $miden::active_account::get_map_item
+      call $miden::protocol::active_account::get_map_item
       local.get 4
       f32.load
       local.set 0
@@ -64,12 +64,12 @@
       local.tee 9
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 0
+      i32.const 1
       call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
       local.get 9
       i32.const 16
       i32.add
-      call $miden::active_account::get_item
+      call $miden::protocol::active_account::get_item
       local.get 9
       f32.load offset=24
       local.set 10
@@ -108,7 +108,7 @@
         local.get 9
         local.get 8
         call $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
-        i32.const 1
+        i32.const 0
         call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
         local.get 7
         local.get 6
@@ -125,7 +125,7 @@
         local.get 9
         i32.const 16
         i32.add
-        call $miden::native_account::set_map_item
+        call $miden::protocol::native_account::set_map_item
       end
       local.get 9
       i32.const 48
@@ -186,17 +186,17 @@
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden::active_account::get_item (;9;) (type 6) (param f32 i32)
+    (func $miden::protocol::active_account::get_item (;9;) (type 6) (param f32 i32)
       unreachable
     )
-    (func $miden::active_account::get_map_item (;10;) (type 7) (param f32 f32 f32 f32 f32 i32)
+    (func $miden::protocol::active_account::get_map_item (;10;) (type 7) (param f32 f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::native_account::set_map_item (;11;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
+    (func $miden::protocol::native_account::set_map_item (;11;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\05\00\00\00!owner_public_key\01\15test value9auth::rpo_falcon512::pub_key\01\01\00\1basset_qty_map\01\11test map\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "\1fstorage-example_A simple example of a Miden account storage API\0b0.1.0\03\01\02\006miden::component::miden_storage_example::asset_qty_map\01\01%asset quantity map\00\00\09word\00\00\09word\009miden::component::miden_storage_example::owner_public_key\00\01!owner public key\00\09word\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;1;)))
   (alias export $miden:base/core-types@1.0.0 "word" (type $word (;2;)))

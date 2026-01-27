@@ -39,12 +39,12 @@
       call $wit_bindgen::rt::run_ctors_once
       call $miden_base_sys::bindings::tx::get_block_number
       local.set 5
-      call $miden::native_account::incr_nonce
+      call $miden::protocol::native_account::incr_nonce
       local.set 6
       local.get 4
       i32.const 32
       i32.add
-      call $miden::native_account::compute_delta_commitment
+      call $miden::protocol::native_account::compute_delta_commitment
       local.get 4
       i64.load offset=40
       local.set 7
@@ -222,7 +222,7 @@
       local.get 4
       i32.const 96
       i32.add
-      call $miden::active_account::get_item
+      call $miden::protocol::active_account::get_item
       local.get 11
       local.get 10
       local.get 6
@@ -273,7 +273,7 @@
       end
     )
     (func $miden_base_sys::bindings::tx::get_block_number (;4;) (type 2) (result f32)
-      call $miden::tx::get_block_number
+      call $miden::protocol::tx::get_block_number
     )
     (func $miden_base_sys::bindings::tx::get_input_notes_commitment (;5;) (type 3) (param i32)
       (local i32)
@@ -283,7 +283,7 @@
       local.tee 1
       global.set $__stack_pointer
       local.get 1
-      call $miden::tx::get_input_notes_commitment
+      call $miden::protocol::tx::get_input_notes_commitment
       local.get 0
       local.get 1
       i64.load
@@ -309,7 +309,7 @@
       local.tee 1
       global.set $__stack_pointer
       local.get 1
-      call $miden::tx::get_output_notes_commitment
+      call $miden::protocol::tx::get_output_notes_commitment
       local.get 0
       local.get 1
       i64.load
@@ -371,26 +371,26 @@
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden::active_account::get_item (;15;) (type 9) (param f32 i32)
+    (func $miden::protocol::active_account::get_item (;15;) (type 9) (param f32 i32)
       unreachable
     )
-    (func $miden::native_account::compute_delta_commitment (;16;) (type 3) (param i32)
+    (func $miden::protocol::native_account::compute_delta_commitment (;16;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::native_account::incr_nonce (;17;) (type 2) (result f32)
+    (func $miden::protocol::native_account::incr_nonce (;17;) (type 2) (result f32)
       unreachable
     )
-    (func $miden::tx::get_block_number (;18;) (type 2) (result f32)
+    (func $miden::protocol::tx::get_block_number (;18;) (type 2) (result f32)
       unreachable
     )
-    (func $miden::tx::get_input_notes_commitment (;19;) (type 3) (param i32)
+    (func $miden::protocol::tx::get_input_notes_commitment (;19;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::tx::get_output_notes_commitment (;20;) (type 3) (param i32)
+    (func $miden::protocol::tx::get_output_notes_commitment (;20;) (type 3) (param i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "9auth-component-rpo-falcon512\01\0b0.1.0\01\03\00\00\00!owner_public_key\01!owner public key9auth::rpo_falcon512::pub_key\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "9auth-component-rpo-falcon512\01\0b0.1.0\01\01\00Fmiden::component::miden_auth_component_rpo_falcon512::owner_public_key\00\01!owner public key\00]miden::standards::auth::falcon512_rpo::pub_key\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "word" (type $word (;1;)))
   (core instance $main (;0;) (instantiate $main))

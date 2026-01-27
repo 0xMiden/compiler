@@ -707,7 +707,7 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::mem::memcopy_words", span);
+                self.raw_exec("miden::core::mem::memcopy_words", span);
                 return;
             }
             // Values which can be broken up into word-sized chunks can piggy-back on the
@@ -736,7 +736,7 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::mem::memcopy_words", span);
+                self.raw_exec("miden::core::mem::memcopy_words", span);
                 return;
             }
             // For now, all other values fallback to the default implementation

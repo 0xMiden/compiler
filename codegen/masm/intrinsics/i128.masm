@@ -1,5 +1,5 @@
 # Adds `a` to `b`, wrapping to 128 bits.
-export.add              # [bhh bmh bml bll ahh amh aml all ...]
+pub proc add              # [bhh bmh bml bll ahh amh aml all ...]
     movup.7             # [all bhh bmh bml bll ahh amh aml ...]
     movup.4             # [bll all bhh bmh bml ahh amh aml ...]
     u32overflowing_add  # [oll rll bhh bmh bml ahh amh aml ...]
@@ -15,7 +15,7 @@ export.add              # [bhh bmh bml bll ahh amh aml all ...]
 end
 
 # Subtracts `b` from `a`, wrapping to 128 bits.
-export.sub              # [bhh bmh bml bll ahh amh aml all ...]
+pub proc sub              # [bhh bmh bml bll ahh amh aml all ...]
     movup.7             # [all bhh bmh bml bll ahh amh aml ...]
     movup.4             # [bll all bhh bmh bml ahh amh aml ...]
     u32overflowing_sub  # [ull rll bhh bmh bml ahh amh aml ...]
@@ -59,7 +59,7 @@ end
 # -------------------------------------------
 #                  rhh    rmh     rml     rll
 
-export.mul              # [bhh bmh bml bll ahh amh aml all ... ]
+pub proc mul              # [bhh bmh bml bll ahh amh aml all ... ]
     dup.7               # [all bhh bmh bml bll ahh amh aml all ... ]
     dup.4               # [bll all bhh bmh bml bll ahh amh aml all ... ]
     u32overflowing_mul  # [o rll bhh bmh bml bll ahh amh aml all ... ]

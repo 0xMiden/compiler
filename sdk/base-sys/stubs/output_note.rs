@@ -1,7 +1,7 @@
 use core::ffi::c_void;
 
 /// Output note interface stubs
-#[unsafe(export_name = "miden::output_note::create")]
+#[unsafe(export_name = "miden::protocol::output_note::create")]
 pub extern "C" fn output_note_create_plain(
     _tag: f32,
     _aux: f32,
@@ -15,7 +15,7 @@ pub extern "C" fn output_note_create_plain(
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::output_note::add_asset")]
+#[unsafe(export_name = "miden::protocol::output_note::add_asset")]
 pub extern "C" fn output_note_add_asset_plain(
     _a0: f32,
     _a1: f32,
@@ -26,22 +26,22 @@ pub extern "C" fn output_note_add_asset_plain(
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::output_note::get_assets_info")]
+#[unsafe(export_name = "miden::protocol::output_note::get_assets_info")]
 pub extern "C" fn output_note_get_assets_info_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::output_note::get_assets")]
+#[unsafe(export_name = "miden::protocol::output_note::get_assets")]
 pub extern "C" fn output_note_get_assets_plain(_dest_ptr: *mut c_void, _note_index: f32) -> usize {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::output_note::get_recipient")]
+#[unsafe(export_name = "miden::protocol::output_note::get_recipient")]
 pub extern "C" fn output_note_get_recipient_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::output_note::get_metadata")]
+#[unsafe(export_name = "miden::protocol::output_note::get_metadata")]
 pub extern "C" fn output_note_get_metadata_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }

@@ -46,9 +46,9 @@
       end
     )
     (func $miden_base_sys::bindings::tx::get_num_input_notes (;4;) (type 2) (result f32)
-      call $miden::tx::get_num_input_notes
+      call $miden::protocol::tx::get_num_input_notes
     )
-    (func $miden::tx::get_num_input_notes (;5;) (type 2) (result f32)
+    (func $miden::protocol::tx::get_num_input_notes (;5;) (type 2) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

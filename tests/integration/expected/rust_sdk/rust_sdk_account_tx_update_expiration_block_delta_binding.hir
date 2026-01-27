@@ -54,14 +54,13 @@ builtin.component miden:base/transaction-script@1.0.0 {
 
         private builtin.function @miden_base_sys::bindings::tx::update_expiration_block_delta(v29: felt) {
         ^block15(v29: felt):
-            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/miden::tx::update_expiration_block_delta(v29)
+            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/miden::protocol::tx::update_expiration_block_delta(v29)
             builtin.ret ;
         };
 
-        private builtin.function @miden::tx::update_expiration_block_delta(v30: felt) {
+        private builtin.function @miden::protocol::tx::update_expiration_block_delta(v30: felt) {
         ^block17(v30: felt):
-            hir.exec @miden/tx/update_expiration_block_delta(v30)
-            builtin.ret ;
+            ub.unreachable ;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -76,7 +75,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
     };
 
     public builtin.function @run(v31: felt, v32: felt, v33: felt, v34: felt) {
-    ^block21(v31: felt, v32: felt, v33: felt, v34: felt):
+    ^block19(v31: felt, v32: felt, v33: felt, v34: felt):
         hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/miden:base/transaction-script@1.0.0#run(v31, v32, v33, v34)
         builtin.ret ;
     };

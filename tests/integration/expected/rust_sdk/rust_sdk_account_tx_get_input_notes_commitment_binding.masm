@@ -1,14 +1,14 @@
-# mod miden:base/transaction-script@1.0.0
+# mod ::miden:base/transaction-script@1.0.0
 
 @callconv("canon-lift")
 pub proc run(felt, felt, felt, felt)
-    exec.::miden:base/transaction-script@1.0.0::init
+    exec.miden:base/transaction-script@1.0.0::init
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::miden:base/transaction-script@1.0.0#run
+    exec.miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::miden:base/transaction-script@1.0.0_run
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -21,7 +21,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding
+# mod ::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -49,7 +49,7 @@ proc rust_sdk_account_tx_get_input_notes_commitment_binding::bindings::__link_cu
 end
 
 @callconv("C")
-proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
+proc miden:base/transaction-script@1.0.0_run(felt, felt, felt, felt)
     drop
     drop
     drop
@@ -76,13 +76,13 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     nop
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::wit_bindgen::rt::run_ctors_once
+    exec.miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.0
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::miden_base_sys::bindings::tx::get_input_notes_commitment
+    exec.miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::miden_base_sys::bindings::tx::get_input_notes_commitment
     trace.252
     nop
     push.16
@@ -140,7 +140,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::__wasm_call_ctors
+        exec.miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -198,7 +198,7 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     dup.0
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::miden::tx::get_input_notes_commitment
+    exec.::miden::protocol::tx::get_input_notes_commitment
     trace.252
     nop
     dup.0
@@ -285,59 +285,12 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     nop
 end
 
+# mod ::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_input_notes_commitment_binding::miden::protocol::tx
+
 @callconv("C")
-proc miden::tx::get_input_notes_commitment(i32)
-    trace.240
-    nop
-    exec.::miden::tx::get_input_notes_commitment
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
+proc get_input_notes_commitment(i32)
+    drop
+    push.0
+    assert
 end
 

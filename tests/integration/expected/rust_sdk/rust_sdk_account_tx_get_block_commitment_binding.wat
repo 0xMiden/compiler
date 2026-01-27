@@ -63,7 +63,7 @@
       local.tee 1
       global.set $__stack_pointer
       local.get 1
-      call $miden::tx::get_block_commitment
+      call $miden::protocol::tx::get_block_commitment
       local.get 0
       local.get 1
       i64.load
@@ -81,7 +81,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden::tx::get_block_commitment (;5;) (type 2) (param i32)
+    (func $miden::protocol::tx::get_block_commitment (;5;) (type 2) (param i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

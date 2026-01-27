@@ -292,7 +292,7 @@
     local.tee 3
     i32.const 2
     i32.shr_u
-    call $miden::active_note::get_inputs
+    call $miden::protocol::active_note::get_inputs
     i32.store offset=8
     local.get 0
     local.get 3
@@ -572,7 +572,7 @@
     i32.gt_u
     select
   )
-  (func $miden::active_note::get_inputs (;23;) (type 12) (param i32) (result i32)
+  (func $miden::protocol::active_note::get_inputs (;23;) (type 12) (param i32) (result i32)
     unreachable
   )
   (func $cabi_realloc (;24;) (type 2) (param i32 i32 i32 i32) (result i32)

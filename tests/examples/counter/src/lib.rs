@@ -44,9 +44,10 @@ mod component {
 mod tests {
     use miden::Felt;
     use miden_lib::account::auth::AuthRpoFalcon512;
-    use miden_objects::account::{
-        AccountBuilder, AccountComponent, InitStorageData, auth::AuthSecretKey,
+    use miden_protocol::account::{
+        AccountBuilder, AccountComponent, auth::AuthSecretKey, component::InitStorageData,
     };
+    use miden_standards::account::auth::AuthFalcon512Rpo;
 
     // This tests loads the generated package in the `foo` variable and is then
     // printed.
@@ -97,12 +98,12 @@ mod tests {
     fn load_generated_account(account: Package, mock: MockChainBuilder) {
         let init_storage_data = InitStorageData::default();
         let account_component =
-            AccountComponent::from_package_with_init_data(&account, &init_storage_data).unwrap();
+            AccountComponent::from_package(&account, &init_storage_data).unwrap();
 
         let (_key_pair, auth_component) = {
-            let key_pair = AuthSecretKey::new_rpo_falcon512();
+            let key_pair = AuthSecretKey::new_falcon512_rpo();
             let auth_component: AccountComponent =
-                AuthRpoFalcon512::new(key_pair.public_key().to_commitment()).into();
+                AuthFalcon512Rpo::new(key_pair.public_key().to_commitment()).into();
             (key_pair, auth_component)
         };
 

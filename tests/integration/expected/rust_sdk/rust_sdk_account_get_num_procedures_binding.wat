@@ -20,7 +20,7 @@
     (func $rust_sdk_account_get_num_procedures_binding::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1#binding (;2;) (type 1) (result f32)
       call $wit_bindgen::rt::run_ctors_once
-      call $miden::active_account::get_num_procedures
+      call $miden::protocol::active_account::get_num_procedures
     )
     (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
       (local i32)
@@ -40,11 +40,11 @@
         i32.store8
       end
     )
-    (func $miden::active_account::get_num_procedures (;4;) (type 1) (result f32)
+    (func $miden::protocol::active_account::get_num_procedures (;4;) (type 1) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "Wrust_sdk_account_get_num_procedures_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "Wrust_sdk_account_get_num_procedures_binding\01\0b0.0.1\03\01\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;1;)))
   (core instance $main (;0;) (instantiate $main))

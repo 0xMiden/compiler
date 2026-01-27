@@ -1,25 +1,25 @@
-# mod miden:storage-example/foo@1.0.0
+# mod ::miden:storage-example/foo@1.0.0
 
 @callconv("canon-lift")
 pub proc set-asset-qty(felt, felt, felt, felt, felt, felt, felt, felt, felt)
-    exec.::miden:storage-example/foo@1.0.0::init
+    exec.miden:storage-example/foo@1.0.0::init
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#set-asset-qty
+    exec.miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0_set-asset-qty
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 @callconv("canon-lift")
 pub proc get-asset-qty(felt, felt, felt, felt) -> felt
-    exec.::miden:storage-example/foo@1.0.0::init
+    exec.miden:storage-example/foo@1.0.0::init
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0#get-asset-qty
+    exec.miden:storage-example/foo@1.0.0::storage_example::miden:storage-example/foo@1.0.0_get-asset-qty
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -32,7 +32,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -43,7 +43,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:storage-example/foo@1.0.0::storage_example
+# mod ::miden:storage-example/foo@1.0.0::storage_example
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -60,7 +60,7 @@ proc storage_example::bindings::__link_custom_section_describing_imports(
 end
 
 @callconv("C")
-proc miden:storage-example/foo@1.0.0#get-asset-qty(
+proc miden:storage-example/foo@1.0.0_get-asset-qty(
     felt,
     felt,
     felt,
@@ -88,13 +88,13 @@ proc miden:storage-example/foo@1.0.0#get-asset-qty(
     nop
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
+    exec.miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
-    push.1
+    push.0
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
+    exec.miden:storage-example/foo@1.0.0::storage_example::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     dup.1
@@ -107,7 +107,7 @@ proc miden:storage-example/foo@1.0.0#get-asset-qty(
     swap.1
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::active_account::get_map_item
+    exec.::miden::protocol::active_account::get_map_item
     trace.252
     nop
     dup.0
@@ -138,7 +138,7 @@ proc miden:storage-example/foo@1.0.0#get-asset-qty(
 end
 
 @callconv("C")
-proc miden:storage-example/foo@1.0.0#set-asset-qty(
+proc miden:storage-example/foo@1.0.0_set-asset-qty(
     felt,
     felt,
     felt,
@@ -171,13 +171,13 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
     nop
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
+    exec.miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
-    push.0
+    push.1
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
+    exec.miden:storage-example/foo@1.0.0::storage_example::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     push.16
@@ -186,7 +186,7 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
     swap.1
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::active_account::get_item
+    exec.::miden::protocol::active_account::get_item
     trace.252
     nop
     push.24
@@ -318,13 +318,13 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
                     dup.1
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
+                    exec.miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
                     trace.252
                     nop
-                    push.1
+                    push.0
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
+                    exec.miden:storage-example/foo@1.0.0::storage_example::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
                     trace.252
                     nop
                     push.12
@@ -408,7 +408,7 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
                     swap.5
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::miden::native_account::set_map_item
+                    exec.::miden::protocol::native_account::set_map_item
                     trace.252
                     nop
                 end
@@ -470,7 +470,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:storage-example/foo@1.0.0::storage_example::__wasm_call_ctors
+        exec.miden:storage-example/foo@1.0.0::storage_example::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -588,234 +588,43 @@ proc <miden_field::wasm32::Felt as core::convert::From<u8>>::from(
     u32and
 end
 
+# mod ::miden:storage-example/foo@1.0.0::storage_example::miden::protocol::active_account
+
 @callconv("C")
-proc miden::active_account::get_item(felt, i32)
-    trace.240
-    nop
-    exec.::miden::active_account::get_item
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
+proc get_item(felt, i32)
+    drop
+    drop
+    push.0
+    assert
 end
 
 @callconv("C")
-proc miden::active_account::get_map_item(felt, felt, felt, felt, felt, i32)
-    trace.240
-    nop
-    exec.::miden::active_account::get_map_item
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
+proc get_map_item(felt, felt, felt, felt, felt, i32)
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    push.0
+    assert
 end
 
+# mod ::miden:storage-example/foo@1.0.0::storage_example::miden::protocol::native_account
+
 @callconv("C")
-proc miden::native_account::set_map_item(
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    i32
-)
-    trace.240
-    nop
-    exec.::miden::native_account::set_map_item
-    trace.252
-    nop
-    movup.8
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.16
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.20
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.24
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.28
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
+proc set_map_item(felt, felt, felt, felt, felt, felt, felt, felt, felt, i32)
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    push.0
+    assert
 end
 

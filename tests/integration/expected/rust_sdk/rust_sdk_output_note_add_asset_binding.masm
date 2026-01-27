@@ -1,16 +1,16 @@
-# mod miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1
+# mod ::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> felt
-    exec.::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::init
+    exec.miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::init
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1#binding
+    exec.miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1_binding
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -23,7 +23,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -34,7 +34,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding
+# mod ::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -51,7 +51,7 @@ proc rust_sdk_output_note_add_asset_binding::bindings::__link_custom_section_des
 end
 
 @callconv("C")
-proc miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1#binding(
+proc miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1_binding(
 
 ) -> felt
     push.1114144
@@ -76,7 +76,7 @@ proc miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::wit_bindgen::rt::run_ctors_once
+    exec.miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -157,14 +157,14 @@ proc miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset
     dup.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+    exec.miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
     trace.252
     nop
     push.0
     dup.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::miden_base_sys::bindings::output_note::add_asset
+    exec.miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::miden_base_sys::bindings::output_note::add_asset
     trace.252
     nop
     push.32
@@ -223,7 +223,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::__wasm_call_ctors
+        exec.miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -328,7 +328,7 @@ proc miden_base_sys::bindings::output_note::add_asset(
     swap.2
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::miden::output_note::add_asset
+    exec.::miden::protocol::output_note::add_asset
     trace.252
     nop
 end
@@ -408,12 +408,16 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field
     nop
 end
 
+# mod ::miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1::rust_sdk_output_note_add_asset_binding::miden::protocol::output_note
+
 @callconv("C")
-proc miden::output_note::add_asset(felt, felt, felt, felt, felt)
-    trace.240
-    nop
-    exec.::miden::output_note::add_asset
-    trace.252
-    nop
+proc add_asset(felt, felt, felt, felt, felt)
+    drop
+    drop
+    drop
+    drop
+    drop
+    push.0
+    assert
 end
 

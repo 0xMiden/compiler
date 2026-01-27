@@ -264,8 +264,8 @@ mod imp {
     /// hash function.
     ///
     /// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib and to the
-    /// `std::crypto::hashes::rpo::hash_memory_words` word-optimized variant when the input length is a
-    /// multiple of 4.
+    /// `std::crypto::hashes::rpo::hash_memory_words` word-optimized variant when the input length is
+    /// a multiple of 4.
     ///
     /// # Arguments
     /// * `elements` - A Vec of field elements to be hashed
@@ -305,13 +305,13 @@ mod imp {
     pub fn hash_words(words: &[Word]) -> Digest {
         let rust_ptr = words.as_ptr().addr() as u32;
 
+        let miden_ptr = rust_ptr / 4;
+        // It's safe to assume the `words` ptr is word-aligned.
+        assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
+
         unsafe {
             let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
             let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
-            let miden_ptr = rust_ptr / 4;
-            // It's safe to assume the `words` ptr is word-aligned.
-            assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
-
             let start_addr = miden_ptr;
             let end_addr = start_addr + (words.len() as u32 * 4);
             extern_hash_memory_words(start_addr, end_addr, result_ptr);

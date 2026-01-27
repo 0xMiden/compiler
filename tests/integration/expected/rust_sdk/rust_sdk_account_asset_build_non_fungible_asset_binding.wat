@@ -132,7 +132,7 @@
       local.get 3
       f32.load
       local.get 4
-      call $miden::asset::build_non_fungible_asset
+      call $miden::protocol::asset::build_non_fungible_asset
       local.get 0
       local.get 4
       i64.load
@@ -153,11 +153,11 @@
     (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
       unreachable
     )
-    (func $miden::asset::build_non_fungible_asset (;6;) (type 4) (param f32 f32 f32 f32 f32 i32)
+    (func $miden::protocol::asset::build_non_fungible_asset (;6;) (type 4) (param f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "orust_sdk_account_asset_build_non_fungible_asset_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "orust_sdk_account_asset_build_non_fungible_asset_binding\01\0b0.0.1\03\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "asset" (type $asset (;1;)))
   (core instance $main (;0;) (instantiate $main))

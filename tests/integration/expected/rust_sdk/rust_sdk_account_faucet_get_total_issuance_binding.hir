@@ -13,7 +13,7 @@ builtin.component miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-
         private builtin.function @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1#binding() -> felt {
         ^block9:
             hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/wit_bindgen::rt::run_ctors_once()
-            v1 = hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/miden::faucet::get_total_issuance() : felt
+            v1 = hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/miden::protocol::faucet::get_total_issuance() : felt
             builtin.ret v1;
         };
 
@@ -40,21 +40,20 @@ builtin.component miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-
                 v16 = hir.bitcast v15 : ptr<byte, i32>;
                 v17 = hir.load v16 : i32;
                 hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/__wasm_call_ctors()
-                v29 = arith.constant 1 : u8;
-                v31 = arith.constant 1048584 : i32;
-                v19 = arith.add v17, v31 : i32 #[overflow = wrapping];
+                v28 = arith.constant 1 : u8;
+                v30 = arith.constant 1048584 : i32;
+                v19 = arith.add v17, v30 : i32 #[overflow = wrapping];
                 v23 = hir.bitcast v19 : u32;
                 v24 = hir.int_to_ptr v23 : ptr<byte, u8>;
-                hir.store v24, v29;
+                hir.store v24, v28;
                 scf.yield ;
             };
             builtin.ret ;
         };
 
-        private builtin.function @miden::faucet::get_total_issuance() -> felt {
+        private builtin.function @miden::protocol::faucet::get_total_issuance() -> felt {
         ^block15:
-            v25 = hir.exec @miden/faucet/get_total_issuance() : felt
-            builtin.ret v25;
+            ub.unreachable ;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -69,8 +68,8 @@ builtin.component miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-
     };
 
     public builtin.function @binding() -> felt {
-    ^block19:
-        v27 = hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1#binding() : felt
-        builtin.ret v27;
+    ^block17:
+        v26 = hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1#binding() : felt
+        builtin.ret v26;
     };
 };

@@ -1,16 +1,16 @@
-# mod miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1
+# mod ::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> felt
-    exec.::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::init
+    exec.miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::init
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1#binding
+    exec.miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1_binding
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -23,7 +23,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -34,7 +34,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding
+# mod ::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -51,7 +51,7 @@ proc rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::bindings::__l
 end
 
 @callconv("C")
-proc miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1#binding(
+proc miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1_binding(
 
 ) -> felt
     push.1114144
@@ -76,7 +76,7 @@ proc miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::wit_bindgen::rt::run_ctors_once
+    exec.miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -157,7 +157,7 @@ proc miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk
     dup.1
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+    exec.miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
     trace.252
     nop
     push.12
@@ -229,7 +229,7 @@ proc miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk
     swap.2
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::miden::faucet::is_non_fungible_asset_issued
+    exec.::miden::protocol::faucet::is_non_fungible_asset_issued
     trace.252
     nop
     push.32
@@ -293,7 +293,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::__wasm_call_ctors
+        exec.miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -399,12 +399,15 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field
     nop
 end
 
+# mod ::miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-binding/rust-sdk-account-faucet-is-non-fungible-asset-issued-binding@0.0.1::rust_sdk_account_faucet_is_non_fungible_asset_issued_binding::miden::protocol::faucet
+
 @callconv("C")
-proc miden::faucet::is_non_fungible_asset_issued(felt, felt, felt, felt) -> felt
-    trace.240
-    nop
-    exec.::miden::faucet::is_non_fungible_asset_issued
-    trace.252
-    nop
+proc is_non_fungible_asset_issued(felt, felt, felt, felt) -> felt
+    drop
+    drop
+    drop
+    drop
+    push.0
+    assert
 end
 

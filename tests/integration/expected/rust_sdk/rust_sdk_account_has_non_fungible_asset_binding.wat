@@ -68,7 +68,7 @@
       f32.load offset=4
       local.get 0
       f32.load
-      call $miden::active_account::has_non_fungible_asset
+      call $miden::protocol::active_account::has_non_fungible_asset
       i32.const 0
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::eq
@@ -116,11 +116,11 @@
     (func $intrinsics::felt::from_u32 (;6;) (type 4) (param i32) (result f32)
       unreachable
     )
-    (func $miden::active_account::has_non_fungible_asset (;7;) (type 5) (param f32 f32 f32 f32) (result f32)
+    (func $miden::protocol::active_account::has_non_fungible_asset (;7;) (type 5) (param f32 f32 f32 f32) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "_rust_sdk_account_has_non_fungible_asset_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "_rust_sdk_account_has_non_fungible_asset_binding\01\0b0.0.1\03\01\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;1;)))
   (core instance $main (;0;) (instantiate $main))

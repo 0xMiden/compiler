@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::root_ns:root@1.0.0
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::hash_elements
+# mod ::root_ns:root@1.0.0::hash_elements
 
 @callconv("C")
 proc __rustc::__rust_dealloc(i32, i32, i32)
@@ -99,7 +99,7 @@ pub proc entrypoint(i32) -> felt
         swap.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_elements::std::crypto::hashes::rpo::hash_memory_words
+        exec.root_ns:root@1.0.0::hash_elements::std::crypto::hashes::rpo::hash_memory_words
         trace.252
         nop
     else
@@ -108,7 +108,7 @@ pub proc entrypoint(i32) -> felt
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_elements::std::crypto::hashes::rpo::hash_memory
+        exec.root_ns:root@1.0.0::hash_elements::std::crypto::hashes::rpo::hash_memory
         trace.252
         nop
     end
@@ -135,7 +135,7 @@ pub proc entrypoint(i32) -> felt
     swap.4
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::<alloc::raw_vec::RawVecInner>::deallocate
+    exec.root_ns:root@1.0.0::hash_elements::<alloc::raw_vec::RawVecInner>::deallocate
     trace.252
     nop
     push.16
@@ -146,118 +146,6 @@ pub proc entrypoint(i32) -> felt
     trace.240
     nop
     exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc std::crypto::hashes::rpo::hash_memory(i32, i32, i32)
-    trace.240
-    nop
-    exec.::std::crypto::hashes::rpo::hash_memory
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc std::crypto::hashes::rpo::hash_memory_words(i32, i32, i32)
-    trace.240
-    nop
-    exec.::std::crypto::hashes::rpo::hash_memory_words
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
     trace.252
     nop
 end
@@ -298,7 +186,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_elements::<alloc::raw_vec::RawVecInner>::current_memory
+    exec.root_ns:root@1.0.0::hash_elements::<alloc::raw_vec::RawVecInner>::current_memory
     trace.252
     nop
     push.8
@@ -363,7 +251,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         movdn.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_elements::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.root_ns:root@1.0.0::hash_elements::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         trace.252
         nop
     end
@@ -531,9 +419,123 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_elements::__rustc::__rust_dealloc
+        exec.root_ns:root@1.0.0::hash_elements::__rustc::__rust_dealloc
         trace.252
         nop
     end
+end
+
+# mod ::root_ns:root@1.0.0::hash_elements::std::crypto::hashes::rpo
+
+@callconv("C")
+proc hash_memory(i32, i32, i32)
+    trace.240
+    nop
+    exec.::miden::core::crypto::hashes::rpo256::hash_elements
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc hash_memory_words(i32, i32, i32)
+    trace.240
+    nop
+    exec.::miden::core::crypto::hashes::rpo256::hash_words
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
 end
 
