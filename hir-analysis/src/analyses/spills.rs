@@ -228,6 +228,10 @@ pub struct SpillAnalysis {
     pub spills: SmallVec<[SpillInfo; 4]>,
     // The set of instructions corresponding to the reload of a spilled value
     pub reloads: SmallVec<[ReloadInfo; 4]>,
+    // Index spills by (placement, spilled value) for fast global deduplication.
+    spill_ids: FxHashMap<(Placement, ValueRef), Spill>,
+    // Index reloads by (placement, spilled value) for fast global deduplication.
+    reload_ids: FxHashMap<(Placement, ValueRef), Reload>,
     // The set of operands in registers on entry to a given program point
     w_entries: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
     // The set of operands that have been spilled upon entry to a given program point
@@ -489,15 +493,18 @@ impl SpillAnalysis {
     /// Returns true if `value` is spilled at the given program point (i.e. inserted before)
     pub fn is_spilled_at(&self, value: ValueRef, pp: ProgramPoint) -> bool {
         let place = match pp {
-            ProgramPoint::Block {
-                block: split_block, ..
-            } => match self.splits.iter().find(|split| split.split == Some(split_block)) {
-                Some(split) => Placement::Split(split.id),
-                None => Placement::At(ProgramPoint::at_end_of(split_block)),
-            },
+            ProgramPoint::Block { block, .. } => {
+                match self.splits.iter().find(|split| split.split == Some(block)) {
+                    // Treat a query using the materialized split block as a query on the
+                    // corresponding edge split placement.
+                    Some(split) => Placement::Split(split.id),
+                    // Preserve the original program point (including before/after) for non-split blocks.
+                    None => Placement::At(pp),
+                }
+            }
             point => Placement::At(point),
         };
-        self.spills.iter().any(|info| info.value == value && info.place == place)
+        self.spill_ids.contains_key(&(place, value))
     }
 
     /// Returns true if `value` will be spilled in the given split
@@ -512,11 +519,6 @@ impl SpillAnalysis {
         self.spills.as_slice()
     }
 
-    /// Same as [SpillAnalysis::spills], but as a mutable reference
-    pub fn spills_mut(&mut self) -> &mut [SpillInfo] {
-        self.spills.as_mut_slice()
-    }
-
     /// Returns true if `value` is reloaded at some point
     pub fn is_reloaded(&self, value: &ValueRef) -> bool {
         self.reloads.iter().any(|info| &info.value == value)
@@ -525,15 +527,18 @@ impl SpillAnalysis {
     /// Returns true if `value` is reloaded at the given program point (i.e. inserted before)
     pub fn is_reloaded_at(&self, value: ValueRef, pp: ProgramPoint) -> bool {
         let place = match pp {
-            ProgramPoint::Block {
-                block: split_block, ..
-            } => match self.splits.iter().find(|split| split.split == Some(split_block)) {
-                Some(split) => Placement::Split(split.id),
-                None => Placement::At(ProgramPoint::at_end_of(split_block)),
-            },
+            ProgramPoint::Block { block, .. } => {
+                match self.splits.iter().find(|split| split.split == Some(block)) {
+                    // Treat a query using the materialized split block as a query on the
+                    // corresponding edge split placement.
+                    Some(split) => Placement::Split(split.id),
+                    // Preserve the original program point (including before/after) for non-split blocks.
+                    None => Placement::At(pp),
+                }
+            }
             point => Placement::At(point),
         };
-        self.reloads.iter().any(|info| info.value == value && info.place == place)
+        self.reload_ids.contains_key(&(place, value))
     }
 
     /// Returns true if `value` will be reloaded in the given split
@@ -546,11 +551,6 @@ impl SpillAnalysis {
     /// Returns the set of computed reloads
     pub fn reloads(&self) -> &[ReloadInfo] {
         self.reloads.as_slice()
-    }
-
-    /// Same as [SpillAnalysis::reloads], but as a mutable reference
-    pub fn reloads_mut(&mut self) -> &mut [ReloadInfo] {
-        self.reloads.as_mut_slice()
     }
 
     /// Returns the operands in W upon entry to `point`
@@ -1158,6 +1158,14 @@ impl SpillAnalysis {
     }
 
     fn spill(&mut self, place: Placement, value: ValueRef, span: SourceSpan) -> Spill {
+        // Spills are computed by multiple routines (MIN, edge reconciliation, over-K entry/results
+        // handling). Deduplicate globally to avoid materializing the same spill multiple times when
+        // distinct control-flow edges are forced to share a single insertion point.
+        let key = (place, value);
+        if let Some(existing) = self.spill_ids.get(&key).copied() {
+            self.spilled.insert(value);
+            return existing;
+        }
         let id = Spill::new(self.spills.len());
         self.spilled.insert(value);
         self.spills.push(SpillInfo {
@@ -1167,10 +1175,16 @@ impl SpillAnalysis {
             span,
             inst: None,
         });
+        self.spill_ids.insert(key, id);
         id
     }
 
     fn reload(&mut self, place: Placement, value: ValueRef, span: SourceSpan) -> Reload {
+        // See `spill` for details on why reloads are globally deduplicated.
+        let key = (place, value);
+        if let Some(existing) = self.reload_ids.get(&key).copied() {
+            return existing;
+        }
         let id = Reload::new(self.reloads.len());
         self.reloads.push(ReloadInfo {
             id,
@@ -1179,6 +1193,7 @@ impl SpillAnalysis {
             span,
             inst: None,
         });
+        self.reload_ids.insert(key, id);
         id
     }
 
@@ -1218,6 +1233,26 @@ impl SpillAnalysis {
         self.compute_w_entry_normal(op, block, liveness);
     }
 
+    /// Spill values from the end of `ordered` until `usage` fits within `K`.
+    ///
+    /// Returns the updated stack usage after inserting spill records.
+    fn spill_trailing_until_fits(
+        &mut self,
+        take: &mut SmallSet<ValueOrAlias, 4>,
+        ordered: &mut SmallVec<[ValueOrAlias; 4]>,
+        mut usage: usize,
+        place: Placement,
+    ) -> usize {
+        while usage > K {
+            let value =
+                ordered.pop().expect("expected at least one value when spilling over-K usage");
+            take.remove(&value);
+            usage = usage.checked_sub(value.stack_size()).expect("spill usage underflow");
+            self.spill(place, value.value(), value.value().borrow().span());
+        }
+        usage
+    }
+
     fn compute_w_entry_normal(
         &mut self,
         op: &Operation,
@@ -1229,23 +1264,23 @@ impl SpillAnalysis {
         let mut cand = SmallSet::<ValueOrAlias, 4>::default();
 
         // Block arguments are always in w_entry by definition
-        for arg in block.arguments().iter().copied() {
-            take.insert(ValueOrAlias::new(arg as ValueRef));
-        }
-
-        // TODO(pauls): We likely need to account for the implicit spilling that occurs when the
-        // operand stack space required by the function arguments exceeds K. In such cases, the W set
-        // contains the function parameters up to the first parameter that would cause the operand
-        // stack to overflow, all subsequent parameters are placed on the advice stack, and are assumed
-        // to be moved from the advice stack to locals in the same order as they appear in the function
-        // signature as part of the function prologue. Thus, the S set is preloaded with those values
-        // which were spilled in this manner.
         //
-        // NOTE: It should never be the case that the set of block arguments consumes more than K
-        assert!(
-            take.iter().map(|o| o.stack_size()).sum::<usize>() <= K,
-            "unhandled spills implied by function/block parameter list"
-        );
+        // However, it is possible for a block to have more than K stack slots' worth of arguments.
+        // When this occurs, we proactively spill as many of the highest-indexed block arguments as
+        // needed to ensure W^entry fits within K, inserting those spills at the start of the block.
+        let start_of_block = ProgramPoint::at_start_of(block);
+        let mut block_args = SmallVec::<[ValueOrAlias; 4]>::default();
+        for arg in block.arguments().iter().copied() {
+            let arg = ValueOrAlias::new(arg as ValueRef);
+            take.insert(arg);
+            block_args.push(arg);
+        }
+        let w_entry_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        if w_entry_usage > K {
+            let place = Placement::At(start_of_block);
+            let _ =
+                self.spill_trailing_until_fits(&mut take, &mut block_args, w_entry_usage, place);
+        }
 
         // If this is the entry block to an IsolatedFromAbove region, the operands in w_entry are
         // guaranteed to be equal to the set of region arguments, so we're done.
@@ -1383,14 +1418,18 @@ impl SpillAnalysis {
         let mut cand = SmallSet::<ValueOrAlias, 4>::default();
 
         // Op results are always in W^exit by definition
+        let after_branch = ProgramPoint::after(branch.as_operation());
+        let mut results = SmallVec::<[ValueOrAlias; 4]>::default();
         for result in branch.results().iter().copied() {
-            take.insert(ValueOrAlias::new(result as ValueRef));
+            let result = ValueOrAlias::new(result as ValueRef);
+            take.insert(result);
+            results.push(result);
         }
-
-        assert!(
-            take.iter().map(|o| o.stack_size()).sum::<usize>() <= K,
-            "unhandled spills implied by results of region branch op"
-        );
+        let w_exit_usage = take.iter().map(|o| o.stack_size()).sum::<usize>();
+        if w_exit_usage > K {
+            let place = Placement::At(after_branch);
+            let _ = self.spill_trailing_until_fits(&mut take, &mut results, w_exit_usage, place);
+        }
 
         // If this block is the entry block of a RegionBranchOpInterface op, then we compute the
         // set of predecessors differently than unstructured CFG ops.
@@ -2077,11 +2116,34 @@ impl SpillAnalysis {
             return;
         }
 
-        // Otherwise, we need to split the edge from P to B, and place any spills/reloads in the split,
-        // S, moving any block arguments for B, to the unconditional branch in S.
-        let split = self.split(info.point, *pred);
-        let place = Placement::Split(split);
-        let span = pred.operation(info.point).span();
+        // If spills/reloads are needed on this edge, we need a placement for those instructions.
+        //
+        // For unstructured control flow (i.e. an explicit branch op), we split the edge and insert
+        // spills/reloads in the split block so they are executed only along that predecessor edge.
+        //
+        // For structured control flow edges (i.e. predecessor is `Parent` or `Region`), we insert
+        // spills/reloads at the destination when it has a single live predecessor, otherwise we
+        // fall back to placing them before the predecessor operation, as we do not currently
+        // support splitting such edges during transformation.
+        let (place, span) = match pred {
+            Predecessor::Block { .. } => {
+                let split = self.split(info.point, *pred);
+                (Placement::Split(split), pred.operation(info.point).span())
+            }
+            Predecessor::Parent | Predecessor::Region(_) => {
+                // If the destination has a single live predecessor, placing at the destination is
+                // effectively edge-specific.
+                if info.live_predecessors.len() == 1 {
+                    (Placement::At(info.point), pred.operation(info.point).span())
+                } else {
+                    let predecessor = pred.operation(info.point);
+                    // NOTE: This placement is not edge-specific. Multiple distinct structured edges
+                    // may map to the same insertion point, so we rely on spill/reload deduplication
+                    // to avoid materializing duplicates.
+                    (Placement::At(ProgramPoint::before(predecessor)), predecessor.span())
+                }
+            }
+        };
 
         // Insert spills first, to end the live ranges of as many variables as possible
         for spill in to_spill {
@@ -2122,9 +2184,32 @@ impl SpillAnalysis {
         log::trace!(target: "spills", "  W^entry = {w:?}");
         log::trace!(target: "spills", "  S^entry = {s:?}");
 
-        let is_terminator = op.implements::<dyn Terminator>()
-            && !(op.implements::<dyn RegionBranchTerminatorOpInterface>()
-                || op.implements::<dyn BranchOpInterface>());
+        if op.implements::<dyn RegionBranchTerminatorOpInterface>() {
+            log::trace!(target: "spills", "  region terminator = true");
+            // Region branch terminators forward successor operands across region boundaries.
+            //
+            // These operands can exceed K, but since control flow transfers immediately, we do not
+            // need to keep the entire set addressable for subsequent instructions in the current
+            // block. Instead, we ensure that any required operands are present in W and leave edge
+            // reconciliation to the normal mechanisms (e.g. spills inserted at join points).
+            w.retain(|o| liveness.is_live_before(o, op));
+            let to_reload = ValueRange::<4>::from(op.operands().all());
+            for reload in to_reload.into_iter().map(ValueOrAlias::new) {
+                if w.insert(reload) {
+                    log::trace!(target: "spills", "  emitting reload for {reload}");
+                    // By definition, if we are emitting a reload, the value must have been spilled
+                    s.insert(reload);
+                    self.reload(place, reload.value(), span);
+                }
+            }
+
+            log::trace!(target: "spills", "  W^exit = {w:?}");
+            log::trace!(target: "spills", "  S^exit = {s:?}");
+            return;
+        }
+
+        let is_terminator =
+            op.implements::<dyn Terminator>() && !op.implements::<dyn BranchOpInterface>();
 
         if is_terminator {
             log::trace!(target: "spills", "  terminator = true");

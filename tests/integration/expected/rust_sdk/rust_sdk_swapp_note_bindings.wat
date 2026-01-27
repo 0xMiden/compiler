@@ -15,8 +15,7 @@
     (type (;2;) (func (param f32 f32 f32 f32)))
     (type (;3;) (func (param i32)))
     (type (;4;) (func (param f32 f32) (result f32)))
-    (type (;5;) (func (param i32 i32)))
-    (type (;6;) (func (param f32 f32) (result i32)))
+    (type (;5;) (func (param f32 f32) (result i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -182,54 +181,52 @@
     (func $miden_base_sys::bindings::active_note::get_script_root (;6;) (type 3) (param i32)
       (local i32)
       global.get $__stack_pointer
-      i32.const 32
+      i32.const 16
       i32.sub
       local.tee 1
       global.set $__stack_pointer
       local.get 1
       call $miden::active_note::get_script_root
-      local.get 1
-      local.get 1
-      i64.load offset=8
-      i64.store offset=24
-      local.get 1
-      local.get 1
-      i64.load
-      i64.store offset=16
       local.get 0
       local.get 1
-      i32.const 16
-      i32.add
-      call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
+      i64.load
+      i64.const 32
+      i64.rotl
+      i64.store offset=8
+      local.get 0
       local.get 1
-      i32.const 32
+      i64.load offset=8
+      i64.const 32
+      i64.rotl
+      i64.store
+      local.get 1
+      i32.const 16
       i32.add
       global.set $__stack_pointer
     )
     (func $miden_base_sys::bindings::active_note::get_serial_number (;7;) (type 3) (param i32)
       (local i32)
       global.get $__stack_pointer
-      i32.const 32
+      i32.const 16
       i32.sub
       local.tee 1
       global.set $__stack_pointer
       local.get 1
       call $miden::active_note::get_serial_number
-      local.get 1
-      local.get 1
-      i64.load offset=8
-      i64.store offset=24
-      local.get 1
-      local.get 1
-      i64.load
-      i64.store offset=16
       local.get 0
       local.get 1
-      i32.const 16
-      i32.add
-      call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
+      i64.load
+      i64.const 32
+      i64.rotl
+      i64.store offset=8
+      local.get 0
       local.get 1
-      i32.const 32
+      i64.load offset=8
+      i64.const 32
+      i64.rotl
+      i64.store
+      local.get 1
+      i32.const 16
       i32.add
       global.set $__stack_pointer
     )
@@ -238,77 +235,19 @@
       local.get 1
       call $miden::active_account::get_balance
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word>::reverse (;9;) (type 5) (param i32 i32)
-      (local i32 i32 i32 f32)
-      global.get $__stack_pointer
-      i32.const 16
-      i32.sub
-      local.tee 2
-      local.get 1
-      i64.load offset=8
-      i64.store offset=8 align=4
-      local.get 2
-      local.get 1
-      i64.load
-      i64.store align=4
-      local.get 2
-      i32.const 12
-      i32.add
-      local.set 3
-      i32.const 0
-      local.set 1
-      block ;; label = @1
-        loop ;; label = @2
-          local.get 1
-          i32.const 8
-          i32.eq
-          br_if 1 (;@1;)
-          local.get 2
-          local.get 1
-          i32.add
-          local.tee 4
-          f32.load
-          local.set 5
-          local.get 4
-          local.get 3
-          i32.load
-          i32.store
-          local.get 3
-          local.get 5
-          f32.store
-          local.get 1
-          i32.const 4
-          i32.add
-          local.set 1
-          local.get 3
-          i32.const -4
-          i32.add
-          local.set 3
-          br 0 (;@2;)
-        end
-      end
-      local.get 0
-      local.get 2
-      i64.load offset=8 align=4
-      i64.store offset=8
-      local.get 0
-      local.get 2
-      i64.load align=4
-      i64.store
-    )
-    (func $intrinsics::felt::eq (;10;) (type 6) (param f32 f32) (result i32)
+    (func $intrinsics::felt::eq (;9;) (type 5) (param f32 f32) (result i32)
       unreachable
     )
-    (func $miden::active_account::get_balance (;11;) (type 4) (param f32 f32) (result f32)
+    (func $miden::active_account::get_balance (;10;) (type 4) (param f32 f32) (result f32)
       unreachable
     )
-    (func $miden::active_note::get_script_root (;12;) (type 3) (param i32)
+    (func $miden::active_note::get_script_root (;11;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::active_note::get_sender (;13;) (type 3) (param i32)
+    (func $miden::active_note::get_sender (;12;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::active_note::get_serial_number (;14;) (type 3) (param i32)
+    (func $miden::active_note::get_serial_number (;13;) (type 3) (param i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
