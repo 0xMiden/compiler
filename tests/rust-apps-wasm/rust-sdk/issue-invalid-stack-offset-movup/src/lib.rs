@@ -64,14 +64,12 @@ fn run(arg: Word) {
     assert_eq(is_valid, felt!(1));
 
     let _one = felt!(1);
-    let offered_out = calculate_output_amount(offered_asset_total, requested_asset_total, input_amount);
+    let offered_out =
+        calculate_output_amount(offered_asset_total, requested_asset_total, input_amount);
 
     active_note::add_assets_to_account();
 
-    let routing_serial = add_word(
-        current_note_serial,
-        Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]),
-    );
+    let routing_serial = add_word(current_note_serial, Word::from_u64_unchecked([0, 0, 0, 1]));
 
     let aux_value = offered_out;
     let input_asset = Asset::new(Word::from([inputs[0], inputs[1], inputs[2], input_amount]));

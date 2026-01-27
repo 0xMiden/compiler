@@ -54,8 +54,8 @@ unsafe extern "C" {
 /// use miden::{felt, output_note, Asset, Digest, NoteType, Recipient, Tag, Word};
 ///
 /// // Values used to derive the note recipient.
-/// let serial_num = Word::from([felt!(1), felt!(2), felt!(3), felt!(4)]);
-/// let note_script_root = Digest::from_word(Word::from([felt!(0), felt!(0), felt!(0), felt!(0)]));
+/// let serial_num = Word::from_u64_unchecked([1, 2, 3, 4]);
+/// let note_script_root = Digest::from_word(Word::from_u64_unchecked([0, 0, 0, 0]));
 ///
 /// // Note inputs must be padded to a multiple of 8 felts (2 words).
 /// let padded_inputs = alloc::vec![felt!(0); 8];
