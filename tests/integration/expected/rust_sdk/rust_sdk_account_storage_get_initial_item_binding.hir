@@ -23,7 +23,7 @@ builtin.component miden:rust-sdk-account-storage-get-initial-item-binding/rust-s
             hir.exec @miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1/rust_sdk_account_storage_get_initial_item_binding/wit_bindgen::rt::run_ctors_once()
             v1 = arith.constant 0 : i32;
             v10 = hir.exec @miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1/rust_sdk_account_storage_get_initial_item_binding/<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v1) : felt
-            hir.exec @miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1/rust_sdk_account_storage_get_initial_item_binding/miden::active_account::get_initial_item(v10, v6)
+            hir.exec @miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1/rust_sdk_account_storage_get_initial_item_binding/miden::protocol::active_account::get_initial_item(v10, v6)
             v11 = builtin.global_symbol @miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1/rust_sdk_account_storage_get_initial_item_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v12 = hir.bitcast v11 : ptr<byte, i32>;
             v13 = hir.load v12 : i32;
@@ -38,59 +38,59 @@ builtin.component miden:rust-sdk-account-storage-get-initial-item-binding/rust-s
             v22 = arith.constant 12 : u32;
             v21 = hir.bitcast v15 : u32;
             v23 = arith.add v21, v22 : u32 #[overflow = checked];
-            v155 = arith.constant 4 : u32;
-            v25 = arith.mod v23, v155 : u32;
+            v140 = arith.constant 4 : u32;
+            v25 = arith.mod v23, v140 : u32;
             hir.assertz v25 #[code = 250];
             v26 = hir.int_to_ptr v23 : ptr<byte, felt>;
             hir.store v26, v20;
-            v154 = arith.constant 4 : u32;
+            v139 = arith.constant 4 : u32;
             v27 = hir.bitcast v6 : u32;
-            v29 = arith.add v27, v154 : u32 #[overflow = checked];
-            v153 = arith.constant 4 : u32;
-            v31 = arith.mod v29, v153 : u32;
+            v29 = arith.add v27, v139 : u32 #[overflow = checked];
+            v138 = arith.constant 4 : u32;
+            v31 = arith.mod v29, v138 : u32;
             hir.assertz v31 #[code = 250];
             v32 = hir.int_to_ptr v29 : ptr<byte, felt>;
             v33 = hir.load v32 : felt;
             v35 = arith.constant 8 : u32;
             v34 = hir.bitcast v15 : u32;
             v36 = arith.add v34, v35 : u32 #[overflow = checked];
-            v152 = arith.constant 4 : u32;
-            v38 = arith.mod v36, v152 : u32;
+            v137 = arith.constant 4 : u32;
+            v38 = arith.mod v36, v137 : u32;
             hir.assertz v38 #[code = 250];
             v39 = hir.int_to_ptr v36 : ptr<byte, felt>;
             hir.store v39, v33;
-            v151 = arith.constant 8 : u32;
+            v136 = arith.constant 8 : u32;
             v40 = hir.bitcast v6 : u32;
-            v42 = arith.add v40, v151 : u32 #[overflow = checked];
-            v150 = arith.constant 4 : u32;
-            v44 = arith.mod v42, v150 : u32;
+            v42 = arith.add v40, v136 : u32 #[overflow = checked];
+            v135 = arith.constant 4 : u32;
+            v44 = arith.mod v42, v135 : u32;
             hir.assertz v44 #[code = 250];
             v45 = hir.int_to_ptr v42 : ptr<byte, felt>;
             v46 = hir.load v45 : felt;
-            v149 = arith.constant 4 : u32;
+            v134 = arith.constant 4 : u32;
             v47 = hir.bitcast v15 : u32;
-            v49 = arith.add v47, v149 : u32 #[overflow = checked];
-            v148 = arith.constant 4 : u32;
-            v51 = arith.mod v49, v148 : u32;
+            v49 = arith.add v47, v134 : u32 #[overflow = checked];
+            v133 = arith.constant 4 : u32;
+            v51 = arith.mod v49, v133 : u32;
             hir.assertz v51 #[code = 250];
             v52 = hir.int_to_ptr v49 : ptr<byte, felt>;
             hir.store v52, v46;
-            v147 = arith.constant 12 : u32;
+            v132 = arith.constant 12 : u32;
             v53 = hir.bitcast v6 : u32;
-            v55 = arith.add v53, v147 : u32 #[overflow = checked];
-            v146 = arith.constant 4 : u32;
-            v57 = arith.mod v55, v146 : u32;
+            v55 = arith.add v53, v132 : u32 #[overflow = checked];
+            v131 = arith.constant 4 : u32;
+            v57 = arith.mod v55, v131 : u32;
             hir.assertz v57 #[code = 250];
             v58 = hir.int_to_ptr v55 : ptr<byte, felt>;
             v59 = hir.load v58 : felt;
             v60 = hir.bitcast v15 : u32;
-            v145 = arith.constant 4 : u32;
-            v62 = arith.mod v60, v145 : u32;
+            v130 = arith.constant 4 : u32;
+            v62 = arith.mod v60, v130 : u32;
             hir.assertz v62 #[code = 250];
             v63 = hir.int_to_ptr v60 : ptr<byte, felt>;
             hir.store v63, v59;
-            v144 = arith.constant 16 : i32;
-            v65 = arith.add v6, v144 : i32 #[overflow = wrapping];
+            v129 = arith.constant 16 : i32;
+            v65 = arith.add v6, v129 : i32 #[overflow = wrapping];
             v66 = builtin.global_symbol @miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1/rust_sdk_account_storage_get_initial_item_binding/__stack_pointer : ptr<byte, u8>
             v67 = hir.bitcast v66 : ptr<byte, i32>;
             hir.store v67, v65;
@@ -120,12 +120,12 @@ builtin.component miden:rust-sdk-account-storage-get-initial-item-binding/rust-s
                 v82 = hir.bitcast v81 : ptr<byte, i32>;
                 v83 = hir.load v82 : i32;
                 hir.exec @miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1/rust_sdk_account_storage_get_initial_item_binding/__wasm_call_ctors()
-                v157 = arith.constant 1 : u8;
-                v159 = arith.constant 1048600 : i32;
-                v85 = arith.add v83, v159 : i32 #[overflow = wrapping];
+                v142 = arith.constant 1 : u8;
+                v144 = arith.constant 1048600 : i32;
+                v85 = arith.add v83, v144 : i32 #[overflow = wrapping];
                 v89 = hir.bitcast v85 : u32;
                 v90 = hir.int_to_ptr v89 : ptr<byte, u8>;
-                hir.store v90, v157;
+                hir.store v90, v142;
                 scf.yield ;
             };
             builtin.ret ;
@@ -139,25 +139,9 @@ builtin.component miden:rust-sdk-account-storage-get-initial-item-binding/rust-s
             builtin.ret v95;
         };
 
-        private builtin.function @miden::active_account::get_initial_item(v96: felt, v97: i32) {
+        private builtin.function @miden::protocol::active_account::get_initial_item(v96: felt, v97: i32) {
         ^block17(v96: felt, v97: i32):
-            v98, v99, v100, v101 = hir.exec @miden/active_account/get_initial_item(v96) : felt, felt, felt, felt
-            v102 = hir.bitcast v97 : u32;
-            v103 = hir.int_to_ptr v102 : ptr<byte, felt>;
-            hir.store v103, v98;
-            v104 = arith.constant 4 : u32;
-            v105 = arith.add v102, v104 : u32 #[overflow = checked];
-            v106 = hir.int_to_ptr v105 : ptr<byte, felt>;
-            hir.store v106, v99;
-            v107 = arith.constant 8 : u32;
-            v108 = arith.add v102, v107 : u32 #[overflow = checked];
-            v109 = hir.int_to_ptr v108 : ptr<byte, felt>;
-            hir.store v109, v100;
-            v110 = arith.constant 12 : u32;
-            v111 = arith.add v102, v110 : u32 #[overflow = checked];
-            v112 = hir.int_to_ptr v111 : ptr<byte, felt>;
-            hir.store v112, v101;
-            builtin.ret ;
+            ub.unreachable ;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -172,34 +156,34 @@ builtin.component miden:rust-sdk-account-storage-get-initial-item-binding/rust-s
     };
 
     public builtin.function @binding() -> felt, felt, felt, felt {
-    ^block21:
-        v113 = hir.exec @miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1/rust_sdk_account_storage_get_initial_item_binding/miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1#binding() : i32
-        v114 = arith.constant 0 : i32;
-        v115 = arith.add v113, v114 : i32 #[overflow = unchecked];
-        v163 = arith.constant 0 : i32;
-        v164 = arith.constant 0 : i32;
-        v117 = arith.add v115, v164 : i32 #[overflow = unchecked];
-        v119 = arith.add v117, v163 : i32 #[overflow = unchecked];
-        v120 = hir.int_to_ptr v119 : ptr<byte, felt>;
-        v121 = hir.load v120 : felt;
-        v162 = arith.constant 0 : i32;
-        v122 = arith.constant 4 : i32;
-        v123 = arith.add v115, v122 : i32 #[overflow = unchecked];
-        v125 = arith.add v123, v162 : i32 #[overflow = unchecked];
-        v126 = hir.int_to_ptr v125 : ptr<byte, felt>;
-        v127 = hir.load v126 : felt;
-        v161 = arith.constant 0 : i32;
-        v128 = arith.constant 8 : i32;
-        v129 = arith.add v115, v128 : i32 #[overflow = unchecked];
-        v131 = arith.add v129, v161 : i32 #[overflow = unchecked];
-        v132 = hir.int_to_ptr v131 : ptr<byte, felt>;
-        v133 = hir.load v132 : felt;
-        v160 = arith.constant 0 : i32;
-        v134 = arith.constant 12 : i32;
-        v135 = arith.add v115, v134 : i32 #[overflow = unchecked];
-        v137 = arith.add v135, v160 : i32 #[overflow = unchecked];
-        v138 = hir.int_to_ptr v137 : ptr<byte, felt>;
-        v139 = hir.load v138 : felt;
-        builtin.ret v121, v127, v133, v139;
+    ^block19:
+        v98 = hir.exec @miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1/rust_sdk_account_storage_get_initial_item_binding/miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1#binding() : i32
+        v99 = arith.constant 0 : i32;
+        v100 = arith.add v98, v99 : i32 #[overflow = unchecked];
+        v148 = arith.constant 0 : i32;
+        v149 = arith.constant 0 : i32;
+        v102 = arith.add v100, v149 : i32 #[overflow = unchecked];
+        v104 = arith.add v102, v148 : i32 #[overflow = unchecked];
+        v105 = hir.int_to_ptr v104 : ptr<byte, felt>;
+        v106 = hir.load v105 : felt;
+        v147 = arith.constant 0 : i32;
+        v107 = arith.constant 4 : i32;
+        v108 = arith.add v100, v107 : i32 #[overflow = unchecked];
+        v110 = arith.add v108, v147 : i32 #[overflow = unchecked];
+        v111 = hir.int_to_ptr v110 : ptr<byte, felt>;
+        v112 = hir.load v111 : felt;
+        v146 = arith.constant 0 : i32;
+        v113 = arith.constant 8 : i32;
+        v114 = arith.add v100, v113 : i32 #[overflow = unchecked];
+        v116 = arith.add v114, v146 : i32 #[overflow = unchecked];
+        v117 = hir.int_to_ptr v116 : ptr<byte, felt>;
+        v118 = hir.load v117 : felt;
+        v145 = arith.constant 0 : i32;
+        v119 = arith.constant 12 : i32;
+        v120 = arith.add v100, v119 : i32 #[overflow = unchecked];
+        v122 = arith.add v120, v145 : i32 #[overflow = unchecked];
+        v123 = hir.int_to_ptr v122 : ptr<byte, felt>;
+        v124 = hir.load v123 : felt;
+        builtin.ret v106, v112, v118, v124;
     };
 };

@@ -73,7 +73,7 @@
       local.get 4
       local.get 5
       local.get 0
-      call $miden::active_account::get_initial_map_item
+      call $miden::protocol::active_account::get_initial_map_item
       global.get $GOT.data.internal.__memory_base
       i32.const 1048584
       i32.add
@@ -126,11 +126,11 @@
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden::active_account::get_initial_map_item (;6;) (type 3) (param f32 f32 f32 f32 f32 i32)
+    (func $miden::protocol::active_account::get_initial_map_item (;6;) (type 3) (param f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "krust_sdk_account_storage_get_initial_map_item_binding\01\0b0.0.1\03\01\01")
+    (@custom "rodata,miden_account" (after data) "krust_sdk_account_storage_get_initial_map_item_binding\01\0b0.0.1\03\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "word" (type $word (;1;)))
   (core instance $main (;0;) (instantiate $main))

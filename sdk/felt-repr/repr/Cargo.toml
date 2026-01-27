@@ -20,7 +20,7 @@ miden-felt-repr-derive = { path = "../derive", version = "0.7.1" }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 miden-core.workspace = true
-miden-objects.workspace = true
+miden-protocol.workspace = true
 
 [features]
 default = []

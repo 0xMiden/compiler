@@ -1,14 +1,14 @@
-# mod miden:base/note-script@1.0.0
+# mod ::miden:base/note-script@1.0.0
 
 @callconv("canon-lift")
 pub proc run(felt, felt, felt, felt)
-    exec.::miden:base/note-script@1.0.0::init
+    exec.miden:base/note-script@1.0.0::init
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::miden:base/note-script@1.0.0#run
+    exec.miden:base/note-script@1.0.0::cross_ctx_note_word_arg::miden:base/note-script@1.0.0_run
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -21,7 +21,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:base/note-script@1.0.0::cross_ctx_note_word_arg
+# mod ::miden:base/note-script@1.0.0::cross_ctx_note_word_arg
 
 @callconv("C")
 proc cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(
@@ -55,7 +55,7 @@ proc cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::
 ) -> felt
     trace.240
     nop
-    call.::miden:cross-ctx-account-word-arg/foo@1.0.0::process-word
+    call.miden:cross-ctx-account-word-arg/foo@1.0.0::process-word
     trace.252
     nop
 end
@@ -75,14 +75,14 @@ proc cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports
 end
 
 @callconv("C")
-proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
+proc miden:base/note-script@1.0.0_run(felt, felt, felt, felt)
     drop
     drop
     drop
     drop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::wit_bindgen::rt::run_ctors_once
+    exec.miden:base/note-script@1.0.0::cross_ctx_note_word_arg::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.7
@@ -110,7 +110,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
+    exec.miden:base/note-script@1.0.0::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
     trace.252
     nop
     push.458760
@@ -160,7 +160,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::cross_ctx_note_word_arg::__wasm_call_ctors
+        exec.miden:base/note-script@1.0.0::cross_ctx_note_word_arg::__wasm_call_ctors
         trace.252
         nop
         push.1

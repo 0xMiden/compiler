@@ -221,7 +221,7 @@ impl ToFeltRepr for bool {
 }
 
 #[cfg(not(target_family = "wasm"))]
-impl ToFeltRepr for miden_objects::account::AccountId {
+impl ToFeltRepr for miden_protocol::account::AccountId {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         writer.write(self.prefix().as_felt().into());

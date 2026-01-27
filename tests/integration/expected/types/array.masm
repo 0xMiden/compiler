@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::root_ns:root@1.0.0
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     push.262144
     push.3
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -24,7 +24,7 @@ proc init
     mem_store.278546
 end
 
-# mod root_ns:root@1.0.0::test_rust_cb39dafa72dff125238b7a3ed9e652b134e1b6c8b56777106a49349224402a6d
+# mod ::root_ns:root@1.0.0::test_rust_cb39dafa72dff125238b7a3ed9e652b134e1b6c8b56777106a49349224402a6d
 
 @callconv("C")
 pub proc __main(
@@ -34,14 +34,14 @@ pub proc __main(
     push.1048576
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::test_rust_cb39dafa72dff125238b7a3ed9e652b134e1b6c8b56777106a49349224402a6d::sum_arr
+    exec.root_ns:root@1.0.0::test_rust_cb39dafa72dff125238b7a3ed9e652b134e1b6c8b56777106a49349224402a6d::sum_arr
     trace.252
     nop
     push.5
     push.1048596
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::test_rust_cb39dafa72dff125238b7a3ed9e652b134e1b6c8b56777106a49349224402a6d::sum_arr
+    exec.root_ns:root@1.0.0::test_rust_cb39dafa72dff125238b7a3ed9e652b134e1b6c8b56777106a49349224402a6d::sum_arr
     trace.252
     nop
     u32wrapping_add

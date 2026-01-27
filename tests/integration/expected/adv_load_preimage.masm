@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::root_ns:root@1.0.0
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::adv_load_preimage
+# mod ::root_ns:root@1.0.0::adv_load_preimage
 
 @callconv("C")
 proc __rustc::__rust_alloc(i32, i32) -> i32
@@ -19,7 +19,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.root_ns:root@1.0.0::adv_load_preimage::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -33,7 +33,7 @@ proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.root_ns:root@1.0.0::adv_load_preimage::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -128,7 +128,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
     dup.8
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::advice::adv_push_mapvaln
+    exec.::intrinsics::advice::adv_push_mapvaln
     trace.252
     nop
     u32split
@@ -155,7 +155,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
     movup.2
     trace.240
     nop
-    exec.::std::math::u64::shr
+    exec.::miden::core::math::u64::shr
     trace.252
     nop
     dup.1
@@ -164,7 +164,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
     push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::miden::core::math::u64::lt
     trace.252
     nop
     assert
@@ -188,7 +188,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
     swap.2
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::<alloc::raw_vec::RawVecInner>::try_allocate_in
+    exec.root_ns:root@1.0.0::adv_load_preimage::<alloc::raw_vec::RawVecInner>::try_allocate_in
     trace.252
     nop
     push.8
@@ -264,7 +264,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::adv_load_preimage::alloc::raw_vec::handle_error
+        exec.root_ns:root@1.0.0::adv_load_preimage::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -304,7 +304,7 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
         swap.4
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::adv_load_preimage::std::mem::pipe_preimage_to_memory
+        exec.root_ns:root@1.0.0::adv_load_preimage::std::mem::pipe_preimage_to_memory
         trace.252
         nop
         drop
@@ -536,7 +536,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::adv_load_preimage::<core::ptr::alignment::Alignment>::max
+        exec.root_ns:root@1.0.0::adv_load_preimage::<core::ptr::alignment::Alignment>::max
         trace.252
         nop
         push.0
@@ -585,7 +585,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
             else
                 trace.240
                 nop
-                exec.::root_ns:root@1.0.0::adv_load_preimage::intrinsics::mem::heap_base
+                exec.::intrinsics::mem::heap_base
                 trace.252
                 nop
                 trace.240
@@ -686,35 +686,6 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
 end
 
 @callconv("C")
-proc intrinsics::mem::heap_base(
-
-) -> i32
-    trace.240
-    nop
-    exec.::intrinsics::mem::heap_base
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::advice::adv_push_mapvaln(felt, felt, felt, felt) -> felt
-    trace.240
-    nop
-    exec.::intrinsics::advice::adv_push_mapvaln
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc std::mem::pipe_preimage_to_memory(felt, i32, felt, felt, felt, felt) -> i32
-    trace.240
-    nop
-    exec.::std::mem::pipe_preimage_to_memory
-    trace.252
-    nop
-end
-
-@callconv("C")
 proc <alloc::alloc::Global>::alloc_impl(
     i32,
     i32,
@@ -733,7 +704,7 @@ proc <alloc::alloc::Global>::alloc_impl(
     else
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::adv_load_preimage::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        exec.root_ns:root@1.0.0::adv_load_preimage::__rustc::__rust_no_alloc_shim_is_unstable_v2
         trace.252
         nop
         push.0
@@ -744,7 +715,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::adv_load_preimage::__rustc::__rust_alloc_zeroed
+            exec.root_ns:root@1.0.0::adv_load_preimage::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -752,7 +723,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::adv_load_preimage::__rustc::__rust_alloc
+            exec.root_ns:root@1.0.0::adv_load_preimage::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -831,7 +802,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::adv_load_preimage::<alloc::alloc::Global>::alloc_impl
+    exec.root_ns:root@1.0.0::adv_load_preimage::<alloc::alloc::Global>::alloc_impl
     trace.252
     nop
     push.12
@@ -974,7 +945,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
     movup.2
     trace.240
     nop
-    exec.::std::math::u64::shr
+    exec.::miden::core::math::u64::shr
     trace.252
     nop
     drop
@@ -1023,7 +994,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::adv_load_preimage::<alloc::alloc::Global>::alloc_impl
+                    exec.root_ns:root@1.0.0::adv_load_preimage::<alloc::alloc::Global>::alloc_impl
                     trace.252
                     nop
                     dup.2
@@ -1049,7 +1020,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::adv_load_preimage::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.root_ns:root@1.0.0::adv_load_preimage::<alloc::alloc::Global as core::alloc::Allocator>::allocate
                     trace.252
                     nop
                     push.8
@@ -1340,5 +1311,40 @@ proc <core::ptr::alignment::Alignment>::max(
     u32gt
     neq
     cdrop
+end
+
+# mod ::root_ns:root@1.0.0::adv_load_preimage::intrinsics::advice
+
+@callconv("C")
+proc adv_push_mapvaln(felt, felt, felt, felt) -> felt
+    trace.240
+    nop
+    exec.::intrinsics::advice::adv_push_mapvaln
+    trace.252
+    nop
+end
+
+# mod ::root_ns:root@1.0.0::adv_load_preimage::intrinsics::mem
+
+@callconv("C")
+proc heap_base(
+
+) -> i32
+    trace.240
+    nop
+    exec.::intrinsics::mem::heap_base
+    trace.252
+    nop
+end
+
+# mod ::root_ns:root@1.0.0::adv_load_preimage::std::mem
+
+@callconv("C")
+proc pipe_preimage_to_memory(felt, i32, felt, felt, felt, felt) -> i32
+    trace.240
+    nop
+    exec.::miden::core::mem::pipe_preimage_to_memory
+    trace.252
+    nop
 end
 

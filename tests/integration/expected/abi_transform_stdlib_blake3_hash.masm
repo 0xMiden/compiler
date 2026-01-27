@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::root_ns:root@1.0.0
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash
+# mod ::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash
 
 @callconv("C")
 pub proc entrypoint(i32, i32)
@@ -136,7 +136,7 @@ pub proc entrypoint(i32, i32)
     swap.8
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::std::crypto::hashes::blake3::hash_1to1
+    exec.root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::std::crypto::hashes::blake3::hash_1to1
     trace.252
     nop
     push.24
@@ -263,21 +263,13 @@ pub proc entrypoint(i32, i32)
     nop
 end
 
+# mod ::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::std::crypto::hashes::blake3
+
 @callconv("C")
-proc std::crypto::hashes::blake3::hash_1to1(
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32
-)
+proc hash_1to1(i32, i32, i32, i32, i32, i32, i32, i32, i32)
     trace.240
     nop
-    exec.::std::crypto::hashes::blake3::hash_1to1
+    exec.::miden::core::crypto::hashes::blake3::hash
     trace.252
     nop
     movup.8

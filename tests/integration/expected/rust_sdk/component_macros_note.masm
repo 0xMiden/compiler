@@ -1,14 +1,14 @@
-# mod miden:base/note-script@1.0.0
+# mod ::miden:base/note-script@1.0.0
 
 @callconv("canon-lift")
 pub proc run(felt, felt, felt, felt)
-    exec.::miden:base/note-script@1.0.0::init
+    exec.miden:base/note-script@1.0.0::init
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::miden:base/note-script@1.0.0#run
+    exec.miden:base/note-script@1.0.0::component_macros_note::miden:base/note-script@1.0.0_run
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -21,7 +21,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:base/note-script@1.0.0::component_macros_note
+# mod ::miden:base/note-script@1.0.0::component_macros_note
 
 @callconv("C")
 proc component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22(
@@ -52,7 +52,7 @@ proc component_macros_note::bindings::miden::component_macros_account::component
 )
     trace.240
     nop
-    call.::miden:component-macros-account/component-macros-account@0.1.0::test-custom-types
+    call.miden:component-macros-account/component-macros-account@0.1.0::test-custom-types
     trace.252
     nop
     push.0
@@ -96,7 +96,7 @@ proc component_macros_note::bindings::__link_custom_section_describing_imports(
 end
 
 @callconv("C")
-proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
+proc miden:base/note-script@1.0.0_run(felt, felt, felt, felt)
     drop
     drop
     drop
@@ -123,7 +123,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::wit_bindgen::rt::run_ctors_once
+    exec.miden:base/note-script@1.0.0::component_macros_note::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.8
@@ -177,7 +177,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     swap.4
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22
+    exec.miden:base/note-script@1.0.0::component_macros_note::component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22
     trace.252
     nop
     push.12
@@ -308,7 +308,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::component_macros_note::__wasm_call_ctors
+        exec.miden:base/note-script@1.0.0::component_macros_note::__wasm_call_ctors
         trace.252
         nop
         push.1

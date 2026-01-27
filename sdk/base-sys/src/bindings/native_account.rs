@@ -4,7 +4,7 @@ use super::types::Asset;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::native_account::add_asset"]
+    #[link_name = "miden::protocol::native_account::add_asset"]
     fn extern_native_account_add_asset(
         asset_3: Felt,
         asset_2: Felt,
@@ -12,7 +12,7 @@ unsafe extern "C" {
         asset_0: Felt,
         ptr: *mut Asset,
     );
-    #[link_name = "miden::native_account::remove_asset"]
+    #[link_name = "miden::protocol::native_account::remove_asset"]
     fn extern_native_account_remove_asset(
         asset_3: Felt,
         asset_2: Felt,
@@ -20,11 +20,11 @@ unsafe extern "C" {
         asset_0: Felt,
         ptr: *mut Asset,
     );
-    #[link_name = "miden::native_account::incr_nonce"]
+    #[link_name = "miden::protocol::native_account::incr_nonce"]
     fn extern_native_account_incr_nonce() -> Felt;
-    #[link_name = "miden::native_account::compute_delta_commitment"]
+    #[link_name = "miden::protocol::native_account::compute_delta_commitment"]
     fn extern_native_account_compute_delta_commitment(ptr: *mut Word);
-    #[link_name = "miden::native_account::was_procedure_called"]
+    #[link_name = "miden::protocol::native_account::was_procedure_called"]
     fn extern_native_account_was_procedure_called(
         proc_root_3: Felt,
         proc_root_2: Felt,
@@ -72,7 +72,7 @@ pub fn add_asset(asset: Asset) -> Asset {
             asset.inner[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init()
     }
 }
 

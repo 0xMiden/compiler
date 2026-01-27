@@ -855,12 +855,9 @@ impl HirLowering for hir::Exec {
             }
         };
 
-        // Convert the path components to an absolute procedure path
-        let mut path = callee_path.to_library_path();
-        let name = masm::ProcedureName::from_raw_parts(
-            path.pop().expect("expected at least two path components"),
-        );
-        let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
+        // Convert the symbol path to a fully-qualified procedure path
+        let path = callee_path.to_library_path();
+        let callee = masm::InvocationTarget::Path(masm::Span::new(self.span(), path.as_path().into()));
 
         emitter.inst_emitter(self.as_operation()).exec(callee, signature, self.span());
 
@@ -909,12 +906,9 @@ impl HirLowering for hir::Call {
             }
         };
 
-        // Convert the path components to an absolute procedure path
-        let mut path = callee_path.to_library_path();
-        let name = masm::ProcedureName::from_raw_parts(
-            path.pop().expect("expected at least two path components"),
-        );
-        let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
+        // Convert the symbol path to a fully-qualified procedure path
+        let path = callee_path.to_library_path();
+        let callee = masm::InvocationTarget::Path(masm::Span::new(self.span(), path.as_path().into()));
 
         emitter.inst_emitter(self.as_operation()).call(callee, signature, self.span());
 

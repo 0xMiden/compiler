@@ -157,7 +157,8 @@ fn test_all_templates_and_examples() {
     let expected_function = "auth__procedure";
     let lib = auth_comp.unwrap_library();
     assert!(
-        lib.exports().any(|export| { export.name.name.as_str() == expected_function }),
+        lib.exports()
+            .any(|export| export.path().as_ref().last() == Some(expected_function)),
         "expected one of the authentication component exports to contain  function \
          '{expected_function}'"
     );

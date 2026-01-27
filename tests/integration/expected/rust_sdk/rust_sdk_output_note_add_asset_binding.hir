@@ -24,7 +24,7 @@ builtin.component miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-n
             v124 = arith.constant 0 : felt;
             v1 = arith.constant 0 : i32;
             v167, v168, v169, v170 = scf.while v1, v7, v124 : i32, i32, felt, i32 {
-            ^block36(v171: i32, v172: i32, v173: felt):
+            ^block34(v171: i32, v172: i32, v173: felt):
                 v184 = arith.constant 0 : i32;
                 v31 = arith.constant 16 : i32;
                 v15 = arith.eq v171, v31 : i1;
@@ -32,7 +32,7 @@ builtin.component miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-n
                 v17 = hir.bitcast v16 : i32;
                 v19 = arith.neq v17, v184 : i1;
                 v162 = scf.if v19 : i32 {
-                ^block35:
+                ^block33:
                     v133 = ub.poison i32 : i32;
                     scf.yield v133;
                 } else {
@@ -60,7 +60,7 @@ builtin.component miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-n
                 v156 = arith.trunc v166 : i1;
                 scf.condition v156, v162, v163, v164, v172;
             } do {
-            ^block37(v174: i32, v175: i32, v176: felt, v177: i32):
+            ^block35(v174: i32, v175: i32, v176: felt, v177: i32):
                 scf.yield v174, v175, v176;
             };
             v181 = arith.constant 16 : i32;
@@ -143,7 +143,7 @@ builtin.component miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-n
             hir.assertz v89 #[code = 250];
             v90 = hir.int_to_ptr v87 : ptr<byte, felt>;
             v91 = hir.load v90 : felt;
-            hir.exec @miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1/rust_sdk_output_note_add_asset_binding/miden::output_note::add_asset(v72, v79, v86, v91, v65)
+            hir.exec @miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1/rust_sdk_output_note_add_asset_binding/miden::protocol::output_note::add_asset(v72, v79, v86, v91, v65)
             builtin.ret ;
         };
 
@@ -180,10 +180,9 @@ builtin.component miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-n
             builtin.ret ;
         };
 
-        private builtin.function @miden::output_note::add_asset(v116: felt, v117: felt, v118: felt, v119: felt, v120: felt) {
+        private builtin.function @miden::protocol::output_note::add_asset(v116: felt, v117: felt, v118: felt, v119: felt, v120: felt) {
         ^block23(v116: felt, v117: felt, v118: felt, v119: felt, v120: felt):
-            hir.exec @miden/output_note/add_asset(v116, v117, v118, v119, v120)
-            builtin.ret ;
+            ub.unreachable ;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -198,7 +197,7 @@ builtin.component miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-n
     };
 
     public builtin.function @binding() -> felt {
-    ^block27:
+    ^block25:
         v121 = hir.exec @miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1/rust_sdk_output_note_add_asset_binding/miden:rust-sdk-output-note-add-asset-binding/rust-sdk-output-note-add-asset-binding@0.0.1#binding() : felt
         builtin.ret v121;
     };

@@ -1,14 +1,14 @@
-# mod miden:cross-ctx-account/foo@1.0.0
+# mod ::miden:cross-ctx-account/foo@1.0.0
 
 @callconv("canon-lift")
 pub proc process-felt(felt) -> felt
-    exec.::miden:cross-ctx-account/foo@1.0.0::init
+    exec.miden:cross-ctx-account/foo@1.0.0::init
     trace.240
     nop
-    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::miden:cross-ctx-account/foo@1.0.0#process-felt
+    exec.miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::miden:cross-ctx-account/foo@1.0.0_process-felt
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -21,7 +21,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:cross-ctx-account/foo@1.0.0::cross_ctx_account
+# mod ::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -49,7 +49,7 @@ proc cross_ctx_account::bindings::__link_custom_section_describing_imports(
 end
 
 @callconv("C")
-proc miden:cross-ctx-account/foo@1.0.0#process-felt(felt) -> felt
+proc miden:cross-ctx-account/foo@1.0.0_process-felt(felt) -> felt
     push.1114148
     u32divmod.4
     swap.1
@@ -62,7 +62,7 @@ proc miden:cross-ctx-account/foo@1.0.0#process-felt(felt) -> felt
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::wit_bindgen::rt::run_ctors_once
+    exec.miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.0
@@ -144,7 +144,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::__wasm_call_ctors
+        exec.miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::__wasm_call_ctors
         trace.252
         nop
         push.1

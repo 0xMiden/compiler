@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::root_ns:root@1.0.0
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -18,7 +18,7 @@ proc init
     mem_store.278536
 end
 
-# mod root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4
+# mod ::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4
 
 @callconv("C")
 proc __rustc::__rust_alloc(i32, i32) -> i32
@@ -27,7 +27,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -48,7 +48,7 @@ proc __rustc::__rust_realloc(i32, i32, i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -152,7 +152,7 @@ proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -248,7 +248,7 @@ pub proc entrypoint(
     u32wrapping_add
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::miden_base_sys::bindings::active_note::get_inputs
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::miden_base_sys::bindings::active_note::get_inputs
     trace.252
     nop
     push.12
@@ -271,7 +271,7 @@ pub proc entrypoint(
     dup.0
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_field::wasm32::Felt as core::convert::From<u32>>::from
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<miden_field::wasm32::Felt as core::convert::From<u32>>::from
     trace.252
     nop
     push.4
@@ -415,7 +415,7 @@ pub proc entrypoint(
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+                    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     push.4
@@ -423,7 +423,7 @@ pub proc entrypoint(
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+                    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     push.16
@@ -493,7 +493,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<core::ptr::alignment::Alignment>::max
+        exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<core::ptr::alignment::Alignment>::max
         trace.252
         nop
         push.0
@@ -542,7 +542,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
             else
                 trace.240
                 nop
-                exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::mem::heap_base
+                exec.::intrinsics::mem::heap_base
                 trace.252
                 nop
                 trace.240
@@ -643,17 +643,6 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
 end
 
 @callconv("C")
-proc intrinsics::mem::heap_base(
-
-) -> i32
-    trace.240
-    nop
-    exec.::intrinsics::mem::heap_base
-    trace.252
-    nop
-end
-
-@callconv("C")
 proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     i32,
     i32,
@@ -694,7 +683,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::try_allocate_in
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::try_allocate_in
     trace.252
     nop
     push.8
@@ -818,7 +807,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::alloc::raw_vec::handle_error
+        exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -835,7 +824,7 @@ proc <alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop
     swap.2
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::deallocate
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::deallocate
     trace.252
     nop
 end
@@ -875,7 +864,7 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::with_capacity_in
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::with_capacity_in
     trace.252
     nop
     push.8
@@ -918,7 +907,7 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     u32shr
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::miden::active_note::get_inputs
+    exec.::miden::protocol::active_note::get_inputs
     trace.252
     nop
     push.8
@@ -1014,7 +1003,7 @@ proc <alloc::alloc::Global>::alloc_impl(
     else
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_no_alloc_shim_is_unstable_v2
         trace.252
         nop
         push.0
@@ -1025,7 +1014,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_alloc_zeroed
+            exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -1033,7 +1022,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_alloc
+            exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -1109,7 +1098,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::current_memory
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::current_memory
     trace.252
     nop
     push.8
@@ -1174,7 +1163,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         movdn.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         trace.252
         nop
     end
@@ -1342,7 +1331,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_dealloc
+        exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_dealloc
         trace.252
         nop
     end
@@ -1387,7 +1376,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global>::alloc_impl
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global>::alloc_impl
     trace.252
     nop
     push.12
@@ -1530,7 +1519,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
     movup.2
     trace.240
     nop
-    exec.::std::math::u64::shr
+    exec.::miden::core::math::u64::shr
     trace.252
     nop
     drop
@@ -1579,7 +1568,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global>::alloc_impl
+                    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global>::alloc_impl
                     trace.252
                     nop
                     dup.2
@@ -1605,7 +1594,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global as core::alloc::Allocator>::allocate
                     trace.252
                     nop
                     push.8
@@ -1899,21 +1888,10 @@ proc <core::ptr::alignment::Alignment>::max(
 end
 
 @callconv("C")
-proc miden::active_note::get_inputs(i32) -> i32
-    trace.240
-    nop
-    exec.::miden::active_note::get_inputs
-    trace.252
-    nop
-    swap.1
-    drop
-end
-
-@callconv("C")
 pub proc cabi_realloc(i32, i32, i32, i32) -> i32
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::cabi_realloc_wit_bindgen_0_46_0
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::cabi_realloc_wit_bindgen_0_46_0
     trace.252
     nop
 end
@@ -1922,13 +1900,13 @@ end
 proc alloc::alloc::alloc(i32, i32) -> i32
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_no_alloc_shim_is_unstable_v2
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_no_alloc_shim_is_unstable_v2
     trace.252
     nop
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_alloc
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_alloc
     trace.252
     nop
 end
@@ -1946,7 +1924,7 @@ proc wit_bindgen::rt::cabi_realloc(
     if.true
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_realloc
+        exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::__rustc::__rust_realloc
         trace.252
         nop
         push.0
@@ -1970,7 +1948,7 @@ proc wit_bindgen::rt::cabi_realloc(
             dup.2
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::alloc::alloc::alloc
+            exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::alloc::alloc::alloc
             trace.252
             nop
         end
@@ -2024,21 +2002,59 @@ end
 pub proc cabi_realloc_wit_bindgen_0_46_0(i32, i32, i32, i32) -> i32
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::wit_bindgen::rt::cabi_realloc
+    exec.root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::wit_bindgen::rt::cabi_realloc
     trace.252
     nop
 end
 
-# mod miden::active_note
+# mod ::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::intrinsics::mem
+
+@callconv("C")
+proc heap_base(
+
+) -> i32
+    trace.240
+    nop
+    exec.::intrinsics::mem::heap_base
+    trace.252
+    nop
+end
+
+# mod ::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::miden::protocol::active_note
+
+@callconv("C")
+proc get_inputs(i32) -> i32
+    drop
+    push.0
+    assert
+end
+
+# mod ::miden::protocol::active_note
 
 pub proc get_inputs
+    dup.0
     push.4294967295
+    swap.1
+    mem_store
+    dup.0
     push.1
+    u32wrapping_add
+    push.1
+    swap.1
+    mem_store
+    dup.0
     push.2
+    u32wrapping_add
+    push.2
+    swap.1
+    mem_store
+    dup.0
     push.3
-    dup.4
-    mem_storew_be
-    dropw
+    u32wrapping_add
+    push.3
+    swap.1
+    mem_store
+    drop
     push.4
 end
 

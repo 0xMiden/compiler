@@ -1,29 +1,29 @@
-# mod miden:counter-contract/counter-contract@0.1.0
+# mod ::miden:counter-contract/counter-contract@0.1.0
 
 @callconv("canon-lift")
 pub proc get-count(
 
 ) -> felt
-    exec.::miden:counter-contract/counter-contract@0.1.0::init
+    exec.miden:counter-contract/counter-contract@0.1.0::init
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden:counter-contract/counter-contract@0.1.0#get-count
+    exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::miden:counter-contract/counter-contract@0.1.0_get-count
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 @callconv("canon-lift")
 pub proc increment-count(
 
 ) -> felt
-    exec.::miden:counter-contract/counter-contract@0.1.0::init
+    exec.miden:counter-contract/counter-contract@0.1.0::init
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden:counter-contract/counter-contract@0.1.0#increment-count
+    exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::miden:counter-contract/counter-contract@0.1.0_increment-count
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -36,7 +36,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -47,7 +47,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:counter-contract/counter-contract@0.1.0::counter_contract
+# mod ::miden:counter-contract/counter-contract@0.1.0::counter_contract
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -91,7 +91,7 @@ proc miden_base_sys::bindings::storage::get_map_item(
     push.0
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
+    exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     push.12
@@ -169,7 +169,7 @@ proc miden_base_sys::bindings::storage::get_map_item(
     swap.5
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden::active_account::get_map_item
+    exec.::miden::protocol::active_account::get_map_item
     trace.252
     nop
     dup.0
@@ -257,7 +257,7 @@ proc miden_base_sys::bindings::storage::get_map_item(
 end
 
 @callconv("C")
-proc miden:counter-contract/counter-contract@0.1.0#get-count(
+proc miden:counter-contract/counter-contract@0.1.0_get-count(
 
 ) -> felt
     push.1114144
@@ -282,7 +282,7 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     nop
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::wit_bindgen::rt::run_ctors_once
+    exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.12
@@ -365,7 +365,7 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     swap.1
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden_base_sys::bindings::storage::get_map_item
+    exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::miden_base_sys::bindings::storage::get_map_item
     trace.252
     nop
     push.28
@@ -399,7 +399,7 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
 end
 
 @callconv("C")
-proc miden:counter-contract/counter-contract@0.1.0#increment-count(
+proc miden:counter-contract/counter-contract@0.1.0_increment-count(
 
 ) -> felt
     push.1114144
@@ -424,7 +424,7 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     nop
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::wit_bindgen::rt::run_ctors_once
+    exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.12
@@ -507,7 +507,7 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     swap.1
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden_base_sys::bindings::storage::get_map_item
+    exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::miden_base_sys::bindings::storage::get_map_item
     trace.252
     nop
     push.44
@@ -536,13 +536,13 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     swap.1
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
+    exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
     trace.252
     nop
     push.0
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
+    exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     push.28
@@ -633,7 +633,7 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     swap.9
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden::native_account::set_map_item
+    exec.::miden::protocol::native_account::set_map_item
     trace.252
     nop
     push.64
@@ -692,7 +692,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::__wasm_call_ctors
+        exec.miden:counter-contract/counter-contract@0.1.0::counter_contract::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -810,178 +810,35 @@ proc <miden_field::wasm32::Felt as core::convert::From<u8>>::from(
     u32and
 end
 
-@callconv("C")
-proc miden::active_account::get_map_item(felt, felt, felt, felt, felt, i32)
-    trace.240
-    nop
-    exec.::miden::active_account::get_map_item
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
+# mod ::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden::protocol::active_account
 
 @callconv("C")
-proc miden::native_account::set_map_item(
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    i32
-)
-    trace.240
-    nop
-    exec.::miden::native_account::set_map_item
-    trace.252
-    nop
-    movup.8
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.16
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.20
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.24
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.28
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
+proc get_map_item(felt, felt, felt, felt, felt, i32)
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    push.0
+    assert
+end
+
+# mod ::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden::protocol::native_account
+
+@callconv("C")
+proc set_map_item(felt, felt, felt, felt, felt, felt, felt, felt, felt, i32)
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    push.0
+    assert
 end
 

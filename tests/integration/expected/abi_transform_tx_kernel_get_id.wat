@@ -152,7 +152,7 @@
     local.get 1
     i32.const 8
     i32.add
-    call $miden::active_account::get_id
+    call $miden::protocol::active_account::get_id
     local.get 0
     local.get 1
     i64.load offset=8 align=4
@@ -170,7 +170,7 @@
     i32.gt_u
     select
   )
-  (func $miden::active_account::get_id (;8;) (type 2) (param i32)
+  (func $miden::protocol::active_account::get_id (;8;) (type 2) (param i32)
     unreachable
   )
   (func $cabi_realloc (;9;) (type 1) (param i32 i32 i32 i32) (result i32)

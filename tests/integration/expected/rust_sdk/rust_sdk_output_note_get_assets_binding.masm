@@ -1,16 +1,16 @@
-# mod miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1
+# mod ::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> felt
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::init
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::init
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1#binding
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1_binding
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -23,7 +23,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -34,7 +34,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding
+# mod ::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -59,7 +59,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -89,7 +89,7 @@ proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -164,7 +164,7 @@ proc rust_sdk_output_note_get_assets_binding::bindings::__link_custom_section_de
 end
 
 @callconv("C")
-proc miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1#binding(
+proc miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1_binding(
 
 ) -> felt
     push.1114144
@@ -189,7 +189,7 @@ proc miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-asse
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::wit_bindgen::rt::run_ctors_once
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -198,7 +198,7 @@ proc miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-asse
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::miden_base_sys::bindings::output_note::get_assets
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::miden_base_sys::bindings::output_note::get_assets
     trace.252
     nop
     push.12
@@ -218,16 +218,12 @@ proc miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-asse
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.16
     push.4
-    dup.3
+    dup.2
     u32wrapping_add
-    dup.1
-    swap.2
-    swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::deallocate
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop
     trace.252
     nop
     push.16
@@ -293,7 +289,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__wasm_call_ctors
+        exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -355,7 +351,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<core::ptr::alignment::Alignment>::max
+        exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<core::ptr::alignment::Alignment>::max
         trace.252
         nop
         push.0
@@ -404,7 +400,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
             else
                 trace.240
                 nop
-                exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::intrinsics::mem::heap_base
+                exec.::intrinsics::mem::heap_base
                 trace.252
                 nop
                 trace.240
@@ -505,17 +501,6 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
 end
 
 @callconv("C")
-proc intrinsics::mem::heap_base(
-
-) -> i32
-    trace.240
-    nop
-    exec.::intrinsics::mem::heap_base
-    trace.252
-    nop
-end
-
-@callconv("C")
 proc <alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(
     i32
 )
@@ -550,7 +535,7 @@ proc <alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(
     swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::with_capacity_in
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::with_capacity_in
     trace.252
     nop
     push.8
@@ -659,7 +644,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::try_allocate_in
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::try_allocate_in
     trace.252
     nop
     push.8
@@ -783,7 +768,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
         swap.1
         trace.240
         nop
-        exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::alloc::raw_vec::handle_error
+        exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -821,7 +806,7 @@ proc miden_base_sys::bindings::output_note::get_assets(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity
     trace.252
     nop
     push.8
@@ -849,7 +834,7 @@ proc miden_base_sys::bindings::output_note::get_assets(
     swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::miden::output_note::get_assets
+    exec.::miden::protocol::output_note::get_assets
     trace.252
     nop
     push.8
@@ -915,6 +900,20 @@ proc miden_base_sys::bindings::output_note::get_assets(
 end
 
 @callconv("C")
+proc <alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop(
+    i32
+)
+    push.16
+    dup.0
+    swap.2
+    trace.240
+    nop
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::deallocate
+    trace.252
+    nop
+end
+
+@callconv("C")
 proc <alloc::alloc::Global>::alloc_impl(
     i32,
     i32,
@@ -933,7 +932,7 @@ proc <alloc::alloc::Global>::alloc_impl(
     else
         trace.240
         nop
-        exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__rustc::__rust_no_alloc_shim_is_unstable_v2
         trace.252
         nop
         push.0
@@ -944,7 +943,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__rustc::__rust_alloc_zeroed
+            exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -952,7 +951,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__rustc::__rust_alloc
+            exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -1028,7 +1027,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::current_memory
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::current_memory
     trace.252
     nop
     push.8
@@ -1093,7 +1092,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         movdn.2
         trace.240
         nop
-        exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
         trace.252
         nop
     end
@@ -1261,7 +1260,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
         swap.1
         trace.240
         nop
-        exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__rustc::__rust_dealloc
+        exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::__rustc::__rust_dealloc
         trace.252
         nop
     end
@@ -1306,7 +1305,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::alloc::Global>::alloc_impl
+    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::alloc::Global>::alloc_impl
     trace.252
     nop
     push.12
@@ -1449,7 +1448,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
     movup.2
     trace.240
     nop
-    exec.::std::math::u64::shr
+    exec.::miden::core::math::u64::shr
     trace.252
     nop
     drop
@@ -1498,7 +1497,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::alloc::Global>::alloc_impl
+                    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::alloc::Global>::alloc_impl
                     trace.252
                     nop
                     dup.2
@@ -1524,7 +1523,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::<alloc::alloc::Global as core::alloc::Allocator>::allocate
                     trace.252
                     nop
                     push.8
@@ -1817,14 +1816,26 @@ proc <core::ptr::alignment::Alignment>::max(
     cdrop
 end
 
+# mod ::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::intrinsics::mem
+
 @callconv("C")
-proc miden::output_note::get_assets(i32, felt) -> i32
+proc heap_base(
+
+) -> i32
     trace.240
     nop
-    exec.::miden::output_note::get_assets
+    exec.::intrinsics::mem::heap_base
     trace.252
     nop
-    swap.1
+end
+
+# mod ::miden:rust-sdk-output-note-get-assets-binding/rust-sdk-output-note-get-assets-binding@0.0.1::rust_sdk_output_note_get_assets_binding::miden::protocol::output_note
+
+@callconv("C")
+proc get_assets(i32, felt) -> i32
     drop
+    drop
+    push.0
+    assert
 end
 

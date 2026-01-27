@@ -122,7 +122,7 @@
       local.get 1
       f32.load
       local.get 2
-      call $miden::faucet::mint
+      call $miden::protocol::faucet::mint
       local.get 0
       local.get 2
       i64.load
@@ -153,11 +153,11 @@
     (func $intrinsics::felt::from_u32 (;6;) (type 3) (param i32) (result f32)
       unreachable
     )
-    (func $miden::faucet::mint (;7;) (type 4) (param f32 f32 f32 f32 i32)
+    (func $miden::protocol::faucet::mint (;7;) (type 4) (param f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "Irust_sdk_account_faucet_mint_binding\01\0b0.0.1\05\02\03\01")
+    (@custom "rodata,miden_account" (after data) "Irust_sdk_account_faucet_mint_binding\01\0b0.0.1\05\02\03\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "asset" (type $asset (;1;)))
   (core instance $main (;0;) (instantiate $main))

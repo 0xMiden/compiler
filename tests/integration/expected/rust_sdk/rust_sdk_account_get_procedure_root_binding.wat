@@ -34,7 +34,7 @@
       i32.const 0
       call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
       local.get 0
-      call $miden::active_account::get_procedure_root
+      call $miden::protocol::active_account::get_procedure_root
       global.get $GOT.data.internal.__memory_base
       i32.const 1048584
       i32.add
@@ -84,11 +84,11 @@
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden::active_account::get_procedure_root (;5;) (type 3) (param f32 i32)
+    (func $miden::protocol::active_account::get_procedure_root (;5;) (type 3) (param f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "Wrust_sdk_account_get_procedure_root_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "Wrust_sdk_account_get_procedure_root_binding\01\0b0.0.1\03\01\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "word" (type $word (;1;)))
   (core instance $main (;0;) (instantiate $main))

@@ -18,7 +18,7 @@ struct AuthComponent {
     #[storage(
         slot(0),
         description = "owner public key",
-        type = "auth::rpo_falcon512::pub_key"
+        type = "miden::standards::auth::falcon512_rpo::pub_key"
     )]
     owner_public_key: Value,
 }

@@ -462,7 +462,7 @@
       f32.load offset=4
       local.get 4
       f32.load
-      call $miden::output_note::create
+      call $miden::protocol::output_note::create
     )
     (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from (;15;) (type 10) (param i32 i32)
       local.get 0
@@ -752,7 +752,7 @@
       i32.gt_u
       select
     )
-    (func $miden::output_note::create (;32;) (type 18) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
+    (func $miden::protocol::output_note::create (;32;) (type 18) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
       unreachable
     )
     (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00")

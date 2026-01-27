@@ -22,11 +22,22 @@ impl Word {
         }
     }
 }
+impl From<(Felt, Felt, Felt, Felt)> for Word {
+    fn from(word: (Felt, Felt, Felt, Felt)) -> Self {
+        Self { inner: word }
+    }
+}
 impl From<[Felt; 4]> for Word {
     fn from(word: [Felt; 4]) -> Self {
         Self {
             inner: (word[0], word[1], word[2], word[3]),
         }
+    }
+}
+impl From<Word> for (Felt, Felt, Felt, Felt) {
+    #[inline(always)]
+    fn from(word: Word) -> Self {
+        word.inner
     }
 }
 impl From<Word> for [Felt; 4] {

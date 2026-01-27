@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::root_ns:root@1.0.0
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::rust_sdk_stdlib_smt_set
+# mod ::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set
 
 @callconv("C")
 proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
@@ -248,7 +248,7 @@ pub proc entrypoint(
     swap.6
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::std::collections::smt::set
+    exec.root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::std::collections::smt::set
     trace.252
     nop
     push.88
@@ -425,7 +425,7 @@ pub proc entrypoint(
     push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::miden::core::math::u64::lt
     trace.252
     nop
     assert
@@ -457,7 +457,7 @@ pub proc entrypoint(
     push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::miden::core::math::u64::lt
     trace.252
     nop
     assert
@@ -489,7 +489,7 @@ pub proc entrypoint(
     push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::miden::core::math::u64::lt
     trace.252
     nop
     assert
@@ -521,7 +521,7 @@ pub proc entrypoint(
     push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::miden::core::math::u64::lt
     trace.252
     nop
     assert
@@ -553,7 +553,7 @@ pub proc entrypoint(
     push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::miden::core::math::u64::lt
     trace.252
     nop
     assert
@@ -585,7 +585,7 @@ pub proc entrypoint(
     push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::miden::core::math::u64::lt
     trace.252
     nop
     assert
@@ -617,7 +617,7 @@ pub proc entrypoint(
     push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::miden::core::math::u64::lt
     trace.252
     nop
     assert
@@ -649,7 +649,7 @@ pub proc entrypoint(
     push.4294967295
     trace.240
     nop
-    exec.::std::math::u64::lt
+    exec.::miden::core::math::u64::lt
     trace.252
     nop
     assert
@@ -671,7 +671,7 @@ pub proc entrypoint(
     u32wrapping_add
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+    exec.root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
     trace.252
     nop
     push.0
@@ -692,7 +692,7 @@ pub proc entrypoint(
         u32wrapping_add
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+        exec.root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
         trace.252
         nop
         push.0
@@ -731,8 +731,10 @@ pub proc entrypoint(
     end
 end
 
+# mod ::root_ns:root@1.0.0::rust_sdk_stdlib_smt_set::std::collections::smt
+
 @callconv("C")
-proc std::collections::smt::set(
+proc set(
     felt,
     felt,
     felt,
@@ -749,7 +751,7 @@ proc std::collections::smt::set(
 )
     trace.240
     nop
-    exec.::std::collections::smt::set
+    exec.::miden::core::collections::smt::set
     trace.252
     nop
     movup.8

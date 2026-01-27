@@ -46,9 +46,9 @@
       end
     )
     (func $miden_base_sys::bindings::tx::get_block_number (;4;) (type 2) (result f32)
-      call $miden::tx::get_block_number
+      call $miden::protocol::tx::get_block_number
     )
-    (func $miden::tx::get_block_number (;5;) (type 2) (result f32)
+    (func $miden::protocol::tx::get_block_number (;5;) (type 2) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

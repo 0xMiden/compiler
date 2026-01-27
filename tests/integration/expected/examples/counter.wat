@@ -43,7 +43,7 @@
       local.get 1
       f32.load
       local.get 2
-      call $miden::active_account::get_map_item
+      call $miden::protocol::active_account::get_map_item
       local.get 0
       local.get 2
       i64.load
@@ -168,7 +168,7 @@
       local.get 0
       i32.const 32
       i32.add
-      call $miden::native_account::set_map_item
+      call $miden::protocol::native_account::set_map_item
       local.get 0
       i32.const 64
       i32.add
@@ -229,14 +229,14 @@
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden::active_account::get_map_item (;10;) (type 6) (param f32 f32 f32 f32 f32 i32)
+    (func $miden::protocol::active_account::get_map_item (;10;) (type 6) (param f32 f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::native_account::set_map_item (;11;) (type 7) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
+    (func $miden::protocol::native_account::set_map_item (;11;) (type 7) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "!counter-contract\95A simple example of a Miden counter contract using the Account Storage API\0b0.1.0\03\01\03\01\00\00\13count_map\019counter contract storage map\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "!counter-contract\95A simple example of a Miden counter contract using the Account Storage API\0b0.1.0\03\01\01\003miden::component::miden_counter_contract::count_map\01\019counter contract storage map\00\00\09word\00\00\09word\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;1;)))
   (core instance $main (;0;) (instantiate $main))
