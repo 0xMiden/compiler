@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use miden_felt_repr::FromFeltRepr;
-use miden_stdlib_sys::{Digest, Felt, Word, felt, hash_elements, intrinsics::crypto::merge};
+use miden_stdlib_sys::{Digest, Felt, Word, hash_elements, intrinsics::crypto::merge};
 
 /// Unique identifier for a Miden account, composed of two field elements.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr)]
@@ -115,7 +115,7 @@ impl Recipient {
             "`padded_inputs` length must be a multiple of 8"
         );
 
-        let empty_word = Word::new([felt!(0), felt!(0), felt!(0), felt!(0)]);
+        let empty_word = Word::from_u64_unchecked(0, 0, 0, 0);
 
         let serial_num_hash = merge([Digest::from_word(serial_num), Digest::from_word(empty_word)]);
         let merge_script = merge([serial_num_hash, script_digest]);
