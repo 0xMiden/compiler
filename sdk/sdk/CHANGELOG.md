@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pass an account as a parameter to note and tx script #798
 - `ActiveAccount` and `NativeAccount` traits to call tx kernel functions via `self.*` on an account #801
 - Expose `miden::note::build_recipient_hash` tx kernel function Rust equivalent as `Recipient::compute` #823
+- Assert range in `Felt` constructor, moving some range checks from runtime to compile time #891
 
 ## [0.7.1](https://github.com/0xMiden/compiler/compare/miden-v0.7.0...miden-v0.7.1) - 2025-11-13
 

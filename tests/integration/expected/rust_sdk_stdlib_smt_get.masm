@@ -480,16 +480,6 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     assertz
     push.13
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -512,16 +502,6 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     assertz
     push.12
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -544,16 +524,6 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     assertz
     push.11
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -576,16 +546,6 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     assertz
     push.10
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1

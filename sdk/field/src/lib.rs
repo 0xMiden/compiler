@@ -42,7 +42,11 @@ pub(crate) trait FeltImpl:
     + core::ops::MulAssign
     + core::ops::DivAssign
 {
-    /// Creates a `Felt` from `value` without range checks.
+    /// Creates a `Felt` from `value`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value > Felt::M`.
     fn from_u64_unchecked(value: u64) -> Self;
 
     /// Creates a `Felt` from a `u32` value.
