@@ -6,7 +6,6 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub(crate) const MODULE_ID: &str = "std::mem";
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Std),

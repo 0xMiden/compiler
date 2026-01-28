@@ -6,7 +6,6 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const MODULE_ID: &str = "miden::tx";
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Miden),

@@ -20,7 +20,7 @@ use super::{
 use crate::{
     WasmTranslationConfig,
     error::WasmResult,
-    intrinsics::Intrinsic,
+    intrinsics::{Intrinsic, IntrinsicsConversionResult},
     module::{
         DefinedFuncIndex,
         func_translator::FuncTranslator,
@@ -147,15 +147,28 @@ pub fn build_ir_module(
         let Ok(intrinsic) = Intrinsic::try_from(&import_path) else {
             continue;
         };
+        dbg!(&func_name);
+        dbg!(&intrinsic);
 
         // Check if this intrinsic can be inlined as an operation
         let Some(conv) = intrinsic.conversion_result() else {
             continue;
         };
 
-        if !conv.is_operation() {
-            continue;
+        // TODO: it seems like all intrinsics should have conversion_result() as an op
+        match conv {
+            IntrinsicsConversionResult::FunctionType(_function_type) => {
+                dbg!(&func_name);
+                if func_name != "intrinsics::mem::heap_base" {
+                    continue;
+                }
+            }
+            IntrinsicsConversionResult::MidenVmOp => (),
         }
+
+        // if !conv.is_operation() {
+        //     continue;
+        // }
 
         // Register the stub so calls to it will be inlined as operations
         if let Some(mut function_ref) = module_state.register_linker_stub(func_index, intrinsic)? {
