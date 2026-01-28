@@ -206,7 +206,11 @@ fn parse_function_body<B: ?Sized + Builder>(
     debug_assert_eq!(state.control_stack.len(), 1, "State not initialized");
 
     let func_name = builder.name();
-    let mut end_span = SourceSpan::default();
+    let mut end_span = SourceSpan::UNKNOWN;
+    // Track the last valid span to use as a fallback for instructions without DWARF debug info.
+    // This is particularly useful for `unreachable` instructions that follow panic calls,
+    // where the unreachable itself has no source location but should inherit the panic call's span.
+    let mut last_valid_span = SourceSpan::UNKNOWN;
     while !reader.eof() {
         let pos = reader.original_position();
         let (op, offset) = reader.read_with_offset().into_diagnostic()?;
@@ -215,7 +219,7 @@ fn parse_function_body<B: ?Sized + Builder>(
         let offset = (offset as u64)
             .checked_sub(module.wasm_file.code_section_offset)
             .expect("offset occurs before start of code section");
-        let mut span = SourceSpan::default();
+        let mut span = SourceSpan::UNKNOWN;
         if let Some(loc) = addr2line.find_location(offset).into_diagnostic()? {
             if let Some(file) = loc.file {
                 let path = std::path::Path::new(file);
@@ -267,7 +271,12 @@ fn parse_function_body<B: ?Sized + Builder>(
                         session.source_manager.load_file(&absolute_path).into_diagnostic()?;
                     let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
                     let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
-                    span = source_file.line_column_to_span(line, column).unwrap_or_default();
+                    span = source_file
+                        .line_column_to_span(line, column)
+                        .unwrap_or(SourceSpan::UNKNOWN);
+                    if !span.is_unknown() {
+                        last_valid_span = span;
+                    }
                 } else {
                     log::debug!(target: "module-parser",
                         "failed to resolve source path '{file}' for instruction at offset \
@@ -287,6 +296,15 @@ fn parse_function_body<B: ?Sized + Builder>(
             end_span = span;
         }
 
+        let effective_span = if span.is_unknown() && !last_valid_span.is_unknown() {
+            log::debug!(target: "module-parser",
+                "using last valid span as fallback for {:?} at offset {offset} in function {func_name}", op
+            );
+            last_valid_span
+        } else {
+            span
+        };
+
         translate_operator(
             &op,
             builder,
@@ -295,7 +313,7 @@ fn parse_function_body<B: ?Sized + Builder>(
             &module.module,
             mod_types,
             &session.diagnostics,
-            span,
+            effective_span,
         )?;
     }
     let pos = reader.original_position();
