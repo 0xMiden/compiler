@@ -1,3 +1,5 @@
+use alloc::rc::Rc;
+
 use midenc_hir::{derive::operation, effects::*, traits::*, *};
 
 use crate::ArithDialect;
@@ -522,6 +524,19 @@ pub struct Rotl {
 infer_return_ty_for_binary_op!(Rotl);
 has_no_effects!(Rotl);
 
+impl Canonicalizable for Rotl {
+    fn get_canonicalization_patterns(
+        rewrites: &mut patterns::RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        let name = context
+            .get_or_register_dialect::<ArithDialect>()
+            .expect_registered_name::<Self>();
+        rewrites
+            .push(crate::canonicalization::CanonicalizeI64RotateBy32ToSwap::for_op(context, name));
+    }
+}
+
 /// Bitwise rotate-right
 ///
 /// The rotation count must be < the bitwidth of the value type.
@@ -541,6 +556,19 @@ pub struct Rotr {
 
 infer_return_ty_for_binary_op!(Rotr);
 has_no_effects!(Rotr);
+
+impl Canonicalizable for Rotr {
+    fn get_canonicalization_patterns(
+        rewrites: &mut patterns::RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        let name = context
+            .get_or_register_dialect::<ArithDialect>()
+            .expect_registered_name::<Self>();
+        rewrites
+            .push(crate::canonicalization::CanonicalizeI64RotateBy32ToSwap::for_op(context, name));
+    }
+}
 
 /// Equality comparison
 #[operation(

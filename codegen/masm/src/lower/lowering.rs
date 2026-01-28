@@ -4,7 +4,7 @@ use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_hir::{
-    Op, OpExt, Span, SymbolTable, Value, ValueRange, ValueRef,
+    Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
     dialects::builtin,
     traits::{BinaryOp, Commutative},
 };
@@ -1210,10 +1210,53 @@ impl HirLowering for arith::Cto {
 }
 
 impl HirLowering for arith::Join {
+    fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let op = self.as_operation();
+
+        let args = self.required_operands();
+        if args.is_empty() {
+            return Ok(());
+        }
+
+        let mut constraints = emitter.constraints_for(op, &args);
+        let mut args = args.into_smallvec();
+
+        // For `i128`/`u128` we use a different stack order for 64-bit limbs.
+        //
+        // The IR specifies limbs most-significant to least-significant, but the runtime stack
+        // representation for two 64-bit limbs is (lo, hi).
+        if args.len() == 2 && matches!(self.ty(), Type::I128 | Type::U128) {
+            args.swap(0, 1);
+            constraints.swap(0, 1);
+        }
+
+        emitter
+            .schedule_operands(
+                &args,
+                &constraints,
+                op.span(),
+                SolverOptions {
+                    strict: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
+                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
+                    op.name(),
+                    &emitter.stack,
+                )
+            });
+
+        Ok(())
+    }
+
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        inst_emitter.pop().expect("operand stack is empty");
-        inst_emitter.pop().expect("operand stack is empty");
+        for _ in 0..self.num_operands() {
+            inst_emitter.pop().expect("operand stack is empty");
+        }
         inst_emitter.push(self.result().as_value_ref());
         Ok(())
     }
@@ -1223,8 +1266,9 @@ impl HirLowering for arith::Split {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
         inst_emitter.pop().expect("operand stack is empty");
-        inst_emitter.push(self.result_low().as_value_ref());
-        inst_emitter.push(self.result_high().as_value_ref());
+        for limb in self.limbs().iter().rev() {
+            inst_emitter.push(limb.borrow().as_value_ref());
+        }
         Ok(())
     }
 }
