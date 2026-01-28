@@ -6,8 +6,6 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const MODULE_ID: &str = "std::crypto::hashes::sha256";
-
 pub const HASH_1TO1: &str = "hash_1to1";
 pub const HASH_2TO1: &str = "hash_2to1";
 

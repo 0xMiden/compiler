@@ -6,8 +6,6 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub(crate) const MODULE_ID: &str = "std::crypto::dsa::rpo_falcon512";
-
 pub(crate) const RPO_FALCON512_VERIFY: &str = "verify";
 
 fn module_path() -> SymbolPath {

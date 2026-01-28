@@ -6,8 +6,6 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub(crate) const MODULE_ID: &str = "std::collections::smt";
-
 pub(crate) const GET: &str = "get";
 pub(crate) const SET: &str = "set";
 

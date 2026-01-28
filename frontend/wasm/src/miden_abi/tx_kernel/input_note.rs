@@ -6,8 +6,6 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const MODULE_ID: &str = "miden::input_note";
-
 fn module_path() -> SymbolPath {
     let parts = [
         SymbolNameComponent::Root,
