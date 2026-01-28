@@ -28,3 +28,4 @@ wit-bindgen-rust = { version = "0.46", default-features = false }
 [dev-dependencies]
 # Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 miden-objects = { workspace = true, features = ["std"] }
+trybuild.workspace = true

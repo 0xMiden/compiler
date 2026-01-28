@@ -73,6 +73,7 @@ Inflector = "0.11"
 intrusive-collections = "0.9"
 inventory = "0.3"
 log = "0.4"
+trybuild = "1.0"
 
 # Miden Dependencies
 miden-assembly = { version = "0.19", default-features = false }
