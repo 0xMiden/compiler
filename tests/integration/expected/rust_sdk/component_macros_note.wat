@@ -35,7 +35,7 @@
     (type (;0;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
     (type (;1;) (func))
     (type (;2;) (func (param f32 f32 f32 f32)))
-    (type (;3;) (func (param i32 i32)))
+    (type (;3;) (func (param i32 i64 i64 i64 i64)))
     (type (;4;) (func (param f32 f32) (result i32)))
     (type (;5;) (func (param i32) (result f32)))
     (type (;6;) (func (param i64) (result f32)))
@@ -52,27 +52,16 @@
     (func $miden:base/note-script@1.0.0#run (;3;) (type 2) (param f32 f32 f32 f32)
       (local i32 f32 f32 f32 f32 f32 f32 f32 f32)
       global.get $__stack_pointer
-      i32.const 48
+      i32.const 32
       i32.sub
       local.tee 4
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       local.get 4
-      i64.const 44
-      i64.store offset=40
-      local.get 4
-      i64.const 33
-      i64.store offset=32
-      local.get 4
-      i64.const 22
-      i64.store offset=24
-      local.get 4
       i64.const 11
-      i64.store offset=16
-      local.get 4
-      local.get 4
-      i32.const 16
-      i32.add
+      i64.const 22
+      i64.const 33
+      i64.const 44
       call $<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked
       i32.const 99
       call $intrinsics::felt::from_u32
@@ -100,7 +89,7 @@
       local.set 12
       local.get 4
       i64.const 0
-      i64.store offset=16
+      i64.store offset=24
       local.get 12
       local.get 11
       local.get 10
@@ -114,15 +103,15 @@
       local.get 7
       local.get 8
       local.get 4
-      i32.const 16
+      i32.const 24
       i32.add
       call $component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22
       local.get 4
-      f32.load offset=20
+      f32.load offset=28
       local.set 6
       block ;; label = @1
         local.get 4
-        f32.load offset=16
+        f32.load offset=24
         local.get 12
         call $intrinsics::felt::eq
         i32.const 1
@@ -135,7 +124,7 @@
         i32.ne
         br_if 0 (;@1;)
         local.get 4
-        i32.const 48
+        i32.const 32
         i32.add
         global.set $__stack_pointer
         return
@@ -160,33 +149,29 @@
         i32.store8
       end
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked (;5;) (type 3) (param i32 i32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked (;5;) (type 3) (param i32 i64 i64 i64 i64)
       (local f32 f32 f32)
       local.get 1
-      i64.load
       call $intrinsics::felt::from_u64_unchecked
-      local.set 2
-      local.get 1
-      i64.load offset=8
+      local.set 5
+      local.get 2
       call $intrinsics::felt::from_u64_unchecked
-      local.set 3
-      local.get 1
-      i64.load offset=16
+      local.set 6
+      local.get 3
       call $intrinsics::felt::from_u64_unchecked
-      local.set 4
+      local.set 7
       local.get 0
-      local.get 1
-      i64.load offset=24
+      local.get 4
       call $intrinsics::felt::from_u64_unchecked
       f32.store offset=12
       local.get 0
-      local.get 4
+      local.get 7
       f32.store offset=8
       local.get 0
-      local.get 3
+      local.get 6
       f32.store offset=4
       local.get 0
-      local.get 2
+      local.get 5
       f32.store
     )
     (func $intrinsics::felt::eq (;6;) (type 4) (param f32 f32) (result i32)

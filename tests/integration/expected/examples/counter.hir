@@ -33,60 +33,60 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             v20 = arith.constant 8 : u32;
             v19 = hir.bitcast v1 : u32;
             v21 = arith.add v19, v20 : u32 #[overflow = checked];
-            v433 = arith.constant 4 : u32;
-            v23 = arith.mod v21, v433 : u32;
+            v358 = arith.constant 4 : u32;
+            v23 = arith.mod v21, v358 : u32;
             hir.assertz v23 #[code = 250];
             v24 = hir.int_to_ptr v21 : ptr<byte, felt>;
             v25 = hir.load v24 : felt;
-            v432 = arith.constant 4 : u32;
+            v357 = arith.constant 4 : u32;
             v26 = hir.bitcast v1 : u32;
-            v28 = arith.add v26, v432 : u32 #[overflow = checked];
-            v431 = arith.constant 4 : u32;
-            v30 = arith.mod v28, v431 : u32;
+            v28 = arith.add v26, v357 : u32 #[overflow = checked];
+            v356 = arith.constant 4 : u32;
+            v30 = arith.mod v28, v356 : u32;
             hir.assertz v30 #[code = 250];
             v31 = hir.int_to_ptr v28 : ptr<byte, felt>;
             v32 = hir.load v31 : felt;
             v33 = hir.bitcast v1 : u32;
-            v430 = arith.constant 4 : u32;
-            v35 = arith.mod v33, v430 : u32;
+            v355 = arith.constant 4 : u32;
+            v35 = arith.mod v33, v355 : u32;
             hir.assertz v35 #[code = 250];
             v36 = hir.int_to_ptr v33 : ptr<byte, felt>;
             v37 = hir.load v36 : felt;
             hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden::active_account::get_map_item(v11, v18, v25, v32, v37, v7)
             v38 = hir.bitcast v7 : u32;
-            v429 = arith.constant 8 : u32;
-            v40 = arith.mod v38, v429 : u32;
+            v354 = arith.constant 8 : u32;
+            v40 = arith.mod v38, v354 : u32;
             hir.assertz v40 #[code = 250];
             v41 = hir.int_to_ptr v38 : ptr<byte, i64>;
             v42 = hir.load v41 : i64;
-            v420, v421 = arith.split v42 : felt, felt;
-            v428 = arith.constant 8 : u32;
+            v345, v346 = arith.split v42 : felt, felt;
+            v353 = arith.constant 8 : u32;
             v46 = hir.bitcast v0 : u32;
-            v48 = arith.add v46, v428 : u32 #[overflow = checked];
-            v427 = arith.constant 8 : u32;
-            v50 = arith.mod v48, v427 : u32;
+            v48 = arith.add v46, v353 : u32 #[overflow = checked];
+            v352 = arith.constant 8 : u32;
+            v50 = arith.mod v48, v352 : u32;
             hir.assertz v50 #[code = 250];
-            v422 = arith.join v421, v420 : i64;
+            v347 = arith.join v346, v345 : i64;
             v51 = hir.int_to_ptr v48 : ptr<byte, i64>;
-            hir.store v51, v422;
-            v426 = arith.constant 8 : u32;
+            hir.store v51, v347;
+            v351 = arith.constant 8 : u32;
             v52 = hir.bitcast v7 : u32;
-            v54 = arith.add v52, v426 : u32 #[overflow = checked];
-            v425 = arith.constant 8 : u32;
-            v56 = arith.mod v54, v425 : u32;
+            v54 = arith.add v52, v351 : u32 #[overflow = checked];
+            v350 = arith.constant 8 : u32;
+            v56 = arith.mod v54, v350 : u32;
             hir.assertz v56 #[code = 250];
             v57 = hir.int_to_ptr v54 : ptr<byte, i64>;
             v58 = hir.load v57 : i64;
-            v417, v418 = arith.split v58 : felt, felt;
+            v342, v343 = arith.split v58 : felt, felt;
             v62 = hir.bitcast v0 : u32;
-            v424 = arith.constant 8 : u32;
-            v64 = arith.mod v62, v424 : u32;
+            v349 = arith.constant 8 : u32;
+            v64 = arith.mod v62, v349 : u32;
             hir.assertz v64 #[code = 250];
-            v419 = arith.join v418, v417 : i64;
+            v344 = arith.join v343, v342 : i64;
             v65 = hir.int_to_ptr v62 : ptr<byte, i64>;
-            hir.store v65, v419;
-            v423 = arith.constant 16 : i32;
-            v67 = arith.add v7, v423 : i32 #[overflow = wrapping];
+            hir.store v65, v344;
+            v348 = arith.constant 16 : i32;
+            v67 = arith.add v7, v348 : i32 #[overflow = wrapping];
             v68 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
             v69 = hir.bitcast v68 : ptr<byte, i32>;
             hir.store v69, v67;
@@ -98,415 +98,313 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             v73 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
             v74 = hir.bitcast v73 : ptr<byte, i32>;
             v75 = hir.load v74 : i32;
-            v76 = arith.constant 48 : i32;
+            v76 = arith.constant 32 : i32;
             v77 = arith.sub v75, v76 : i32 #[overflow = wrapping];
             v78 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
             v79 = hir.bitcast v78 : ptr<byte, i32>;
             hir.store v79, v77;
             hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/wit_bindgen::rt::run_ctors_once()
-            v80 = arith.constant 32 : i32;
-            v81 = arith.add v77, v80 : i32 #[overflow = wrapping];
-            v83 = hir.bitcast v81 : u32;
-            v84 = arith.constant 8 : u32;
-            v85 = arith.mod v83, v84 : u32;
-            hir.assertz v85 #[code = 250];
-            v82 = arith.constant 0 : i64;
-            v86 = hir.int_to_ptr v83 : ptr<byte, i64>;
-            hir.store v86, v82;
-            v87 = arith.constant 24 : i32;
-            v88 = arith.add v77, v87 : i32 #[overflow = wrapping];
-            v90 = hir.bitcast v88 : u32;
-            v440 = arith.constant 8 : u32;
-            v92 = arith.mod v90, v440 : u32;
-            hir.assertz v92 #[code = 250];
-            v439 = arith.constant 0 : i64;
-            v93 = hir.int_to_ptr v90 : ptr<byte, i64>;
-            hir.store v93, v439;
-            v96 = arith.constant 16 : u32;
-            v95 = hir.bitcast v77 : u32;
-            v97 = arith.add v95, v96 : u32 #[overflow = checked];
-            v438 = arith.constant 8 : u32;
-            v99 = arith.mod v97, v438 : u32;
-            hir.assertz v99 #[code = 250];
-            v437 = arith.constant 0 : i64;
-            v100 = hir.int_to_ptr v97 : ptr<byte, i64>;
-            hir.store v100, v437;
-            v103 = arith.constant 40 : u32;
-            v102 = hir.bitcast v77 : u32;
-            v104 = arith.add v102, v103 : u32 #[overflow = checked];
-            v436 = arith.constant 8 : u32;
-            v106 = arith.mod v104, v436 : u32;
-            hir.assertz v106 #[code = 250];
-            v101 = arith.constant 1 : i64;
-            v107 = hir.int_to_ptr v104 : ptr<byte, i64>;
-            hir.store v107, v101;
-            v108 = arith.constant 16 : i32;
-            v109 = arith.add v77, v108 : i32 #[overflow = wrapping];
-            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked(v77, v109)
-            v435 = arith.constant 16 : i32;
-            v111 = arith.add v77, v435 : i32 #[overflow = wrapping];
-            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden_base_sys::bindings::storage::get_map_item(v111, v77)
-            v113 = arith.constant 28 : u32;
-            v112 = hir.bitcast v77 : u32;
-            v114 = arith.add v112, v113 : u32 #[overflow = checked];
-            v115 = arith.constant 4 : u32;
-            v116 = arith.mod v114, v115 : u32;
-            hir.assertz v116 #[code = 250];
-            v117 = hir.int_to_ptr v114 : ptr<byte, felt>;
-            v118 = hir.load v117 : felt;
-            v434 = arith.constant 48 : i32;
-            v120 = arith.add v77, v434 : i32 #[overflow = wrapping];
-            v121 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
-            v122 = hir.bitcast v121 : ptr<byte, i32>;
-            hir.store v122, v120;
-            builtin.ret v118;
+            v83 = arith.constant 1 : i64;
+            v80 = arith.constant 0 : i64;
+            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked(v77, v80, v80, v80, v83)
+            v84 = arith.constant 16 : i32;
+            v85 = arith.add v77, v84 : i32 #[overflow = wrapping];
+            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden_base_sys::bindings::storage::get_map_item(v85, v77)
+            v87 = arith.constant 28 : u32;
+            v86 = hir.bitcast v77 : u32;
+            v88 = arith.add v86, v87 : u32 #[overflow = checked];
+            v89 = arith.constant 4 : u32;
+            v90 = arith.mod v88, v89 : u32;
+            hir.assertz v90 #[code = 250];
+            v91 = hir.int_to_ptr v88 : ptr<byte, felt>;
+            v92 = hir.load v91 : felt;
+            v359 = arith.constant 32 : i32;
+            v94 = arith.add v77, v359 : i32 #[overflow = wrapping];
+            v95 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
+            v96 = hir.bitcast v95 : ptr<byte, i32>;
+            hir.store v96, v94;
+            builtin.ret v92;
         };
 
         private builtin.function @miden:counter-contract/counter-contract@0.1.0#increment-count() -> felt {
         ^block13:
-            v126 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
-            v127 = hir.bitcast v126 : ptr<byte, i32>;
-            v128 = hir.load v127 : i32;
-            v129 = arith.constant 64 : i32;
-            v130 = arith.sub v128, v129 : i32 #[overflow = wrapping];
-            v131 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
-            v132 = hir.bitcast v131 : ptr<byte, i32>;
-            hir.store v132, v130;
+            v100 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
+            v101 = hir.bitcast v100 : ptr<byte, i32>;
+            v102 = hir.load v101 : i32;
+            v103 = arith.constant 64 : i32;
+            v104 = arith.sub v102, v103 : i32 #[overflow = wrapping];
+            v105 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
+            v106 = hir.bitcast v105 : ptr<byte, i32>;
+            hir.store v106, v104;
             hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/wit_bindgen::rt::run_ctors_once()
-            v133 = arith.constant 48 : i32;
-            v134 = arith.add v130, v133 : i32 #[overflow = wrapping];
-            v136 = hir.bitcast v134 : u32;
-            v137 = arith.constant 8 : u32;
-            v138 = arith.mod v136, v137 : u32;
-            hir.assertz v138 #[code = 250];
-            v135 = arith.constant 0 : i64;
-            v139 = hir.int_to_ptr v136 : ptr<byte, i64>;
-            hir.store v139, v135;
-            v140 = arith.constant 40 : i32;
-            v141 = arith.add v130, v140 : i32 #[overflow = wrapping];
-            v143 = hir.bitcast v141 : u32;
-            v459 = arith.constant 8 : u32;
-            v145 = arith.mod v143, v459 : u32;
-            hir.assertz v145 #[code = 250];
-            v458 = arith.constant 0 : i64;
-            v146 = hir.int_to_ptr v143 : ptr<byte, i64>;
-            hir.store v146, v458;
-            v149 = arith.constant 32 : u32;
-            v148 = hir.bitcast v130 : u32;
-            v150 = arith.add v148, v149 : u32 #[overflow = checked];
-            v457 = arith.constant 8 : u32;
-            v152 = arith.mod v150, v457 : u32;
-            hir.assertz v152 #[code = 250];
-            v456 = arith.constant 0 : i64;
-            v153 = hir.int_to_ptr v150 : ptr<byte, i64>;
-            hir.store v153, v456;
-            v156 = arith.constant 56 : u32;
-            v155 = hir.bitcast v130 : u32;
-            v157 = arith.add v155, v156 : u32 #[overflow = checked];
-            v455 = arith.constant 8 : u32;
-            v159 = arith.mod v157, v455 : u32;
-            hir.assertz v159 #[code = 250];
-            v154 = arith.constant 1 : i64;
-            v160 = hir.int_to_ptr v157 : ptr<byte, i64>;
-            hir.store v160, v154;
-            v161 = arith.constant 32 : i32;
-            v162 = arith.add v130, v161 : i32 #[overflow = wrapping];
-            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked(v130, v162)
-            v454 = arith.constant 32 : i32;
-            v164 = arith.add v130, v454 : i32 #[overflow = wrapping];
-            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden_base_sys::bindings::storage::get_map_item(v164, v130)
-            v166 = arith.constant 44 : u32;
-            v165 = hir.bitcast v130 : u32;
-            v167 = arith.add v165, v166 : u32 #[overflow = checked];
-            v168 = arith.constant 4 : u32;
-            v169 = arith.mod v167, v168 : u32;
-            hir.assertz v169 #[code = 250];
-            v170 = hir.int_to_ptr v167 : ptr<byte, felt>;
-            v171 = hir.load v170 : felt;
-            v441 = arith.constant 1 : felt;
-            v174 = arith.add v171, v441 : felt #[overflow = unchecked];
-            v176 = arith.constant 12 : u32;
-            v175 = hir.bitcast v130 : u32;
-            v177 = arith.add v175, v176 : u32 #[overflow = checked];
-            v453 = arith.constant 4 : u32;
-            v179 = arith.mod v177, v453 : u32;
-            hir.assertz v179 #[code = 250];
-            v180 = hir.int_to_ptr v177 : ptr<byte, felt>;
-            v181 = hir.load v180 : felt;
-            v452 = arith.constant 8 : u32;
-            v182 = hir.bitcast v130 : u32;
-            v184 = arith.add v182, v452 : u32 #[overflow = checked];
-            v451 = arith.constant 4 : u32;
-            v186 = arith.mod v184, v451 : u32;
-            hir.assertz v186 #[code = 250];
-            v187 = hir.int_to_ptr v184 : ptr<byte, felt>;
-            v188 = hir.load v187 : felt;
-            v450 = arith.constant 4 : u32;
-            v189 = hir.bitcast v130 : u32;
-            v191 = arith.add v189, v450 : u32 #[overflow = checked];
-            v449 = arith.constant 4 : u32;
-            v193 = arith.mod v191, v449 : u32;
-            hir.assertz v193 #[code = 250];
-            v194 = hir.int_to_ptr v191 : ptr<byte, felt>;
-            v195 = hir.load v194 : felt;
-            v196 = hir.bitcast v130 : u32;
-            v448 = arith.constant 4 : u32;
-            v198 = arith.mod v196, v448 : u32;
-            hir.assertz v198 #[code = 250];
-            v199 = hir.int_to_ptr v196 : ptr<byte, felt>;
-            v200 = hir.load v199 : felt;
-            v201 = arith.constant 16 : i32;
-            v202 = arith.add v130, v201 : i32 #[overflow = wrapping];
-            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from(v202, v174)
-            v124 = arith.constant 0 : i32;
-            v204 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v124) : felt
-            v206 = arith.constant 28 : u32;
-            v205 = hir.bitcast v130 : u32;
-            v207 = arith.add v205, v206 : u32 #[overflow = checked];
-            v447 = arith.constant 4 : u32;
-            v209 = arith.mod v207, v447 : u32;
-            hir.assertz v209 #[code = 250];
-            v210 = hir.int_to_ptr v207 : ptr<byte, felt>;
-            v211 = hir.load v210 : felt;
-            v213 = arith.constant 24 : u32;
-            v212 = hir.bitcast v130 : u32;
-            v214 = arith.add v212, v213 : u32 #[overflow = checked];
-            v446 = arith.constant 4 : u32;
-            v216 = arith.mod v214, v446 : u32;
-            hir.assertz v216 #[code = 250];
-            v217 = hir.int_to_ptr v214 : ptr<byte, felt>;
-            v218 = hir.load v217 : felt;
-            v220 = arith.constant 20 : u32;
-            v219 = hir.bitcast v130 : u32;
-            v221 = arith.add v219, v220 : u32 #[overflow = checked];
-            v445 = arith.constant 4 : u32;
-            v223 = arith.mod v221, v445 : u32;
-            hir.assertz v223 #[code = 250];
-            v224 = hir.int_to_ptr v221 : ptr<byte, felt>;
-            v225 = hir.load v224 : felt;
-            v227 = arith.constant 16 : u32;
-            v226 = hir.bitcast v130 : u32;
-            v228 = arith.add v226, v227 : u32 #[overflow = checked];
-            v444 = arith.constant 4 : u32;
-            v230 = arith.mod v228, v444 : u32;
-            hir.assertz v230 #[code = 250];
-            v231 = hir.int_to_ptr v228 : ptr<byte, felt>;
-            v232 = hir.load v231 : felt;
-            v443 = arith.constant 32 : i32;
-            v234 = arith.add v130, v443 : i32 #[overflow = wrapping];
-            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden::native_account::set_map_item(v204, v181, v188, v195, v200, v211, v218, v225, v232, v234)
-            v442 = arith.constant 64 : i32;
-            v236 = arith.add v130, v442 : i32 #[overflow = wrapping];
-            v237 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
-            v238 = hir.bitcast v237 : ptr<byte, i32>;
-            hir.store v238, v236;
-            builtin.ret v174;
+            v110 = arith.constant 1 : i64;
+            v107 = arith.constant 0 : i64;
+            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked(v104, v107, v107, v107, v110)
+            v111 = arith.constant 32 : i32;
+            v112 = arith.add v104, v111 : i32 #[overflow = wrapping];
+            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden_base_sys::bindings::storage::get_map_item(v112, v104)
+            v114 = arith.constant 44 : u32;
+            v113 = hir.bitcast v104 : u32;
+            v115 = arith.add v113, v114 : u32 #[overflow = checked];
+            v116 = arith.constant 4 : u32;
+            v117 = arith.mod v115, v116 : u32;
+            hir.assertz v117 #[code = 250];
+            v118 = hir.int_to_ptr v115 : ptr<byte, felt>;
+            v119 = hir.load v118 : felt;
+            v360 = arith.constant 1 : felt;
+            v122 = arith.add v119, v360 : felt #[overflow = unchecked];
+            v124 = arith.constant 12 : u32;
+            v123 = hir.bitcast v104 : u32;
+            v125 = arith.add v123, v124 : u32 #[overflow = checked];
+            v371 = arith.constant 4 : u32;
+            v127 = arith.mod v125, v371 : u32;
+            hir.assertz v127 #[code = 250];
+            v128 = hir.int_to_ptr v125 : ptr<byte, felt>;
+            v129 = hir.load v128 : felt;
+            v131 = arith.constant 8 : u32;
+            v130 = hir.bitcast v104 : u32;
+            v132 = arith.add v130, v131 : u32 #[overflow = checked];
+            v370 = arith.constant 4 : u32;
+            v134 = arith.mod v132, v370 : u32;
+            hir.assertz v134 #[code = 250];
+            v135 = hir.int_to_ptr v132 : ptr<byte, felt>;
+            v136 = hir.load v135 : felt;
+            v369 = arith.constant 4 : u32;
+            v137 = hir.bitcast v104 : u32;
+            v139 = arith.add v137, v369 : u32 #[overflow = checked];
+            v368 = arith.constant 4 : u32;
+            v141 = arith.mod v139, v368 : u32;
+            hir.assertz v141 #[code = 250];
+            v142 = hir.int_to_ptr v139 : ptr<byte, felt>;
+            v143 = hir.load v142 : felt;
+            v144 = hir.bitcast v104 : u32;
+            v367 = arith.constant 4 : u32;
+            v146 = arith.mod v144, v367 : u32;
+            hir.assertz v146 #[code = 250];
+            v147 = hir.int_to_ptr v144 : ptr<byte, felt>;
+            v148 = hir.load v147 : felt;
+            v149 = arith.constant 16 : i32;
+            v150 = arith.add v104, v149 : i32 #[overflow = wrapping];
+            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from(v150, v122)
+            v98 = arith.constant 0 : i32;
+            v152 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v98) : felt
+            v154 = arith.constant 28 : u32;
+            v153 = hir.bitcast v104 : u32;
+            v155 = arith.add v153, v154 : u32 #[overflow = checked];
+            v366 = arith.constant 4 : u32;
+            v157 = arith.mod v155, v366 : u32;
+            hir.assertz v157 #[code = 250];
+            v158 = hir.int_to_ptr v155 : ptr<byte, felt>;
+            v159 = hir.load v158 : felt;
+            v161 = arith.constant 24 : u32;
+            v160 = hir.bitcast v104 : u32;
+            v162 = arith.add v160, v161 : u32 #[overflow = checked];
+            v365 = arith.constant 4 : u32;
+            v164 = arith.mod v162, v365 : u32;
+            hir.assertz v164 #[code = 250];
+            v165 = hir.int_to_ptr v162 : ptr<byte, felt>;
+            v166 = hir.load v165 : felt;
+            v168 = arith.constant 20 : u32;
+            v167 = hir.bitcast v104 : u32;
+            v169 = arith.add v167, v168 : u32 #[overflow = checked];
+            v364 = arith.constant 4 : u32;
+            v171 = arith.mod v169, v364 : u32;
+            hir.assertz v171 #[code = 250];
+            v172 = hir.int_to_ptr v169 : ptr<byte, felt>;
+            v173 = hir.load v172 : felt;
+            v175 = arith.constant 16 : u32;
+            v174 = hir.bitcast v104 : u32;
+            v176 = arith.add v174, v175 : u32 #[overflow = checked];
+            v363 = arith.constant 4 : u32;
+            v178 = arith.mod v176, v363 : u32;
+            hir.assertz v178 #[code = 250];
+            v179 = hir.int_to_ptr v176 : ptr<byte, felt>;
+            v180 = hir.load v179 : felt;
+            v362 = arith.constant 32 : i32;
+            v182 = arith.add v104, v362 : i32 #[overflow = wrapping];
+            hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden::native_account::set_map_item(v152, v129, v136, v143, v148, v159, v166, v173, v180, v182)
+            v361 = arith.constant 64 : i32;
+            v184 = arith.add v104, v361 : i32 #[overflow = wrapping];
+            v185 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/__stack_pointer : ptr<byte, u8>
+            v186 = hir.bitcast v185 : ptr<byte, i32>;
+            hir.store v186, v184;
+            builtin.ret v122;
         };
 
         private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block15:
-            v240 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/GOT.data.internal.__memory_base : ptr<byte, u8>
-            v241 = hir.bitcast v240 : ptr<byte, i32>;
-            v242 = hir.load v241 : i32;
-            v243 = arith.constant 1048584 : i32;
-            v244 = arith.add v242, v243 : i32 #[overflow = wrapping];
-            v245 = hir.bitcast v244 : u32;
-            v246 = hir.int_to_ptr v245 : ptr<byte, u8>;
-            v247 = hir.load v246 : u8;
-            v239 = arith.constant 0 : i32;
-            v248 = arith.zext v247 : u32;
-            v249 = hir.bitcast v248 : i32;
-            v251 = arith.neq v249, v239 : i1;
-            scf.if v251{
+            v188 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v189 = hir.bitcast v188 : ptr<byte, i32>;
+            v190 = hir.load v189 : i32;
+            v191 = arith.constant 1048584 : i32;
+            v192 = arith.add v190, v191 : i32 #[overflow = wrapping];
+            v193 = hir.bitcast v192 : u32;
+            v194 = hir.int_to_ptr v193 : ptr<byte, u8>;
+            v195 = hir.load v194 : u8;
+            v187 = arith.constant 0 : i32;
+            v196 = arith.zext v195 : u32;
+            v197 = hir.bitcast v196 : i32;
+            v199 = arith.neq v197, v187 : i1;
+            scf.if v199{
             ^block17:
                 scf.yield ;
             } else {
             ^block18:
-                v252 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/GOT.data.internal.__memory_base : ptr<byte, u8>
-                v253 = hir.bitcast v252 : ptr<byte, i32>;
-                v254 = hir.load v253 : i32;
+                v200 = builtin.global_symbol @miden:counter-contract/counter-contract@0.1.0/counter_contract/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v201 = hir.bitcast v200 : ptr<byte, i32>;
+                v202 = hir.load v201 : i32;
                 hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/__wasm_call_ctors()
-                v461 = arith.constant 1 : u8;
-                v463 = arith.constant 1048584 : i32;
-                v256 = arith.add v254, v463 : i32 #[overflow = wrapping];
-                v260 = hir.bitcast v256 : u32;
-                v261 = hir.int_to_ptr v260 : ptr<byte, u8>;
-                hir.store v261, v461;
+                v373 = arith.constant 1 : u8;
+                v375 = arith.constant 1048584 : i32;
+                v204 = arith.add v202, v375 : i32 #[overflow = wrapping];
+                v208 = hir.bitcast v204 : u32;
+                v209 = hir.int_to_ptr v208 : ptr<byte, u8>;
+                hir.store v209, v373;
                 scf.yield ;
             };
             builtin.ret ;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked(v262: i32, v263: i32) {
-        ^block19(v262: i32, v263: i32):
-            v265 = hir.bitcast v263 : u32;
-            v266 = arith.constant 8 : u32;
-            v267 = arith.mod v265, v266 : u32;
+        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked(v210: i32, v211: i64, v212: i64, v213: i64, v214: i64) {
+        ^block19(v210: i32, v211: i64, v212: i64, v213: i64, v214: i64):
+            v221 = arith.constant 12 : u32;
+            v220 = hir.bitcast v210 : u32;
+            v222 = arith.add v220, v221 : u32 #[overflow = checked];
+            v223 = arith.constant 4 : u32;
+            v224 = arith.mod v222, v223 : u32;
+            hir.assertz v224 #[code = 250];
+            v219 = hir.cast v214 : felt;
+            v225 = hir.int_to_ptr v222 : ptr<byte, felt>;
+            hir.store v225, v219;
+            v227 = arith.constant 8 : u32;
+            v226 = hir.bitcast v210 : u32;
+            v228 = arith.add v226, v227 : u32 #[overflow = checked];
+            v379 = arith.constant 4 : u32;
+            v230 = arith.mod v228, v379 : u32;
+            hir.assertz v230 #[code = 250];
+            v218 = hir.cast v213 : felt;
+            v231 = hir.int_to_ptr v228 : ptr<byte, felt>;
+            hir.store v231, v218;
+            v378 = arith.constant 4 : u32;
+            v232 = hir.bitcast v210 : u32;
+            v234 = arith.add v232, v378 : u32 #[overflow = checked];
+            v377 = arith.constant 4 : u32;
+            v236 = arith.mod v234, v377 : u32;
+            hir.assertz v236 #[code = 250];
+            v217 = hir.cast v212 : felt;
+            v237 = hir.int_to_ptr v234 : ptr<byte, felt>;
+            hir.store v237, v217;
+            v238 = hir.bitcast v210 : u32;
+            v376 = arith.constant 4 : u32;
+            v240 = arith.mod v238, v376 : u32;
+            hir.assertz v240 #[code = 250];
+            v216 = hir.cast v211 : felt;
+            v241 = hir.int_to_ptr v238 : ptr<byte, felt>;
+            hir.store v241, v216;
+            builtin.ret ;
+        };
+
+        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from(v242: i32, v243: felt) {
+        ^block21(v242: i32, v243: felt):
+            v252 = arith.constant 12 : u32;
+            v251 = hir.bitcast v242 : u32;
+            v253 = arith.add v251, v252 : u32 #[overflow = checked];
+            v254 = arith.constant 4 : u32;
+            v255 = arith.mod v253, v254 : u32;
+            hir.assertz v255 #[code = 250];
+            v256 = hir.int_to_ptr v253 : ptr<byte, felt>;
+            hir.store v256, v243;
+            v258 = arith.constant 8 : u32;
+            v257 = hir.bitcast v242 : u32;
+            v259 = arith.add v257, v258 : u32 #[overflow = checked];
+            v388 = arith.constant 4 : u32;
+            v261 = arith.mod v259, v388 : u32;
+            hir.assertz v261 #[code = 250];
+            v382 = arith.constant 0 : felt;
+            v262 = hir.int_to_ptr v259 : ptr<byte, felt>;
+            hir.store v262, v382;
+            v387 = arith.constant 4 : u32;
+            v263 = hir.bitcast v242 : u32;
+            v265 = arith.add v263, v387 : u32 #[overflow = checked];
+            v386 = arith.constant 4 : u32;
+            v267 = arith.mod v265, v386 : u32;
             hir.assertz v267 #[code = 250];
-            v268 = hir.int_to_ptr v265 : ptr<byte, i64>;
-            v269 = hir.load v268 : i64;
-            v472 = arith.constant 8 : u32;
-            v271 = hir.bitcast v263 : u32;
-            v273 = arith.add v271, v472 : u32 #[overflow = checked];
-            v471 = arith.constant 8 : u32;
-            v275 = arith.mod v273, v471 : u32;
-            hir.assertz v275 #[code = 250];
-            v276 = hir.int_to_ptr v273 : ptr<byte, i64>;
-            v277 = hir.load v276 : i64;
-            v280 = arith.constant 16 : u32;
-            v279 = hir.bitcast v263 : u32;
-            v281 = arith.add v279, v280 : u32 #[overflow = checked];
-            v470 = arith.constant 8 : u32;
-            v283 = arith.mod v281, v470 : u32;
-            hir.assertz v283 #[code = 250];
-            v284 = hir.int_to_ptr v281 : ptr<byte, i64>;
-            v285 = hir.load v284 : i64;
-            v288 = arith.constant 24 : u32;
-            v287 = hir.bitcast v263 : u32;
-            v289 = arith.add v287, v288 : u32 #[overflow = checked];
-            v469 = arith.constant 8 : u32;
-            v291 = arith.mod v289, v469 : u32;
-            hir.assertz v291 #[code = 250];
-            v292 = hir.int_to_ptr v289 : ptr<byte, i64>;
-            v293 = hir.load v292 : i64;
+            v385 = arith.constant 0 : felt;
+            v268 = hir.int_to_ptr v265 : ptr<byte, felt>;
+            hir.store v268, v385;
+            v269 = hir.bitcast v242 : u32;
+            v384 = arith.constant 4 : u32;
+            v271 = arith.mod v269, v384 : u32;
+            hir.assertz v271 #[code = 250];
+            v383 = arith.constant 0 : felt;
+            v272 = hir.int_to_ptr v269 : ptr<byte, felt>;
+            hir.store v272, v383;
+            builtin.ret ;
+        };
+
+        private builtin.function @<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v273: i32) -> felt {
+        ^block23(v273: i32):
+            v275 = arith.constant 255 : i32;
+            v276 = arith.band v273, v275 : i32;
+            v277 = hir.bitcast v276 : felt;
+            builtin.ret v277;
+        };
+
+        private builtin.function @miden::active_account::get_map_item(v278: felt, v279: felt, v280: felt, v281: felt, v282: felt, v283: i32) {
+        ^block25(v278: felt, v279: felt, v280: felt, v281: felt, v282: felt, v283: i32):
+            v284, v285, v286, v287 = hir.exec @miden/active_account/get_map_item(v278, v279, v280, v281, v282) : felt, felt, felt, felt
+            v288 = hir.bitcast v283 : u32;
+            v289 = hir.int_to_ptr v288 : ptr<byte, felt>;
+            hir.store v289, v284;
+            v290 = arith.constant 4 : u32;
+            v291 = arith.add v288, v290 : u32 #[overflow = checked];
+            v292 = hir.int_to_ptr v291 : ptr<byte, felt>;
+            hir.store v292, v285;
+            v293 = arith.constant 8 : u32;
+            v294 = arith.add v288, v293 : u32 #[overflow = checked];
+            v295 = hir.int_to_ptr v294 : ptr<byte, felt>;
+            hir.store v295, v286;
             v296 = arith.constant 12 : u32;
-            v295 = hir.bitcast v262 : u32;
-            v297 = arith.add v295, v296 : u32 #[overflow = checked];
-            v298 = arith.constant 4 : u32;
-            v299 = arith.mod v297, v298 : u32;
-            hir.assertz v299 #[code = 250];
-            v294 = hir.cast v293 : felt;
-            v300 = hir.int_to_ptr v297 : ptr<byte, felt>;
-            hir.store v300, v294;
-            v468 = arith.constant 8 : u32;
-            v301 = hir.bitcast v262 : u32;
-            v303 = arith.add v301, v468 : u32 #[overflow = checked];
-            v467 = arith.constant 4 : u32;
-            v305 = arith.mod v303, v467 : u32;
-            hir.assertz v305 #[code = 250];
-            v286 = hir.cast v285 : felt;
-            v306 = hir.int_to_ptr v303 : ptr<byte, felt>;
-            hir.store v306, v286;
-            v466 = arith.constant 4 : u32;
-            v307 = hir.bitcast v262 : u32;
-            v309 = arith.add v307, v466 : u32 #[overflow = checked];
-            v465 = arith.constant 4 : u32;
-            v311 = arith.mod v309, v465 : u32;
-            hir.assertz v311 #[code = 250];
-            v278 = hir.cast v277 : felt;
-            v312 = hir.int_to_ptr v309 : ptr<byte, felt>;
-            hir.store v312, v278;
-            v313 = hir.bitcast v262 : u32;
-            v464 = arith.constant 4 : u32;
-            v315 = arith.mod v313, v464 : u32;
-            hir.assertz v315 #[code = 250];
-            v270 = hir.cast v269 : felt;
-            v316 = hir.int_to_ptr v313 : ptr<byte, felt>;
-            hir.store v316, v270;
+            v297 = arith.add v288, v296 : u32 #[overflow = checked];
+            v298 = hir.int_to_ptr v297 : ptr<byte, felt>;
+            hir.store v298, v287;
             builtin.ret ;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from(v317: i32, v318: felt) {
-        ^block21(v317: i32, v318: felt):
-            v327 = arith.constant 12 : u32;
-            v326 = hir.bitcast v317 : u32;
-            v328 = arith.add v326, v327 : u32 #[overflow = checked];
-            v329 = arith.constant 4 : u32;
-            v330 = arith.mod v328, v329 : u32;
-            hir.assertz v330 #[code = 250];
-            v331 = hir.int_to_ptr v328 : ptr<byte, felt>;
-            hir.store v331, v318;
-            v333 = arith.constant 8 : u32;
-            v332 = hir.bitcast v317 : u32;
-            v334 = arith.add v332, v333 : u32 #[overflow = checked];
-            v481 = arith.constant 4 : u32;
-            v336 = arith.mod v334, v481 : u32;
-            hir.assertz v336 #[code = 250];
-            v475 = arith.constant 0 : felt;
-            v337 = hir.int_to_ptr v334 : ptr<byte, felt>;
-            hir.store v337, v475;
-            v480 = arith.constant 4 : u32;
-            v338 = hir.bitcast v317 : u32;
-            v340 = arith.add v338, v480 : u32 #[overflow = checked];
-            v479 = arith.constant 4 : u32;
-            v342 = arith.mod v340, v479 : u32;
-            hir.assertz v342 #[code = 250];
-            v478 = arith.constant 0 : felt;
-            v343 = hir.int_to_ptr v340 : ptr<byte, felt>;
-            hir.store v343, v478;
-            v344 = hir.bitcast v317 : u32;
-            v477 = arith.constant 4 : u32;
-            v346 = arith.mod v344, v477 : u32;
-            hir.assertz v346 #[code = 250];
-            v476 = arith.constant 0 : felt;
-            v347 = hir.int_to_ptr v344 : ptr<byte, felt>;
-            hir.store v347, v476;
-            builtin.ret ;
-        };
-
-        private builtin.function @<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v348: i32) -> felt {
-        ^block23(v348: i32):
-            v350 = arith.constant 255 : i32;
-            v351 = arith.band v348, v350 : i32;
-            v352 = hir.bitcast v351 : felt;
-            builtin.ret v352;
-        };
-
-        private builtin.function @miden::active_account::get_map_item(v353: felt, v354: felt, v355: felt, v356: felt, v357: felt, v358: i32) {
-        ^block25(v353: felt, v354: felt, v355: felt, v356: felt, v357: felt, v358: i32):
-            v359, v360, v361, v362 = hir.exec @miden/active_account/get_map_item(v353, v354, v355, v356, v357) : felt, felt, felt, felt
-            v363 = hir.bitcast v358 : u32;
-            v364 = hir.int_to_ptr v363 : ptr<byte, felt>;
-            hir.store v364, v359;
-            v365 = arith.constant 4 : u32;
-            v366 = arith.add v363, v365 : u32 #[overflow = checked];
-            v367 = hir.int_to_ptr v366 : ptr<byte, felt>;
-            hir.store v367, v360;
-            v368 = arith.constant 8 : u32;
-            v369 = arith.add v363, v368 : u32 #[overflow = checked];
-            v370 = hir.int_to_ptr v369 : ptr<byte, felt>;
-            hir.store v370, v361;
-            v371 = arith.constant 12 : u32;
-            v372 = arith.add v363, v371 : u32 #[overflow = checked];
-            v373 = hir.int_to_ptr v372 : ptr<byte, felt>;
-            hir.store v373, v362;
-            builtin.ret ;
-        };
-
-        private builtin.function @miden::native_account::set_map_item(v374: felt, v375: felt, v376: felt, v377: felt, v378: felt, v379: felt, v380: felt, v381: felt, v382: felt, v383: i32) {
-        ^block29(v374: felt, v375: felt, v376: felt, v377: felt, v378: felt, v379: felt, v380: felt, v381: felt, v382: felt, v383: i32):
-            v384, v385, v386, v387, v388, v389, v390, v391 = hir.exec @miden/native_account/set_map_item(v374, v375, v376, v377, v378, v379, v380, v381, v382) : felt, felt, felt, felt, felt, felt, felt, felt
-            v392 = hir.bitcast v383 : u32;
-            v393 = hir.int_to_ptr v392 : ptr<byte, felt>;
-            hir.store v393, v384;
-            v394 = arith.constant 4 : u32;
-            v395 = arith.add v392, v394 : u32 #[overflow = checked];
-            v396 = hir.int_to_ptr v395 : ptr<byte, felt>;
-            hir.store v396, v385;
-            v397 = arith.constant 8 : u32;
-            v398 = arith.add v392, v397 : u32 #[overflow = checked];
-            v399 = hir.int_to_ptr v398 : ptr<byte, felt>;
-            hir.store v399, v386;
-            v400 = arith.constant 12 : u32;
-            v401 = arith.add v392, v400 : u32 #[overflow = checked];
-            v402 = hir.int_to_ptr v401 : ptr<byte, felt>;
-            hir.store v402, v387;
-            v403 = arith.constant 16 : u32;
-            v404 = arith.add v392, v403 : u32 #[overflow = checked];
-            v405 = hir.int_to_ptr v404 : ptr<byte, felt>;
-            hir.store v405, v388;
-            v406 = arith.constant 20 : u32;
-            v407 = arith.add v392, v406 : u32 #[overflow = checked];
-            v408 = hir.int_to_ptr v407 : ptr<byte, felt>;
-            hir.store v408, v389;
-            v409 = arith.constant 24 : u32;
-            v410 = arith.add v392, v409 : u32 #[overflow = checked];
-            v411 = hir.int_to_ptr v410 : ptr<byte, felt>;
-            hir.store v411, v390;
-            v412 = arith.constant 28 : u32;
-            v413 = arith.add v392, v412 : u32 #[overflow = checked];
-            v414 = hir.int_to_ptr v413 : ptr<byte, felt>;
-            hir.store v414, v391;
+        private builtin.function @miden::native_account::set_map_item(v299: felt, v300: felt, v301: felt, v302: felt, v303: felt, v304: felt, v305: felt, v306: felt, v307: felt, v308: i32) {
+        ^block29(v299: felt, v300: felt, v301: felt, v302: felt, v303: felt, v304: felt, v305: felt, v306: felt, v307: felt, v308: i32):
+            v309, v310, v311, v312, v313, v314, v315, v316 = hir.exec @miden/native_account/set_map_item(v299, v300, v301, v302, v303, v304, v305, v306, v307) : felt, felt, felt, felt, felt, felt, felt, felt
+            v317 = hir.bitcast v308 : u32;
+            v318 = hir.int_to_ptr v317 : ptr<byte, felt>;
+            hir.store v318, v309;
+            v319 = arith.constant 4 : u32;
+            v320 = arith.add v317, v319 : u32 #[overflow = checked];
+            v321 = hir.int_to_ptr v320 : ptr<byte, felt>;
+            hir.store v321, v310;
+            v322 = arith.constant 8 : u32;
+            v323 = arith.add v317, v322 : u32 #[overflow = checked];
+            v324 = hir.int_to_ptr v323 : ptr<byte, felt>;
+            hir.store v324, v311;
+            v325 = arith.constant 12 : u32;
+            v326 = arith.add v317, v325 : u32 #[overflow = checked];
+            v327 = hir.int_to_ptr v326 : ptr<byte, felt>;
+            hir.store v327, v312;
+            v328 = arith.constant 16 : u32;
+            v329 = arith.add v317, v328 : u32 #[overflow = checked];
+            v330 = hir.int_to_ptr v329 : ptr<byte, felt>;
+            hir.store v330, v313;
+            v331 = arith.constant 20 : u32;
+            v332 = arith.add v317, v331 : u32 #[overflow = checked];
+            v333 = hir.int_to_ptr v332 : ptr<byte, felt>;
+            hir.store v333, v314;
+            v334 = arith.constant 24 : u32;
+            v335 = arith.add v317, v334 : u32 #[overflow = checked];
+            v336 = hir.int_to_ptr v335 : ptr<byte, felt>;
+            hir.store v336, v315;
+            v337 = arith.constant 28 : u32;
+            v338 = arith.add v317, v337 : u32 #[overflow = checked];
+            v339 = hir.int_to_ptr v338 : ptr<byte, felt>;
+            hir.store v339, v316;
             builtin.ret ;
         };
 
@@ -523,13 +421,13 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
 
     public builtin.function @get-count() -> felt {
     ^block32:
-        v415 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden:counter-contract/counter-contract@0.1.0#get-count() : felt
-        builtin.ret v415;
+        v340 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden:counter-contract/counter-contract@0.1.0#get-count() : felt
+        builtin.ret v340;
     };
 
     public builtin.function @increment-count() -> felt {
     ^block34:
-        v416 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden:counter-contract/counter-contract@0.1.0#increment-count() : felt
-        builtin.ret v416;
+        v341 = hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/miden:counter-contract/counter-contract@0.1.0#increment-count() : felt
+        builtin.ret v341;
     };
 };

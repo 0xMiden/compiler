@@ -10,12 +10,13 @@
     (type (;0;) (func))
     (type (;1;) (func (param i32 i32)))
     (type (;2;) (func (result f32)))
-    (type (;3;) (func (param i32 f32)))
-    (type (;4;) (func (param f32 f32) (result f32)))
-    (type (;5;) (func (param i32) (result f32)))
-    (type (;6;) (func (param i64) (result f32)))
-    (type (;7;) (func (param f32 f32 f32 f32 f32 i32)))
-    (type (;8;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
+    (type (;3;) (func (param i32 i64 i64 i64 i64)))
+    (type (;4;) (func (param i32 f32)))
+    (type (;5;) (func (param f32 f32) (result f32)))
+    (type (;6;) (func (param i32) (result f32)))
+    (type (;7;) (func (param i64) (result f32)))
+    (type (;8;) (func (param f32 f32 f32 f32 f32 i32)))
+    (type (;9;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -65,31 +66,16 @@
     (func $miden:counter-contract/counter-contract@0.1.0#get-count (;3;) (type 2) (result f32)
       (local i32 f32)
       global.get $__stack_pointer
-      i32.const 48
+      i32.const 32
       i32.sub
       local.tee 0
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 32
-      i32.add
       i64.const 0
-      i64.store
-      local.get 0
-      i32.const 24
-      i32.add
       i64.const 0
-      i64.store
-      local.get 0
       i64.const 0
-      i64.store offset=16
-      local.get 0
       i64.const 1
-      i64.store offset=40
-      local.get 0
-      local.get 0
-      i32.const 16
-      i32.add
       call $<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked
       local.get 0
       i32.const 16
@@ -100,7 +86,7 @@
       f32.load offset=28
       local.set 1
       local.get 0
-      i32.const 48
+      i32.const 32
       i32.add
       global.set $__stack_pointer
       local.get 1
@@ -114,25 +100,10 @@
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 48
-      i32.add
       i64.const 0
-      i64.store
-      local.get 0
-      i32.const 40
-      i32.add
       i64.const 0
-      i64.store
-      local.get 0
       i64.const 0
-      i64.store offset=32
-      local.get 0
       i64.const 1
-      i64.store offset=56
-      local.get 0
-      local.get 0
-      i32.const 32
-      i32.add
       call $<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked
       local.get 0
       i32.const 32
@@ -204,36 +175,32 @@
         i32.store8
       end
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked (;6;) (type 1) (param i32 i32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked (;6;) (type 3) (param i32 i64 i64 i64 i64)
       (local f32 f32 f32)
       local.get 1
-      i64.load
       call $intrinsics::felt::from_u64_unchecked
-      local.set 2
-      local.get 1
-      i64.load offset=8
+      local.set 5
+      local.get 2
       call $intrinsics::felt::from_u64_unchecked
-      local.set 3
-      local.get 1
-      i64.load offset=16
+      local.set 6
+      local.get 3
       call $intrinsics::felt::from_u64_unchecked
-      local.set 4
+      local.set 7
       local.get 0
-      local.get 1
-      i64.load offset=24
+      local.get 4
       call $intrinsics::felt::from_u64_unchecked
       f32.store offset=12
       local.get 0
-      local.get 4
+      local.get 7
       f32.store offset=8
       local.get 0
-      local.get 3
+      local.get 6
       f32.store offset=4
       local.get 0
-      local.get 2
+      local.get 5
       f32.store
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from (;7;) (type 3) (param i32 f32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from (;7;) (type 4) (param i32 f32)
       (local f32 f32 f32)
       i32.const 0
       call $intrinsics::felt::from_u32
@@ -257,25 +224,25 @@
       local.get 2
       f32.store
     )
-    (func $intrinsics::felt::add (;8;) (type 4) (param f32 f32) (result f32)
+    (func $intrinsics::felt::add (;8;) (type 5) (param f32 f32) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;9;) (type 5) (param i32) (result f32)
+    (func $intrinsics::felt::from_u32 (;9;) (type 6) (param i32) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u64_unchecked (;10;) (type 6) (param i64) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;10;) (type 7) (param i64) (result f32)
       unreachable
     )
-    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;11;) (type 5) (param i32) (result f32)
+    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;11;) (type 6) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden::active_account::get_map_item (;12;) (type 7) (param f32 f32 f32 f32 f32 i32)
+    (func $miden::active_account::get_map_item (;12;) (type 8) (param f32 f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::native_account::set_map_item (;13;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
+    (func $miden::native_account::set_map_item (;13;) (type 9) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

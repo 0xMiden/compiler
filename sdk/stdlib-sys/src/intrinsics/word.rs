@@ -20,13 +20,13 @@ impl Word {
     /// # Panics
     ///
     /// Panics if a value is larger than `Felt::M`.
-    pub fn from_u64_unchecked(values: [u64; 4]) -> Self {
+    pub fn from_u64_unchecked(a: u64, b: u64, c: u64, d: u64) -> Self {
         Self {
             inner: (
-                Felt::from_u64_unchecked(values[0]),
-                Felt::from_u64_unchecked(values[1]),
-                Felt::from_u64_unchecked(values[2]),
-                Felt::from_u64_unchecked(values[3]),
+                Felt::from_u64_unchecked(a),
+                Felt::from_u64_unchecked(b),
+                Felt::from_u64_unchecked(c),
+                Felt::from_u64_unchecked(d),
             ),
         }
     }
