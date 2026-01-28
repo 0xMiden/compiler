@@ -85,18 +85,24 @@ debug = false
 
 use miden::*;
 
-#[note_script]
-fn run(_arg: Word) {
-    let sender = active_note::get_sender();
-    let script_root = active_note::get_script_root();
-    let serial_number = active_note::get_serial_number();
-    let balance = active_account::get_balance(sender);
+#[note]
+struct Note;
 
-    assert_eq!(sender.prefix, sender.prefix);
-    assert_eq!(sender.suffix, sender.suffix);
-    assert_eq!(script_root, script_root);
-    assert_eq!(serial_number, serial_number);
-    assert_eq!(balance, balance);
+#[note]
+impl Note {
+    #[note_script]
+    pub fn run(self, _arg: Word) {
+        let sender = active_note::get_sender();
+        let script_root = active_note::get_script_root();
+        let serial_number = active_note::get_serial_number();
+        let balance = active_account::get_balance(sender);
+
+        assert_eq!(sender.prefix, sender.prefix);
+        assert_eq!(sender.suffix, sender.suffix);
+        assert_eq!(script_root, script_root);
+        assert_eq!(serial_number, serial_number);
+        assert_eq!(balance, balance);
+    }
 }
 "#;
 
