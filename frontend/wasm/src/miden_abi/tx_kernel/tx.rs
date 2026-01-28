@@ -9,6 +9,7 @@ use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Miden),
+    SymbolNameComponent::Component(symbols::Protocol),
     SymbolNameComponent::Component(symbols::Tx),
 ];
 

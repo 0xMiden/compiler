@@ -127,3 +127,4 @@ tx = {}
 rpo = {}
 collections = {}
 smt = {}
+protocol = {}
