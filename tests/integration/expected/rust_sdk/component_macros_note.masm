@@ -109,7 +109,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.32
+    push.16
     u32wrapping_sub
     push.1114144
     dup.1
@@ -126,87 +126,22 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::miden:base/note-script@1.0.0::component_macros_note::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
-    push.44
-    push.0
-    push.33
-    push.0
-    push.22
-    push.0
     push.11
     push.0
-    dup.8
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::component_macros_note::<miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked
+    exec.::std::math::u64::lt
     trace.252
     nop
-    push.12
-    dup.1
+    assert
+    mul.4294967296
     add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
     push.8
     dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.4
-    dup.3
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    dup.3
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.24
-    dup.5
     add
     u32assert
     push.8
@@ -227,38 +162,78 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    push.24
-    dup.5
+    push.8
+    dup.2
     u32wrapping_add
     push.66
     push.77
     push.88
     push.99
-    dup.5
+    push.44
+    push.0
     dup.1
-    dup.3
-    dup.5
-    dup.7
-    movup.2
-    swap.9
-    swap.12
-    movdn.2
-    swap.11
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+    push.33
+    push.0
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+    push.22
+    push.0
+    dup.1
+    dup.1
+    push.1
+    push.4294967295
+    trace.240
+    nop
+    exec.::std::math::u64::lt
+    trace.252
+    nop
+    assert
+    mul.4294967296
+    add
+    dup.8
+    dup.4
+    dup.6
+    dup.8
+    dup.10
     swap.1
     swap.10
-    swap.13
+    swap.6
+    swap.2
+    swap.9
+    swap.5
+    swap.1
+    swap.11
+    swap.7
     swap.3
     swap.8
-    swap.7
-    swap.6
-    swap.5
     swap.4
     trace.240
     nop
     exec.::miden:base/note-script@1.0.0::component_macros_note::component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22
     trace.252
     nop
-    push.28
+    push.12
     dup.2
     add
     u32assert
@@ -275,7 +250,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.24
+    push.8
     dup.3
     add
     u32assert
@@ -316,7 +291,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
             swap.1
             drop
         else
-            push.32
+            push.16
             movup.2
             u32wrapping_add
             push.1114144
@@ -415,138 +390,5 @@ proc wit_bindgen::rt::run_ctors_once(
         swap.1
         mem_store
     end
-end
-
-@callconv("C")
-proc <miden_stdlib_sys::intrinsics::word::Word>::from_u64_unchecked(
-    i32,
-    [u32; 2],
-    [u32; 2],
-    [u32; 2],
-    [u32; 2]
-)
-    push.12
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.9
-    movup.9
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.7
-    movup.7
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.5
-    movup.5
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movdn.2
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
-    mul.4294967296
-    add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
 end
 

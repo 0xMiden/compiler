@@ -20,6 +20,7 @@ impl Word {
     /// # Panics
     ///
     /// Panics if a value is larger than `Felt::M`.
+    #[inline(always)]
     pub fn from_u64_unchecked(a: u64, b: u64, c: u64, d: u64) -> Self {
         Self {
             inner: (
