@@ -1,11 +1,12 @@
 //! Common helper functions for mock-chain integration tests.
 
-use std::{borrow::Borrow, collections::BTreeSet, future::Future, sync::Arc};
+use std::{collections::BTreeSet, future::Future, sync::Arc};
 
 use miden_client::{
     Word,
     account::component::BasicWallet,
     asset::FungibleAsset,
+    auth::AuthSecretKey,
     crypto::FeltRng,
     note::{
         Note, NoteAssets, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript,
@@ -13,21 +14,21 @@ use miden_client::{
     },
     testing::{MockChain, TransactionContextBuilder},
     transaction::OutputNote,
-    utils::Deserializable,
 };
 use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
 use miden_felt_repr::ToFeltRepr;
 use miden_integration_tests::CompilerTestBuilder;
-use miden_lib::account::interface::AccountInterface;
-use miden_mast_package::{Package, SectionId};
-use miden_objects::{
+use miden_mast_package::Package;
+use miden_protocol::{
     account::{
-        Account, AccountBuilder, AccountComponent, AccountComponentMetadata,
-        AccountComponentTemplate, AccountId, AccountStorageMode, AccountType, StorageMap,
-        StorageSlot,
+        Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
+        AccountStorage, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
     },
     asset::Asset,
+    note::PartialNote,
+    transaction::TransactionScript,
 };
+use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -89,7 +90,7 @@ impl Default for NoteCreationConfig {
     fn default() -> Self {
         Self {
             note_type: NoteType::Public,
-            tag: NoteTag::for_local_use_case(0, 0).unwrap(),
+            tag: NoteTag::new(0),
             assets: Default::default(),
             inputs: Default::default(),
             execution_hint: NoteExecutionHint::always(),
@@ -113,14 +114,7 @@ pub(super) fn create_note_from_package(
     let note_inputs = NoteInputs::new(config.inputs).unwrap();
     let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
 
-    let metadata = NoteMetadata::new(
-        sender_id,
-        config.note_type,
-        config.tag,
-        config.execution_hint,
-        config.aux,
-    )
-    .unwrap();
+    let metadata = NoteMetadata::new(sender_id, config.note_type, config.tag);
 
     Note::new(config.assets, metadata, recipient)
 }
@@ -133,27 +127,11 @@ pub(super) fn account_component_from_package(
     package: Arc<Package>,
     storage_slots: Vec<StorageSlot>,
 ) -> AccountComponent {
-    let account_component_metadata = package.sections.iter().find_map(|section| {
-        if section.id == SectionId::ACCOUNT_COMPONENT_METADATA {
-            Some(section.data.borrow())
-        } else {
-            None
-        }
-    });
-
-    match account_component_metadata {
-        None => panic!("no account component metadata present"),
-        Some(bytes) => {
-            let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
-            let template =
-                AccountComponentTemplate::new(metadata, package.unwrap_library().as_ref().clone());
-
-            let supported_types = BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode]);
-            AccountComponent::new(template.library().clone(), storage_slots)
-                .unwrap()
-                .with_supported_types(supported_types)
-        }
-    }
+    let metadata = AccountComponentMetadata::try_from(package.as_ref())
+        .expect("no account component metadata present");
+    AccountComponent::new(package.unwrap_library().as_ref().clone(), storage_slots)
+        .unwrap()
+        .with_metadata(metadata)
 }
 
 // BASIC WALLET HELPERS
@@ -213,19 +191,22 @@ pub(super) fn assert_account_has_fungible_asset(
 pub(super) fn build_send_notes_script(
     account: &Account,
     notes: &[Note],
-) -> miden_objects::transaction::TransactionScript {
-    let partial_notes =
-        notes.iter().map(miden_objects::note::PartialNote::from).collect::<Vec<_>>();
+) -> TransactionScript {
+    let partial_notes = notes
+        .iter()
+        .cloned()
+        .map(PartialNote::from)
+        .collect::<Vec<_>>();
 
-    AccountInterface::from(account)
-        .build_send_notes_script(&partial_notes, None, false)
+    AccountInterface::from_account(account)
+        .build_send_notes_script(&partial_notes, None)
         .expect("failed to build send_notes transaction script")
 }
 
 /// Executes a transaction context against the chain and commits it in the next block.
 pub(super) fn execute_tx(chain: &mut MockChain, tx_context_builder: TransactionContextBuilder) {
     let tx_context = tx_context_builder.build().unwrap();
-    let executed_tx = block_on(tx_context.execute()).unwrap();
+    let executed_tx = block_on(tx_context.execute()).unwrap_or_else(|err| panic!("{err}"));
     chain.add_pending_executed_transaction(&executed_tx).unwrap();
     chain.prove_next_block().unwrap();
 }
@@ -252,7 +233,7 @@ pub(super) fn build_asset_transfer_tx(
         NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
 
     let tx_script_program = tx_script_package.unwrap_program();
-    let tx_script = miden_objects::transaction::TransactionScript::from_parts(
+    let tx_script = TransactionScript::from_parts(
         tx_script_program.mast_forest().clone(),
         tx_script_program.entrypoint(),
     );
@@ -265,14 +246,7 @@ pub(super) fn build_asset_transfer_tx(
         assets: NoteAssets::new(vec![asset.into()]).unwrap(),
         ..Default::default()
     };
-    let metadata = NoteMetadata::new(
-        sender_id,
-        config.note_type,
-        config.tag,
-        config.execution_hint,
-        config.aux,
-    )
-    .unwrap();
+    let metadata = NoteMetadata::new(sender_id, config.note_type, config.tag);
     let output_note = Note::new(config.assets, metadata, note_recipient.clone());
 
     // Prepare commitment data
@@ -309,10 +283,20 @@ pub(super) fn build_asset_transfer_tx(
 // COUNTER CONTRACT HELPERS
 // ================================================================================================
 
+fn counter_storage_slot_name() -> StorageSlotName {
+    StorageSlotName::new("miden::component::miden_counter_contract::count_map")
+        .expect("counter storage slot name should be valid")
+}
+
+fn auth_public_key_slot_name() -> StorageSlotName {
+    StorageSlotName::new("miden::component::miden_auth_component_rpo_falcon512::owner_public_key")
+        .expect("auth component storage slot name should be valid")
+}
+
 /// Asserts the counter value stored in the counter contract's storage map at `storage_slot`.
 pub(super) fn assert_counter_storage(
-    counter_account_storage: &miden_client::account::AccountStorage,
-    storage_slot: u8,
+    counter_account_storage: &AccountStorage,
+    storage_slot: &StorageSlotName,
     expected: u64,
 ) {
     // according to `examples/counter-contract` for inner (slot, key) values
@@ -366,18 +350,21 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
     component_package: Arc<Package>,
     auth_component_package: Arc<Package>,
     seed: [u8; 32],
-) -> (Account, miden_client::crypto::rpo_falcon512::SecretKey) {
+) -> (Account, AuthSecretKey) {
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let counter_storage_slots =
-        vec![StorageSlot::Map(StorageMap::with_entries([(key, value)]).unwrap())];
+        vec![StorageSlot::with_map(
+            counter_storage_slot_name(),
+            StorageMap::with_entries([(key, value)]).unwrap(),
+        )];
 
     let mut rng = StdRng::seed_from_u64(1);
-    let secret_key = miden_client::crypto::rpo_falcon512::SecretKey::with_rng(&mut rng);
-    let pk_commitment: Word =
-        miden_client::auth::PublicKeyCommitment::from(secret_key.public_key()).into();
+    let secret_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);
+    let pk_commitment: Word = secret_key.public_key().to_commitment().into();
 
-    let auth_storage_slots = vec![StorageSlot::Value(pk_commitment)];
+    let auth_storage_slots =
+        vec![StorageSlot::with_value(auth_public_key_slot_name(), pk_commitment)];
 
     let account = build_existing_counter_account_builder_with_auth_package(
         component_package,

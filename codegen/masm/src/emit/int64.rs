@@ -264,7 +264,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn lt_i64(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i64::lt", span);
+        self.raw_exec("::intrinsics::i64::lt", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes `a <= b` on the stack.
@@ -280,7 +280,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn lte_i64(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i64::lte", span);
+        self.raw_exec("::intrinsics::i64::lte", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes `a > b` on the stack.
@@ -296,7 +296,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn gt_i64(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i64::gt", span);
+        self.raw_exec("::intrinsics::i64::gt", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes `a >= b` on the stack.
@@ -312,7 +312,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn gte_i64(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i64::gte", span);
+        self.raw_exec("::intrinsics::i64::gte", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes `a == b` on the stack.
@@ -343,12 +343,12 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, so if the values are not valid i64, execution will trap.
     pub fn min_i64(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i64::min", span);
+        self.raw_exec("::intrinsics::i64::min", span);
     }
 
     pub fn min_imm_i64(&mut self, imm: i64, span: SourceSpan) {
         self.push_i64(imm, span);
-        self.raw_exec("intrinsics::i64::min", span);
+        self.raw_exec("::intrinsics::i64::min", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes `max(a, b)` on the stack.
@@ -363,12 +363,12 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, so if the values are not valid i64, execution will trap.
     pub fn max_i64(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i64::max", span);
+        self.raw_exec("::intrinsics::i64::max", span);
     }
 
     pub fn max_imm_i64(&mut self, imm: i64, span: SourceSpan) {
         self.push_i64(imm, span);
-        self.raw_exec("intrinsics::i64::max", span);
+        self.raw_exec("::intrinsics::i64::max", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes `a != b` on the stack.
@@ -436,9 +436,9 @@ impl OpEmitter<'_> {
         match overflow {
             Overflow::Unchecked | Overflow::Wrapping => self.add_u64(overflow, span),
             Overflow::Checked => {
-                self.raw_exec("intrinsics::i64::checked_add", span);
+                self.raw_exec("::intrinsics::i64::checked_add", span);
             }
-            Overflow::Overflowing => self.raw_exec("intrinsics::i64::overflowing_add", span),
+            Overflow::Overflowing => self.raw_exec("::intrinsics::i64::overflowing_add", span),
         }
     }
 
@@ -476,8 +476,8 @@ impl OpEmitter<'_> {
     pub fn sub_i64(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Unchecked | Overflow::Wrapping => self.sub_u64(overflow, span),
-            Overflow::Checked => self.raw_exec("intrinsics::i64::checked_sub", span),
-            Overflow::Overflowing => self.raw_exec("intrinsics::i64::overflowing_sub", span),
+            Overflow::Checked => self.raw_exec("::intrinsics::i64::checked_sub", span),
+            Overflow::Overflowing => self.raw_exec("::intrinsics::i64::overflowing_sub", span),
         }
     }
 
@@ -494,8 +494,8 @@ impl OpEmitter<'_> {
         self.push_i64(imm, span);
         match overflow {
             Overflow::Unchecked | Overflow::Wrapping => self.sub_u64(overflow, span),
-            Overflow::Checked => self.raw_exec("intrinsics::i64::checked_sub", span),
-            Overflow::Overflowing => self.raw_exec("intrinsics::i64::overflowing_sub", span),
+            Overflow::Checked => self.raw_exec("::intrinsics::i64::checked_sub", span),
+            Overflow::Overflowing => self.raw_exec("::intrinsics::i64::overflowing_sub", span),
         }
     }
 
@@ -535,10 +535,10 @@ impl OpEmitter<'_> {
     pub fn mul_i64(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Unchecked | Overflow::Wrapping => {
-                self.raw_exec("intrinsics::i64::wrapping_mul", span)
+                self.raw_exec("::intrinsics::i64::wrapping_mul", span)
             }
-            Overflow::Checked => self.raw_exec("intrinsics::i64::checked_mul", span),
-            Overflow::Overflowing => self.raw_exec("intrinsics::i64::overflowing_mul", span),
+            Overflow::Checked => self.raw_exec("::intrinsics::i64::checked_mul", span),
+            Overflow::Overflowing => self.raw_exec("::intrinsics::i64::overflowing_mul", span),
         }
     }
 
@@ -562,15 +562,15 @@ impl OpEmitter<'_> {
             imm => match overflow {
                 Overflow::Unchecked | Overflow::Wrapping => {
                     self.push_i64(imm, span);
-                    self.raw_exec("intrinsics::i64::wrapping_mul", span);
+                    self.raw_exec("::intrinsics::i64::wrapping_mul", span);
                 }
                 Overflow::Checked => {
                     self.push_i64(imm, span);
-                    self.raw_exec("intrinsics::i64::checked_mul", span);
+                    self.raw_exec("::intrinsics::i64::checked_mul", span);
                 }
                 Overflow::Overflowing => {
                     self.push_i64(imm, span);
-                    self.raw_exec("intrinsics::i64::overflowing_mul", span);
+                    self.raw_exec("::intrinsics::i64::overflowing_mul", span);
                 }
             },
         }
@@ -592,7 +592,7 @@ impl OpEmitter<'_> {
     /// Both the operands and result are validated to ensure they are valid u64 values.
     #[inline]
     pub fn checked_div_i64(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i64::checked_div", span);
+        self.raw_exec("::intrinsics::i64::checked_div", span);
     }
 
     /// Pops a i64 value off the stack, `a`, and performs `a / <imm>`.
@@ -603,7 +603,7 @@ impl OpEmitter<'_> {
     pub fn checked_div_imm_i64(&mut self, imm: i64, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.push_i64(imm, span);
-        self.raw_exec("intrinsics::i64::checked_div", span);
+        self.raw_exec("::intrinsics::i64::checked_div", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes the result of `a / b` on the
@@ -706,7 +706,7 @@ impl OpEmitter<'_> {
     /// The operation will trap if the shift value is > 63.
     #[inline]
     pub fn shr_i64(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i64::checked_shr", span);
+        self.raw_exec("::intrinsics::i64::checked_shr", span);
     }
 
     /// Pops a i64 value off the stack, `a`, and performs `a >> <imm>`
@@ -715,7 +715,7 @@ impl OpEmitter<'_> {
     pub fn shr_imm_i64(&mut self, imm: u32, span: SourceSpan) {
         assert!(imm < 63, "invalid shift value: must be < 63, got {imm}");
         self.emit_push(imm, span);
-        self.raw_exec("intrinsics::i64::checked_shr", span);
+        self.raw_exec("::intrinsics::i64::checked_shr", span);
     }
 
     /// Pops a u32 value, `b`, and a u64 value, `a`, off the stack and rotates the bitwise

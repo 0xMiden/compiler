@@ -928,7 +928,7 @@ impl OpEmitter<'_> {
                 );
             }
             Type::I64 => {
-                self.raw_exec("intrinsics::i64::pow2", span);
+                self.raw_exec("::intrinsics::i64::pow2", span);
             }
             Type::Felt => {
                 self.emit(masm::Instruction::Pow2, span);
@@ -937,7 +937,7 @@ impl OpEmitter<'_> {
                 self.emit_all([masm::Instruction::Pow2, masm::Instruction::U32Assert], span);
             }
             Type::I32 => {
-                self.raw_exec("intrinsics::i32::pow2", span);
+                self.raw_exec("::intrinsics::i32::pow2", span);
             }
             Type::U8 | Type::U16 => {
                 self.emit_all([masm::Instruction::Pow2, masm::Instruction::U32Assert], span);

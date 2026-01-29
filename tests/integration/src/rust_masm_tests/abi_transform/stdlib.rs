@@ -23,11 +23,11 @@ use crate::{
 #[test]
 fn test_hash_elements() {
     let main_fn = r#"
-    (input: alloc::vec::Vec<miden_stdlib_sys::Felt>) -> miden_stdlib_sys::Felt {
-        let res = miden_stdlib_sys::hash_elements(input);
-        res.inner.inner.0
-    }"#
-    .to_string();
+	    (input: alloc::vec::Vec<miden_stdlib_sys::Felt>) -> miden_stdlib_sys::Felt {
+	        let res = miden_stdlib_sys::hash_elements(input);
+	        res.inner[0]
+	    }"#
+	    .to_string();
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
         "hash_elements",
@@ -105,12 +105,12 @@ fn test_hash_elements() {
 fn test_hash_words() {
     // Similar to test_hash_elements, but passes Vec<Word> and uses hash_words
     let main_fn = r#"
-    (input: alloc::vec::Vec<miden_stdlib_sys::Word>) -> miden_stdlib_sys::Felt {
-        let res = miden_stdlib_sys::hash_words(&input);
-        // Return the first limb of the digest for easy comparison
-        res.inner.inner.0
-    }"#
-    .to_string();
+	    (input: alloc::vec::Vec<miden_stdlib_sys::Word>) -> miden_stdlib_sys::Felt {
+	        let res = miden_stdlib_sys::hash_words(&input);
+	        // Return the first limb of the digest for easy comparison
+	        res.inner[0]
+	    }"#
+	    .to_string();
 
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(

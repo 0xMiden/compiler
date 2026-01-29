@@ -1,5 +1,6 @@
 use alloc::{borrow::Cow, collections::VecDeque, format};
 use core::fmt;
+use std::string::{String, ToString};
 
 use midenc_session::diagnostics::{Diagnostic, miette};
 use smallvec::{SmallVec, smallvec};
@@ -267,34 +268,30 @@ impl SymbolPath {
 
     /// Derive a Miden Assembly `LibraryPath` from this symbol path
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {
-        use midenc_session::{
-            LibraryNamespace, LibraryPath,
-            miden_assembly::{SourceSpan, Span, ast::Ident},
-        };
+        use midenc_session::LibraryPath;
 
-        let mut components = self.path.iter();
-        let mut parts = SmallVec::<[_; 3]>::default();
-        if self.is_absolute() {
-            let _ = components.next();
-        }
-        let ns = match components.next() {
-            None => {
-                return LibraryPath::new_from_components(LibraryNamespace::Anon, parts);
-            }
-            Some(component) => LibraryNamespace::from_ident_unchecked(Ident::from_raw_parts(
-                Span::new(SourceSpan::default(), component.as_symbol_name().as_str().into()),
-            )),
-        };
-
+        let components = self.path.iter();
+        let mut path_str = String::new();
         for component in components {
-            let id = Ident::from_raw_parts(Span::new(
-                SourceSpan::default(),
-                component.as_symbol_name().as_str().into(),
-            ));
-            parts.push(id);
+            if component.is_root() {
+                path_str.push_str("::");
+                continue;
+            }
+            if !path_str.is_empty() && !path_str.ends_with("::") {
+                // don't put "::" at the start and right after Root component
+                path_str.push_str("::");
+            }
+            let component_str = component.as_symbol_name().as_str();
+            let s = if component_str.contains("::") {
+                format!("\"{component_str}\"")
+            } else {
+                component_str.to_string()
+            };
+            path_str.push_str(&s);
         }
 
-        LibraryPath::new_from_components(ns, parts)
+        // std::dbg!(&path_str);
+        LibraryPath::new(&path_str).expect("invalid library path")
     }
 
     /// Returns true if this symbol name is fully-qualified

@@ -41,11 +41,10 @@ impl ComponentId {
 
     /// Get the Miden Assembly [LibraryPath] that uniquely identifies this interface.
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {
-        use midenc_session::{LibraryNamespace, LibraryPath};
+        use midenc_session::LibraryPath;
 
         let ns = format!("{}:{}@{}", &self.namespace, &self.name, &self.version);
-        let namespace = LibraryNamespace::User(ns.into_boxed_str().into());
-        LibraryPath::new_from_components(namespace, [])
+        LibraryPath::new(&ns).expect("invalid component interface module name")
     }
 }
 

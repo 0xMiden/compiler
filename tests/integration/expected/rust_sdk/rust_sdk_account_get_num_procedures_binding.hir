@@ -40,12 +40,12 @@ builtin.component miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-acc
                 v16 = hir.bitcast v15 : ptr<byte, i32>;
                 v17 = hir.load v16 : i32;
                 hir.exec @miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1/rust_sdk_account_get_num_procedures_binding/__wasm_call_ctors()
-                v28 = arith.constant 1 : u8;
-                v30 = arith.constant 1048584 : i32;
-                v19 = arith.add v17, v30 : i32 #[overflow = wrapping];
+                v29 = arith.constant 1 : u8;
+                v31 = arith.constant 1048584 : i32;
+                v19 = arith.add v17, v31 : i32 #[overflow = wrapping];
                 v23 = hir.bitcast v19 : u32;
                 v24 = hir.int_to_ptr v23 : ptr<byte, u8>;
-                hir.store v24, v28;
+                hir.store v24, v29;
                 scf.yield ;
             };
             builtin.ret ;
@@ -53,7 +53,8 @@ builtin.component miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-acc
 
         private builtin.function @miden::protocol::active_account::get_num_procedures() -> felt {
         ^block15:
-            ub.unreachable ;
+            v25 = hir.exec @miden/protocol/active_account/get_num_procedures() : felt
+            builtin.ret v25;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -68,8 +69,8 @@ builtin.component miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-acc
     };
 
     public builtin.function @binding() -> felt {
-    ^block17:
-        v26 = hir.exec @miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1/rust_sdk_account_get_num_procedures_binding/miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1#binding() : felt
-        builtin.ret v26;
+    ^block20:
+        v27 = hir.exec @miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1/rust_sdk_account_get_num_procedures_binding/miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1#binding() : felt
+        builtin.ret v27;
     };
 };
