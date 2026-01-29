@@ -11,7 +11,7 @@ use miden_test_harness::miden_test_suite;
 
 #[cfg(target_family = "wasm")]
 mod component {
-    use miden::{component, felt, Felt, StorageMap, StorageMapAccess, Word};
+    use miden::{Felt, StorageMap, StorageMapAccess, Word, component, felt};
 
     /// Main contract structure for the counter example.
     #[component]
@@ -25,13 +25,13 @@ mod component {
     impl CounterContract {
         /// Returns the current counter value stored in the contract's storage map.
         pub fn get_count(&self) -> Felt {
-            let key = Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]);
+            let key = Word::from_u64_unchecked(0, 0, 0, 1);
             self.count_map.get(&key)
         }
 
         /// Increments the counter value stored in the contract's storage map by one.
         pub fn increment_count(&mut self) -> Felt {
-            let key = Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]);
+            let key = Word::from_u64_unchecked(0, 0, 0, 1);
             let current_value: Felt = self.count_map.get(&key);
             let new_value = current_value + felt!(1);
             self.count_map.set(key, new_value);
@@ -45,7 +45,7 @@ mod tests {
     use miden::Felt;
     use miden_lib::account::auth::AuthRpoFalcon512;
     use miden_objects::account::{
-        auth::AuthSecretKey, AccountBuilder, AccountComponent, InitStorageData,
+        AccountBuilder, AccountComponent, InitStorageData, auth::AuthSecretKey,
     };
 
     // This tests loads the generated package in the `foo` variable and is then

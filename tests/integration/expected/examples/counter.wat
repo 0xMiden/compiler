@@ -13,8 +13,9 @@
     (type (;3;) (func (param i32 f32)))
     (type (;4;) (func (param f32 f32) (result f32)))
     (type (;5;) (func (param i32) (result f32)))
-    (type (;6;) (func (param f32 f32 f32 f32 f32 i32)))
-    (type (;7;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
+    (type (;6;) (func (param i64) (result f32)))
+    (type (;7;) (func (param f32 f32 f32 f32 f32 i32)))
+    (type (;8;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -69,18 +70,18 @@
       local.tee 0
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 1
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 3
       local.get 0
-      i32.const 1
-      call $intrinsics::felt::from_u32
+      i64.const 1
+      call $intrinsics::felt::from_u64_unchecked
       f32.store offset=12
       local.get 0
       local.get 3
@@ -113,18 +114,18 @@
       local.tee 0
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 1
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 3
       local.get 0
-      i32.const 1
-      call $intrinsics::felt::from_u32
+      i64.const 1
+      call $intrinsics::felt::from_u64_unchecked
       local.tee 4
       f32.store offset=12
       local.get 0
@@ -223,16 +224,19 @@
     (func $intrinsics::felt::from_u32 (;8;) (type 5) (param i32) (result f32)
       unreachable
     )
-    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;9;) (type 5) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;9;) (type 6) (param i64) (result f32)
+      unreachable
+    )
+    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;10;) (type 5) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
       f32.reinterpret_i32
     )
-    (func $miden::active_account::get_map_item (;10;) (type 6) (param f32 f32 f32 f32 f32 i32)
+    (func $miden::active_account::get_map_item (;11;) (type 7) (param f32 f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::native_account::set_map_item (;11;) (type 7) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
+    (func $miden::native_account::set_map_item (;12;) (type 8) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

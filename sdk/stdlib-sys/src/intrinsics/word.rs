@@ -15,6 +15,23 @@ impl Word {
         }
     }
 
+    /// Converts each of the `values` to `Felt`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a value is larger than `Felt::M`.
+    #[inline(always)]
+    pub fn from_u64_unchecked(a: u64, b: u64, c: u64, d: u64) -> Self {
+        Self {
+            inner: (
+                Felt::from_u64_unchecked(a),
+                Felt::from_u64_unchecked(b),
+                Felt::from_u64_unchecked(c),
+                Felt::from_u64_unchecked(d),
+            ),
+        }
+    }
+
     #[inline(always)]
     pub fn reverse(&self) -> Word {
         Word {

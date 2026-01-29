@@ -126,8 +126,12 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::miden:base/note-script@1.0.0::component_macros_note::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    push.11
+    push.0
+    mul.4294967296
+    add
     push.8
-    dup.1
+    dup.2
     add
     u32assert
     push.8
@@ -149,16 +153,25 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.8
-    dup.1
+    dup.2
     u32wrapping_add
     push.66
     push.77
     push.88
     push.99
     push.44
+    push.0
+    mul.4294967296
+    add
     push.33
+    push.0
+    mul.4294967296
+    add
     push.22
-    push.11
+    push.0
+    mul.4294967296
+    add
+    dup.8
     dup.4
     dup.6
     dup.8
@@ -181,7 +194,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.12
-    dup.1
+    dup.2
     add
     u32assert
     push.4
@@ -198,7 +211,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.8
-    dup.2
+    dup.3
     add
     u32assert
     push.4
@@ -216,8 +229,8 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
     push.0
     push.1
-    push.11
-    movup.3
+    movup.2
+    movup.4
     eq
     neq
     neq

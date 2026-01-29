@@ -74,10 +74,7 @@ impl InvalidStackOffsetMovupNote {
 
         active_note::add_assets_to_account();
 
-        let routing_serial = add_word(
-            current_note_serial,
-            Word::from([felt!(0), felt!(0), felt!(0), felt!(1)]),
-        );
+        let routing_serial = add_word(current_note_serial, Word::from_u64_unchecked(0, 0, 0, 1));
 
         let aux_value = offered_out;
         let input_asset = Asset::new(Word::from([inputs[0], inputs[1], inputs[2], input_amount]));
