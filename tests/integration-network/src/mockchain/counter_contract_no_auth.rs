@@ -9,8 +9,8 @@ use miden_client::{
     transaction::OutputNote,
 };
 use miden_core::{Felt, FieldElement};
-use miden_objects::account::{
-    AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageSlot,
+use miden_protocol::account::{
+    AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
 };
 
 use super::helpers::{
@@ -36,8 +36,13 @@ pub fn test_counter_contract_no_auth() {
 
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+    let counter_storage_slot =
+        StorageSlotName::new("miden::component::miden_counter_contract::count_map").unwrap();
     let counter_storage_slots =
-        vec![StorageSlot::Map(StorageMap::with_entries([(key, value)]).unwrap())];
+        vec![StorageSlot::with_map(
+            counter_storage_slot.clone(),
+            StorageMap::with_entries([(key, value)]).unwrap(),
+        )];
 
     let mut builder = MockChain::builder();
 
@@ -72,7 +77,7 @@ pub fn test_counter_contract_no_auth() {
         note_package.clone(),
         sender_account.id(),
         NoteCreationConfig {
-            tag: NoteTag::from_account_id(counter_account.id()),
+            tag: NoteTag::with_account_target(counter_account.id()),
             ..Default::default()
         },
         &mut rng,
@@ -84,7 +89,11 @@ pub fn test_counter_contract_no_auth() {
     chain.prove_next_block().unwrap();
     chain.prove_next_block().unwrap();
 
-    assert_counter_storage(chain.committed_account(counter_account.id()).unwrap().storage(), 0, 1);
+    assert_counter_storage(
+        chain.committed_account(counter_account.id()).unwrap().storage(),
+        &counter_storage_slot,
+        1,
+    );
 
     // Consume the note with the counter account (no signature/auth required).
     let tx_context_builder = chain
@@ -93,5 +102,9 @@ pub fn test_counter_contract_no_auth() {
     execute_tx(&mut chain, tx_context_builder);
 
     // The counter contract storage value should be 2 after the note is consumed
-    assert_counter_storage(chain.committed_account(counter_account.id()).unwrap().storage(), 0, 2);
+    assert_counter_storage(
+        chain.committed_account(counter_account.id()).unwrap().storage(),
+        &counter_storage_slot,
+        2,
+    );
 }

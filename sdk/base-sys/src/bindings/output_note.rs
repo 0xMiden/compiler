@@ -7,7 +7,7 @@ use super::types::{Asset, NoteIdx, NoteType, Recipient, Tag};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::output_note::create"]
+    #[link_name = "miden::protocol::output_note::create"]
     pub fn extern_output_note_create(
         tag: Tag,
         aux: Felt,
@@ -19,7 +19,7 @@ unsafe extern "C" {
         recipient_f3: Felt,
     ) -> NoteIdx;
 
-    #[link_name = "miden::output_note::add_asset"]
+    #[link_name = "miden::protocol::output_note::add_asset"]
     pub fn extern_output_note_add_asset(
         asset_f0: Felt,
         asset_f1: Felt,
@@ -28,16 +28,16 @@ unsafe extern "C" {
         note_idx: NoteIdx,
     );
 
-    #[link_name = "miden::output_note::get_assets_info"]
+    #[link_name = "miden::protocol::output_note::get_assets_info"]
     pub fn extern_output_note_get_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
 
-    #[link_name = "miden::output_note::get_assets"]
+    #[link_name = "miden::protocol::output_note::get_assets"]
     pub fn extern_output_note_get_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
 
-    #[link_name = "miden::output_note::get_recipient"]
+    #[link_name = "miden::protocol::output_note::get_recipient"]
     pub fn extern_output_note_get_recipient(note_index: Felt, ptr: *mut Recipient);
 
-    #[link_name = "miden::output_note::get_metadata"]
+    #[link_name = "miden::protocol::output_note::get_metadata"]
     pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut Word);
 }
 
@@ -57,9 +57,9 @@ unsafe extern "C" {
 /// let serial_num = Word::from_u64_unchecked(1, 2, 3, 4);
 /// let note_script_root = Digest::from_word(Word::from_u64_unchecked(0, 0, 0, 0));
 ///
-/// // Note inputs must be padded to a multiple of 8 felts (2 words).
-/// let padded_inputs = alloc::vec![felt!(0); 8];
-/// let recipient = Recipient::compute(serial_num, note_script_root, padded_inputs);
+    /// // Note inputs are hashed via `hash_elements`.
+    /// let inputs = alloc::vec![felt!(0); 2];
+    /// let recipient = Recipient::compute(serial_num, note_script_root, inputs);
 ///
 /// let tag = Tag::from(felt!(0));
 /// let note_type = NoteType::from(felt!(0));

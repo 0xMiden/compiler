@@ -25,11 +25,9 @@ use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_core::{Felt, FieldElement, Word};
 use miden_felt_repr::ToFeltRepr;
 use miden_integration_tests::CompilerTestBuilder;
-use miden_mast_package::{Package, SectionId};
-use miden_objects::{
-    account::{
-        AccountBuilder, AccountComponent, AccountComponentMetadata, AccountComponentTemplate,
-    },
+use miden_mast_package::Package;
+use miden_protocol::{
+    account::{AccountBuilder, AccountComponent, AccountComponentMetadata},
     asset::Asset,
     transaction::TransactionId,
 };
@@ -103,33 +101,24 @@ pub async fn create_account_with_component(
     package: Arc<Package>,
     config: AccountCreationConfig,
 ) -> Result<Account, ClientError> {
-    let account_component_metadata = package.sections.iter().find_map(|s| {
-        if s.id == SectionId::ACCOUNT_COMPONENT_METADATA {
-            Some(s.data.borrow())
-        } else {
-            None
-        }
-    });
-    let account_component = match account_component_metadata {
-        None => panic!("no account component metadata present"),
-        Some(bytes) => {
-            let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
-            let template =
-                AccountComponentTemplate::new(metadata, package.unwrap_library().as_ref().clone());
+    let AccountCreationConfig {
+        account_type,
+        storage_mode,
+        storage_slots,
+        supported_types,
+        with_basic_wallet,
+    } = config;
 
-            let component =
-                AccountComponent::new(template.library().clone(), config.storage_slots).unwrap();
+    let metadata =
+        AccountComponentMetadata::try_from(package.as_ref()).expect("no account component metadata present");
+    let mut account_component =
+        AccountComponent::new(package.unwrap_library().as_ref().clone(), storage_slots)
+            .unwrap()
+            .with_metadata(metadata);
 
-            // Use supported types from config if provided, otherwise default to RegularAccountUpdatableCode
-            let supported_types = if let Some(types) = config.supported_types {
-                BTreeSet::from_iter(types)
-            } else {
-                BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode])
-            };
-
-            component.with_supported_types(supported_types)
-        }
-    };
+    if let Some(types) = supported_types {
+        account_component = account_component.with_supported_types(BTreeSet::from_iter(types));
+    }
 
     let mut init_seed = [0_u8; 32];
     client.rng().fill_bytes(&mut init_seed);
@@ -140,13 +129,13 @@ pub async fn create_account_with_component(
     let _sync_summary = client.sync_state().await.unwrap();
 
     let mut builder = AccountBuilder::new(init_seed)
-        .account_type(config.account_type)
-        .storage_mode(config.storage_mode)
+        .account_type(account_type)
+        .storage_mode(storage_mode)
         .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(
             key_pair.public_key().to_commitment(),
         )));
 
-    if config.with_basic_wallet {
+    if with_basic_wallet {
         builder = builder.with_component(BasicWallet);
     }
 
@@ -200,33 +189,25 @@ pub async fn create_account_with_component_and_auth_package(
     auth_component_package: Arc<Package>,
     config: AccountCreationConfig,
 ) -> Result<Account, ClientError> {
-    // Build the main account component from its template metadata
-    let account_component_metadata_section = component_package
-        .sections
-        .iter()
-        .find(|s| s.id == SectionId::ACCOUNT_COMPONENT_METADATA)
-        .expect("no account component metadata found");
-    let account_component = {
-        let bytes = account_component_metadata_section.data.as_ref();
-        let metadata = AccountComponentMetadata::read_from_bytes(bytes).unwrap();
-        let template = AccountComponentTemplate::new(
-            metadata,
-            component_package.unwrap_library().as_ref().clone(),
-        );
+    let AccountCreationConfig {
+        account_type,
+        storage_mode,
+        storage_slots,
+        supported_types,
+        with_basic_wallet,
+    } = config;
 
-        let component =
-            AccountComponent::new(template.library().clone(), config.storage_slots.clone())
-                .unwrap();
+    let metadata = AccountComponentMetadata::try_from(component_package.as_ref())
+        .expect("no account component metadata present");
+    let mut account_component =
+        AccountComponent::new(component_package.unwrap_library().as_ref().clone(), storage_slots)
+            .unwrap()
+            .with_metadata(metadata);
 
-        // Use supported types from config if provided, otherwise default to RegularAccountUpdatableCode
-        let supported_types = if let Some(types) = &config.supported_types {
-            BTreeSet::from_iter(types.iter().cloned())
-        } else {
-            BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode])
-        };
-
-        component.with_supported_types(supported_types)
-    };
+    if let Some(types) = supported_types.as_ref() {
+        account_component =
+            account_component.with_supported_types(BTreeSet::from_iter(types.iter().copied()));
+    }
 
     // Build the authentication component from the compiled library (no storage)
     let mut auth_component =
@@ -234,9 +215,9 @@ pub async fn create_account_with_component_and_auth_package(
             .unwrap();
 
     // Ensure auth component supports the intended account type
-    if let Some(types) = &config.supported_types {
+    if let Some(types) = supported_types.as_ref() {
         auth_component =
-            auth_component.with_supported_types(BTreeSet::from_iter(types.iter().cloned()));
+            auth_component.with_supported_types(BTreeSet::from_iter(types.iter().copied()));
     } else {
         auth_component = auth_component
             .with_supported_types(BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode]));
@@ -249,11 +230,11 @@ pub async fn create_account_with_component_and_auth_package(
     let _sync_summary = client.sync_state().await.unwrap();
 
     let mut builder = AccountBuilder::new(init_seed)
-        .account_type(config.account_type)
-        .storage_mode(config.storage_mode)
+        .account_type(account_type)
+        .storage_mode(storage_mode)
         .with_auth_component(auth_component);
 
-    if config.with_basic_wallet {
+    if with_basic_wallet {
         builder = builder.with_component(BasicWallet);
     }
 
@@ -371,7 +352,7 @@ pub async fn assert_account_has_fungible_asset(
         .expect("Failed to get account")
         .expect("Account not found");
 
-    let account_state: miden_objects::account::Account = account_record.into();
+    let account_state: Account = account_record.into();
 
     // Look for the specific fungible asset in the vault
     let found_asset = account_state.vault().assets().find_map(|asset| {

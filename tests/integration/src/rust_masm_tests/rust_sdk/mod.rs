@@ -4,7 +4,8 @@ use miden_core::{
     Felt, FieldElement, Word,
     utils::{Deserializable, Serializable},
 };
-use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
+use miden_protocol::account::AccountComponentMetadata;
+use miden_protocol::account::component::InitStorageData;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{FunctionIdent, Ident, SourceSpan, interner::Symbol};
@@ -160,20 +161,23 @@ fn rust_sdk_cross_ctx_account_and_note() {
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account.masm")]);
     let account_package = test.compiled_package();
     let lib = account_package.unwrap_library();
+    let exports = lib
+        .exports()
+        .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
+        .map(|e| e.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
     assert!(
         !lib.exports()
-            .any(|export| { export.name.to_string().starts_with("intrinsics") }),
+            .any(|export| export.path().as_ref().as_str().starts_with("intrinsics")),
         "expected no intrinsics in the exports"
     );
-    let expected_module = "miden:cross-ctx-account/foo@1.0.0";
-    let expected_function = "process-felt";
+    let expected_module_prefix = "::miden:cross-ctx-account/";
+    let expected_function_suffix = "::process-felt";
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}"
+        exports
+            .iter()
+            .any(|export| export.starts_with(expected_module_prefix) && export.ends_with(expected_function_suffix)),
+        "expected one of the exports to start with '{expected_module_prefix}' and end with '{expected_function_suffix}', got exports: {exports:?}"
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
@@ -217,21 +221,19 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     )]);
     let account_package = test.compiled_package();
     let lib = account_package.unwrap_library();
-    let expected_module = "miden:cross-ctx-account-word/foo@1.0.0";
-    let expected_function = "process-word";
+    let expected_module_prefix = "::miden:cross-ctx-account-word/";
+    let expected_function_suffix = "::process-word";
     let exports = lib
         .exports()
-        .filter(|e| !e.name.module.to_string().starts_with("intrinsics"))
-        .map(|e| format!("{}::{}", e.name.module, e.name.name.as_str()))
+        .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
+        .map(|e| e.path().as_ref().as_str().to_string())
         .collect::<Vec<_>>();
     // dbg!(&exports);
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}"
+        exports
+            .iter()
+            .any(|export| export.starts_with(expected_module_prefix) && export.ends_with(expected_function_suffix)),
+        "expected one of the exports to start with '{expected_module_prefix}' and end with '{expected_function_suffix}', got exports: {exports:?}"
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
@@ -288,21 +290,18 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     let account_package = test.compiled_package();
 
     let lib = account_package.unwrap_library();
-    let expected_module = "miden:cross-ctx-account-word-arg/foo@1.0.0";
-    let expected_function = "process-word";
+    let expected_module_prefix = "::miden:cross-ctx-account-word-arg/";
+    let expected_function_suffix = "::process-word";
     let exports = lib
         .exports()
-        .filter(|e| !e.name.module.to_string().starts_with("intrinsics"))
-        .map(|e| format!("{}::{}", e.name.module, e.name.name.as_str()))
+        .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
+        .map(|e| e.path().as_ref().as_str().to_string())
         .collect::<Vec<_>>();
-    dbg!(&exports);
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}"
+        exports
+            .iter()
+            .any(|export| export.starts_with(expected_module_prefix) && export.ends_with(expected_function_suffix)),
+        "expected one of the exports to start with '{expected_module_prefix}' and end with '{expected_function_suffix}', got exports: {exports:?}"
     );
 
     // Build counter note

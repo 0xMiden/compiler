@@ -14,16 +14,15 @@ use crate::bindings::exports::miden::storage_example::*;
 miden::generate!();
 bindings::export!(MyAccount);
 
+/// An example account demonstrating storage value and map usage.
 #[component]
 struct MyAccount {
-    #[storage(
-        slot(0),
-        description = "test value",
-        type = "auth::rpo_falcon512::pub_key"
-    )]
+    /// Public key authorized to update the stored asset quantities.
+    #[storage(slot(0), description = "owner public key")]
     owner_public_key: Value,
 
-    #[storage(slot(1), description = "test map")]
+    /// A map from asset identifier to quantity held by the account.
+    #[storage(slot(1), description = "asset quantity map")]
     asset_qty_map: StorageMap,
 }
 
@@ -38,6 +37,7 @@ struct MyAccount {
 // }
 
 impl foo::Guest for MyAccount {
+    /// Sets the quantity for `asset` if `pub_key` matches the stored owner key.
     fn set_asset_qty(pub_key: Word, asset: Asset, qty: Felt) {
         let mut my_account = MyAccount::default();
         let owner_key: Word = my_account.owner_public_key.read();
@@ -46,6 +46,7 @@ impl foo::Guest for MyAccount {
         }
     }
 
+    /// Returns the stored quantity for `asset`, or 0 if not present.
     fn get_asset_qty(asset: Asset) -> Felt {
         let my_account = MyAccount::default();
         my_account.asset_qty_map.get(&asset)

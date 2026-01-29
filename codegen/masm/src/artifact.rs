@@ -4,9 +4,13 @@ use alloc::{
 };
 use core::fmt;
 
-use miden_assembly::{Library, ast::InvocationTarget, library::LibraryExport};
+use miden_assembly::{
+    Library, Path, PathBuf,
+    ast::InvocationTarget,
+    library::{LibraryExport, ProcedureExport},
+};
 use miden_core::{Program, Word};
-use miden_mast_package::{MastArtifact, Package, ProcedureName};
+use miden_mast_package::{MastArtifact, Package};
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
@@ -153,11 +157,11 @@ impl fmt::Display for MasmComponent {
             // modules to focus on the user-defined modules and avoid the
             // stack overflow error when printing large programs
             // https://github.com/0xMiden/miden-formatting/issues/4
-            let module_name = module.path().path();
-            if INTRINSICS_MODULE_NAMES.contains(&module_name.as_ref()) {
+            let module_name = module.path().as_str();
+            if INTRINSICS_MODULE_NAMES.contains(&module_name) {
                 continue;
             }
-            if ["std"].contains(&module.namespace().as_str()) {
+            if module.is_in_namespace(Path::new("std")) {
                 continue;
             } else {
                 writeln!(f, "# mod {}\n", &module_name)?;
@@ -199,15 +203,14 @@ impl MasmComponent {
             target: "assembly",
             "assembling executable with entrypoint '{entrypoint}' (debug_mode={debug_mode})"
         );
-        let mut assembler =
-            Assembler::new(session.source_manager.clone()).with_debug_mode(debug_mode);
+        let mut assembler = Assembler::new(session.source_manager.clone());
 
-        let mut lib_modules = BTreeSet::default();
+        let mut lib_modules = BTreeSet::<PathBuf>::default();
         // Link extra libraries
         for library in link_libraries.iter().cloned() {
             for module in library.module_infos() {
                 log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
-                lib_modules.insert(module.path().clone());
+                lib_modules.insert(module.path().to_path_buf());
             }
             assembler.link_dynamic_library(library)?;
         }
@@ -228,7 +231,7 @@ impl MasmComponent {
                 continue;
             }
 
-            if module.path().to_string().starts_with("intrinsics") {
+            if module.path().as_str().trim_start_matches("::").starts_with("intrinsics") {
                 log::debug!(target: "assembly", "adding intrinsics '{}' to assembler", module.path());
                 assembler.compile_and_statically_link(module)?;
             } else {
@@ -244,7 +247,8 @@ impl MasmComponent {
         }
 
         let emit_test_harness = session.get_flag("test_harness");
-        let main = self.generate_main(entrypoint, emit_test_harness)?;
+        let main =
+            self.generate_main(entrypoint, emit_test_harness, session.source_manager.clone())?;
         log::debug!(target: "assembly", "generated executable module:\n{main}");
         let program = assembler.assemble_program(main)?;
         let advice_map: miden_core::AdviceMap =
@@ -268,15 +272,14 @@ impl MasmComponent {
             debug_mode
         );
 
-        let mut assembler =
-            Assembler::new(session.source_manager.clone()).with_debug_mode(debug_mode);
+        let mut assembler = Assembler::new(session.source_manager.clone());
 
-        let mut lib_modules = Vec::new();
+        let mut lib_modules = BTreeSet::<PathBuf>::default();
         // Link extra libraries
         for library in link_libraries.iter().cloned() {
             for module in library.module_infos() {
                 log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
-                lib_modules.push(module.path().clone());
+                lib_modules.insert(module.path().to_path_buf());
             }
             assembler.link_dynamic_library(library)?;
         }
@@ -295,7 +298,7 @@ impl MasmComponent {
                 );
                 continue;
             }
-            if module.path().to_string().starts_with("intrinsics") {
+            if module.path().as_str().trim_start_matches("::").starts_with("intrinsics") {
                 log::debug!(target: "assembly", "adding intrinsics '{}' to assembler", module.path());
                 assembler.compile_and_statically_link(module)?;
             } else {
@@ -330,6 +333,7 @@ impl MasmComponent {
         &self,
         entrypoint: &InvocationTarget,
         emit_test_harness: bool,
+        source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
     ) -> Result<Arc<masm::Module>, Report> {
         use masm::{Instruction as Inst, Op};
 
@@ -357,12 +361,11 @@ impl MasmComponent {
                 .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
 
             // Truncate the stack to 16 elements on exit
-            let truncate_stack = InvocationTarget::AbsoluteProcedurePath {
-                name: ProcedureName::new("truncate_stack").unwrap(),
-                path: masm::LibraryPath::new_from_components(
-                    masm::LibraryNamespace::new("std").unwrap(),
-                    [masm::Ident::new("sys").unwrap()],
-                ),
+            let truncate_stack = {
+                let name = masm::ProcedureName::new("truncate_stack").unwrap();
+                let module = masm::LibraryPath::new("::miden::core::sys").unwrap();
+                let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
+                InvocationTarget::Path(Span::new(span, qualified.into_inner()))
             };
             block.push(Op::Inst(Span::new(span, Inst::Exec(truncate_stack))));
             block
@@ -374,7 +377,8 @@ impl MasmComponent {
             0,
             body,
         );
-        exe.define_procedure(masm::Export::Procedure(start))?;
+        exe.define_procedure(start, source_manager)
+            .map_err(|err| Report::msg(err.to_string()))?;
         Ok(Arc::from(exe))
     }
 
@@ -384,8 +388,12 @@ impl MasmComponent {
 
         let span = SourceSpan::default();
 
-        let pipe_words_to_memory = masm::ProcedureName::new("pipe_words_to_memory").unwrap();
-        let std_mem = masm::LibraryPath::new("std::mem").unwrap();
+        let pipe_words_to_memory = {
+            let name = masm::ProcedureName::new("pipe_words_to_memory").unwrap();
+            let module = masm::LibraryPath::new("::miden::core::mem").unwrap();
+            let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
+            InvocationTarget::Path(Span::new(span, qualified.into_inner()))
+        };
 
         // Step 1: Get the number of initializers to run
         // => [inits] on operand stack
@@ -414,13 +422,7 @@ impl MasmComponent {
         // => [C, B, A, dest_ptr, inits'] on operand stack
         loop_body
             .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameStart.as_u32().into()))));
-        loop_body.push(Op::Inst(Span::new(
-            span,
-            Inst::Exec(InvocationTarget::AbsoluteProcedurePath {
-                name: pipe_words_to_memory,
-                path: std_mem,
-            }),
-        )));
+        loop_body.push(Op::Inst(Span::new(span, Inst::Exec(pipe_words_to_memory))));
         loop_body
             .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
         // Drop C, B, A
@@ -459,48 +461,62 @@ impl MasmComponent {
 ///
 /// 2. Assembler using the current module name to generate exports.
 ///
-fn recover_wasm_cm_interfaces(
-    lib: &Library,
-) -> BTreeMap<masm::QualifiedProcedureName, LibraryExport> {
+fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExport> {
     use crate::intrinsics::INTRINSICS_MODULE_NAMES;
 
     let mut exports = BTreeMap::new();
     for export in lib.exports() {
-        if INTRINSICS_MODULE_NAMES.contains(&export.name.module.to_string().as_str())
-            || export.name.name.as_str().starts_with("cabi")
-        {
+        let path = export.path();
+        let Some(proc_export) = export.as_procedure() else {
+            exports.insert(path, export.clone());
+            continue;
+        };
+
+        let Some(module) = proc_export.path.parent() else {
+            exports.insert(path, export.clone());
+            continue;
+        };
+        let Some(proc_name) = proc_export.path.last() else {
+            exports.insert(path, export.clone());
+            continue;
+        };
+
+        if INTRINSICS_MODULE_NAMES.contains(&module.as_str()) || proc_name.starts_with("cabi") {
             // Preserve intrinsics modules and internal Wasm CM `cabi_*` functions
-            exports.insert(export.name.clone(), export.clone());
+            exports.insert(path, export.clone());
             continue;
         }
 
-        if let Some((component, interface)) = export.name.name.as_str().rsplit_once('/') {
-            let export_node_id = lib.get_export_node_id(&export.name);
-
+        if let Some((component, interface)) = proc_name.rsplit_once('/') {
             // Wasm CM interface
             let (interface, function) =
                 interface.rsplit_once('#').expect("invalid wasm component model identifier");
 
-            let mut component_parts = component.split(':').map(Arc::from);
-            let ns = masm::LibraryNamespace::User(
-                component_parts.next().expect("invalid wasm component model identifier"),
-            );
-            let component_parts = component_parts
-                .map(Span::unknown)
-                .map(masm::Ident::from_raw_parts)
-                .chain([masm::Ident::from_raw_parts(Span::unknown(Arc::from(interface)))]);
-            let path = masm::LibraryPath::new_from_components(ns, component_parts);
+            // Derive a new module path in which the Wasm CM interface name is encoded as part of
+            // the module path, rather than being encoded in the procedure name.
+            let mut module_path = component.to_string();
+            module_path.push_str("::");
+            module_path.push_str(interface);
+            dbg!(&module_path);
+            let module_path = masm::LibraryPath::new(&module_path)
+                .expect("invalid wasm component model identifier");
+
             let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
                 Span::unknown(Arc::from(function)),
             ));
-            let new_export = masm::QualifiedProcedureName::new(path, name);
+            let qualified = masm::QualifiedProcedureName::new(module_path.as_path(), name);
+            let qualified = qualified.into_inner();
 
-            let new_lib_export = LibraryExport::new(export_node_id, new_export.clone());
+            let mut new_export = ProcedureExport::new(proc_export.node, qualified.clone())
+                .with_attributes(proc_export.attributes.clone());
+            if let Some(signature) = proc_export.signature.clone() {
+                new_export = new_export.with_signature(signature);
+            }
 
-            exports.insert(new_export, new_lib_export.clone());
+            exports.insert(qualified, LibraryExport::Procedure(new_export));
         } else {
             // Non-Wasm CM interface, preserve as is
-            exports.insert(export.name.clone(), export.clone());
+            exports.insert(path, export.clone());
         }
     }
     exports

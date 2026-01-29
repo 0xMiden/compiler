@@ -203,8 +203,10 @@ impl<'a> OpEmitter<'a> {
             span,
             callee.function.as_str().into(),
         )));
-        let path = masm::LibraryPath::new(callee.module.as_str()).unwrap();
-        let target = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
+        let module_name = callee.module.as_str();
+        let module = masm::LibraryPath::new(module_name).unwrap();
+        let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
+        let target = masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
         self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
         self.emit(masm::Instruction::Nop, span);
         self.emit(masm::Instruction::Exec(target), span);
@@ -2035,12 +2037,11 @@ mod tests {
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
         let return_ty = Type::from(ArrayType::new(Type::U32, 1));
-        let callee = masm::InvocationTarget::AbsoluteProcedurePath {
-            path: masm::LibraryPath::new_from_components(
-                masm::LibraryNamespace::new("test").unwrap(),
-                [],
-            ),
-            name: masm::ProcedureName::new("add").unwrap(),
+        let callee = {
+            let name = masm::ProcedureName::new("add").unwrap();
+            let module = masm::LibraryPath::new("test").unwrap();
+            let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
+            masm::InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
         };
         let signature = Signature::new(
             [AbiParam::new(Type::U32), AbiParam::new(Type::I1)],

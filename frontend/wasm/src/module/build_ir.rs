@@ -147,8 +147,8 @@ pub fn build_ir_module(
         let Ok(intrinsic) = Intrinsic::try_from(&import_path) else {
             continue;
         };
-        dbg!(&func_name);
-        dbg!(&intrinsic);
+        // dbg!(&func_name);
+        // dbg!(&intrinsic);
 
         // Check if this intrinsic can be inlined as an operation
         let Some(conv) = intrinsic.conversion_result() else {
@@ -158,8 +158,8 @@ pub fn build_ir_module(
         // TODO: it seems like all intrinsics should have conversion_result() as an op
         match conv {
             IntrinsicsConversionResult::FunctionType(_function_type) => {
-                dbg!(&func_name);
-                if func_name != "intrinsics::mem::heap_base" {
+                // dbg!(&func_name);
+                if !func_name.contains("intrinsics::mem::heap_base") {
                     continue;
                 }
             }
