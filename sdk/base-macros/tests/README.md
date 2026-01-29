@@ -8,9 +8,8 @@ When tests are run, the Rust source files in `./errors/` are compiled. For `./er
 
 **Adding new source files**:
 
-- Add `./errors/your_file.rs` and run tests. This will fail and produce `wip/your_file.stderr`.
-- Inspect `your_file.stderr`. If it contains the expected error, move it next to `your_file.rs`.
-- Run tests again, now they should pass.
+- Add `./errors/your_file.rs` and run tests with the environment variable `TRYBUILD=overwrite`.
+- This adds `your_file.stderr`. Inspect it and commit if it contains the expected error.
 
 **Updating `stderr` files**:
 
