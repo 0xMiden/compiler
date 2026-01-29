@@ -378,7 +378,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v539 = arith.constant 50 : felt;
             v342 = arith.constant -11 : i32;
             v340 = arith.constant -4294967302 : i64;
-            v341 = hir.cast v340 : felt;
+            v341 = arith.trunc v340 : felt;
             v339 = arith.constant -1001 : i64;
             hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_mixed::wit_import4(v339, v341, v342, v539, v345, v174, v186, v349)
             v583 = arith.constant 8 : u32;
@@ -440,7 +440,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v405 = hir.int_to_ptr v402 : ptr<byte, felt>;
             v406 = hir.load v405 : felt;
             v407 = arith.constant -4294967296 : i64;
-            v408 = hir.cast v407 : felt;
+            v408 = arith.trunc v407 : felt;
             hir.assert_eq v406, v408;
             v409 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_field::wasm32::Felt as core::convert::From<u32>>::from(v399) : felt
             v410 = arith.constant -1 : i32;

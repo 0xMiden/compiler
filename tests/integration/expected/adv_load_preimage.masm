@@ -158,16 +158,6 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
     exec.::std::math::u64::shr
     trace.252
     nop
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     push.2

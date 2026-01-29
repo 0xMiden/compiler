@@ -297,16 +297,6 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     assertz
     push.1
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -329,16 +319,6 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     assertz
     push.0
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -361,16 +341,6 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     assertz
     push.0
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -390,16 +360,6 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     assertz
     push.0
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -481,58 +441,18 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     nop
     push.0
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     push.0
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     push.0
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     push.1
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     push.12

@@ -844,16 +844,6 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     push.4294967285
     push.4294967290
     push.4294967294
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     push.4294966295
@@ -1003,16 +993,6 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         nop
         push.0
         push.4294967295
-        dup.1
-        dup.1
-        push.1
-        push.4294967295
-        trace.240
-        nop
-        exec.::std::math::u64::lt
-        trace.252
-        nop
-        assert
         mul.4294967296
         add
         assert_eq

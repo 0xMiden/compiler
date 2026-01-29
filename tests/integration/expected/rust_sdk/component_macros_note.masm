@@ -128,16 +128,6 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
     push.11
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     push.8
@@ -171,44 +161,14 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     push.99
     push.44
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     push.33
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     push.22
     push.0
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::std::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     dup.8

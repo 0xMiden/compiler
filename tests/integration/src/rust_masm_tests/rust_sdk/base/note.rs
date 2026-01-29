@@ -8,9 +8,15 @@ fn run_note_binding_test(name: &str, body: &str) {
 
 use miden::*;
 
-#[note_script]
-fn run(_arg: Word) {{
-    {body}
+#[note]
+struct Note;
+
+#[note]
+impl Note {{
+    #[note_script]
+    pub fn run(self, _arg: Word) {{
+        {body}
+    }}
 }}
 ",
         body = body

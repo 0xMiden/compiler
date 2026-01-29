@@ -11,86 +11,92 @@ extern crate alloc;
 
 use miden::*;
 
-/// Note-script entrypoint used to reproduce issue #831.
-///
-/// The `create_swapp_note` call uses a flattened argument size of 15 felts.
-#[note_script]
-fn run(arg: Word) {
-    // NOTE: Guard the reproduction logic behind a runtime condition so that once #831 is fixed,
-    // this note can execute without requiring a full `active_note`/`output_note` runtime context.
-    if arg[0] == felt!(0) {
-        return;
-    }
+#[note]
+struct InvalidStackOffsetMovupNote;
 
-    let inputs = active_note::get_inputs();
+#[note]
+impl InvalidStackOffsetMovupNote {
+    /// Note-script entrypoint used to reproduce issue #831.
+    ///
+    /// The `create_swapp_note` call uses a flattened argument size of 15 felts.
+    #[note_script]
+    pub fn run(self, arg: Word) {
+        // NOTE: Guard the reproduction logic behind a runtime condition so that once #831 is fixed,
+        // this note can execute without requiring a full `active_note`/`output_note` runtime context.
+        if arg[0] == felt!(0) {
+            return;
+        }
 
-    let executing_account_id = active_account::get_id();
-    let swapp_note_creator_id = AccountId::new(inputs[8], inputs[9]);
+        let inputs = active_note::get_inputs();
 
-    if swapp_note_creator_id == executing_account_id {
+        let executing_account_id = active_account::get_id();
+        let swapp_note_creator_id = AccountId::new(inputs[8], inputs[9]);
+
+        if swapp_note_creator_id == executing_account_id {
+            active_note::add_assets_to_account();
+            return;
+        }
+
+        let inflight_val = arg[0];
+        let input_amount = arg[1];
+        let _inflight = inflight_val != felt!(0);
+
+        let _requested_asset_word = Asset::from([inputs[0], inputs[1], inputs[2], inputs[3]]);
+        let offered_asset_word = Asset::from([inputs[4], inputs[5], inputs[6], inputs[7]]);
+
+        let note_assets = active_note::get_assets();
+        let num_assets = note_assets.len();
+        assert_eq(Felt::from_u32(num_assets as u32), felt!(1));
+
+        let note_asset = note_assets[0];
+        let assets_match = if offered_asset_word == note_asset {
+            felt!(1)
+        } else {
+            felt!(0)
+        };
+        assert_eq(assets_match, felt!(1));
+
+        let requested_asset_total = inputs[3];
+        let offered_asset_total = inputs[7];
+
+        let current_note_serial = active_note::get_serial_number();
+
+        let is_valid = if input_amount <= requested_asset_total {
+            felt!(1)
+        } else {
+            felt!(0)
+        };
+        assert_eq(is_valid, felt!(1));
+
+        let _one = felt!(1);
+        let offered_out =
+            calculate_output_amount(offered_asset_total, requested_asset_total, input_amount);
+
         active_note::add_assets_to_account();
-        return;
-    }
 
-    let inflight_val = arg[0];
-    let input_amount = arg[1];
-    let _inflight = inflight_val != felt!(0);
+        let routing_serial = add_word(current_note_serial, Word::from_u64_unchecked(0, 0, 0, 1));
 
-    let _requested_asset_word = Asset::from([inputs[0], inputs[1], inputs[2], inputs[3]]);
-    let offered_asset_word = Asset::from([inputs[4], inputs[5], inputs[6], inputs[7]]);
+        let aux_value = offered_out;
+        let input_asset = Asset::new(Word::from([inputs[0], inputs[1], inputs[2], input_amount]));
 
-    let note_assets = active_note::get_assets();
-    let num_assets = note_assets.len();
-    assert_eq(Felt::from_u32(num_assets as u32), felt!(1));
+        create_p2id_note(routing_serial, input_asset, swapp_note_creator_id, aux_value);
 
-    let note_asset = note_assets[0];
-    let assets_match = if offered_asset_word == note_asset {
-        felt!(1)
-    } else {
-        felt!(0)
-    };
-    assert_eq(assets_match, felt!(1));
+        if offered_out < offered_asset_total {
+            let remainder_serial = hash_words(&[current_note_serial]).inner;
+            let remainder_aux = offered_out;
+            let remainder_requested_asset =
+                Asset::from([inputs[0], inputs[1], inputs[2], inputs[3] - input_amount]);
+            let remainder_offered_asset =
+                Asset::from([inputs[4], inputs[5], inputs[6], inputs[7] - offered_out]);
 
-    let requested_asset_total = inputs[3];
-    let offered_asset_total = inputs[7];
-
-    let current_note_serial = active_note::get_serial_number();
-
-    let is_valid = if input_amount <= requested_asset_total {
-        felt!(1)
-    } else {
-        felt!(0)
-    };
-    assert_eq(is_valid, felt!(1));
-
-    let _one = felt!(1);
-    let offered_out =
-        calculate_output_amount(offered_asset_total, requested_asset_total, input_amount);
-
-    active_note::add_assets_to_account();
-
-    let routing_serial = add_word(current_note_serial, Word::from_u64_unchecked(0, 0, 0, 1));
-
-    let aux_value = offered_out;
-    let input_asset = Asset::new(Word::from([inputs[0], inputs[1], inputs[2], input_amount]));
-
-    create_p2id_note(routing_serial, input_asset, swapp_note_creator_id, aux_value);
-
-    if offered_out < offered_asset_total {
-        let remainder_serial = hash_words(&[current_note_serial]).inner;
-        let remainder_aux = offered_out;
-        let remainder_requested_asset =
-            Asset::from([inputs[0], inputs[1], inputs[2], inputs[3] - input_amount]);
-        let remainder_offered_asset =
-            Asset::from([inputs[4], inputs[5], inputs[6], inputs[7] - offered_out]);
-
-        create_swapp_note(
-            remainder_serial,
-            remainder_requested_asset,
-            remainder_offered_asset,
-            swapp_note_creator_id,
-            remainder_aux,
-        );
+            create_swapp_note(
+                remainder_serial,
+                remainder_requested_asset,
+                remainder_offered_asset,
+                swapp_note_creator_id,
+                remainder_aux,
+            );
+        }
     }
 }
 

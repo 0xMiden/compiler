@@ -111,7 +111,7 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             v92 = arith.mod v90, v91 : u32;
             hir.assertz v92 #[code = 250];
             v86 = arith.constant 1 : i64;
-            v87 = hir.cast v86 : felt;
+            v87 = arith.trunc v86 : felt;
             v93 = hir.int_to_ptr v90 : ptr<byte, felt>;
             hir.store v93, v87;
             v95 = arith.constant 8 : u32;
@@ -121,7 +121,7 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             v98 = arith.mod v96, v360 : u32;
             hir.assertz v98 #[code = 250];
             v80 = arith.constant 0 : i64;
-            v85 = hir.cast v80 : felt;
+            v85 = arith.trunc v80 : felt;
             v99 = hir.int_to_ptr v96 : ptr<byte, felt>;
             hir.store v99, v85;
             v359 = arith.constant 4 : u32;
@@ -131,7 +131,7 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             v104 = arith.mod v102, v358 : u32;
             hir.assertz v104 #[code = 250];
             v357 = arith.constant 0 : i64;
-            v83 = hir.cast v357 : felt;
+            v83 = arith.trunc v357 : felt;
             v105 = hir.int_to_ptr v102 : ptr<byte, felt>;
             hir.store v105, v83;
             v106 = hir.bitcast v77 : u32;
@@ -139,7 +139,7 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             v108 = arith.mod v106, v356 : u32;
             hir.assertz v108 #[code = 250];
             v355 = arith.constant 0 : i64;
-            v81 = hir.cast v355 : felt;
+            v81 = arith.trunc v355 : felt;
             v109 = hir.int_to_ptr v106 : ptr<byte, felt>;
             hir.store v109, v81;
             v110 = arith.constant 16 : i32;
@@ -173,13 +173,13 @@ builtin.component miden:counter-contract/counter-contract@0.1.0 {
             hir.store v132, v130;
             hir.exec @miden:counter-contract/counter-contract@0.1.0/counter_contract/wit_bindgen::rt::run_ctors_once()
             v133 = arith.constant 0 : i64;
-            v134 = hir.cast v133 : felt;
+            v134 = arith.trunc v133 : felt;
             v374 = arith.constant 0 : i64;
-            v136 = hir.cast v374 : felt;
+            v136 = arith.trunc v374 : felt;
             v373 = arith.constant 0 : i64;
-            v138 = hir.cast v373 : felt;
+            v138 = arith.trunc v373 : felt;
             v139 = arith.constant 1 : i64;
-            v140 = hir.cast v139 : felt;
+            v140 = arith.trunc v139 : felt;
             v142 = arith.constant 12 : u32;
             v141 = hir.bitcast v130 : u32;
             v143 = arith.add v141, v142 : u32 #[overflow = checked];

@@ -40,7 +40,7 @@ builtin.component miden:base/note-script@1.0.0 {
             hir.store v37, v35;
             hir.exec @miden:base/note-script@1.0.0/component_macros_note/wit_bindgen::rt::run_ctors_once()
             v38 = arith.constant 11 : i64;
-            v39 = hir.cast v38 : felt;
+            v39 = arith.trunc v38 : felt;
             v56 = arith.constant 8 : u32;
             v55 = hir.bitcast v35 : u32;
             v57 = arith.add v55, v56 : u32 #[overflow = checked];
@@ -57,11 +57,11 @@ builtin.component miden:base/note-script@1.0.0 {
             v128 = arith.constant 88 : felt;
             v129 = arith.constant 99 : felt;
             v44 = arith.constant 44 : i64;
-            v45 = hir.cast v44 : felt;
+            v45 = arith.trunc v44 : felt;
             v42 = arith.constant 33 : i64;
-            v43 = hir.cast v42 : felt;
+            v43 = arith.trunc v42 : felt;
             v40 = arith.constant 22 : i64;
-            v41 = hir.cast v40 : felt;
+            v41 = arith.trunc v40 : felt;
             hir.exec @miden:base/note-script@1.0.0/component_macros_note/component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22(v39, v41, v43, v45, v129, v128, v127, v126, v129, v128, v127, v126, v62)
             v64 = arith.constant 12 : u32;
             v63 = hir.bitcast v35 : u32;
