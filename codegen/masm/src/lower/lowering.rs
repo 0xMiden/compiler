@@ -12,7 +12,28 @@ use midenc_session::diagnostics::{Report, Severity, Spanned};
 use smallvec::{SmallVec, smallvec};
 
 use super::*;
-use crate::{Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
+use crate::{
+    Constraint, double_colon_to_double_underscore, emitter::BlockEmitter, masm,
+    opt::operands::SolverOptions,
+};
+
+/// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
+///
+/// Miden Assembly uses `::` as a namespace separator. When the leaf procedure name contains `::`,
+/// it can be misinterpreted as additional namespace components during linking. To avoid this, we
+/// rewrite `::` to `__` in procedure names before constructing the invocation target.
+fn invocation_target_from_symbol_path(
+    callee_path: &midenc_hir::SymbolPath,
+    span: midenc_hir::SourceSpan,
+) -> masm::InvocationTarget {
+    let proc_name = double_colon_to_double_underscore(callee_path.name().as_str());
+    let proc_name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
+        masm::Span::new(span, proc_name.as_ref().into()),
+    ));
+    let module = callee_path.without_leaf().to_library_path();
+    let qualified = masm::QualifiedProcedureName::new(module.as_path(), proc_name);
+    masm::InvocationTarget::Path(masm::Span::new(span, qualified.into_inner()))
+}
 
 /// This trait is registered with all ops, of all dialects, which are legal for lowering to MASM.
 ///
@@ -856,8 +877,7 @@ impl HirLowering for hir::Exec {
         };
 
         // Convert the symbol path to a fully-qualified procedure path
-        let path = callee_path.to_library_path();
-        let callee = masm::InvocationTarget::Path(masm::Span::new(self.span(), path.as_path().into()));
+        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
         emitter.inst_emitter(self.as_operation()).exec(callee, signature, self.span());
 
@@ -907,8 +927,7 @@ impl HirLowering for hir::Call {
         };
 
         // Convert the symbol path to a fully-qualified procedure path
-        let path = callee_path.to_library_path();
-        let callee = masm::InvocationTarget::Path(masm::Span::new(self.span(), path.as_path().into()));
+        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
         emitter.inst_emitter(self.as_operation()).call(callee, signature, self.span());
 

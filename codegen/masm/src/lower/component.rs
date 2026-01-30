@@ -16,6 +16,7 @@ use smallvec::SmallVec;
 use crate::{
     TraceEvent,
     artifact::MasmComponent,
+    double_colon_to_double_underscore,
     emitter::BlockEmitter,
     linker::{LinkInfo, Linker},
     masm,
@@ -517,9 +518,10 @@ impl MasmFunctionBuilder {
         use midenc_hir::{Symbol, Visibility};
 
         let name = function.name();
+        let sanitized = double_colon_to_double_underscore(name.as_str());
         let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(Span::new(
             name.span,
-            name.as_str().into(),
+            sanitized.as_ref().into(),
         )));
         let visibility = match function.visibility() {
             Visibility::Public => masm::Visibility::Public,

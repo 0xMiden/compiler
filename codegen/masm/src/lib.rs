@@ -14,15 +14,13 @@ mod events;
 pub mod intrinsics;
 mod linker;
 mod lower;
+mod naming;
 mod opt;
 mod stack;
 
 pub mod masm {
     pub use miden_assembly_syntax::{
-        KernelLibrary,
-        Library,
-        Path as LibraryPathRef,
-        PathBuf as LibraryPath,
+        KernelLibrary, Library, Path as LibraryPathRef, PathBuf as LibraryPath,
         PathComponent as LibraryPathComponent,
         ast::*,
         debuginfo::{SourceSpan, Span, Spanned},
@@ -30,13 +28,13 @@ pub mod masm {
     };
 }
 
-pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
     events::{TRACE_FRAME_END, TRACE_FRAME_START, TraceEvent},
     lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},
 };
+pub(crate) use self::{lower::HirLowering, naming::double_colon_to_double_underscore};
 
 pub fn register_dialect_hooks(context: &midenc_hir::Context) {
     use midenc_dialect_arith as arith;
