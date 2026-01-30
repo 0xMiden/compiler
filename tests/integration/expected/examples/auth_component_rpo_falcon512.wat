@@ -131,7 +131,7 @@
       local.get 4
       i32.const 96
       i32.add
-      call $std::crypto::hashes::rpo::hash_memory_words
+      call $miden::core::crypto::hashes::rpo::hash_memory_words
       local.get 4
       f32.load offset=108
       local.set 7
@@ -255,7 +255,7 @@
       local.get 12
       local.get 8
       local.get 7
-      call $std::crypto::dsa::rpo_falcon512::verify
+      call $miden::core::crypto::dsa::rpo_falcon512::verify
       local.get 4
       i32.const 112
       i32.add
@@ -369,10 +369,10 @@
     (func $intrinsics::felt::from_u64_unchecked (;12;) (type 9) (param i64) (result f32)
       unreachable
     )
-    (func $std::crypto::dsa::rpo_falcon512::verify (;13;) (type 6) (param f32 f32 f32 f32 f32 f32 f32 f32)
+    (func $miden::core::crypto::dsa::rpo_falcon512::verify (;13;) (type 6) (param f32 f32 f32 f32 f32 f32 f32 f32)
       unreachable
     )
-    (func $std::crypto::hashes::rpo::hash_memory_words (;14;) (type 4) (param i32 i32 i32)
+    (func $miden::core::crypto::hashes::rpo::hash_memory_words (;14;) (type 4) (param i32 i32 i32)
       unreachable
     )
     (func $miden::protocol::active_account::get_item (;15;) (type 10) (param f32 f32 i32)

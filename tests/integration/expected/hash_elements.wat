@@ -40,7 +40,7 @@
         local.get 3
         local.get 2
         local.get 1
-        call $std::crypto::hashes::rpo::hash_memory
+        call $miden::core::crypto::hashes::rpo::hash_memory
         br 1 (;@1;)
       end
       local.get 3
@@ -48,7 +48,7 @@
       local.get 2
       i32.add
       local.get 1
-      call $std::crypto::hashes::rpo::hash_memory_words
+      call $miden::core::crypto::hashes::rpo::hash_memory_words
     end
     local.get 1
     f32.load offset=12
@@ -69,10 +69,10 @@
   (func $intrinsics::felt::from_u32 (;3;) (type 1) (param i32) (result f32)
     unreachable
   )
-  (func $std::crypto::hashes::rpo::hash_memory (;4;) (type 0) (param i32 i32 i32)
+  (func $miden::core::crypto::hashes::rpo::hash_memory (;4;) (type 0) (param i32 i32 i32)
     unreachable
   )
-  (func $std::crypto::hashes::rpo::hash_memory_words (;5;) (type 0) (param i32 i32 i32)
+  (func $miden::core::crypto::hashes::rpo::hash_memory_words (;5;) (type 0) (param i32 i32 i32)
     unreachable
   )
   (func $<alloc::raw_vec::RawVecInner>::deallocate (;6;) (type 0) (param i32 i32 i32)

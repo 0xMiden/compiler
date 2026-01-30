@@ -17,7 +17,7 @@ mod imp {
         /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::blake3::hash_1to1"]
+        #[link_name = "miden::core::crypto::hashes::blake3::hash_1to1"]
         fn extern_blake3_hash_1to1(
             e1: u32,
             e2: u32,
@@ -35,7 +35,7 @@ mod imp {
         /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::blake3::hash_2to1"]
+        #[link_name = "miden::core::crypto::hashes::blake3::hash_2to1"]
         fn extern_blake3_hash_2to1(
             e1: u32,
             e2: u32,
@@ -63,7 +63,7 @@ mod imp {
         /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::sha256::hash_1to1"]
+        #[link_name = "miden::core::crypto::hashes::sha256::hash_1to1"]
         fn extern_sha256_hash_1to1(
             e1: u32,
             e2: u32,
@@ -81,7 +81,7 @@ mod imp {
         /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::sha256::hash_2to1"]
+        #[link_name = "miden::core::crypto::hashes::sha256::hash_2to1"]
         fn extern_sha256_hash_2to1(
             e1: u32,
             e2: u32,
@@ -112,7 +112,7 @@ mod imp {
         /// Input: A pointer to the memory location and the number of elements to hash
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::rpo::hash_memory"]
+        #[link_name = "miden::core::crypto::hashes::rpo::hash_memory"]
         pub fn extern_hash_memory(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
 
         /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO) hash
@@ -124,7 +124,7 @@ mod imp {
         /// Input: The start and end addresses (in field elements) of the words to hash.
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::rpo::hash_memory_words"]
+        #[link_name = "miden::core::crypto::hashes::rpo::hash_memory_words"]
         pub fn extern_hash_memory_words(start_addr: u32, end_addr: u32, result_ptr: *mut Felt);
     }
 
@@ -331,7 +331,7 @@ mod imp {
     #[inline]
     pub fn blake3_hash_1to1(_input: [u8; 32]) -> [u8; 32] {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
@@ -339,7 +339,7 @@ mod imp {
     #[inline]
     pub fn blake3_hash_2to1(_input: [u8; 64]) -> [u8; 32] {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
@@ -347,7 +347,7 @@ mod imp {
     #[inline]
     pub fn sha256_hash_1to1(_input: [u8; 32]) -> [u8; 32] {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
@@ -355,7 +355,7 @@ mod imp {
     #[inline]
     pub fn sha256_hash_2to1(_input: [u8; 64]) -> [u8; 32] {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
@@ -364,7 +364,7 @@ mod imp {
     #[inline]
     pub fn hash_elements(_elements: Vec<Felt>) -> Digest {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
@@ -373,7 +373,7 @@ mod imp {
     #[inline]
     pub fn hash_words(_words: &[Word]) -> Digest {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
@@ -381,7 +381,7 @@ mod imp {
     #[inline]
     pub fn extern_hash_memory(_ptr: u32, _num_elements: u32, _result_ptr: *mut Felt) {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
@@ -389,7 +389,7 @@ mod imp {
     #[inline]
     pub fn extern_hash_memory_words(_start_addr: u32, _end_addr: u32, _result_ptr: *mut Felt) {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 }

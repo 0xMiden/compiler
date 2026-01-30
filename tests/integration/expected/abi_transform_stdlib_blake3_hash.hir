@@ -50,12 +50,12 @@ builtin.component root_ns:root@1.0.0 {
             v47 = arith.add v45, v46 : u32 #[overflow = checked];
             v48 = hir.int_to_ptr v47 : ptr<byte, i32>;
             v49 = hir.load v48 : i32;
-            hir.exec @root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/std::crypto::hashes::blake3::hash_1to1(v14, v19, v24, v29, v34, v39, v44, v49, v9)
-            v138 = arith.constant 24 : u32;
+            hir.exec @root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/miden::core::crypto::hashes::blake3::hash_1to1(v14, v19, v24, v29, v34, v39, v44, v49, v9)
+            v107 = arith.constant 24 : u32;
             v52 = hir.bitcast v9 : u32;
-            v54 = arith.add v52, v138 : u32 #[overflow = checked];
-            v137 = arith.constant 8 : u32;
-            v56 = arith.mod v54, v137 : u32;
+            v54 = arith.add v52, v107 : u32 #[overflow = checked];
+            v106 = arith.constant 8 : u32;
+            v56 = arith.mod v54, v106 : u32;
             hir.assertz v56 #[code = 250];
             v57 = hir.int_to_ptr v54 : ptr<byte, i64>;
             v58 = hir.load v57 : i64;
@@ -64,11 +64,11 @@ builtin.component root_ns:root@1.0.0 {
             v59 = hir.bitcast v51 : u32;
             v60 = hir.int_to_ptr v59 : ptr<byte, i64>;
             hir.store v60, v58;
-            v136 = arith.constant 16 : u32;
+            v105 = arith.constant 16 : u32;
             v63 = hir.bitcast v9 : u32;
-            v65 = arith.add v63, v136 : u32 #[overflow = checked];
-            v135 = arith.constant 8 : u32;
-            v67 = arith.mod v65, v135 : u32;
+            v65 = arith.add v63, v105 : u32 #[overflow = checked];
+            v104 = arith.constant 8 : u32;
+            v67 = arith.mod v65, v104 : u32;
             hir.assertz v67 #[code = 250];
             v68 = hir.int_to_ptr v65 : ptr<byte, i64>;
             v69 = hir.load v68 : i64;
@@ -77,11 +77,11 @@ builtin.component root_ns:root@1.0.0 {
             v70 = hir.bitcast v62 : u32;
             v71 = hir.int_to_ptr v70 : ptr<byte, i64>;
             hir.store v71, v69;
-            v134 = arith.constant 8 : u32;
+            v103 = arith.constant 8 : u32;
             v74 = hir.bitcast v9 : u32;
-            v76 = arith.add v74, v134 : u32 #[overflow = checked];
-            v133 = arith.constant 8 : u32;
-            v78 = arith.mod v76, v133 : u32;
+            v76 = arith.add v74, v103 : u32 #[overflow = checked];
+            v102 = arith.constant 8 : u32;
+            v78 = arith.mod v76, v102 : u32;
             hir.assertz v78 #[code = 250];
             v79 = hir.int_to_ptr v76 : ptr<byte, i64>;
             v80 = hir.load v79 : i64;
@@ -91,8 +91,8 @@ builtin.component root_ns:root@1.0.0 {
             v82 = hir.int_to_ptr v81 : ptr<byte, i64>;
             hir.store v82, v80;
             v83 = hir.bitcast v9 : u32;
-            v132 = arith.constant 8 : u32;
-            v85 = arith.mod v83, v132 : u32;
+            v101 = arith.constant 8 : u32;
+            v85 = arith.mod v83, v101 : u32;
             hir.assertz v85 #[code = 250];
             v86 = hir.int_to_ptr v83 : ptr<byte, i64>;
             v87 = hir.load v86 : i64;
@@ -105,41 +105,9 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @std::crypto::hashes::blake3::hash_1to1(v92: i32, v93: i32, v94: i32, v95: i32, v96: i32, v97: i32, v98: i32, v99: i32, v100: i32) {
+        private builtin.function @miden::core::crypto::hashes::blake3::hash_1to1(v92: i32, v93: i32, v94: i32, v95: i32, v96: i32, v97: i32, v98: i32, v99: i32, v100: i32) {
         ^block6(v92: i32, v93: i32, v94: i32, v95: i32, v96: i32, v97: i32, v98: i32, v99: i32, v100: i32):
-            v101, v102, v103, v104, v105, v106, v107, v108 = hir.exec @std/crypto/hashes/blake3/hash_1to1(v92, v93, v94, v95, v96, v97, v98, v99) : i32, i32, i32, i32, i32, i32, i32, i32
-            v109 = hir.bitcast v100 : u32;
-            v110 = hir.int_to_ptr v109 : ptr<byte, i32>;
-            hir.store v110, v101;
-            v111 = arith.constant 4 : u32;
-            v112 = arith.add v109, v111 : u32 #[overflow = checked];
-            v113 = hir.int_to_ptr v112 : ptr<byte, i32>;
-            hir.store v113, v102;
-            v114 = arith.constant 8 : u32;
-            v115 = arith.add v109, v114 : u32 #[overflow = checked];
-            v116 = hir.int_to_ptr v115 : ptr<byte, i32>;
-            hir.store v116, v103;
-            v117 = arith.constant 12 : u32;
-            v118 = arith.add v109, v117 : u32 #[overflow = checked];
-            v119 = hir.int_to_ptr v118 : ptr<byte, i32>;
-            hir.store v119, v104;
-            v120 = arith.constant 16 : u32;
-            v121 = arith.add v109, v120 : u32 #[overflow = checked];
-            v122 = hir.int_to_ptr v121 : ptr<byte, i32>;
-            hir.store v122, v105;
-            v123 = arith.constant 20 : u32;
-            v124 = arith.add v109, v123 : u32 #[overflow = checked];
-            v125 = hir.int_to_ptr v124 : ptr<byte, i32>;
-            hir.store v125, v106;
-            v126 = arith.constant 24 : u32;
-            v127 = arith.add v109, v126 : u32 #[overflow = checked];
-            v128 = hir.int_to_ptr v127 : ptr<byte, i32>;
-            hir.store v128, v107;
-            v129 = arith.constant 28 : u32;
-            v130 = arith.add v109, v129 : u32 #[overflow = checked];
-            v131 = hir.int_to_ptr v130 : ptr<byte, i32>;
-            hir.store v131, v108;
-            builtin.ret ;
+            ub.unreachable ;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

@@ -44,7 +44,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     m.insert(module_path, funcs);
     let mut env_funcs: FunctionTypeMap = Default::default();
     env_funcs.insert(
-        Symbol::intern("std::collections::smt::get"),
+        Symbol::intern("miden::core::collections::smt::get"),
         FunctionType::new(
             CallConv::Wasm,
             [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
@@ -52,7 +52,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         ),
     );
     env_funcs.insert(
-        Symbol::intern("std::collections::smt::set"),
+        Symbol::intern("miden::core::collections::smt::set"),
         FunctionType::new(
             CallConv::Wasm,
             [

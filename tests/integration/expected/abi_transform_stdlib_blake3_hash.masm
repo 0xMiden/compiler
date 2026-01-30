@@ -136,7 +136,7 @@ pub proc entrypoint(i32, i32)
     swap.8
     trace.240
     nop
-    exec.root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::std::crypto::hashes::blake3::hash_1to1
+    exec.::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::miden__core__crypto__hashes__blake3__hash_1to1
     trace.252
     nop
     push.24
@@ -263,113 +263,28 @@ pub proc entrypoint(i32, i32)
     nop
 end
 
-# mod ::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::std::crypto::hashes::blake3
-
 @callconv("C")
-proc hash_1to1(i32, i32, i32, i32, i32, i32, i32, i32, i32)
-    trace.240
-    nop
-    exec.::miden::core::crypto::hashes::blake3::hash
-    trace.252
-    nop
-    movup.8
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.12
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.16
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.20
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.24
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-    push.28
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
+proc miden__core__crypto__hashes__blake3__hash_1to1(
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32
+)
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+    push.0
+    assert
 end
 

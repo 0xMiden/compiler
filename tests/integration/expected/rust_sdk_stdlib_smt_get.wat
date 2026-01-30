@@ -84,7 +84,7 @@
     local.get 8
     i32.const 64
     i32.add
-    call $std::collections::smt::get
+    call $miden::core::collections::smt::get
     local.get 8
     i64.load offset=88
     local.set 10
@@ -168,7 +168,7 @@
   (func $intrinsics::felt::from_u64_unchecked (;3;) (type 3) (param i64) (result f32)
     unreachable
   )
-  (func $std::collections::smt::get (;4;) (type 4) (param f32 f32 f32 f32 f32 f32 f32 f32 i32)
+  (func $miden::core::collections::smt::get (;4;) (type 4) (param f32 f32 f32 f32 f32 f32 f32 f32 i32)
     unreachable
   )
 )
