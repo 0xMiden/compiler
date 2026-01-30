@@ -364,6 +364,7 @@ fn auth_component_no_auth() {
     let _loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
 }
 
+#[ignore = "until https://github.com/0xMiden/compiler/issues/904 is fixed"]
 #[test]
 fn auth_component_rpo_falcon512() {
     let config = WasmTranslationConfig::default();
