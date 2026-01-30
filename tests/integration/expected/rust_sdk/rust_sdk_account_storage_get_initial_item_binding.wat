@@ -13,7 +13,7 @@
     (type (;0;) (func))
     (type (;1;) (func (result i32)))
     (type (;2;) (func (param i32) (result f32)))
-    (type (;3;) (func (param f32 i32)))
+    (type (;3;) (func (param f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -24,33 +24,37 @@
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $rust_sdk_account_storage_get_initial_item_binding::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1#binding (;2;) (type 1) (result i32)
-      (local i32 i32)
+      (local i32 f32 i32)
       global.get $__stack_pointer
       i32.const 16
       i32.sub
       local.tee 0
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 0
-      call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
+      i32.const 1
+      call $intrinsics::felt::from_u32
+      local.set 1
+      i32.const 1
+      call $intrinsics::felt::from_u32
+      local.get 1
       local.get 0
       call $miden::protocol::active_account::get_initial_item
       global.get $GOT.data.internal.__memory_base
       i32.const 1048584
       i32.add
-      local.tee 1
+      local.tee 2
       local.get 0
       f32.load
       f32.store offset=12
-      local.get 1
+      local.get 2
       local.get 0
       f32.load offset=4
       f32.store offset=8
-      local.get 1
+      local.get 2
       local.get 0
       f32.load offset=8
       f32.store offset=4
-      local.get 1
+      local.get 2
       local.get 0
       f32.load offset=12
       f32.store
@@ -58,7 +62,7 @@
       i32.const 16
       i32.add
       global.set $__stack_pointer
-      local.get 1
+      local.get 2
     )
     (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
       (local i32)
@@ -78,13 +82,10 @@
         i32.store8
       end
     )
-    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;4;) (type 2) (param i32) (result f32)
-      local.get 0
-      i32.const 255
-      i32.and
-      f32.reinterpret_i32
+    (func $intrinsics::felt::from_u32 (;4;) (type 2) (param i32) (result f32)
+      unreachable
     )
-    (func $miden::protocol::active_account::get_initial_item (;5;) (type 3) (param f32 i32)
+    (func $miden::protocol::active_account::get_initial_item (;5;) (type 3) (param f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

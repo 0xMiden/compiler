@@ -222,7 +222,7 @@ fn rust_sdk_account_storage_get_initial_item_binding() {
     run_account_binding_test(
         "rust_sdk_account_storage_get_initial_item_binding",
         "pub fn binding(&self) -> Word {
-        storage::get_initial_item(0)
+        storage::get_initial_item(StorageSlotId::new(felt!(1), felt!(1)))
     }",
     );
 }
@@ -233,7 +233,7 @@ fn rust_sdk_account_storage_get_initial_map_item_binding() {
         "rust_sdk_account_storage_get_initial_map_item_binding",
         "pub fn binding(&self) -> Word {
         let key = Word::from([Felt::from_u32(0); 4]);
-        storage::get_initial_map_item(0, &key)
+        storage::get_initial_map_item(StorageSlotId::new(felt!(1), felt!(1)), &key)
     }",
     );
 }

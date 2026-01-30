@@ -13,7 +13,7 @@
     (type (;0;) (func))
     (type (;1;) (func (result i32)))
     (type (;2;) (func (param i32) (result f32)))
-    (type (;3;) (func (param f32 f32 f32 f32 f32 i32)))
+    (type (;3;) (func (param f32 f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -24,7 +24,7 @@
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $rust_sdk_account_storage_get_initial_map_item_binding::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1#binding (;2;) (type 1) (result i32)
-      (local i32 i32 f32 f32 f32 f32)
+      (local i32 i32 f32 f32 f32 f32 f32)
       global.get $__stack_pointer
       i32.const 16
       i32.sub
@@ -66,8 +66,12 @@
       local.get 0
       f32.load
       local.set 5
-      i32.const 0
-      call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
+      i32.const 1
+      call $intrinsics::felt::from_u32
+      local.set 6
+      i32.const 1
+      call $intrinsics::felt::from_u32
+      local.get 6
       local.get 2
       local.get 3
       local.get 4
@@ -120,13 +124,7 @@
     (func $intrinsics::felt::from_u32 (;4;) (type 2) (param i32) (result f32)
       unreachable
     )
-    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;5;) (type 2) (param i32) (result f32)
-      local.get 0
-      i32.const 255
-      i32.and
-      f32.reinterpret_i32
-    )
-    (func $miden::protocol::active_account::get_initial_map_item (;6;) (type 3) (param f32 f32 f32 f32 f32 i32)
+    (func $miden::protocol::active_account::get_initial_map_item (;5;) (type 3) (param f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
