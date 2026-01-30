@@ -985,7 +985,7 @@ proc <miden_field::wasm32::Felt as core::convert::From<u32>>::from(
 end
 
 @callconv("C")
-proc <alloc::alloc::Global>::alloc_impl(
+proc _RNvMNtCsdsDaDmiSXUj_5alloc5allocNtB2_6Global10alloc_impl_llvm_10205990268952501685(
     i32,
     i32,
     i32,
@@ -1098,7 +1098,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::raw_vec::RawVecInner>::current_memory
+    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::_RNvMs2_NtCsdsDaDmiSXUj_5alloc7raw_vecNtB5_11RawVecInner14current_memoryB7__llvm_10205990268952501685
     trace.252
     nop
     push.8
@@ -1163,7 +1163,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         movdn.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::_RNvXs_NtCsdsDaDmiSXUj_5alloc5allocNtB4_6GlobalNtNtCs7GatJLEbxQq_4core5alloc9Allocator10deallocate_llvm_10205990268952501685
         trace.252
         nop
     end
@@ -1180,7 +1180,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
 end
 
 @callconv("C")
-proc <alloc::raw_vec::RawVecInner>::current_memory(
+proc _RNvMs2_NtCsdsDaDmiSXUj_5alloc7raw_vecNtB5_11RawVecInner14current_memoryB7__llvm_10205990268952501685(
     i32,
     i32,
     i32,
@@ -1312,7 +1312,7 @@ proc <alloc::raw_vec::RawVecInner>::current_memory(
 end
 
 @callconv("C")
-proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
+proc _RNvXs_NtCsdsDaDmiSXUj_5alloc5allocNtB4_6GlobalNtNtCs7GatJLEbxQq_4core5alloc9Allocator10deallocate_llvm_10205990268952501685(
     i32,
     i32,
     i32
@@ -1338,7 +1338,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
 end
 
 @callconv("C")
-proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
+proc _RNvXs_NtCsdsDaDmiSXUj_5alloc5allocNtB4_6GlobalNtNtCs7GatJLEbxQq_4core5alloc9Allocator8allocate_llvm_10205990268952501685(
     i32,
     i32,
     i32
@@ -1376,7 +1376,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global>::alloc_impl
+    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::_RNvMNtCsdsDaDmiSXUj_5alloc5allocNtB2_6Global10alloc_impl_llvm_10205990268952501685
     trace.252
     nop
     push.12
@@ -1568,7 +1568,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global>::alloc_impl
+                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::_RNvMNtCsdsDaDmiSXUj_5alloc5allocNtB2_6Global10alloc_impl_llvm_10205990268952501685
                     trace.252
                     nop
                     dup.2
@@ -1594,7 +1594,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.::root_ns:root@1.0.0::abi_transform_tx_kernel_get_inputs_4::_RNvXs_NtCsdsDaDmiSXUj_5alloc5allocNtB4_6GlobalNtNtCs7GatJLEbxQq_4core5alloc9Allocator8allocate_llvm_10205990268952501685
                     trace.252
                     nop
                     push.8

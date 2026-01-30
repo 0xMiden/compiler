@@ -7,7 +7,7 @@ pub proc binding(
     exec.miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::init
     trace.240
     nop
-    exec.miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1_binding
+    exec.::miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::miden_rust_sdk_input_note_get_inputs_info_binding_rust_sdk_input_note_get_inputs_info_binding_0_0_1_binding
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -51,7 +51,7 @@ proc rust_sdk_input_note_get_inputs_info_binding::bindings::__link_custom_sectio
 end
 
 @callconv("C")
-proc miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1_binding(
+proc miden_rust_sdk_input_note_get_inputs_info_binding_rust_sdk_input_note_get_inputs_info_binding_0_0_1_binding(
 
 ) -> felt
     push.1114144
@@ -76,14 +76,14 @@ proc miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-i
     nop
     trace.240
     nop
-    exec.miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::wit_bindgen::rt::run_ctors_once
+    exec.::miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
     dup.1
     trace.240
     nop
-    exec.miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::miden_base_sys::bindings::input_note::get_inputs_info
+    exec.::miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::miden_base_sys::bindings::input_note::get_inputs_info
     trace.252
     nop
     push.16
@@ -159,7 +159,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::__wasm_call_ctors
+        exec.::miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -219,7 +219,7 @@ proc miden_base_sys::bindings::input_note::get_inputs_info(
     movup.3
     trace.240
     nop
-    exec.::miden::protocol::input_note::get_inputs_info
+    exec.::miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::miden__protocol__input_note__get_inputs_info
     trace.252
     nop
     push.16
@@ -398,10 +398,8 @@ proc miden_base_sys::bindings::input_note::get_inputs_info(
     nop
 end
 
-# mod ::miden:rust-sdk-input-note-get-inputs-info-binding/rust-sdk-input-note-get-inputs-info-binding@0.0.1::rust_sdk_input_note_get_inputs_info_binding::miden::protocol::input_note
-
 @callconv("C")
-proc get_inputs_info(felt, i32)
+proc miden__protocol__input_note__get_inputs_info(felt, i32)
     drop
     drop
     push.0

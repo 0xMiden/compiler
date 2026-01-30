@@ -7,7 +7,7 @@ pub proc binding(
     exec.miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::init
     trace.240
     nop
-    exec.miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1_binding
+    exec.::miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::miden_rust_sdk_account_has_non_fungible_asset_binding_rust_sdk_account_has_non_fungible_asset_binding_0_0_1_binding
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -51,7 +51,7 @@ proc rust_sdk_account_has_non_fungible_asset_binding::bindings::__link_custom_se
 end
 
 @callconv("C")
-proc miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1_binding(
+proc miden_rust_sdk_account_has_non_fungible_asset_binding_rust_sdk_account_has_non_fungible_asset_binding_0_0_1_binding(
 
 ) -> felt
     push.1114144
@@ -76,7 +76,7 @@ proc miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-
     nop
     trace.240
     nop
-    exec.miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::wit_bindgen::rt::run_ctors_once
+    exec.::miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -157,7 +157,7 @@ proc miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-
     dup.1
     trace.240
     nop
-    exec.miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+    exec.::miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
     trace.252
     nop
     push.12
@@ -229,7 +229,7 @@ proc miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-
     swap.2
     trace.240
     nop
-    exec.::miden::protocol::active_account::has_non_fungible_asset
+    exec.::miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::miden__protocol__active_account__has_non_fungible_asset
     trace.252
     nop
     push.32
@@ -293,7 +293,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::__wasm_call_ctors
+        exec.::miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -399,15 +399,17 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field
     nop
 end
 
-# mod ::miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1::rust_sdk_account_has_non_fungible_asset_binding::miden::protocol::active_account
-
 @callconv("C")
-proc has_non_fungible_asset(felt, felt, felt, felt) -> felt
-    drop
-    drop
-    drop
-    drop
-    push.0
-    assert
+proc miden__protocol__active_account__has_non_fungible_asset(
+    felt,
+    felt,
+    felt,
+    felt
+) -> felt
+    trace.240
+    nop
+    exec.::miden::protocol::active_account::has_non_fungible_asset
+    trace.252
+    nop
 end
 

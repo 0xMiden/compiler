@@ -7,7 +7,7 @@ pub proc binding(
     exec.miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1::init
     trace.240
     nop
-    exec.miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1::rust_sdk_account_get_num_procedures_binding::miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1_binding
+    exec.::miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1::rust_sdk_account_get_num_procedures_binding::miden_rust_sdk_account_get_num_procedures_binding_rust_sdk_account_get_num_procedures_binding_0_0_1_binding
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -51,17 +51,17 @@ proc rust_sdk_account_get_num_procedures_binding::bindings::__link_custom_sectio
 end
 
 @callconv("C")
-proc miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1_binding(
+proc miden_rust_sdk_account_get_num_procedures_binding_rust_sdk_account_get_num_procedures_binding_0_0_1_binding(
 
 ) -> felt
     trace.240
     nop
-    exec.miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1::rust_sdk_account_get_num_procedures_binding::wit_bindgen::rt::run_ctors_once
+    exec.::miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1::rust_sdk_account_get_num_procedures_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     trace.240
     nop
-    exec.::miden::protocol::active_account::get_num_procedures
+    exec.::miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1::rust_sdk_account_get_num_procedures_binding::miden__protocol__active_account__get_num_procedures
     trace.252
     nop
 end
@@ -109,7 +109,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1::rust_sdk_account_get_num_procedures_binding::__wasm_call_ctors
+        exec.::miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1::rust_sdk_account_get_num_procedures_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -140,13 +140,14 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
-# mod ::miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1::rust_sdk_account_get_num_procedures_binding::miden::protocol::active_account
-
 @callconv("C")
-proc get_num_procedures(
+proc miden__protocol__active_account__get_num_procedures(
 
 ) -> felt
-    push.0
-    assert
+    trace.240
+    nop
+    exec.::miden::protocol::active_account::get_num_procedures
+    trace.252
+    nop
 end
 

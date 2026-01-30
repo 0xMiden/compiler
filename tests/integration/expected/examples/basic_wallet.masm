@@ -1,22 +1,22 @@
 # mod ::miden:basic-wallet/basic-wallet@0.1.0
 
 @callconv("canon-lift")
-pub proc receive-asset(felt, felt, felt, felt)
+pub proc receive_asset(felt, felt, felt, felt)
     exec.miden:basic-wallet/basic-wallet@0.1.0::init
     trace.240
     nop
-    exec.miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden:basic-wallet/basic-wallet@0.1.0_receive-asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_basic_wallet_basic_wallet_0_1_0_receive_asset
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
 end
 
 @callconv("canon-lift")
-pub proc move-asset-to-note(felt, felt, felt, felt, felt)
+pub proc move_asset_to_note(felt, felt, felt, felt, felt)
     exec.miden:basic-wallet/basic-wallet@0.1.0::init
     trace.240
     nop
-    exec.miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden:basic-wallet/basic-wallet@0.1.0_move-asset-to-note
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_basic_wallet_basic_wallet_0_1_0_move_asset_to_note
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -60,7 +60,7 @@ proc basic_wallet::bindings::__link_custom_section_describing_imports(
 end
 
 @callconv("C")
-proc miden:basic-wallet/basic-wallet@0.1.0_move-asset-to-note(
+proc miden_basic_wallet_basic_wallet_0_1_0_move_asset_to_note(
     felt,
     felt,
     felt,
@@ -89,7 +89,7 @@ proc miden:basic-wallet/basic-wallet@0.1.0_move-asset-to-note(
     nop
     trace.240
     nop
-    exec.miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::wit_bindgen::rt::run_ctors_once
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.12
@@ -172,7 +172,7 @@ proc miden:basic-wallet/basic-wallet@0.1.0_move-asset-to-note(
     swap.1
     trace.240
     nop
-    exec.miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::native_account::remove_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::native_account::remove_asset
     trace.252
     nop
     push.16
@@ -182,7 +182,7 @@ proc miden:basic-wallet/basic-wallet@0.1.0_move-asset-to-note(
     swap.1
     trace.240
     nop
-    exec.miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::output_note::add_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::output_note::add_asset
     trace.252
     nop
     push.32
@@ -198,7 +198,7 @@ proc miden:basic-wallet/basic-wallet@0.1.0_move-asset-to-note(
 end
 
 @callconv("C")
-proc miden:basic-wallet/basic-wallet@0.1.0_receive-asset(felt, felt, felt, felt)
+proc miden_basic_wallet_basic_wallet_0_1_0_receive_asset(felt, felt, felt, felt)
     push.1114144
     u32divmod.4
     swap.1
@@ -221,7 +221,7 @@ proc miden:basic-wallet/basic-wallet@0.1.0_receive-asset(felt, felt, felt, felt)
     nop
     trace.240
     nop
-    exec.miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::wit_bindgen::rt::run_ctors_once
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.12
@@ -304,7 +304,7 @@ proc miden:basic-wallet/basic-wallet@0.1.0_receive-asset(felt, felt, felt, felt)
     swap.1
     trace.240
     nop
-    exec.miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::native_account::add_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden_base_sys::bindings::native_account::add_asset
     trace.252
     nop
     push.32
@@ -362,7 +362,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::__wasm_call_ctors
+        exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -398,27 +398,24 @@ proc miden_base_sys::bindings::native_account::add_asset(
     i32,
     i32
 )
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_sub
-    push.1114144
+    push.12
+    dup.2
+    add
+    u32assert
+    push.4
     dup.1
     swap.1
+    u32mod
+    u32assert
+    assertz
     u32divmod.4
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_sw
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.12
+    push.8
     dup.3
     add
     u32assert
@@ -435,7 +432,7 @@ proc miden_base_sys::bindings::native_account::add_asset(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.8
+    push.4
     dup.4
     add
     u32assert
@@ -452,10 +449,7 @@ proc miden_base_sys::bindings::native_account::add_asset(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.4
-    dup.5
-    add
-    u32assert
+    movup.4
     push.4
     dup.1
     swap.1
@@ -469,110 +463,11 @@ proc miden_base_sys::bindings::native_account::add_asset(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.5
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    dup.4
-    swap.1
-    swap.3
-    swap.1
-    swap.4
-    trace.240
-    nop
-    exec.::miden::protocol::native_account::add_asset
-    trace.252
-    nop
-    dup.0
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.8
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    swap.2
-    movup.2
-    u32divmod.4
-    swap.1
-    movup.2
     movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    movup.3
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
     swap.2
-    movup.2
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
     trace.240
     nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.16
-    u32wrapping_add
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden__protocol__native_account__add_asset
     trace.252
     nop
 end
@@ -651,7 +546,7 @@ proc miden_base_sys::bindings::output_note::add_asset(
     swap.2
     trace.240
     nop
-    exec.::miden::protocol::output_note::add_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden__protocol__output_note__add_asset
     trace.252
     nop
 end
@@ -753,7 +648,7 @@ proc miden_base_sys::bindings::native_account::remove_asset(
     swap.4
     trace.240
     nop
-    exec.::miden::protocol::native_account::remove_asset
+    exec.::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden__protocol__native_account__remove_asset
     trace.252
     nop
     dup.0
@@ -840,40 +735,124 @@ proc miden_base_sys::bindings::native_account::remove_asset(
     nop
 end
 
-# mod ::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden::protocol::native_account
-
 @callconv("C")
-proc add_asset(felt, felt, felt, felt, i32)
-    drop
-    drop
-    drop
-    drop
-    drop
-    push.0
-    assert
+proc miden__protocol__native_account__add_asset(felt, felt, felt, felt, i32)
+    trace.240
+    nop
+    exec.::miden::protocol::native_account::add_asset
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
 end
 
 @callconv("C")
-proc remove_asset(felt, felt, felt, felt, i32)
-    drop
-    drop
-    drop
-    drop
-    drop
-    push.0
-    assert
+proc miden__protocol__native_account__remove_asset(felt, felt, felt, felt, i32)
+    trace.240
+    nop
+    exec.::miden::protocol::native_account::remove_asset
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
 end
 
-# mod ::miden:basic-wallet/basic-wallet@0.1.0::basic_wallet::miden::protocol::output_note
-
 @callconv("C")
-proc add_asset(felt, felt, felt, felt, felt)
-    drop
-    drop
-    drop
-    drop
-    drop
-    push.0
-    assert
+proc miden__protocol__output_note__add_asset(felt, felt, felt, felt, felt)
+    trace.240
+    nop
+    exec.::miden::protocol::output_note::add_asset
+    trace.252
+    nop
 end
 

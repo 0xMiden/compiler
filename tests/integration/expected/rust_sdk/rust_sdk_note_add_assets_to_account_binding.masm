@@ -5,7 +5,7 @@ pub proc run(felt, felt, felt, felt)
     exec.miden:base/note-script@1.0.0::init
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden:base/note-script@1.0.0_run
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden_base_note_script_1_0_0_run
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -57,7 +57,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -87,7 +87,7 @@ proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -162,19 +162,19 @@ proc rust_sdk_note_add_assets_to_account_binding::bindings::__link_custom_sectio
 end
 
 @callconv("C")
-proc miden:base/note-script@1.0.0_run(felt, felt, felt, felt)
+proc miden_base_note_script_1_0_0_run(felt, felt, felt, felt)
     drop
     drop
     drop
     drop
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::wit_bindgen::rt::run_ctors_once
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden_base_sys::bindings::active_note::add_assets_to_account
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden_base_sys::bindings::active_note::add_assets_to_account
     trace.252
     nop
 end
@@ -229,7 +229,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__wasm_call_ctors
+        exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -291,7 +291,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<core::ptr::alignment::Alignment>::max
+        exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<core::ptr::alignment::Alignment>::max
         trace.252
         nop
         push.0
@@ -475,7 +475,7 @@ proc <alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(
     swap.1
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::raw_vec::RawVecInner>::with_capacity_in
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::raw_vec::RawVecInner>::with_capacity_in
     trace.252
     nop
     push.8
@@ -584,7 +584,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     swap.1
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::raw_vec::RawVecInner>::try_allocate_in
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::raw_vec::RawVecInner>::try_allocate_in
     trace.252
     nop
     push.8
@@ -708,7 +708,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
         swap.1
         trace.240
         nop
-        exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::alloc::raw_vec::handle_error
+        exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -745,7 +745,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     u32wrapping_add
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity
     trace.252
     nop
     push.8
@@ -771,7 +771,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     u32shr
     trace.240
     nop
-    exec.::miden::protocol::active_note::get_assets
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden__protocol__active_note__get_assets
     trace.252
     nop
     push.8
@@ -865,7 +865,7 @@ proc miden_base_sys::bindings::active_note::add_assets_to_account(
     u32wrapping_add
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden_base_sys::bindings::active_note::get_assets
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden_base_sys::bindings::active_note::get_assets
     trace.252
     nop
     push.32
@@ -1114,7 +1114,7 @@ proc miden_base_sys::bindings::active_note::add_assets_to_account(
             u32wrapping_add
             trace.240
             nop
-            exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden_base_sys::bindings::native_account::add_asset
+            exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden_base_sys::bindings::native_account::add_asset
             trace.252
             nop
             push.4294967280
@@ -1149,7 +1149,7 @@ proc miden_base_sys::bindings::active_note::add_assets_to_account(
     dup.0
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::vec::into_iter::IntoIter<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::vec::into_iter::IntoIter<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop
     trace.252
     nop
     push.48
@@ -1169,27 +1169,24 @@ proc miden_base_sys::bindings::native_account::add_asset(
     i32,
     i32
 )
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_sw
-    trace.252
-    nop
-    push.16
-    u32wrapping_sub
-    push.1114144
+    push.12
+    dup.2
+    add
+    u32assert
+    push.4
     dup.1
     swap.1
+    u32mod
+    u32assert
+    assertz
     u32divmod.4
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_sw
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.12
+    push.8
     dup.3
     add
     u32assert
@@ -1206,7 +1203,7 @@ proc miden_base_sys::bindings::native_account::add_asset(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.8
+    push.4
     dup.4
     add
     u32assert
@@ -1223,10 +1220,7 @@ proc miden_base_sys::bindings::native_account::add_asset(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.4
-    dup.5
-    add
-    u32assert
+    movup.4
     push.4
     dup.1
     swap.1
@@ -1240,110 +1234,11 @@ proc miden_base_sys::bindings::native_account::add_asset(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.5
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    dup.4
-    swap.1
-    swap.3
-    swap.1
-    swap.4
-    trace.240
-    nop
-    exec.::miden::protocol::native_account::add_asset
-    trace.252
-    nop
-    dup.0
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.8
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    swap.2
-    movup.2
-    u32divmod.4
-    swap.1
-    movup.2
     movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    movup.3
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
     swap.2
-    movup.2
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
     trace.240
     nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.16
-    u32wrapping_add
-    push.1114144
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_sw
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden__protocol__native_account__add_asset
     trace.252
     nop
 end
@@ -1396,7 +1291,7 @@ proc <alloc::vec::into_iter::IntoIter<miden_base_sys::bindings::types::Asset> as
     u32wrapping_add
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<<alloc::vec::into_iter::IntoIter<_, _> as core::ops::drop::Drop>::drop::DropGuard<miden_base_sys::bindings::types::Asset, alloc::alloc::Global> as core::ops::drop::Drop>::drop
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<<alloc::vec::into_iter::IntoIter<_, _> as core::ops::drop::Drop>::drop::DropGuard<miden_base_sys::bindings::types::Asset, alloc::alloc::Global> as core::ops::drop::Drop>::drop
     trace.252
     nop
     push.16
@@ -1519,7 +1414,7 @@ proc <<alloc::vec::into_iter::IntoIter<_, _> as core::ops::drop::Drop>::drop::Dr
     u32wrapping_add
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop
     trace.252
     nop
     push.16
@@ -1543,13 +1438,13 @@ proc <alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::op
     swap.2
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::raw_vec::RawVecInner>::deallocate
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::raw_vec::RawVecInner>::deallocate
     trace.252
     nop
 end
 
 @callconv("C")
-proc <alloc::alloc::Global>::alloc_impl(
+proc _RNvMNtCs5zzFQX5pZvB_5alloc5allocNtB2_6Global10alloc_impl_llvm_13799548502354450250(
     i32,
     i32,
     i32,
@@ -1567,7 +1462,7 @@ proc <alloc::alloc::Global>::alloc_impl(
     else
         trace.240
         nop
-        exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__rustc::__rust_no_alloc_shim_is_unstable_v2
         trace.252
         nop
         push.0
@@ -1578,7 +1473,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__rustc::__rust_alloc_zeroed
+            exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -1586,7 +1481,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__rustc::__rust_alloc
+            exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -1662,7 +1557,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     swap.1
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::raw_vec::RawVecInner>::current_memory
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::_RNvMs2_NtCs5zzFQX5pZvB_5alloc7raw_vecNtB5_11RawVecInner14current_memoryB7__llvm_13799548502354450250
     trace.252
     nop
     push.8
@@ -1727,7 +1622,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         movdn.2
         trace.240
         nop
-        exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::_RNvXs_NtCs5zzFQX5pZvB_5alloc5allocNtB4_6GlobalNtNtCs5AegeM8IMgk_4core5alloc9Allocator10deallocate_llvm_13799548502354450250
         trace.252
         nop
     end
@@ -1744,7 +1639,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
 end
 
 @callconv("C")
-proc <alloc::raw_vec::RawVecInner>::current_memory(
+proc _RNvMs2_NtCs5zzFQX5pZvB_5alloc7raw_vecNtB5_11RawVecInner14current_memoryB7__llvm_13799548502354450250(
     i32,
     i32,
     i32,
@@ -1876,7 +1771,7 @@ proc <alloc::raw_vec::RawVecInner>::current_memory(
 end
 
 @callconv("C")
-proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
+proc _RNvXs_NtCs5zzFQX5pZvB_5alloc5allocNtB4_6GlobalNtNtCs5AegeM8IMgk_4core5alloc9Allocator10deallocate_llvm_13799548502354450250(
     i32,
     i32,
     i32
@@ -1895,14 +1790,14 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
         swap.1
         trace.240
         nop
-        exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__rustc::__rust_dealloc
+        exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::__rustc::__rust_dealloc
         trace.252
         nop
     end
 end
 
 @callconv("C")
-proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
+proc _RNvXs_NtCs5zzFQX5pZvB_5alloc5allocNtB4_6GlobalNtNtCs5AegeM8IMgk_4core5alloc9Allocator8allocate_llvm_13799548502354450250(
     i32,
     i32,
     i32
@@ -1940,7 +1835,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     swap.1
     trace.240
     nop
-    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::alloc::Global>::alloc_impl
+    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::_RNvMNtCs5zzFQX5pZvB_5alloc5allocNtB2_6Global10alloc_impl_llvm_13799548502354450250
     trace.252
     nop
     push.12
@@ -2132,7 +2027,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::alloc::Global>::alloc_impl
+                    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::_RNvMNtCs5zzFQX5pZvB_5alloc5allocNtB2_6Global10alloc_impl_llvm_13799548502354450250
                     trace.252
                     nop
                     dup.2
@@ -2158,7 +2053,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::_RNvXs_NtCs5zzFQX5pZvB_5alloc5allocNtB4_6GlobalNtNtCs5AegeM8IMgk_4core5alloc9Allocator8allocate_llvm_13799548502354450250
                     trace.252
                     nop
                     push.8
@@ -2451,38 +2346,70 @@ proc <core::ptr::alignment::Alignment>::max(
     cdrop
 end
 
-# mod ::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::intrinsics::mem
-
 @callconv("C")
-proc heap_base(
-
-) -> i32
+proc miden__protocol__active_note__get_assets(i32) -> i32
     trace.240
     nop
-    exec.::intrinsics::mem::heap_base
+    exec.::miden::protocol::active_note::get_assets
     trace.252
     nop
+    swap.1
+    drop
 end
 
-# mod ::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden::protocol::active_note
-
 @callconv("C")
-proc get_assets(i32) -> i32
-    drop
-    push.0
-    assert
-end
-
-# mod ::miden:base/note-script@1.0.0::rust_sdk_note_add_assets_to_account_binding::miden::protocol::native_account
-
-@callconv("C")
-proc add_asset(felt, felt, felt, felt, i32)
-    drop
-    drop
-    drop
-    drop
-    drop
-    push.0
-    assert
+proc miden__protocol__native_account__add_asset(felt, felt, felt, felt, i32)
+    trace.240
+    nop
+    exec.::miden::protocol::native_account::add_asset
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
 end
 

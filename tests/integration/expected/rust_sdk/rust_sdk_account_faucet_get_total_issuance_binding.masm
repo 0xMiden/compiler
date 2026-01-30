@@ -7,7 +7,7 @@ pub proc binding(
     exec.miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1::init
     trace.240
     nop
-    exec.miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1::rust_sdk_account_faucet_get_total_issuance_binding::miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1_binding
+    exec.::miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1::rust_sdk_account_faucet_get_total_issuance_binding::miden_rust_sdk_account_faucet_get_total_issuance_binding_rust_sdk_account_faucet_get_total_issuance_binding_0_0_1_binding
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -51,17 +51,17 @@ proc rust_sdk_account_faucet_get_total_issuance_binding::bindings::__link_custom
 end
 
 @callconv("C")
-proc miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1_binding(
+proc miden_rust_sdk_account_faucet_get_total_issuance_binding_rust_sdk_account_faucet_get_total_issuance_binding_0_0_1_binding(
 
 ) -> felt
     trace.240
     nop
-    exec.miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1::rust_sdk_account_faucet_get_total_issuance_binding::wit_bindgen::rt::run_ctors_once
+    exec.::miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1::rust_sdk_account_faucet_get_total_issuance_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     trace.240
     nop
-    exec.::miden::protocol::faucet::get_total_issuance
+    exec.::miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1::rust_sdk_account_faucet_get_total_issuance_binding::miden__protocol__faucet__get_total_issuance
     trace.252
     nop
 end
@@ -109,7 +109,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1::rust_sdk_account_faucet_get_total_issuance_binding::__wasm_call_ctors
+        exec.::miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1::rust_sdk_account_faucet_get_total_issuance_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -140,10 +140,8 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
-# mod ::miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1::rust_sdk_account_faucet_get_total_issuance_binding::miden::protocol::faucet
-
 @callconv("C")
-proc get_total_issuance(
+proc miden__protocol__faucet__get_total_issuance(
 
 ) -> felt
     push.0

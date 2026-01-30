@@ -1,11 +1,11 @@
 # mod ::miden:cross-ctx-account-word/foo@1.0.0
 
 @callconv("canon-lift")
-pub proc process-word(felt, felt, felt, felt) -> (felt, felt, felt, felt)
+pub proc process_word(felt, felt, felt, felt) -> (felt, felt, felt, felt)
     exec.miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0_process-word
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden_cross_ctx_account_word_foo_1_0_0_process_word
     trace.252
     nop
     push.0
@@ -64,7 +64,7 @@ pub proc process-word(felt, felt, felt, felt) -> (felt, felt, felt, felt)
 end
 
 @callconv("canon-lift")
-pub proc process-another-word(
+pub proc process_another_word(
     felt,
     felt,
     felt,
@@ -73,7 +73,7 @@ pub proc process-another-word(
     exec.miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0_process-another-word
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden_cross_ctx_account_word_foo_1_0_0_process_another_word
     trace.252
     nop
     push.0
@@ -132,22 +132,22 @@ pub proc process-another-word(
 end
 
 @callconv("canon-lift")
-pub proc process-felt(felt) -> felt
+pub proc process_felt(felt) -> felt
     exec.miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0_process-felt
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden_cross_ctx_account_word_foo_1_0_0_process_felt
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
 end
 
 @callconv("canon-lift")
-pub proc process-pair(felt, felt) -> (felt, felt)
+pub proc process_pair(felt, felt) -> (felt, felt)
     exec.miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0_process-pair
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden_cross_ctx_account_word_foo_1_0_0_process_pair
     trace.252
     nop
     push.0
@@ -179,11 +179,11 @@ pub proc process-pair(felt, felt) -> (felt, felt)
 end
 
 @callconv("canon-lift")
-pub proc process-triple(felt, felt, felt) -> (felt, felt, felt)
+pub proc process_triple(felt, felt, felt) -> (felt, felt, felt)
     exec.miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0_process-triple
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden_cross_ctx_account_word_foo_1_0_0_process_triple
     trace.252
     nop
     push.0
@@ -227,7 +227,7 @@ pub proc process-triple(felt, felt, felt) -> (felt, felt, felt)
 end
 
 @callconv("canon-lift")
-pub proc process-mixed(
+pub proc process_mixed(
     [u32; 2],
     felt,
     i32,
@@ -239,7 +239,7 @@ pub proc process-mixed(
     exec.miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0_process-mixed
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden_cross_ctx_account_word_foo_1_0_0_process_mixed
     trace.252
     nop
     push.0
@@ -348,11 +348,11 @@ pub proc process-mixed(
 end
 
 @callconv("canon-lift")
-pub proc process-nested(felt, felt, felt) -> (felt, felt, felt)
+pub proc process_nested(felt, felt, felt) -> (felt, felt, felt)
     exec.miden:cross-ctx-account-word/foo@1.0.0::init
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden:cross-ctx-account-word/foo@1.0.0_process-nested
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::miden_cross_ctx_account_word_foo_1_0_0_process_nested
     trace.252
     nop
     push.0
@@ -436,7 +436,7 @@ proc cross_ctx_account_word::bindings::__link_custom_section_describing_imports(
 end
 
 @callconv("C")
-proc miden:cross-ctx-account-word/foo@1.0.0_process-another-word(
+proc miden_cross_ctx_account_word_foo_1_0_0_process_another_word(
     felt,
     felt,
     felt,
@@ -452,7 +452,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-another-word(
     nop
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1048584
@@ -541,10 +541,10 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-another-word(
 end
 
 @callconv("C")
-proc miden:cross-ctx-account-word/foo@1.0.0_process-felt(felt) -> felt
+proc miden_cross_ctx_account_word_foo_1_0_0_process_felt(felt) -> felt
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.3
@@ -552,7 +552,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-felt(felt) -> felt
 end
 
 @callconv("C")
-proc miden:cross-ctx-account-word/foo@1.0.0_process-mixed(
+proc miden_cross_ctx_account_word_foo_1_0_0_process_mixed(
     [u32; 2],
     felt,
     i32,
@@ -571,7 +571,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-mixed(
     nop
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1048584
@@ -767,7 +767,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-mixed(
 end
 
 @callconv("C")
-proc miden:cross-ctx-account-word/foo@1.0.0_process-nested(
+proc miden_cross_ctx_account_word_foo_1_0_0_process_nested(
     felt,
     felt,
     felt
@@ -782,7 +782,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-nested(
     nop
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1048584
@@ -850,7 +850,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-nested(
 end
 
 @callconv("C")
-proc miden:cross-ctx-account-word/foo@1.0.0_process-pair(felt, felt) -> i32
+proc miden_cross_ctx_account_word_foo_1_0_0_process_pair(felt, felt) -> i32
     push.1114148
     u32divmod.4
     swap.1
@@ -861,7 +861,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-pair(felt, felt) -> i32
     nop
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1048584
@@ -908,7 +908,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-pair(felt, felt) -> i32
 end
 
 @callconv("C")
-proc miden:cross-ctx-account-word/foo@1.0.0_process-triple(
+proc miden_cross_ctx_account_word_foo_1_0_0_process_triple(
     felt,
     felt,
     felt
@@ -923,7 +923,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-triple(
     nop
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1048584
@@ -991,7 +991,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-triple(
 end
 
 @callconv("C")
-proc miden:cross-ctx-account-word/foo@1.0.0_process-word(
+proc miden_cross_ctx_account_word_foo_1_0_0_process_word(
     felt,
     felt,
     felt,
@@ -1007,7 +1007,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0_process-word(
     nop
     trace.240
     nop
-    exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
+    exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1048584
@@ -1138,7 +1138,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::__wasm_call_ctors
+        exec.::miden:cross-ctx-account-word/foo@1.0.0::cross_ctx_account_word::__wasm_call_ctors
         trace.252
         nop
         push.1

@@ -7,7 +7,7 @@ pub proc binding(
     exec.miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::init
     trace.240
     nop
-    exec.miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1_binding
+    exec.::miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::miden_rust_sdk_output_note_get_recipient_binding_rust_sdk_output_note_get_recipient_binding_0_0_1_binding
     trace.252
     nop
     push.0
@@ -106,7 +106,7 @@ proc rust_sdk_output_note_get_recipient_binding::bindings::__link_custom_section
 end
 
 @callconv("C")
-proc miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1_binding(
+proc miden_rust_sdk_output_note_get_recipient_binding_rust_sdk_output_note_get_recipient_binding_0_0_1_binding(
 
 ) -> i32
     push.1114144
@@ -131,14 +131,14 @@ proc miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-r
     nop
     trace.240
     nop
-    exec.miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::wit_bindgen::rt::run_ctors_once
+    exec.::miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
     dup.1
     trace.240
     nop
-    exec.miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::miden_base_sys::bindings::output_note::get_recipient
+    exec.::miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::miden_base_sys::bindings::output_note::get_recipient
     trace.252
     nop
     push.1114148
@@ -275,7 +275,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::__wasm_call_ctors
+        exec.::miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -335,7 +335,7 @@ proc miden_base_sys::bindings::output_note::get_recipient(
     movup.3
     trace.240
     nop
-    exec.::miden::protocol::output_note::get_recipient
+    exec.::miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::miden__protocol__output_note__get_recipient
     trace.252
     nop
     dup.0
@@ -422,13 +422,59 @@ proc miden_base_sys::bindings::output_note::get_recipient(
     nop
 end
 
-# mod ::miden:rust-sdk-output-note-get-recipient-binding/rust-sdk-output-note-get-recipient-binding@0.0.1::rust_sdk_output_note_get_recipient_binding::miden::protocol::output_note
-
 @callconv("C")
-proc get_recipient(felt, i32)
-    drop
-    drop
-    push.0
-    assert
+proc miden__protocol__output_note__get_recipient(felt, i32)
+    trace.240
+    nop
+    exec.::miden::protocol::output_note::get_recipient
+    trace.252
+    nop
+    movup.4
+    dup.0
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.8
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
 end
 

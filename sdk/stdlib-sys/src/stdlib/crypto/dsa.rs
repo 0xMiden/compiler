@@ -42,5 +42,7 @@ pub fn rpo_falcon512_verify(pk: Word, msg: Word) {
 #[inline(always)]
 #[cfg(not(all(target_family = "wasm", miden)))]
 pub fn rpo_falcon512_verify(_pk: Word, _msg: Word) {
-    unimplemented!("miden::core::crypto::dsa bindings are only available when targeting the Miden VM")
+    unimplemented!(
+        "miden::core::crypto::dsa bindings are only available when targeting the Miden VM"
+    )
 }

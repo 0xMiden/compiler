@@ -7,7 +7,7 @@ pub proc binding(
     exec.miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::init
     trace.240
     nop
-    exec.miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1_binding
+    exec.::miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::miden_rust_sdk_input_note_get_sender_binding_rust_sdk_input_note_get_sender_binding_0_0_1_binding
     trace.252
     nop
     push.0
@@ -76,7 +76,7 @@ proc rust_sdk_input_note_get_sender_binding::bindings::__link_custom_section_des
 end
 
 @callconv("C")
-proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1_binding(
+proc miden_rust_sdk_input_note_get_sender_binding_rust_sdk_input_note_get_sender_binding_0_0_1_binding(
 
 ) -> i32
     push.1114144
@@ -101,7 +101,7 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     nop
     trace.240
     nop
-    exec.miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::wit_bindgen::rt::run_ctors_once
+    exec.::miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -110,7 +110,7 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     u32wrapping_add
     trace.240
     nop
-    exec.miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::miden_base_sys::bindings::input_note::get_sender
+    exec.::miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::miden_base_sys::bindings::input_note::get_sender
     trace.252
     nop
     push.1114148
@@ -213,7 +213,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::__wasm_call_ctors
+        exec.::miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -275,7 +275,7 @@ proc miden_base_sys::bindings::input_note::get_sender(
     movup.3
     trace.240
     nop
-    exec.::miden::protocol::input_note::get_sender
+    exec.::miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::miden__protocol__input_note__get_sender
     trace.252
     nop
     push.8
@@ -324,10 +324,8 @@ proc miden_base_sys::bindings::input_note::get_sender(
     nop
 end
 
-# mod ::miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1::rust_sdk_input_note_get_sender_binding::miden::protocol::input_note
-
 @callconv("C")
-proc get_sender(felt, i32)
+proc miden__protocol__input_note__get_sender(felt, i32)
     drop
     drop
     push.0

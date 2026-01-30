@@ -178,7 +178,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_words::<alloc::raw_vec::RawVecInner>::current_memory
+    exec.::root_ns:root@1.0.0::hash_words::_RNvMs2_NtCsavCk3dk0kOp_5alloc7raw_vecNtB5_11RawVecInner14current_memoryB7__llvm_1322842343069687788
     trace.252
     nop
     push.8
@@ -243,7 +243,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         movdn.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_words::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.::root_ns:root@1.0.0::hash_words::_RNvXs_NtCsavCk3dk0kOp_5alloc5allocNtB4_6GlobalNtNtCs2GsBZC3Lp7H_4core5alloc9Allocator10deallocate_llvm_1322842343069687788
         trace.252
         nop
     end
@@ -260,7 +260,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
 end
 
 @callconv("C")
-proc <alloc::raw_vec::RawVecInner>::current_memory(
+proc _RNvMs2_NtCsavCk3dk0kOp_5alloc7raw_vecNtB5_11RawVecInner14current_memoryB7__llvm_1322842343069687788(
     i32,
     i32,
     i32,
@@ -392,7 +392,7 @@ proc <alloc::raw_vec::RawVecInner>::current_memory(
 end
 
 @callconv("C")
-proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
+proc _RNvXs_NtCsavCk3dk0kOp_5alloc5allocNtB4_6GlobalNtNtCs2GsBZC3Lp7H_4core5alloc9Allocator10deallocate_llvm_1322842343069687788(
     i32,
     i32,
     i32

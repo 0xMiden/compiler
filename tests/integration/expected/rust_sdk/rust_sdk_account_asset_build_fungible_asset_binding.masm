@@ -7,7 +7,7 @@ pub proc binding(
     exec.miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::init
     trace.240
     nop
-    exec.miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1_binding
+    exec.::miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::miden_rust_sdk_account_asset_build_fungible_asset_binding_rust_sdk_account_asset_build_fungible_asset_binding_0_0_1_binding
     trace.252
     nop
     push.0
@@ -106,7 +106,7 @@ proc rust_sdk_account_asset_build_fungible_asset_binding::bindings::__link_custo
 end
 
 @callconv("C")
-proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1_binding(
+proc miden_rust_sdk_account_asset_build_fungible_asset_binding_rust_sdk_account_asset_build_fungible_asset_binding_0_0_1_binding(
 
 ) -> i32
     push.1114144
@@ -131,7 +131,7 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     nop
     trace.240
     nop
-    exec.miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::wit_bindgen::rt::run_ctors_once
+    exec.::miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.10
@@ -140,7 +140,7 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     dup.3
     trace.240
     nop
-    exec.miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::miden_base_sys::bindings::asset::build_fungible_asset
+    exec.::miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::miden_base_sys::bindings::asset::build_fungible_asset
     trace.252
     nop
     push.1114148
@@ -277,7 +277,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::__wasm_call_ctors
+        exec.::miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -345,7 +345,7 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     swap.3
     trace.240
     nop
-    exec.::miden::protocol::asset::build_fungible_asset
+    exec.::miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::miden__protocol__asset__build_fungible_asset
     trace.252
     nop
     dup.0
@@ -432,10 +432,8 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     nop
 end
 
-# mod ::miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1::rust_sdk_account_asset_build_fungible_asset_binding::miden::protocol::asset
-
 @callconv("C")
-proc build_fungible_asset(felt, felt, felt, i32)
+proc miden__protocol__asset__build_fungible_asset(felt, felt, felt, i32)
     drop
     drop
     drop

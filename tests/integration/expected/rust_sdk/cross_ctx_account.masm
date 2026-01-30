@@ -1,11 +1,11 @@
 # mod ::miden:cross-ctx-account/foo@1.0.0
 
 @callconv("canon-lift")
-pub proc process-felt(felt) -> felt
+pub proc process_felt(felt) -> felt
     exec.miden:cross-ctx-account/foo@1.0.0::init
     trace.240
     nop
-    exec.miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::miden:cross-ctx-account/foo@1.0.0_process-felt
+    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::miden_cross_ctx_account_foo_1_0_0_process_felt
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -49,7 +49,7 @@ proc cross_ctx_account::bindings::__link_custom_section_describing_imports(
 end
 
 @callconv("C")
-proc miden:cross-ctx-account/foo@1.0.0_process-felt(felt) -> felt
+proc miden_cross_ctx_account_foo_1_0_0_process_felt(felt) -> felt
     push.1114148
     u32divmod.4
     swap.1
@@ -62,7 +62,7 @@ proc miden:cross-ctx-account/foo@1.0.0_process-felt(felt) -> felt
     u32wrapping_add
     trace.240
     nop
-    exec.miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::wit_bindgen::rt::run_ctors_once
+    exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.0
@@ -144,7 +144,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::__wasm_call_ctors
+        exec.::miden:cross-ctx-account/foo@1.0.0::cross_ctx_account::__wasm_call_ctors
         trace.252
         nop
         push.1
