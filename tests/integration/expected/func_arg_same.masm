@@ -19,7 +19,7 @@ pub proc entrypoint(i32, i32) -> i32
     dup.0
     trace.240
     nop
-    exec.root_ns:root@1.0.0::func_arg_same::intrinsic
+    exec.::root_ns:root@1.0.0::func_arg_same::intrinsic
     trace.252
     nop
 end

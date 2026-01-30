@@ -991,6 +991,7 @@ name = "miden"
 version = "0.8.0"
 dependencies = [
  "miden-base",
+ "miden-base-macros",
  "miden-base-sys",
  "miden-felt-repr",
  "miden-field",
@@ -1052,7 +1053,6 @@ dependencies = [
 name = "miden-base"
 version = "0.8.0"
 dependencies = [
- "miden-base-macros",
  "miden-base-sys",
  "miden-stdlib-sys",
 ]
@@ -1184,7 +1184,6 @@ dependencies = [
  "miden-core",
  "miden-felt-repr-derive",
  "miden-field",
- "miden-protocol",
 ]
 
 [[package]]

@@ -18,11 +18,11 @@ bindings::export!(MyAccount);
 #[component]
 struct MyAccount {
     /// Public key authorized to update the stored asset quantities.
-    #[storage(slot(0), description = "owner public key")]
+    #[storage(description = "owner public key")]
     owner_public_key: Value,
 
     /// A map from asset identifier to quantity held by the account.
-    #[storage(slot(1), description = "asset quantity map")]
+    #[storage(description = "asset quantity map")]
     asset_qty_map: StorageMap,
 }
 

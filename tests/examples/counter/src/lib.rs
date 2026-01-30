@@ -17,7 +17,7 @@ mod component {
     #[component]
     struct CounterContract {
         /// Storage map holding the counter value.
-        #[storage(slot(0), description = "counter contract storage map")]
+        #[storage(description = "counter contract storage map")]
         count_map: StorageMap,
     }
 

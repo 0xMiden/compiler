@@ -72,10 +72,6 @@ fn parse_storage_attribute(
 
     list.parse_args_with(parser)?;
 
-    // The `slot(N)` argument is accepted for backwards compatibility but no longer required.
-    // Slot ids are derived from the canonical slot name computed for each field.
-    let _legacy_slot_index = slot_value;
-
     Ok(Some(StorageAttributeArgs {
         description: description_value,
         type_attr: type_value,

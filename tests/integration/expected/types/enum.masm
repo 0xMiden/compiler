@@ -27,7 +27,7 @@ pub proc __main(
     push.3
     trace.240
     nop
-    exec.root_ns:root@1.0.0::test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c::match_enum
+    exec.::root_ns:root@1.0.0::test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c::match_enum
     trace.252
     nop
     push.1
@@ -35,7 +35,7 @@ pub proc __main(
     push.3
     trace.240
     nop
-    exec.root_ns:root@1.0.0::test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c::match_enum
+    exec.::root_ns:root@1.0.0::test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c::match_enum
     trace.252
     nop
     push.2
@@ -43,7 +43,7 @@ pub proc __main(
     push.3
     trace.240
     nop
-    exec.root_ns:root@1.0.0::test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c::match_enum
+    exec.::root_ns:root@1.0.0::test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c::match_enum
     trace.252
     nop
     movdn.2
