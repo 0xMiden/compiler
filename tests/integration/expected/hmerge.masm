@@ -189,7 +189,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt) -> felt
     dup.1
     trace.240
     nop
-    exec.::intrinsics::crypto::hmerge
+    exec.::root_ns:root@1.0.0::hmerge::intrinsics__crypto__hmerge
     trace.252
     nop
     push.32
@@ -222,10 +222,8 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt) -> felt
     nop
 end
 
-# mod ::root_ns:root@1.0.0::hmerge::intrinsics::crypto
-
 @callconv("C")
-proc hmerge(i32, i32)
+proc intrinsics__crypto__hmerge(i32, i32)
     trace.240
     nop
     exec.::intrinsics::crypto::hmerge
