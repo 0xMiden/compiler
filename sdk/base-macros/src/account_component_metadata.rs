@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 
-use miden_protocol::account::{AccountType, StorageSlotName};
-use miden_protocol::account::component::{
-    AccountComponentMetadata, MapSlotSchema, StorageSchema, StorageSlotSchema, ValueSlotSchema,
-    WordSchema,
-    storage::SchemaTypeId,
+use miden_protocol::account::{
+    AccountType, StorageSlotName,
+    component::{
+        AccountComponentMetadata, MapSlotSchema, StorageSchema, StorageSlotSchema, ValueSlotSchema,
+        WordSchema, storage::SchemaTypeId,
+    },
 };
 use semver::Version;
 
@@ -102,8 +103,8 @@ impl AccountComponentMetadataBuilder {
     }
 
     pub fn build(self) -> AccountComponentMetadata {
-        let storage_schema = StorageSchema::new(self.storage)
-            .expect("failed to build component storage schema");
+        let storage_schema =
+            StorageSchema::new(self.storage).expect("failed to build component storage schema");
         AccountComponentMetadata::new(
             self.name,
             self.description,

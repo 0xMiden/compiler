@@ -4,8 +4,7 @@ use miden_core::{
     Felt, FieldElement, Word,
     utils::{Deserializable, Serializable},
 };
-use miden_protocol::account::AccountComponentMetadata;
-use miden_protocol::account::component::InitStorageData;
+use miden_protocol::account::{AccountComponentMetadata, component::InitStorageData};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{FunctionIdent, Ident, SourceSpan, interner::Symbol};
@@ -174,10 +173,10 @@ fn rust_sdk_cross_ctx_account_and_note() {
     let expected_module_prefix = "::miden:cross-ctx-account/";
     let expected_function_suffix = "::process-felt";
     assert!(
-        exports
-            .iter()
-            .any(|export| export.starts_with(expected_module_prefix) && export.ends_with(expected_function_suffix)),
-        "expected one of the exports to start with '{expected_module_prefix}' and end with '{expected_function_suffix}', got exports: {exports:?}"
+        exports.iter().any(|export| export.starts_with(expected_module_prefix)
+            && export.ends_with(expected_function_suffix)),
+        "expected one of the exports to start with '{expected_module_prefix}' and end with \
+         '{expected_function_suffix}', got exports: {exports:?}"
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
@@ -230,10 +229,10 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
         .collect::<Vec<_>>();
     // dbg!(&exports);
     assert!(
-        exports
-            .iter()
-            .any(|export| export.starts_with(expected_module_prefix) && export.ends_with(expected_function_suffix)),
-        "expected one of the exports to start with '{expected_module_prefix}' and end with '{expected_function_suffix}', got exports: {exports:?}"
+        exports.iter().any(|export| export.starts_with(expected_module_prefix)
+            && export.ends_with(expected_function_suffix)),
+        "expected one of the exports to start with '{expected_module_prefix}' and end with \
+         '{expected_function_suffix}', got exports: {exports:?}"
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
@@ -298,10 +297,10 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
         .map(|e| e.path().as_ref().as_str().to_string())
         .collect::<Vec<_>>();
     assert!(
-        exports
-            .iter()
-            .any(|export| export.starts_with(expected_module_prefix) && export.ends_with(expected_function_suffix)),
-        "expected one of the exports to start with '{expected_module_prefix}' and end with '{expected_function_suffix}', got exports: {exports:?}"
+        exports.iter().any(|export| export.starts_with(expected_module_prefix)
+            && export.ends_with(expected_function_suffix)),
+        "expected one of the exports to start with '{expected_module_prefix}' and end with \
+         '{expected_function_suffix}', got exports: {exports:?}"
     );
 
     // Build counter note

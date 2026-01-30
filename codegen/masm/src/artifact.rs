@@ -497,7 +497,6 @@ fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExpor
             let mut module_path = component.to_string();
             module_path.push_str("::");
             module_path.push_str(interface);
-            dbg!(&module_path);
             let module_path = masm::LibraryPath::new(&module_path)
                 .expect("invalid wasm component model identifier");
 

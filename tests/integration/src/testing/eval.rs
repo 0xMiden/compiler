@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use miden_core::{Felt, FieldElement};
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
+use miden_processor::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
-use miden_processor::AdviceInputs;
 use midenc_compile::LinkOutput;
 use midenc_session::{STDLIB, Session};
 use proptest::test_runner::TestCaseError;

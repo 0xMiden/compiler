@@ -349,8 +349,10 @@ fn auth_component_no_auth() {
     let auth_comp_package = test.compiled_package();
     let lib = auth_comp_package.unwrap_library();
     let expected_function = "auth__procedure";
-    let exports =
-        lib.exports().map(|e| e.path().as_ref().as_str().to_string()).collect::<Vec<_>>();
+    let exports = lib
+        .exports()
+        .map(|e| e.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
     assert!(
         lib.exports()
             .any(|export| export.path().as_ref().last() == Some(expected_function)),

@@ -27,7 +27,7 @@ fn test_hash_elements() {
 	        let res = miden_stdlib_sys::hash_elements(input);
 	        res.inner[0]
 	    }"#
-	    .to_string();
+    .to_string();
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
         "hash_elements",
@@ -110,7 +110,7 @@ fn test_hash_words() {
 	        // Return the first limb of the digest for easy comparison
 	        res.inner[0]
 	    }"#
-	    .to_string();
+    .to_string();
 
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(

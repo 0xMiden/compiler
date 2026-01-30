@@ -5,9 +5,9 @@ use miden_core::{
     crypto::merkle::{MerkleStore, Smt},
 };
 use miden_debug::Executor;
+use miden_processor::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
-use miden_processor::AdviceInputs;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_session::STDLIB;

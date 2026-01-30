@@ -57,9 +57,9 @@ unsafe extern "C" {
 /// let serial_num = Word::from_u64_unchecked(1, 2, 3, 4);
 /// let note_script_root = Digest::from_word(Word::from_u64_unchecked(0, 0, 0, 0));
 ///
-    /// // Note inputs are hashed via `hash_elements`.
-    /// let inputs = alloc::vec![felt!(0); 2];
-    /// let recipient = Recipient::compute(serial_num, note_script_root, inputs);
+/// // Note inputs are hashed via `hash_elements`.
+/// let inputs = alloc::vec![felt!(0); 2];
+/// let recipient = Recipient::compute(serial_num, note_script_root, inputs);
 ///
 /// let tag = Tag::from(felt!(0));
 /// let note_type = NoteType::from(felt!(0));

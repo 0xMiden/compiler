@@ -3,9 +3,9 @@ use std::{collections::VecDeque, sync::Arc};
 
 use miden_core::{FieldElement, StarkField, utils::group_slice_elements};
 use miden_debug::{Executor, Felt as TestFelt, FromMidenRepr, ToMidenRepr};
+use miden_processor::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
-use miden_processor::AdviceInputs;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;

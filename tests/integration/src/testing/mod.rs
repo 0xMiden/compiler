@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use miden_core::Felt;
 use miden_debug::Executor;
+use miden_mast_package::Package;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
-use miden_mast_package::Package;
 use midenc_session::STDLIB;
 
 pub use self::{

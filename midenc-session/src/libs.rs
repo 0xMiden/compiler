@@ -14,10 +14,7 @@ use miden_core_lib::CoreLibrary;
 use midenc_hir_symbol::sync::LazyLock;
 
 #[cfg(feature = "std")]
-use crate::{
-    Path,
-    diagnostics::IntoDiagnostic,
-};
+use crate::{Path, diagnostics::IntoDiagnostic};
 use crate::{PathBuf, Session, TargetEnv, diagnostics::Report};
 
 pub static STDLIB: LazyLock<Arc<CompiledLibrary>> =
