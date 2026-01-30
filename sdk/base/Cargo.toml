@@ -12,10 +12,8 @@ readme.workspace = true
 edition.workspace = true
 
 [dependencies]
-miden-protocol.workspace = true
 miden-base-sys = { version = "0.8.0", path = "../base-sys" }
 miden-stdlib-sys = { version = "0.8.0", path = "../stdlib-sys" }
-miden-base-macros = { version = "0.8.0", path = "../base-macros" }
 
 [features]
 default = []

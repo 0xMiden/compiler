@@ -16,7 +16,6 @@ use miden_client::{
     transaction::OutputNote,
 };
 use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
-use miden_felt_repr::ToFeltRepr;
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_protocol::{
@@ -33,8 +32,8 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Converts a value's felt representation into `miden_core::Felt` elements.
-pub(super) fn to_core_felts<T: ToFeltRepr + ?Sized>(value: &T) -> Vec<Felt> {
-    value.to_felt_repr().into_iter().map(Into::into).collect()
+pub(super) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
+    vec![value.prefix().as_felt(), value.suffix()]
 }
 
 // ASYNC HELPERS
@@ -188,15 +187,8 @@ pub(super) fn assert_account_has_fungible_asset(
 
 /// Builds a `send_notes` transaction script for accounts that support a standard note creation
 /// interface (e.g. basic wallets and basic fungible faucets).
-pub(super) fn build_send_notes_script(
-    account: &Account,
-    notes: &[Note],
-) -> TransactionScript {
-    let partial_notes = notes
-        .iter()
-        .cloned()
-        .map(PartialNote::from)
-        .collect::<Vec<_>>();
+pub(super) fn build_send_notes_script(account: &Account, notes: &[Note]) -> TransactionScript {
+    let partial_notes = notes.iter().cloned().map(PartialNote::from).collect::<Vec<_>>();
 
     AccountInterface::from_account(account)
         .build_send_notes_script(&partial_notes, None)
@@ -353,11 +345,10 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
 ) -> (Account, AuthSecretKey) {
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-    let counter_storage_slots =
-        vec![StorageSlot::with_map(
-            counter_storage_slot_name(),
-            StorageMap::with_entries([(key, value)]).unwrap(),
-        )];
+    let counter_storage_slots = vec![StorageSlot::with_map(
+        counter_storage_slot_name(),
+        StorageMap::with_entries([(key, value)]).unwrap(),
+    )];
 
     let mut rng = StdRng::seed_from_u64(1);
     let secret_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);

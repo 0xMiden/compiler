@@ -88,9 +88,9 @@ fn slot_id_tokens(id: miden_protocol::account::StorageSlotId) -> proc_macro2::To
     let suffix = id.suffix().as_int();
     let prefix = id.prefix().as_int();
     quote! {
-        miden_protocol::account::StorageSlotId::new(
-            miden_protocol::Felt::new(#suffix),
-            miden_protocol::Felt::new(#prefix),
+        ::miden::StorageSlotId::new(
+            ::miden::Felt::from_u64_unchecked(#suffix),
+            ::miden::Felt::from_u64_unchecked(#prefix),
         )
     }
 }

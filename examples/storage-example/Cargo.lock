@@ -521,7 +521,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -977,6 +977,7 @@ name = "miden"
 version = "0.8.0"
 dependencies = [
  "miden-base",
+ "miden-base-macros",
  "miden-base-sys",
  "miden-felt-repr",
  "miden-field",
@@ -1038,9 +1039,7 @@ dependencies = [
 name = "miden-base"
 version = "0.8.0"
 dependencies = [
- "miden-base-macros",
  "miden-base-sys",
- "miden-protocol",
  "miden-stdlib-sys",
 ]
 
@@ -1171,7 +1170,6 @@ dependencies = [
  "miden-core",
  "miden-felt-repr-derive",
  "miden-field",
- "miden-protocol",
 ]
 
 [[package]]
@@ -2186,7 +2184,7 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2111ef44dae28680ae9752bb89409e7310ca33a8c621ebe7b106cf5c928b3ac0"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

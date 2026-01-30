@@ -1,7 +1,6 @@
-use miden_protocol::account::StorageSlotId;
 use miden_stdlib_sys::{Felt, Word};
 
-use super::StorageCommitmentRoot;
+use super::{StorageCommitmentRoot, StorageSlotId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -75,9 +74,7 @@ unsafe extern "C" {
 pub fn get_item(slot_id: StorageSlotId) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        let index_prefix = Felt::from(slot_id.prefix());
-        let index_suffix = Felt::from(slot_id.suffix());
-        extern_get_storage_item(index_prefix, index_suffix, ret_area.as_mut_ptr());
+        extern_get_storage_item(slot_id.prefix(), slot_id.suffix(), ret_area.as_mut_ptr());
         let word = ret_area.assume_init();
         word.reverse()
     }
@@ -88,9 +85,7 @@ pub fn get_item(slot_id: StorageSlotId) -> Word {
 pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        let index_prefix = Felt::from(slot_id.prefix());
-        let index_suffix = Felt::from(slot_id.suffix());
-        extern_get_initial_storage_item(index_prefix, index_suffix, ret_area.as_mut_ptr());
+        extern_get_initial_storage_item(slot_id.prefix(), slot_id.suffix(), ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }
 }
@@ -112,11 +107,9 @@ pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
 pub fn set_item(slot_id: StorageSlotId, value: Word) -> (StorageCommitmentRoot, Word) {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();
-        let index_prefix = Felt::from(slot_id.prefix());
-        let index_suffix = Felt::from(slot_id.suffix());
         extern_set_storage_item(
-            index_prefix,
-            index_suffix,
+            slot_id.prefix(),
+            slot_id.suffix(),
             value[3],
             value[2],
             value[1],
@@ -145,11 +138,9 @@ pub fn set_item(slot_id: StorageSlotId, value: Word) -> (StorageCommitmentRoot, 
 pub fn get_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        let index_prefix = Felt::from(slot_id.prefix());
-        let index_suffix = Felt::from(slot_id.suffix());
         extern_get_storage_map_item(
-            index_prefix,
-            index_suffix,
+            slot_id.prefix(),
+            slot_id.suffix(),
             key[3],
             key[2],
             key[1],
@@ -165,11 +156,9 @@ pub fn get_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
 pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        let index_prefix = Felt::from(slot_id.prefix());
-        let index_suffix = Felt::from(slot_id.suffix());
         extern_get_initial_storage_map_item(
-            index_prefix,
-            index_suffix,
+            slot_id.prefix(),
+            slot_id.suffix(),
             key[3],
             key[2],
             key[1],
@@ -203,11 +192,9 @@ pub fn set_map_item(
 ) -> (StorageCommitmentRoot, Word) {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();
-        let index_prefix = Felt::from(slot_id.prefix());
-        let index_suffix = Felt::from(slot_id.suffix());
         extern_set_storage_map_item(
-            index_prefix,
-            index_suffix,
+            slot_id.prefix(),
+            slot_id.suffix(),
             key[3],
             key[2],
             key[1],

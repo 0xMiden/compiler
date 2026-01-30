@@ -2,6 +2,7 @@
 #![deny(warnings)]
 
 pub use miden_base::*;
+pub use miden_base_macros::{component, export_type, generate, note_script, tx_script};
 pub use miden_base_sys::bindings::*;
 /// Felt representation helpers.
 pub use miden_felt_repr as felt_repr;
