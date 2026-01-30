@@ -414,9 +414,11 @@ impl OpEmitter<'_> {
     pub fn add_i64(&mut self, overflow: Overflow, span: SourceSpan) {
         self.raw_exec(
             match overflow {
-                Overflow::Unchecked | Overflow::Wrapping => "miden::core::math::u64::wrapping_add",
-                Overflow::Checked => "intrinsics::i64::checked_add",
-                Overflow::Overflowing => "intrinsics::i64::overflowing_add",
+                Overflow::Unchecked | Overflow::Wrapping => {
+                    "::miden::core::math::u64::wrapping_add"
+                }
+                Overflow::Checked => "::intrinsics::i64::checked_add",
+                Overflow::Overflowing => "::intrinsics::i64::overflowing_add",
             },
             span,
         )
