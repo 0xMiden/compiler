@@ -1,5 +1,7 @@
 cargo-features = ["trim-paths"]
 
+[workspace]
+
 [package]
 name = "source_location_test"
 version = "0.1.0"
