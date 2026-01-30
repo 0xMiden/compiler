@@ -34,7 +34,7 @@ pub use self::{
     lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},
 };
-pub(crate) use self::{lower::HirLowering, naming::double_colon_to_double_underscore};
+pub(crate) use self::{lower::HirLowering, naming::sanitize_procedure_name};
 
 pub fn register_dialect_hooks(context: &midenc_hir::Context) {
     use midenc_dialect_arith as arith;

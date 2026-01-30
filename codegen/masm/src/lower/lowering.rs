@@ -13,8 +13,7 @@ use smallvec::{SmallVec, smallvec};
 
 use super::*;
 use crate::{
-    Constraint, double_colon_to_double_underscore, emitter::BlockEmitter, masm,
-    opt::operands::SolverOptions,
+    Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions, sanitize_procedure_name,
 };
 
 /// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
@@ -26,7 +25,7 @@ fn invocation_target_from_symbol_path(
     callee_path: &midenc_hir::SymbolPath,
     span: midenc_hir::SourceSpan,
 ) -> masm::InvocationTarget {
-    let proc_name = double_colon_to_double_underscore(callee_path.name().as_str());
+    let proc_name = sanitize_procedure_name(callee_path.name().as_str());
     let proc_name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
         masm::Span::new(span, proc_name.as_ref().into()),
     ));

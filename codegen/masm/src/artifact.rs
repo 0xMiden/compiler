@@ -462,7 +462,7 @@ impl MasmComponent {
 /// 2. Assembler using the current module name to generate exports.
 ///
 fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExport> {
-    use crate::intrinsics::INTRINSICS_MODULE_NAMES;
+    use crate::{intrinsics::INTRINSICS_MODULE_NAMES, sanitize_procedure_name};
 
     let mut exports = BTreeMap::new();
     for export in lib.exports() {
@@ -500,8 +500,9 @@ fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExpor
             let module_path = masm::LibraryPath::new(&module_path)
                 .expect("invalid wasm component model identifier");
 
+            let function = sanitize_procedure_name(function);
             let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
-                Span::unknown(Arc::from(function)),
+                Span::unknown(Arc::from(function.as_ref())),
             ));
             let qualified = masm::QualifiedProcedureName::new(module_path.as_path(), name);
             let qualified = qualified.into_inner();

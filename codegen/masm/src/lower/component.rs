@@ -16,10 +16,9 @@ use smallvec::SmallVec;
 use crate::{
     TraceEvent,
     artifact::MasmComponent,
-    double_colon_to_double_underscore,
     emitter::BlockEmitter,
     linker::{LinkInfo, Linker},
-    masm,
+    masm, sanitize_procedure_name,
 };
 
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
@@ -518,7 +517,7 @@ impl MasmFunctionBuilder {
         use midenc_hir::{Symbol, Visibility};
 
         let name = function.name();
-        let sanitized = double_colon_to_double_underscore(name.as_str());
+        let sanitized = sanitize_procedure_name(name.as_str());
         let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(Span::new(
             name.span,
             sanitized.as_ref().into(),
