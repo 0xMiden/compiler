@@ -3,8 +3,10 @@ use std::sync::Arc;
 use miden_assembly::Assembler;
 use miden_core::Felt;
 use miden_debug::{Executor, Felt as TestFelt};
-use miden_protocol::ProtocolLib;
-use miden_protocol::note::{NoteInputs, NoteRecipient, NoteScript};
+use miden_protocol::{
+    ProtocolLib,
+    note::{NoteInputs, NoteRecipient, NoteScript},
+};
 use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
@@ -37,12 +39,14 @@ fn test_get_inputs(test_name: &str, expected_inputs: Vec<u32>) -> Result<(), Rep
 pub proc get_inputs
     # Stack input: [dest_ptr]
     #
-    # Write 4 inputs to memory starting at `dest_ptr`, then return `num_inputs`.
+    # Write 4 inputs to memory starting at `dest_ptr`, then return `[num_inputs, dest_ptr]`.
+    #
+    # This matches the Miden protocol `active_note::get_inputs` convention, where `dest_ptr` is
+    # preserved on the operand stack alongside `num_inputs`.
     dup.0 push.{expect1} swap.1 mem_store
     dup.0 push.1 u32wrapping_add push.{expect2} swap.1 mem_store
     dup.0 push.2 u32wrapping_add push.{expect3} swap.1 mem_store
     dup.0 push.3 u32wrapping_add push.{expect4} swap.1 mem_store
-    drop
     push.4
 end
 ",
