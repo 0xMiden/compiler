@@ -313,21 +313,21 @@ impl Context {
         UnsafeIntrusiveEntityRef::<T>::new_uninit_with_metadata(Default::default(), &self.allocator)
     }
 
-    /// Allocate a new `EntityHandle<T>`.
+    /// Allocate a new `UnsafeEntityRef<T>`.
     ///
-    /// [EntityHandle] is a smart-pointer type for IR entities, which behaves like a ref-counted
+    /// [UnsafeEntityRef] is a smart-pointer type for IR entities, which behaves like a ref-counted
     /// pointer with dynamically-checked borrow checking rules. It is designed to play well with
     /// entities allocated from a [Context], and with the somewhat cyclical nature of the IR.
     pub fn alloc<T: 'static>(&self, value: T) -> UnsafeEntityRef<T> {
         UnsafeEntityRef::new(value, &self.allocator)
     }
 
-    /// Allocate a new `TrackedEntityHandle<T>`.
+    /// Allocate a new `UnsafeIntrusiveEntityRef<T>`.
     ///
-    /// [TrackedEntityHandle] is like [EntityHandle], except that it is specially designed for
-    /// entities which are meant to be tracked in intrusive linked lists. For example, the blocks
-    /// in a region, or the ops in a block. It does this without requiring the entity to know about
-    /// the link at all, while still making it possible to access the link from the entity.
+    /// [UnsafeIntrusiveEntityRef] is like [UnsafeEntityRef], except that it is specially designed
+    /// for entities which are meant to be tracked in intrusive linked lists. For example, the
+    /// blocks in a region, or the ops in a block. It does this without requiring the entity to know
+    /// about the link at all, while still making it possible to access the link from the entity.
     pub fn alloc_tracked<T: 'static>(&self, value: T) -> UnsafeIntrusiveEntityRef<T> {
         UnsafeIntrusiveEntityRef::new_with_metadata(value, Default::default(), &self.allocator)
     }

@@ -203,12 +203,12 @@ trait EntityListTraits<T>: Sized {
     /// are moved.
     fn split_before(cursor: &mut EntityCursorMut<'_, T>) -> EntityList<T>;
 
-    /// Remove the entity at the front of the list, returning its [TrackedEntityHandle]
+    /// Remove the entity at the front of the list, returning its [UnsafeIntrusiveEntityRef]
     ///
     /// Returns `None` if the list is empty.
     fn pop_front(&mut self) -> Option<UnsafeIntrusiveEntityRef<T>>;
 
-    /// Remove the entity at the back of the list, returning its [TrackedEntityHandle]
+    /// Remove the entity at the back of the list, returning its [UnsafeIntrusiveEntityRef]
     ///
     /// Returns `None` if the list is empty.
     fn pop_back(&mut self) -> Option<UnsafeIntrusiveEntityRef<T>>;
@@ -569,14 +569,14 @@ impl<T: EntityListItem> EntityList<T> {
         <Self as EntityListTraits<T>>::push_back(self, entity)
     }
 
-    /// Remove the entity at the front of the list, returning its [TrackedEntityHandle]
+    /// Remove the entity at the front of the list, returning its [UnsafeIntrusiveEntityRef]
     ///
     /// Returns `None` if the list is empty.
     pub fn pop_front(&mut self) -> Option<UnsafeIntrusiveEntityRef<T>> {
         <Self as EntityListTraits<T>>::pop_front(self)
     }
 
-    /// Remove the entity at the back of the list, returning its [TrackedEntityHandle]
+    /// Remove the entity at the back of the list, returning its [UnsafeIntrusiveEntityRef]
     ///
     /// Returns `None` if the list is empty.
     pub fn pop_back(&mut self) -> Option<UnsafeIntrusiveEntityRef<T>> {
@@ -673,7 +673,7 @@ impl<'a, T> EntityCursor<'a, T> {
         Some(self.cursor.get()?.entity.borrow())
     }
 
-    /// Get the [TrackedEntityHandle] corresponding to the entity under the cursor.
+    /// Get the [UnsafeIntrusiveEntityRef] corresponding to the entity under the cursor.
     ///
     /// Returns `None` if the cursor is pointing to the null object.
     #[inline]
@@ -793,7 +793,7 @@ impl<'a, T: EntityListItem> EntityCursorMut<'a, T> {
         }
     }
 
-    /// Get the [TrackedEntityHandle] corresponding to the entity under the cursor.
+    /// Get the [UnsafeIntrusiveEntityRef] corresponding to the entity under the cursor.
     ///
     /// Returns `None` if the cursor is pointing to the null object.
     #[inline]
