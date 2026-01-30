@@ -27,7 +27,6 @@ fn sanitize_slot_name_component(component: &str) -> String {
 
 /// Parsed arguments collected from a `#[storage(...)]` attribute.
 struct StorageAttributeArgs {
-    slot: u8,
     description: Option<String>,
     type_attr: Option<String>,
 }
@@ -73,15 +72,27 @@ fn parse_storage_attribute(
 
     list.parse_args_with(parser)?;
 
-    let slot = slot_value.ok_or_else(|| {
-        syn::Error::new(attr.span(), "missing required `slot(N)` argument in `storage` attribute")
-    })?;
+    // The `slot(N)` argument is accepted for backwards compatibility but no longer required.
+    // Slot ids are derived from the canonical slot name computed for each field.
+    let _legacy_slot_index = slot_value;
 
     Ok(Some(StorageAttributeArgs {
-        slot,
         description: description_value,
         type_attr: type_value,
     }))
+}
+
+/// Converts a [`miden_protocol::account::StorageSlotId`] into tokens that reconstruct it as a
+/// constant expression.
+fn slot_id_tokens(id: miden_protocol::account::StorageSlotId) -> proc_macro2::TokenStream {
+    let suffix = id.suffix().as_int();
+    let prefix = id.prefix().as_int();
+    quote! {
+        miden_protocol::account::StorageSlotId::new(
+            miden_protocol::Felt::new(#suffix),
+            miden_protocol::Felt::new(#prefix),
+        )
+    }
 }
 
 /// Processes component struct fields, recording storage metadata and building default
@@ -119,8 +130,10 @@ pub fn process_storage_fields(
         }
 
         if let Some(args) = storage_args {
+            // TODO: remove sanitazing, just : -> _ in the package name
             let namespace = sanitize_slot_name_component(storage_namespace);
             let field_component = sanitize_slot_name_component(&field_name.to_string());
+            // TODO: remove `miden::component`
             let slot_name_str = format!("miden::component::{namespace}::{field_component}");
             let slot_name =
                 miden_protocol::account::StorageSlotName::new(slot_name_str).map_err(|err| {
@@ -129,6 +142,7 @@ pub fn process_storage_fields(
                         format!("failed to construct storage slot name: {err}"),
                     )
                 })?;
+            let slot_id = slot_name.id();
 
             builder.add_storage_entry(
                 slot_name.clone(),
@@ -137,7 +151,7 @@ pub fn process_storage_fields(
                 args.type_attr,
             );
 
-            field_infos.push((field_name.clone(), field_type.clone(), slot_name));
+            field_infos.push((field_name.clone(), field_type.clone(), slot_id));
         } else {
             errors
                 .push(syn::Error::new(field.span(), "field is missing the `#[storage]` attribute"));
@@ -148,28 +162,9 @@ pub fn process_storage_fields(
         return Err(first_error);
     }
 
-    // Compute slot indices based on the canonical storage slot ordering used by the protocol.
-    //
-    // Storage slots are ordered by their hashed [`StorageSlotId`]. We assign indices based on
-    // that ordering so component code can reference slots deterministically at runtime.
-    let mut ordered = field_infos
-        .iter()
-        .enumerate()
-        .map(|(idx, (_, _, slot_name))| (idx, slot_name.clone()))
-        .collect::<Vec<_>>();
-    ordered.sort_by(|(_, a), (_, b)| a.cmp(b));
-
-    let mut index_by_field = vec![0u8; field_infos.len()];
-    for (slot_index, (field_idx, _)) in ordered.into_iter().enumerate() {
-        let slot_index = u8::try_from(slot_index).map_err(|_| {
-            syn::Error::new(fields.span(), "component storage schema contains more than 255 slots")
-        })?;
-        index_by_field[field_idx] = slot_index;
-    }
-
     let mut field_inits = Vec::with_capacity(field_infos.len());
-    for (idx, (field_name, field_type, _slot_name)) in field_infos.into_iter().enumerate() {
-        let slot = index_by_field[idx];
+    for (field_name, field_type, slot_id) in field_infos.into_iter() {
+        let slot = slot_id_tokens(slot_id);
         field_inits.push(quote! {
             #field_name: #field_type { slot: #slot }
         });

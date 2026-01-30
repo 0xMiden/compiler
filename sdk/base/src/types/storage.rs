@@ -1,4 +1,5 @@
 use miden_base_sys::bindings::{StorageCommitmentRoot, storage};
+use miden_protocol::account::StorageSlotId;
 use miden_stdlib_sys::Word;
 
 pub trait ValueAccess<V> {
@@ -7,7 +8,7 @@ pub trait ValueAccess<V> {
 }
 
 pub struct Value {
-    pub slot: u8,
+    pub slot: StorageSlotId,
 }
 
 impl<V: Into<Word> + From<Word>> ValueAccess<V> for Value {
@@ -36,7 +37,7 @@ pub trait StorageMapAccess<K, V> {
 }
 
 pub struct StorageMap {
-    pub slot: u8,
+    pub slot: StorageSlotId,
 }
 
 impl<K: Into<Word> + AsRef<Word>, V: From<Word> + Into<Word>> StorageMapAccess<K, V>

@@ -1040,6 +1040,7 @@ version = "0.8.0"
 dependencies = [
  "miden-base-macros",
  "miden-base-sys",
+ "miden-protocol",
  "miden-stdlib-sys",
 ]
 

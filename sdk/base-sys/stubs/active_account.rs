@@ -36,18 +36,23 @@ pub extern "C" fn active_account_compute_storage_commitment_plain(_out: *mut c_v
 }
 
 #[unsafe(export_name = "miden::protocol::active_account::get_item")]
-pub extern "C" fn active_account_get_item_plain(_index: f32, _out: *mut c_void) {
+pub extern "C" fn active_account_get_item_plain(_index_prefix: f32, _index_suffix: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[unsafe(export_name = "miden::protocol::active_account::get_initial_item")]
-pub extern "C" fn active_account_get_initial_item_plain(_index: f32, _out: *mut c_void) {
+pub extern "C" fn active_account_get_initial_item_plain(
+    _index_prefix: f32,
+    _index_suffix: f32,
+    _out: *mut c_void,
+) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[unsafe(export_name = "miden::protocol::active_account::get_map_item")]
 pub extern "C" fn active_account_get_map_item_plain(
-    _index: f32,
+    _index_prefix: f32,
+    _index_suffix: f32,
     _k0: f32,
     _k1: f32,
     _k2: f32,
@@ -59,7 +64,8 @@ pub extern "C" fn active_account_get_map_item_plain(
 
 #[unsafe(export_name = "miden::protocol::active_account::get_initial_map_item")]
 pub extern "C" fn active_account_get_initial_map_item_plain(
-    _index: f32,
+    _index_prefix: f32,
+    _index_suffix: f32,
     _k0: f32,
     _k1: f32,
     _k2: f32,

@@ -34,7 +34,8 @@ pub extern "C" fn native_account_compute_delta_commitment_plain(_out: *mut c_voi
 
 #[unsafe(export_name = "miden::protocol::native_account::set_item")]
 pub extern "C" fn native_account_set_item_plain(
-    _index: f32,
+    _index_prefix: f32,
+    _index_suffix: f32,
     _v0: f32,
     _v1: f32,
     _v2: f32,
@@ -46,7 +47,8 @@ pub extern "C" fn native_account_set_item_plain(
 
 #[unsafe(export_name = "miden::protocol::native_account::set_map_item")]
 pub extern "C" fn native_account_set_map_item_plain(
-    _index: f32,
+    _index_prefix: f32,
+    _index_suffix: f32,
     _k0: f32,
     _k1: f32,
     _k2: f32,

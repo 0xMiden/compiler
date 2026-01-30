@@ -5,10 +5,7 @@
 //! contract account that uses the Rust-compiled auth component.
 
 use miden_client::{
-    auth::BasicAuthenticator,
-    crypto::RpoRandomCoin,
-    note::NoteTag,
-    testing::MockChain,
+    auth::BasicAuthenticator, crypto::RpoRandomCoin, note::NoteTag, testing::MockChain,
     transaction::OutputNote,
 };
 use miden_protocol::account::StorageSlotName;
@@ -66,7 +63,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
         &mut rng,
     );
     let tx_script = build_send_notes_script(&counter_account, std::slice::from_ref(&own_note));
-    let authenticator = BasicAuthenticator::new(&[secret_key.clone()]);
+    let authenticator = BasicAuthenticator::new(std::slice::from_ref(&secret_key));
 
     let tx_context_builder = chain
         .build_tx_context(counter_account.clone(), &[], &[])
