@@ -63,8 +63,8 @@ mod imp {
         /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "miden::core::crypto::hashes::sha256::hash_1to1"]
-        fn extern_sha256_hash_1to1(
+        #[link_name = "miden::core::crypto::hashes::sha256::hash"]
+        fn extern_sha256_hash(
             e1: u32,
             e2: u32,
             e3: u32,
@@ -81,8 +81,8 @@ mod imp {
         /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "miden::core::crypto::hashes::sha256::hash_2to1"]
-        fn extern_sha256_hash_2to1(
+        #[link_name = "miden::core::crypto::hashes::sha256::merge"]
+        fn extern_sha256_merge(
             e1: u32,
             e2: u32,
             e3: u32,
@@ -197,7 +197,7 @@ mod imp {
 
     /// Hashes a 32-byte input to a 32-byte output using the SHA256 hash function.
     #[inline]
-    pub fn sha256_hash_1to1(input: [u8; 32]) -> [u8; 32] {
+    pub fn sha256_hash(input: [u8; 32]) -> [u8; 32] {
         use crate::intrinsics::WordAligned;
 
         let swapped_words = {
@@ -217,7 +217,7 @@ mod imp {
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_sha256_hash_1to1(w0, w1, w2, w3, w4, w5, w6, w7, ptr);
+            extern_sha256_hash(w0, w1, w2, w3, w4, w5, w6, w7, ptr);
             let mut output = ret_area.assume_init().into_inner();
             // The extern returns the digest as big-endian words as well; flip each lane so callers see
             // the conventional Rust `[u8; 32]` ordering.
@@ -230,12 +230,12 @@ mod imp {
 
     /// Hashes a 64-byte input to a 32-byte output using the SHA256 hash function.
     #[inline]
-    pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
+    pub fn sha256_merge(input: [u8; 64]) -> [u8; 32] {
         use crate::intrinsics::WordAligned;
 
         let swapped_words = {
             let mut be_bytes = input;
-            // Same story as `sha256_hash_1to1`: adjust the byte layout so the ABI receives big-endian
+            // Same story as `sha256_hash`: adjust the byte layout so the ABI receives big-endian
             // 32-bit words.
             for chunk in be_bytes.chunks_exact_mut(4) {
                 chunk.reverse();
@@ -248,7 +248,7 @@ mod imp {
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_sha256_hash_2to1(
+            extern_sha256_merge(
                 w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15, ptr,
             );
             let mut output = ret_area.assume_init().into_inner();
@@ -345,7 +345,7 @@ mod imp {
 
     /// Computes SHA256 1-to-1 hash.
     #[inline]
-    pub fn sha256_hash_1to1(_input: [u8; 32]) -> [u8; 32] {
+    pub fn sha256_hash(_input: [u8; 32]) -> [u8; 32] {
         unimplemented!(
             "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
@@ -353,7 +353,7 @@ mod imp {
 
     /// Computes SHA256 2-to-1 hash.
     #[inline]
-    pub fn sha256_hash_2to1(_input: [u8; 64]) -> [u8; 32] {
+    pub fn sha256_merge(_input: [u8; 64]) -> [u8; 32] {
         unimplemented!(
             "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )

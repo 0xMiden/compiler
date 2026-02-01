@@ -378,7 +378,7 @@ builtin.component root_ns:root@1.0.0 {
             v279 = hir.load v278 : i32;
             v715 = arith.constant 32 : i32;
             v281 = arith.add v660, v715 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/rust_sdk_stdlib_sha256_hash/miden::core::crypto::hashes::sha256::hash_1to1(v230, v237, v244, v251, v258, v265, v272, v279, v281)
+            hir.exec @root_ns:root@1.0.0/rust_sdk_stdlib_sha256_hash/miden::core::crypto::hashes::sha256::hash(v230, v237, v244, v251, v258, v265, v272, v279, v281)
             v283 = arith.constant 56 : u32;
             v282 = hir.bitcast v660 : u32;
             v284 = arith.add v282, v283 : u32 #[overflow = checked];
@@ -589,9 +589,9 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::core::crypto::hashes::sha256::hash_1to1(v437: i32, v438: i32, v439: i32, v440: i32, v441: i32, v442: i32, v443: i32, v444: i32, v445: i32) {
+        private builtin.function @miden::core::crypto::hashes::sha256::hash(v437: i32, v438: i32, v439: i32, v440: i32, v441: i32, v442: i32, v443: i32, v444: i32, v445: i32) {
         ^block25(v437: i32, v438: i32, v439: i32, v440: i32, v441: i32, v442: i32, v443: i32, v444: i32, v445: i32):
-            v446, v447, v448, v449, v450, v451, v452, v453 = hir.exec @miden/core/crypto/hashes/sha256/hash_1to1(v437, v438, v439, v440, v441, v442, v443, v444) : i32, i32, i32, i32, i32, i32, i32, i32
+            v446, v447, v448, v449, v450, v451, v452, v453 = hir.exec @miden/core/crypto/hashes/sha256/hash(v437, v438, v439, v440, v441, v442, v443, v444) : i32, i32, i32, i32, i32, i32, i32, i32
             v454 = hir.bitcast v445 : u32;
             v455 = hir.int_to_ptr v454 : ptr<byte, i32>;
             hir.store v455, v446;

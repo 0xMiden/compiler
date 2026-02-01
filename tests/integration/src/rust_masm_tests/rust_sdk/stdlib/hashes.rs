@@ -138,7 +138,7 @@ fn test_blake3_1to1_hash() {
 fn test_sha256_1to1_hash() {
     run_stdlib_hash_1to1_test(
         "rust_sdk_stdlib_sha256_hash",
-        "miden_stdlib_sys::sha256_hash_1to1(a)",
+        "miden_stdlib_sys::sha256_hash(a)",
         |ibytes| {
             let hash = Sha256::digest(ibytes);
             let mut output = [0u8; 32];
@@ -167,10 +167,10 @@ fn test_blake3_hash_2to1() {
 /// Tests the SHA-256 hash helper (2-to-1) via the full compilation pipeline.
 #[test]
 #[ignore = "requires large stack frame; kept for reference"]
-fn test_sha256_hash_2to1() {
+fn test_sha256_merge() {
     run_stdlib_hash_2to1_test(
-        "rust_sdk_stdlib_sha256_hash_2to1",
-        "miden_stdlib_sys::sha256_hash_2to1(a)",
+        "rust_sdk_stdlib_sha256_merge",
+        "miden_stdlib_sys::sha256_merge(a)",
         |ibytes| {
             let hash = Sha256::digest(ibytes);
             let mut output = [0u8; 32];

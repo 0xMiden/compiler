@@ -6,14 +6,14 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const HASH_1TO1: &str = "hash_1to1";
-pub const HASH_2TO1: &str = "hash_2to1";
+pub const HASH: &str = "hash";
+pub const MERGE: &str = "merge";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
     let mut sha256: FunctionTypeMap = Default::default();
     sha256.insert(
-        Symbol::from(HASH_1TO1),
+        Symbol::from(HASH),
         FunctionType::new(
             CallConv::Wasm,
             [I32, I32, I32, I32, I32, I32, I32, I32],
@@ -21,7 +21,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         ),
     );
     sha256.insert(
-        Symbol::from(HASH_2TO1),
+        Symbol::from(MERGE),
         FunctionType::new(
             CallConv::Wasm,
             [I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32],

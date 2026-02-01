@@ -51,8 +51,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         }
                         symbols::Sha256 => {
                             match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                                stdlib::crypto::hashes::sha256::HASH_1TO1
-                                | stdlib::crypto::hashes::sha256::HASH_2TO1 => {
+                                stdlib::crypto::hashes::sha256::HASH
+                                | stdlib::crypto::hashes::sha256::MERGE => {
                                     Some(TransformStrategy::ReturnViaPointer)
                                 }
                                 _ => None,
