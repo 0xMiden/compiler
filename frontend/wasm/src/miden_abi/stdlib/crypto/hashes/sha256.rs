@@ -31,7 +31,8 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
 
     let module_path = SymbolPath::from_iter([
         SymbolNameComponent::Root,
-        SymbolNameComponent::Component(symbols::Std),
+        SymbolNameComponent::Component(symbols::Miden),
+        SymbolNameComponent::Component(symbols::Core),
         SymbolNameComponent::Component(symbols::Crypto),
         SymbolNameComponent::Component(symbols::Hashes),
         SymbolNameComponent::Component(Symbol::intern("sha256")),
