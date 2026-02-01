@@ -26,6 +26,6 @@ miden-test-harness-macros.workspace = true
 libtest-mimic = "0.8.1"
 inventory.workspace = true
 clap.workspace = true
-miden-testing = "0.13"
 miden-protocol = { version = "0.13", features = ["std"] }
+miden-testing.workspace = true
 cargo-miden.workspace = true

@@ -60,7 +60,7 @@ impl ToMasmComponent for builtin::Component {
                 // TODO(pauls): Narrow this to only be true if the target env is not 'rollup', we
                 // cannot currently do so because we do not have sufficient Cargo metadata yet in
                 // 'cargo miden build' to detect the target env, and we default it to 'rollup'
-                let is_wrapper = component_path.as_path().as_str() == "root_ns:root@1.0.0";
+                let is_wrapper = component_path.as_path().as_str() == "\"root_ns:root@1.0.0\"";
                 let path = if is_wrapper {
                     let mut path = component_path.clone();
                     path.push(entry_id.module.as_str());

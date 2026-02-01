@@ -256,7 +256,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn lt_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::lt", span);
+        self.raw_exec("::miden::core::math::u64::lt", span);
     }
 
     /// Pops two i64 values off the stack, `b` and `a`, and pushes `a < b` on the stack.
@@ -272,7 +272,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn lte_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::lte", span);
+        self.raw_exec("::miden::core::math::u64::lte", span);
     }
 
     /// Pops two i64 values off the stack, `b` and `a`, and pushes `a <= b` on the stack.
@@ -288,7 +288,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn gt_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::gt", span);
+        self.raw_exec("::miden::core::math::u64::gt", span);
     }
 
     /// Pops two i64 values off the stack, `b` and `a`, and pushes `a > b` on the stack.
@@ -304,7 +304,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn gte_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::gte", span);
+        self.raw_exec("::miden::core::math::u64::gte", span);
     }
 
     /// Pops two i64 values off the stack, `b` and `a`, and pushes `a >= b` on the stack.
@@ -320,7 +320,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn eq_int64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::eq", span);
+        self.raw_exec("::miden::core::math::u64::eq", span);
     }
 
     /// Pops a u64 value off the stack, `a`, and pushes `a == 0` on the stack.
@@ -328,7 +328,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the value is not a valid u64, execution will trap.
     #[inline]
     pub fn is_zero_int64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::eqz", span);
+        self.raw_exec("::miden::core::math::u64::eqz", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes `min(a, b)` on the stack.
@@ -336,7 +336,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn min_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::min", span);
+        self.raw_exec("::miden::core::math::u64::min", span);
     }
 
     /// Pops two i64 values off the stack, `b` and `a`, and pushes `min(a, b)` on the stack.
@@ -356,7 +356,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn max_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::max", span);
+        self.raw_exec("::miden::core::math::u64::max", span);
     }
 
     /// Pops two i64 values off the stack, `b` and `a`, and pushes `max(a, b)` on the stack.
@@ -376,7 +376,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, so if the values are not valid u64, execution will trap.
     #[inline]
     pub fn neq_int64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::neq", span);
+        self.raw_exec("::miden::core::math::u64::neq", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and performs `a + b`.
@@ -395,14 +395,14 @@ impl OpEmitter<'_> {
     pub fn add_u64(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Checked => {
-                self.raw_exec("miden::core::math::u64::overflowing_add", span);
+                self.raw_exec("::miden::core::math::u64::overflowing_add", span);
                 self.emit(masm::Instruction::Assertz, span);
             }
             Overflow::Unchecked | Overflow::Wrapping => {
-                self.raw_exec("miden::core::math::u64::wrapping_add", span);
+                self.raw_exec("::miden::core::math::u64::wrapping_add", span);
             }
             Overflow::Overflowing => {
-                self.raw_exec("miden::core::math::u64::overflowing_add", span);
+                self.raw_exec("::miden::core::math::u64::overflowing_add", span);
             }
         }
     }
@@ -414,9 +414,9 @@ impl OpEmitter<'_> {
     pub fn add_i64(&mut self, overflow: Overflow, span: SourceSpan) {
         self.raw_exec(
             match overflow {
-                Overflow::Unchecked | Overflow::Wrapping => "miden::core::math::u64::wrapping_add",
-                Overflow::Checked => "intrinsics::i64::checked_add",
-                Overflow::Overflowing => "intrinsics::i64::overflowing_add",
+                Overflow::Unchecked | Overflow::Wrapping => "::miden::core::math::u64::wrapping_add",
+                Overflow::Checked => "::intrinsics::i64::checked_add",
+                Overflow::Overflowing => "::intrinsics::i64::overflowing_add",
             },
             span,
         )
@@ -458,14 +458,14 @@ impl OpEmitter<'_> {
     pub fn sub_u64(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Checked => {
-                self.raw_exec("miden::core::math::u64::overflowing_sub", span);
+                self.raw_exec("::miden::core::math::u64::overflowing_sub", span);
                 self.emit(masm::Instruction::Assertz, span);
             }
             Overflow::Unchecked | Overflow::Wrapping => {
-                self.raw_exec("miden::core::math::u64::wrapping_sub", span);
+                self.raw_exec("::miden::core::math::u64::wrapping_sub", span);
             }
             Overflow::Overflowing => {
-                self.raw_exec("miden::core::math::u64::overflowing_sub", span);
+                self.raw_exec("::miden::core::math::u64::overflowing_sub", span);
             }
         }
     }
@@ -515,16 +515,16 @@ impl OpEmitter<'_> {
     pub fn mul_u64(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Checked => {
-                self.raw_exec("miden::core::math::u64::overflowing_mul", span);
-                self.raw_exec("miden::core::math::u64::eqz", span);
+                self.raw_exec("::miden::core::math::u64::overflowing_mul", span);
+                self.raw_exec("::miden::core::math::u64::eqz", span);
                 self.emit(masm::Instruction::Assertz, span);
             }
             Overflow::Unchecked | Overflow::Wrapping => {
-                self.raw_exec("miden::core::math::u64::wrapping_mul", span);
+                self.raw_exec("::miden::core::math::u64::wrapping_mul", span);
             }
             Overflow::Overflowing => {
-                self.raw_exec("miden::core::math::u64::overflowing_mul", span);
-                self.raw_exec("miden::core::math::u64::eqz", span);
+                self.raw_exec("::miden::core::math::u64::overflowing_mul", span);
+                self.raw_exec("::miden::core::math::u64::eqz", span);
             }
         }
     }
@@ -583,7 +583,7 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn checked_div_u64(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32AssertW, span);
-        self.raw_exec("miden::core::math::u64::div", span);
+        self.raw_exec("::miden::core::math::u64::div", span);
     }
 
     /// Pops two i64 values off the stack, `b` and `a`, and pushes the result of `a / b` on the
@@ -612,7 +612,7 @@ impl OpEmitter<'_> {
     /// This operation is unchecked, it is up to the caller to ensure validity of the operands.
     #[inline]
     pub fn unchecked_div_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::div", span);
+        self.raw_exec("::miden::core::math::u64::div", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes the result of `a % b` on the
@@ -622,7 +622,7 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn checked_mod_u64(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32AssertW, span);
-        self.raw_exec("miden::core::math::u64::mod", span);
+        self.raw_exec("::miden::core::math::u64::mod", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes the result of `a % b` on the
@@ -631,7 +631,7 @@ impl OpEmitter<'_> {
     /// This operation is unchecked, it is up to the caller to ensure validity of the operands.
     #[inline]
     pub fn unchecked_mod_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::mod", span);
+        self.raw_exec("::miden::core::math::u64::mod", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes `a / b`, then `a % b` on the
@@ -641,7 +641,7 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn checked_divmod_u64(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32AssertW, span);
-        self.raw_exec("miden::core::math::u64::divmod", span);
+        self.raw_exec("::miden::core::math::u64::divmod", span);
     }
 
     /// Pops two u64 values off the stack, `b` and `a`, and pushes `a / b`, then `a % b` on the
@@ -650,7 +650,7 @@ impl OpEmitter<'_> {
     /// This operation is unchecked, it is up to the caller to ensure validity of the operands.
     #[inline]
     pub fn unchecked_divmod_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::divmod", span);
+        self.raw_exec("::miden::core::math::u64::divmod", span);
     }
 
     /// Pops two 64-bit values off the stack, `b` and `a`, and pushes `a & b` on the stack.
@@ -658,7 +658,7 @@ impl OpEmitter<'_> {
     /// Both the operands and result are validated to ensure they are valid int64 values.
     #[inline]
     pub fn band_int64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::and", span);
+        self.raw_exec("::miden::core::math::u64::and", span);
     }
 
     /// Pops two 64-bit values off the stack, `b` and `a`, and pushes `a | b` on the stack.
@@ -666,7 +666,7 @@ impl OpEmitter<'_> {
     /// Both the operands and result are validated to ensure they are valid int64 values.
     #[inline]
     pub fn bor_int64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::or", span);
+        self.raw_exec("::miden::core::math::u64::or", span);
     }
 
     /// Pops two 64-bit values off the stack, `b` and `a`, and pushes `a ^ b` on the stack.
@@ -674,7 +674,7 @@ impl OpEmitter<'_> {
     /// Both the operands and result are validated to ensure they are valid int64 values.
     #[inline]
     pub fn bxor_int64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::xor", span);
+        self.raw_exec("::miden::core::math::u64::xor", span);
     }
 
     /// Pops a u32 value, `b`, and a u64 value, `a`, off the stack and pushes `a << b` on the stack.
@@ -684,7 +684,7 @@ impl OpEmitter<'_> {
     /// The operation will trap if the shift value is > 63.
     #[inline]
     pub fn shl_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::shl", span);
+        self.raw_exec("::miden::core::math::u64::shl", span);
     }
 
     /// Pops a u32 value, `b`, and a u64 value, `a`, off the stack and pushes `a >> b` on the stack.
@@ -694,7 +694,7 @@ impl OpEmitter<'_> {
     /// The operation will trap if the shift value is > 63.
     #[inline]
     pub fn shr_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::shr", span);
+        self.raw_exec("::miden::core::math::u64::shr", span);
     }
 
     /// Arithmetic shift right (i.e. signedness is preserved)
@@ -725,7 +725,7 @@ impl OpEmitter<'_> {
     /// The operation will trap if the rotation value is > 63.
     #[inline]
     pub fn rotl_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::rotl", span);
+        self.raw_exec("::miden::core::math::u64::rotl", span);
     }
 
     /// Pops a u32 value, `b`, and a u64 value, `a`, off the stack and rotates the bitwise
@@ -735,7 +735,7 @@ impl OpEmitter<'_> {
     /// The operation will trap if the rotation value is > 63.
     #[inline]
     pub fn rotr_u64(&mut self, span: SourceSpan) {
-        self.raw_exec("miden::core::math::u64::rotr", span);
+        self.raw_exec("::miden::core::math::u64::rotr", span);
     }
 }
 

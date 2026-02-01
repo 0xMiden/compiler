@@ -3,8 +3,10 @@ use std::sync::Arc;
 use miden_assembly::Assembler;
 use miden_core::Felt;
 use miden_debug::{Executor, Felt as TestFelt};
-use miden_protocol::ProtocolLib;
-use miden_protocol::note::{NoteInputs, NoteRecipient, NoteScript};
+use miden_protocol::{
+    ProtocolLib,
+    note::{NoteInputs, NoteRecipient, NoteScript},
+};
 use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
