@@ -42,8 +42,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     symbols::Hashes => match components.next()?.as_symbol_name() {
                         symbols::Blake3 => {
                             match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                                stdlib::crypto::hashes::blake3::HASH_1TO1
-                                | stdlib::crypto::hashes::blake3::HASH_2TO1 => {
+                                stdlib::crypto::hashes::blake3::HASH
+                                | stdlib::crypto::hashes::blake3::MERGE => {
                                     Some(TransformStrategy::ReturnViaPointer)
                                 }
                                 _ => None,

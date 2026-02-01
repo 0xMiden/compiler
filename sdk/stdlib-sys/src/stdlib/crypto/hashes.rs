@@ -17,8 +17,8 @@ mod imp {
         /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "miden::core::crypto::hashes::blake3::hash_1to1"]
-        fn extern_blake3_hash_1to1(
+        #[link_name = "miden::core::crypto::hashes::blake3::hash"]
+        fn extern_blake3_hash(
             e1: u32,
             e2: u32,
             e3: u32,
@@ -35,8 +35,8 @@ mod imp {
         /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "miden::core::crypto::hashes::blake3::hash_2to1"]
-        fn extern_blake3_hash_2to1(
+        #[link_name = "miden::core::crypto::hashes::blake3::merge"]
+        fn extern_blake3_merge(
             e1: u32,
             e2: u32,
             e3: u32,
@@ -130,16 +130,16 @@ mod imp {
 
     /// Hashes a 32-byte input to a 32-byte output using the given hash function.
     #[inline(always)]
-    fn hash_1to1(
+    fn hash(
         input: [u8; 32],
-        extern_hash_1to1: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, *mut u8),
+        extern_hash: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, *mut u8),
     ) -> [u8; 32] {
         use crate::intrinsics::WordAligned;
         let input = unsafe { core::mem::transmute::<[u8; 32], [u32; 8]>(input) };
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_hash_1to1(
+            extern_hash(
                 input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7], ptr,
             );
             ret_area.assume_init().into_inner()
@@ -148,9 +148,9 @@ mod imp {
 
     /// Hashes a 64-byte input to a 32-byte output using the given hash function.
     #[inline(always)]
-    fn hash_2to1(
+    fn merge(
         input: [u8; 64],
-        extern_hash_2to1: unsafe extern "C" fn(
+        extern_merge: unsafe extern "C" fn(
             u32,
             u32,
             u32,
@@ -174,7 +174,7 @@ mod imp {
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<[u8; 32]>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_hash_2to1(
+            extern_merge(
                 input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7],
                 input[8], input[9], input[10], input[11], input[12], input[13], input[14],
                 input[15], ptr,
@@ -185,14 +185,14 @@ mod imp {
 
     /// Hashes a 32-byte input to a 32-byte output using the BLAKE3 hash function.
     #[inline]
-    pub fn blake3_hash_1to1(input: [u8; 32]) -> [u8; 32] {
-        hash_1to1(input, extern_blake3_hash_1to1)
+    pub fn blake3_hash(input: [u8; 32]) -> [u8; 32] {
+        hash(input, extern_blake3_hash)
     }
 
     /// Hashes a 64-byte input to a 32-byte output using the BLAKE3 hash function.
     #[inline]
-    pub fn blake3_hash_2to1(input: [u8; 64]) -> [u8; 32] {
-        hash_2to1(input, extern_blake3_hash_2to1)
+    pub fn blake3_merge(input: [u8; 64]) -> [u8; 32] {
+        merge(input, extern_blake3_merge)
     }
 
     /// Hashes a 32-byte input to a 32-byte output using the SHA256 hash function.
@@ -329,7 +329,7 @@ mod imp {
 
     /// Computes BLAKE3 1-to-1 hash.
     #[inline]
-    pub fn blake3_hash_1to1(_input: [u8; 32]) -> [u8; 32] {
+    pub fn blake3_hash(_input: [u8; 32]) -> [u8; 32] {
         unimplemented!(
             "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
@@ -337,7 +337,7 @@ mod imp {
 
     /// Computes BLAKE3 2-to-1 hash.
     #[inline]
-    pub fn blake3_hash_2to1(_input: [u8; 64]) -> [u8; 32] {
+    pub fn blake3_merge(_input: [u8; 64]) -> [u8; 32] {
         unimplemented!(
             "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )

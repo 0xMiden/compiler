@@ -33,7 +33,7 @@
     local.get 1
     i32.load offset=28 align=1
     local.get 3
-    call $miden::core::crypto::hashes::blake3::hash_1to1
+    call $miden::core::crypto::hashes::blake3::hash
     local.get 0
     i32.const 24
     i32.add
@@ -59,7 +59,7 @@
     local.get 2
     global.set $__stack_pointer
   )
-  (func $miden::core::crypto::hashes::blake3::hash_1to1 (;1;) (type 1) (param i32 i32 i32 i32 i32 i32 i32 i32 i32)
+  (func $miden::core::crypto::hashes::blake3::hash (;1;) (type 1) (param i32 i32 i32 i32 i32 i32 i32 i32 i32)
     unreachable
   )
 )
