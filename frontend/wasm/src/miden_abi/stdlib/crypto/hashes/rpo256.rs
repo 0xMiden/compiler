@@ -29,7 +29,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         SymbolNameComponent::Component(symbols::Core),
         SymbolNameComponent::Component(symbols::Crypto),
         SymbolNameComponent::Component(symbols::Hashes),
-        SymbolNameComponent::Component(Symbol::intern("rpo")),
+        SymbolNameComponent::Component(symbols::Rpo256),
     ]);
     m.insert(module_path, rpo);
     m

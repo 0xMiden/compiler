@@ -58,10 +58,10 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                                 _ => None,
                             }
                         }
-                        symbols::Rpo => {
+                        symbols::Rpo256 => {
                             match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                                stdlib::crypto::hashes::rpo::HASH_ELEMENTS
-                                | stdlib::crypto::hashes::rpo::HASH_WORDS => {
+                                stdlib::crypto::hashes::rpo256::HASH_ELEMENTS
+                                | stdlib::crypto::hashes::rpo256::HASH_WORDS => {
                                     Some(TransformStrategy::ReturnViaPointer)
                                 }
                                 _ => None,

@@ -10,7 +10,7 @@ fn module_path() -> SymbolPath {
     let parts = [
         SymbolNameComponent::Root,
         SymbolNameComponent::Component(symbols::Miden),
-        SymbolNameComponent::Component(Symbol::intern("input_note")),
+        SymbolNameComponent::Component(symbols::InputNote),
     ];
     SymbolPath::from_iter(parts)
 }

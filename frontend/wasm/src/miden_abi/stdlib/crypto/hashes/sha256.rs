@@ -35,7 +35,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         SymbolNameComponent::Component(symbols::Core),
         SymbolNameComponent::Component(symbols::Crypto),
         SymbolNameComponent::Component(symbols::Hashes),
-        SymbolNameComponent::Component(Symbol::intern("sha256")),
+        SymbolNameComponent::Component(symbols::Sha256),
     ]);
     m.insert(module_path, sha256);
     m
