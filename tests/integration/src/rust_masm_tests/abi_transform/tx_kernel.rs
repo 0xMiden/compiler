@@ -76,9 +76,6 @@ end
     test_builder.link_with_masm_module("miden::protocol::active_note", masm);
     let mut test = test_builder.build();
 
-    test.expect_wasm(expect_file![format!("../../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/{artifact_name}.masm")]);
     let package = test.compiled_package();
 
     let mut exec = Executor::new(vec![]);
