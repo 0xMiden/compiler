@@ -107,25 +107,25 @@ mod imp {
         /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
         /// hash function.
         ///
-        /// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib.
+        /// This maps to the `std::crypto::rpo::hash_elements` procedure in the Miden stdlib.
         ///
         /// Input: A pointer to the memory location and the number of elements to hash
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "miden::core::crypto::hashes::rpo::hash_memory"]
-        pub fn extern_hash_memory(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
+        #[link_name = "miden::core::crypto::hashes::rpo::hash_elements"]
+        pub fn extern_hash_elements(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
 
         /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO) hash
         /// function.
         ///
-        /// This maps to the `std::crypto::hashes::rpo::hash_memory_words` procedure in the Miden
+        /// This maps to the `std::crypto::hashes::rpo::hash_words` procedure in the Miden
         /// stdlib.
         ///
         /// Input: The start and end addresses (in field elements) of the words to hash.
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "miden::core::crypto::hashes::rpo::hash_memory_words"]
-        pub fn extern_hash_memory_words(start_addr: u32, end_addr: u32, result_ptr: *mut Felt);
+        #[link_name = "miden::core::crypto::hashes::rpo::hash_words"]
+        pub fn extern_hash_words(start_addr: u32, end_addr: u32, result_ptr: *mut Felt);
     }
 
     /// Hashes a 32-byte input to a 32-byte output using the given hash function.
@@ -263,8 +263,8 @@ mod imp {
     /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
     /// hash function.
     ///
-    /// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib and to the
-    /// `std::crypto::hashes::rpo::hash_memory_words` word-optimized variant when the input length is
+    /// This maps to the `std::crypto::rpo::hash_elements` procedure in the Miden stdlib and to the
+    /// `std::crypto::hashes::rpo::hash_words` word-optimized variant when the input length is
     /// a multiple of 4.
     ///
     /// # Arguments
@@ -285,9 +285,9 @@ mod imp {
             if element_count.is_multiple_of(4) {
                 let start_addr = miden_ptr;
                 let end_addr = start_addr + num_elements;
-                extern_hash_memory_words(start_addr, end_addr, result_ptr);
+                extern_hash_words(start_addr, end_addr, result_ptr);
             } else {
-                extern_hash_memory(miden_ptr, num_elements, result_ptr);
+                extern_hash_elements(miden_ptr, num_elements, result_ptr);
             }
 
             Digest::from_word(ret_area.assume_init().reverse())
@@ -297,7 +297,7 @@ mod imp {
     /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO)
     /// hash function.
     ///
-    /// This maps to the `std::crypto::hashes::rpo::hash_memory_words` procedure in the Miden stdlib.
+    /// This maps to the `std::crypto::hashes::rpo::hash_words` procedure in the Miden stdlib.
     ///
     /// # Arguments
     /// * `words` - A slice of words to be hashed
@@ -314,7 +314,7 @@ mod imp {
             let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
             let start_addr = miden_ptr;
             let end_addr = start_addr + (words.len() as u32 * 4);
-            extern_hash_memory_words(start_addr, end_addr, result_ptr);
+            extern_hash_words(start_addr, end_addr, result_ptr);
 
             Digest::from_word(ret_area.assume_init().reverse())
         }
@@ -377,17 +377,17 @@ mod imp {
         )
     }
 
-    /// ABI helper for `std::crypto::hashes::rpo::hash_memory`.
+    /// ABI helper for `std::crypto::hashes::rpo::hash_elements`.
     #[inline]
-    pub fn extern_hash_memory(_ptr: u32, _num_elements: u32, _result_ptr: *mut Felt) {
+    pub fn extern_hash_elements(_ptr: u32, _num_elements: u32, _result_ptr: *mut Felt) {
         unimplemented!(
             "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
-    /// ABI helper for `std::crypto::hashes::rpo::hash_memory_words`.
+    /// ABI helper for `std::crypto::hashes::rpo::hash_words`.
     #[inline]
-    pub fn extern_hash_memory_words(_start_addr: u32, _end_addr: u32, _result_ptr: *mut Felt) {
+    pub fn extern_hash_words(_start_addr: u32, _end_addr: u32, _result_ptr: *mut Felt) {
         unimplemented!(
             "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
