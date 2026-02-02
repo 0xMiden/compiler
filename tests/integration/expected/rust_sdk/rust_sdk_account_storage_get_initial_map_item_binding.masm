@@ -103,6 +103,52 @@ proc rust_sdk_account_storage_get_initial_map_item_binding::bindings::__link_cus
 end
 
 @callconv("C")
+proc <rust_sdk_account_storage_get_initial_map_item_binding::TestAccount as core::default::Default>::default(
+    i32
+)
+    push.4
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    push.3955828357
+    push.2220095670
+    mul.4294967296
+    add
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    push.3495821841
+    push.643588342
+    mul.4294967296
+    add
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+end
+
+@callconv("C")
 proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1#binding(
 
 ) -> i32
@@ -114,7 +160,7 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.16
+    push.32
     u32wrapping_sub
     push.1114144
     dup.1
@@ -129,6 +175,14 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
     trace.240
     nop
     exec.::"miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1"::rust_sdk_account_storage_get_initial_map_item_binding::wit_bindgen::rt::run_ctors_once
+    trace.252
+    nop
+    push.8
+    dup.1
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1"::rust_sdk_account_storage_get_initial_map_item_binding::<rust_sdk_account_storage_get_initial_map_item_binding::TestAccount as core::default::Default>::default
     trace.252
     nop
     push.0
@@ -148,7 +202,9 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
             drop
             push.3735929054
         else
-            dup.2
+            push.16
+            dup.3
+            u32wrapping_add
             dup.2
             u32wrapping_add
             push.4
@@ -201,7 +257,7 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
     drop
     drop
     drop
-    push.12
+    push.28
     dup.1
     add
     u32assert
@@ -218,7 +274,7 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.8
+    push.24
     dup.2
     add
     u32assert
@@ -235,7 +291,7 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.4
+    push.20
     dup.3
     add
     u32assert
@@ -252,7 +308,10 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.3
+    push.16
+    dup.4
+    add
+    u32assert
     push.4
     dup.1
     swap.1
@@ -266,9 +325,46 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.1
-    dup.0
-    dup.6
+    dup.4
+    trace.240
+    nop
+    exec.::"miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1"::rust_sdk_account_storage_get_initial_map_item_binding::<rust_sdk_account_storage_get_initial_map_item_binding::TestAccount as core::default::Default>::default
+    trace.252
+    nop
+    push.4
+    dup.5
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    dup.5
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.16
+    dup.7
+    u32wrapping_add
     movup.3
     swap.5
     movdn.3
@@ -289,137 +385,140 @@ proc miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-accoun
     nop
     push.1048584
     u32wrapping_add
-    dup.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.12
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.8
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.4
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    dup.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
     push.16
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.12
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.20
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.8
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.24
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.4
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.28
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    dup.1
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.32
     movup.2
     u32wrapping_add
     push.1114144
