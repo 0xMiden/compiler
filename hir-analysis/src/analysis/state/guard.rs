@@ -199,6 +199,24 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
         Self::subscribe_nonnull(guard, analysis);
     }
 
+    /// Require this analysis state at `dependent`
+    ///
+    /// This is meant to be used in cases where calling `DataFlowSolver::require` is not possible
+    /// because you already hold an `AnalysisStateGuardMut` for the state, but you still need to
+    /// ensure that we execute the `on_require_analysis` hook for `dependent`.
+    pub fn require<A>(&mut self, analysis: &A, dependent: ProgramPoint)
+    where
+        A: DataFlowAnalysis + 'static,
+    {
+        let analysis = analysis as *const dyn DataFlowAnalysis;
+        let analysis = unsafe { NonNull::new_unchecked(analysis.cast_mut()) };
+        let info = unsafe { self.info.as_mut() };
+        let state = unsafe { self.state.as_ref() };
+        <T as AnalysisStateSubscriptionBehavior>::on_require_analysis(
+            state, info, analysis, dependent,
+        );
+    }
+
     /// Subscribe `analysis` to any changes of the lattice anchor.
     ///
     /// This is handled by invoking the [AnalysisStateSubscriptionBehavior::on_subscribe] callback,

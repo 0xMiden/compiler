@@ -400,14 +400,24 @@ pub(super) fn visit_block<A>(
             );
             let operands = branch.get_successor_operands(pred.index());
             for (idx, lattice) in arg_lattices.iter_mut().enumerate() {
+                let arg = lattice.anchor().as_value().unwrap();
                 if let Some(operand) =
                     operands.get(idx).and_then(|operand| operand.into_value_ref())
                 {
-                    log::trace!(target: analysis.debug_name(), "joining lattice for {} with {operand}", lattice.anchor());
-                    let operand_lattice =
-                        get_lattice_element_for::<A>(current_point, operand, solver);
-                    let change_result = lattice.join(operand_lattice.lattice());
-                    log::debug!(target: analysis.debug_name(), "updated lattice for {} to {:#?}: {change_result}", lattice.anchor(), lattice);
+                    // If the block is its own predecessor, then successor operands could include
+                    // some of the block arguments, leading us to attempting to acquire analysis
+                    // state mutably for the same value twice. Since this is a sparse analysis
+                    // however, we don't need to do anything aside from register a dependency on
+                    // the value at the current program point - the lattice is already updated
+                    if arg == operand {
+                        lattice.require(analysis, current_point);
+                    } else {
+                        log::trace!(target: analysis.debug_name(), "joining lattice for {} with {operand}", lattice.anchor());
+                        let operand_lattice =
+                            get_lattice_element_for::<A>(current_point, operand, solver);
+                        let change_result = lattice.join(operand_lattice.lattice());
+                        log::debug!(target: analysis.debug_name(), "updated lattice for {} to {:#?}: {change_result}", lattice.anchor(), lattice);
+                    }
                 } else {
                     // Conservatively consider internally produced arguments as entry points.
                     log::trace!(target: analysis.debug_name(), "setting lattice for internally-produced argument {} to entry state", lattice.anchor());
