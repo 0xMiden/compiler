@@ -7,7 +7,7 @@ pub mod registry;
 mod specialization;
 pub mod statistics;
 
-use alloc::string::String;
+use alloc::{borrow::Cow, string::String};
 
 pub use self::{
     analysis::{Analysis, AnalysisManager, OperationAnalysis, PreservedAnalyses},
@@ -40,11 +40,9 @@ use crate::{EntityRef, Operation, OperationName, OperationRef, SmallVec};
 #[derive(Default)]
 pub struct Print {
     selected_passes: Option<SelectedPasses>,
-
-    only_when_modified: bool,
-    op_filter: Option<OpFilter>,
-
     target: Option<compact_str::CompactString>,
+    filters: SmallVec<[OpFilter; 1]>,
+    only_when_modified: bool,
 }
 
 /// Which passes are enabled for IR printing.
@@ -56,65 +54,62 @@ enum SelectedPasses {
     Just(SmallVec<[String; 1]>),
 }
 
-#[derive(Default, Debug)]
-enum OpFilter {
+#[derive(Default, Debug, Clone)]
+pub enum OpFilter {
     /// Print all operations
     #[default]
     All,
     /// Print any `Symbol` operation, optionally filtering by symbols whose name contains a given
     /// string.
-    /// NOTE: Currently marked as `dead_code` since it is not configured via the CLI. See
-    /// [`Print::with_symbol_filter`] for more details.
-    #[allow(dead_code)]
-    Symbol(Option<&'static str>),
+    ///
+    /// See [`Print::with_symbol_filter`] for more details.
+    Symbol(Option<Cow<'static, str>>),
     /// Print only operations of the given type
-    /// NOTE: Currently marked as `dead_code` since it is not configured via the CLI. See
-    /// [`Print::with_symbol_filter`] for more details.
-    #[allow(dead_code)]
+    ///
+    /// NOTE: Currently marked as `dead_code` since it is not configured via the CLI.
+    ///
+    /// See [`Print::with_symbol_filter`] for more details.
     Type {
         dialect: crate::interner::Symbol,
         op: crate::interner::Symbol,
     },
 }
 
+impl From<midenc_session::IrFilter> for OpFilter {
+    fn from(value: midenc_session::IrFilter) -> Self {
+        use midenc_session::IrFilter;
+
+        match value {
+            IrFilter::Any => OpFilter::All,
+            IrFilter::Symbol(pattern) => OpFilter::Symbol(pattern),
+            IrFilter::Op { dialect, op } => OpFilter::Type { dialect, op },
+        }
+    }
+}
+
 impl Print {
     pub fn new(config: &IRPrintingConfig) -> Option<Self> {
-        let print = if config.print_ir_after_all
+        if config.print_ir_after_all
             || !config.print_ir_after_pass.is_empty()
             || config.print_ir_after_modified
         {
-            Some(Self::default())
+            Some(Self::default().with_pass_filter(config).with_symbol_filter(config))
         } else {
             None
-        };
-        print.map(|p| p.with_pass_filter(config)).map(|p| p.with_symbol_filter(config))
+        }
     }
 
     pub fn with_type_filter<T: crate::OpRegistration>(mut self) -> Self {
         let dialect = <T as crate::OpRegistration>::dialect_name();
         let op = <T as crate::OpRegistration>::name();
-        self.op_filter = Some(OpFilter::Type { dialect, op });
-        self
-    }
-
-    #[allow(dead_code)]
-    /// Create a printer that only prints `Symbol` operations containing `name`
-    fn with_symbol_matching(mut self, name: &'static str) -> Self {
-        self.op_filter = Some(OpFilter::Symbol(Some(name)));
+        self.filters.push(OpFilter::Type { dialect, op });
         self
     }
 
     /// Configure which operations are printed. This is set via the different variants present in
     /// [`OpFilter`].
-    ///
-    /// NOTE: At the moment, all operations are shown because symbol filtering is not processed by
-    /// the CLI. If added, this function could be expanded to process it.
-    fn with_symbol_filter(self, _config: &IRPrintingConfig) -> Self {
-        self.with_all_symbols()
-    }
-
-    fn with_all_symbols(mut self) -> Self {
-        self.op_filter = Some(OpFilter::All);
+    fn with_symbol_filter(mut self, config: &IRPrintingConfig) -> Self {
+        self.filters.extend(config.print_ir_filters.iter().cloned());
         self
     }
 
@@ -152,37 +147,50 @@ impl Print {
         self
     }
 
-    fn print_ir(&self, op: EntityRef<'_, Operation>) {
-        match self.op_filter {
-            Some(OpFilter::All) => {
-                let target = self.target.as_deref().unwrap_or("printer");
-                log::trace!(target: target, "{op}");
-            }
-            Some(OpFilter::Type {
-                dialect,
-                op: op_name,
-            }) => {
-                let name = op.name();
-                if name.dialect() == dialect && name.name() == op_name {
+    pub fn print_ir(&self, op: EntityRef<'_, Operation>) {
+        // Determine if any filter applies to `op`, and print accordingly
+        if self.filters.is_empty() {
+            let target = self.target.as_deref().unwrap_or("printer");
+            log::trace!(target: target, "{op}");
+            return;
+        }
+
+        for filter in self.filters.iter() {
+            match filter {
+                OpFilter::All => {
                     let target = self.target.as_deref().unwrap_or("printer");
                     log::trace!(target: target, "{op}");
+                    break;
+                }
+                OpFilter::Type {
+                    dialect,
+                    op: op_name,
+                } => {
+                    let name = op.name();
+                    if name.dialect() == *dialect && name.name() == *op_name {
+                        let target = self.target.as_deref().unwrap_or("printer");
+                        log::trace!(target: target, "{op}");
+                        break;
+                    }
+                }
+                OpFilter::Symbol(None) => {
+                    if let Some(sym) = op.as_symbol() {
+                        let name = sym.name().as_str();
+                        let target = self.target.as_deref().unwrap_or(name);
+                        log::trace!(target: target, "{}", sym.as_symbol_operation());
+                        break;
+                    }
+                }
+                OpFilter::Symbol(Some(filter)) => {
+                    if let Some(sym) =
+                        op.as_symbol().filter(|sym| sym.name().as_str().contains(filter.as_ref()))
+                    {
+                        let target = self.target.as_deref().unwrap_or(filter.as_ref());
+                        log::trace!(target: target, "{}", sym.as_symbol_operation());
+                        break;
+                    }
                 }
             }
-            Some(OpFilter::Symbol(None)) => {
-                if let Some(sym) = op.as_symbol() {
-                    let name = sym.name().as_str();
-                    let target = self.target.as_deref().unwrap_or(name);
-                    log::trace!(target: target, "{}", sym.as_symbol_operation());
-                }
-            }
-            Some(OpFilter::Symbol(Some(filter))) => {
-                if let Some(sym) = op.as_symbol().filter(|sym| sym.name().as_str().contains(filter))
-                {
-                    let target = self.target.as_deref().unwrap_or(filter);
-                    log::trace!(target: target, "{}", sym.as_symbol_operation());
-                }
-            }
-            None => (),
         }
     }
 

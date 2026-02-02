@@ -11,7 +11,7 @@ use midenc_session::{Options, diagnostics::Severity};
 use smallvec::{SmallVec, smallvec};
 
 use super::{
-    AnalysisManager, OperationPass, Pass, PassExecutionState, PassInstrumentation,
+    AnalysisManager, OpFilter, OperationPass, Pass, PassExecutionState, PassInstrumentation,
     PassInstrumentor, PipelineParentInfo, Statistic,
 };
 use crate::{
@@ -35,8 +35,6 @@ pub enum PassDisplayMode {
     Pipeline,
 }
 
-// TODO(pauls)
-#[allow(unused)]
 #[derive(Default, Debug)]
 pub struct IRPrintingConfig {
     pub print_module_scope: bool,
@@ -45,6 +43,7 @@ pub struct IRPrintingConfig {
     pub print_ir_after_all: bool,
     pub print_ir_after_pass: SmallVec<[String; 1]>,
     pub print_ir_after_modified: bool,
+    pub print_ir_filters: SmallVec<[OpFilter; 1]>,
     pub flags: OpPrintingFlags,
 }
 
@@ -62,10 +61,19 @@ impl TryFrom<&Options> for IRPrintingConfig {
             ));
         };
 
-        Ok(IRPrintingConfig {
+        let print_ir_filters = options
+            .print_ir_filters
+            .iter()
+            .cloned()
+            .map(OpFilter::from)
+            .filter(|filter| !matches!(filter, OpFilter::All))
+            .collect();
+
+        Ok(Self {
             print_ir_after_all: options.print_ir_after_all,
             print_ir_after_pass: pass_filters.into(),
             print_ir_after_modified: options.print_ir_after_modified,
+            print_ir_filters,
             ..Default::default()
         })
     }

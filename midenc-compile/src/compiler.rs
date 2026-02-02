@@ -7,9 +7,9 @@ use std::ffi::OsString;
 #[cfg(feature = "std")]
 use clap::{Parser, builder::ArgPredicate};
 use midenc_session::{
-    ColorChoice, DebugInfo, InputFile, LinkLibrary, OptLevel, Options, OutputFile, OutputType,
-    OutputTypeSpec, OutputTypes, Path, PathBuf, ProjectType, Session, TargetEnv, Verbosity,
-    Warnings, add_target_link_libraries,
+    ColorChoice, DebugInfo, InputFile, IrFilter, LinkLibrary, OptLevel, Options, OutputFile,
+    OutputType, OutputTypeSpec, OutputTypes, Path, PathBuf, ProjectType, Session, TargetEnv,
+    Verbosity, Warnings, add_target_link_libraries,
     diagnostics::{DefaultSourceManager, Emitter},
 };
 
@@ -338,6 +338,28 @@ pub struct UnstableOptions {
         )
     )]
     pub print_cfg_after_pass: Vec<String>,
+    /// Print the IR before each compiler stage.
+    ///
+    /// The available stages are:
+    ///
+    /// * `link`     - performs initial translation to HIR, and links dependencies into the graph
+    ///
+    /// * `rewrite`  - performs rewrites/optimizations on the initial unmodified HIR
+    ///
+    /// * `codegen`  - performs lowering from HIR to Miden Assembly
+    ///
+    /// * `assemble` - performs assembly of a program or library package
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            value_name = "STAGE",
+            value_delimiter = ',',
+            next_line_help(true),
+            help_heading = "Passes"
+        )
+    )]
+    pub print_ir_before_stage: Vec<String>,
     /// Print the IR after each pass is applied
     #[cfg_attr(
         feature = "std",
@@ -362,6 +384,29 @@ pub struct UnstableOptions {
         arg(long, default_value_t = false, help_heading = "Passes")
     )]
     pub print_ir_after_modified: bool,
+    /// Only print IR that matches the given filter.
+    ///
+    /// The syntax for filters are as follows:
+    ///
+    /// * `any` (default)         - matches any operation
+    ///
+    /// * `symbol:*`              - matches any symbol
+    ///
+    /// * `symbol:<pattern>`      - matches any symbol whose name contains <pattern>
+    ///
+    /// * `op:<dialect>.<opcode>` - matches any instance of the given operation name
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            action = clap::ArgAction::Append,
+            value_name = "FILTER",
+            value_delimiter = ',',
+            next_line_help(true),
+            help_heading = "Passes"
+        )
+    )]
+    pub print_ir_filter: Vec<IrFilter>,
     /// Print source location information in HIR output
     ///
     /// When enabled, HIR output will include #loc() annotations showing the source file,
@@ -578,6 +623,7 @@ impl Compiler {
         options.print_ir_after_all = unstable.print_ir_after_all;
         options.print_ir_after_pass = unstable.print_ir_after_pass;
         options.print_ir_after_modified = unstable.print_ir_after_modified;
+        options.print_ir_filters = unstable.print_ir_filter;
         options.print_hir_source_locations = unstable.print_hir_source_locations;
         options.trim_path_prefixes = unstable.trim_path_prefixes;
 

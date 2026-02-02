@@ -1,5 +1,8 @@
+mod printing;
+
 use alloc::{fmt, str::FromStr, string::String, sync::Arc, vec, vec::Vec};
 
+pub use self::printing::IrFilter;
 #[cfg(feature = "std")]
 use crate::Path;
 use crate::{
@@ -52,12 +55,16 @@ pub struct Options {
     pub print_cfg_after_all: bool,
     /// Print CFG to stdout each time the named passes are applied
     pub print_cfg_after_pass: Vec<String>,
+    /// Print IR to stdout at the start of each stage
+    pub print_ir_before_stage: Vec<String>,
     /// Print IR to stdout after each pass
     pub print_ir_after_all: bool,
     /// Print IR to stdout each time the named passes are applied
     pub print_ir_after_pass: Vec<String>,
     /// Only print the IR if the pass modified the IR structure.
     pub print_ir_after_modified: bool,
+    /// Apply filters to what IR is printed, when printing is enabled
+    pub print_ir_filters: Vec<IrFilter>,
     /// Save intermediate artifacts in memory during compilation
     pub save_temps: bool,
     /// We store any leftover argument matches in the session options for use
@@ -132,9 +139,11 @@ impl Options {
             save_temps: false,
             print_cfg_after_all: false,
             print_cfg_after_pass: vec![],
+            print_ir_before_stage: vec![],
             print_ir_after_all: false,
             print_ir_after_pass: vec![],
             print_ir_after_modified: false,
+            print_ir_filters: vec![],
             flags: CompileFlags::default(),
         }
     }

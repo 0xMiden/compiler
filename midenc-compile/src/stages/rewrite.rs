@@ -22,7 +22,6 @@ impl Stage for ApplyRewritesStage {
     }
 
     fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
-        let ir_print_config: IRPrintingConfig = (&context.as_ref().session().options).try_into()?;
         log::debug!(target: "driver", "applying rewrite passes");
         // TODO(pauls): Set up pass registration for new pass infra
         /*
@@ -49,6 +48,7 @@ impl Stage for ApplyRewritesStage {
         */
 
         // Construct a pass manager with the default pass pipeline
+        let ir_print_config = IRPrintingConfig::try_from(&context.session().options)?;
         let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit)
             .enable_ir_printing(ir_print_config);
 
