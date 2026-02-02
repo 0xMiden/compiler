@@ -74,7 +74,8 @@ unsafe extern "C" {
 pub fn get_item(slot_id: StorageSlotId) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        extern_get_storage_item(slot_id.prefix(), slot_id.suffix(), ret_area.as_mut_ptr());
+        let (prefix, suffix) = slot_id.to_prefix_suffix();
+        extern_get_storage_item(prefix, suffix, ret_area.as_mut_ptr());
         let word = ret_area.assume_init();
         word.reverse()
     }
@@ -85,7 +86,8 @@ pub fn get_item(slot_id: StorageSlotId) -> Word {
 pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        extern_get_initial_storage_item(slot_id.prefix(), slot_id.suffix(), ret_area.as_mut_ptr());
+        let (prefix, suffix) = slot_id.to_prefix_suffix();
+        extern_get_initial_storage_item(prefix, suffix, ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }
 }
@@ -106,9 +108,10 @@ pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
 pub fn set_item(slot_id: StorageSlotId, value: Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let (prefix, suffix) = slot_id.to_prefix_suffix();
         extern_set_storage_item(
-            slot_id.prefix(),
-            slot_id.suffix(),
+            prefix,
+            suffix,
             value[3],
             value[2],
             value[1],
@@ -136,9 +139,10 @@ pub fn set_item(slot_id: StorageSlotId, value: Word) -> Word {
 pub fn get_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let (prefix, suffix) = slot_id.to_prefix_suffix();
         extern_get_storage_map_item(
-            slot_id.prefix(),
-            slot_id.suffix(),
+            prefix,
+            suffix,
             key[3],
             key[2],
             key[1],
@@ -154,9 +158,10 @@ pub fn get_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
 pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let (prefix, suffix) = slot_id.to_prefix_suffix();
         extern_get_initial_storage_map_item(
-            slot_id.prefix(),
-            slot_id.suffix(),
+            prefix,
+            suffix,
             key[3],
             key[2],
             key[1],
@@ -185,9 +190,10 @@ pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
 pub fn set_map_item(slot_id: StorageSlotId, key: Word, value: Word) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let (prefix, suffix) = slot_id.to_prefix_suffix();
         extern_set_storage_map_item(
-            slot_id.prefix(),
-            slot_id.suffix(),
+            prefix,
+            suffix,
             key[3],
             key[2],
             key[1],

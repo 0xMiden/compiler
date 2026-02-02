@@ -164,8 +164,7 @@ impl From<Felt> for NoteType {
 
 /// The partial hash of a storage slot name.
 ///
-/// A slot id consists of two field elements, where the first is called the `suffix` and the
-/// second is called the `prefix`.
+/// A slot id consists of two field elements: a `prefix` and a `suffix`.
 ///
 /// Slot ids uniquely identify slots in account storage and are used by the host functions exposed
 /// via `miden::protocol::*`.
@@ -177,8 +176,23 @@ pub struct StorageSlotId {
 
 impl StorageSlotId {
     /// Creates a new [`StorageSlotId`] from the provided felts.
+    ///
+    /// Note: this constructor takes `(suffix, prefix)` to match the values returned by
+    /// `miden_protocol::account::StorageSlotId::{suffix,prefix}`.
     pub fn new(suffix: Felt, prefix: Felt) -> Self {
         Self { suffix, prefix }
+    }
+
+    /// Creates a new [`StorageSlotId`] from the provided felts in host-call order.
+    ///
+    /// Host functions take the `prefix` first and then the `suffix`.
+    pub fn from_prefix_suffix(prefix: Felt, suffix: Felt) -> Self {
+        Self { suffix, prefix }
+    }
+
+    /// Returns the `(prefix, suffix)` pair in host-call order.
+    pub fn to_prefix_suffix(&self) -> (Felt, Felt) {
+        (self.prefix, self.suffix)
     }
 
     /// Returns the suffix of the [`StorageSlotId`].
