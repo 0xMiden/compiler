@@ -1,6 +1,5 @@
 use alloc::{borrow::Cow, collections::VecDeque, format};
 use core::fmt;
-use std::string::{String, ToString};
 
 use midenc_session::diagnostics::{Diagnostic, miette};
 use smallvec::{SmallVec, smallvec};
@@ -271,27 +270,17 @@ impl SymbolPath {
         use midenc_session::LibraryPath;
 
         let components = self.path.iter();
-        let mut path_str = String::new();
+        let mut path = LibraryPath::default();
         for component in components {
             if component.is_root() {
-                path_str.push_str("::");
+                path.push_component("::");
                 continue;
-            }
-            if !path_str.is_empty() && !path_str.ends_with("::") {
-                // don't put "::" at the start and right after Root component
-                path_str.push_str("::");
-            }
-            let component_str = component.as_symbol_name().as_str();
-            let s = if component_str.contains("::") {
-                format!("\"{component_str}\"")
             } else {
-                component_str.to_string()
-            };
-            path_str.push_str(&s);
+                path.push_component(component.as_symbol_name().as_str());
+            }
         }
 
-        // std::dbg!(&path_str);
-        LibraryPath::new(&path_str).expect("invalid library path")
+        path
     }
 
     /// Returns true if this symbol name is fully-qualified

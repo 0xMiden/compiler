@@ -14,7 +14,6 @@ mod events;
 pub mod intrinsics;
 mod linker;
 mod lower;
-mod naming;
 mod opt;
 mod stack;
 
@@ -28,13 +27,13 @@ pub mod masm {
     };
 }
 
+pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
     events::{TRACE_FRAME_END, TRACE_FRAME_START, TraceEvent},
     lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},
 };
-pub(crate) use self::{lower::HirLowering, naming::sanitize_procedure_name};
 
 pub fn register_dialect_hooks(context: &midenc_hir::Context) {
     use midenc_dialect_arith as arith;

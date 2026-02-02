@@ -12,20 +12,14 @@ use midenc_session::diagnostics::{Report, Severity, Spanned};
 use smallvec::{SmallVec, smallvec};
 
 use super::*;
-use crate::{
-    Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions, sanitize_procedure_name,
-};
+use crate::{Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
 
 /// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
-///
-/// Miden Assembly uses `::` as a namespace separator. When the leaf procedure name contains `::`,
-/// it can be misinterpreted as additional namespace components during linking. To avoid this, we
-/// rewrite `::` to `__` in procedure names before constructing the invocation target.
 fn invocation_target_from_symbol_path(
     callee_path: &midenc_hir::SymbolPath,
     span: midenc_hir::SourceSpan,
 ) -> masm::InvocationTarget {
-    let proc_name = sanitize_procedure_name(callee_path.name().as_str());
+    let proc_name = callee_path.name();
     let proc_name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
         masm::Span::new(span, proc_name.as_ref().into()),
     ));

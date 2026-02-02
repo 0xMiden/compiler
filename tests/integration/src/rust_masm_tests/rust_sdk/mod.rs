@@ -170,8 +170,8 @@ fn rust_sdk_cross_ctx_account_and_note() {
             .any(|export| export.path().as_ref().as_str().starts_with("intrinsics")),
         "expected no intrinsics in the exports"
     );
-    let expected_module_prefix = "::miden:cross-ctx-account/";
-    let expected_function_suffix = "::process_felt";
+    let expected_module_prefix = "::\"miden:cross-ctx-account/";
+    let expected_function_suffix = "\"process-felt\"";
     assert!(
         exports.iter().any(|export| export.starts_with(expected_module_prefix)
             && export.ends_with(expected_function_suffix)),
@@ -220,8 +220,8 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     )]);
     let account_package = test.compiled_package();
     let lib = account_package.unwrap_library();
-    let expected_module_prefix = "::miden:cross-ctx-account-word/";
-    let expected_function_suffix = "::process_word";
+    let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
+    let expected_function_suffix = "\"process-word\"";
     let exports = lib
         .exports()
         .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
@@ -289,8 +289,8 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     let account_package = test.compiled_package();
 
     let lib = account_package.unwrap_library();
-    let expected_module_prefix = "::miden:cross-ctx-account-word-arg/";
-    let expected_function_suffix = "::process_word";
+    let expected_module_prefix = "::\"miden:cross-ctx-account-word-arg/";
+    let expected_function_suffix = "\"process-word\"";
     let exports = lib
         .exports()
         .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))

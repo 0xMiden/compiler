@@ -1,4 +1,4 @@
-# mod ::root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod ::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash
+# mod ::"root_ns:root@1.0.0"::abi_transform_stdlib_blake3_hash
 
 @callconv("C")
 pub proc entrypoint(i32, i32)
@@ -136,7 +136,7 @@ pub proc entrypoint(i32, i32)
     swap.8
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::miden__core__crypto__hashes__blake3__hash
+    exec.::"root_ns:root@1.0.0"::abi_transform_stdlib_blake3_hash::"miden::core::crypto::hashes::blake3::hash"
     trace.252
     nop
     push.24
@@ -264,7 +264,7 @@ pub proc entrypoint(i32, i32)
 end
 
 @callconv("C")
-proc miden__core__crypto__hashes__blake3__hash(
+proc miden::core::crypto::hashes::blake3::hash(
     i32,
     i32,
     i32,

@@ -1,4 +1,4 @@
-# mod ::root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -24,7 +24,7 @@ proc init
     mem_store.278538
 end
 
-# mod ::root_ns:root@1.0.0::test_rust_2512f26a084edd4aa11742f4c2ef0985a5681361fee42216136cb00d26224778
+# mod ::"root_ns:root@1.0.0"::test_rust_2512f26a084edd4aa11742f4c2ef0985a5681361fee42216136cb00d26224778
 
 @callconv("C")
 pub proc __main(
@@ -32,7 +32,7 @@ pub proc __main(
 ) -> i32
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::test_rust_2512f26a084edd4aa11742f4c2ef0985a5681361fee42216136cb00d26224778::global_var_update
+    exec.::"root_ns:root@1.0.0"::test_rust_2512f26a084edd4aa11742f4c2ef0985a5681361fee42216136cb00d26224778::global_var_update
     trace.252
     nop
     push.0

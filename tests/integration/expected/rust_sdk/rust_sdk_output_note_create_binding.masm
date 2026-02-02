@@ -1,13 +1,13 @@
-# mod ::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1
+# mod ::"miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1"
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> felt
-    exec.miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::init
+    exec."miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1"::init
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::miden_rust_sdk_output_note_create_binding_rust_sdk_output_note_create_binding_0_0_1_binding
+    exec.::"miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1"::rust_sdk_output_note_create_binding::"miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1#binding"
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -34,7 +34,7 @@ proc init
     mem_store.278537
 end
 
-# mod ::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding
+# mod ::"miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1"::rust_sdk_output_note_create_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -51,7 +51,7 @@ proc rust_sdk_output_note_create_binding::bindings::__link_custom_section_descri
 end
 
 @callconv("C")
-proc miden_rust_sdk_output_note_create_binding_rust_sdk_output_note_create_binding_0_0_1_binding(
+proc miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1#binding(
 
 ) -> felt
     push.1114144
@@ -76,7 +76,7 @@ proc miden_rust_sdk_output_note_create_binding_rust_sdk_output_note_create_bindi
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1"::rust_sdk_output_note_create_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -157,7 +157,7 @@ proc miden_rust_sdk_output_note_create_binding_rust_sdk_output_note_create_bindi
     dup.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+    exec.::"miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1"::rust_sdk_output_note_create_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
     trace.252
     nop
     push.0
@@ -171,7 +171,7 @@ proc miden_rust_sdk_output_note_create_binding_rust_sdk_output_note_create_bindi
     swap.4
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::miden_base_sys::bindings::output_note::create
+    exec.::"miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1"::rust_sdk_output_note_create_binding::miden_base_sys::bindings::output_note::create
     trace.252
     nop
     push.32
@@ -230,7 +230,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::__wasm_call_ctors
+        exec.::"miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1"::rust_sdk_output_note_create_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -344,7 +344,7 @@ proc miden_base_sys::bindings::output_note::create(
     swap.4
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1::rust_sdk_output_note_create_binding::miden__protocol__output_note__create
+    exec.::"miden:rust-sdk-output-note-create-binding/rust-sdk-output-note-create-binding@0.0.1"::rust_sdk_output_note_create_binding::"miden::protocol::output_note::create"
     trace.252
     nop
 end
@@ -425,7 +425,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field
 end
 
 @callconv("C")
-proc miden__protocol__output_note__create(
+proc miden::protocol::output_note::create(
     felt,
     felt,
     felt,

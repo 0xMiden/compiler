@@ -1,11 +1,11 @@
-# mod ::miden:base/transaction-script@1.0.0
+# mod ::"miden:base/transaction-script@1.0.0"
 
 @callconv("canon-lift")
 pub proc run(felt, felt, felt, felt)
-    exec.miden:base/transaction-script@1.0.0::init
+    exec."miden:base/transaction-script@1.0.0"::init
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_num_input_notes_binding::miden_base_transaction_script_1_0_0_run
+    exec.::"miden:base/transaction-script@1.0.0"::rust_sdk_account_tx_get_num_input_notes_binding::"miden:base/transaction-script@1.0.0#run"
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod ::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_num_input_notes_binding
+# mod ::"miden:base/transaction-script@1.0.0"::rust_sdk_account_tx_get_num_input_notes_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -49,19 +49,19 @@ proc rust_sdk_account_tx_get_num_input_notes_binding::bindings::__link_custom_se
 end
 
 @callconv("C")
-proc miden_base_transaction_script_1_0_0_run(felt, felt, felt, felt)
+proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     drop
     drop
     drop
     drop
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_num_input_notes_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:base/transaction-script@1.0.0"::rust_sdk_account_tx_get_num_input_notes_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_num_input_notes_binding::miden_base_sys::bindings::tx::get_num_input_notes
+    exec.::"miden:base/transaction-script@1.0.0"::rust_sdk_account_tx_get_num_input_notes_binding::miden_base_sys::bindings::tx::get_num_input_notes
     trace.252
     nop
     drop
@@ -110,7 +110,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_num_input_notes_binding::__wasm_call_ctors
+        exec.::"miden:base/transaction-script@1.0.0"::rust_sdk_account_tx_get_num_input_notes_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -147,13 +147,13 @@ proc miden_base_sys::bindings::tx::get_num_input_notes(
 ) -> felt
     trace.240
     nop
-    exec.::miden:base/transaction-script@1.0.0::rust_sdk_account_tx_get_num_input_notes_binding::miden__protocol__tx__get_num_input_notes
+    exec.::"miden:base/transaction-script@1.0.0"::rust_sdk_account_tx_get_num_input_notes_binding::"miden::protocol::tx::get_num_input_notes"
     trace.252
     nop
 end
 
 @callconv("C")
-proc miden__protocol__tx__get_num_input_notes(
+proc miden::protocol::tx::get_num_input_notes(
 
 ) -> felt
     trace.240

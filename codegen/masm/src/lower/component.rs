@@ -18,7 +18,7 @@ use crate::{
     artifact::MasmComponent,
     emitter::BlockEmitter,
     linker::{LinkInfo, Linker},
-    masm, sanitize_procedure_name,
+    masm,
 };
 
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
@@ -60,7 +60,7 @@ impl ToMasmComponent for builtin::Component {
                 // TODO(pauls): Narrow this to only be true if the target env is not 'rollup', we
                 // cannot currently do so because we do not have sufficient Cargo metadata yet in
                 // 'cargo miden build' to detect the target env, and we default it to 'rollup'
-                let is_wrapper = component_path.as_path().as_str() == "root_ns:root@1.0.0";
+                let is_wrapper = component_path.as_path().as_str() == "\"root_ns:root@1.0.0\"";
                 let path = if is_wrapper {
                     let mut path = component_path.clone();
                     path.push(entry_id.module.as_str());
@@ -517,10 +517,9 @@ impl MasmFunctionBuilder {
         use midenc_hir::{Symbol, Visibility};
 
         let name = function.name();
-        let sanitized = sanitize_procedure_name(name.as_str());
         let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(Span::new(
             name.span,
-            sanitized.as_ref().into(),
+            name.as_ref().into(),
         )));
         let visibility = match function.visibility() {
             Visibility::Public => masm::Visibility::Public,

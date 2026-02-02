@@ -1,13 +1,13 @@
-# mod ::miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1
+# mod ::"miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1"
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> felt
-    exec.miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1::init
+    exec."miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1"::init
     trace.240
     nop
-    exec.::miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1::rust_sdk_account_get_initial_balance_binding::miden_rust_sdk_account_get_initial_balance_binding_rust_sdk_account_get_initial_balance_binding_0_0_1_binding
+    exec.::"miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1"::rust_sdk_account_get_initial_balance_binding::"miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1#binding"
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -34,7 +34,7 @@ proc init
     mem_store.278537
 end
 
-# mod ::miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1::rust_sdk_account_get_initial_balance_binding
+# mod ::"miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1"::rust_sdk_account_get_initial_balance_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -51,19 +51,19 @@ proc rust_sdk_account_get_initial_balance_binding::bindings::__link_custom_secti
 end
 
 @callconv("C")
-proc miden_rust_sdk_account_get_initial_balance_binding_rust_sdk_account_get_initial_balance_binding_0_0_1_binding(
+proc miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1#binding(
 
 ) -> felt
     trace.240
     nop
-    exec.::miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1::rust_sdk_account_get_initial_balance_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1"::rust_sdk_account_get_initial_balance_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
     push.1
     trace.240
     nop
-    exec.::miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1::rust_sdk_account_get_initial_balance_binding::miden__protocol__active_account__get_initial_balance
+    exec.::"miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1"::rust_sdk_account_get_initial_balance_binding::"miden::protocol::active_account::get_initial_balance"
     trace.252
     nop
 end
@@ -111,7 +111,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1::rust_sdk_account_get_initial_balance_binding::__wasm_call_ctors
+        exec.::"miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1"::rust_sdk_account_get_initial_balance_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -143,7 +143,7 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc miden__protocol__active_account__get_initial_balance(felt, felt) -> felt
+proc miden::protocol::active_account::get_initial_balance(felt, felt) -> felt
     trace.240
     nop
     exec.::miden::protocol::active_account::get_initial_balance

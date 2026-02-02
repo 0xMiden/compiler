@@ -43,7 +43,7 @@ impl ComponentId {
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {
         use midenc_session::LibraryPath;
 
-        let ns = format!("{}:{}@{}", &self.namespace, &self.name, &self.version);
+        let ns = format!("\"{}:{}@{}\"", &self.namespace, &self.name, &self.version);
         LibraryPath::new(&ns).expect("invalid component interface module name")
     }
 }

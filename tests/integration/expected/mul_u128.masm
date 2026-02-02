@@ -1,4 +1,4 @@
-# mod ::root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -16,7 +16,7 @@ proc init
     mem_store.278530
 end
 
-# mod ::root_ns:root@1.0.0::test_rust_47451efa7b59553058cbdbb88f5ae77d281126afc1fd9ca385bcdeb64d64800e
+# mod ::"root_ns:root@1.0.0"::test_rust_47451efa7b59553058cbdbb88f5ae77d281126afc1fd9ca385bcdeb64d64800e
 
 @locals("2")
 @callconv("C")

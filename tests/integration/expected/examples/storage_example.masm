@@ -1,22 +1,22 @@
-# mod ::miden:storage-example/foo@1.0.0
+# mod ::"miden:storage-example/foo@1.0.0"
 
 @callconv("canon-lift")
-pub proc set_asset_qty(felt, felt, felt, felt, felt, felt, felt, felt, felt)
-    exec.miden:storage-example/foo@1.0.0::init
+pub proc set-asset-qty(felt, felt, felt, felt, felt, felt, felt, felt, felt)
+    exec."miden:storage-example/foo@1.0.0"::init
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden_storage_example_foo_1_0_0_set_asset_qty
+    exec.::"miden:storage-example/foo@1.0.0"::storage_example::"miden:storage-example/foo@1.0.0#set-asset-qty"
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
 end
 
 @callconv("canon-lift")
-pub proc get_asset_qty(felt, felt, felt, felt) -> felt
-    exec.miden:storage-example/foo@1.0.0::init
+pub proc get-asset-qty(felt, felt, felt, felt) -> felt
+    exec."miden:storage-example/foo@1.0.0"::init
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden_storage_example_foo_1_0_0_get_asset_qty
+    exec.::"miden:storage-example/foo@1.0.0"::storage_example::"miden:storage-example/foo@1.0.0#get-asset-qty"
     trace.252
     nop
     exec.::miden::core::sys::truncate_stack
@@ -43,7 +43,7 @@ proc init
     mem_store.278537
 end
 
-# mod ::miden:storage-example/foo@1.0.0::storage_example
+# mod ::"miden:storage-example/foo@1.0.0"::storage_example
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -190,7 +190,7 @@ proc <storage_example::MyAccount as core::default::Default>::default(
 end
 
 @callconv("C")
-proc miden_storage_example_foo_1_0_0_get_asset_qty(
+proc miden:storage-example/foo@1.0.0#get-asset-qty(
     felt,
     felt,
     felt,
@@ -218,13 +218,13 @@ proc miden_storage_example_foo_1_0_0_get_asset_qty(
     nop
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:storage-example/foo@1.0.0"::storage_example::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.0
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::<storage_example::MyAccount as core::default::Default>::default
+    exec.::"miden:storage-example/foo@1.0.0"::storage_example::<storage_example::MyAccount as core::default::Default>::default
     trace.252
     nop
     push.12
@@ -273,7 +273,7 @@ proc miden_storage_example_foo_1_0_0_get_asset_qty(
     swap.2
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden__protocol__active_account__get_map_item
+    exec.::"miden:storage-example/foo@1.0.0"::storage_example::"miden::protocol::active_account::get_map_item"
     trace.252
     nop
     push.16
@@ -307,7 +307,7 @@ proc miden_storage_example_foo_1_0_0_get_asset_qty(
 end
 
 @callconv("C")
-proc miden_storage_example_foo_1_0_0_set_asset_qty(
+proc miden:storage-example/foo@1.0.0#set-asset-qty(
     felt,
     felt,
     felt,
@@ -340,13 +340,13 @@ proc miden_storage_example_foo_1_0_0_set_asset_qty(
     nop
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:storage-example/foo@1.0.0"::storage_example::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.0
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::<storage_example::MyAccount as core::default::Default>::default
+    exec.::"miden:storage-example/foo@1.0.0"::storage_example::<storage_example::MyAccount as core::default::Default>::default
     trace.252
     nop
     push.4
@@ -386,7 +386,7 @@ proc miden_storage_example_foo_1_0_0_set_asset_qty(
     swap.2
     trace.240
     nop
-    exec.::miden:storage-example/foo@1.0.0::storage_example::miden__protocol__active_account__get_item
+    exec.::"miden:storage-example/foo@1.0.0"::storage_example::"miden::protocol::active_account::get_item"
     trace.252
     nop
     push.40
@@ -555,7 +555,7 @@ proc miden_storage_example_foo_1_0_0_set_asset_qty(
                     swap.1
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
+                    exec.::"miden:storage-example/foo@1.0.0"::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
                     trace.252
                     nop
                     push.28
@@ -642,7 +642,7 @@ proc miden_storage_example_foo_1_0_0_set_asset_qty(
                     swap.6
                     trace.240
                     nop
-                    exec.::miden:storage-example/foo@1.0.0::storage_example::miden__protocol__native_account__set_map_item
+                    exec.::"miden:storage-example/foo@1.0.0"::storage_example::"miden::protocol::native_account::set_map_item"
                     trace.252
                     nop
                 end
@@ -704,7 +704,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:storage-example/foo@1.0.0::storage_example::__wasm_call_ctors
+        exec.::"miden:storage-example/foo@1.0.0"::storage_example::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -815,7 +815,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_fiel
 end
 
 @callconv("C")
-proc miden__protocol__active_account__get_item(felt, felt, i32)
+proc miden::protocol::active_account::get_item(felt, felt, i32)
     trace.240
     nop
     exec.::miden::protocol::active_account::get_item
@@ -873,7 +873,7 @@ proc miden__protocol__active_account__get_item(felt, felt, i32)
 end
 
 @callconv("C")
-proc miden__protocol__active_account__get_map_item(
+proc miden::protocol::active_account::get_map_item(
     felt,
     felt,
     felt,
@@ -939,7 +939,7 @@ proc miden__protocol__active_account__get_map_item(
 end
 
 @callconv("C")
-proc miden__protocol__native_account__set_map_item(
+proc miden::protocol::native_account::set_map_item(
     felt,
     felt,
     felt,

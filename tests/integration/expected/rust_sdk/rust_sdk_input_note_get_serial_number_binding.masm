@@ -1,13 +1,13 @@
-# mod ::miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1
+# mod ::"miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1"
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> (felt, felt, felt, felt)
-    exec.miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1::init
+    exec."miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1"::init
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1::rust_sdk_input_note_get_serial_number_binding::miden_rust_sdk_input_note_get_serial_number_binding_rust_sdk_input_note_get_serial_number_binding_0_0_1_binding
+    exec.::"miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1"::rust_sdk_input_note_get_serial_number_binding::"miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1#binding"
     trace.252
     nop
     push.0
@@ -86,7 +86,7 @@ proc init
     mem_store.278537
 end
 
-# mod ::miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1::rust_sdk_input_note_get_serial_number_binding
+# mod ::"miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1"::rust_sdk_input_note_get_serial_number_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -103,7 +103,7 @@ proc rust_sdk_input_note_get_serial_number_binding::bindings::__link_custom_sect
 end
 
 @callconv("C")
-proc miden_rust_sdk_input_note_get_serial_number_binding_rust_sdk_input_note_get_serial_number_binding_0_0_1_binding(
+proc miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1#binding(
 
 ) -> i32
     push.1114144
@@ -128,14 +128,14 @@ proc miden_rust_sdk_input_note_get_serial_number_binding_rust_sdk_input_note_get
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1::rust_sdk_input_note_get_serial_number_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1"::rust_sdk_input_note_get_serial_number_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
     dup.1
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1::rust_sdk_input_note_get_serial_number_binding::miden_base_sys::bindings::input_note::get_serial_number
+    exec.::"miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1"::rust_sdk_input_note_get_serial_number_binding::miden_base_sys::bindings::input_note::get_serial_number
     trace.252
     nop
     push.1114148
@@ -272,7 +272,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1::rust_sdk_input_note_get_serial_number_binding::__wasm_call_ctors
+        exec.::"miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1"::rust_sdk_input_note_get_serial_number_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -332,7 +332,7 @@ proc miden_base_sys::bindings::input_note::get_serial_number(
     movup.3
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1::rust_sdk_input_note_get_serial_number_binding::miden__protocol__input_note__get_serial_number
+    exec.::"miden:rust-sdk-input-note-get-serial-number-binding/rust-sdk-input-note-get-serial-number-binding@0.0.1"::rust_sdk_input_note_get_serial_number_binding::"miden::protocol::input_note::get_serial_number"
     trace.252
     nop
     dup.0
@@ -420,7 +420,7 @@ proc miden_base_sys::bindings::input_note::get_serial_number(
 end
 
 @callconv("C")
-proc miden__protocol__input_note__get_serial_number(felt, i32)
+proc miden::protocol::input_note::get_serial_number(felt, i32)
     drop
     drop
     push.0

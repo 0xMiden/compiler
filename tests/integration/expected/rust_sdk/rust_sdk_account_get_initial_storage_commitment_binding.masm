@@ -1,13 +1,13 @@
-# mod ::miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1
+# mod ::"miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1"
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> (felt, felt, felt, felt)
-    exec.miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1::init
+    exec."miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1"::init
     trace.240
     nop
-    exec.::miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1::rust_sdk_account_get_initial_storage_commitment_binding::miden_rust_sdk_account_get_initial_storage_commitment_binding_rust_sdk_account_get_initial_storage_commitment_binding_0_0_1_binding
+    exec.::"miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1"::rust_sdk_account_get_initial_storage_commitment_binding::"miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1#binding"
     trace.252
     nop
     push.0
@@ -86,7 +86,7 @@ proc init
     mem_store.278537
 end
 
-# mod ::miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1::rust_sdk_account_get_initial_storage_commitment_binding
+# mod ::"miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1"::rust_sdk_account_get_initial_storage_commitment_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -103,7 +103,7 @@ proc rust_sdk_account_get_initial_storage_commitment_binding::bindings::__link_c
 end
 
 @callconv("C")
-proc miden_rust_sdk_account_get_initial_storage_commitment_binding_rust_sdk_account_get_initial_storage_commitment_binding_0_0_1_binding(
+proc miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1#binding(
 
 ) -> i32
     push.1114144
@@ -136,13 +136,13 @@ proc miden_rust_sdk_account_get_initial_storage_commitment_binding_rust_sdk_acco
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1::rust_sdk_account_get_initial_storage_commitment_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1"::rust_sdk_account_get_initial_storage_commitment_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.1
     trace.240
     nop
-    exec.::miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1::rust_sdk_account_get_initial_storage_commitment_binding::miden__protocol__active_account__get_initial_storage_commitment
+    exec.::"miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1"::rust_sdk_account_get_initial_storage_commitment_binding::"miden::protocol::active_account::get_initial_storage_commitment"
     trace.252
     nop
     push.1048584
@@ -333,7 +333,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1::rust_sdk_account_get_initial_storage_commitment_binding::__wasm_call_ctors
+        exec.::"miden:rust-sdk-account-get-initial-storage-commitment-binding/rust-sdk-account-get-initial-storage-commitment-binding@0.0.1"::rust_sdk_account_get_initial_storage_commitment_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -365,7 +365,7 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc miden__protocol__active_account__get_initial_storage_commitment(i32)
+proc miden::protocol::active_account::get_initial_storage_commitment(i32)
     trace.240
     nop
     exec.::miden::protocol::active_account::get_initial_storage_commitment

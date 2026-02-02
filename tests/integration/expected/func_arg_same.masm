@@ -1,4 +1,4 @@
-# mod ::root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod ::root_ns:root@1.0.0::func_arg_same
+# mod ::"root_ns:root@1.0.0"::func_arg_same
 
 @callconv("C")
 pub proc entrypoint(i32, i32) -> i32
@@ -19,7 +19,7 @@ pub proc entrypoint(i32, i32) -> i32
     dup.0
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::func_arg_same::intrinsic
+    exec.::"root_ns:root@1.0.0"::func_arg_same::intrinsic
     trace.252
     nop
 end

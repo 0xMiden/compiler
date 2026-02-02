@@ -1,13 +1,13 @@
-# mod ::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1
+# mod ::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> (felt, felt, felt, felt)
-    exec.miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::init
+    exec."miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::init
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::miden_rust_sdk_account_faucet_burn_binding_rust_sdk_account_faucet_burn_binding_0_0_1_binding
+    exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1#binding"
     trace.252
     nop
     push.0
@@ -89,7 +89,7 @@ proc init
     mem_store.278537
 end
 
-# mod ::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding
+# mod ::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -106,7 +106,7 @@ proc rust_sdk_account_faucet_burn_binding::bindings::__link_custom_section_descr
 end
 
 @callconv("C")
-proc miden_rust_sdk_account_faucet_burn_binding_rust_sdk_account_faucet_burn_binding_0_0_1_binding(
+proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1#binding(
 
 ) -> i32
     push.1114144
@@ -131,7 +131,7 @@ proc miden_rust_sdk_account_faucet_burn_binding_rust_sdk_account_faucet_burn_bin
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
@@ -220,7 +220,7 @@ proc miden_rust_sdk_account_faucet_burn_binding_rust_sdk_account_faucet_burn_bin
     dup.2
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+    exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
     trace.252
     nop
     push.16
@@ -230,7 +230,7 @@ proc miden_rust_sdk_account_faucet_burn_binding_rust_sdk_account_faucet_burn_bin
     swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::miden_base_sys::bindings::faucet::burn
+    exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::miden_base_sys::bindings::faucet::burn
     trace.252
     nop
     push.1048584
@@ -362,7 +362,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::__wasm_call_ctors
+        exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -487,7 +487,7 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     swap.4
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1::rust_sdk_account_faucet_burn_binding::miden__protocol__faucet__burn
+    exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::"miden::protocol::faucet::burn"
     trace.252
     nop
     dup.0
@@ -650,7 +650,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field
 end
 
 @callconv("C")
-proc miden__protocol__faucet__burn(felt, felt, felt, felt, i32)
+proc miden::protocol::faucet::burn(felt, felt, felt, felt, i32)
     drop
     drop
     drop
