@@ -39,7 +39,6 @@ fn parse_storage_attribute(
         return Ok(None);
     }
 
-    let mut slot_value = None;
     let mut description_value = None;
     let mut type_value = None;
 
@@ -50,11 +49,7 @@ fn parse_storage_attribute(
 
     let parser = syn::meta::parser(|meta| {
         if meta.path.is_ident("slot") {
-            let value_stream;
-            syn::parenthesized!(value_stream in meta.input);
-            let lit: syn::LitInt = value_stream.parse()?;
-            slot_value = Some(lit.base10_parse::<u8>()?);
-            Ok(())
+            Err(meta.error("`slot(...)` is no longer supported; slots are derived from slot names"))
         } else if meta.path.is_ident("description") {
             let value = meta.value()?;
             let lit: syn::LitStr = value.parse()?;
