@@ -397,7 +397,7 @@ impl CodegenOptions {
                 "\
 Available codegen options:
 
-Usage: midenc compile -C <opt>
+Usage: midenc -C <opt>
 
 {all-args}{after-help}
 
@@ -439,7 +439,7 @@ impl UnstableOptions {
                 "\
 Available unstable options:
 
-Usage: midenc compile -Z <opt>
+Usage: midenc -Z <opt>
 
 {all-args}{after-help}
 
@@ -588,6 +588,18 @@ impl Compiler {
             options.current_dir.join(&self.target_dir)
         };
         create_target_dir(target_dir.as_path());
+
+        // Raise an error if no inputs were provided
+        if inputs.is_empty() {
+            let cmd = <Compiler as clap::CommandFactory>::command();
+            let mut err =
+                clap::Error::new(clap::error::ErrorKind::MissingRequiredArgument).with_cmd(&cmd);
+            err.insert(
+                clap::error::ContextKind::InvalidArg,
+                clap::error::ContextValue::String("INPUT".to_string()),
+            );
+            err.exit();
+        }
 
         let source_manager = Arc::new(DefaultSourceManager::default());
         Session::new(
