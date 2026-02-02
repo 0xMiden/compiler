@@ -1,4 +1,0 @@
-name = "parsing"
-patterns = ["*.hir"]
-
-[format.shtest]

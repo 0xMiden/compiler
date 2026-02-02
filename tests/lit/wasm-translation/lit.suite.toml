@@ -1,5 +1,0 @@
-name = "wasm-translation"
-patterns = ["*.wat"]
-working_dir = "../../../"
-
-[format.shtest]

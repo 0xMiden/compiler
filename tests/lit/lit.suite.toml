@@ -1,0 +1,9 @@
+name = "compiler"
+patterns = ["*.wat", "*.masm"]
+
+[substitutions]
+"midenc" = "$$MIDENC_BIN_DIR/midenc"
+"%cargo" = "cargo +$$CARGO_MAKE_RUSTUP_TOOLCHAIN_NAME"
+"%target_dir" = "$$CARGO_TARGET_DIR"
+
+[format.shtest]

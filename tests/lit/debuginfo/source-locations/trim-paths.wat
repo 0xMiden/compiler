@@ -1,6 +1,6 @@
-;; RUN: cargo build --release --target wasm32-unknown-unknown --manifest-path %S/test-project/Cargo.toml 2>&1
-;; RUN: env MIDENC_TRACE=debug bin/midenc %S/test-project/target/wasm32-unknown-unknown/release/source_location_test.wasm --entrypoint=source_location_test::test_assertion -Z trim-path-prefix=%S/test-project --emit=masm=- 2>&1 | filecheck %s
-;; RUN: bin/midenc %S/test-project/target/wasm32-unknown-unknown/release/source_location_test.wasm --entrypoint=source_location_test::test_assertion -Z trim-path-prefix=%S/test-project -Z print-hir-source-locations --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR
+;; RUN: %cargo build --target-dir %target_dir/trim-paths --manifest-path %S/test-project/Cargo.toml --release --target wasm32-unknown-unknown 2>&1
+;; RUN: env MIDENC_TRACE=debug midenc %target_dir/trim-paths/wasm32-unknown-unknown/release/source_location_test.wasm --entrypoint=source_location_test::test_assertion -Z trim-path-prefix=%S/test-project --emit=masm=- 2>&1 | filecheck %s
+;; RUN: midenc %target_dir/trim-paths/wasm32-unknown-unknown/release/source_location_test.wasm --entrypoint=source_location_test::test_assertion -Z trim-path-prefix=%S/test-project -Z print-hir-source-locations --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR
 ;;
 ;; This test verifies that source location information from DWARF is correctly
 ;; resolved when trim-paths is enabled.

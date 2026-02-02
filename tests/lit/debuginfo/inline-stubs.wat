@@ -1,6 +1,6 @@
-;; RUN: bin/midenc %s --entrypoint=test_felt_add --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR-ADD
-;; RUN: bin/midenc %s --entrypoint=test_felt_assert_eq --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR-ASSERT
-;; RUN: bin/midenc %s --entrypoint=test_felt_arithmetic --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR-ARITH
+;; RUN: midenc %s --entrypoint=test_felt_add --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR-ADD
+;; RUN: midenc %s --entrypoint=test_felt_assert_eq --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR-ASSERT
+;; RUN: midenc %s --entrypoint=test_felt_arithmetic --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR-ARITH
 ;;
 ;; This test verifies that linker stubs (intrinsic functions like felt::add, felt::assert_eq)
 ;; are inlined at call sites rather than being emitted as separate function definitions.

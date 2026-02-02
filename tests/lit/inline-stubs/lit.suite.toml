@@ -1,5 +1,0 @@
-name = "inline-stubs"
-patterns = ["*.wat"]
-working_dir = "../../../"
-
-[format.shtest]
