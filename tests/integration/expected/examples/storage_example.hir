@@ -19,7 +19,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v14 = arith.mod v12, v13 : u32;
             hir.assertz v14 #[code = 250];
             v8 = arith.constant -6348547769199644661 : i64;
-            v9 = hir.cast v8 : felt;
+            v9 = arith.trunc v8 : felt;
             v15 = hir.int_to_ptr v12 : ptr<byte, felt>;
             hir.store v15, v9;
             v17 = arith.constant 8 : u32;
@@ -29,7 +29,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v20 = arith.mod v18, v368 : u32;
             hir.assertz v20 #[code = 250];
             v6 = arith.constant -6475110084634595035 : i64;
-            v7 = hir.cast v6 : felt;
+            v7 = arith.trunc v6 : felt;
             v21 = hir.int_to_ptr v18 : ptr<byte, felt>;
             hir.store v21, v7;
             v367 = arith.constant 4 : u32;
@@ -39,7 +39,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v26 = arith.mod v24, v366 : u32;
             hir.assertz v26 #[code = 250];
             v4 = arith.constant -637820373289844411 : i64;
-            v5 = hir.cast v4 : felt;
+            v5 = arith.trunc v4 : felt;
             v27 = hir.int_to_ptr v24 : ptr<byte, felt>;
             hir.store v27, v5;
             v28 = hir.bitcast v0 : u32;
@@ -47,7 +47,7 @@ builtin.component miden:storage-example/foo@1.0.0 {
             v30 = arith.mod v28, v365 : u32;
             hir.assertz v30 #[code = 250];
             v2 = arith.constant 3042002143573699788 : i64;
-            v3 = hir.cast v2 : felt;
+            v3 = arith.trunc v2 : felt;
             v31 = hir.int_to_ptr v28 : ptr<byte, felt>;
             hir.store v31, v3;
             builtin.ret ;

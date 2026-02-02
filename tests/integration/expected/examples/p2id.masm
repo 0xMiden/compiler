@@ -1,14 +1,14 @@
-# mod miden:base/note-script@1.0.0
+# mod ::"miden:base/note-script@1.0.0"
 
 @callconv("canon-lift")
 pub proc run(felt, felt, felt, felt)
-    exec.::miden:base/note-script@1.0.0::init
+    exec."miden:base/note-script@1.0.0"::init
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::miden:base/note-script@1.0.0#run
+    exec.::"miden:base/note-script@1.0.0"::p2id::"miden:base/note-script@1.0.0#run"
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -21,7 +21,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:base/note-script@1.0.0::p2id
+# mod ::"miden:base/note-script@1.0.0"::p2id
 
 @callconv("C")
 proc p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7(
@@ -43,7 +43,7 @@ proc p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_impor
 )
     trace.240
     nop
-    call.::miden:basic-wallet/basic-wallet@0.1.0::receive-asset
+    call.::"miden:basic-wallet/basic-wallet@0.1.0"::"receive-asset"
     trace.252
     nop
 end
@@ -71,7 +71,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::"miden:base/note-script@1.0.0"::p2id::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -101,7 +101,7 @@ proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::"miden:base/note-script@1.0.0"::p2id::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
     push.0
@@ -189,7 +189,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.32
+    push.48
     u32wrapping_sub
     push.1114144
     dup.1
@@ -203,18 +203,18 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:base/note-script@1.0.0"::p2id::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
-    push.12
+    push.32
     dup.1
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::active_note::get_inputs
+    exec.::"miden:base/note-script@1.0.0"::p2id::miden_base_sys::bindings::active_note::get_inputs
     trace.252
     nop
-    push.20
+    push.40
     dup.1
     add
     u32assert
@@ -249,7 +249,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         end
     else
         drop
-        push.16
+        push.36
         dup.1
         add
         u32assert
@@ -297,29 +297,31 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        push.12
+        push.32
         dup.3
         u32wrapping_add
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+        exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
         trace.252
         nop
-        push.12
+        push.32
         dup.3
         u32wrapping_add
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+        exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
         trace.252
         nop
-        dup.2
+        push.8
+        dup.3
+        u32wrapping_add
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::active_account::get_id
+        exec.::"miden:base/note-script@1.0.0"::p2id::miden_base_sys::bindings::active_account::get_id
         trace.252
         nop
-        push.4
+        push.12
         dup.3
         add
         u32assert
@@ -336,7 +338,10 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        dup.3
+        push.8
+        dup.4
+        add
+        u32assert
         push.4
         dup.1
         swap.1
@@ -375,15 +380,15 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 swap.1
                 drop
             else
-                push.12
+                push.20
                 dup.2
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::miden:base/note-script@1.0.0::p2id::miden_base_sys::bindings::active_note::get_assets
+                exec.::"miden:base/note-script@1.0.0"::p2id::miden_base_sys::bindings::active_note::get_assets
                 trace.252
                 nop
-                push.20
+                push.28
                 dup.2
                 add
                 u32assert
@@ -400,7 +405,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 exec.::intrinsics::mem::load_sw
                 trace.252
                 nop
-                push.12
+                push.24
                 dup.3
                 add
                 u32assert
@@ -417,7 +422,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 exec.::intrinsics::mem::load_sw
                 trace.252
                 nop
-                push.16
+                push.20
                 dup.4
                 add
                 u32assert
@@ -434,14 +439,70 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 exec.::intrinsics::mem::load_sw
                 trace.252
                 nop
+                push.40
+                dup.5
+                add
+                u32assert
                 push.4
-                movup.3
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::store_sw
+                trace.252
+                nop
+                push.32
+                dup.4
+                add
+                u32assert
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                dup.1
+                swap.1
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::store_sw
+                trace.252
+                nop
+                push.4
+                movup.2
                 swap.1
                 u32shl
                 dup.1
+                dup.1
+                u32wrapping_add
+                push.44
+                dup.5
+                add
+                u32assert
+                push.4
+                dup.1
+                swap.1
+                u32mod
+                u32assert
+                assertz
+                dup.1
+                swap.1
+                u32divmod.4
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::store_sw
+                trace.252
+                nop
                 swap.3
                 swap.4
-                swap.5
                 swap.2
                 swap.1
                 push.1
@@ -528,7 +589,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                         swap.2
                         trace.240
                         nop
-                        exec.::miden:base/note-script@1.0.0::p2id::p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
+                        exec.::"miden:base/note-script@1.0.0"::p2id::p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
                         trace.252
                         nop
                         push.16
@@ -540,40 +601,32 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                     end
                     push.3735929054
                     dup.3
-                    dup.7
+                    dup.6
                     swap.2
                     swap.1
                     cdrop
                     push.3735929054
                     dup.4
-                    dup.7
-                    swap.2
-                    swap.1
-                    cdrop
-                    push.3735929054
-                    dup.5
-                    dup.7
+                    dup.6
                     swap.2
                     swap.1
                     cdrop
                     push.1
                     push.0
-                    movup.7
+                    movup.6
                     cdrop
                     push.1
                     u32and
+                    movup.2
+                    swap.4
+                    movdn.2
                     swap.1
                     swap.3
-                    swap.5
-                    swap.2
-                    swap.4
                     swap.1
                     if.true
-                        movup.5
+                        movup.4
                         drop
-                        movup.5
-                        drop
-                        movup.5
+                        movup.4
                         drop
                         push.1
                     else
@@ -584,8 +637,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 drop
                 drop
                 drop
-                drop
-                push.28
+                push.36
                 dup.1
                 add
                 u32assert
@@ -602,40 +654,17 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 trace.240
                 nop
                 exec.::intrinsics::mem::store_sw
-                trace.252
-                nop
-                push.24
-                dup.1
-                add
-                u32assert
-                push.4
-                dup.1
-                swap.1
-                u32mod
-                u32assert
-                assertz
-                movup.2
-                swap.1
-                u32divmod.4
-                swap.1
-                trace.240
-                nop
-                exec.::intrinsics::mem::store_sw
-                trace.252
-                nop
-                push.16
-                push.24
-                dup.2
-                u32wrapping_add
-                dup.1
-                swap.2
-                swap.1
-                trace.240
-                nop
-                exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::deallocate
                 trace.252
                 nop
                 push.32
+                dup.1
+                u32wrapping_add
+                trace.240
+                nop
+                exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::vec::into_iter::IntoIter<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop
+                trace.252
+                nop
+                push.48
                 u32wrapping_add
                 push.1114144
                 u32divmod.4
@@ -712,7 +741,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::__wasm_call_ctors
+        exec.::"miden:base/note-script@1.0.0"::p2id::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -774,7 +803,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::<core::ptr::alignment::Alignment>::max
+        exec.::"miden:base/note-script@1.0.0"::p2id::<core::ptr::alignment::Alignment>::max
         trace.252
         nop
         push.0
@@ -823,7 +852,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
             else
                 trace.240
                 nop
-                exec.::miden:base/note-script@1.0.0::p2id::intrinsics::mem::heap_base
+                exec.::intrinsics::mem::heap_base
                 trace.252
                 nop
                 trace.240
@@ -924,17 +953,6 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
 end
 
 @callconv("C")
-proc intrinsics::mem::heap_base(
-
-) -> i32
-    trace.240
-    nop
-    exec.::intrinsics::mem::heap_base
-    trace.252
-    nop
-end
-
-@callconv("C")
 proc <alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(
     i32
 )
@@ -969,7 +987,7 @@ proc <alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::with_capacity_in
+    exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::raw_vec::RawVecInner>::with_capacity_in
     trace.252
     nop
     push.8
@@ -1078,7 +1096,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::try_allocate_in
+    exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::raw_vec::RawVecInner>::try_allocate_in
     trace.252
     nop
     push.8
@@ -1202,7 +1220,7 @@ proc <alloc::raw_vec::RawVecInner>::with_capacity_in(
         swap.1
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::alloc::raw_vec::handle_error
+        exec.::"miden:base/note-script@1.0.0"::p2id::alloc::raw_vec::handle_error
         trace.252
         nop
         push.0
@@ -1219,7 +1237,7 @@ proc <alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop
     swap.2
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::deallocate
+    exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::raw_vec::RawVecInner>::deallocate
     trace.252
     nop
 end
@@ -1253,7 +1271,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity
+    exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity
     trace.252
     nop
     push.8
@@ -1279,7 +1297,7 @@ proc miden_base_sys::bindings::active_note::get_assets(
     u32shr
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::miden::active_note::get_assets
+    exec.::"miden:base/note-script@1.0.0"::p2id::"miden::protocol::active_note::get_assets"
     trace.252
     nop
     push.8
@@ -1379,7 +1397,7 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::with_capacity_in
+    exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::raw_vec::RawVecInner>::with_capacity_in
     trace.252
     nop
     push.8
@@ -1422,7 +1440,7 @@ proc miden_base_sys::bindings::active_note::get_inputs(
     u32shr
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::miden::active_note::get_inputs
+    exec.::"miden:base/note-script@1.0.0"::p2id::"miden::protocol::active_note::get_inputs"
     trace.252
     nop
     push.8
@@ -1486,6 +1504,69 @@ proc miden_base_sys::bindings::active_note::get_inputs(
 end
 
 @callconv("C")
+proc <alloc::vec::into_iter::IntoIter<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop(
+    i32
+)
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_sub
+    push.1114144
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.12
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.12
+    dup.1
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:base/note-script@1.0.0"::p2id::<<alloc::vec::into_iter::IntoIter<_, _> as core::ops::drop::Drop>::drop::DropGuard<miden_base_sys::bindings::types::Asset, alloc::alloc::Global> as core::ops::drop::Drop>::drop
+    trace.252
+    nop
+    push.16
+    u32wrapping_add
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
 proc miden_base_sys::bindings::active_account::get_id(i32)
     push.1114144
     u32divmod.4
@@ -1512,7 +1593,7 @@ proc miden_base_sys::bindings::active_account::get_id(i32)
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::miden::active_account::get_id
+    exec.::"miden:base/note-script@1.0.0"::p2id::"miden::protocol::active_account::get_id"
     trace.252
     nop
     push.8
@@ -1562,6 +1643,143 @@ proc miden_base_sys::bindings::active_account::get_id(i32)
 end
 
 @callconv("C")
+proc <<alloc::vec::into_iter::IntoIter<_, _> as core::ops::drop::Drop>::drop::DropGuard<miden_base_sys::bindings::types::Asset, alloc::alloc::Global> as core::ops::drop::Drop>::drop(
+    i32
+)
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    u32wrapping_sub
+    push.1114144
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    swap.1
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    dup.0
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.12
+    dup.3
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.8
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    dup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.8
+    dup.1
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop
+    trace.252
+    nop
+    push.16
+    u32wrapping_add
+    push.1114144
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc <alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop(
+    i32
+)
+    push.16
+    dup.0
+    swap.2
+    trace.240
+    nop
+    exec.::"miden:base/note-script@1.0.0"::p2id::<alloc::raw_vec::RawVecInner>::deallocate
+    trace.252
+    nop
+end
+
+@callconv("C")
 proc <alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
@@ -1587,7 +1805,7 @@ proc <alloc::alloc::Global>::alloc_impl(
     else
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_no_alloc_shim_is_unstable_v2
+        exec.::"miden:base/note-script@1.0.0"::p2id::__rustc::__rust_no_alloc_shim_is_unstable_v2
         trace.252
         nop
         push.0
@@ -1598,7 +1816,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_alloc_zeroed
+            exec.::"miden:base/note-script@1.0.0"::p2id::__rustc::__rust_alloc_zeroed
             trace.252
             nop
         else
@@ -1606,7 +1824,7 @@ proc <alloc::alloc::Global>::alloc_impl(
             dup.2
             trace.240
             nop
-            exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_alloc
+            exec.::"miden:base/note-script@1.0.0"::p2id::__rustc::__rust_alloc
             trace.252
             nop
         end
@@ -1682,7 +1900,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::<alloc::raw_vec::RawVecInner>::current_memory
+    exec.::"miden:base/note-script@1.0.0"::p2id::"<alloc::raw_vec::RawVecInner>::current_memory"
     trace.252
     nop
     push.8
@@ -1747,7 +1965,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         movdn.2
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.::"miden:base/note-script@1.0.0"::p2id::"<alloc::alloc::Global as core::alloc::Allocator>::deallocate"
         trace.252
         nop
     end
@@ -1915,7 +2133,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
         swap.1
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::p2id::__rustc::__rust_dealloc
+        exec.::"miden:base/note-script@1.0.0"::p2id::__rustc::__rust_dealloc
         trace.252
         nop
     end
@@ -1960,7 +2178,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::allocate(
     swap.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global>::alloc_impl
+    exec.::"miden:base/note-script@1.0.0"::p2id::"<alloc::alloc::Global>::alloc_impl"
     trace.252
     nop
     push.12
@@ -2103,7 +2321,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
     movup.2
     trace.240
     nop
-    exec.::std::math::u64::shr
+    exec.::miden::core::math::u64::shr
     trace.252
     nop
     drop
@@ -2152,7 +2370,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global>::alloc_impl
+                    exec.::"miden:base/note-script@1.0.0"::p2id::"<alloc::alloc::Global>::alloc_impl"
                     trace.252
                     nop
                     dup.2
@@ -2178,7 +2396,7 @@ proc <alloc::raw_vec::RawVecInner>::try_allocate_in(
                     swap.2
                     trace.240
                     nop
-                    exec.::miden:base/note-script@1.0.0::p2id::<alloc::alloc::Global as core::alloc::Allocator>::allocate
+                    exec.::"miden:base/note-script@1.0.0"::p2id::"<alloc::alloc::Global as core::alloc::Allocator>::allocate"
                     trace.252
                     nop
                     push.8
@@ -2472,10 +2690,10 @@ proc <core::ptr::alignment::Alignment>::max(
 end
 
 @callconv("C")
-proc miden::active_account::get_id(i32)
+proc miden::protocol::active_account::get_id(i32)
     trace.240
     nop
-    exec.::miden::active_account::get_id
+    exec.::miden::protocol::active_account::get_id
     trace.252
     nop
     movup.2
@@ -2502,10 +2720,10 @@ proc miden::active_account::get_id(i32)
 end
 
 @callconv("C")
-proc miden::active_note::get_assets(i32) -> i32
+proc miden::protocol::active_note::get_assets(i32) -> i32
     trace.240
     nop
-    exec.::miden::active_note::get_assets
+    exec.::miden::protocol::active_note::get_assets
     trace.252
     nop
     swap.1
@@ -2513,10 +2731,10 @@ proc miden::active_note::get_assets(i32) -> i32
 end
 
 @callconv("C")
-proc miden::active_note::get_inputs(i32) -> i32
+proc miden::protocol::active_note::get_inputs(i32) -> i32
     trace.240
     nop
-    exec.::miden::active_note::get_inputs
+    exec.::miden::protocol::active_note::get_inputs
     trace.252
     nop
     swap.1

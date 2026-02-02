@@ -75,16 +75,6 @@ proc <storage_example::MyAccount as core::default::Default>::default(
     assertz
     push.2705436683
     push.2816830832
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::miden::core::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -107,16 +97,6 @@ proc <storage_example::MyAccount as core::default::Default>::default(
     assertz
     push.1137586469
     push.2787363247
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::miden::core::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -139,16 +119,6 @@ proc <storage_example::MyAccount as core::default::Default>::default(
     assertz
     push.4086120773
     push.4146463167
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::miden::core::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
@@ -167,16 +137,6 @@ proc <storage_example::MyAccount as core::default::Default>::default(
     assertz
     push.363850956
     push.708271317
-    dup.1
-    dup.1
-    push.1
-    push.4294967295
-    trace.240
-    nop
-    exec.::miden::core::math::u64::lt
-    trace.252
-    nop
-    assert
     mul.4294967296
     add
     swap.1
