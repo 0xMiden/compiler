@@ -160,8 +160,8 @@ miden-test-harness-macros = { path = "test-harness/test-harness-macros" }
 #miden-assembly-syntax = { path = "../miden-vm/assembly-syntax" }
 #miden-core = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-core = { path = "../miden-vm/core" }
-miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "0a5add565d1388f77cd182f3639c16aa8f7ec674" }
-miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "greenhat-migrate-vm-v0.20" }
+# miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "0a5add565d1388f77cd182f3639c16aa8f7ec674" }
+# miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "greenhat-migrate-vm-v0.20" }
 #miden-debug-types = { path = "../miden-vm/crates/debug/types" }
 #miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-processor = { path = "../miden-vm/processor" }
