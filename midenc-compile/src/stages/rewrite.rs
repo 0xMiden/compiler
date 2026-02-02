@@ -63,23 +63,27 @@ impl Stage for ApplyRewritesStage {
                 let mut module_pm = component_pm.nest::<builtin::Module>();
                 let mut func_pm = module_pm.nest::<builtin::Function>();
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+                func_pm.add_pass(Box::new(SinkOperandDefs));
+                func_pm.add_pass(Box::new(ControlFlowSink));
+                func_pm.add_pass(Box::new(TransformSpills));
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
                 func_pm.add_pass(Box::new(SinkOperandDefs));
                 func_pm.add_pass(Box::new(ControlFlowSink));
-                func_pm.add_pass(Box::new(TransformSpills));
             }
             // Function passes for component-level functions
             {
                 let mut func_pm = component_pm.nest::<builtin::Function>();
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+                func_pm.add_pass(Box::new(SinkOperandDefs));
+                func_pm.add_pass(Box::new(ControlFlowSink));
+                func_pm.add_pass(Box::new(TransformSpills));
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
                 func_pm.add_pass(Box::new(SinkOperandDefs));
                 func_pm.add_pass(Box::new(ControlFlowSink));
-                func_pm.add_pass(Box::new(TransformSpills));
             }
         }
 

@@ -631,10 +631,9 @@ impl SpillAnalysis {
         liveness: &LivenessAnalysis,
         analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
-        log::trace!(target: "spills", "visiting cfg");
-
         // Visit the blocks of the CFG in reverse postorder (top-down)
         let mut block_q = VecDeque::from(domtree.reverse_postorder());
+        log::debug!(target: "spills", "visiting cfg (reverse post-order): {}", DisplayValues::new(block_q.iter().filter_map(|n| n.block())));
 
         // If a block has a predecessor which it dominates (i.e. control flow always flows through
         // the block in question before the given predecessor), then we must defer computing spills

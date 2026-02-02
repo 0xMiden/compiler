@@ -364,14 +364,17 @@ fn auth_component_no_auth() {
     let _loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
 }
 
-#[ignore = "until https://github.com/0xMiden/compiler/issues/904 is fixed"]
 #[test]
 fn auth_component_rpo_falcon512() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
         "../../examples/auth-component-rpo-falcon512",
         config,
-        [],
+        [
+            "-Zprint-ir-after-all".to_string(),
+            "-Zprint-ir-after-modified".to_string(),
+            "-Zprint-ir-filter=symbol:auth-procedure".to_string(),
+        ],
     );
     test.expect_wasm(expect_file![format!(
         "../../expected/examples/auth_component_rpo_falcon512.wat"
