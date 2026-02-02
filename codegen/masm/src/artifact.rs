@@ -201,11 +201,9 @@ impl MasmComponent {
     ) -> Result<Arc<Program>, Report> {
         use miden_assembly::Assembler;
 
-        let debug_mode = session.options.emit_debug_decorators();
-
         log::debug!(
             target: "assembly",
-            "assembling executable with entrypoint '{entrypoint}' (debug_mode={debug_mode})"
+            "assembling executable with entrypoint '{entrypoint}'"
         );
         let mut assembler = Assembler::new(session.source_manager.clone());
 
@@ -268,12 +266,10 @@ impl MasmComponent {
     ) -> Result<Arc<Library>, Report> {
         use miden_assembly::Assembler;
 
-        let debug_mode = session.options.emit_debug_decorators();
         log::debug!(
             target: "assembly",
-            "assembling library of {} modules (debug_mode={})",
-            self.modules.len(),
-            debug_mode
+            "assembling library of {} modules",
+            self.modules.len()
         );
 
         let mut assembler = Assembler::new(session.source_manager.clone());
