@@ -200,6 +200,11 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::output_note::CREATE => Some(TransformStrategy::NoTransform),
                         tx_kernel::output_note::ADD_ASSET => Some(TransformStrategy::NoTransform),
+                        tx_kernel::output_note::SET_ATTACHMENT
+                        | tx_kernel::output_note::SET_WORD_ATTACHMENT
+                        | tx_kernel::output_note::SET_ARRAY_ATTACHMENT => {
+                            Some(TransformStrategy::NoTransform)
+                        }
                         tx_kernel::output_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
                         tx_kernel::output_note::GET_ASSETS_INFO
                         | tx_kernel::output_note::GET_RECIPIENT

@@ -9,8 +9,7 @@ use miden_client::{
     auth::AuthSecretKey,
     crypto::FeltRng,
     note::{
-        Note, NoteAssets, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient, NoteScript,
-        NoteTag, NoteType,
+        Note, NoteAssets, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag, NoteType,
     },
     testing::{MockChain, TransactionContextBuilder},
     transaction::OutputNote,
@@ -79,10 +78,6 @@ pub(super) struct NoteCreationConfig {
     pub assets: NoteAssets,
     /// Note inputs (e.g. target account id, timelock/reclaim height, etc.).
     pub inputs: Vec<Felt>,
-    /// Execution hint for the note script.
-    pub execution_hint: NoteExecutionHint,
-    /// Auxiliary note metadata field.
-    pub aux: Felt,
 }
 
 impl Default for NoteCreationConfig {
@@ -92,8 +87,6 @@ impl Default for NoteCreationConfig {
             tag: NoteTag::new(0),
             assets: Default::default(),
             inputs: Default::default(),
-            execution_hint: NoteExecutionHint::always(),
-            aux: Felt::ZERO,
         }
     }
 }
@@ -242,17 +235,15 @@ pub(super) fn build_asset_transfer_tx(
     let output_note = Note::new(config.assets, metadata, note_recipient.clone());
 
     // Prepare commitment data
-    let mut commitment_input: Vec<Felt> = vec![
-        config.tag.into(),
-        config.aux,
-        Felt::from(config.note_type),
-        Felt::from(config.execution_hint),
-    ];
+    // This must match the input layout expected by `examples/basic-wallet-tx-script`.
+    let mut commitment_input: Vec<Felt> = vec![config.tag.into(), Felt::from(config.note_type)];
     let recipient_digest: [Felt; 4] = note_recipient.digest().into();
     commitment_input.extend(recipient_digest);
 
     let asset_arr: Word = asset.into();
     commitment_input.extend(asset_arr);
+    // Ensure word alignment for `adv_load_preimage` in the tx script.
+    commitment_input.extend([Felt::ZERO, Felt::ZERO]);
 
     let commitment_key: Word = Rpo256::hash_elements(&commitment_input);
     assert_eq!(commitment_input.len() % 4, 0, "commitment input needs to be word-aligned");

@@ -10,9 +10,7 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::output_note::create"]
     pub fn extern_output_note_create(
         tag: Tag,
-        aux: Felt,
         note_type: NoteType,
-        execution_hint: Felt,
         recipient_f0: Felt,
         recipient_f1: Felt,
         recipient_f2: Felt,
@@ -39,6 +37,37 @@ unsafe extern "C" {
 
     #[link_name = "miden::protocol::output_note::get_metadata"]
     pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut Word);
+
+    #[link_name = "miden::protocol::output_note::set_attachment"]
+    pub fn extern_output_note_set_attachment(
+        note_idx: NoteIdx,
+        attachment_scheme: Felt,
+        attachment_kind: Felt,
+        attachment_f0: Felt,
+        attachment_f1: Felt,
+        attachment_f2: Felt,
+        attachment_f3: Felt,
+    );
+
+    #[link_name = "miden::protocol::output_note::set_word_attachment"]
+    pub fn extern_output_note_set_word_attachment(
+        note_idx: NoteIdx,
+        attachment_scheme: Felt,
+        attachment_f0: Felt,
+        attachment_f1: Felt,
+        attachment_f2: Felt,
+        attachment_f3: Felt,
+    );
+
+    #[link_name = "miden::protocol::output_note::set_array_attachment"]
+    pub fn extern_output_note_set_array_attachment(
+        note_idx: NoteIdx,
+        attachment_scheme: Felt,
+        attachment_f0: Felt,
+        attachment_f1: Felt,
+        attachment_f2: Felt,
+        attachment_f3: Felt,
+    );
 }
 
 /// Creates a new output note and returns its index.
@@ -62,30 +91,71 @@ unsafe extern "C" {
 /// let recipient = Recipient::compute(serial_num, note_script_root, inputs);
 ///
 /// let tag = Tag::from(felt!(0));
-/// let note_type = NoteType::from(felt!(0));
-/// let execution_hint = felt!(0);
+/// let note_type = NoteType::from(felt!(1)); // public note type (0b01)
 ///
-/// let note_idx = output_note::create(tag, felt!(0), note_type, execution_hint, recipient);
+/// let note_idx = output_note::create(tag, note_type, recipient);
 /// output_note::add_asset(Asset::new([felt!(0), felt!(0), felt!(0), felt!(1)]), note_idx);
 /// ```
-pub fn create(
-    tag: Tag,
-    aux: Felt,
-    note_type: NoteType,
-    execution_hint: Felt,
-    recipient: Recipient,
-) -> NoteIdx {
+pub fn create(tag: Tag, note_type: NoteType, recipient: Recipient) -> NoteIdx {
     unsafe {
         extern_output_note_create(
             tag,
-            aux,
             note_type,
-            execution_hint,
             recipient.inner[3],
             recipient.inner[2],
             recipient.inner[1],
             recipient.inner[0],
         )
+    }
+}
+
+/// Sets the attachment of the output note specified by `note_idx`.
+pub fn set_attachment(
+    note_idx: NoteIdx,
+    attachment_scheme: Felt,
+    attachment_kind: Felt,
+    attachment: Word,
+) {
+    unsafe {
+        extern_output_note_set_attachment(
+            note_idx,
+            attachment_scheme,
+            attachment_kind,
+            attachment[3],
+            attachment[2],
+            attachment[1],
+            attachment[0],
+        );
+    }
+}
+
+/// Sets the attachment of the output note specified by `note_idx` to the provided word.
+pub fn set_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
+    unsafe {
+        extern_output_note_set_word_attachment(
+            note_idx,
+            attachment_scheme,
+            attachment[3],
+            attachment[2],
+            attachment[1],
+            attachment[0],
+        );
+    }
+}
+
+/// Sets the attachment of the output note specified by `note_idx` to the provided commitment.
+///
+/// The advice map must contain an entry for the attachment elements committed to by `attachment`.
+pub fn set_array_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
+    unsafe {
+        extern_output_note_set_array_attachment(
+            note_idx,
+            attachment_scheme,
+            attachment[3],
+            attachment[2],
+            attachment[1],
+            attachment[0],
+        );
     }
 }
 

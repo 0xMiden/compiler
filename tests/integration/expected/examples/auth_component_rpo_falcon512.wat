@@ -131,7 +131,7 @@
       local.get 4
       i32.const 96
       i32.add
-      call $miden::core::crypto::hashes::rpo::hash_memory_words
+      call $miden::core::crypto::hashes::rpo256::hash_words
       local.get 4
       f32.load offset=108
       local.set 7
@@ -372,7 +372,7 @@
     (func $miden::core::crypto::dsa::rpo_falcon512::verify (;13;) (type 6) (param f32 f32 f32 f32 f32 f32 f32 f32)
       unreachable
     )
-    (func $miden::core::crypto::hashes::rpo::hash_memory_words (;14;) (type 4) (param i32 i32 i32)
+    (func $miden::core::crypto::hashes::rpo256::hash_words (;14;) (type 4) (param i32 i32 i32)
       unreachable
     )
     (func $miden::protocol::active_account::get_item (;15;) (type 10) (param f32 f32 i32)

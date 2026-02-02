@@ -102,7 +102,7 @@ pub fn test_create_note(
     note_type: NoteType,
     recipient: Recipient,
 ) -> NoteIdx {
-    let note_idx = miden::output_note::create(tag, Felt::ZERO, note_type, Felt::ZERO, recipient);
+    let note_idx = miden::output_note::create(tag, note_type, recipient);
     miden::output_note::add_asset(asset, note_idx);
     note_idx
 }

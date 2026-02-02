@@ -516,7 +516,7 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.80
+    push.64
     u32wrapping_sub
     push.1114144
     dup.1
@@ -799,7 +799,7 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::"miden::protocol::native_account::set_map_item"
     trace.252
     nop
-    push.80
+    push.64
     movup.2
     u32wrapping_add
     push.1114144
@@ -981,8 +981,6 @@ proc miden::protocol::active_account::get_map_item(
     trace.252
     nop
     movup.4
-    drop
-    movup.4
     dup.0
     movup.2
     swap.1
@@ -1050,9 +1048,7 @@ proc miden::protocol::native_account::set_map_item(
     exec.::miden::protocol::native_account::set_map_item
     trace.252
     nop
-    movup.8
-    drop
-    movup.8
+    movup.4
     dup.0
     movup.2
     swap.1
@@ -1090,58 +1086,6 @@ proc miden::protocol::native_account::set_map_item(
     trace.252
     nop
     push.12
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.16
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.20
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.24
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.28
     add
     u32assert
     u32divmod.4

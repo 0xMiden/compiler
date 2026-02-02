@@ -123,8 +123,8 @@ fn rust_sdk_output_note_create_binding() {
         "pub fn binding(&self) -> NoteIdx {
         let recipient = Recipient::from([Felt::from_u32(0); 4]);
         let tag = Tag { inner: Felt::from_u32(0) };
-        let note_type = NoteType { inner: Felt::from_u32(0) };
-        output_note::create(tag, Felt::from_u32(0), note_type, Felt::from_u32(0), recipient)
+        let note_type = NoteType { inner: Felt::from_u32(1) };
+        output_note::create(tag, note_type, recipient)
     }",
     );
 }

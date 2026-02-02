@@ -92,7 +92,7 @@
     (func $miden:storage-example/foo@1.0.0#set-asset-qty (;4;) (type 3) (param f32 f32 f32 f32 f32 f32 f32 f32 f32)
       (local i32 f32 f32 f32)
       global.get $__stack_pointer
-      i32.const 64
+      i32.const 48
       i32.sub
       local.tee 9
       global.set $__stack_pointer
@@ -173,7 +173,7 @@
         call $miden::protocol::native_account::set_map_item
       end
       local.get 9
-      i32.const 64
+      i32.const 48
       i32.add
       global.set $__stack_pointer
     )

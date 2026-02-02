@@ -137,7 +137,7 @@
     (func $miden:counter-contract/counter-contract@0.1.0#increment-count (;5;) (type 3) (result f32)
       (local i32 f32 f32 f32 f32 f32 f32 f32)
       global.get $__stack_pointer
-      i32.const 80
+      i32.const 64
       i32.sub
       local.tee 0
       global.set $__stack_pointer
@@ -213,7 +213,7 @@
       i32.add
       call $miden::protocol::native_account::set_map_item
       local.get 0
-      i32.const 80
+      i32.const 64
       i32.add
       global.set $__stack_pointer
       local.get 7

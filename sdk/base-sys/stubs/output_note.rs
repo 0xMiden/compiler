@@ -4,9 +4,7 @@ use core::ffi::c_void;
 #[unsafe(export_name = "miden::protocol::output_note::create")]
 pub extern "C" fn output_note_create_plain(
     _tag: f32,
-    _aux: f32,
     _note_type: f32,
-    _execution_hint: f32,
     _r0: f32,
     _r1: f32,
     _r2: f32,
@@ -43,5 +41,42 @@ pub extern "C" fn output_note_get_recipient_plain(_note_index: f32, _out: *mut c
 
 #[unsafe(export_name = "miden::protocol::output_note::get_metadata")]
 pub extern "C" fn output_note_get_metadata_plain(_note_index: f32, _out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::output_note::set_attachment")]
+pub extern "C" fn output_note_set_attachment_plain(
+    _note_index: f32,
+    _attachment_scheme: f32,
+    _attachment_kind: f32,
+    _a0: f32,
+    _a1: f32,
+    _a2: f32,
+    _a3: f32,
+) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::output_note::set_word_attachment")]
+pub extern "C" fn output_note_set_word_attachment_plain(
+    _note_index: f32,
+    _attachment_scheme: f32,
+    _a0: f32,
+    _a1: f32,
+    _a2: f32,
+    _a3: f32,
+) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::output_note::set_array_attachment")]
+pub extern "C" fn output_note_set_array_attachment_plain(
+    _note_index: f32,
+    _attachment_scheme: f32,
+    _a0: f32,
+    _a1: f32,
+    _a2: f32,
+    _a3: f32,
+) {
     unsafe { core::hint::unreachable_unchecked() }
 }

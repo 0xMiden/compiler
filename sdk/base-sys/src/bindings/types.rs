@@ -103,23 +103,16 @@ pub struct Recipient {
 impl Recipient {
     /// Computes a recipient digest from the provided components.
     ///
-    /// The `padded_inputs` must be padded with ZEROs to the next multiple of 8 (i.e. 2-word
-    /// aligned). For example, to pass two inputs `a` and `b`, use:
-    /// `vec![a, b, felt!(0), felt!(0), felt!(0), felt!(0), felt!(0), felt!(0)]`.
+    /// This matches the Miden protocol note recipient digest:
+    /// `hash(hash(hash(serial_num, [0; 4]), script_root), inputs_commitment)`.
     ///
-    /// # Panics
-    /// Panics if `padded_inputs.len()` is not a multiple of 8.
-    pub fn compute(serial_num: Word, script_digest: Digest, padded_inputs: Vec<Felt>) -> Self {
-        assert!(
-            padded_inputs.len().is_multiple_of(8),
-            "`padded_inputs` length must be a multiple of 8"
-        );
-
+    /// Where `inputs_commitment` is the RPO256 hash of the provided `inputs`.
+    pub fn compute(serial_num: Word, script_digest: Digest, inputs: Vec<Felt>) -> Self {
         let empty_word = Word::from_u64_unchecked(0, 0, 0, 0);
 
         let serial_num_hash = merge([Digest::from_word(serial_num), Digest::from_word(empty_word)]);
         let merge_script = merge([serial_num_hash, script_digest]);
-        let digest: Word = merge([merge_script, hash_elements(padded_inputs)]).into();
+        let digest: Word = merge([merge_script, hash_elements(inputs)]).into();
 
         Self { inner: digest }
     }
@@ -166,17 +159,6 @@ pub struct NoteType {
 impl From<Felt> for NoteType {
     fn from(value: Felt) -> Self {
         NoteType { inner: value }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct StorageCommitmentRoot(Word);
-
-impl StorageCommitmentRoot {
-    #[inline]
-    pub(crate) fn reverse(&self) -> StorageCommitmentRoot {
-        Self(self.0.reverse())
     }
 }
 

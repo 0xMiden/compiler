@@ -522,8 +522,6 @@ proc miden::protocol::active_account::get_initial_map_item(
     trace.252
     nop
     movup.4
-    drop
-    movup.4
     dup.0
     movup.2
     swap.1

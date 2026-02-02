@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word};
 
-use super::{StorageCommitmentRoot, StorageSlotId};
+use super::StorageSlotId;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -18,7 +18,7 @@ unsafe extern "C" {
         v1: Felt,
         v2: Felt,
         v3: Felt,
-        ptr: *mut (StorageCommitmentRoot, Word),
+        ptr: *mut Word,
     );
 
     #[link_name = "miden::protocol::active_account::get_map_item"]
@@ -55,7 +55,7 @@ unsafe extern "C" {
         v1: Felt,
         v2: Felt,
         v3: Felt,
-        ptr: *mut (StorageCommitmentRoot, Word),
+        ptr: *mut Word,
     );
 }
 
@@ -93,20 +93,19 @@ pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
 /// Sets an item in the account storage.
 ///
 /// Inputs: slot_id, value
-/// Outputs: (new_root, old_value)
+/// Outputs: old_value
 ///
 /// Where:
 /// - slot_id identifies the storage slot to update.
 /// - value is the value to set.
-/// - new_root is the new storage commitment.
 /// - old_value is the previous value of the item.
 ///
 /// Panics if:
 /// - the requested slot does not exist in the account storage.
 #[inline]
-pub fn set_item(slot_id: StorageSlotId, value: Word) -> (StorageCommitmentRoot, Word) {
+pub fn set_item(slot_id: StorageSlotId, value: Word) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_set_storage_item(
             slot_id.prefix(),
             slot_id.suffix(),
@@ -116,8 +115,7 @@ pub fn set_item(slot_id: StorageSlotId, value: Word) -> (StorageCommitmentRoot, 
             value[0],
             ret_area.as_mut_ptr(),
         );
-        let (comm, value) = ret_area.assume_init();
-        (comm.reverse(), value.reverse())
+        ret_area.assume_init().reverse()
     }
 }
 
@@ -172,26 +170,21 @@ pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
 /// Sets a map item in the account storage.
 ///
 /// Inputs: slot_id, key, value
-/// Outputs: (map_old_root, map_old_value)
+/// Outputs: old_value
 ///
 /// Where:
 /// - slot_id identifies the map slot where the key should be set.
 /// - key is the key to set.
 /// - value is the value to set.
-/// - map_old_root is the old map root.
-/// - map_old_value is the old value at key.
+/// - old_value is the old value at key.
 ///
 /// Panics if:
 /// - the requested slot does not exist in the account storage.
 /// - the slot content is not a map.
 #[inline]
-pub fn set_map_item(
-    slot_id: StorageSlotId,
-    key: Word,
-    value: Word,
-) -> (StorageCommitmentRoot, Word) {
+pub fn set_map_item(slot_id: StorageSlotId, key: Word, value: Word) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<(StorageCommitmentRoot, Word)>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_set_storage_map_item(
             slot_id.prefix(),
             slot_id.suffix(),
@@ -205,7 +198,6 @@ pub fn set_map_item(
             value[0],
             ret_area.as_mut_ptr(),
         );
-        let (comm, value) = ret_area.assume_init();
-        (comm.reverse(), value.reverse())
+        ret_area.assume_init().reverse()
     }
 }

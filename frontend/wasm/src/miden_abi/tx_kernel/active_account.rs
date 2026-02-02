@@ -62,19 +62,27 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     active_account.insert(
         Symbol::from(GET_STORAGE_ITEM),
-        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt], [Felt, Felt, Felt, Felt]),
     );
     active_account.insert(
         Symbol::from(GET_INITIAL_STORAGE_ITEM),
-        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt], [Felt, Felt, Felt, Felt]),
     );
     active_account.insert(
         Symbol::from(GET_STORAGE_MAP_ITEM),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt, Felt, Felt, Felt, Felt, Felt],
+            [Felt, Felt, Felt, Felt],
+        ),
     );
     active_account.insert(
         Symbol::from(GET_INITIAL_STORAGE_MAP_ITEM),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt, Felt, Felt, Felt, Felt, Felt],
+            [Felt, Felt, Felt, Felt],
+        ),
     );
     active_account.insert(
         Symbol::from(GET_BALANCE),
