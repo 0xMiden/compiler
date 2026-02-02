@@ -43,7 +43,6 @@ mod component {
 #[miden_test_suite]
 mod tests {
     use miden::Felt;
-    use miden_lib::account::auth::AuthRpoFalcon512;
     use miden_protocol::account::{
         AccountBuilder, AccountComponent, auth::AuthSecretKey, component::InitStorageData,
     };
