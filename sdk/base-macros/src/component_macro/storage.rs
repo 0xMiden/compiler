@@ -1,8 +1,15 @@
+use std::collections::HashMap;
+
 use quote::quote;
 use syn::spanned::Spanned;
 
 use crate::account_component_metadata::AccountComponentMetadataBuilder;
 
+/// Normalizes a storage slot name component into a valid identifier-like segment.
+///
+/// This is a lossy transformation: characters outside `[A-Za-z0-9_]` are replaced with `_`, and
+/// empty/leading-underscore components are prefixed to avoid invalid identifiers. Callers should
+/// ensure the resulting slot names remain unique.
 fn sanitize_slot_name_component(component: &str) -> String {
     let mut out: String = component
         .chars()
@@ -95,9 +102,12 @@ pub fn process_storage_fields(
 ) -> Result<Vec<proc_macro2::TokenStream>, syn::Error> {
     let mut field_infos = Vec::new();
     let mut errors = Vec::new();
+    let mut slot_names = HashMap::<String, String>::new();
+    let mut slot_ids = HashMap::<(u64, u64), String>::new();
 
     for field in fields.named.iter_mut() {
         let field_name = field.ident.as_ref().expect("Named field must have an identifier");
+        let field_name_str = field_name.to_string();
         let field_type = &field.ty;
         let mut storage_args = None;
         let mut attr_indices_to_remove = Vec::new();
@@ -123,17 +133,41 @@ pub fn process_storage_fields(
         if let Some(args) = storage_args {
             // TODO: remove sanitazing, just : -> _ in the package name
             let namespace = sanitize_slot_name_component(storage_namespace);
-            let field_component = sanitize_slot_name_component(&field_name.to_string());
+            let field_component = sanitize_slot_name_component(&field_name_str);
             // TODO: remove `miden::component`
             let slot_name_str = format!("miden::component::{namespace}::{field_component}");
-            let slot_name =
-                miden_protocol::account::StorageSlotName::new(slot_name_str).map_err(|err| {
+            if let Some(existing_field) = slot_names.get(&slot_name_str) {
+                errors.push(syn::Error::new(
+                    field.span(),
+                    format!(
+                        "storage slot name '{slot_name_str}' for field '{field_name_str}' \
+                         conflicts with field '{existing_field}'"
+                    ),
+                ));
+                continue;
+            }
+
+            let slot_name = miden_protocol::account::StorageSlotName::new(slot_name_str.clone())
+                .map_err(|err| {
                     syn::Error::new(
                         field.span(),
                         format!("failed to construct storage slot name: {err}"),
                     )
                 })?;
             let slot_id = slot_name.id();
+            let slot_id_key = (slot_id.suffix().as_int(), slot_id.prefix().as_int());
+            if let Some(existing_field) = slot_ids.get(&slot_id_key) {
+                errors.push(syn::Error::new(
+                    field.span(),
+                    format!(
+                        "storage slot id for field '{field_name_str}' conflicts with field \
+                         '{existing_field}'"
+                    ),
+                ));
+                continue;
+            }
+            slot_names.insert(slot_name_str, field_name_str.clone());
+            slot_ids.insert(slot_id_key, field_name_str);
 
             builder.add_storage_entry(
                 slot_name.clone(),
