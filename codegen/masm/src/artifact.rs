@@ -153,15 +153,19 @@ impl fmt::Display for MasmComponent {
         use crate::intrinsics::INTRINSICS_MODULE_NAMES;
 
         for module in self.modules.iter() {
-            // Skip printing the standard library modules and intrinsics
-            // modules to focus on the user-defined modules and avoid the
+            // Skip printing the standard library modules and intrinsics modules to focus on the
+            // user-defined modules and avoid the
             // stack overflow error when printing large programs
             // https://github.com/0xMiden/miden-formatting/issues/4
             let module_name = module.path().as_str();
+            let module_name_trimmed = module_name.trim_start_matches("::");
             if INTRINSICS_MODULE_NAMES.contains(&module_name) {
                 continue;
             }
-            if module.is_in_namespace(Path::new("std")) {
+            if module.is_in_namespace(Path::new("std"))
+                || module_name_trimmed.starts_with("miden::core")
+                || module_name_trimmed.starts_with("miden::protocol")
+            {
                 continue;
             } else {
                 writeln!(f, "# mod {}\n", &module_name)?;
