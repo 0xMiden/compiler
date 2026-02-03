@@ -1,0 +1,21 @@
+[package]
+name = "midenc-dialect-debuginfo"
+description = "Miden IR Debug Info Dialect"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["std"]
+std = ["midenc-hir/std"]
+
+[dependencies]
+midenc-hir.workspace = true
+paste.workspace = true
+log.workspace = true
