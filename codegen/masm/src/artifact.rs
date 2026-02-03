@@ -14,7 +14,7 @@ use miden_mast_package::{MastArtifact, Package};
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
-    diagnostics::{Report, SourceSpan, Span},
+    diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
 };
 
 use crate::{TraceEvent, lower::NativePtr, masm};
@@ -378,7 +378,8 @@ impl MasmComponent {
             body,
         );
         exe.define_procedure(start, source_manager)
-            .map_err(|err| Report::msg(err.to_string()))?;
+            .into_diagnostic()
+            .wrap_err("failed to define executable `main` procedure")?;
         Ok(Arc::from(exe))
     }
 

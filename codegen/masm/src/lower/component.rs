@@ -9,7 +9,7 @@ use midenc_hir::{
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::{
     TargetEnv,
-    diagnostics::{Report, Spanned},
+    diagnostics::{Report, Spanned, WrapErr},
 };
 use smallvec::SmallVec;
 
@@ -60,7 +60,7 @@ impl ToMasmComponent for builtin::Component {
                 // TODO(pauls): Narrow this to only be true if the target env is not 'rollup', we
                 // cannot currently do so because we do not have sufficient Cargo metadata yet in
                 // 'cargo miden build' to detect the target env, and we default it to 'rollup'
-                let is_wrapper = component_path.as_path().as_str() == "\"root_ns:root@1.0.0\"";
+                let is_wrapper = link_info.component().is_synthetic_wrapper();
                 let path = if is_wrapper {
                     let mut path = component_path.clone();
                     path.push(entry_id.module.as_str());
@@ -251,7 +251,8 @@ impl MasmComponentBuilder<'_> {
 
             module
                 .define_procedure(init, self.source_manager.clone())
-                .map_err(|err| Report::msg(err.to_string()))?;
+                .into_diagnostic()
+                .wrap_err("failed to define component `init` procedure")?;
         } else {
             assert!(
                 self.init_body.is_empty(),
@@ -325,7 +326,8 @@ impl MasmComponentBuilder<'_> {
         );
         module
             .define_procedure(procedure, self.source_manager.clone())
-            .map_err(|err| Report::msg(err.to_string()))?;
+            .into_diagnostic()
+            .wrap_err("failed to define MASM procedure")?;
 
         Ok(())
     }
