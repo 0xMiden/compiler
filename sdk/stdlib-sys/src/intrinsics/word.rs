@@ -102,3 +102,12 @@ impl AsRef<Word> for Word {
         self
     }
 }
+
+impl Default for Word {
+    /// Creates a new `Word` with all four field elements set to zero.
+    fn default() -> Self {
+        Self {
+            inner: (felt!(0), felt!(0), felt!(0), felt!(0)),
+        }
+    }
+}
