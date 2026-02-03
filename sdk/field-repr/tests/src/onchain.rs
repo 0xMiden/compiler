@@ -6,14 +6,14 @@
 use std::borrow::Cow;
 
 use miden_debug::{ExecutionTrace, Felt as TestFelt};
-use miden_felt_repr::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
 use miden_field::Felt;
+use miden_field_repr::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
 use miden_integration_tests::testing::{Initializer, eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::build_felt_repr_test;
 
-/// Converts `miden-felt-repr` felts to `miden-core` felts for VM memory initialization.
+/// Converts `miden-field-repr` felts to `miden-core` felts for VM memory initialization.
 fn to_core_felts(felts: &[ReprFelt]) -> Vec<miden_core::Felt> {
     felts.iter().copied().map(Into::into).collect()
 }
@@ -54,7 +54,7 @@ struct TwoFelts {
     b: Felt,
 }
 
-/// Test using `FeltReader` from `miden-felt-repr`.
+/// Test using `FeltReader` from `miden-field-repr`.
 #[test]
 fn test_felt_reader() {
     let original = TwoFelts {
@@ -64,7 +64,7 @@ fn test_felt_reader() {
     let serialized = original.to_felt_repr();
 
     let onchain_code = r#"(input: Word) -> Word {
-        use miden_felt_repr::FeltReader;
+        use miden_field_repr::FeltReader;
 
         let input_arr: [Felt; 4] = input.into();
 
@@ -132,7 +132,7 @@ fn test_two_felts_struct_round_trip() {
     let serialized = original.to_felt_repr();
 
     let onchain_code = r#"(input: [Felt; 2]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct TestStruct {
@@ -205,7 +205,7 @@ fn test_five_felts_struct_round_trip() {
     assert_eq!(serialized[4], Felt::from_u64_unchecked(55555));
 
     let onchain_code = r#"(input: [Felt; 5]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct TestStruct {
@@ -285,7 +285,7 @@ fn test_minimal_u64_bug() {
     assert_eq!(serialized.len(), 6);
 
     let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         assert_eq(input[0], felt!(111111));
         assert_eq(input[1], felt!(0));
@@ -372,7 +372,7 @@ fn test_mixed_types_no_u64_round_trip() {
     assert_eq!(serialized.len(), 6);
 
     let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct TestStruct {
@@ -465,7 +465,7 @@ fn test_nested_struct_round_trip() {
     assert_eq!(serialized.len(), 7);
 
     let onchain_code = r#"(input: [Felt; 7]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct Inner {
@@ -554,7 +554,7 @@ fn test_enum_unit_round_trip() {
     assert_eq!(serialized[1], Felt::from_u64_unchecked(1));
 
     let onchain_code = r#"(input: [Felt; 2]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         enum SimpleEnum {
@@ -622,7 +622,7 @@ fn test_enum_tuple_round_trip() {
     assert_eq!(serialized[2], Felt::from_u64_unchecked(222));
 
     let onchain_code = r#"(input: [Felt; 3]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         enum MixedEnum {
@@ -704,7 +704,7 @@ fn test_struct_with_enum_round_trip() {
     assert_eq!(serialized.len(), 6);
 
     let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct Inner {
@@ -795,7 +795,7 @@ fn test_enum_nested_with_struct_round_trip() {
     assert_eq!(serialized.len(), 7);
 
     let onchain_code = r#"(input: [Felt; 7]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         enum State {
@@ -879,7 +879,7 @@ fn test_struct_with_option_round_trip() {
     assert_eq!(serialized_some.len(), 4);
 
     let onchain_code = r#"(input: [Felt; 4]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct WithOption {
@@ -960,7 +960,7 @@ fn test_struct_with_vec_round_trip() {
     assert_eq!(serialized.len(), 6);
 
     let onchain_code = r#"(input: [Felt; 6]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct WithVec {
@@ -1022,7 +1022,7 @@ fn test_tuple_struct_round_trip() {
     );
 
     let onchain_code = r#"(input: [Felt; 3]) -> Vec<Felt> {
-        use miden_felt_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
         #[derive(FromFeltRepr, ToFeltRepr)]
         struct TupleStruct(u32, bool, Felt);

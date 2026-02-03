@@ -1457,8 +1457,8 @@ dependencies = [
  "miden-base",
  "miden-base-macros",
  "miden-base-sys",
- "miden-felt-repr",
  "miden-field",
+ "miden-field-repr",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
  "wit-bindgen 0.46.0",
@@ -1560,7 +1560,7 @@ dependencies = [
 name = "miden-base-sys"
 version = "0.8.1"
 dependencies = [
- "miden-felt-repr",
+ "miden-field-repr",
  "miden-stdlib-sys",
 ]
 
@@ -1676,28 +1676,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-felt-repr"
-version = "0.7.1"
+name = "miden-field"
+version = "0.8.0"
 dependencies = [
  "miden-core",
- "miden-felt-repr-derive",
- "miden-field",
 ]
 
 [[package]]
-name = "miden-felt-repr-derive"
+name = "miden-field-repr"
+version = "0.7.1"
+dependencies = [
+ "miden-core",
+ "miden-field",
+ "miden-field-repr-derive",
+]
+
+[[package]]
+name = "miden-field-repr-derive"
 version = "0.7.1"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
-]
-
-[[package]]
-name = "miden-field"
-version = "0.8.0"
-dependencies = [
- "miden-core",
 ]
 
 [[package]]
