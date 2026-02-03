@@ -357,7 +357,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
             else
                 trace.240
                 nop
-                exec.::intrinsics::mem::heap_base
+                exec.::"root_ns:root@1.0.0"::vec_alloc_vec::"intrinsics::mem::heap_base"
                 trace.252
                 nop
                 trace.240
@@ -455,6 +455,17 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
     else
         nop
     end
+end
+
+@callconv("C")
+proc intrinsics::mem::heap_base(
+
+) -> i32
+    trace.240
+    nop
+    exec.::intrinsics::mem::heap_base
+    trace.252
+    nop
 end
 
 @callconv("C")

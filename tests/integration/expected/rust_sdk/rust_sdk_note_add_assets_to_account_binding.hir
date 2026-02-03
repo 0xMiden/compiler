@@ -1,12 +1,12 @@
 builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @rust_sdk_note_add_assets_to_account_binding {
         private builtin.function @__wasm_call_ctors() {
-        ^block7:
+        ^block5:
             builtin.ret ;
         };
 
         private builtin.function @__rustc::__rust_alloc(v0: i32, v1: i32) -> i32 {
-        ^block9(v0: i32, v1: i32):
+        ^block7(v0: i32, v1: i32):
             v3 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v4 = hir.bitcast v3 : ptr<byte, i32>;
             v5 = hir.load v4 : i32;
@@ -17,12 +17,12 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @__rustc::__rust_dealloc(v9: i32, v10: i32, v11: i32) {
-        ^block11(v9: i32, v10: i32, v11: i32):
+        ^block9(v9: i32, v10: i32, v11: i32):
             builtin.ret ;
         };
 
         private builtin.function @__rustc::__rust_alloc_zeroed(v12: i32, v13: i32) -> i32 {
-        ^block13(v12: i32, v13: i32):
+        ^block11(v12: i32, v13: i32):
             v15 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v16 = hir.bitcast v15 : ptr<byte, i32>;
             v17 = hir.load v16 : i32;
@@ -36,10 +36,10 @@ builtin.component miden:base/note-script@1.0.0 {
             v24 = hir.bitcast v23 : i32;
             v26 = arith.neq v24, v853 : i1;
             scf.if v26{
-            ^block15:
+            ^block13:
                 scf.yield ;
             } else {
-            ^block16:
+            ^block14:
                 v851 = arith.constant 0 : i32;
                 v852 = arith.constant 0 : i32;
                 v28 = arith.eq v12, v852 : i1;
@@ -47,10 +47,10 @@ builtin.component miden:base/note-script@1.0.0 {
                 v30 = hir.bitcast v29 : i32;
                 v32 = arith.neq v30, v851 : i1;
                 scf.if v32{
-                ^block108:
+                ^block110:
                     scf.yield ;
                 } else {
-                ^block17:
+                ^block15:
                     v845 = arith.constant 0 : u8;
                     v35 = hir.bitcast v12 : u32;
                     v36 = hir.bitcast v20 : u32;
@@ -64,24 +64,24 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @rust_sdk_note_add_assets_to_account_binding::bindings::__link_custom_section_describing_imports() {
-        ^block18:
+        ^block16:
             builtin.ret ;
         };
 
         private builtin.function @miden:base/note-script@1.0.0#run(v39: felt, v40: felt, v41: felt, v42: felt) {
-        ^block20(v39: felt, v40: felt, v41: felt, v42: felt):
+        ^block18(v39: felt, v40: felt, v41: felt, v42: felt):
             hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/wit_bindgen::rt::run_ctors_once()
             hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/miden_base_sys::bindings::active_note::add_assets_to_account()
             builtin.ret ;
         };
 
         private builtin.function @__rustc::__rust_no_alloc_shim_is_unstable_v2() {
-        ^block22:
+        ^block20:
             builtin.ret ;
         };
 
         private builtin.function @wit_bindgen::rt::run_ctors_once() {
-        ^block24:
+        ^block22:
             v44 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v45 = hir.bitcast v44 : ptr<byte, i32>;
             v46 = hir.load v45 : i32;
@@ -95,10 +95,10 @@ builtin.component miden:base/note-script@1.0.0 {
             v53 = hir.bitcast v52 : i32;
             v55 = arith.neq v53, v43 : i1;
             scf.if v55{
-            ^block26:
+            ^block24:
                 scf.yield ;
             } else {
-            ^block27:
+            ^block25:
                 v56 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
                 v57 = hir.bitcast v56 : ptr<byte, i32>;
                 v58 = hir.load v57 : i32;
@@ -115,7 +115,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v66: i32, v67: i32, v68: i32) -> i32 {
-        ^block28(v66: i32, v67: i32, v68: i32):
+        ^block26(v66: i32, v67: i32, v68: i32):
             v71 = arith.constant 16 : i32;
             v70 = arith.constant 0 : i32;
             v859 = arith.constant 16 : u32;
@@ -131,12 +131,12 @@ builtin.component miden:base/note-script@1.0.0 {
             v83 = arith.band v80, v82 : i32;
             v85 = arith.neq v83, v899 : i1;
             v868, v869 = scf.if v85 : i32, u32 {
-            ^block114:
+            ^block116:
                 v860 = arith.constant 0 : u32;
                 v864 = ub.poison i32 : i32;
                 scf.yield v864, v860;
             } else {
-            ^block31:
+            ^block29:
                 v87 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/<core::ptr::alignment::Alignment>::max(v67, v80) : i32
                 v898 = arith.constant 0 : i32;
                 v86 = arith.constant -2147483648 : i32;
@@ -148,11 +148,11 @@ builtin.component miden:base/note-script@1.0.0 {
                 v93 = hir.bitcast v92 : i32;
                 v95 = arith.neq v93, v898 : i1;
                 v883 = scf.if v95 : i32 {
-                ^block113:
+                ^block115:
                     v897 = ub.poison i32 : i32;
                     scf.yield v897;
                 } else {
-                ^block32:
+                ^block30:
                     v895 = arith.constant 0 : i32;
                     v101 = arith.sub v895, v87 : i32 #[overflow = wrapping];
                     v896 = arith.constant -1 : i32;
@@ -168,56 +168,54 @@ builtin.component miden:base/note-script@1.0.0 {
                     v894 = arith.constant 0 : i32;
                     v109 = arith.neq v107, v894 : i1;
                     scf.if v109{
-                    ^block112:
+                    ^block114:
                         scf.yield ;
                     } else {
-                    ^block34:
-                        v110 = hir.exec @intrinsics/mem/heap_base() : u32
+                    ^block32:
+                        v110 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/intrinsics::mem::heap_base() : i32
                         v111 = hir.mem_size  : u32;
-                        v119 = hir.bitcast v66 : u32;
+                        v117 = hir.bitcast v66 : u32;
                         v893 = arith.constant 4 : u32;
-                        v121 = arith.mod v119, v893 : u32;
-                        hir.assertz v121 #[code = 250];
+                        v119 = arith.mod v117, v893 : u32;
+                        hir.assertz v119 #[code = 250];
                         v892 = arith.constant 16 : u32;
                         v112 = hir.bitcast v111 : i32;
                         v115 = arith.shl v112, v892 : i32;
-                        v116 = hir.bitcast v115 : u32;
-                        v117 = arith.add v110, v116 : u32 #[overflow = wrapping];
-                        v118 = hir.bitcast v117 : i32;
-                        v122 = hir.int_to_ptr v119 : ptr<byte, i32>;
-                        hir.store v122, v118;
+                        v116 = arith.add v110, v115 : i32 #[overflow = wrapping];
+                        v120 = hir.int_to_ptr v117 : ptr<byte, i32>;
+                        hir.store v120, v116;
                         scf.yield ;
                     };
-                    v125 = hir.bitcast v66 : u32;
+                    v123 = hir.bitcast v66 : u32;
                     v891 = arith.constant 4 : u32;
-                    v127 = arith.mod v125, v891 : u32;
-                    hir.assertz v127 #[code = 250];
-                    v128 = hir.int_to_ptr v125 : ptr<byte, i32>;
-                    v129 = hir.load v128 : i32;
+                    v125 = arith.mod v123, v891 : u32;
+                    hir.assertz v125 #[code = 250];
+                    v126 = hir.int_to_ptr v123 : ptr<byte, i32>;
+                    v127 = hir.load v126 : i32;
                     v889 = arith.constant 0 : i32;
                     v890 = arith.constant -1 : i32;
-                    v131 = arith.bxor v129, v890 : i32;
-                    v133 = hir.bitcast v131 : u32;
-                    v132 = hir.bitcast v102 : u32;
-                    v134 = arith.gt v132, v133 : i1;
-                    v135 = arith.zext v134 : u32;
-                    v136 = hir.bitcast v135 : i32;
-                    v138 = arith.neq v136, v889 : i1;
-                    v882 = scf.if v138 : i32 {
-                    ^block35:
+                    v129 = arith.bxor v127, v890 : i32;
+                    v131 = hir.bitcast v129 : u32;
+                    v130 = hir.bitcast v102 : u32;
+                    v132 = arith.gt v130, v131 : i1;
+                    v133 = arith.zext v132 : u32;
+                    v134 = hir.bitcast v133 : i32;
+                    v136 = arith.neq v134, v889 : i1;
+                    v882 = scf.if v136 : i32 {
+                    ^block33:
                         v888 = arith.constant 0 : i32;
                         scf.yield v888;
                     } else {
-                    ^block36:
-                        v140 = hir.bitcast v66 : u32;
+                    ^block34:
+                        v138 = hir.bitcast v66 : u32;
                         v887 = arith.constant 4 : u32;
-                        v142 = arith.mod v140, v887 : u32;
-                        hir.assertz v142 #[code = 250];
-                        v139 = arith.add v129, v102 : i32 #[overflow = wrapping];
-                        v143 = hir.int_to_ptr v140 : ptr<byte, i32>;
-                        hir.store v143, v139;
-                        v145 = arith.add v129, v87 : i32 #[overflow = wrapping];
-                        scf.yield v145;
+                        v140 = arith.mod v138, v887 : u32;
+                        hir.assertz v140 #[code = 250];
+                        v137 = arith.add v127, v102 : i32 #[overflow = wrapping];
+                        v141 = hir.int_to_ptr v138 : ptr<byte, i32>;
+                        hir.store v141, v137;
+                        v143 = arith.add v127, v87 : i32 #[overflow = wrapping];
+                        scf.yield v143;
                     };
                     scf.yield v882;
                 };
@@ -228,15 +226,21 @@ builtin.component miden:base/note-script@1.0.0 {
             };
             v885 = arith.constant 0 : u32;
             v881 = arith.eq v869, v885 : i1;
-            cf.cond_br v881 ^block30, ^block116(v868);
-        ^block30:
+            cf.cond_br v881 ^block28, ^block118(v868);
+        ^block28:
             ub.unreachable ;
-        ^block116(v861: i32):
+        ^block118(v861: i32):
             builtin.ret v861;
         };
 
+        private builtin.function @intrinsics::mem::heap_base() -> i32 {
+        ^block35:
+            v146 = hir.exec @intrinsics/mem/heap_base() : i32
+            builtin.ret v146;
+        };
+
         private builtin.function @<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(v148: i32) {
-        ^block37(v148: i32):
+        ^block39(v148: i32):
             v151 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__stack_pointer : ptr<byte, u8>
             v152 = hir.bitcast v151 : ptr<byte, i32>;
             v153 = hir.load v152 : i32;
@@ -282,7 +286,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<alloc::raw_vec::RawVecInner>::with_capacity_in(v185: i32, v186: i32, v187: i32, v188: i32) {
-        ^block39(v185: i32, v186: i32, v187: i32, v188: i32):
+        ^block41(v185: i32, v186: i32, v187: i32, v188: i32):
             v190 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__stack_pointer : ptr<byte, u8>
             v191 = hir.bitcast v190 : ptr<byte, i32>;
             v192 = hir.load v191 : i32;
@@ -317,8 +321,8 @@ builtin.component miden:base/note-script@1.0.0 {
             v216 = arith.zext v215 : u32;
             v217 = hir.bitcast v216 : i32;
             v219 = arith.neq v217, v913 : i1;
-            cf.cond_br v219 ^block41, ^block42;
-        ^block41:
+            cf.cond_br v219 ^block43, ^block44;
+        ^block43:
             v228 = arith.constant 12 : u32;
             v227 = hir.bitcast v194 : u32;
             v229 = arith.add v227, v228 : u32 #[overflow = checked];
@@ -347,7 +351,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v247 = hir.bitcast v246 : ptr<byte, i32>;
             hir.store v247, v245;
             builtin.ret ;
-        ^block42:
+        ^block44:
             v907 = arith.constant 12 : u32;
             v220 = hir.bitcast v194 : u32;
             v222 = arith.add v220, v907 : u32 #[overflow = checked];
@@ -361,7 +365,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @miden_base_sys::bindings::active_note::get_assets(v248: i32) {
-        ^block43(v248: i32):
+        ^block45(v248: i32):
             v250 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__stack_pointer : ptr<byte, u8>
             v251 = hir.bitcast v250 : ptr<byte, i32>;
             v252 = hir.load v251 : i32;
@@ -417,7 +421,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @miden_base_sys::bindings::active_note::add_assets_to_account() {
-        ^block45:
+        ^block47:
             v294 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__stack_pointer : ptr<byte, u8>
             v295 = hir.bitcast v294 : ptr<byte, i32>;
             v296 = hir.load v295 : i32;
@@ -487,7 +491,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v349 = hir.int_to_ptr v346 : ptr<byte, i32>;
             hir.store v349, v316;
             v963, v964, v965, v966 = scf.while v326, v298, v316 : i32, i32, i32, i32 {
-            ^block129(v967: i32, v968: i32, v969: i32):
+            ^block131(v967: i32, v968: i32, v969: i32):
                 v984 = arith.constant 0 : i32;
                 v293 = arith.constant 0 : i32;
                 v352 = arith.eq v967, v293 : i1;
@@ -495,11 +499,11 @@ builtin.component miden:base/note-script@1.0.0 {
                 v354 = hir.bitcast v353 : i32;
                 v356 = arith.neq v354, v984 : i1;
                 v958, v959 = scf.if v356 : i32, i32 {
-                ^block128:
+                ^block130:
                     v930 = ub.poison i32 : i32;
                     scf.yield v930, v930;
                 } else {
-                ^block50:
+                ^block52:
                     v359 = arith.constant 16 : i32;
                     v360 = arith.add v969, v359 : i32 #[overflow = wrapping];
                     v983 = arith.constant 4 : u32;
@@ -557,7 +561,7 @@ builtin.component miden:base/note-script@1.0.0 {
                 v952 = arith.trunc v962 : i1;
                 scf.condition v952, v958, v960, v959, v968;
             } do {
-            ^block130(v970: i32, v971: i32, v972: i32, v973: i32):
+            ^block132(v970: i32, v971: i32, v972: i32, v973: i32):
                 scf.yield v970, v971, v972;
             };
             hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/<alloc::vec::into_iter::IntoIter<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop(v966)
@@ -570,7 +574,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @miden_base_sys::bindings::native_account::add_asset(v401: i32, v402: i32) {
-        ^block51(v401: i32, v402: i32):
+        ^block53(v401: i32, v402: i32):
             v404 = arith.constant 12 : u32;
             v403 = hir.bitcast v402 : u32;
             v405 = arith.add v403, v404 : u32 #[overflow = checked];
@@ -606,7 +610,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<alloc::vec::into_iter::IntoIter<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop(v429: i32) {
-        ^block53(v429: i32):
+        ^block55(v429: i32):
             v431 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__stack_pointer : ptr<byte, u8>
             v432 = hir.bitcast v431 : ptr<byte, i32>;
             v433 = hir.load v432 : i32;
@@ -635,7 +639,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<<alloc::vec::into_iter::IntoIter<_, _> as core::ops::drop::Drop>::drop::DropGuard<miden_base_sys::bindings::types::Asset, alloc::alloc::Global> as core::ops::drop::Drop>::drop(v450: i32) {
-        ^block55(v450: i32):
+        ^block57(v450: i32):
             v452 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__stack_pointer : ptr<byte, u8>
             v453 = hir.bitcast v452 : ptr<byte, i32>;
             v454 = hir.load v453 : i32;
@@ -692,14 +696,14 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop(v494: i32) {
-        ^block57(v494: i32):
+        ^block59(v494: i32):
             v495 = arith.constant 16 : i32;
             hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/<alloc::raw_vec::RawVecInner>::deallocate(v494, v495, v495)
             builtin.ret ;
         };
 
         private builtin.function @<alloc::alloc::Global>::alloc_impl(v497: i32, v498: i32, v499: i32, v500: i32) {
-        ^block59(v497: i32, v498: i32, v499: i32, v500: i32):
+        ^block61(v497: i32, v498: i32, v499: i32, v500: i32):
             v1019 = arith.constant 0 : i32;
             v501 = arith.constant 0 : i32;
             v502 = arith.eq v499, v501 : i1;
@@ -707,19 +711,19 @@ builtin.component miden:base/note-script@1.0.0 {
             v504 = hir.bitcast v503 : i32;
             v506 = arith.neq v504, v1019 : i1;
             v1015 = scf.if v506 : i32 {
-            ^block131:
+            ^block133:
                 scf.yield v498;
             } else {
-            ^block62:
+            ^block64:
                 hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__rustc::__rust_no_alloc_shim_is_unstable_v2()
                 v1018 = arith.constant 0 : i32;
                 v508 = arith.neq v500, v1018 : i1;
                 v1014 = scf.if v508 : i32 {
-                ^block63:
+                ^block65:
                     v510 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__rustc::__rust_alloc_zeroed(v499, v498) : i32
                     scf.yield v510;
                 } else {
-                ^block64:
+                ^block66:
                     v509 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__rustc::__rust_alloc(v499, v498) : i32
                     scf.yield v509;
                 };
@@ -743,7 +747,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<alloc::raw_vec::RawVecInner>::deallocate(v524: i32, v525: i32, v526: i32) {
-        ^block65(v524: i32, v525: i32, v526: i32):
+        ^block67(v524: i32, v525: i32, v526: i32):
             v528 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__stack_pointer : ptr<byte, u8>
             v529 = hir.bitcast v528 : ptr<byte, i32>;
             v530 = hir.load v529 : i32;
@@ -770,10 +774,10 @@ builtin.component miden:base/note-script@1.0.0 {
             v547 = hir.bitcast v546 : i32;
             v549 = arith.neq v547, v1026 : i1;
             scf.if v549{
-            ^block134:
+            ^block136:
                 scf.yield ;
             } else {
-            ^block68:
+            ^block70:
                 v1025 = arith.constant 4 : u32;
                 v550 = hir.bitcast v532 : u32;
                 v552 = arith.add v550, v1025 : u32 #[overflow = checked];
@@ -802,7 +806,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<alloc::raw_vec::RawVecInner>::current_memory(v569: i32, v570: i32, v571: i32, v572: i32) {
-        ^block69(v569: i32, v570: i32, v571: i32, v572: i32):
+        ^block71(v569: i32, v570: i32, v571: i32, v572: i32):
             v1052 = arith.constant 0 : i32;
             v573 = arith.constant 0 : i32;
             v577 = arith.eq v572, v573 : i1;
@@ -810,12 +814,12 @@ builtin.component miden:base/note-script@1.0.0 {
             v579 = hir.bitcast v578 : i32;
             v581 = arith.neq v579, v1052 : i1;
             v1039, v1040 = scf.if v581 : i32, i32 {
-            ^block137:
+            ^block139:
                 v1051 = arith.constant 0 : i32;
                 v575 = arith.constant 4 : i32;
                 scf.yield v575, v1051;
             } else {
-            ^block72:
+            ^block74:
                 v582 = hir.bitcast v570 : u32;
                 v617 = arith.constant 4 : u32;
                 v584 = arith.mod v582, v617 : u32;
@@ -829,11 +833,11 @@ builtin.component miden:base/note-script@1.0.0 {
                 v590 = hir.bitcast v589 : i32;
                 v592 = arith.neq v590, v1049 : i1;
                 v1037 = scf.if v592 : i32 {
-                ^block136:
+                ^block138:
                     v1048 = arith.constant 0 : i32;
                     scf.yield v1048;
                 } else {
-                ^block73:
+                ^block75:
                     v1047 = arith.constant 4 : u32;
                     v593 = hir.bitcast v569 : u32;
                     v595 = arith.add v593, v1047 : u32 #[overflow = checked];
@@ -875,7 +879,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<alloc::alloc::Global as core::alloc::Allocator>::deallocate(v620: i32, v621: i32, v622: i32) {
-        ^block74(v620: i32, v621: i32, v622: i32):
+        ^block76(v620: i32, v621: i32, v622: i32):
             v1054 = arith.constant 0 : i32;
             v623 = arith.constant 0 : i32;
             v624 = arith.eq v622, v623 : i1;
@@ -883,10 +887,10 @@ builtin.component miden:base/note-script@1.0.0 {
             v626 = hir.bitcast v625 : i32;
             v628 = arith.neq v626, v1054 : i1;
             scf.if v628{
-            ^block76:
+            ^block78:
                 scf.yield ;
             } else {
-            ^block77:
+            ^block79:
                 hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__rustc::__rust_dealloc(v620, v622, v621)
                 scf.yield ;
             };
@@ -894,7 +898,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<alloc::alloc::Global as core::alloc::Allocator>::allocate(v629: i32, v630: i32, v631: i32) {
-        ^block78(v629: i32, v630: i32, v631: i32):
+        ^block80(v629: i32, v630: i32, v631: i32):
             v633 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__stack_pointer : ptr<byte, u8>
             v634 = hir.bitcast v633 : ptr<byte, i32>;
             v635 = hir.load v634 : i32;
@@ -946,7 +950,7 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @<alloc::raw_vec::RawVecInner>::try_allocate_in(v671: i32, v672: i32, v673: i32, v674: i32, v675: i32) {
-        ^block80(v671: i32, v672: i32, v673: i32, v674: i32, v675: i32):
+        ^block82(v671: i32, v672: i32, v673: i32, v674: i32, v675: i32):
             v678 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/__stack_pointer : ptr<byte, u8>
             v679 = hir.bitcast v678 : ptr<byte, i32>;
             v680 = hir.load v679 : i32;
@@ -977,12 +981,12 @@ builtin.component miden:base/note-script@1.0.0 {
             v703 = arith.trunc v702 : i32;
             v705 = arith.neq v703, v1162 : i1;
             v1075, v1076, v1077, v1078, v1079, v1080 = scf.if v705 : i32, i32, i32, i32, i32, u32 {
-            ^block141:
+            ^block143:
                 v1060 = arith.constant 0 : u32;
                 v1067 = ub.poison i32 : i32;
                 scf.yield v671, v682, v1067, v1067, v1067, v1060;
             } else {
-            ^block85:
+            ^block87:
                 v706 = arith.trunc v697 : i32;
                 v1161 = arith.constant 0 : i32;
                 v707 = arith.constant -2147483648 : i32;
@@ -994,15 +998,15 @@ builtin.component miden:base/note-script@1.0.0 {
                 v713 = hir.bitcast v712 : i32;
                 v715 = arith.neq v713, v1161 : i1;
                 v1123 = scf.if v715 : i32 {
-                ^block83:
+                ^block85:
                     v1160 = arith.constant 0 : i32;
                     v726 = arith.neq v706, v1160 : i1;
                     v1122 = scf.if v726 : i32 {
-                    ^block87:
+                    ^block89:
                         v1159 = arith.constant 0 : i32;
                         v742 = arith.neq v673, v1159 : i1;
                         v1121 = scf.if v742 : i32 {
-                        ^block90:
+                        ^block92:
                             v724 = arith.constant 1 : i32;
                             hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/<alloc::alloc::Global>::alloc_impl(v682, v674, v706, v724)
                             v753 = hir.bitcast v682 : u32;
@@ -1013,7 +1017,7 @@ builtin.component miden:base/note-script@1.0.0 {
                             v757 = hir.load v756 : i32;
                             scf.yield v757;
                         } else {
-                        ^block91:
+                        ^block93:
                             v743 = arith.constant 8 : i32;
                             v744 = arith.add v682, v743 : i32 #[overflow = wrapping];
                             hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/<alloc::alloc::Global as core::alloc::Allocator>::allocate(v744, v674, v706)
@@ -1030,7 +1034,7 @@ builtin.component miden:base/note-script@1.0.0 {
                         v1157 = arith.constant 0 : i32;
                         v760 = arith.neq v1121, v1157 : i1;
                         scf.if v760{
-                        ^block92:
+                        ^block94:
                             v1156 = arith.constant 8 : u32;
                             v777 = hir.bitcast v671 : u32;
                             v779 = arith.add v777, v1156 : u32 #[overflow = checked];
@@ -1049,7 +1053,7 @@ builtin.component miden:base/note-script@1.0.0 {
                             hir.store v789, v672;
                             scf.yield ;
                         } else {
-                        ^block93:
+                        ^block95:
                             v1152 = arith.constant 8 : u32;
                             v763 = hir.bitcast v671 : u32;
                             v765 = arith.add v763, v1152 : u32 #[overflow = checked];
@@ -1073,7 +1077,7 @@ builtin.component miden:base/note-script@1.0.0 {
                         v1120 = cf.select v760, v1148, v1147 : i32;
                         scf.yield v1120;
                     } else {
-                    ^block88:
+                    ^block90:
                         v1146 = arith.constant 8 : u32;
                         v727 = hir.bitcast v671 : u32;
                         v729 = arith.add v727, v1146 : u32 #[overflow = checked];
@@ -1096,7 +1100,7 @@ builtin.component miden:base/note-script@1.0.0 {
                     };
                     scf.yield v1122;
                 } else {
-                ^block86:
+                ^block88:
                     v1140 = ub.poison i32 : i32;
                     scf.yield v1140;
                 };
@@ -1115,7 +1119,7 @@ builtin.component miden:base/note-script@1.0.0 {
             };
             v1081, v1082, v1083 = scf.index_switch v1080 : i32, i32, i32 
             case 0 {
-            ^block84:
+            ^block86:
                 v1134 = arith.constant 4 : u32;
                 v718 = hir.bitcast v1075 : u32;
                 v720 = arith.add v718, v1134 : u32 #[overflow = checked];
@@ -1129,7 +1133,7 @@ builtin.component miden:base/note-script@1.0.0 {
                 scf.yield v1075, v1131, v1076;
             }
             default {
-            ^block145:
+            ^block147:
                 scf.yield v1077, v1078, v1079;
             };
             v793 = hir.bitcast v1081 : u32;
@@ -1147,12 +1151,12 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @alloc::raw_vec::handle_error(v804: i32, v805: i32) {
-        ^block94(v804: i32, v805: i32):
+        ^block96(v804: i32, v805: i32):
             ub.unreachable ;
         };
 
         private builtin.function @<core::ptr::alignment::Alignment>::max(v806: i32, v807: i32) -> i32 {
-        ^block96(v806: i32, v807: i32):
+        ^block98(v806: i32, v807: i32):
             v814 = arith.constant 0 : i32;
             v810 = hir.bitcast v807 : u32;
             v809 = hir.bitcast v806 : u32;
@@ -1165,13 +1169,13 @@ builtin.component miden:base/note-script@1.0.0 {
         };
 
         private builtin.function @miden::protocol::active_note::get_assets(v817: i32) -> i32 {
-        ^block98(v817: i32):
+        ^block100(v817: i32):
             v818, v819 = hir.exec @miden/protocol/active_note/get_assets(v817) : i32, i32
             builtin.ret v818;
         };
 
         private builtin.function @miden::protocol::native_account::add_asset(v821: felt, v822: felt, v823: felt, v824: felt, v825: i32) {
-        ^block103(v821: felt, v822: felt, v823: felt, v824: felt, v825: i32):
+        ^block105(v821: felt, v822: felt, v823: felt, v824: felt, v825: i32):
             v826, v827, v828, v829 = hir.exec @miden/protocol/native_account/add_asset(v821, v822, v823, v824) : felt, felt, felt, felt
             v830 = hir.bitcast v825 : u32;
             v831 = hir.int_to_ptr v830 : ptr<byte, felt>;
@@ -1203,7 +1207,7 @@ builtin.component miden:base/note-script@1.0.0 {
     };
 
     public builtin.function @run(v841: felt, v842: felt, v843: felt, v844: felt) {
-    ^block106(v841: felt, v842: felt, v843: felt, v844: felt):
+    ^block108(v841: felt, v842: felt, v843: felt, v844: felt):
         hir.exec @miden:base/note-script@1.0.0/rust_sdk_note_add_assets_to_account_binding/miden:base/note-script@1.0.0#run(v841, v842, v843, v844)
         builtin.ret ;
     };
