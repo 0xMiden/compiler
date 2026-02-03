@@ -294,7 +294,7 @@ jobs:
           fi
       - name: Test
         run: |
-          cargo make test -E 'test(test_all_templates_and_examples)'
+          cargo make test -E 'test(test_all_templates)'
 
   miden_integration_node_tests:
     name: miden integration node tests
