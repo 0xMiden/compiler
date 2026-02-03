@@ -1,0 +1,19 @@
+public builtin.function @test(v0: u32) -> u32 {
+^block0(v0: u32):
+    v2 = arith.constant 0 : u32;
+    v3 = arith.eq v0, v2 : i1;
+    debuginfo.debug_value v0 #[expression = di.expression()] #[variable = di.local_variable(name = input, file = test.rs, line = 1, column = 1)];
+    v8 = scf.if v3 : u32 {
+    ^block1:
+        v4 = arith.incr v0 : u32;
+        debuginfo.debug_value v4 #[expression = di.expression()] #[variable = di.local_variable(name = result, file = test.rs, line = 2, column = 1)];
+        scf.yield v4;
+    } else {
+    ^block2:
+        v5 = arith.mul v0, v0 : u32 #[overflow = checked];
+        debuginfo.debug_value v5 #[expression = di.expression()] #[variable = di.local_variable(name = result, file = test.rs, line = 2, column = 1)];
+        scf.yield v5;
+    };
+    debuginfo.debug_value v8 #[expression = di.expression()] #[variable = di.local_variable(name = result, file = test.rs, line = 2, column = 1)];
+    builtin.ret v8;
+};

@@ -11,6 +11,7 @@ use miden_mast_package::debug_info::{
     DebugFileInfo, DebugFunctionInfo, DebugInfoSection, DebugPrimitiveType, DebugTypeInfo,
     DebugVariableInfo,
 };
+use midenc_dialect_debuginfo as debuginfo;
 use midenc_hir::{DILocalVariableAttr, DISubprogramAttr, OpExt, Type, dialects::builtin};
 
 /// Builder for constructing a `DebugInfoSection` from HIR components.
@@ -202,7 +203,7 @@ impl DebugInfoBuilder {
     ) {
         for op in block.body() {
             // Check if this is a DbgValue operation
-            if let Some(dbg_value) = op.downcast_ref::<builtin::DbgValue>()
+            if let Some(dbg_value) = op.downcast_ref::<debuginfo::DebugValue>()
                 && let Some(var_info) = self.extract_variable_info(dbg_value.variable())
             {
                 func_info.add_variable(var_info);

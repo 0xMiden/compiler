@@ -1,5 +1,6 @@
 use midenc_dialect_arith as arith;
 use midenc_dialect_cf as cf;
+use midenc_dialect_debuginfo as debuginfo;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
@@ -1229,7 +1230,7 @@ impl HirLowering for arith::Split {
     }
 }
 
-impl HirLowering for builtin::DbgValue {
+impl HirLowering for debuginfo::DebugValue {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use miden_core::{DebugVarInfo, DebugVarLocation, Felt};
         use midenc_hir::DIExpressionOp;

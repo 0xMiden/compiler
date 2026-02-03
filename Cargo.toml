@@ -139,6 +139,7 @@ midenc-dialect-arith = { version = "0.6.0", path = "dialects/arith" }
 midenc-dialect-hir = { version = "0.6.0", path = "dialects/hir" }
 midenc-dialect-scf = { version = "0.6.0", path = "dialects/scf" }
 midenc-dialect-cf = { version = "0.6.0", path = "dialects/cf" }
+midenc-dialect-debuginfo = { version = "0.6.0", path = "dialects/debuginfo" }
 midenc-dialect-ub = { version = "0.6.0", path = "dialects/ub" }
 midenc-hir = { version = "0.6.0", path = "hir" }
 midenc-hir-analysis = { version = "0.6.0", path = "hir-analysis" }

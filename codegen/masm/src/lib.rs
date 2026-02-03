@@ -37,6 +37,7 @@ pub use self::{
 pub fn register_dialect_hooks(context: &midenc_hir::Context) {
     use midenc_dialect_arith as arith;
     use midenc_dialect_cf as cf;
+    use midenc_dialect_debuginfo as debuginfo;
     use midenc_dialect_hir as hir;
     use midenc_dialect_scf as scf;
     use midenc_dialect_ub as ub;
@@ -46,7 +47,9 @@ pub fn register_dialect_hooks(context: &midenc_hir::Context) {
         info.register_operation_trait::<builtin::Ret, dyn HirLowering>();
         info.register_operation_trait::<builtin::RetImm, dyn HirLowering>();
         info.register_operation_trait::<builtin::GlobalSymbol, dyn HirLowering>();
-        info.register_operation_trait::<builtin::DbgValue, dyn HirLowering>();
+    });
+    context.register_dialect_hook::<debuginfo::DebugInfoDialect, _>(|info, _context| {
+        info.register_operation_trait::<debuginfo::DebugValue, dyn HirLowering>();
     });
     context.register_dialect_hook::<arith::ArithDialect, _>(|info, _context| {
         info.register_operation_trait::<arith::Constant, dyn HirLowering>();

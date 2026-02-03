@@ -379,8 +379,8 @@ mod tests {
     use builtin::{BuiltinOpBuilder, FunctionBuilder};
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        AbiParam, BuilderExt, Context, Ident, OpBuilder, PointerType, Report, Signature,
-        SourceSpan, Type, dialects::builtin, pass,
+        AbiParam, BuilderExt, Context, DILocalVariableAttr, Ident, OpBuilder, PointerType, Report,
+        Signature, SourceSpan, Type, dialects::builtin, interner::Symbol, pass,
     };
 
     use super::*;
@@ -872,6 +872,101 @@ mod tests {
         let output = format!("{}", &operation.borrow());
         expect_file!["expected/cfg_to_scf_lift_multiple_exit_nested_while_loop_after.hir"]
             .assert_eq(&output);
+
+        Ok(())
+    }
+
+    /// This test verifies that `debuginfo.debug_value` operations are preserved through the
+    /// CF-to-SCF transformation. The key behavior being tested is that `replace_all_uses_with`
+    /// (used internally by the transform to replace block arguments with `scf.if` results)
+    /// automatically updates the SSA operands of debug value ops.
+    #[test]
+    fn cfg_to_scf_debug_value_preservation() -> Result<(), Report> {
+        use midenc_dialect_debuginfo::{DebugInfoDialect, DebugInfoOpBuilder};
+
+        let context = Rc::new(Context::default());
+        context.get_or_register_dialect::<DebugInfoDialect>();
+        let mut builder = OpBuilder::new(context.clone());
+
+        let span = SourceSpan::default();
+        let function = {
+            let builder = builder.create::<builtin::Function, (_, _)>(span);
+            let name = Ident::new("test".into(), span);
+            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
+            builder(name, signature).unwrap()
+        };
+
+        // Define function body
+        let mut builder = FunctionBuilder::new(function, &mut builder);
+
+        let if_is_zero = builder.create_block();
+        let if_is_nonzero = builder.create_block();
+        let exit_block = builder.create_block();
+        let return_val = builder.append_block_param(exit_block, Type::U32, span);
+
+        let block = builder.current_block();
+        let input = block.borrow().arguments()[0].upcast();
+
+        let input_var = DILocalVariableAttr::new(
+            Symbol::intern("input"),
+            Symbol::intern("test.rs"),
+            1,
+            Some(1),
+        );
+        let result_var = DILocalVariableAttr::new(
+            Symbol::intern("result"),
+            Symbol::intern("test.rs"),
+            2,
+            Some(1),
+        );
+
+        let zero = builder.u32(0, span);
+        let is_zero = builder.eq(input, zero, span)?;
+        // Track the input variable
+        builder
+            .builder_mut()
+            .debug_value(input, input_var.clone(), span)?;
+        builder.cond_br(is_zero, if_is_zero, [], if_is_nonzero, [], span)?;
+
+        builder.switch_to_block(if_is_zero);
+        let a = builder.incr(input, span)?;
+        // Track result in then-branch
+        builder
+            .builder_mut()
+            .debug_value(a, result_var.clone(), span)?;
+        builder.br(exit_block, [a], span)?;
+
+        builder.switch_to_block(if_is_nonzero);
+        let b = builder.mul(input, input, span)?;
+        // Track result in else-branch
+        builder
+            .builder_mut()
+            .debug_value(b, result_var.clone(), span)?;
+        builder.br(exit_block, [b], span)?;
+
+        builder.switch_to_block(exit_block);
+        // KEY: this debug_value uses the block argument `return_val`, which will be
+        // replaced by the scf.if result via replace_all_uses_with
+        builder
+            .builder_mut()
+            .debug_value(return_val, result_var.clone(), span)?;
+        builder.ret(Some(return_val), span)?;
+
+        let operation = function.as_operation_ref();
+
+        // Verify the input IR
+        let input_ir = format!("{}", &operation.borrow());
+        expect_file!["expected/cfg_to_scf_debug_value_preservation_before.hir"]
+            .assert_eq(&input_ir);
+
+        // Run transformation
+        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
+        pm.add_pass(Box::new(LiftControlFlowToSCF));
+        pm.run(operation)?;
+
+        // Verify that debug values survive with updated SSA operands
+        let output = format!("{}", &operation.borrow());
+        expect_file!["expected/cfg_to_scf_debug_value_preservation_after.hir"].assert_eq(&output);
 
         Ok(())
     }

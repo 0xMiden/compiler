@@ -6,6 +6,7 @@ use cranelift_entity::{EntityRef as _, SecondaryMap};
 use log::warn;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
+use midenc_dialect_debuginfo::DebugInfoOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
@@ -186,7 +187,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         }
 
         if let Err(err) =
-            BuiltinOpBuilder::builder_mut(self).dbg_value_with_expr(value, attr, expr_opt, span)
+            DebugInfoOpBuilder::builder_mut(self).debug_value_with_expr(value, attr, expr_opt, span)
         {
             warn!("failed to emit dbg.value for local {idx}: {err:?}");
         }
@@ -281,7 +282,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         }
 
         if let Err(err) =
-            BuiltinOpBuilder::builder_mut(self).dbg_value_with_expr(value, attr, expression, span)
+            DebugInfoOpBuilder::builder_mut(self).debug_value_with_expr(value, attr, expression, span)
         {
             warn!("failed to emit scheduled dbg.value for local {idx}: {err:?}");
         }
@@ -659,6 +660,18 @@ impl<'f, B: ?Sized + Builder> UndefinedBehaviorOpBuilder<'f, B> for FunctionBuil
 }
 
 impl<'f, B: ?Sized + Builder> BuiltinOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+    #[inline(always)]
+    fn builder(&self) -> &B {
+        self.inner.builder()
+    }
+
+    #[inline(always)]
+    fn builder_mut(&mut self) -> &mut B {
+        self.inner.builder_mut()
+    }
+}
+
+impl<'f, B: ?Sized + Builder> DebugInfoOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
     #[inline(always)]
     fn builder(&self) -> &B {
         self.inner.builder()
