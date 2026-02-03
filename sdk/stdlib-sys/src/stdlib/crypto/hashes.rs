@@ -107,7 +107,7 @@ mod imp {
         /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
         /// hash function.
         ///
-        /// This maps to the `std::crypto::rpo256::hash_elements` procedure in the Miden stdlib.
+        /// This maps to the `miden::core::crypto::hashes::rpo256::hash_elements` procedure.
         ///
         /// Input: A pointer to the memory location and the number of elements to hash
         /// Output: One digest (4 field elements)
@@ -118,8 +118,7 @@ mod imp {
         /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO) hash
         /// function.
         ///
-        /// This maps to the `std::crypto::hashes::rpo256::hash_words` procedure in the Miden
-        /// stdlib.
+        /// This maps to the `miden::core::crypto::hashes::rpo256::hash_words` procedure.
         ///
         /// Input: The start and end addresses (in field elements) of the words to hash.
         /// Output: One digest (4 field elements)
@@ -263,9 +262,9 @@ mod imp {
     /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
     /// hash function.
     ///
-    /// This maps to the `std::crypto::rpo256::hash_elements` procedure in the Miden stdlib and to the
-    /// `std::crypto::hashes::rpo256::hash_words` word-optimized variant when the input length is
-    /// a multiple of 4.
+    /// This maps to the `miden::core::crypto::hashes::rpo256::hash_elements` procedure and to the
+    /// `miden::core::crypto::hashes::rpo256::hash_words` word-optimized variant when the input
+    /// length is a multiple of 4.
     ///
     /// # Arguments
     /// * `elements` - A Vec of field elements to be hashed
@@ -297,7 +296,7 @@ mod imp {
     /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO)
     /// hash function.
     ///
-    /// This maps to the `std::crypto::hashes::rpo256::hash_words` procedure in the Miden stdlib.
+    /// This maps to the `miden::core::crypto::hashes::rpo256::hash_words` procedure.
     ///
     /// # Arguments
     /// * `words` - A slice of words to be hashed
@@ -377,7 +376,7 @@ mod imp {
         )
     }
 
-    /// ABI helper for `std::crypto::hashes::rpo256::hash_elements`.
+    /// ABI helper for `miden::core::crypto::hashes::rpo256::hash_elements`.
     #[inline]
     pub fn extern_hash_elements(_ptr: u32, _num_elements: u32, _result_ptr: *mut Felt) {
         unimplemented!(
@@ -385,7 +384,7 @@ mod imp {
         )
     }
 
-    /// ABI helper for `std::crypto::hashes::rpo256::hash_words`.
+    /// ABI helper for `miden::core::crypto::hashes::rpo256::hash_words`.
     #[inline]
     pub fn extern_hash_words(_start_addr: u32, _end_addr: u32, _result_ptr: *mut Felt) {
         unimplemented!(

@@ -131,10 +131,10 @@ pub fn process_storage_fields(
         }
 
         if let Some(args) = storage_args {
-            // TODO: remove sanitazing, just : -> _ in the package name
+            // Slot names are part of the on-chain storage ABI: `StorageSlotId` values are derived
+            // from the slot name. Keep this format stable.
             let namespace = sanitize_slot_name_component(storage_namespace);
             let field_component = sanitize_slot_name_component(&field_name_str);
-            // TODO: remove `miden::component`
             let slot_name_str = format!("miden::component::{namespace}::{field_component}");
             if let Some(existing_field) = slot_names.get(&slot_name_str) {
                 errors.push(syn::Error::new(
