@@ -4,9 +4,9 @@ builtin.component root_ns:root@1.0.0 {
         ^block6(v0: i32):
             v2 = arith.constant 0 : i32;
             v3 = arith.constant 0 : i32;
-            builtin.dbg_value v3 #[expression = di.expression()] #[variable = di.local_variable(name = local1, file = unknown, line = 0, ty = i32)];
+            debuginfo.debug_value v3 #[expression = di.expression()] #[variable = di.local_variable(name = local1, file = unknown, line = 0, ty = i32)];
             v4 = arith.constant 0 : i32;
-            builtin.dbg_value v4 #[expression = di.expression()] #[variable = di.local_variable(name = local2, file = unknown, line = 0, ty = i32)];
+            debuginfo.debug_value v4 #[expression = di.expression()] #[variable = di.local_variable(name = local2, file = unknown, line = 0, ty = i32)];
             cf.br ^block8(v3, v0, v4);
         ^block7(v1: i32):
 
@@ -23,10 +23,10 @@ builtin.component root_ns:root@1.0.0 {
 
         ^block10:
             v16 = arith.add v15, v6 : i32 #[overflow = wrapping];
-            builtin.dbg_value v16 #[expression = di.expression()] #[variable = di.local_variable(name = local2, file = unknown, line = 0, ty = i32)];
+            debuginfo.debug_value v16 #[expression = di.expression()] #[variable = di.local_variable(name = local2, file = unknown, line = 0, ty = i32)];
             v17 = arith.constant 1 : i32;
             v18 = arith.add v6, v17 : i32 #[overflow = wrapping];
-            builtin.dbg_value v18 #[expression = di.expression()] #[variable = di.local_variable(name = local1, file = unknown, line = 0, ty = i32)];
+            debuginfo.debug_value v18 #[expression = di.expression()] #[variable = di.local_variable(name = local1, file = unknown, line = 0, ty = i32)];
             cf.br ^block8(v18, v7, v16);
         ^block11:
             builtin.ret v15;

@@ -35,6 +35,7 @@ miden-assembly.workspace = true
 miden-debug-types.workspace = true
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
+midenc-dialect-debuginfo.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true

@@ -29,6 +29,7 @@ pub mod masm {
 
 use midenc_dialect_arith as arith;
 use midenc_dialect_cf as cf;
+use midenc_dialect_debuginfo as debuginfo;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
@@ -45,6 +46,9 @@ pub use self::{
 
 inventory::submit!(::midenc_hir::DialectRegistrationHookInfo::new::<builtin::BuiltinDialect>(
     lower_builtin_ops
+));
+inventory::submit!(::midenc_hir::DialectRegistrationHookInfo::new::<debuginfo::DebugInfoDialect>(
+    lower_debuginfo_ops
 ));
 inventory::submit!(::midenc_hir::DialectRegistrationHookInfo::new::<arith::ArithDialect>(
     lower_arith_ops
@@ -69,6 +73,10 @@ fn lower_builtin_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<builtin::Ret, dyn HirLowering>();
     info.register_operation_trait::<builtin::RetImm, dyn HirLowering>();
     info.register_operation_trait::<builtin::GlobalSymbol, dyn HirLowering>();
+}
+
+fn lower_debuginfo_ops(info: &mut midenc_hir::DialectInfo) {
+    info.register_operation_trait::<debuginfo::DebugValue, dyn HirLowering>();
 }
 
 fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
