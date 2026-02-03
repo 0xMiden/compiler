@@ -16,7 +16,7 @@ fn module_path() -> SymbolPath {
         SymbolNameComponent::Component(symbols::Core),
         SymbolNameComponent::Component(symbols::Crypto),
         SymbolNameComponent::Component(symbols::Dsa),
-        SymbolNameComponent::Component(symbols::RpoFalcon512),
+        SymbolNameComponent::Component(symbols::Falcon512Rpo),
     ];
     SymbolPath::from_iter(parts)
 }

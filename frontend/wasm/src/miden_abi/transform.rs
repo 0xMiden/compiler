@@ -70,7 +70,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         _ => None,
                     },
                     symbols::Dsa => match components.next()?.as_symbol_name() {
-                        symbols::RpoFalcon512 => {
+                        symbols::Falcon512Rpo => {
                             match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                                 stdlib::crypto::dsa::rpo_falcon512::RPO_FALCON512_VERIFY => {
                                     Some(TransformStrategy::NoTransform)
