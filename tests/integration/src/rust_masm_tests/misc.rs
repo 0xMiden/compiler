@@ -227,17 +227,44 @@ fn test_vec_realloc_copies_data_issue_811() {
         extern crate alloc;
         use alloc::vec::Vec;
 
-        // Create a Vec and push 5 Felt elements. Vec typically starts with capacity 4, so the
-        // 5th push triggers reallocation.
-        let mut v: Vec<Felt> = Vec::new();
+        // Create a Vec with a tiny capacity to make growth (and thus reallocation) likely.
+        let mut v: Vec<Felt> = Vec::with_capacity(1);
+
         v.push(felt!(11111));
+        let mut last_ptr = v.as_ptr() as u32;
+        let mut moves: u32 = 0;
+
         v.push(felt!(22222));
+        let ptr = v.as_ptr() as u32;
+        if ptr != last_ptr {
+            moves += 1;
+            last_ptr = ptr;
+        }
+
         v.push(felt!(33333));
+        let ptr = v.as_ptr() as u32;
+        if ptr != last_ptr {
+            moves += 1;
+            last_ptr = ptr;
+        }
+
         v.push(felt!(44444));
+        let ptr = v.as_ptr() as u32;
+        if ptr != last_ptr {
+            moves += 1;
+            last_ptr = ptr;
+        }
+
         v.push(felt!(55555));
+        let ptr = v.as_ptr() as u32;
+        if ptr != last_ptr {
+            moves += 1;
+            last_ptr = ptr;
+        }
 
         // Sum all elements - if realloc doesn't copy, the first 4 elements will be garbage.
-        v[0] + v[1] + v[2] + v[3] + v[4]
+        let sum = v[0] + v[1] + v[2] + v[3] + v[4];
+        if moves >= 2 { sum } else { felt!(0) }
     }"#;
 
     setup::enable_compiler_instrumentation();
