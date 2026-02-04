@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.0]
 
 ### BREAKING
-- Note scripts now use a struct-based API: replace `#[note_script] fn run(...)` with `#[note]` on a note input `struct` and `#[note]` on an inherent `impl` block containing exactly one `#[note_script]` entrypoint method #890
+- Note scripts now use a struct-based API: replace `#[note_script] fn run(...)` with `#[note]` on a note input `struct` and `#[note]` on an inherent `impl` block containing exactly one `#[note_script]` entrypoint method #890. See an [example](https://github.com/0xMiden/project-template/blob/main/contracts/increment-note/src/lib.rs)
+
 - Storage slot IDs are now derived from slot names; `#[storage(slot(...))]`/`slot(...)` is no longer supported, and slot name / id collisions are detected at compile time #907
 - SDK bindings updated for VM v0.20 / protocol v0.13 (some bindings changed, e.g. `output_note::create(tag, note_type, recipient)`) #907
 - Renamed `AccountId::from` to `AccountId::new` #808
