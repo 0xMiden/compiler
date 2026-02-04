@@ -24,7 +24,7 @@ builtin.component miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk
             v128 = arith.constant 0 : felt;
             v1 = arith.constant 0 : i32;
             v171, v172, v173, v174 = scf.while v1, v7, v128 : i32, i32, felt, i32 {
-            ^block34(v175: i32, v176: i32, v177: felt):
+            ^block35(v175: i32, v176: i32, v177: felt):
                 v192 = arith.constant 0 : i32;
                 v31 = arith.constant 16 : i32;
                 v15 = arith.eq v175, v31 : i1;
@@ -32,7 +32,7 @@ builtin.component miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk
                 v17 = hir.bitcast v16 : i32;
                 v19 = arith.neq v17, v192 : i1;
                 v166 = scf.if v19 : i32 {
-                ^block33:
+                ^block34:
                     v137 = ub.poison i32 : i32;
                     scf.yield v137;
                 } else {
@@ -60,7 +60,7 @@ builtin.component miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk
                 v160 = arith.trunc v170 : i1;
                 scf.condition v160, v166, v167, v168, v176;
             } do {
-            ^block35(v178: i32, v179: i32, v180: felt, v181: i32):
+            ^block36(v178: i32, v179: i32, v180: felt, v181: i32):
                 scf.yield v178, v179, v180;
             };
             v189 = arith.constant 16 : i32;
@@ -96,7 +96,7 @@ builtin.component miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk
             hir.assertz v56 #[code = 250];
             v57 = hir.int_to_ptr v54 : ptr<byte, felt>;
             v58 = hir.load v57 : felt;
-            v59 = hir.exec @miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1/rust_sdk_account_has_non_fungible_asset_binding/miden::active_account::has_non_fungible_asset(v39, v46, v53, v58) : felt
+            v59 = hir.exec @miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1/rust_sdk_account_has_non_fungible_asset_binding/miden::protocol::active_account::has_non_fungible_asset(v39, v46, v53, v58) : felt
             v183 = arith.constant 32 : i32;
             v70 = arith.add v174, v183 : i32 #[overflow = wrapping];
             v71 = builtin.global_symbol @miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1/rust_sdk_account_has_non_fungible_asset_binding/__stack_pointer : ptr<byte, u8>
@@ -180,9 +180,9 @@ builtin.component miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_account::has_non_fungible_asset(v120: felt, v121: felt, v122: felt, v123: felt) -> felt {
+        private builtin.function @miden::protocol::active_account::has_non_fungible_asset(v120: felt, v121: felt, v122: felt, v123: felt) -> felt {
         ^block21(v120: felt, v121: felt, v122: felt, v123: felt):
-            v124 = hir.exec @miden/active_account/has_non_fungible_asset(v120, v121, v122, v123) : felt
+            v124 = hir.exec @miden/protocol/active_account/has_non_fungible_asset(v120, v121, v122, v123) : felt
             builtin.ret v124;
         };
 
@@ -198,7 +198,7 @@ builtin.component miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk
     };
 
     public builtin.function @binding() -> felt {
-    ^block25:
+    ^block26:
         v126 = hir.exec @miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1/rust_sdk_account_has_non_fungible_asset_binding/miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk-account-has-non-fungible-asset-binding@0.0.1#binding() : felt
         builtin.ret v126;
     };

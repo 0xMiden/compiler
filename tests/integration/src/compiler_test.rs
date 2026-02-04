@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use miden_assembly::LibraryPath;
+use miden_assembly::PathBuf as LibraryPath;
 use midenc_compile::{
     compile_link_output_to_masm_with_pre_assembly_stage, compile_to_unoptimized_hir,
 };
@@ -655,7 +655,8 @@ impl CompilerTestBuilder {
     panic = "abort"
     # optimize for size
     opt-level = "z"
-    debug = false
+    debug = true
+    trim-paths = ["diagnostics", "object"]
 "#,
                     sdk_path = sdk_path.display(),
                     sdk_alloc_path = sdk_alloc_path.display(),

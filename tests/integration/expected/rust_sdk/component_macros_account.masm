@@ -1,4 +1,4 @@
-# mod miden:component-macros-account/component-macros-account@0.1.0
+# mod ::"miden:component-macros-account/component-macros-account@0.1.0"
 
 @callconv("canon-lift")
 pub proc test-custom-types(
@@ -15,10 +15,10 @@ pub proc test-custom-types(
     felt,
     felt
 ) -> (felt, felt)
-    exec.::miden:component-macros-account/component-macros-account@0.1.0::init
+    exec."miden:component-macros-account/component-macros-account@0.1.0"::init
     trace.240
     nop
-    exec.::miden:component-macros-account/component-macros-account@0.1.0::component_macros_account::miden:component-macros-account/component-macros-account@0.1.0#test-custom-types
+    exec.::"miden:component-macros-account/component-macros-account@0.1.0"::component_macros_account::"miden:component-macros-account/component-macros-account@0.1.0#test-custom-types"
     trace.252
     nop
     push.0
@@ -46,7 +46,7 @@ pub proc test-custom-types(
     trace.252
     nop
     swap.1
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 @callconv("canon-lift")
@@ -64,10 +64,10 @@ pub proc test-custom-types2(
     felt,
     felt
 ) -> (felt, felt)
-    exec.::miden:component-macros-account/component-macros-account@0.1.0::init
+    exec."miden:component-macros-account/component-macros-account@0.1.0"::init
     trace.240
     nop
-    exec.::miden:component-macros-account/component-macros-account@0.1.0::component_macros_account::miden:component-macros-account/component-macros-account@0.1.0#test-custom-types2
+    exec.::"miden:component-macros-account/component-macros-account@0.1.0"::component_macros_account::"miden:component-macros-account/component-macros-account@0.1.0#test-custom-types2"
     trace.252
     nop
     push.0
@@ -95,7 +95,7 @@ pub proc test-custom-types2(
     trace.252
     nop
     swap.1
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -108,7 +108,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -119,7 +119,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:component-macros-account/component-macros-account@0.1.0::component_macros_account
+# mod ::"miden:component-macros-account/component-macros-account@0.1.0"::component_macros_account
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -180,7 +180,7 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     nop
     trace.240
     nop
-    exec.::miden:component-macros-account/component-macros-account@0.1.0::component_macros_account::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:component-macros-account/component-macros-account@0.1.0"::component_macros_account::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1048584
@@ -267,7 +267,7 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     nop
     trace.240
     nop
-    exec.::miden:component-macros-account/component-macros-account@0.1.0::component_macros_account::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:component-macros-account/component-macros-account@0.1.0"::component_macros_account::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.1048584
@@ -352,7 +352,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:component-macros-account/component-macros-account@0.1.0::component_macros_account::__wasm_call_ctors
+        exec.::"miden:component-macros-account/component-macros-account@0.1.0"::component_macros_account::__wasm_call_ctors
         trace.252
         nop
         push.1

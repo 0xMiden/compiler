@@ -108,7 +108,7 @@ builtin.component miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-outpu
             v73 = builtin.global_symbol @miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1/rust_sdk_output_note_get_metadata_binding/__stack_pointer : ptr<byte, u8>
             v74 = hir.bitcast v73 : ptr<byte, i32>;
             hir.store v74, v72;
-            hir.exec @miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1/rust_sdk_output_note_get_metadata_binding/miden::output_note::get_metadata(v66, v72)
+            hir.exec @miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1/rust_sdk_output_note_get_metadata_binding/miden::protocol::output_note::get_metadata(v66, v72)
             v75 = hir.bitcast v72 : u32;
             v76 = arith.constant 8 : u32;
             v77 = arith.mod v75, v76 : u32;
@@ -149,9 +149,9 @@ builtin.component miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-outpu
             builtin.ret ;
         };
 
-        private builtin.function @miden::output_note::get_metadata(v107: felt, v108: i32) {
+        private builtin.function @miden::protocol::output_note::get_metadata(v107: felt, v108: i32) {
         ^block17(v107: felt, v108: i32):
-            v109, v110, v111, v112 = hir.exec @miden/output_note/get_metadata(v107) : felt, felt, felt, felt
+            v109, v110, v111, v112 = hir.exec @miden/protocol/output_note/get_metadata(v107) : felt, felt, felt, felt
             v113 = hir.bitcast v108 : u32;
             v114 = hir.int_to_ptr v113 : ptr<byte, felt>;
             hir.store v114, v109;
@@ -182,7 +182,7 @@ builtin.component miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-outpu
     };
 
     public builtin.function @binding() -> felt, felt, felt, felt {
-    ^block21:
+    ^block22:
         v124 = hir.exec @miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1/rust_sdk_output_note_get_metadata_binding/miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1#binding() : i32
         v125 = arith.constant 0 : i32;
         v126 = arith.add v124, v125 : i32 #[overflow = unchecked];

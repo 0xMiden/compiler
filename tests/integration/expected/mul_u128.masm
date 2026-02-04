@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -16,10 +16,11 @@ proc init
     mem_store.278530
 end
 
-# mod root_ns:root@1.0.0::test_rust_47451efa7b59553058cbdbb88f5ae77d281126afc1fd9ca385bcdeb64d64800e
+# mod ::"root_ns:root@1.0.0"::test_rust_47451efa7b59553058cbdbb88f5ae77d281126afc1fd9ca385bcdeb64d64800e
 
+@locals("2")
 @callconv("C")
-pub proc entrypoint.2(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
+pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     dup.2
     dup.2
     push.0
@@ -103,12 +104,12 @@ pub proc entrypoint.2(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     movup.6
     trace.240
     nop
-    exec.::std::math::u64::wrapping_add
+    exec.::miden::core::math::u64::wrapping_add
     trace.252
     nop
     trace.240
     nop
-    exec.::std::math::u64::wrapping_add
+    exec.::miden::core::math::u64::wrapping_add
     trace.252
     nop
     movup.2

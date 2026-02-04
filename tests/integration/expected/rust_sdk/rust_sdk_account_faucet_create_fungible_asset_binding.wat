@@ -82,7 +82,7 @@
       global.set $__stack_pointer
       local.get 1
       local.get 2
-      call $miden::faucet::create_fungible_asset
+      call $miden::protocol::faucet::create_fungible_asset
       local.get 0
       local.get 2
       i64.load
@@ -103,11 +103,11 @@
     (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
       unreachable
     )
-    (func $miden::faucet::create_fungible_asset (;6;) (type 4) (param f32 i32)
+    (func $miden::protocol::faucet::create_fungible_asset (;6;) (type 4) (param f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "krust_sdk_account_faucet_create_fungible_asset_binding\01\0b0.0.1\05\02\03\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "krust_sdk_account_faucet_create_fungible_asset_binding\01\0b0.0.1\05\02\03\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "asset" (type $asset (;1;)))
   (core instance $main (;0;) (instantiate $main))

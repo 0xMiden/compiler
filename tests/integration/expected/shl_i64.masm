@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -16,7 +16,7 @@ proc init
     mem_store.278530
 end
 
-# mod root_ns:root@1.0.0::test_rust_9d7fa5c817c0e8ad40aeb12756fb108047ae365f6bc8c673617a6bc264b3917a
+# mod ::"root_ns:root@1.0.0"::test_rust_9d7fa5c817c0e8ad40aeb12756fb108047ae365f6bc8c673617a6bc264b3917a
 
 @callconv("C")
 pub proc entrypoint([u32; 2], [u32; 2]) -> [u32; 2]
@@ -34,7 +34,7 @@ pub proc entrypoint([u32; 2], [u32; 2]) -> [u32; 2]
     assert
     trace.240
     nop
-    exec.::std::math::u64::shl
+    exec.::miden::core::math::u64::shl
     trace.252
     nop
 end

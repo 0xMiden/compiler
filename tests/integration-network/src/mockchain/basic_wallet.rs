@@ -359,7 +359,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let bob_found = bob_account.vault().assets().find(|asset| {
         matches!(
             asset,
-            miden_objects::asset::Asset::Fungible(fungible_asset)
+            miden_protocol::asset::Asset::Fungible(fungible_asset)
                 if fungible_asset.faucet_id() == faucet_id
         )
     });

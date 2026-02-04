@@ -22,8 +22,11 @@ fn is_miden_stdlib_module(module_path: &SymbolPath) -> bool {
 }
 
 pub fn miden_abi_function_type(path: &SymbolPath) -> FunctionType {
-    const STD: &[SymbolNameComponent] =
-        &[SymbolNameComponent::Root, SymbolNameComponent::Component(symbols::Std)];
+    const STD: &[SymbolNameComponent] = &[
+        SymbolNameComponent::Root,
+        SymbolNameComponent::Component(symbols::Miden),
+        SymbolNameComponent::Component(symbols::Core),
+    ];
 
     if path.is_prefixed_by(STD) {
         miden_stdlib_function_type(path)

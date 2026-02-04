@@ -1,14 +1,14 @@
-# mod miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0
+# mod ::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0
 
 @callconv("canon-lift")
 pub proc auth__procedure(felt, felt, felt, felt)
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::init
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::init
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-procedure
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0_auth-procedure
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -21,7 +21,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512
+# mod ::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -48,8 +48,9 @@ proc auth_component_rpo_falcon512::bindings::__link_custom_section_describing_im
     nop
 end
 
+@locals("5")
 @callconv("C")
-proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-procedure.5(
+proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0_auth-procedure(
     felt,
     felt,
     felt,
@@ -81,17 +82,17 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     nop
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::wit_bindgen::rt::run_ctors_once
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_block_number
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_block_number
     trace.252
     nop
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::native_account::incr_nonce
+    exec.::miden::protocol::native_account::incr_nonce
     trace.252
     nop
     push.32
@@ -99,7 +100,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::native_account::compute_delta_commitment
+    exec.::miden::protocol::native_account::compute_delta_commitment
     trace.252
     nop
     push.40
@@ -141,7 +142,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     dup.6
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_input_notes_commitment
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_input_notes_commitment
     trace.252
     nop
     push.16
@@ -149,7 +150,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_output_notes_commitment
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_output_notes_commitment
     trace.252
     nop
     push.8
@@ -427,7 +428,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     movup.2
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::std::crypto::hashes::rpo::hash_memory_words
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::std::crypto::hashes::rpo::hash_memory_words
     trace.252
     nop
     push.108
@@ -935,13 +936,13 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::advice::adv_insert
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::advice::adv_insert
     trace.252
     nop
     push.0
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
     trace.252
     nop
     push.96
@@ -950,7 +951,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     swap.1
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::active_account::get_item
+    exec.::miden::protocol::active_account::get_item
     trace.252
     nop
     push.96
@@ -1031,7 +1032,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     dup.12
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::advice::emit_falcon_sig_to_stack
+    exec.::intrinsics::advice::emit_falcon_sig_to_stack
     trace.252
     nop
     movup.4
@@ -1046,7 +1047,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     swap.3
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::std::crypto::dsa::rpo_falcon512::verify
+    exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::std::crypto::dsa::rpo_falcon512::verify
     trace.252
     nop
     push.112
@@ -1104,7 +1105,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::__wasm_call_ctors
+        exec.miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -1141,7 +1142,7 @@ proc miden_base_sys::bindings::tx::get_block_number(
 ) -> felt
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::tx::get_block_number
+    exec.::miden::protocol::tx::get_block_number
     trace.252
     nop
 end
@@ -1173,7 +1174,7 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     dup.0
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::tx::get_input_notes_commitment
+    exec.::miden::protocol::tx::get_input_notes_commitment
     trace.252
     nop
     dup.0
@@ -1287,7 +1288,7 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     dup.0
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::tx::get_output_notes_commitment
+    exec.::miden::protocol::tx::get_output_notes_commitment
     trace.252
     nop
     dup.0
@@ -1464,108 +1465,7 @@ proc miden_stdlib_sys::intrinsics::advice::adv_insert(
     swap.5
     trace.240
     nop
-    exec.::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::advice::adv_insert_mem
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::advice::adv_insert_mem(felt, felt, felt, felt, i32, i32)
-    trace.240
-    nop
     exec.::intrinsics::advice::adv_insert_mem
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::advice::emit_falcon_sig_to_stack(
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt
-)
-    trace.240
-    nop
-    exec.::intrinsics::advice::emit_falcon_sig_to_stack
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc std::crypto::dsa::rpo_falcon512::verify(
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt,
-    felt
-)
-    trace.240
-    nop
-    exec.::std::crypto::dsa::rpo_falcon512::verify
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc std::crypto::hashes::rpo::hash_memory_words(i32, i32, i32)
-    trace.240
-    nop
-    exec.::std::crypto::hashes::rpo::hash_memory_words
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
     trace.252
     nop
 end
@@ -1578,201 +1478,95 @@ proc <miden_field::wasm32::Felt as core::convert::From<u8>>::from(
     u32and
 end
 
+# mod ::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::intrinsics::advice
+
 @callconv("C")
-proc miden::active_account::get_item(felt, i32)
+proc adv_insert_mem(felt, felt, felt, felt, i32, i32)
     trace.240
     nop
-    exec.::miden::active_account::get_item
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
+    exec.::intrinsics::advice::adv_insert_mem
     trace.252
     nop
 end
 
 @callconv("C")
-proc miden::native_account::compute_delta_commitment(i32)
+proc emit_falcon_sig_to_stack(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.240
     nop
-    exec.::miden::native_account::compute_delta_commitment
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
+    exec.::intrinsics::advice::emit_falcon_sig_to_stack
     trace.252
     nop
 end
 
+# mod ::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::protocol::active_account
+
 @callconv("C")
-proc miden::native_account::incr_nonce(
+proc get_item(felt, i32)
+    drop
+    drop
+    push.0
+    assert
+end
+
+# mod ::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::protocol::native_account
+
+@callconv("C")
+proc compute_delta_commitment(i32)
+    drop
+    push.0
+    assert
+end
+
+@callconv("C")
+proc incr_nonce(
 
 ) -> felt
-    trace.240
-    nop
-    exec.::miden::native_account::incr_nonce
-    trace.252
-    nop
+    push.0
+    assert
 end
 
+# mod ::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::miden::protocol::tx
+
 @callconv("C")
-proc miden::tx::get_block_number(
+proc get_block_number(
 
 ) -> felt
+    push.0
+    assert
+end
+
+@callconv("C")
+proc get_input_notes_commitment(i32)
+    drop
+    push.0
+    assert
+end
+
+@callconv("C")
+proc get_output_notes_commitment(i32)
+    drop
+    push.0
+    assert
+end
+
+# mod ::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::std::crypto::dsa::rpo_falcon512
+
+@callconv("C")
+proc verify(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.240
     nop
-    exec.::miden::tx::get_block_number
+    exec.::miden::core::crypto::dsa::falcon512rpo::verify
     trace.252
     nop
 end
 
-@callconv("C")
-proc miden::tx::get_input_notes_commitment(i32)
-    trace.240
-    nop
-    exec.::miden::tx::get_input_notes_commitment
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
+# mod ::miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0::auth_component_rpo_falcon512::std::crypto::hashes::rpo
 
 @callconv("C")
-proc miden::tx::get_output_notes_commitment(i32)
+proc hash_memory_words(i32, i32, i32)
     trace.240
     nop
-    exec.::miden::tx::get_output_notes_commitment
+    exec.::miden::core::crypto::hashes::rpo256::hash_words
     trace.252
     nop
     movup.4

@@ -4,43 +4,43 @@ use super::types::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::active_account::get_id"]
+    #[link_name = "miden::protocol::active_account::get_id"]
     fn extern_active_account_get_id(ptr: *mut AccountId);
-    #[link_name = "miden::active_account::get_nonce"]
+    #[link_name = "miden::protocol::active_account::get_nonce"]
     fn extern_active_account_get_nonce() -> Felt;
-    #[link_name = "miden::active_account::get_initial_commitment"]
+    #[link_name = "miden::protocol::active_account::get_initial_commitment"]
     fn extern_active_account_get_initial_commitment(ptr: *mut Word);
-    #[link_name = "miden::active_account::compute_commitment"]
+    #[link_name = "miden::protocol::active_account::compute_commitment"]
     fn extern_active_account_compute_commitment(ptr: *mut Word);
-    #[link_name = "miden::active_account::get_code_commitment"]
+    #[link_name = "miden::protocol::active_account::get_code_commitment"]
     fn extern_active_account_get_code_commitment(ptr: *mut Word);
-    #[link_name = "miden::active_account::get_initial_storage_commitment"]
+    #[link_name = "miden::protocol::active_account::get_initial_storage_commitment"]
     fn extern_active_account_get_initial_storage_commitment(ptr: *mut Word);
-    #[link_name = "miden::active_account::compute_storage_commitment"]
+    #[link_name = "miden::protocol::active_account::compute_storage_commitment"]
     fn extern_active_account_compute_storage_commitment(ptr: *mut Word);
-    #[link_name = "miden::active_account::get_balance"]
+    #[link_name = "miden::protocol::active_account::get_balance"]
     fn extern_active_account_get_balance(faucet_id_prefix: Felt, faucet_id_suffix: Felt) -> Felt;
-    #[link_name = "miden::active_account::get_initial_balance"]
+    #[link_name = "miden::protocol::active_account::get_initial_balance"]
     fn extern_active_account_get_initial_balance(
         faucet_id_prefix: Felt,
         faucet_id_suffix: Felt,
     ) -> Felt;
-    #[link_name = "miden::active_account::has_non_fungible_asset"]
+    #[link_name = "miden::protocol::active_account::has_non_fungible_asset"]
     fn extern_active_account_has_non_fungible_asset(
         asset_3: Felt,
         asset_2: Felt,
         asset_1: Felt,
         asset_0: Felt,
     ) -> Felt;
-    #[link_name = "miden::active_account::get_initial_vault_root"]
+    #[link_name = "miden::protocol::active_account::get_initial_vault_root"]
     fn extern_active_account_get_initial_vault_root(ptr: *mut Word);
-    #[link_name = "miden::active_account::get_vault_root"]
+    #[link_name = "miden::protocol::active_account::get_vault_root"]
     fn extern_active_account_get_vault_root(ptr: *mut Word);
-    #[link_name = "miden::active_account::get_num_procedures"]
+    #[link_name = "miden::protocol::active_account::get_num_procedures"]
     fn extern_active_account_get_num_procedures() -> Felt;
-    #[link_name = "miden::active_account::get_procedure_root"]
+    #[link_name = "miden::protocol::active_account::get_procedure_root"]
     fn extern_active_account_get_procedure_root(index: Felt, ptr: *mut Word);
-    #[link_name = "miden::active_account::has_procedure"]
+    #[link_name = "miden::protocol::active_account::has_procedure"]
     fn extern_active_account_has_procedure(
         proc_root_3: Felt,
         proc_root_2: Felt,

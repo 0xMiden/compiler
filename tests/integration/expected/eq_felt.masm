@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::eq_felt
+# mod ::"root_ns:root@1.0.0"::eq_felt
 
 @callconv("C")
 pub proc entrypoint(felt, felt) -> i32

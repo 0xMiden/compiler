@@ -53,13 +53,13 @@ builtin.component miden:base/transaction-script@1.0.0 {
 
         private builtin.function @miden_base_sys::bindings::tx::get_num_output_notes() -> felt {
         ^block15:
-            v29 = hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_output_notes_binding/miden::tx::get_num_output_notes() : felt
+            v29 = hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_output_notes_binding/miden::protocol::tx::get_num_output_notes() : felt
             builtin.ret v29;
         };
 
-        private builtin.function @miden::tx::get_num_output_notes() -> felt {
+        private builtin.function @miden::protocol::tx::get_num_output_notes() -> felt {
         ^block17:
-            v30 = hir.exec @miden/tx/get_num_output_notes() : felt
+            v30 = hir.exec @miden/protocol/tx/get_num_output_notes() : felt
             builtin.ret v30;
         };
 
@@ -75,7 +75,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
     };
 
     public builtin.function @run(v32: felt, v33: felt, v34: felt, v35: felt) {
-    ^block21(v32: felt, v33: felt, v34: felt, v35: felt):
+    ^block22(v32: felt, v33: felt, v34: felt, v35: felt):
         hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_num_output_notes_binding/miden:base/transaction-script@1.0.0#run(v32, v33, v34, v35)
         builtin.ret ;
     };

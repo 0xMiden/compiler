@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::rust_sdk_stdlib_smt_get
+# mod ::"root_ns:root@1.0.0"::rust_sdk_stdlib_smt_get
 
 @callconv("C")
 proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
@@ -309,7 +309,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     swap.6
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::std::collections::smt::get
+    exec.::"root_ns:root@1.0.0"::rust_sdk_stdlib_smt_get::"miden::core::collections::smt::get"
     trace.252
     nop
     push.88
@@ -564,7 +564,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32wrapping_add
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+    exec.::"root_ns:root@1.0.0"::rust_sdk_stdlib_smt_get::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
     trace.252
     nop
     push.0
@@ -585,7 +585,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
         u32wrapping_add
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::rust_sdk_stdlib_smt_get::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+        exec.::"root_ns:root@1.0.0"::rust_sdk_stdlib_smt_get::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
         trace.252
         nop
         push.0
@@ -625,7 +625,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
 end
 
 @callconv("C")
-proc std::collections::smt::get(
+proc miden::core::collections::smt::get(
     felt,
     felt,
     felt,
@@ -638,7 +638,7 @@ proc std::collections::smt::get(
 )
     trace.240
     nop
-    exec.::std::collections::smt::get
+    exec.::miden::core::collections::smt::get
     trace.252
     nop
     movup.8

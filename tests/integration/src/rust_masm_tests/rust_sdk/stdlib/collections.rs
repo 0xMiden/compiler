@@ -5,8 +5,9 @@ use miden_core::{
     crypto::merkle::{MerkleStore, Smt},
 };
 use miden_debug::Executor;
-use miden_lib::MidenLib;
 use miden_processor::AdviceInputs;
+use miden_protocol::ProtocolLib;
+use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_session::STDLIB;
@@ -56,9 +57,12 @@ fn executor_with_std(args: Vec<Felt>) -> Executor {
     let std_library = (*STDLIB).clone();
     exec.dependency_resolver_mut()
         .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
     exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
+        .add(*protocol_library.digest(), protocol_library.clone().into());
+    let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*standards_library.digest(), standards_library.clone().into());
     exec
 }
 

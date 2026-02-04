@@ -236,7 +236,7 @@ fn test_func_arg_order() {
         let digest2 = miden_stdlib_sys::Digest::new([f4, f5, f6, f7]);
         let digests = [digest1, digest2];
         let res = merge(digests);
-        res.inner.inner.0
+        res.inner[0]
     }}
 
     #[inline]

@@ -1,14 +1,14 @@
-# mod miden:base/note-script@1.0.0
+# mod ::"miden:base/note-script@1.0.0"
 
 @callconv("canon-lift")
 pub proc run(felt, felt, felt, felt)
-    exec.::miden:base/note-script@1.0.0::init
+    exec."miden:base/note-script@1.0.0"::init
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden:base/note-script@1.0.0#run
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::"miden:base/note-script@1.0.0#run"
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -21,7 +21,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings
+# mod ::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -256,7 +256,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.8
@@ -264,7 +264,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::active_note::get_sender
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::active_note::get_sender
     trace.252
     nop
     push.12
@@ -306,7 +306,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::active_note::get_script_root
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::active_note::get_script_root
     trace.252
     nop
     push.32
@@ -314,14 +314,14 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::active_note::get_serial_number
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::active_note::get_serial_number
     trace.252
     nop
     dup.1
     dup.1
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::active_account::get_balance
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::miden_base_sys::bindings::active_account::get_balance
     trace.252
     nop
     push.0
@@ -357,7 +357,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
             u32wrapping_add
             trace.240
             nop
-            exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+            exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
             trace.252
             nop
             push.0
@@ -378,7 +378,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+                exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
                 trace.252
                 nop
                 push.0
@@ -476,7 +476,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::__wasm_call_ctors
+        exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -536,7 +536,7 @@ proc miden_base_sys::bindings::active_note::get_sender(
     u32wrapping_add
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden::active_note::get_sender
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::"miden::protocol::active_note::get_sender"
     trace.252
     nop
     push.8
@@ -612,7 +612,7 @@ proc miden_base_sys::bindings::active_note::get_script_root(
     dup.0
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden::active_note::get_script_root
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::"miden::protocol::active_note::get_script_root"
     trace.252
     nop
     dup.0
@@ -726,7 +726,7 @@ proc miden_base_sys::bindings::active_note::get_serial_number(
     dup.0
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden::active_note::get_serial_number
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::"miden::protocol::active_note::get_serial_number"
     trace.252
     nop
     dup.0
@@ -820,25 +820,25 @@ proc miden_base_sys::bindings::active_account::get_balance(
 ) -> felt
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::rust_sdk_swapp_note_bindings::miden::active_account::get_balance
+    exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::"miden::protocol::active_account::get_balance"
     trace.252
     nop
 end
 
 @callconv("C")
-proc miden::active_account::get_balance(felt, felt) -> felt
+proc miden::protocol::active_account::get_balance(felt, felt) -> felt
     trace.240
     nop
-    exec.::miden::active_account::get_balance
+    exec.::miden::protocol::active_account::get_balance
     trace.252
     nop
 end
 
 @callconv("C")
-proc miden::active_note::get_script_root(i32)
+proc miden::protocol::active_note::get_script_root(i32)
     trace.240
     nop
-    exec.::miden::active_note::get_script_root
+    exec.::miden::protocol::active_note::get_script_root
     trace.252
     nop
     movup.4
@@ -891,10 +891,10 @@ proc miden::active_note::get_script_root(i32)
 end
 
 @callconv("C")
-proc miden::active_note::get_sender(i32)
+proc miden::protocol::active_note::get_sender(i32)
     trace.240
     nop
-    exec.::miden::active_note::get_sender
+    exec.::miden::protocol::active_note::get_sender
     trace.252
     nop
     movup.2
@@ -921,10 +921,10 @@ proc miden::active_note::get_sender(i32)
 end
 
 @callconv("C")
-proc miden::active_note::get_serial_number(i32)
+proc miden::protocol::active_note::get_serial_number(i32)
     trace.240
     nop
-    exec.::miden::active_note::get_serial_number
+    exec.::miden::protocol::active_note::get_serial_number
     trace.252
     nop
     movup.4

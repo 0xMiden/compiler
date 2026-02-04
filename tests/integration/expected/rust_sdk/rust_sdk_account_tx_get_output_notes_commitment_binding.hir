@@ -74,7 +74,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
             v46 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
             v47 = hir.bitcast v46 : ptr<byte, i32>;
             hir.store v47, v45;
-            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/miden::tx::get_output_notes_commitment(v45)
+            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/miden::protocol::tx::get_output_notes_commitment(v45)
             v48 = hir.bitcast v45 : u32;
             v49 = arith.constant 8 : u32;
             v50 = arith.mod v48, v49 : u32;
@@ -115,9 +115,9 @@ builtin.component miden:base/transaction-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::tx::get_output_notes_commitment(v80: i32) {
+        private builtin.function @miden::protocol::tx::get_output_notes_commitment(v80: i32) {
         ^block17(v80: i32):
-            v81, v82, v83, v84 = hir.exec @miden/tx/get_output_notes_commitment() : felt, felt, felt, felt
+            v81, v82, v83, v84 = hir.exec @miden/protocol/tx/get_output_notes_commitment() : felt, felt, felt, felt
             v85 = hir.bitcast v80 : u32;
             v86 = hir.int_to_ptr v85 : ptr<byte, felt>;
             hir.store v86, v81;
@@ -148,7 +148,7 @@ builtin.component miden:base/transaction-script@1.0.0 {
     };
 
     public builtin.function @run(v96: felt, v97: felt, v98: felt, v99: felt) {
-    ^block21(v96: felt, v97: felt, v98: felt, v99: felt):
+    ^block22(v96: felt, v97: felt, v98: felt, v99: felt):
         hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/miden:base/transaction-script@1.0.0#run(v96, v97, v98, v99)
         builtin.ret ;
     };

@@ -63,7 +63,7 @@ builtin.component miden:base/note-script@1.0.0 {
                 v42 = hir.bitcast v41 : i32;
                 v44 = arith.neq v42, v373 : i1;
                 v360 = scf.if v44 : i32 {
-                ^block49:
+                ^block50:
                     v372 = arith.constant 0 : i32;
                     scf.yield v372;
                 } else {
@@ -93,7 +93,7 @@ builtin.component miden:base/note-script@1.0.0 {
                     v64 = hir.bitcast v63 : i32;
                     v66 = arith.neq v64, v367 : i1;
                     v361 = scf.if v66 : i32 {
-                    ^block48:
+                    ^block49:
                         v366 = arith.constant 0 : i32;
                         scf.yield v366;
                     } else {
@@ -175,7 +175,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v127 = hir.bitcast v126 : i32;
             v129 = arith.neq v127, v92 : i1;
             v385 = scf.if v129 : u32 {
-            ^block57:
+            ^block58:
                 v381 = arith.constant 0 : u32;
                 scf.yield v381;
             } else {
@@ -189,7 +189,7 @@ builtin.component miden:base/note-script@1.0.0 {
                 v135 = hir.bitcast v134 : i32;
                 v137 = arith.neq v135, v412 : i1;
                 v387 = scf.if v137 : u32 {
-                ^block56:
+                ^block57:
                     v411 = arith.constant 0 : u32;
                     scf.yield v411;
                 } else {
@@ -206,7 +206,7 @@ builtin.component miden:base/note-script@1.0.0 {
                     v146 = hir.bitcast v145 : i32;
                     v148 = arith.neq v146, v407 : i1;
                     v389 = scf.if v148 : u32 {
-                    ^block55:
+                    ^block56:
                         v406 = arith.constant 0 : u32;
                         scf.yield v406;
                     } else {
@@ -223,7 +223,7 @@ builtin.component miden:base/note-script@1.0.0 {
                         v157 = hir.bitcast v156 : i32;
                         v159 = arith.neq v157, v402 : i1;
                         v391 = scf.if v159 : u32 {
-                        ^block54:
+                        ^block55:
                             v401 = arith.constant 0 : u32;
                             scf.yield v401;
                         } else {
@@ -237,7 +237,7 @@ builtin.component miden:base/note-script@1.0.0 {
                             v165 = hir.bitcast v164 : i32;
                             v167 = arith.neq v165, v399 : i1;
                             scf.if v167{
-                            ^block53:
+                            ^block54:
                                 scf.yield ;
                             } else {
                             ^block22:
@@ -261,10 +261,10 @@ builtin.component miden:base/note-script@1.0.0 {
             };
             v396 = arith.constant 0 : u32;
             v394 = arith.eq v385, v396 : i1;
-            cf.cond_br v394 ^block17, ^block59;
+            cf.cond_br v394 ^block17, ^block60;
         ^block17:
             ub.unreachable ;
-        ^block59:
+        ^block60:
             builtin.ret ;
         };
 
@@ -314,7 +314,7 @@ builtin.component miden:base/note-script@1.0.0 {
             hir.store v203, v201;
             v204 = arith.constant 8 : i32;
             v205 = arith.add v201, v204 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden::active_note::get_sender(v205)
+            hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden::protocol::active_note::get_sender(v205)
             v207 = arith.constant 8 : u32;
             v206 = hir.bitcast v201 : u32;
             v208 = arith.add v206, v207 : u32 #[overflow = checked];
@@ -347,7 +347,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v228 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/__stack_pointer : ptr<byte, u8>
             v229 = hir.bitcast v228 : ptr<byte, i32>;
             hir.store v229, v227;
-            hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden::active_note::get_script_root(v227)
+            hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden::protocol::active_note::get_script_root(v227)
             v230 = hir.bitcast v227 : u32;
             v231 = arith.constant 8 : u32;
             v232 = arith.mod v230, v231 : u32;
@@ -398,7 +398,7 @@ builtin.component miden:base/note-script@1.0.0 {
             v269 = builtin.global_symbol @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/__stack_pointer : ptr<byte, u8>
             v270 = hir.bitcast v269 : ptr<byte, i32>;
             hir.store v270, v268;
-            hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden::active_note::get_serial_number(v268)
+            hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden::protocol::active_note::get_serial_number(v268)
             v271 = hir.bitcast v268 : u32;
             v272 = arith.constant 8 : u32;
             v273 = arith.mod v271, v272 : u32;
@@ -441,19 +441,19 @@ builtin.component miden:base/note-script@1.0.0 {
 
         private builtin.function @miden_base_sys::bindings::active_account::get_balance(v303: felt, v304: felt) -> felt {
         ^block33(v303: felt, v304: felt):
-            v306 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden::active_account::get_balance(v303, v304) : felt
+            v306 = hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden::protocol::active_account::get_balance(v303, v304) : felt
             builtin.ret v306;
         };
 
-        private builtin.function @miden::active_account::get_balance(v307: felt, v308: felt) -> felt {
+        private builtin.function @miden::protocol::active_account::get_balance(v307: felt, v308: felt) -> felt {
         ^block35(v307: felt, v308: felt):
-            v309 = hir.exec @miden/active_account/get_balance(v307, v308) : felt
+            v309 = hir.exec @miden/protocol/active_account/get_balance(v307, v308) : felt
             builtin.ret v309;
         };
 
-        private builtin.function @miden::active_note::get_script_root(v311: i32) {
-        ^block39(v311: i32):
-            v312, v313, v314, v315 = hir.exec @miden/active_note/get_script_root() : felt, felt, felt, felt
+        private builtin.function @miden::protocol::active_note::get_script_root(v311: i32) {
+        ^block40(v311: i32):
+            v312, v313, v314, v315 = hir.exec @miden/protocol/active_note/get_script_root() : felt, felt, felt, felt
             v316 = hir.bitcast v311 : u32;
             v317 = hir.int_to_ptr v316 : ptr<byte, felt>;
             hir.store v317, v312;
@@ -472,9 +472,9 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_note::get_sender(v327: i32) {
-        ^block42(v327: i32):
-            v328, v329 = hir.exec @miden/active_note/get_sender() : felt, felt
+        private builtin.function @miden::protocol::active_note::get_sender(v327: i32) {
+        ^block43(v327: i32):
+            v328, v329 = hir.exec @miden/protocol/active_note/get_sender() : felt, felt
             v330 = hir.bitcast v327 : u32;
             v331 = hir.int_to_ptr v330 : ptr<byte, felt>;
             hir.store v331, v328;
@@ -485,9 +485,9 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_note::get_serial_number(v335: i32) {
-        ^block44(v335: i32):
-            v336, v337, v338, v339 = hir.exec @miden/active_note/get_serial_number() : felt, felt, felt, felt
+        private builtin.function @miden::protocol::active_note::get_serial_number(v335: i32) {
+        ^block45(v335: i32):
+            v336, v337, v338, v339 = hir.exec @miden/protocol/active_note/get_serial_number() : felt, felt, felt, felt
             v340 = hir.bitcast v335 : u32;
             v341 = hir.int_to_ptr v340 : ptr<byte, felt>;
             hir.store v341, v336;
@@ -518,7 +518,7 @@ builtin.component miden:base/note-script@1.0.0 {
     };
 
     public builtin.function @run(v351: felt, v352: felt, v353: felt, v354: felt) {
-    ^block46(v351: felt, v352: felt, v353: felt, v354: felt):
+    ^block47(v351: felt, v352: felt, v353: felt, v354: felt):
         hir.exec @miden:base/note-script@1.0.0/rust_sdk_swapp_note_bindings/miden:base/note-script@1.0.0#run(v351, v352, v353, v354)
         builtin.ret ;
     };

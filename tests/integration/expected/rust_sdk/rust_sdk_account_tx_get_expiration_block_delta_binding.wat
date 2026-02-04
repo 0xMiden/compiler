@@ -46,9 +46,9 @@
       end
     )
     (func $miden_base_sys::bindings::tx::get_expiration_block_delta (;4;) (type 2) (result f32)
-      call $miden::tx::get_expiration_block_delta
+      call $miden::protocol::tx::get_expiration_block_delta
     )
-    (func $miden::tx::get_expiration_block_delta (;5;) (type 2) (result f32)
+    (func $miden::protocol::tx::get_expiration_block_delta (;5;) (type 2) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

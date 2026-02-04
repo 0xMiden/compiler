@@ -14,6 +14,20 @@ use smallvec::{SmallVec, smallvec};
 use super::*;
 use crate::{Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
 
+/// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
+fn invocation_target_from_symbol_path(
+    callee_path: &midenc_hir::SymbolPath,
+    span: midenc_hir::SourceSpan,
+) -> masm::InvocationTarget {
+    let proc_name = callee_path.name();
+    let proc_name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
+        masm::Span::new(span, proc_name.as_ref().into()),
+    ));
+    let module = callee_path.without_leaf().to_library_path();
+    let qualified = masm::QualifiedProcedureName::new(module.as_path(), proc_name);
+    masm::InvocationTarget::Path(masm::Span::new(span, qualified.into_inner()))
+}
+
 /// This trait is registered with all ops, of all dialects, which are legal for lowering to MASM.
 ///
 /// The [BlockEmitter] is responsible for then invoking the methods of this trait to facilitate
@@ -855,12 +869,8 @@ impl HirLowering for hir::Exec {
             }
         };
 
-        // Convert the path components to an absolute procedure path
-        let mut path = callee_path.to_library_path();
-        let name = masm::ProcedureName::from_raw_parts(
-            path.pop().expect("expected at least two path components"),
-        );
-        let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
+        // Convert the symbol path to a fully-qualified procedure path
+        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
         emitter.inst_emitter(self.as_operation()).exec(callee, signature, self.span());
 
@@ -909,12 +919,8 @@ impl HirLowering for hir::Call {
             }
         };
 
-        // Convert the path components to an absolute procedure path
-        let mut path = callee_path.to_library_path();
-        let name = masm::ProcedureName::from_raw_parts(
-            path.pop().expect("expected at least two path components"),
-        );
-        let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
+        // Convert the symbol path to a fully-qualified procedure path
+        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
         emitter.inst_emitter(self.as_operation()).call(callee, signature, self.span());
 

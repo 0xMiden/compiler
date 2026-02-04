@@ -4,39 +4,39 @@
 # at 2^31 (see `miden_core::FMP_INIT_VALUE`). Additionally, we place this above the maximum
 # addressable Wasm linear memory range (in element-addressable space) so that Wasm code cannot
 # reach it via byte pointers.
-const.HEAP_INFO_ADDR=0x40000000 # 2^30 (address in elements)
+const HEAP_INFO_ADDR=0x40000000 # 2^30 (address in elements)
 
 # The location of the heap_top value
-const.HEAP_INFO_TOP=HEAP_INFO_ADDR
+const HEAP_INFO_TOP=HEAP_INFO_ADDR
 
 # The location of the heap_size value
-const.HEAP_INFO_SIZE=HEAP_INFO_ADDR + 1
+const HEAP_INFO_SIZE=HEAP_INFO_ADDR + 1
 
 # The location of the heap_base value
-const.HEAP_INFO_BASE=HEAP_INFO_ADDR + 2
+const HEAP_INFO_BASE=HEAP_INFO_ADDR + 2
 
 # The location of the MAGIC value
-const.HEAP_INFO_MAGIC=HEAP_INFO_ADDR + 3
+const HEAP_INFO_MAGIC=HEAP_INFO_ADDR + 3
 
 # The address beyond which the dynamic heap cannot be allowed to grow
-const.HEAP_END=((HEAP_INFO_ADDR - 1) * 4) # (2^30 - 1) * 4 (i.e. byte address, not element address)
+const HEAP_END=((HEAP_INFO_ADDR - 1) * 4) # (2^30 - 1) * 4 (i.e. byte address, not element address)
 
 # The assertion error code used when intrinsics are used without calling heap_init
-const.HEAP_ERR="rust heap has not been initialized"
+const HEAP_ERR="rust heap has not been initialized"
 
 # u32::MAX | -1i32
-const.NEG1=4294967295
+const NEG1=4294967295
 
 # The magic bytes used to verify that the heap was properly initialized
-const.MAGIC=0xDEADBEEF
+const MAGIC=0xDEADBEEF
 
 # The size in bytes of each page of memory
-const.PAGE_SIZE=65536
+const PAGE_SIZE=65536
 
 # Checks the HEAP_INFO magic to ensure heap initialization has taken place
 #
 # This consumes the input element.
-proc.verify_heap_magic
+proc verify_heap_magic
     mem_load.HEAP_INFO_MAGIC
     push.MAGIC
     assert_eq.err=HEAP_ERR
@@ -45,7 +45,7 @@ end
 # Intrinsic used to initialize the heap globals manipulated by memory intrinsics
 #
 # This must be called before any other heap intrinsics are called. This is checked by each intrinsic
-export.heap_init # [heap_base]
+pub proc heap_init # [heap_base]
     dup.0 # [heap_base, heap_base]
     push.0 # [0, heap_base, heap_base]
     swap.1 # [heap_base, 0, heap_base]
@@ -55,30 +55,30 @@ export.heap_init # [heap_base]
 end
 
 # Get the (byte) address where the base of the heap starts
-export.heap_base
+pub proc heap_base
     exec.verify_heap_magic
     mem_load.HEAP_INFO_BASE
 end
 
 # Get the (byte) address of the top of the heap
-export.heap_top_unchecked
+pub proc heap_top_unchecked
     mem_load.HEAP_INFO_TOP
 end
 
 # Get the (byte) address of the top of the heap
-export.heap_top
+pub proc heap_top
     exec.verify_heap_magic
     mem_load.HEAP_INFO_TOP
 end
 
 # Intrinsic corresponding to the `memory_size` instruction
-export.memory_size
+pub proc memory_size
     exec.verify_heap_magic
     mem_load.HEAP_INFO_SIZE
 end
 
 # Intrinsic corresponding to the `memory_grow` instruction
-export.memory_grow # [num_pages]
+pub proc memory_grow # [num_pages]
     exec.verify_heap_magic
     mem_load.HEAP_INFO_SIZE # [heap_size, num_pages]
     dup.0                   # [heap_size, heap_size, num_pages]
@@ -118,7 +118,7 @@ end
 # word other than the at the specified index.
 #
 # The element index must be in the range 0..=3.
-export.extract_element # [element_index, w3, w2, w1, w0]
+pub proc extract_element # [element_index, w3, w2, w1, w0]
     # assert the index given is valid
     dup.0 push.3 lte assert
     # compute a set of three booleans which used in conjunction with cdrop will
@@ -146,7 +146,7 @@ end
 # which is the offset of the first byte, in the 32-bit representation of that element.
 #
 # A field element must be naturally aligned, i.e. it's byte offset must be zero.
-export.load_felt # [addr, offset]
+pub proc load_felt # [addr, offset]
     # assert the pointer is felt-aligned, then load
     swap.1 assertz mem_load
 end
@@ -155,7 +155,7 @@ end
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
-export.load_sw # [addr, offset]
+pub proc load_sw # [addr, offset]
     # check for alignment and offset validity
     dup.1 eq.0                # [offset == 0, addr, offset]
     # offset must be < 4
@@ -236,7 +236,7 @@ end
 # representing any unaligned double-word value
 #
 # Stack transition is [chunk_hi, chunk_mid, chunk_lo, offset] -> [shifted_lo, shifted_hi]
-export.realign_dw
+pub proc realign_dw
     # We will refer to the parts of our desired double-word value
     # as two parts, `x_hi` and `x_lo`.
     # Re-align the high bits by shifting out the offset
@@ -295,7 +295,7 @@ end
 # Shift two 32-bit words by the given offset.
 #
 # Returns three 32-bit chunks [chunk_lo, chunk_mid, chunk_hi]
-export.offset_dw # [value_hi, value_lo, offset]
+pub proc offset_dw # [value_hi, value_lo, offset]
     dup.0
     dup.3 u32shl # [chunk_hi, value_hi, value_lo, offset]
 
@@ -313,7 +313,7 @@ export.offset_dw # [value_hi, value_lo, offset]
 end
 
 # Load two 32-bit words to the operand stack
-export.load_dw # [addr, offset]
+pub proc load_dw # [addr, offset]
     # check for alignment and offset validity
     dup.1 eq.0                # [offset == 0, addr, offset]
     # offset must be < 4
@@ -345,7 +345,7 @@ end
 # specified index, leaving the modified word on top of the stack
 #
 # The element index must be in the range 0..=3.
-export.replace_element # [element_index, value, w3, w2, w1, w0]
+pub proc replace_element # [element_index, value, w3, w2, w1, w0]
     # assert the index given is valid
     dup.0 push.3 lte assert
     # compute a set of three booleans which used in conjunction with cdrop will
@@ -370,7 +370,7 @@ end
 # which is the offset of the first byte, in the 32-bit representation of that element.
 #
 # A field element must be naturally aligned, i.e. it's byte offset must be zero.
-export.store_felt # [addr, offset, value]
+pub proc store_felt # [addr, offset, value]
     # assert the pointer is felt-aligned, then load
     swap.1 assertz mem_store
 end
@@ -379,7 +379,7 @@ end
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
-export.store_sw # [addr, offset, value]
+pub proc store_sw # [addr, offset, value]
     # check for alignment and offset validity
     dup.1 eq.0                # [offset == 0, addr, offset, value]
     # offset must be < 4
@@ -440,7 +440,7 @@ end
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
-export.store_dw # [addr, offset, value_hi, value_lo]
+pub proc store_dw # [addr, offset, value_hi, value_lo]
     # check for alignment and offset validity
     dup.1 eq.0   # [offset == 0, addr, offset]
     # offset must be < 4
@@ -499,7 +499,7 @@ end
 #
 # * `dst` is expected to be an address in byte-addressable space, _not_ an element address.
 # * `value` must be a 32-bit value or smaller
-export.memset_sw # [size, dst, count, value]
+pub proc memset_sw # [size, dst, count, value]
     # prepare to loop until `count` iterations have been performed
     push.0        # [i, dst, size, count, value]
     dup.3         # [count, i, dst, size, count, value]
@@ -539,7 +539,7 @@ end
 #
 # * `dst` is expected to be an address in byte-addressable space, _not_ an element address.
 # * `value` must be a two 32-bit words.
-export.memset_dw # [size, dst, count, value_hi, value_lo]
+pub proc memset_dw # [size, dst, count, value_hi, value_lo]
     # prepare to loop until `count` iterations have been performed
     push.0        # [i, dst, size, count, value_hi, value_lo]
     dup.3         # [count, i, dst, size, count, value_hi, value_lo]

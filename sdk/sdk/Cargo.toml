@@ -18,6 +18,7 @@ crate-type = ["rlib"]
 miden-sdk-alloc = { version = "0.8.0", path = "../alloc" }
 miden-stdlib-sys = { version = "0.8.0", path = "../stdlib-sys" }
 miden-base = { version = "0.8.0", path = "../base" }
+miden-base-macros = { version = "0.8.0", path = "../base-macros" }
 miden-base-sys = { version = "0.8.1", path = "../base-sys" }
 miden-felt-repr = { version = "0.7.1", path = "../felt-repr/repr" }
 miden-field = { version = "0.8.0", path = "../field" }

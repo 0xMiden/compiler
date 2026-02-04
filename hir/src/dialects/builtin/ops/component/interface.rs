@@ -39,13 +39,23 @@ impl ComponentId {
             && self.version.cmp_precedence(&other.version).is_eq()
     }
 
-    /// Get the Miden Assembly [LibraryPath] that uniquely identifies this interface.
+    /// Returns true if this is the synthetic wrapper component used for pure-Rust compilation.
+    pub fn is_synthetic_wrapper(&self) -> bool {
+        self.namespace.as_str() == "root_ns"
+            && self.name.as_str() == "root"
+            && self.version == Version::new(1, 0, 0)
+    }
+
+    /// Get the Miden Assembly [`LibraryPath`] that uniquely identifies this interface.
+    ///
+    /// The returned path is a single quoted component so that `:` and `@` are preserved.
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {
-        use midenc_session::{LibraryNamespace, LibraryPath};
+        use midenc_session::LibraryPath;
 
         let ns = format!("{}:{}@{}", &self.namespace, &self.name, &self.version);
-        let namespace = LibraryNamespace::User(ns.into_boxed_str().into());
-        LibraryPath::new_from_components(namespace, [])
+        let mut path = LibraryPath::default();
+        path.push_component(&ns);
+        path
     }
 }
 
