@@ -202,6 +202,15 @@ pub fn process_storage_fields(
 }
 
 /// Checks that the type of `field` is either `StorageMap` or `Value` from the `miden` crate.
+///
+/// # Limitations
+///
+/// Types are not resolved during macro expansion, so this check just verifies the identifier
+/// written in the struct correspond to one of the expected values. Hence the following cannot
+/// be detected:
+///
+/// * A developer defines their own `StorageMap` or `Value`
+/// * A developer uses a valid type from miden but aliases it
 fn typecheck_storage_field(field: &Field) -> Result<(), syn::Error> {
     let type_path = match &field.ty {
         Type::Path(type_path) => type_path,
