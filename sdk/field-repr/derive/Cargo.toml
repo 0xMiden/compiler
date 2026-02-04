@@ -1,5 +1,5 @@
 [package]
-name = "miden-felt-repr-derive"
+name = "miden-field-repr-derive"
 description = "Derive macros for felt representation serialization/deserialization"
 version = "0.7.1"
 rust-version.workspace = true

@@ -20,7 +20,7 @@ miden-stdlib-sys = { version = "0.8.0", path = "../stdlib-sys" }
 miden-base = { version = "0.8.0", path = "../base" }
 miden-base-macros = { version = "0.8.0", path = "../base-macros" }
 miden-base-sys = { version = "0.8.1", path = "../base-sys" }
-miden-felt-repr = { version = "0.7.1", path = "../felt-repr/repr" }
+miden-field-repr = { version = "0.7.1", path = "../field-repr/repr" }
 miden-field = { version = "0.8.0", path = "../field" }
 wit-bindgen = { version = "0.46", default-features = false, features = ["macros"] }
 

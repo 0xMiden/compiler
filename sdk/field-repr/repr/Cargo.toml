@@ -1,5 +1,5 @@
 [package]
-name = "miden-felt-repr"
+name = "miden-field-repr"
 description = "Serialization/deserialization for felt representation"
 version = "0.7.1"
 rust-version.workspace = true
@@ -16,7 +16,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 miden-field = { version = "0.8.0", path = "../../field" }
-miden-felt-repr-derive = { path = "../derive", version = "0.7.1" }
+miden-field-repr-derive = { path = "../derive", version = "0.7.1" }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 miden-core.workspace = true

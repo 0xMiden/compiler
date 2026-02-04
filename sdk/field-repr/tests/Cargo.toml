@@ -1,5 +1,5 @@
 [package]
-name = "miden-felt-repr-tests"
+name = "miden-field-repr-tests"
 description = "Integration tests for felt representation serialization/deserialization"
 version = "0.7.1"
 rust-version.workspace = true
@@ -14,7 +14,7 @@ publish = false
 
 [dependencies]
 miden-field = { path = "../../field", version = "0.8.0" }
-miden-felt-repr = { path = "../repr", version = "0.7.1" }
+miden-field-repr = { path = "../repr", version = "0.7.1" }
 miden-core.workspace = true
 
 [dev-dependencies]

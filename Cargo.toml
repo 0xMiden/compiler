@@ -15,7 +15,7 @@ members = [
     "midenc-compile",
     "midenc-driver",
     "midenc-session",
-    "sdk/felt-repr/*",
+    "sdk/field-repr/*",
     "sdk/field",
     "sdk/alloc",
     "sdk/base",

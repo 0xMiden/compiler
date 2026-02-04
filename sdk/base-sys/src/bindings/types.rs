@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_felt_repr::FromFeltRepr;
+use miden_field_repr::FromFeltRepr;
 use miden_stdlib_sys::{Digest, Felt, Word, hash_elements, intrinsics::crypto::merge};
 
 /// Unique identifier for a Miden account, composed of two field elements.
