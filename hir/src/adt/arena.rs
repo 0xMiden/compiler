@@ -126,7 +126,8 @@ impl<T> Arena<T> {
         I: IntoIterator<Item = T>,
     {
         if T::IS_ZST {
-            return NonNull::slice_from_raw_parts(NonNull::dangling(), 0);
+            let len = items.into_iter().count();
+            return NonNull::slice_from_raw_parts(NonNull::dangling(), len);
         }
 
         let mut chunks = self.chunks.borrow_mut();
@@ -477,5 +478,24 @@ impl<T, const N: usize> SpecArenaExtend for [T; N] {
         }
 
         ptr
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extend_zst_returns_correct_length() {
+        let arena: Arena<()> = Arena::new();
+        let slice = arena.extend([(), (), ()]);
+        assert_eq!(slice.len(), 3);
+    }
+
+    #[test]
+    fn extend_zst_empty_returns_zero_length() {
+        let arena: Arena<()> = Arena::new();
+        let slice = arena.extend(core::iter::empty::<()>());
+        assert_eq!(slice.len(), 0);
     }
 }
