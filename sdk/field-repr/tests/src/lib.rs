@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use miden_integration_tests::{CompilerTest, project};
 use midenc_frontend_wasm::WasmTranslationConfig;
 
-/// Get the path to the `miden-felt-repr` crate.
+/// Get the path to the `miden-field-repr` crate.
 fn felt_repr_path() -> PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     PathBuf::from(manifest_dir).parent().unwrap().join("repr")
@@ -39,7 +39,7 @@ fn sdk_alloc_path() -> PathBuf {
     PathBuf::from(manifest_dir).parent().unwrap().parent().unwrap().join("alloc")
 }
 
-/// Build a [`CompilerTest`] with a `miden-felt-repr-onchain` dependency.
+/// Build a [`CompilerTest`] with a `miden-field-repr-onchain` dependency.
 ///
 /// The test crate is generated on disk via [`project`], which places it under the Cargo target
 /// directory to reuse build artifacts across test runs.
@@ -60,7 +60,7 @@ authors = []
 [dependencies]
 miden-sdk-alloc = {{ path = "{sdk_alloc}" }}
 miden-stdlib-sys = {{ path = "{stdlib_sys}" }}
-miden-felt-repr = {{ path = "{felt_repr}" }}
+miden-field-repr = {{ path = "{felt_repr}" }}
 
 [lib]
 crate-type = ["cdylib"]

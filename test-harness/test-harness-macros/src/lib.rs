@@ -108,7 +108,7 @@ fn load_package(function: &mut syn::ItemFn) {
         let bytes = crate::PACKAGE_BYTES.get_or_init(|| crate::build_package());
 
         let #package_binding_name =
-            <::miden_objects::vm::Package as ::miden_objects::utils::Deserializable>::read_from_bytes(&bytes).unwrap();
+            <::miden_protocol::vm::Package as ::miden_protocol::utils::serde::Deserializable>::read_from_bytes(&bytes).unwrap();
     };
 
     // We add the required lines to load the generated Package right at the

@@ -13,13 +13,13 @@ impl OpEmitter<'_> {
     /// size of the heap (in pages) if successful, or -1 if the heap could not be grown.
     pub fn mem_grow(&mut self, span: SourceSpan) {
         let _num_pages = self.stack.pop().expect("operand stack is empty");
-        self.raw_exec("intrinsics::mem::memory_grow", span);
+        self.raw_exec("::intrinsics::mem::memory_grow", span);
         self.push(Type::I32);
     }
 
     /// Returns the size (in pages) of the heap (from the perspective of Wasm programs)
     pub fn mem_size(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::mem::memory_size", span);
+        self.raw_exec("::intrinsics::mem::memory_size", span);
         self.push(Type::U32);
     }
 }
@@ -137,7 +137,7 @@ impl OpEmitter<'_> {
             return self.load_felt_imm(imm, span);
         }
 
-        self.raw_exec("intrinsics::mem::load_felt", span);
+        self.raw_exec("::intrinsics::mem::load_felt", span);
     }
 
     fn load_felt_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -155,7 +155,7 @@ impl OpEmitter<'_> {
             return self.load_word_imm(imm, span);
         }
 
-        self.raw_exec("intrinsics::mem::load_sw", span);
+        self.raw_exec("::intrinsics::mem::load_sw", span);
     }
 
     /// Loads a single 32-bit machine word from the given immediate address.
@@ -168,7 +168,7 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to load_sw intrinsic to handle the details of unaligned loads
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::load_sw", span);
+            self.raw_exec("::intrinsics::mem::load_sw", span);
         }
     }
 
@@ -177,7 +177,7 @@ impl OpEmitter<'_> {
         if let Some(imm) = ptr {
             self.load_double_word_imm(imm, span);
         } else {
-            self.raw_exec("intrinsics::mem::load_dw", span);
+            self.raw_exec("::intrinsics::mem::load_dw", span);
         }
 
         // The mem::intrinsic loads two 32-bit words with the first at the top of the stack.  Swap
@@ -272,7 +272,7 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to load_dw to handle the details of unaligned loads
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::load_dw", span);
+            self.raw_exec("::intrinsics::mem::load_dw", span);
         }
     }
 
@@ -281,7 +281,7 @@ impl OpEmitter<'_> {
         if let Some(imm) = ptr {
             return self.load_quad_word_imm(imm, span);
         }
-        self.raw_exec("intrinsics::mem::load_qw", span);
+        self.raw_exec("::intrinsics::mem::load_qw", span);
     }
 
     fn load_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -310,7 +310,7 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to load_qw to handle the details of unaligned loads
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::load_qw", span);
+            self.raw_exec("::intrinsics::mem::load_qw", span);
         }
     }
 
@@ -354,7 +354,7 @@ impl OpEmitter<'_> {
     /// the operand stack representing any unaligned double-word value
     #[allow(unused)]
     fn realign_double_word(&mut self, _ptr: NativePtr, span: SourceSpan) {
-        self.raw_exec("intrinsics::mem::realign_dw", span);
+        self.raw_exec("::intrinsics::mem::realign_dw", span);
     }
 
     /// This handles emitting code that handles aligning an unaligned quad machine-word value
@@ -707,7 +707,7 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::mem::memcopy_words", span);
+                self.raw_exec("::miden::core::mem::memcopy_words", span);
                 return;
             }
             // Values which can be broken up into word-sized chunks can piggy-back on the
@@ -736,7 +736,7 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::mem::memcopy_words", span);
+                self.raw_exec("::miden::core::mem::memcopy_words", span);
                 return;
             }
             // For now, all other values fallback to the default implementation
@@ -826,7 +826,7 @@ impl OpEmitter<'_> {
         if let Some(imm) = ptr {
             return self.store_quad_word_imm(imm, span);
         }
-        self.raw_exec("intrinsics::mem::store_qw", span);
+        self.raw_exec("::intrinsics::mem::store_qw", span);
     }
 
     fn store_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -855,7 +855,7 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to `store_qw` to handle unaligned stores
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::store_qw", span);
+            self.raw_exec("::intrinsics::mem::store_qw", span);
         }
     }
 
@@ -889,13 +889,13 @@ impl OpEmitter<'_> {
                 // Stack: [addr, offset, value_hi, value_lo]
                 self.emit(masm::Instruction::MovUp2, span);
                 self.emit(masm::Instruction::MovDn3, span);
-                self.raw_exec("intrinsics::mem::store_dw", span);
+                self.raw_exec("::intrinsics::mem::store_dw", span);
             }
             None => {
                 // Stack: [addr, offset, value_hi, value_lo]
                 self.emit(masm::Instruction::MovUp2, span);
                 self.emit(masm::Instruction::MovDn3, span);
-                self.raw_exec("intrinsics::mem::store_dw", span);
+                self.raw_exec("::intrinsics::mem::store_dw", span);
             }
         }
     }
@@ -910,7 +910,7 @@ impl OpEmitter<'_> {
             return self.store_word_imm(imm, span);
         }
 
-        self.raw_exec("intrinsics::mem::store_sw", span);
+        self.raw_exec("::intrinsics::mem::store_sw", span);
     }
 
     /// Stores a single 32-bit machine word to the given immediate address.
@@ -923,7 +923,7 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to `store_sw` to handle unaligned stores
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::store_sw", span);
+            self.raw_exec("::intrinsics::mem::store_sw", span);
         }
     }
 
@@ -936,7 +936,7 @@ impl OpEmitter<'_> {
             return self.store_felt_imm(imm, span);
         }
 
-        self.raw_exec("intrinsics::mem::store_felt", span);
+        self.raw_exec("::intrinsics::mem::store_felt", span);
     }
 
     fn store_felt_imm(&mut self, ptr: NativePtr, span: SourceSpan) {

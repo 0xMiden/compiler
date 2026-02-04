@@ -1,7 +1,6 @@
 #[cfg(feature = "std")]
 use alloc::borrow::Cow;
 #[cfg(feature = "std")]
-use alloc::string::ToString;
 use alloc::{format, rc::Rc, sync::Arc};
 
 use miden_assembly::utils::Deserializable;
@@ -181,7 +180,7 @@ impl ParseStage {
         context: Rc<Context>,
     ) -> CompilerResult<ParseOutput> {
         use miden_assembly::{
-            LibraryNamespace, LibraryPath,
+            PathBuf as LibraryPath,
             ast::{self, Ident, ModuleKind},
         };
 
@@ -194,17 +193,16 @@ impl ParseStage {
                     path.display()
                 )
             })?;
-        let namespace = path
-            .parent()
-            .map(|dir| {
-                LibraryNamespace::User(dir.to_str().unwrap().to_string().into_boxed_str().into())
-            })
-            .unwrap_or(LibraryNamespace::Anon);
-        let name = LibraryPath::new_from_components(namespace, [module_name]);
+        let mut name = match path.parent().and_then(|dir| dir.to_str()) {
+            Some(dir) => LibraryPath::new(&dir).into_diagnostic()?,
+            None => LibraryPath::new("$anon").into_diagnostic()?,
+        };
+        name.push(&module_name);
 
         // Parse AST
         let mut parser = ast::Module::parser(ModuleKind::Library);
-        let ast = parser.parse_file(name, path, &context.session().source_manager)?;
+        let ast =
+            parser.parse_file(name.as_path(), path, context.session().source_manager.clone())?;
 
         Ok(ParseOutput::Module(Arc::from(ast)))
     }
@@ -216,7 +214,7 @@ impl ParseStage {
         context: Rc<Context>,
     ) -> CompilerResult<ParseOutput> {
         use miden_assembly::{
-            LibraryPath,
+            PathBuf as LibraryPath,
             ast::{self, ModuleKind},
         };
 
@@ -229,7 +227,8 @@ impl ParseStage {
 
         // Parse AST
         let mut parser = ast::Module::parser(ModuleKind::Library);
-        let ast = parser.parse_str(name, source, &context.session().source_manager)?;
+        let ast =
+            parser.parse_str(name.as_path(), source, context.session().source_manager.clone())?;
 
         Ok(ParseOutput::Module(Arc::from(ast)))
     }

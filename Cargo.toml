@@ -15,7 +15,7 @@ members = [
     "midenc-compile",
     "midenc-driver",
     "midenc-session",
-    "sdk/felt-repr/*",
+    "sdk/field-repr/*",
     "sdk/field",
     "sdk/alloc",
     "sdk/base",
@@ -75,21 +75,17 @@ inventory = "0.3"
 log = "0.4"
 
 # Miden Dependencies
-miden-assembly = { version = "0.19", default-features = false }
-miden-core = { version = "0.19", default-features = false }
-miden-debug = { version = "0.4.1" }
-miden-debug-types = { version = "0.19", default-features = false }
-miden-assembly-syntax = { version = "0.19", default-features = false }
+miden-assembly = { version = "0.20", default-features = false }
+miden-core = { version = "0.20", default-features = false }
+miden-debug = { version = "0.4" }
+miden-debug-types = { version = "0.20", default-features = false }
+miden-assembly-syntax = { version = "0.20", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
-miden-lib = { version = "0.12", default-features = false, features = [
-    "with-debug-info",
-] }
-miden-objects = { version = "0.12", default-features = false }
-miden-processor = { version = "0.19", default-features = false }
-miden-stdlib = { version = "0.19", default-features = false, features = [
-    "with-debug-info",
-] }
-miden-mast-package = { version = "0.19", default-features = false }
+miden-protocol = { version = "0.13", default-features = false }
+miden-standards = { version = "0.13", default-features = false }
+miden-processor = { version = "0.20", default-features = false }
+miden-core-lib = { version = "0.20", default-features = false }
+miden-mast-package = { version = "0.20", default-features = false }
 miette = { package = "miden-miette", version = "7.1.1" }
 paste = "1.0"
 parking_lot = "0.12"
@@ -164,15 +160,11 @@ miden-test-harness-macros = { path = "test-harness/test-harness-macros" }
 #miden-assembly-syntax = { path = "../miden-vm/assembly-syntax" }
 #miden-core = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-core = { path = "../miden-vm/core" }
-#miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "4099516c08c9a56c6d1271fddfc798f40da0d702" }
-miden-debug = { git = "https://github.com/0xMiden/miden-debug", tag = "v0.4.4" }
+# miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "0a5add565d1388f77cd182f3639c16aa8f7ec674" }
+# miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "greenhat-migrate-vm-v0.20" }
 #miden-debug-types = { path = "../miden-vm/crates/debug/types" }
 #miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-processor = { path = "../miden-vm/processor" }
-#miden-lib = { git = "https://github.com/0xMiden/miden-base", rev = "8a50c8f98529f9a78655385e3e78a6de44db9316" }
-#miden-objects = { git = "https://github.com/0xMiden/miden-base", rev = "8a50c8f98529f9a78655385e3e78a6de44db9316" }
-#miden-stdlib = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-stdlib = { path = "../miden-vm/stdlib" }
 #miden-mast-package = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-mast-package = { path = "../miden-vm/package" }
 
@@ -214,7 +206,7 @@ opt-level = 3
 [profile.test.package.miden-client]
 opt-level = 3
 
-[profile.test.package.miden-lib]
+[profile.test.package.miden-protocol]
 opt-level = 3
 
 [profile.test.package.miden-tx]
@@ -233,7 +225,7 @@ opt-level = 3
 [profile.test.package.winter-math]
 opt-level = 3
 
-[profile.test.package.miden-objects]
+[profile.test.package.miden-standards]
 opt-level = 3
 
 [profile.test.package.miden-core]
@@ -242,7 +234,7 @@ opt-level = 3
 [profile.test.package.miden-assembly]
 opt-level = 3
 
-[profile.test.package.miden-stdlib]
+[profile.test.package.miden-core-lib]
 opt-level = 3
 
 # Compiler packages that might be used in tests
@@ -282,7 +274,7 @@ opt-level = 3
 [profile.dev.package.miden-client]
 opt-level = 3
 
-[profile.dev.package.miden-lib]
+[profile.dev.package.miden-protocol]
 opt-level = 3
 
 [profile.dev.package.miden-tx]

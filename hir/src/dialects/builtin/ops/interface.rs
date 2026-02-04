@@ -147,7 +147,10 @@ impl Interface {
             .downcast_ref::<builtin::Component>()
             .expect("invalid parent for interface operation: expected component");
         let component_id = component.id();
-        let path = component_id.to_library_path();
-        Some(path.append_unchecked(self.name().as_str()))
+        let mut path = component_id.to_library_path();
+        let name = self.name().as_str();
+        let suffix = LibraryPath::new(&name).expect("invalid interface module name");
+        path.push(suffix.as_path());
+        Some(path)
     }
 }

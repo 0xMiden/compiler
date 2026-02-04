@@ -5,7 +5,7 @@ use crate::intrinsics::{Felt, Word};
 
 #[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
-    #[link_name = "std::crypto::dsa::rpo_falcon512::verify"]
+    #[link_name = "miden::core::crypto::dsa::rpo_falcon512::verify"]
     fn extern_rpo_falcon512_verify(
         pk1: Felt,
         pk2: Felt,
@@ -42,5 +42,7 @@ pub fn rpo_falcon512_verify(pk: Word, msg: Word) {
 #[inline(always)]
 #[cfg(not(all(target_family = "wasm", miden)))]
 pub fn rpo_falcon512_verify(_pk: Word, _msg: Word) {
-    unimplemented!("std::crypto::dsa bindings are only available when targeting the Miden VM")
+    unimplemented!(
+        "miden::core::crypto::dsa bindings are only available when targeting the Miden VM"
+    )
 }

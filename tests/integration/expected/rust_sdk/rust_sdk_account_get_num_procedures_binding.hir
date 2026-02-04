@@ -13,7 +13,7 @@ builtin.component miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-acc
         private builtin.function @miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1#binding() -> felt {
         ^block9:
             hir.exec @miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1/rust_sdk_account_get_num_procedures_binding/wit_bindgen::rt::run_ctors_once()
-            v1 = hir.exec @miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1/rust_sdk_account_get_num_procedures_binding/miden::active_account::get_num_procedures() : felt
+            v1 = hir.exec @miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1/rust_sdk_account_get_num_procedures_binding/miden::protocol::active_account::get_num_procedures() : felt
             builtin.ret v1;
         };
 
@@ -51,9 +51,9 @@ builtin.component miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-acc
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_account::get_num_procedures() -> felt {
+        private builtin.function @miden::protocol::active_account::get_num_procedures() -> felt {
         ^block15:
-            v25 = hir.exec @miden/active_account/get_num_procedures() : felt
+            v25 = hir.exec @miden/protocol/active_account/get_num_procedures() : felt
             builtin.ret v25;
         };
 
@@ -69,7 +69,7 @@ builtin.component miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-acc
     };
 
     public builtin.function @binding() -> felt {
-    ^block19:
+    ^block20:
         v27 = hir.exec @miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1/rust_sdk_account_get_num_procedures_binding/miden:rust-sdk-account-get-num-procedures-binding/rust-sdk-account-get-num-procedures-binding@0.0.1#binding() : felt
         builtin.ret v27;
     };

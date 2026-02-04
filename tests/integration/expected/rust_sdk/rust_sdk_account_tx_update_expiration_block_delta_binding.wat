@@ -49,12 +49,12 @@
     )
     (func $miden_base_sys::bindings::tx::update_expiration_block_delta (;4;) (type 2) (param f32)
       local.get 0
-      call $miden::tx::update_expiration_block_delta
+      call $miden::protocol::tx::update_expiration_block_delta
     )
     (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
       unreachable
     )
-    (func $miden::tx::update_expiration_block_delta (;6;) (type 2) (param f32)
+    (func $miden::protocol::tx::update_expiration_block_delta (;6;) (type 2) (param f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

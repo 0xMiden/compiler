@@ -3,8 +3,9 @@ use std::{collections::VecDeque, sync::Arc};
 
 use miden_core::{FieldElement, StarkField, utils::group_slice_elements};
 use miden_debug::{Executor, Felt as TestFelt, FromMidenRepr, ToMidenRepr};
-use miden_lib::MidenLib;
 use miden_processor::AdviceInputs;
+use miden_protocol::ProtocolLib;
+use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
@@ -92,9 +93,12 @@ fn test_adv_load_preimage() {
     let std_library = (*STDLIB).clone();
     exec.dependency_resolver_mut()
         .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
     exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
+        .add(*protocol_library.digest(), protocol_library.clone().into());
+    let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*standards_library.digest(), standards_library.clone().into());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("Failed to register dependencies");
     exec.with_advice_inputs(AdviceInputs::default().with_map(advice_map));

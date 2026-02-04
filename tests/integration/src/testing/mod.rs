@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use miden_core::Felt;
 use miden_debug::Executor;
-use miden_lib::MidenLib;
 use miden_mast_package::Package;
+use miden_protocol::ProtocolLib;
+use miden_standards::StandardsLib;
 use midenc_session::STDLIB;
 
 pub use self::{
@@ -25,9 +26,12 @@ pub fn executor_with_std(args: Vec<Felt>, package: Option<&Package>) -> Executor
     let std_library = (*STDLIB).clone();
     exec.dependency_resolver_mut()
         .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
     exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
+        .add(*protocol_library.digest(), protocol_library.clone().into());
+    let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*standards_library.digest(), standards_library.clone().into());
     if let Some(pkg) = package {
         exec.with_dependencies(pkg.manifest.dependencies())
             .expect("Failed to set up dependencies");

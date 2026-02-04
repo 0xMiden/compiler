@@ -53,7 +53,7 @@ builtin.component root_ns:root@1.0.0 {
                 v42 = hir.bitcast v41 : i32;
                 v44 = arith.neq v42, v327 : i1;
                 v314 = scf.if v44 : i32 {
-                ^block21:
+                ^block22:
                     v326 = arith.constant 0 : i32;
                     scf.yield v326;
                 } else {
@@ -83,7 +83,7 @@ builtin.component root_ns:root@1.0.0 {
                     v64 = hir.bitcast v63 : i32;
                     v66 = arith.neq v64, v321 : i1;
                     v315 = scf.if v66 : i32 {
-                    ^block20:
+                    ^block21:
                         v320 = arith.constant 0 : i32;
                         scf.yield v320;
                     } else {
@@ -133,7 +133,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.store v110, v108;
             v111 = arith.constant 64 : i32;
             v112 = arith.add v108, v111 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/rust_sdk_stdlib_smt_set/std::collections::smt::set(v91, v90, v89, v88, v95, v94, v93, v92, v99, v98, v97, v96, v112)
+            hir.exec @root_ns:root@1.0.0/rust_sdk_stdlib_smt_set/miden::core::collections::smt::set(v91, v90, v89, v88, v95, v94, v93, v92, v99, v98, v97, v96, v112)
             v114 = arith.constant 88 : u32;
             v113 = hir.bitcast v108 : u32;
             v115 = arith.add v113, v114 : u32 #[overflow = checked];
@@ -298,7 +298,7 @@ builtin.component root_ns:root@1.0.0 {
             v249 = hir.bitcast v248 : i32;
             v251 = arith.neq v249, v361 : i1;
             v351 = scf.if v251 : u32 {
-            ^block26:
+            ^block27:
                 v347 = arith.constant 0 : u32;
                 scf.yield v347;
             } else {
@@ -315,7 +315,7 @@ builtin.component root_ns:root@1.0.0 {
                 v260 = hir.bitcast v259 : i32;
                 v262 = arith.neq v260, v358 : i1;
                 scf.if v262{
-                ^block25:
+                ^block26:
                     scf.yield ;
                 } else {
                 ^block14:
@@ -331,16 +331,16 @@ builtin.component root_ns:root@1.0.0 {
             };
             v356 = arith.constant 0 : u32;
             v354 = arith.eq v351, v356 : i1;
-            cf.cond_br v354 ^block12, ^block28;
+            cf.cond_br v354 ^block12, ^block29;
         ^block12:
             ub.unreachable ;
-        ^block28:
+        ^block29:
             builtin.ret ;
         };
 
-        private builtin.function @std::collections::smt::set(v265: felt, v266: felt, v267: felt, v268: felt, v269: felt, v270: felt, v271: felt, v272: felt, v273: felt, v274: felt, v275: felt, v276: felt, v277: i32) {
+        private builtin.function @miden::core::collections::smt::set(v265: felt, v266: felt, v267: felt, v268: felt, v269: felt, v270: felt, v271: felt, v272: felt, v273: felt, v274: felt, v275: felt, v276: felt, v277: i32) {
         ^block15(v265: felt, v266: felt, v267: felt, v268: felt, v269: felt, v270: felt, v271: felt, v272: felt, v273: felt, v274: felt, v275: felt, v276: felt, v277: i32):
-            v278, v279, v280, v281, v282, v283, v284, v285 = hir.exec @std/collections/smt/set(v265, v266, v267, v268, v269, v270, v271, v272, v273, v274, v275, v276) : felt, felt, felt, felt, felt, felt, felt, felt
+            v278, v279, v280, v281, v282, v283, v284, v285 = hir.exec @miden/core/collections/smt/set(v265, v266, v267, v268, v269, v270, v271, v272, v273, v274, v275, v276) : felt, felt, felt, felt, felt, felt, felt, felt
             v286 = hir.bitcast v277 : u32;
             v287 = hir.int_to_ptr v286 : ptr<byte, felt>;
             hir.store v287, v278;

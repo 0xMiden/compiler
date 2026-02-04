@@ -102,7 +102,7 @@
         local.get 3
         local.get 2
         local.get 1
-        call $std::mem::pipe_preimage_to_memory
+        call $miden::core::mem::pipe_preimage_to_memory
         drop
         local.get 0
         local.get 8
@@ -250,7 +250,7 @@
   (func $intrinsics::felt::from_u64_unchecked (;10;) (type 9) (param i64) (result f32)
     unreachable
   )
-  (func $std::mem::pipe_preimage_to_memory (;11;) (type 10) (param f32 i32 f32 f32 f32 f32) (result i32)
+  (func $miden::core::mem::pipe_preimage_to_memory (;11;) (type 10) (param f32 i32 f32 f32 f32 f32) (result i32)
     unreachable
   )
   (func $<alloc::alloc::Global>::alloc_impl (;12;) (type 11) (param i32 i32 i32 i32)

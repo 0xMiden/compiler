@@ -17,8 +17,8 @@ mod imp {
         /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::blake3::hash_1to1"]
-        fn extern_blake3_hash_1to1(
+        #[link_name = "miden::core::crypto::hashes::blake3::hash"]
+        fn extern_blake3_hash(
             e1: u32,
             e2: u32,
             e3: u32,
@@ -35,8 +35,8 @@ mod imp {
         /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::blake3::hash_2to1"]
-        fn extern_blake3_hash_2to1(
+        #[link_name = "miden::core::crypto::hashes::blake3::merge"]
+        fn extern_blake3_merge(
             e1: u32,
             e2: u32,
             e3: u32,
@@ -63,8 +63,8 @@ mod imp {
         /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::sha256::hash_1to1"]
-        fn extern_sha256_hash_1to1(
+        #[link_name = "miden::core::crypto::hashes::sha256::hash"]
+        fn extern_sha256_hash(
             e1: u32,
             e2: u32,
             e3: u32,
@@ -81,8 +81,8 @@ mod imp {
         /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::sha256::hash_2to1"]
-        fn extern_sha256_hash_2to1(
+        #[link_name = "miden::core::crypto::hashes::sha256::merge"]
+        fn extern_sha256_merge(
             e1: u32,
             e2: u32,
             e3: u32,
@@ -107,39 +107,38 @@ mod imp {
         /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
         /// hash function.
         ///
-        /// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib.
+        /// This maps to the `miden::core::crypto::hashes::rpo256::hash_elements` procedure.
         ///
         /// Input: A pointer to the memory location and the number of elements to hash
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::rpo::hash_memory"]
-        pub fn extern_hash_memory(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
+        #[link_name = "miden::core::crypto::hashes::rpo256::hash_elements"]
+        pub fn extern_hash_elements(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
 
         /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO) hash
         /// function.
         ///
-        /// This maps to the `std::crypto::hashes::rpo::hash_memory_words` procedure in the Miden
-        /// stdlib.
+        /// This maps to the `miden::core::crypto::hashes::rpo256::hash_words` procedure.
         ///
         /// Input: The start and end addresses (in field elements) of the words to hash.
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "std::crypto::hashes::rpo::hash_memory_words"]
-        pub fn extern_hash_memory_words(start_addr: u32, end_addr: u32, result_ptr: *mut Felt);
+        #[link_name = "miden::core::crypto::hashes::rpo256::hash_words"]
+        pub fn extern_hash_words(start_addr: u32, end_addr: u32, result_ptr: *mut Felt);
     }
 
     /// Hashes a 32-byte input to a 32-byte output using the given hash function.
     #[inline(always)]
-    fn hash_1to1(
+    fn hash(
         input: [u8; 32],
-        extern_hash_1to1: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, *mut u8),
+        extern_hash: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, *mut u8),
     ) -> [u8; 32] {
         use crate::intrinsics::WordAligned;
         let input = unsafe { core::mem::transmute::<[u8; 32], [u32; 8]>(input) };
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_hash_1to1(
+            extern_hash(
                 input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7], ptr,
             );
             ret_area.assume_init().into_inner()
@@ -148,9 +147,9 @@ mod imp {
 
     /// Hashes a 64-byte input to a 32-byte output using the given hash function.
     #[inline(always)]
-    fn hash_2to1(
+    fn merge(
         input: [u8; 64],
-        extern_hash_2to1: unsafe extern "C" fn(
+        extern_merge: unsafe extern "C" fn(
             u32,
             u32,
             u32,
@@ -174,7 +173,7 @@ mod imp {
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<[u8; 32]>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_hash_2to1(
+            extern_merge(
                 input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7],
                 input[8], input[9], input[10], input[11], input[12], input[13], input[14],
                 input[15], ptr,
@@ -185,19 +184,19 @@ mod imp {
 
     /// Hashes a 32-byte input to a 32-byte output using the BLAKE3 hash function.
     #[inline]
-    pub fn blake3_hash_1to1(input: [u8; 32]) -> [u8; 32] {
-        hash_1to1(input, extern_blake3_hash_1to1)
+    pub fn blake3_hash(input: [u8; 32]) -> [u8; 32] {
+        hash(input, extern_blake3_hash)
     }
 
     /// Hashes a 64-byte input to a 32-byte output using the BLAKE3 hash function.
     #[inline]
-    pub fn blake3_hash_2to1(input: [u8; 64]) -> [u8; 32] {
-        hash_2to1(input, extern_blake3_hash_2to1)
+    pub fn blake3_merge(input: [u8; 64]) -> [u8; 32] {
+        merge(input, extern_blake3_merge)
     }
 
     /// Hashes a 32-byte input to a 32-byte output using the SHA256 hash function.
     #[inline]
-    pub fn sha256_hash_1to1(input: [u8; 32]) -> [u8; 32] {
+    pub fn sha256_hash(input: [u8; 32]) -> [u8; 32] {
         use crate::intrinsics::WordAligned;
 
         let swapped_words = {
@@ -217,7 +216,7 @@ mod imp {
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_sha256_hash_1to1(w0, w1, w2, w3, w4, w5, w6, w7, ptr);
+            extern_sha256_hash(w0, w1, w2, w3, w4, w5, w6, w7, ptr);
             let mut output = ret_area.assume_init().into_inner();
             // The extern returns the digest as big-endian words as well; flip each lane so callers see
             // the conventional Rust `[u8; 32]` ordering.
@@ -230,12 +229,12 @@ mod imp {
 
     /// Hashes a 64-byte input to a 32-byte output using the SHA256 hash function.
     #[inline]
-    pub fn sha256_hash_2to1(input: [u8; 64]) -> [u8; 32] {
+    pub fn sha256_merge(input: [u8; 64]) -> [u8; 32] {
         use crate::intrinsics::WordAligned;
 
         let swapped_words = {
             let mut be_bytes = input;
-            // Same story as `sha256_hash_1to1`: adjust the byte layout so the ABI receives big-endian
+            // Same story as `sha256_hash`: adjust the byte layout so the ABI receives big-endian
             // 32-bit words.
             for chunk in be_bytes.chunks_exact_mut(4) {
                 chunk.reverse();
@@ -248,7 +247,7 @@ mod imp {
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_sha256_hash_2to1(
+            extern_sha256_merge(
                 w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15, ptr,
             );
             let mut output = ret_area.assume_init().into_inner();
@@ -263,9 +262,9 @@ mod imp {
     /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
     /// hash function.
     ///
-    /// This maps to the `std::crypto::rpo::hash_memory` procedure in the Miden stdlib and to the
-    /// `std::crypto::hashes::rpo::hash_memory_words` word-optimized variant when the input length is a
-    /// multiple of 4.
+    /// This maps to the `miden::core::crypto::hashes::rpo256::hash_elements` procedure and to the
+    /// `miden::core::crypto::hashes::rpo256::hash_words` word-optimized variant when the input
+    /// length is a multiple of 4.
     ///
     /// # Arguments
     /// * `elements` - A Vec of field elements to be hashed
@@ -285,9 +284,9 @@ mod imp {
             if element_count.is_multiple_of(4) {
                 let start_addr = miden_ptr;
                 let end_addr = start_addr + num_elements;
-                extern_hash_memory_words(start_addr, end_addr, result_ptr);
+                extern_hash_words(start_addr, end_addr, result_ptr);
             } else {
-                extern_hash_memory(miden_ptr, num_elements, result_ptr);
+                extern_hash_elements(miden_ptr, num_elements, result_ptr);
             }
 
             Digest::from_word(ret_area.assume_init().reverse())
@@ -297,7 +296,7 @@ mod imp {
     /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO)
     /// hash function.
     ///
-    /// This maps to the `std::crypto::hashes::rpo::hash_memory_words` procedure in the Miden stdlib.
+    /// This maps to the `miden::core::crypto::hashes::rpo256::hash_words` procedure.
     ///
     /// # Arguments
     /// * `words` - A slice of words to be hashed
@@ -305,16 +304,16 @@ mod imp {
     pub fn hash_words(words: &[Word]) -> Digest {
         let rust_ptr = words.as_ptr().addr() as u32;
 
+        let miden_ptr = rust_ptr / 4;
+        // It's safe to assume the `words` ptr is word-aligned.
+        assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
+
         unsafe {
             let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
             let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
-            let miden_ptr = rust_ptr / 4;
-            // It's safe to assume the `words` ptr is word-aligned.
-            assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
-
             let start_addr = miden_ptr;
             let end_addr = start_addr + (words.len() as u32 * 4);
-            extern_hash_memory_words(start_addr, end_addr, result_ptr);
+            extern_hash_words(start_addr, end_addr, result_ptr);
 
             Digest::from_word(ret_area.assume_init().reverse())
         }
@@ -329,33 +328,33 @@ mod imp {
 
     /// Computes BLAKE3 1-to-1 hash.
     #[inline]
-    pub fn blake3_hash_1to1(_input: [u8; 32]) -> [u8; 32] {
+    pub fn blake3_hash(_input: [u8; 32]) -> [u8; 32] {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
     /// Computes BLAKE3 2-to-1 hash.
     #[inline]
-    pub fn blake3_hash_2to1(_input: [u8; 64]) -> [u8; 32] {
+    pub fn blake3_merge(_input: [u8; 64]) -> [u8; 32] {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
     /// Computes SHA256 1-to-1 hash.
     #[inline]
-    pub fn sha256_hash_1to1(_input: [u8; 32]) -> [u8; 32] {
+    pub fn sha256_hash(_input: [u8; 32]) -> [u8; 32] {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
     /// Computes SHA256 2-to-1 hash.
     #[inline]
-    pub fn sha256_hash_2to1(_input: [u8; 64]) -> [u8; 32] {
+    pub fn sha256_merge(_input: [u8; 64]) -> [u8; 32] {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
@@ -364,7 +363,7 @@ mod imp {
     #[inline]
     pub fn hash_elements(_elements: Vec<Felt>) -> Digest {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
@@ -373,23 +372,23 @@ mod imp {
     #[inline]
     pub fn hash_words(_words: &[Word]) -> Digest {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
-    /// ABI helper for `std::crypto::hashes::rpo::hash_memory`.
+    /// ABI helper for `miden::core::crypto::hashes::rpo256::hash_elements`.
     #[inline]
-    pub fn extern_hash_memory(_ptr: u32, _num_elements: u32, _result_ptr: *mut Felt) {
+    pub fn extern_hash_elements(_ptr: u32, _num_elements: u32, _result_ptr: *mut Felt) {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 
-    /// ABI helper for `std::crypto::hashes::rpo::hash_memory_words`.
+    /// ABI helper for `miden::core::crypto::hashes::rpo256::hash_words`.
     #[inline]
-    pub fn extern_hash_memory_words(_start_addr: u32, _end_addr: u32, _result_ptr: *mut Felt) {
+    pub fn extern_hash_words(_start_addr: u32, _end_addr: u32, _result_ptr: *mut Felt) {
         unimplemented!(
-            "std::crypto::hashes bindings are only available when targeting the Miden VM"
+            "miden::core::crypto::hashes bindings are only available when targeting the Miden VM"
         )
     }
 }

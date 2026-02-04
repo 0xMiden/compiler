@@ -65,13 +65,13 @@ impl Note {
 }
 
 #[unsafe(no_mangle)]
-pub fn test_blake3_hash_1to1(input: [u8; 32]) -> [u8; 32] {
-    blake3_hash_1to1(input)
+pub fn test_blake3_hash(input: [u8; 32]) -> [u8; 32] {
+    blake3_hash(input)
 }
 
 #[unsafe(no_mangle)]
-pub fn test_blake3_hash_2to1(input: [u8; 64]) -> [u8; 32] {
-    blake3_hash_2to1(input)
+pub fn test_blake3_merge(input: [u8; 64]) -> [u8; 32] {
+    blake3_merge(input)
 }
 
 #[unsafe(no_mangle)]
@@ -102,7 +102,7 @@ pub fn test_create_note(
     note_type: NoteType,
     recipient: Recipient,
 ) -> NoteIdx {
-    let note_idx = miden::output_note::create(tag, Felt::ZERO, note_type, Felt::ZERO, recipient);
+    let note_idx = miden::output_note::create(tag, note_type, recipient);
     miden::output_note::add_asset(asset, note_idx);
     note_idx
 }

@@ -20,7 +20,7 @@
     (func $rust_sdk_account_faucet_get_total_issuance_binding::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1#binding (;2;) (type 1) (result f32)
       call $wit_bindgen::rt::run_ctors_once
-      call $miden::faucet::get_total_issuance
+      call $miden::protocol::faucet::get_total_issuance
     )
     (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
       (local i32)
@@ -40,11 +40,11 @@
         i32.store8
       end
     )
-    (func $miden::faucet::get_total_issuance (;4;) (type 1) (result f32)
+    (func $miden::protocol::faucet::get_total_issuance (;4;) (type 1) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "erust_sdk_account_faucet_get_total_issuance_binding\01\0b0.0.1\05\02\03\01\00\00")
+    (@custom "rodata,miden_account" (after data) "erust_sdk_account_faucet_get_total_issuance_binding\01\0b0.0.1\05\02\03\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;1;)))
   (core instance $main (;0;) (instantiate $main))

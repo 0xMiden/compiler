@@ -83,7 +83,7 @@ builtin.component miden:rust-sdk-output-note-get-assets-info-binding/rust-sdk-ou
             v54 = builtin.global_symbol @miden:rust-sdk-output-note-get-assets-info-binding/rust-sdk-output-note-get-assets-info-binding@0.0.1/rust_sdk_output_note_get_assets_info_binding/__stack_pointer : ptr<byte, u8>
             v55 = hir.bitcast v54 : ptr<byte, i32>;
             hir.store v55, v53;
-            hir.exec @miden:rust-sdk-output-note-get-assets-info-binding/rust-sdk-output-note-get-assets-info-binding@0.0.1/rust_sdk_output_note_get_assets_info_binding/miden::output_note::get_assets_info(v47, v53)
+            hir.exec @miden:rust-sdk-output-note-get-assets-info-binding/rust-sdk-output-note-get-assets-info-binding@0.0.1/rust_sdk_output_note_get_assets_info_binding/miden::protocol::output_note::get_assets_info(v47, v53)
             v57 = arith.constant 16 : u32;
             v56 = hir.bitcast v53 : u32;
             v58 = arith.add v56, v57 : u32 #[overflow = checked];
@@ -168,9 +168,9 @@ builtin.component miden:rust-sdk-output-note-get-assets-info-binding/rust-sdk-ou
             builtin.ret ;
         };
 
-        private builtin.function @miden::output_note::get_assets_info(v121: felt, v122: i32) {
+        private builtin.function @miden::protocol::output_note::get_assets_info(v121: felt, v122: i32) {
         ^block17(v121: felt, v122: i32):
-            v123, v124, v125, v126, v127 = hir.exec @miden/output_note/get_assets_info(v121) : felt, felt, felt, felt, felt
+            v123, v124, v125, v126, v127 = hir.exec @miden/protocol/output_note/get_assets_info(v121) : felt, felt, felt, felt, felt
             v128 = hir.bitcast v122 : u32;
             v129 = hir.int_to_ptr v128 : ptr<byte, felt>;
             hir.store v129, v123;
@@ -205,7 +205,7 @@ builtin.component miden:rust-sdk-output-note-get-assets-info-binding/rust-sdk-ou
     };
 
     public builtin.function @binding() -> felt {
-    ^block21:
+    ^block22:
         v142 = hir.exec @miden:rust-sdk-output-note-get-assets-info-binding/rust-sdk-output-note-get-assets-info-binding@0.0.1/rust_sdk_output_note_get_assets_info_binding/miden:rust-sdk-output-note-get-assets-info-binding/rust-sdk-output-note-get-assets-info-binding@0.0.1#binding() : felt
         builtin.ret v142;
     };

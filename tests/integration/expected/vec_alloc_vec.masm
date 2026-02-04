@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::vec_alloc_vec
+# mod ::"root_ns:root@1.0.0"::vec_alloc_vec
 
 @callconv("C")
 proc __rustc::__rust_alloc(i32, i32) -> i32
@@ -19,7 +19,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::vec_alloc_vec::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
+    exec.::"root_ns:root@1.0.0"::vec_alloc_vec::<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
     trace.252
     nop
 end
@@ -55,14 +55,14 @@ pub proc entrypoint(i32) -> felt
     nop
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::vec_alloc_vec::__rustc::__rust_no_alloc_shim_is_unstable_v2
+    exec.::"root_ns:root@1.0.0"::vec_alloc_vec::__rustc::__rust_no_alloc_shim_is_unstable_v2
     trace.252
     nop
     push.4
     push.12
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::vec_alloc_vec::__rustc::__rust_alloc
+    exec.::"root_ns:root@1.0.0"::vec_alloc_vec::__rustc::__rust_alloc
     trace.252
     nop
     push.0
@@ -78,7 +78,7 @@ pub proc entrypoint(i32) -> felt
         push.4
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::alloc::alloc::handle_alloc_error
+        exec.::"root_ns:root@1.0.0"::vec_alloc_vec::alloc::alloc::handle_alloc_error
         trace.252
         nop
         push.0
@@ -237,7 +237,7 @@ pub proc entrypoint(i32) -> felt
             swap.1
             trace.240
             nop
-            exec.::root_ns:root@1.0.0::vec_alloc_vec::<alloc::raw_vec::RawVecInner>::deallocate
+            exec.::"root_ns:root@1.0.0"::vec_alloc_vec::<alloc::raw_vec::RawVecInner>::deallocate
             trace.252
             nop
             push.16
@@ -308,7 +308,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
         movup.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::<core::ptr::alignment::Alignment>::max
+        exec.::"root_ns:root@1.0.0"::vec_alloc_vec::<core::ptr::alignment::Alignment>::max
         trace.252
         nop
         push.0
@@ -357,7 +357,7 @@ proc <miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(
             else
                 trace.240
                 nop
-                exec.::root_ns:root@1.0.0::vec_alloc_vec::intrinsics::mem::heap_base
+                exec.::"root_ns:root@1.0.0"::vec_alloc_vec::"intrinsics::mem::heap_base"
                 trace.252
                 nop
                 trace.240
@@ -512,7 +512,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::vec_alloc_vec::<alloc::raw_vec::RawVecInner>::current_memory
+    exec.::"root_ns:root@1.0.0"::vec_alloc_vec::"<alloc::raw_vec::RawVecInner>::current_memory"
     trace.252
     nop
     push.8
@@ -577,7 +577,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         movdn.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.::"root_ns:root@1.0.0"::vec_alloc_vec::"<alloc::alloc::Global as core::alloc::Allocator>::deallocate"
         trace.252
         nop
     end
@@ -745,7 +745,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::vec_alloc_vec::__rustc::__rust_dealloc
+        exec.::"root_ns:root@1.0.0"::vec_alloc_vec::__rustc::__rust_dealloc
         trace.252
         nop
     end

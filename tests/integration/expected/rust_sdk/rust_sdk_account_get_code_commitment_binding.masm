@@ -1,13 +1,13 @@
-# mod miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1
+# mod ::"miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1"
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> (felt, felt, felt, felt)
-    exec.::miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1::init
+    exec."miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1"::init
     trace.240
     nop
-    exec.::miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1::rust_sdk_account_get_code_commitment_binding::miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1#binding
+    exec.::"miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1"::rust_sdk_account_get_code_commitment_binding::"miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1#binding"
     trace.252
     nop
     push.0
@@ -62,7 +62,7 @@ pub proc binding(
     nop
     movdn.3
     swap.2
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -75,7 +75,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -86,7 +86,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1::rust_sdk_account_get_code_commitment_binding
+# mod ::"miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1"::rust_sdk_account_get_code_commitment_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -136,13 +136,13 @@ proc miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-cod
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1::rust_sdk_account_get_code_commitment_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1"::rust_sdk_account_get_code_commitment_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     dup.1
     trace.240
     nop
-    exec.::miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1::rust_sdk_account_get_code_commitment_binding::miden::active_account::get_code_commitment
+    exec.::"miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1"::rust_sdk_account_get_code_commitment_binding::"miden::protocol::active_account::get_code_commitment"
     trace.252
     nop
     push.1048584
@@ -333,7 +333,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1::rust_sdk_account_get_code_commitment_binding::__wasm_call_ctors
+        exec.::"miden:rust-sdk-account-get-code-commitment-binding/rust-sdk-account-get-code-commitment-binding@0.0.1"::rust_sdk_account_get_code_commitment_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -365,10 +365,10 @@ proc wit_bindgen::rt::run_ctors_once(
 end
 
 @callconv("C")
-proc miden::active_account::get_code_commitment(i32)
+proc miden::protocol::active_account::get_code_commitment(i32)
     trace.240
     nop
-    exec.::miden::active_account::get_code_commitment
+    exec.::miden::protocol::active_account::get_code_commitment
     trace.252
     nop
     movup.4

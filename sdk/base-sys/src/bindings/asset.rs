@@ -4,7 +4,7 @@ use super::types::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::asset::build_fungible_asset"]
+    #[link_name = "miden::protocol::asset::build_fungible_asset"]
     pub fn extern_asset_build_fungible_asset(
         faucet_id_prefix: Felt,
         faucet_id_suffix: Felt,
@@ -12,7 +12,7 @@ unsafe extern "C" {
         ptr: *mut Asset,
     );
 
-    #[link_name = "miden::asset::build_non_fungible_asset"]
+    #[link_name = "miden::protocol::asset::build_non_fungible_asset"]
     pub fn extern_asset_build_non_fungible_asset(
         faucet_id_prefix: Felt,
         data_hash_3: Felt,

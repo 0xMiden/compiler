@@ -14,7 +14,7 @@ pub(crate) fn signatures() -> &'static ModuleFunctionTypeMap {
         m.extend(collections::smt::signatures());
         m.extend(crypto::hashes::blake3::signatures());
         m.extend(crypto::hashes::sha256::signatures());
-        m.extend(crypto::hashes::rpo::signatures());
+        m.extend(crypto::hashes::rpo256::signatures());
         m.extend(crypto::dsa::rpo_falcon512::signatures());
         m.extend(mem::signatures());
         m

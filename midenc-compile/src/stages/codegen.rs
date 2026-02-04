@@ -84,22 +84,22 @@ impl Stage for CodegenStage {
 
 fn required_intrinsics_modules(session: &Session) -> impl IntoIterator<Item = Arc<Module>> {
     [
-        masm::intrinsics::load(MEM_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(MEM_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(I32_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(I32_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(I64_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(I64_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(I128_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(I128_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(CRYPTO_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(CRYPTO_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(ADVICE_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(ADVICE_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
     ]

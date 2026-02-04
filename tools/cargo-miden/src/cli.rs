@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-use crate::commands::{BuildCommand, ExampleCommand, NewCommand, TestCommand};
+use crate::commands::{BuildCommand, NewCommand, TestCommand};
 
 /// Top-level command-line interface for `cargo-miden`.
 #[derive(Debug, Parser)]
@@ -23,8 +23,6 @@ pub enum CargoMidenCommand {
     New(NewCommand),
     /// Compile the current crate to Miden package.
     Build(BuildCommand),
-    /// Scaffold one of the curated example projects.
-    Example(ExampleCommand),
     /// Run the miden-tests in the project.
     Test(TestCommand),
 }

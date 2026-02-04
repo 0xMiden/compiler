@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::hmerge
+# mod ::"root_ns:root@1.0.0"::hmerge
 
 @callconv("C")
 pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt) -> felt
@@ -189,7 +189,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt) -> felt
     dup.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hmerge::intrinsics::crypto::hmerge
+    exec.::"root_ns:root@1.0.0"::hmerge::"intrinsics::crypto::hmerge"
     trace.252
     nop
     push.32

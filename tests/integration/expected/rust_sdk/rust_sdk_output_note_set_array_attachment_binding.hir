@@ -1,0 +1,202 @@
+builtin.component miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1 {
+    builtin.module public @rust_sdk_output_note_set_array_attachment_binding {
+        private builtin.function @__wasm_call_ctors() {
+        ^block5:
+            builtin.ret ;
+        };
+
+        private builtin.function @rust_sdk_output_note_set_array_attachment_binding::bindings::__link_custom_section_describing_imports() {
+        ^block7:
+            builtin.ret ;
+        };
+
+        private builtin.function @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1#binding() -> felt {
+        ^block9:
+            v3 = builtin.global_symbol @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/__stack_pointer : ptr<byte, u8>
+            v4 = hir.bitcast v3 : ptr<byte, i32>;
+            v5 = hir.load v4 : i32;
+            v6 = arith.constant 32 : i32;
+            v7 = arith.sub v5, v6 : i32 #[overflow = wrapping];
+            v8 = builtin.global_symbol @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/__stack_pointer : ptr<byte, u8>
+            v9 = hir.bitcast v8 : ptr<byte, i32>;
+            hir.store v9, v7;
+            hir.exec @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/wit_bindgen::rt::run_ctors_once()
+            v129 = arith.constant 0 : felt;
+            v1 = arith.constant 0 : i32;
+            v200, v201, v202, v203, v204, v205, v206, v207 = scf.while v1, v7, v129, v129, v129 : i32, i32, felt, felt, felt, i32, felt, felt {
+            ^block35(v208: i32, v209: i32, v210: felt, v211: felt, v212: felt):
+                v231 = arith.constant 0 : i32;
+                v18 = arith.constant 16 : i32;
+                v19 = arith.eq v208, v18 : i1;
+                v20 = arith.zext v19 : u32;
+                v21 = hir.bitcast v20 : i32;
+                v23 = arith.neq v21, v231 : i1;
+                v193 = scf.if v23 : i32 {
+                ^block34:
+                    v140 = ub.poison i32 : i32;
+                    scf.yield v140;
+                } else {
+                ^block14:
+                    v230 = arith.constant 16 : i32;
+                    v26 = arith.add v209, v230 : i32 #[overflow = wrapping];
+                    v27 = arith.add v26, v208 : i32 #[overflow = wrapping];
+                    v29 = hir.bitcast v27 : u32;
+                    v38 = arith.constant 4 : u32;
+                    v31 = arith.mod v29, v38 : u32;
+                    hir.assertz v31 #[code = 250];
+                    v32 = hir.int_to_ptr v29 : ptr<byte, felt>;
+                    hir.store v32, v210;
+                    v33 = arith.constant 4 : i32;
+                    v34 = arith.add v208, v33 : i32 #[overflow = wrapping];
+                    scf.yield v34;
+                };
+                v227 = ub.poison felt : felt;
+                v197 = cf.select v23, v227, v212 : felt;
+                v228 = ub.poison felt : felt;
+                v196 = cf.select v23, v228, v211 : felt;
+                v141 = ub.poison felt : felt;
+                v195 = cf.select v23, v141, v210 : felt;
+                v229 = ub.poison i32 : i32;
+                v194 = cf.select v23, v229, v209 : i32;
+                v139 = arith.constant 1 : u32;
+                v131 = arith.constant 0 : u32;
+                v199 = cf.select v23, v131, v139 : u32;
+                v185 = arith.trunc v199 : i1;
+                scf.condition v185, v193, v194, v195, v196, v197, v209, v211, v212;
+            } do {
+            ^block36(v213: i32, v214: i32, v215: felt, v216: felt, v217: felt, v218: i32, v219: felt, v220: felt):
+                scf.yield v213, v214, v215, v216, v217;
+            };
+            v36 = arith.constant 24 : u32;
+            v35 = hir.bitcast v205 : u32;
+            v37 = arith.add v35, v36 : u32 #[overflow = checked];
+            v226 = arith.constant 4 : u32;
+            v39 = arith.mod v37, v226 : u32;
+            hir.assertz v39 #[code = 250];
+            v40 = hir.int_to_ptr v37 : ptr<byte, i64>;
+            v41 = hir.load v40 : i64;
+            v43 = arith.constant 8 : u32;
+            v42 = hir.bitcast v205 : u32;
+            v44 = arith.add v42, v43 : u32 #[overflow = checked];
+            v225 = arith.constant 8 : u32;
+            v46 = arith.mod v44, v225 : u32;
+            hir.assertz v46 #[code = 250];
+            v47 = hir.int_to_ptr v44 : ptr<byte, i64>;
+            hir.store v47, v41;
+            v49 = arith.constant 16 : u32;
+            v48 = hir.bitcast v205 : u32;
+            v50 = arith.add v48, v49 : u32 #[overflow = checked];
+            v224 = arith.constant 4 : u32;
+            v52 = arith.mod v50, v224 : u32;
+            hir.assertz v52 #[code = 250];
+            v53 = hir.int_to_ptr v50 : ptr<byte, i64>;
+            v54 = hir.load v53 : i64;
+            v55 = hir.bitcast v205 : u32;
+            v223 = arith.constant 8 : u32;
+            v57 = arith.mod v55, v223 : u32;
+            hir.assertz v57 #[code = 250];
+            v58 = hir.int_to_ptr v55 : ptr<byte, i64>;
+            hir.store v58, v54;
+            hir.exec @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/miden_base_sys::bindings::output_note::set_array_attachment(v206, v207, v205)
+            v222 = arith.constant 32 : i32;
+            v64 = arith.add v205, v222 : i32 #[overflow = wrapping];
+            v65 = builtin.global_symbol @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/__stack_pointer : ptr<byte, u8>
+            v66 = hir.bitcast v65 : ptr<byte, i32>;
+            hir.store v66, v64;
+            v221 = arith.constant 0 : felt;
+            builtin.ret v221;
+        };
+
+        private builtin.function @wit_bindgen::rt::run_ctors_once() {
+        ^block15:
+            v68 = builtin.global_symbol @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v69 = hir.bitcast v68 : ptr<byte, i32>;
+            v70 = hir.load v69 : i32;
+            v71 = arith.constant 1048584 : i32;
+            v72 = arith.add v70, v71 : i32 #[overflow = wrapping];
+            v73 = hir.bitcast v72 : u32;
+            v74 = hir.int_to_ptr v73 : ptr<byte, u8>;
+            v75 = hir.load v74 : u8;
+            v67 = arith.constant 0 : i32;
+            v76 = arith.zext v75 : u32;
+            v77 = hir.bitcast v76 : i32;
+            v79 = arith.neq v77, v67 : i1;
+            scf.if v79{
+            ^block17:
+                scf.yield ;
+            } else {
+            ^block18:
+                v80 = builtin.global_symbol @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v81 = hir.bitcast v80 : ptr<byte, i32>;
+                v82 = hir.load v81 : i32;
+                hir.exec @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/__wasm_call_ctors()
+                v233 = arith.constant 1 : u8;
+                v235 = arith.constant 1048584 : i32;
+                v84 = arith.add v82, v235 : i32 #[overflow = wrapping];
+                v88 = hir.bitcast v84 : u32;
+                v89 = hir.int_to_ptr v88 : ptr<byte, u8>;
+                hir.store v89, v233;
+                scf.yield ;
+            };
+            builtin.ret ;
+        };
+
+        private builtin.function @miden_base_sys::bindings::output_note::set_array_attachment(v90: felt, v91: felt, v92: i32) {
+        ^block19(v90: felt, v91: felt, v92: i32):
+            v94 = arith.constant 12 : u32;
+            v93 = hir.bitcast v92 : u32;
+            v95 = arith.add v93, v94 : u32 #[overflow = checked];
+            v96 = arith.constant 4 : u32;
+            v97 = arith.mod v95, v96 : u32;
+            hir.assertz v97 #[code = 250];
+            v98 = hir.int_to_ptr v95 : ptr<byte, felt>;
+            v99 = hir.load v98 : felt;
+            v101 = arith.constant 8 : u32;
+            v100 = hir.bitcast v92 : u32;
+            v102 = arith.add v100, v101 : u32 #[overflow = checked];
+            v239 = arith.constant 4 : u32;
+            v104 = arith.mod v102, v239 : u32;
+            hir.assertz v104 #[code = 250];
+            v105 = hir.int_to_ptr v102 : ptr<byte, felt>;
+            v106 = hir.load v105 : felt;
+            v238 = arith.constant 4 : u32;
+            v107 = hir.bitcast v92 : u32;
+            v109 = arith.add v107, v238 : u32 #[overflow = checked];
+            v237 = arith.constant 4 : u32;
+            v111 = arith.mod v109, v237 : u32;
+            hir.assertz v111 #[code = 250];
+            v112 = hir.int_to_ptr v109 : ptr<byte, felt>;
+            v113 = hir.load v112 : felt;
+            v114 = hir.bitcast v92 : u32;
+            v236 = arith.constant 4 : u32;
+            v116 = arith.mod v114, v236 : u32;
+            hir.assertz v116 #[code = 250];
+            v117 = hir.int_to_ptr v114 : ptr<byte, felt>;
+            v118 = hir.load v117 : felt;
+            hir.exec @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/miden::protocol::output_note::set_array_attachment(v90, v91, v99, v106, v113, v118)
+            builtin.ret ;
+        };
+
+        private builtin.function @miden::protocol::output_note::set_array_attachment(v119: felt, v120: felt, v121: felt, v122: felt, v123: felt, v124: felt) {
+        ^block21(v119: felt, v120: felt, v121: felt, v122: felt, v123: felt, v124: felt):
+            hir.exec @miden/protocol/output_note/set_array_attachment(v119, v120, v121, v122, v123, v124)
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable private @#GOT.data.internal.__memory_base : i32 {
+            builtin.ret_imm 0;
+        };
+
+        builtin.segment @1048576 = 0x0000000100000001;
+    };
+
+    public builtin.function @binding() -> felt {
+    ^block26:
+        v125 = hir.exec @miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1/rust_sdk_output_note_set_array_attachment_binding/miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1#binding() : felt
+        builtin.ret v125;
+    };
+};

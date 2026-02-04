@@ -49,10 +49,6 @@ where
             let project_path = cmd.exec()?;
             Ok(Some(CommandOutput::NewCommandOutput { project_path }))
         }
-        cli::CargoMidenCommand::Example(cmd) => {
-            let project_path = cmd.exec()?;
-            Ok(Some(CommandOutput::NewCommandOutput { project_path }))
-        }
         cli::CargoMidenCommand::Build(cmd) => cmd.exec(build_output_type),
         cli::CargoMidenCommand::Test(cmd) => {
             cmd.exec()?;

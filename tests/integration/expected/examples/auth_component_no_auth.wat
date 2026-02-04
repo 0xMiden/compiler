@@ -33,7 +33,7 @@
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       local.get 4
-      call $miden::active_account::get_initial_commitment
+      call $miden::protocol::active_account::get_initial_commitment
       local.get 4
       f32.load offset=8
       local.set 5
@@ -47,7 +47,7 @@
       f32.load offset=12
       local.set 8
       local.get 4
-      call $miden::active_account::compute_commitment
+      call $miden::protocol::active_account::compute_commitment
       local.get 4
       f32.load offset=8
       local.set 9
@@ -85,7 +85,7 @@
           i32.eq
           br_if 1 (;@1;)
         end
-        call $miden::native_account::incr_nonce
+        call $miden::protocol::native_account::incr_nonce
         drop
       end
       local.get 4
@@ -114,17 +114,17 @@
     (func $intrinsics::felt::eq (;4;) (type 2) (param f32 f32) (result i32)
       unreachable
     )
-    (func $miden::active_account::compute_commitment (;5;) (type 3) (param i32)
+    (func $miden::protocol::active_account::compute_commitment (;5;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::active_account::get_initial_commitment (;6;) (type 3) (param i32)
+    (func $miden::protocol::active_account::get_initial_commitment (;6;) (type 3) (param i32)
       unreachable
     )
-    (func $miden::native_account::incr_nonce (;7;) (type 4) (result f32)
+    (func $miden::protocol::native_account::incr_nonce (;7;) (type 4) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "-auth-component-no-auth\01\0b0.1.0\01\01")
+    (@custom "rodata,miden_account" (after data) "-auth-component-no-auth\01\0b0.1.0\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "word" (type $word (;1;)))
   (core instance $main (;0;) (instantiate $main))

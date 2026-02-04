@@ -8,7 +8,6 @@ use midenc_hir::{
 
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
-pub(crate) const MODULE_ID: &str = "intrinsics::mem";
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Intrinsics),

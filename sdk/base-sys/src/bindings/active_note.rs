@@ -3,26 +3,24 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::{AccountId, Asset, Recipient};
+use super::{AccountId, Asset, Recipient, native_account};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::active_note::get_inputs"]
+    #[link_name = "miden::protocol::active_note::get_inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
-    #[link_name = "miden::active_note::get_assets"]
+    #[link_name = "miden::protocol::active_note::get_assets"]
     pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
-    #[link_name = "miden::active_note::get_sender"]
+    #[link_name = "miden::protocol::active_note::get_sender"]
     pub fn extern_note_get_sender(ptr: *mut AccountId);
-    #[link_name = "miden::active_note::get_recipient"]
+    #[link_name = "miden::protocol::active_note::get_recipient"]
     pub fn extern_note_get_recipient(ptr: *mut Recipient);
-    #[link_name = "miden::active_note::get_script_root"]
+    #[link_name = "miden::protocol::active_note::get_script_root"]
     pub fn extern_note_get_script_root(ptr: *mut Word);
-    #[link_name = "miden::active_note::get_serial_number"]
+    #[link_name = "miden::protocol::active_note::get_serial_number"]
     pub fn extern_note_get_serial_number(ptr: *mut Word);
-    #[link_name = "miden::active_note::get_metadata"]
+    #[link_name = "miden::protocol::active_note::get_metadata"]
     pub fn extern_note_get_metadata(ptr: *mut Word);
-    #[link_name = "miden::active_note::add_assets_to_account"]
-    pub fn extern_note_add_assets_to_account();
 }
 
 /// Get the inputs of the currently executing note.
@@ -129,8 +127,12 @@ pub fn get_metadata() -> Word {
     }
 }
 
-/// Moves all assets from the active note into the active account vault.
-#[inline]
+/// Adds the assets of the currently executing note to the native account vault.
+///
+/// This is equivalent to retrieving the active note's assets via [`get_assets`] and adding each one
+/// to the native account vault via [`native_account::add_asset`].
 pub fn add_assets_to_account() {
-    unsafe { extern_note_add_assets_to_account() }
+    for asset in get_assets() {
+        native_account::add_asset(asset);
+    }
 }

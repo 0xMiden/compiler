@@ -9,6 +9,7 @@ use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Miden),
+    SymbolNameComponent::Component(symbols::Protocol),
     SymbolNameComponent::Component(symbols::NativeAccount),
 ];
 
@@ -40,16 +41,23 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(SET_STORAGE_ITEM),
         FunctionType::new(
             CallConv::Wasm,
-            [Felt, Felt, Felt, Felt, Felt],
-            [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
+            [
+                Felt, Felt, // slot_id_prefix, slot_id_suffix
+                Felt, Felt, Felt, Felt, // value components
+            ],
+            [Felt, Felt, Felt, Felt], // old value
         ),
     );
     native_account.insert(
         Symbol::from(SET_STORAGE_MAP_ITEM),
         FunctionType::new(
             CallConv::Wasm,
-            [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
-            [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
+            [
+                Felt, Felt, // slot_id_prefix, slot_id_suffix
+                Felt, Felt, Felt, Felt, // key components
+                Felt, Felt, Felt, Felt, // value components
+            ],
+            [Felt, Felt, Felt, Felt], // old value
         ),
     );
     native_account.insert(Symbol::from(INCR_NONCE), FunctionType::new(CallConv::Wasm, [], [Felt]));

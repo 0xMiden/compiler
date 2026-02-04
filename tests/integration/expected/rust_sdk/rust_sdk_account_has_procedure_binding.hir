@@ -24,7 +24,7 @@ builtin.component miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-
             v100 = arith.constant 0 : felt;
             v1 = arith.constant 0 : i32;
             v143, v144, v145, v146 = scf.while v1, v7, v100 : i32, i32, felt, i32 {
-            ^block32(v147: i32, v148: i32, v149: felt):
+            ^block33(v147: i32, v148: i32, v149: felt):
                 v162 = arith.constant 0 : i32;
                 v163 = arith.constant 16 : i32;
                 v15 = arith.eq v147, v163 : i1;
@@ -32,7 +32,7 @@ builtin.component miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-
                 v17 = hir.bitcast v16 : i32;
                 v19 = arith.neq v17, v162 : i1;
                 v138 = scf.if v19 : i32 {
-                ^block31:
+                ^block32:
                     v109 = ub.poison i32 : i32;
                     scf.yield v109;
                 } else {
@@ -58,7 +58,7 @@ builtin.component miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-
                 v132 = arith.trunc v142 : i1;
                 scf.condition v132, v138, v139, v140, v148;
             } do {
-            ^block33(v150: i32, v151: i32, v152: felt, v153: i32):
+            ^block34(v150: i32, v151: i32, v152: felt, v153: i32):
                 scf.yield v150, v151, v152;
             };
             v30 = arith.constant 12 : u32;
@@ -91,7 +91,7 @@ builtin.component miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-
             hir.assertz v52 #[code = 250];
             v53 = hir.int_to_ptr v50 : ptr<byte, felt>;
             v54 = hir.load v53 : felt;
-            v55 = hir.exec @miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1/rust_sdk_account_has_procedure_binding/miden::active_account::has_procedure(v35, v42, v49, v54) : felt
+            v55 = hir.exec @miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1/rust_sdk_account_has_procedure_binding/miden::protocol::active_account::has_procedure(v35, v42, v49, v54) : felt
             v155 = arith.constant 16 : i32;
             v66 = arith.add v146, v155 : i32 #[overflow = wrapping];
             v67 = builtin.global_symbol @miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1/rust_sdk_account_has_procedure_binding/__stack_pointer : ptr<byte, u8>
@@ -142,9 +142,9 @@ builtin.component miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_account::has_procedure(v92: felt, v93: felt, v94: felt, v95: felt) -> felt {
+        private builtin.function @miden::protocol::active_account::has_procedure(v92: felt, v93: felt, v94: felt, v95: felt) -> felt {
         ^block19(v92: felt, v93: felt, v94: felt, v95: felt):
-            v96 = hir.exec @miden/active_account/has_procedure(v92, v93, v94, v95) : felt
+            v96 = hir.exec @miden/protocol/active_account/has_procedure(v92, v93, v94, v95) : felt
             builtin.ret v96;
         };
 
@@ -160,7 +160,7 @@ builtin.component miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-
     };
 
     public builtin.function @binding() -> felt {
-    ^block23:
+    ^block24:
         v98 = hir.exec @miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1/rust_sdk_account_has_procedure_binding/miden:rust-sdk-account-has-procedure-binding/rust-sdk-account-has-procedure-binding@0.0.1#binding() : felt
         builtin.ret v98;
     };

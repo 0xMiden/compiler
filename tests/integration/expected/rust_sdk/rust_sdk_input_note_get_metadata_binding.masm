@@ -1,13 +1,13 @@
-# mod miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1
+# mod ::"miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1"
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> (felt, felt, felt, felt)
-    exec.::miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1::init
+    exec."miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1"::init
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1::rust_sdk_input_note_get_metadata_binding::miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1#binding
+    exec.::"miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1"::rust_sdk_input_note_get_metadata_binding::"miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1#binding"
     trace.252
     nop
     push.0
@@ -62,7 +62,7 @@ pub proc binding(
     nop
     movdn.3
     swap.2
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -75,7 +75,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -86,7 +86,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1::rust_sdk_input_note_get_metadata_binding
+# mod ::"miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1"::rust_sdk_input_note_get_metadata_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -128,14 +128,14 @@ proc miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-meta
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1::rust_sdk_input_note_get_metadata_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1"::rust_sdk_input_note_get_metadata_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
     dup.1
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1::rust_sdk_input_note_get_metadata_binding::miden_base_sys::bindings::input_note::get_metadata
+    exec.::"miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1"::rust_sdk_input_note_get_metadata_binding::miden_base_sys::bindings::input_note::get_metadata
     trace.252
     nop
     push.1114148
@@ -272,7 +272,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1::rust_sdk_input_note_get_metadata_binding::__wasm_call_ctors
+        exec.::"miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1"::rust_sdk_input_note_get_metadata_binding::__wasm_call_ctors
         trace.252
         nop
         push.1
@@ -332,7 +332,7 @@ proc miden_base_sys::bindings::input_note::get_metadata(
     movup.3
     trace.240
     nop
-    exec.::miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1::rust_sdk_input_note_get_metadata_binding::miden::input_note::get_metadata
+    exec.::"miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-metadata-binding@0.0.1"::rust_sdk_input_note_get_metadata_binding::"miden::protocol::input_note::get_metadata"
     trace.252
     nop
     dup.0
@@ -420,58 +420,10 @@ proc miden_base_sys::bindings::input_note::get_metadata(
 end
 
 @callconv("C")
-proc miden::input_note::get_metadata(felt, i32)
-    trace.240
-    nop
-    exec.::miden::input_note::get_metadata
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
+proc miden::protocol::input_note::get_metadata(felt, i32)
+    drop
+    drop
+    push.0
+    assert
 end
 
