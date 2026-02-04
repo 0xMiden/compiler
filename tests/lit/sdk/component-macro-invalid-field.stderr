@@ -1,0 +1,7 @@
+// RUN: env CARGO_TARGET_DIR=%target_dir/lit/sdk-project cargo run --bin component-macro-invalid-field --manifest-path %S/sdk-project/Cargo.toml 2>&1 | filecheck %s
+
+// CHECK: error: storage field type can only be `StorageMap` or `Value` from `miden` crate
+// CHECK-NEXT:  --> {{.*\.rs}}:{{[0-9]+}}:{{[0-9]+}}
+// CHECK-NEXT:   |
+// CHECK-NEXT: {{[0-9]+}} |     counter: u32,
+// CHECK-NEXT:   |     ^^^^^^^^^^^^

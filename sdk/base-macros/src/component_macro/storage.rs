@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use quote::quote;
-use syn::spanned::Spanned;
+use syn::{Field, Type, spanned::Spanned};
 
 use crate::account_component_metadata::AccountComponentMetadataBuilder;
 
@@ -106,6 +106,9 @@ pub fn process_storage_fields(
     let mut slot_ids = HashMap::<(u64, u64), String>::new();
 
     for field in fields.named.iter_mut() {
+        if let Err(err) = typecheck_storage_field(field) {
+            errors.push(err);
+        }
         let field_name = field.ident.as_ref().expect("Named field must have an identifier");
         let field_name_str = field_name.to_string();
         let field_type = &field.ty;
@@ -196,4 +199,37 @@ pub fn process_storage_fields(
     }
 
     Ok(field_inits)
+}
+
+/// Checks that the type of `field` is either `StorageMap` or `Value` from the `miden` crate.
+fn typecheck_storage_field(field: &Field) -> Result<(), syn::Error> {
+    let type_path = match &field.ty {
+        Type::Path(type_path) => type_path,
+        _ => {
+            return Err(syn::Error::new(field.span(), "storage field type must be a path"));
+        }
+    };
+
+    let segments: Vec<String> = type_path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect();
+
+    const BASE_CRATE: &str = "miden";
+    const TYPENAME_MAP: &str = "StorageMap";
+    const TYPENAME_VALUE: &str = "Value";
+
+    match segments.as_slice() {
+        [a] if a == TYPENAME_MAP || a == TYPENAME_VALUE => Ok(()),
+        [a, b] if a == BASE_CRATE && (b == TYPENAME_MAP || b == TYPENAME_VALUE) => Ok(()),
+        _ => Err(syn::Error::new(
+            field.span(),
+            format!(
+                "storage field type can only be `{TYPENAME_MAP}` or `{TYPENAME_VALUE}` from \
+                 `{BASE_CRATE}` crate"
+            ),
+        )),
+    }
 }
