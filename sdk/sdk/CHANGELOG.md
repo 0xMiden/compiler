@@ -13,12 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Storage slot IDs are now derived from slot names; `#[storage(slot(...))]`/`slot(...)` is no longer supported, and slot name / id collisions are detected at compile time #907
 - SDK bindings updated for VM v0.20 / protocol v0.13 (some bindings changed, e.g. `output_note::create(tag, note_type, recipient)`) #907
 - Renamed `AccountId::from` to `AccountId::new` #808
-- Assert `value <= Felt::M` in `Felt::from_u64_unchecked` #891
 
 ### Added
 - `ToFeltRepr` and `FromFeltRepr` traits with `derive` macros for felt-representation encoding/decoding #808
 - `Word::from_u64_unchecked` constructor #894
-- Assert range in `Felt` constructor, moving some range checks from runtime to compile time #891
+- Assert `value <= Felt::M` in `Felt::from_u64_unchecked` #891
 
 ### Fixed
 - Reverse the return values of `NativeAccount::add_asset` #862
