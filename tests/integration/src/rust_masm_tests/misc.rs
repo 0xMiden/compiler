@@ -218,6 +218,44 @@ fn test_invalid_stack_index_4_word_1_felt_args() {
     .unwrap();
 }
 
+/// Regression test for https://github.com/0xMiden/compiler/issues/811
+///
+/// This reproduces a bug (byte-by-byte copying) in `memory.copy` lowering used by `Vec` reallocation.
+#[test]
+fn test_vec_realloc_copies_data_issue_811() {
+    let main_fn = r#"() -> Felt {
+        extern crate alloc;
+        use alloc::vec::Vec;
+
+        // Create a Vec and push 5 Felt elements. Vec typically starts with capacity 4, so the
+        // 5th push triggers reallocation.
+        let mut v: Vec<Felt> = Vec::new();
+        v.push(felt!(11111));
+        v.push(felt!(22222));
+        v.push(felt!(33333));
+        v.push(felt!(44444));
+        v.push(felt!(55555));
+
+        // Sum all elements - if realloc doesn't copy, the first 4 elements will be garbage.
+        v[0] + v[1] + v[2] + v[3] + v[4]
+    }"#;
+
+    setup::enable_compiler_instrumentation();
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_fn_body_with_stdlib_sys("vec_realloc_copies_data", main_fn, config, []);
+
+    let package = test.compiled_package();
+    let args: [Felt; 0] = [];
+
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let result: u64 = trace.parse_result::<Felt>().unwrap().as_int();
+        assert_eq!(result, 166_665, "Vec reallocation failed to copy existing elements");
+        Ok(())
+    })
+    .unwrap();
+}
+
 #[ignore = "too fragile (depends on mem addrs), this bug is also covered by the test_hmerge test"]
 #[test]
 fn test_func_arg_order() {
