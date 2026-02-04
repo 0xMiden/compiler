@@ -4,10 +4,10 @@ use super::types::Asset;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::faucet::create_fungible_asset"]
+    #[link_name = "miden::protocol::faucet::create_fungible_asset"]
     pub fn extern_faucet_create_fungible_asset(amount: Felt, ptr: *mut Asset);
 
-    #[link_name = "miden::faucet::create_non_fungible_asset"]
+    #[link_name = "miden::protocol::faucet::create_non_fungible_asset"]
     pub fn extern_faucet_create_non_fungible_asset(
         data_hash_3: Felt,
         data_hash_2: Felt,
@@ -16,7 +16,7 @@ unsafe extern "C" {
         ptr: *mut Asset,
     );
 
-    #[link_name = "miden::faucet::mint"]
+    #[link_name = "miden::protocol::faucet::mint"]
     pub fn extern_faucet_mint(
         asset_3: Felt,
         asset_2: Felt,
@@ -25,7 +25,7 @@ unsafe extern "C" {
         ptr: *mut Asset,
     );
 
-    #[link_name = "miden::faucet::burn"]
+    #[link_name = "miden::protocol::faucet::burn"]
     pub fn extern_faucet_burn(
         asset_3: Felt,
         asset_2: Felt,
@@ -34,10 +34,10 @@ unsafe extern "C" {
         ptr: *mut Asset,
     );
 
-    #[link_name = "miden::faucet::get_total_issuance"]
+    #[link_name = "miden::protocol::faucet::get_total_issuance"]
     pub fn extern_faucet_get_total_issuance() -> Felt;
 
-    #[link_name = "miden::faucet::is_non_fungible_asset_issued"]
+    #[link_name = "miden::protocol::faucet::is_non_fungible_asset_issued"]
     pub fn extern_faucet_is_non_fungible_asset_issued(
         asset_3: Felt,
         asset_2: Felt,

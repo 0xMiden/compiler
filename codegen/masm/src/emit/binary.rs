@@ -136,7 +136,7 @@ impl OpEmitter<'_> {
             Type::U32 | Type::U16 | Type::U8 | Type::I1 => {
                 self.emit(masm::Instruction::U32Gt, span);
             }
-            Type::I32 => self.raw_exec("intrinsics::i32::is_gt", span),
+            Type::I32 => self.raw_exec("::intrinsics::i32::is_gt", span),
             ty => unimplemented!("gt is not yet implemented for {ty}"),
         }
         self.push(Type::I1);
@@ -166,7 +166,7 @@ impl OpEmitter<'_> {
             }
             Type::I32 => {
                 self.push_immediate(imm, span);
-                self.raw_exec("intrinsics::i32::is_gt", span);
+                self.raw_exec("::intrinsics::i32::is_gt", span);
             }
             ty => unimplemented!("gt is not yet implemented for {ty}"),
         }
@@ -191,7 +191,7 @@ impl OpEmitter<'_> {
             Type::U32 | Type::U16 | Type::U8 | Type::I1 => {
                 self.emit(masm::Instruction::U32Gte, span);
             }
-            Type::I32 => self.raw_exec("intrinsics::i32::is_gte", span),
+            Type::I32 => self.raw_exec("::intrinsics::i32::is_gte", span),
             ty => unimplemented!("gte is not yet implemented for {ty}"),
         }
         self.push(Type::I1);
@@ -221,7 +221,7 @@ impl OpEmitter<'_> {
             }
             Type::I32 => {
                 self.push_immediate(imm, span);
-                self.raw_exec("intrinsics::i32::is_gte", span);
+                self.raw_exec("::intrinsics::i32::is_gte", span);
             }
             ty => unimplemented!("gte is not yet implemented for {ty}"),
         }
@@ -246,7 +246,7 @@ impl OpEmitter<'_> {
             Type::U32 | Type::U16 | Type::U8 | Type::I1 => {
                 self.emit(masm::Instruction::U32Lt, span);
             }
-            Type::I32 => self.raw_exec("intrinsics::i32::is_lt", span),
+            Type::I32 => self.raw_exec("::intrinsics::i32::is_lt", span),
             ty => unimplemented!("lt is not yet implemented for {ty}"),
         }
         self.push(Type::I1);
@@ -276,7 +276,7 @@ impl OpEmitter<'_> {
             }
             Type::I32 => {
                 self.push_immediate(imm, span);
-                self.raw_exec("intrinsics::i32::is_lt", span);
+                self.raw_exec("::intrinsics::i32::is_lt", span);
             }
             ty => unimplemented!("lt is not yet implemented for {ty}"),
         }
@@ -301,7 +301,7 @@ impl OpEmitter<'_> {
             Type::U32 | Type::U16 | Type::U8 | Type::I1 => {
                 self.emit(masm::Instruction::U32Lte, span);
             }
-            Type::I32 => self.raw_exec("intrinsics::i32::is_lte", span),
+            Type::I32 => self.raw_exec("::intrinsics::i32::is_lte", span),
             ty => unimplemented!("lte is not yet implemented for {ty}"),
         }
         self.push(Type::I1);
@@ -331,7 +331,7 @@ impl OpEmitter<'_> {
             }
             Type::I32 => {
                 self.push_immediate(imm, span);
-                self.raw_exec("intrinsics::i32::is_lte", span);
+                self.raw_exec("::intrinsics::i32::is_lte", span);
             }
             ty => unimplemented!("lte is not yet implemented for {ty}"),
         }
@@ -837,7 +837,7 @@ impl OpEmitter<'_> {
                 self.emit_all([masm::Instruction::Exp, masm::Instruction::U32Assert], span);
             }
             Type::I32 => {
-                self.raw_exec("intrinsics::i32::ipow", span);
+                self.raw_exec("::intrinsics::i32::ipow", span);
             }
             ty @ (Type::U16 | Type::U8) => {
                 self.emit_all([masm::Instruction::Exp, masm::Instruction::U32Assert], span);
@@ -874,7 +874,7 @@ impl OpEmitter<'_> {
             }
             Type::I32 => {
                 self.emit_push(exp, span);
-                self.raw_exec("intrinsics::i32::ipow", span);
+                self.raw_exec("::intrinsics::i32::ipow", span);
             }
             ty @ (Type::U16 | Type::U8) => {
                 self.emit_all(

@@ -1,4 +1,4 @@
-# mod miden:cross-ctx-account-word-arg/foo@1.0.0
+# mod ::"miden:cross-ctx-account-word-arg/foo@1.0.0"
 
 @callconv("canon-lift")
 pub proc process-word(
@@ -19,13 +19,13 @@ pub proc process-word(
     felt,
     felt
 ) -> felt
-    exec.::miden:cross-ctx-account-word-arg/foo@1.0.0::init
+    exec."miden:cross-ctx-account-word-arg/foo@1.0.0"::init
     trace.240
     nop
-    exec.::miden:cross-ctx-account-word-arg/foo@1.0.0::cross_ctx_account_word_arg::miden:cross-ctx-account-word-arg/foo@1.0.0#process-word
+    exec.::"miden:cross-ctx-account-word-arg/foo@1.0.0"::cross_ctx_account_word_arg::"miden:cross-ctx-account-word-arg/foo@1.0.0#process-word"
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -38,7 +38,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -49,7 +49,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:cross-ctx-account-word-arg/foo@1.0.0::cross_ctx_account_word_arg
+# mod ::"miden:cross-ctx-account-word-arg/foo@1.0.0"::cross_ctx_account_word_arg
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -65,8 +65,9 @@ proc cross_ctx_account_word_arg::bindings::__link_custom_section_describing_impo
     nop
 end
 
+@locals("1")
 @callconv("C")
-proc miden:cross-ctx-account-word-arg/foo@1.0.0#process-word.1(
+proc miden:cross-ctx-account-word-arg/foo@1.0.0#process-word(
     felt,
     felt,
     felt,
@@ -86,7 +87,7 @@ proc miden:cross-ctx-account-word-arg/foo@1.0.0#process-word.1(
 ) -> felt
     trace.240
     nop
-    exec.::miden:cross-ctx-account-word-arg/foo@1.0.0::cross_ctx_account_word_arg::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:cross-ctx-account-word-arg/foo@1.0.0"::cross_ctx_account_word_arg::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     movup.15
@@ -211,7 +212,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:cross-ctx-account-word-arg/foo@1.0.0::cross_ctx_account_word_arg::__wasm_call_ctors
+        exec.::"miden:cross-ctx-account-word-arg/foo@1.0.0"::cross_ctx_account_word_arg::__wasm_call_ctors
         trace.252
         nop
         push.1

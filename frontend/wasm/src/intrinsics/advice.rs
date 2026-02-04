@@ -7,7 +7,6 @@ use midenc_hir::{
 
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
-pub(crate) const MODULE_ID: &str = "intrinsics::advice";
 /// The module path prefix for advice intrinsics, not including the function name
 pub const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,

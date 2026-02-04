@@ -1,14 +1,14 @@
-# mod miden:base/note-script@1.0.0
+# mod ::"miden:base/note-script@1.0.0"
 
 @callconv("canon-lift")
 pub proc run(felt, felt, felt, felt)
-    exec.::miden:base/note-script@1.0.0::init
+    exec."miden:base/note-script@1.0.0"::init
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::counter_note::miden:base/note-script@1.0.0#run
+    exec.::"miden:base/note-script@1.0.0"::counter_note::"miden:base/note-script@1.0.0#run"
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -21,7 +21,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -32,7 +32,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:base/note-script@1.0.0::counter_note
+# mod ::"miden:base/note-script@1.0.0"::counter_note
 
 @callconv("C")
 proc counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0(
@@ -40,7 +40,7 @@ proc counter_note::bindings::miden::counter_contract::counter_contract::get_coun
 ) -> felt
     trace.240
     nop
-    call.::miden:counter-contract/counter-contract@0.1.0::get-count
+    call.::"miden:counter-contract/counter-contract@0.1.0"::"get-count"
     trace.252
     nop
 end
@@ -51,7 +51,7 @@ proc counter_note::bindings::miden::counter_contract::counter_contract::incremen
 ) -> felt
     trace.240
     nop
-    call.::miden:counter-contract/counter-contract@0.1.0::increment-count
+    call.::"miden:counter-contract/counter-contract@0.1.0"::"increment-count"
     trace.252
     nop
 end
@@ -78,23 +78,23 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     drop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::counter_note::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:base/note-script@1.0.0"::counter_note::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
+    exec.::"miden:base/note-script@1.0.0"::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
     trace.252
     nop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0
+    exec.::"miden:base/note-script@1.0.0"::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0
     trace.252
     nop
     drop
     trace.240
     nop
-    exec.::miden:base/note-script@1.0.0::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
+    exec.::"miden:base/note-script@1.0.0"::counter_note::counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
     trace.252
     nop
     push.1
@@ -146,7 +146,7 @@ proc wit_bindgen::rt::run_ctors_once(
         nop
         trace.240
         nop
-        exec.::miden:base/note-script@1.0.0::counter_note::__wasm_call_ctors
+        exec.::"miden:base/note-script@1.0.0"::counter_note::__wasm_call_ctors
         trace.252
         nop
         push.1

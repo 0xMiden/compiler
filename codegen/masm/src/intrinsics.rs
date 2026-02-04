@@ -1,15 +1,17 @@
+use alloc::sync::Arc;
+
 use miden_assembly::{
-    LibraryPath,
+    PathBuf as LibraryPath,
     ast::{Module, ModuleKind},
 };
 use midenc_session::diagnostics::{PrintDiagnostic, SourceLanguage, SourceManager, Uri};
 
-pub const I32_INTRINSICS_MODULE_NAME: &str = "intrinsics::i32";
-pub const I64_INTRINSICS_MODULE_NAME: &str = "intrinsics::i64";
-pub const I128_INTRINSICS_MODULE_NAME: &str = "intrinsics::i128";
-pub const MEM_INTRINSICS_MODULE_NAME: &str = "intrinsics::mem";
-pub const CRYPTO_INTRINSICS_MODULE_NAME: &str = "intrinsics::crypto";
-pub const ADVICE_INTRINSICS_MODULE_NAME: &str = "intrinsics::advice";
+pub const I32_INTRINSICS_MODULE_NAME: &str = "::intrinsics::i32";
+pub const I64_INTRINSICS_MODULE_NAME: &str = "::intrinsics::i64";
+pub const I128_INTRINSICS_MODULE_NAME: &str = "::intrinsics::i128";
+pub const MEM_INTRINSICS_MODULE_NAME: &str = "::intrinsics::mem";
+pub const CRYPTO_INTRINSICS_MODULE_NAME: &str = "::intrinsics::crypto";
+pub const ADVICE_INTRINSICS_MODULE_NAME: &str = "::intrinsics::advice";
 
 pub const INTRINSICS_MODULE_NAMES: [&str; 6] = [
     I32_INTRINSICS_MODULE_NAME,
@@ -69,14 +71,14 @@ const INTRINSICS: [(&str, &str, &str); 6] = [
 
 /// This helper loads the named module from the set of intrinsics modules defined in this crate.
 ///
-/// Expects the fully-qualified name to be given, e.g. `intrinsics::mem`
-pub fn load<N: AsRef<str>>(name: N, source_manager: &dyn SourceManager) -> Option<Box<Module>> {
+/// Expects the fully-qualified name to be given, e.g. `::intrinsics::mem`
+pub fn load<N: AsRef<str>>(name: N, source_manager: Arc<dyn SourceManager>) -> Option<Box<Module>> {
     let name = name.as_ref();
     let (name, source, filename) = INTRINSICS.iter().copied().find(|(n, ..)| *n == name)?;
     let filename = Uri::new(filename);
     let source_file = source_manager.load(SourceLanguage::Masm, filename, source.to_string());
     let path = LibraryPath::new(name).expect("invalid module name");
-    match Module::parse(path, ModuleKind::Library, source_file.clone()) {
+    match Module::parse(path, ModuleKind::Library, source_file.clone(), source_manager) {
         Ok(module) => Some(module),
         Err(err) => {
             let err = PrintDiagnostic::new(err);

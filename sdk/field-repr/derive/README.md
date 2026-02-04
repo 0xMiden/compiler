@@ -1,18 +1,18 @@
-# `miden-felt-repr-derive`
+# `miden-field-repr-derive`
 
-Derive macros used by `miden-felt-repr` to implement serialization/deserialization to a flat
+Derive macros used by `miden-field-repr` to implement serialization/deserialization to a flat
 sequence of `Felt` elements (“felt repr”).
 
 ## Usage
 
-This crate is not typically used directly. Instead, depend on `miden-felt-repr` and derive the
+This crate is not typically used directly. Instead, depend on `miden-field-repr` and derive the
 traits re-exported by that crate.
 
 ### Struct example
 
 ```rust
 use miden_field::Felt;
-use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
+use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 
 #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 struct AccountId {
@@ -33,7 +33,7 @@ assert_eq!(roundtrip, value);
 
 ```rust
 use miden_field::Felt;
-use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
+use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 
 #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 enum Message {

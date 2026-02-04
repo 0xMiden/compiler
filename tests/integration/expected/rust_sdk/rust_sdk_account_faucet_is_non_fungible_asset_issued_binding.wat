@@ -68,7 +68,7 @@
       f32.load offset=4
       local.get 0
       f32.load
-      call $miden::faucet::is_non_fungible_asset_issued
+      call $miden::protocol::faucet::is_non_fungible_asset_issued
       i32.const 0
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::eq
@@ -116,11 +116,11 @@
     (func $intrinsics::felt::from_u32 (;6;) (type 4) (param i32) (result f32)
       unreachable
     )
-    (func $miden::faucet::is_non_fungible_asset_issued (;7;) (type 5) (param f32 f32 f32 f32) (result f32)
+    (func $miden::protocol::faucet::is_non_fungible_asset_issued (;7;) (type 5) (param f32 f32 f32 f32) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "yrust_sdk_account_faucet_is_non_fungible_asset_issued_binding\01\0b0.0.1\05\02\03\01\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "yrust_sdk_account_faucet_is_non_fungible_asset_issued_binding\01\0b0.0.1\05\02\03\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;1;)))
   (core instance $main (;0;) (instantiate $main))

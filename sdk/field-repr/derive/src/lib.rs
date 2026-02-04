@@ -1,17 +1,17 @@
 //! Derive macros for felt representation serialization/deserialization.
 //!
-//! This crate provides proc-macros used by `miden-felt-repr` to derive `ToFeltRepr`/`FromFeltRepr`
+//! This crate provides proc-macros used by `miden-field-repr` to derive `ToFeltRepr`/`FromFeltRepr`
 //! implementations for user-defined types.
 //!
 //! # Usage
 //!
-//! This crate is not typically used directly. Instead, depend on `miden-felt-repr` and derive the
+//! This crate is not typically used directly. Instead, depend on `miden-field-repr` and derive the
 //! traits re-exported by that crate.
 //!
 //! ## Struct example
 //!
 //! ```ignore
-//! use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
+//! use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 //! use miden_core::Felt;
 //!
 //! #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
@@ -29,7 +29,7 @@
 //! ## Enum example
 //!
 //! ```ignore
-//! use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
+//! use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 //! use miden_core::Felt;
 //!
 //! #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
@@ -197,7 +197,7 @@ fn ensure_no_explicit_discriminants(
     Ok(())
 }
 
-/// Derives `FromFeltRepr` for `miden-felt-repr` for a struct with named fields, or an enum.
+/// Derives `FromFeltRepr` for `miden-field-repr` for a struct with named fields, or an enum.
 ///
 /// Structs are encoded by serializing their fields in declaration order.
 ///
@@ -207,7 +207,7 @@ fn ensure_no_explicit_discriminants(
 /// # Example
 ///
 /// ```ignore
-/// use miden_felt_repr::FromFeltRepr;
+/// use miden_field_repr::FromFeltRepr;
 ///
 /// #[derive(FromFeltRepr)]
 /// pub struct AccountId {
@@ -219,8 +219,11 @@ fn ensure_no_explicit_discriminants(
 pub fn derive_from_felt_repr(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let expanded =
-        derive_from_felt_repr_impl(&input, quote!(miden_felt_repr), quote!(miden_felt_repr::Felt));
+    let expanded = derive_from_felt_repr_impl(
+        &input,
+        quote!(miden_field_repr),
+        quote!(miden_field_repr::Felt),
+    );
     match expanded {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
@@ -346,7 +349,7 @@ fn derive_from_felt_repr_impl(
 /// # Example
 ///
 /// ```ignore
-/// use miden_felt_repr::ToFeltRepr;
+/// use miden_field_repr::ToFeltRepr;
 ///
 /// #[derive(ToFeltRepr)]
 /// pub struct AccountId {
@@ -358,7 +361,7 @@ fn derive_from_felt_repr_impl(
 pub fn derive_to_felt_repr(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match derive_to_felt_repr_impl(&input, quote!(miden_felt_repr)) {
+    match derive_to_felt_repr_impl(&input, quote!(miden_field_repr)) {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
     }

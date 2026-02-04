@@ -5,7 +5,7 @@ use std::{
 };
 
 use heck::{ToKebabCase, ToSnakeCase};
-use miden_objects::{account::AccountType, utils::Serializable};
+use miden_protocol::{account::AccountType, utils::serde::Serializable};
 use proc_macro::Span;
 use proc_macro2::{Ident, Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
@@ -142,7 +142,8 @@ fn expand_component_struct(
 
     let default_impl = match &mut input_struct.fields {
         syn::Fields::Named(fields) => {
-            let field_inits = process_storage_fields(fields, &mut acc_builder)?;
+            let storage_namespace = metadata.component_package.as_deref().unwrap_or(&metadata.name);
+            let field_inits = process_storage_fields(fields, &mut acc_builder, storage_namespace)?;
             generate_default_impl(struct_name, &field_inits)
         }
         syn::Fields::Unit => quote! {

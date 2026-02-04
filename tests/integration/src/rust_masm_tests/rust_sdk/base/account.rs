@@ -1,7 +1,7 @@
 use super::*;
 
 #[allow(clippy::uninlined_format_args)]
-fn run_account_binding_test(name: &str, method: &str) {
+fn run_account_binding_test_with_struct(name: &str, account_struct: &str, method: &str) {
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
@@ -9,13 +9,14 @@ fn run_account_binding_test(name: &str, method: &str) {
 use miden::*;
 
 #[component]
-struct TestAccount;
+{account_struct}
 
 #[component]
 impl TestAccount {{
     {method}
 }}
 ",
+        account_struct = account_struct,
         method = method
     );
 
@@ -69,6 +70,11 @@ debug = false
     test.expect_masm(expect_file![format!("../../../../expected/rust_sdk/{name}.masm")]);
 
     test.compiled_package();
+}
+
+#[allow(clippy::uninlined_format_args)]
+fn run_account_binding_test(name: &str, method: &str) {
+    run_account_binding_test_with_struct(name, "struct TestAccount;", method)
 }
 
 #[test]
@@ -219,21 +225,29 @@ fn rust_sdk_account_was_procedure_called_binding() {
 
 #[test]
 fn rust_sdk_account_storage_get_initial_item_binding() {
-    run_account_binding_test(
+    run_account_binding_test_with_struct(
         "rust_sdk_account_storage_get_initial_item_binding",
+        r#"struct TestAccount {
+    #[storage(description = "test value")]
+    value: Value,
+}"#,
         "pub fn binding(&self) -> Word {
-        storage::get_initial_item(0)
+        storage::get_initial_item(Self::default().value.slot)
     }",
     );
 }
 
 #[test]
 fn rust_sdk_account_storage_get_initial_map_item_binding() {
-    run_account_binding_test(
+    run_account_binding_test_with_struct(
         "rust_sdk_account_storage_get_initial_map_item_binding",
+        r#"struct TestAccount {
+    #[storage(description = "test map")]
+    map: StorageMap,
+}"#,
         "pub fn binding(&self) -> Word {
         let key = Word::from([Felt::from_u32(0); 4]);
-        storage::get_initial_map_item(0, &key)
+        storage::get_initial_map_item(Self::default().map.slot, &key)
     }",
     );
 }

@@ -1,6 +1,6 @@
 use core::ffi::c_void;
 
-#[unsafe(export_name = "miden::asset::build_fungible_asset")]
+#[unsafe(export_name = "miden::protocol::asset::build_fungible_asset")]
 pub extern "C" fn asset_build_fungible_asset_plain(
     _prefix: f32,
     _suffix: f32,
@@ -10,7 +10,7 @@ pub extern "C" fn asset_build_fungible_asset_plain(
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::asset::build_non_fungible_asset")]
+#[unsafe(export_name = "miden::protocol::asset::build_non_fungible_asset")]
 pub extern "C" fn asset_build_non_fungible_asset_plain(
     _prefix: f32,
     _h0: f32,

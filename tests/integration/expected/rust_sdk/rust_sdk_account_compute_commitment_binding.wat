@@ -33,7 +33,7 @@
       local.set 1
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      call $miden::active_account::compute_commitment
+      call $miden::protocol::active_account::compute_commitment
       local.get 1
       i32.const 1048584
       i32.add
@@ -77,11 +77,11 @@
         i32.store8
       end
     )
-    (func $miden::active_account::compute_commitment (;4;) (type 2) (param i32)
+    (func $miden::protocol::active_account::compute_commitment (;4;) (type 2) (param i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "Wrust_sdk_account_compute_commitment_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "Wrust_sdk_account_compute_commitment_binding\01\0b0.0.1\03\01\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "word" (type $word (;1;)))
   (core instance $main (;0;) (instantiate $main))

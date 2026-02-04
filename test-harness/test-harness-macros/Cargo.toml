@@ -18,7 +18,7 @@ proc-macro = true
 [dependencies]
 # Miden dependencies
 miden-mast-package.workspace = true
-miden-testing = "0.12.4"
+miden-testing = "0.13"
 
 # External dependencies
 quote.workspace = true

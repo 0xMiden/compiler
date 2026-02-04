@@ -18,7 +18,7 @@ builtin.component root_ns:root@1.0.0 {
                 v15 = hir.bitcast v14 : i32;
                 v17 = arith.neq v15, v515 : i1;
                 v507, v508, v509 = scf.if v17 : i32, i32, i32 {
-                ^block38:
+                ^block39:
                     v485 = ub.poison i32 : i32;
                     scf.yield v485, v485, v485;
                 } else {
@@ -57,7 +57,7 @@ builtin.component root_ns:root@1.0.0 {
                 v501 = arith.trunc v511 : i1;
                 scf.condition v501, v507, v508, v509;
             } do {
-            ^block37(v498: i32, v499: i32, v500: i32):
+            ^block38(v498: i32, v499: i32, v500: i32):
                 scf.yield v498, v499, v500;
             };
             builtin.ret ;
@@ -88,7 +88,7 @@ builtin.component root_ns:root@1.0.0 {
             v65 = hir.bitcast v64 : i32;
             v67 = arith.neq v65, v539 : i1;
             v527 = scf.if v67 : i32 {
-            ^block40:
+            ^block41:
                 v538 = arith.constant 0 : i32;
                 scf.yield v538;
             } else {
@@ -109,7 +109,7 @@ builtin.component root_ns:root@1.0.0 {
                 v79 = hir.bitcast v78 : i32;
                 v81 = arith.neq v79, v536 : i1;
                 scf.if v81{
-                ^block39:
+                ^block40:
                     scf.yield ;
                 } else {
                 ^block14:
@@ -261,7 +261,7 @@ builtin.component root_ns:root@1.0.0 {
             v198 = hir.int_to_ptr v195 : ptr<byte, i32>;
             hir.store v198, v192;
             v657, v658, v659, v660, v661, v662 = scf.while v118, v109, v114 : i32, i32, i32, i32, i32, i32 {
-            ^block58(v663: i32, v664: i32, v665: i32):
+            ^block59(v663: i32, v664: i32, v665: i32):
                 v280 = arith.constant 32 : i32;
                 v203 = arith.add v663, v280 : i32 #[overflow = wrapping];
                 v731 = arith.constant 24 : i32;
@@ -282,7 +282,7 @@ builtin.component root_ns:root@1.0.0 {
                 v214 = hir.bitcast v213 : i32;
                 v216 = arith.neq v214, v728 : i1;
                 scf.if v216{
-                ^block54:
+                ^block55:
                     scf.yield ;
                 } else {
                 ^block20:
@@ -309,7 +309,7 @@ builtin.component root_ns:root@1.0.0 {
                 v621 = arith.trunc v656 : i1;
                 scf.condition v621, v652, v653, v654, v663, v664, v665;
             } do {
-            ^block59(v666: i32, v667: i32, v668: i32, v669: i32, v670: i32, v671: i32):
+            ^block60(v666: i32, v667: i32, v668: i32, v669: i32, v670: i32, v671: i32):
                 scf.yield v666, v667, v668;
             };
             v724 = arith.constant 64 : u32;
@@ -378,7 +378,7 @@ builtin.component root_ns:root@1.0.0 {
             v279 = hir.load v278 : i32;
             v715 = arith.constant 32 : i32;
             v281 = arith.add v660, v715 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/rust_sdk_stdlib_sha256_hash/std::crypto::hashes::sha256::hash_1to1(v230, v237, v244, v251, v258, v265, v272, v279, v281)
+            hir.exec @root_ns:root@1.0.0/rust_sdk_stdlib_sha256_hash/miden::core::crypto::hashes::sha256::hash(v230, v237, v244, v251, v258, v265, v272, v279, v281)
             v283 = arith.constant 56 : u32;
             v282 = hir.bitcast v660 : u32;
             v284 = arith.add v282, v283 : u32 #[overflow = checked];
@@ -482,7 +482,7 @@ builtin.component root_ns:root@1.0.0 {
             v363 = hir.int_to_ptr v360 : ptr<byte, i32>;
             hir.store v363, v357;
             v637, v638, v639, v640, v641, v642 = scf.while v660, v661, v662 : i32, i32, i32, i32, i32, i32 {
-            ^block56(v643: i32, v644: i32, v645: i32):
+            ^block57(v643: i32, v644: i32, v645: i32):
                 v367 = arith.constant 108 : i32;
                 v368 = arith.add v643, v367 : i32 #[overflow = wrapping];
                 v692 = arith.constant 16 : i32;
@@ -503,7 +503,7 @@ builtin.component root_ns:root@1.0.0 {
                 v379 = hir.bitcast v378 : i32;
                 v381 = arith.neq v379, v689 : i1;
                 scf.if v381{
-                ^block55:
+                ^block56:
                     scf.yield ;
                 } else {
                 ^block24:
@@ -530,7 +530,7 @@ builtin.component root_ns:root@1.0.0 {
                 v582 = arith.trunc v636 : i1;
                 scf.condition v582, v632, v633, v634, v643, v644, v645;
             } do {
-            ^block57(v646: i32, v647: i32, v648: i32, v649: i32, v650: i32, v651: i32):
+            ^block58(v646: i32, v647: i32, v648: i32, v649: i32, v650: i32, v651: i32):
                 scf.yield v646, v647, v648;
             };
             v682 = arith.constant 64 : u32;
@@ -589,9 +589,9 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @std::crypto::hashes::sha256::hash_1to1(v437: i32, v438: i32, v439: i32, v440: i32, v441: i32, v442: i32, v443: i32, v444: i32, v445: i32) {
+        private builtin.function @miden::core::crypto::hashes::sha256::hash(v437: i32, v438: i32, v439: i32, v440: i32, v441: i32, v442: i32, v443: i32, v444: i32, v445: i32) {
         ^block25(v437: i32, v438: i32, v439: i32, v440: i32, v441: i32, v442: i32, v443: i32, v444: i32, v445: i32):
-            v446, v447, v448, v449, v450, v451, v452, v453 = hir.exec @std/crypto/hashes/sha256/hash_1to1(v437, v438, v439, v440, v441, v442, v443, v444) : i32, i32, i32, i32, i32, i32, i32, i32
+            v446, v447, v448, v449, v450, v451, v452, v453 = hir.exec @miden/core/crypto/hashes/sha256/hash(v437, v438, v439, v440, v441, v442, v443, v444) : i32, i32, i32, i32, i32, i32, i32, i32
             v454 = hir.bitcast v445 : u32;
             v455 = hir.int_to_ptr v454 : ptr<byte, i32>;
             hir.store v455, v446;

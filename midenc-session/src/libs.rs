@@ -6,22 +6,19 @@ use alloc::{boxed::Box, string::ToString};
 use core::fmt;
 
 pub use miden_assembly_syntax::{
-    Library as CompiledLibrary, LibraryNamespace, LibraryPath, LibraryPathComponent,
+    Library as CompiledLibrary, PathBuf as LibraryPath, PathComponent as LibraryPathComponent,
 };
 #[cfg(feature = "std")]
 use miden_core::utils::Deserializable;
-use miden_stdlib::StdLibrary;
+use miden_core_lib::CoreLibrary;
 use midenc_hir_symbol::sync::LazyLock;
 
 #[cfg(feature = "std")]
-use crate::{
-    Path,
-    diagnostics::{IntoDiagnostic, WrapErr},
-};
+use crate::{Path, diagnostics::IntoDiagnostic};
 use crate::{PathBuf, Session, TargetEnv, diagnostics::Report};
 
 pub static STDLIB: LazyLock<Arc<CompiledLibrary>> =
-    LazyLock::new(|| Arc::new(StdLibrary::default().into()));
+    LazyLock::new(|| Arc::new(CoreLibrary::default().into()));
 
 /// The types of libraries that can be linked against during compilation
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -98,7 +95,7 @@ impl LinkLibrary {
         // Handle libraries shipped with the compiler, or via Miden crates
         match self.name.as_ref() {
             "std" => Ok((*STDLIB).as_ref().clone()),
-            "base" => Ok(miden_lib::MidenLib::default().as_ref().clone()),
+            "base" => Ok(miden_protocol::ProtocolLib::default().as_ref().clone()),
             name => Err(Report::msg(format!(
                 "link library '{name}' cannot be loaded: compiler was built without standard \
                  library"
@@ -115,7 +112,7 @@ impl LinkLibrary {
         // Handle libraries shipped with the compiler, or via Miden crates
         match self.name.as_ref() {
             "std" => return Ok((*STDLIB).as_ref().clone()),
-            "base" => return Ok(miden_lib::MidenLib::default().as_ref().clone()),
+            "base" => return Ok(miden_protocol::ProtocolLib::default().as_ref().clone()),
             _ => (),
         }
 
@@ -129,12 +126,14 @@ impl LinkLibrary {
     fn load_from_path(&self, path: &Path, session: &Session) -> Result<CompiledLibrary, Report> {
         match self.kind {
             LibraryKind::Masm => {
-                let ns = LibraryNamespace::new(&self.name)
-                    .into_diagnostic()
-                    .wrap_err_with(|| format!("invalid library namespace '{}'", &self.name))?;
+                let ns = miden_assembly_syntax::Path::validate(&self.name).map_err(|err| {
+                    Report::msg(format!(
+                        "invalid library namespace '{}': {err}",
+                        self.name.as_ref()
+                    ))
+                })?;
 
                 miden_assembly::Assembler::new(session.source_manager.clone())
-                    .with_debug_mode(true)
                     .assemble_library_from_dir(path, ns)
             }
             LibraryKind::Mast => CompiledLibrary::deserialize_from_file(path).map_err(|err| {

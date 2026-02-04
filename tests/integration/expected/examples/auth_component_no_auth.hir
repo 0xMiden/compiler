@@ -21,7 +21,7 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             v12 = hir.bitcast v11 : ptr<byte, i32>;
             hir.store v12, v10;
             hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/wit_bindgen::rt::run_ctors_once()
-            hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden::active_account::get_initial_commitment(v10)
+            hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden::protocol::active_account::get_initial_commitment(v10)
             v14 = arith.constant 8 : u32;
             v13 = hir.bitcast v10 : u32;
             v15 = arith.add v13, v14 : u32 #[overflow = checked];
@@ -52,7 +52,7 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             hir.assertz v36 #[code = 250];
             v37 = hir.int_to_ptr v34 : ptr<byte, felt>;
             v38 = hir.load v37 : felt;
-            hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden::active_account::compute_commitment(v10)
+            hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden::protocol::active_account::compute_commitment(v10)
             v216 = arith.constant 8 : u32;
             v39 = hir.bitcast v10 : u32;
             v41 = arith.add v39, v216 : u32 #[overflow = checked];
@@ -92,7 +92,7 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             v70 = hir.bitcast v69 : i32;
             v72 = arith.neq v70, v4 : i1;
             v174, v175, v176 = scf.if v72 : i32, i32, u32 {
-            ^block35:
+            ^block36:
                 v165 = arith.constant 0 : u32;
                 v169 = ub.poison i32 : i32;
                 scf.yield v10, v169, v165;
@@ -107,7 +107,7 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
                 v78 = hir.bitcast v77 : i32;
                 v80 = arith.neq v78, v208 : i1;
                 v181, v182, v183 = scf.if v80 : i32, i32, u32 {
-                ^block34:
+                ^block35:
                     v206 = arith.constant 0 : u32;
                     v207 = ub.poison i32 : i32;
                     scf.yield v10, v207, v206;
@@ -122,7 +122,7 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
                     v86 = hir.bitcast v85 : i32;
                     v88 = arith.neq v86, v204 : i1;
                     v187, v188, v189 = scf.if v88 : i32, i32, u32 {
-                    ^block33:
+                    ^block34:
                         v202 = arith.constant 0 : u32;
                         v203 = ub.poison i32 : i32;
                         scf.yield v10, v203, v202;
@@ -152,11 +152,11 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             v177 = scf.index_switch v176 : i32 
             case 0 {
             ^block12:
-                v97 = hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden::native_account::incr_nonce() : felt
+                v97 = hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden::protocol::native_account::incr_nonce() : felt
                 scf.yield v174;
             }
             default {
-            ^block39:
+            ^block40:
                 scf.yield v175;
             };
             v196 = arith.constant 16 : i32;
@@ -201,9 +201,9 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_account::compute_commitment(v127: i32) {
+        private builtin.function @miden::protocol::active_account::compute_commitment(v127: i32) {
         ^block21(v127: i32):
-            v128, v129, v130, v131 = hir.exec @miden/active_account/compute_commitment() : felt, felt, felt, felt
+            v128, v129, v130, v131 = hir.exec @miden/protocol/active_account/compute_commitment() : felt, felt, felt, felt
             v132 = hir.bitcast v127 : u32;
             v133 = hir.int_to_ptr v132 : ptr<byte, felt>;
             hir.store v133, v128;
@@ -222,9 +222,9 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_account::get_initial_commitment(v143: i32) {
-        ^block25(v143: i32):
-            v144, v145, v146, v147 = hir.exec @miden/active_account/get_initial_commitment() : felt, felt, felt, felt
+        private builtin.function @miden::protocol::active_account::get_initial_commitment(v143: i32) {
+        ^block26(v143: i32):
+            v144, v145, v146, v147 = hir.exec @miden/protocol/active_account/get_initial_commitment() : felt, felt, felt, felt
             v148 = hir.bitcast v143 : u32;
             v149 = hir.int_to_ptr v148 : ptr<byte, felt>;
             hir.store v149, v144;
@@ -243,9 +243,9 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden::native_account::incr_nonce() -> felt {
-        ^block27:
-            v159 = hir.exec @miden/native_account/incr_nonce() : felt
+        private builtin.function @miden::protocol::native_account::incr_nonce() -> felt {
+        ^block28:
+            v159 = hir.exec @miden/protocol/native_account/incr_nonce() : felt
             builtin.ret v159;
         };
 
@@ -261,7 +261,7 @@ builtin.component miden:auth-component-no-auth/auth-component-no-auth@0.1.0 {
     };
 
     public builtin.function @auth__procedure(v161: felt, v162: felt, v163: felt, v164: felt) {
-    ^block30(v161: felt, v162: felt, v163: felt, v164: felt):
+    ^block31(v161: felt, v162: felt, v163: felt, v164: felt):
         hir.exec @miden:auth-component-no-auth/auth-component-no-auth@0.1.0/auth_component_no_auth/miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(v161, v162, v163, v164)
         builtin.ret ;
     };

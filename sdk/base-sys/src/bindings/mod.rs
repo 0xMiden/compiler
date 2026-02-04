@@ -19,5 +19,5 @@ pub mod storage;
 pub mod tx;
 mod types;
 
-pub use miden_felt_repr::{FromFeltRepr, ToFeltRepr};
+pub use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 pub use types::*;

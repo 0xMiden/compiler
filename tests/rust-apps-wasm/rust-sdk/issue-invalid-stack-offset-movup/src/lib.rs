@@ -119,10 +119,9 @@ fn add_word(a: Word, b: Word) -> Word {
 }
 
 /// Creates a P2ID output note.
-fn create_p2id_note(serial_num: Word, input_asset: Asset, recipient_id: AccountId, aux: Felt) {
+fn create_p2id_note(serial_num: Word, input_asset: Asset, recipient_id: AccountId, _aux: Felt) {
     let tag = Tag::from(felt!(0));
     let note_type = get_note_type();
-    let execution_hint = felt!(0);
 
     let _p2id_note_root_digest = Digest::from_word(Word::new([
         Felt::from_u64_unchecked(6412241294473976817),
@@ -146,7 +145,7 @@ fn create_p2id_note(serial_num: Word, input_asset: Asset, recipient_id: AccountI
         ],
     );
 
-    let note_idx = output_note::create(tag, aux, note_type, execution_hint, recipient);
+    let note_idx = output_note::create(tag, note_type, recipient);
     output_note::add_asset(input_asset, note_idx);
 }
 
@@ -156,11 +155,10 @@ fn create_swapp_note(
     offered_asset: Asset,
     requested_asset: Asset,
     note_creator_id: AccountId,
-    aux: Felt,
+    _aux: Felt,
 ) {
     let tag = get_note_tag();
     let note_type = get_note_type();
-    let execution_hint = felt!(0);
 
     let recipient = Recipient::compute(
         serial_num,
@@ -185,7 +183,7 @@ fn create_swapp_note(
         ],
     );
 
-    let note_idx = output_note::create(tag, aux, note_type, execution_hint, recipient);
+    let note_idx = output_note::create(tag, note_type, recipient);
     output_note::add_asset(offered_asset, note_idx);
 }
 

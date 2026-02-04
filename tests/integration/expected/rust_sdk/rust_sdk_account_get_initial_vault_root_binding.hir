@@ -24,7 +24,7 @@ builtin.component miden:rust-sdk-account-get-initial-vault-root-binding/rust-sdk
             v10 = hir.bitcast v9 : ptr<byte, i32>;
             v11 = hir.load v10 : i32;
             hir.exec @miden:rust-sdk-account-get-initial-vault-root-binding/rust-sdk-account-get-initial-vault-root-binding@0.0.1/rust_sdk_account_get_initial_vault_root_binding/wit_bindgen::rt::run_ctors_once()
-            hir.exec @miden:rust-sdk-account-get-initial-vault-root-binding/rust-sdk-account-get-initial-vault-root-binding@0.0.1/rust_sdk_account_get_initial_vault_root_binding/miden::active_account::get_initial_vault_root(v6)
+            hir.exec @miden:rust-sdk-account-get-initial-vault-root-binding/rust-sdk-account-get-initial-vault-root-binding@0.0.1/rust_sdk_account_get_initial_vault_root_binding/miden::protocol::active_account::get_initial_vault_root(v6)
             v12 = arith.constant 1048584 : i32;
             v13 = arith.add v11, v12 : i32 #[overflow = wrapping];
             v14 = hir.bitcast v6 : u32;
@@ -129,9 +129,9 @@ builtin.component miden:rust-sdk-account-get-initial-vault-root-binding/rust-sdk
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_account::get_initial_vault_root(v89: i32) {
+        private builtin.function @miden::protocol::active_account::get_initial_vault_root(v89: i32) {
         ^block15(v89: i32):
-            v90, v91, v92, v93 = hir.exec @miden/active_account/get_initial_vault_root() : felt, felt, felt, felt
+            v90, v91, v92, v93 = hir.exec @miden/protocol/active_account/get_initial_vault_root() : felt, felt, felt, felt
             v94 = hir.bitcast v89 : u32;
             v95 = hir.int_to_ptr v94 : ptr<byte, felt>;
             hir.store v95, v90;
@@ -162,7 +162,7 @@ builtin.component miden:rust-sdk-account-get-initial-vault-root-binding/rust-sdk
     };
 
     public builtin.function @binding() -> felt, felt, felt, felt {
-    ^block19:
+    ^block20:
         v105 = hir.exec @miden:rust-sdk-account-get-initial-vault-root-binding/rust-sdk-account-get-initial-vault-root-binding@0.0.1/rust_sdk_account_get_initial_vault_root_binding/miden:rust-sdk-account-get-initial-vault-root-binding/rust-sdk-account-get-initial-vault-root-binding@0.0.1#binding() : i32
         v106 = arith.constant 0 : i32;
         v107 = arith.add v105, v106 : i32 #[overflow = unchecked];

@@ -29,7 +29,7 @@ unsafe extern "C" {
     ///
     /// Fails if the tree with the specified `root` does not exist in the VM's advice provider. When
     /// no value has previously been inserted under `key`, the procedure returns the empty word.
-    #[link_name = "std::collections::smt::get"]
+    #[link_name = "miden::core::collections::smt::get"]
     fn extern_smt_get(
         k3: Felt,
         k2: Felt,
@@ -53,7 +53,7 @@ unsafe extern "C" {
     /// `value` is the empty word, the new tree state is equivalent to omitting the update.
     ///
     /// Fails if the tree with the specified `root` does not exist in the VM's advice provider.
-    #[link_name = "std::collections::smt::set"]
+    #[link_name = "miden::core::collections::smt::set"]
     fn extern_smt_set(
         v3: Felt,
         v2: Felt,

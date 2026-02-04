@@ -267,34 +267,20 @@ impl SymbolPath {
 
     /// Derive a Miden Assembly `LibraryPath` from this symbol path
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {
-        use midenc_session::{
-            LibraryNamespace, LibraryPath,
-            miden_assembly::{SourceSpan, Span, ast::Ident},
-        };
+        use midenc_session::LibraryPath;
 
-        let mut components = self.path.iter();
-        let mut parts = SmallVec::<[_; 3]>::default();
-        if self.is_absolute() {
-            let _ = components.next();
-        }
-        let ns = match components.next() {
-            None => {
-                return LibraryPath::new_from_components(LibraryNamespace::Anon, parts);
-            }
-            Some(component) => LibraryNamespace::from_ident_unchecked(Ident::from_raw_parts(
-                Span::new(SourceSpan::default(), component.as_symbol_name().as_str().into()),
-            )),
-        };
-
+        let components = self.path.iter();
+        let mut path = LibraryPath::default();
         for component in components {
-            let id = Ident::from_raw_parts(Span::new(
-                SourceSpan::default(),
-                component.as_symbol_name().as_str().into(),
-            ));
-            parts.push(id);
+            if component.is_root() {
+                path.push_component("::");
+                continue;
+            } else {
+                path.push_component(component.as_symbol_name().as_str());
+            }
         }
 
-        LibraryPath::new_from_components(ns, parts)
+        path
     }
 
     /// Returns true if this symbol name is fully-qualified

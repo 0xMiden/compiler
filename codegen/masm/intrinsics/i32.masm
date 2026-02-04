@@ -1,19 +1,19 @@
-const.SIGN_BIT=2147483648 # 1 << 31
-const.MIN=SIGN_BIT
-const.MAX=2147483647 # (1 << 31) - 1
-const.NEG1=4294967295 # u32::MAX
+const SIGN_BIT=2147483648 # 1 << 31
+const MIN=SIGN_BIT
+const MAX=2147483647 # (1 << 31) - 1
+const NEG1=4294967295 # u32::MAX
 
 # Returns `1` if `a` has its sign bit set, else `0`
 #
 # This function consumes `a`.
-export.is_signed # [a]
+pub proc is_signed # [a]
     push.SIGN_BIT u32and push.SIGN_BIT eq
 end
 
 # Get the negation of `a`
 #
 # This operation is unchecked, so if the input is not a valid i32 the behavior is undefined
-export.unchecked_neg # [a]
+pub proc unchecked_neg # [a]
     u32not u32wrapping_add.1
 end
 
@@ -21,7 +21,7 @@ end
 #
 # This operation is checked, so if the input is not a valid i32,
 # or if the negation is not a valid i32, execution traps
-export.checked_neg # [a]
+pub proc checked_neg # [a]
     # assert that the negation is representable
     dup.0 push.MIN eq assertz
     exec.unchecked_neg
@@ -30,7 +30,7 @@ end
 # Adds `b` to `a`, asserting that both inputs are valid i32.
 #
 # Returns the result modulo 2^32, plus a boolean indicating whether or not the subtraction underflowed.
-export.overflowing_add # [b, a]
+pub proc overflowing_add # [b, a]
     u32assert2
 
     # is `b` signed?
@@ -60,13 +60,13 @@ export.overflowing_add # [b, a]
 end
 
 # Adds `b` to `a`, wrapping around on overflow.
-export.wrapping_add # [b, a]
+pub proc wrapping_add # [b, a]
     exec.overflowing_add # [overflowed, result]
     drop
 end
 
 # Adds `b` to `a`, asserting on overflow.
-export.checked_add # [b, a]
+pub proc checked_add # [b, a]
     exec.overflowing_add # [overflowed, result]
     assertz # [result]
 end
@@ -74,7 +74,7 @@ end
 # Subtracts `b` from `a`, asserting that both inputs are valid i32.
 #
 # Returns the result modulo 2^32, plus a boolean indicating whether or not the subtraction underflowed.
-export.overflowing_sub # [b, a]
+pub proc overflowing_sub # [b, a]
     u32assert2
 
     # Subtraction is equivalent to addition if we negate the right-hand operand
@@ -112,13 +112,13 @@ end
 # Subtracts `b` from `a`
 #
 # This operation will fail if `b` is not a valid i32, or if `result` is not a valid i32
-export.wrapping_sub # [b, a]
+pub proc wrapping_sub # [b, a]
     exec.overflowing_sub # [overflowed, result]
     drop
 end
 
 # Subtracts `b` from `a`, asserting on underflow/overflow
-export.checked_sub # [b, a]
+pub proc checked_sub # [b, a]
     exec.overflowing_sub # [overflowed, result]
     assertz # [result]
 end
@@ -126,7 +126,7 @@ end
 # Multiplies `a` by `b`, asserting that both inputs are valid i32.
 #
 # Returns the result modulo 2^32, plus a boolean indicating whether or not the multiplication overflowed.
-export.overflowing_mul # [b, a]
+pub proc overflowing_mul # [b, a]
     u32assert2
 
     # is `b` i32::MIN?
@@ -186,19 +186,19 @@ export.overflowing_mul # [b, a]
 end
 
 # Multiplies `a` by `b`, wrapping on overflow.
-export.wrapping_mul # [b, a]
+pub proc wrapping_mul # [b, a]
     exec.overflowing_mul # [overflowed, result]
     drop
 end
 
 # Multiplies `a` by `b`, asserting on overflow
-export.checked_mul # [b, a]
+pub proc checked_mul # [b, a]
     exec.overflowing_mul # [overflowed, result]
     assertz # [result]
 end
 
 # Divides `a` by `b`, asserting that both inputs are valid i32
-export.checked_div # [b, a]
+pub proc checked_div # [b, a]
     u32assert2
 
     # get positive dividend
@@ -224,7 +224,7 @@ end
 
 # Given two i32 values in two's complement representation, compare them,
 # returning -1 if `a` < `b`, 0 if equal, and 1 if `a` > `b`.
-export.icmp # [b, a]
+pub proc icmp # [b, a]
     dup.1 # [a, b, a]
     dup.1 # [b, a, b, a]
 
@@ -263,27 +263,27 @@ export.icmp # [b, a]
 end
 
 # Given two i32 values in two's complement representation, return 1 if `a < b`, else 0
-export.is_lt # [b, a]
+pub proc is_lt # [b, a]
     exec.icmp push.NEG1 eq
 end
 
 # Given two i32 values in two's complement representation, return 1 if `a <= b`, else 0
-export.is_lte # [b, a]
+pub proc is_lte # [b, a]
     exec.icmp neq.1
 end
 
 # Given two i32 values in two's complement representation, return 1 if `a > b`, else 0
-export.is_gt # [b, a]
+pub proc is_gt # [b, a]
     exec.icmp eq.1
 end
 
 # Given two i32 values in two's complement representation, return 1 if `a >= b`, else 0
-export.is_gte # [b, a]
+pub proc is_gte # [b, a]
     exec.icmp push.NEG1 neq
 end
 
 # Compute 2^n, where `n` must be less than 31, or the result will overflow i32::MAX
-export.pow2 # [n]
+pub proc pow2 # [n]
     dup.0
     push.31
     u32lt          # [n < 31, pow]
@@ -293,7 +293,7 @@ export.pow2 # [n]
 end
 
 # Compute a^b, where `b` must be a positive i32 value < 31
-export.ipow # [b, a]
+pub proc ipow # [b, a]
     dup.0 push.31 u32lt assert # assert that `b` is < 31
     dup.0 eq.0       # [b == 0, b, a]
     dup.2 eq.0       # [a == 0, b == 0, b, a]
@@ -338,7 +338,7 @@ end
 # This function will assert if `b` is > 31.
 #
 # This implementation is checked, so it will assert if the inputs are invalid
-export.checked_shr # [b, a]
+pub proc checked_shr # [b, a]
     # validate the shift is valid
     dup.0 push.32
     u32lt          # [b < 32, b, a]

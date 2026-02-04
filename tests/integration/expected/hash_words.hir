@@ -40,7 +40,7 @@ builtin.component root_ns:root@1.0.0 {
             v184 = arith.constant 2 : u32;
             v39 = arith.shl v27, v184 : i32;
             v40 = arith.add v36, v39 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/hash_words/std::crypto::hashes::rpo::hash_memory_words(v36, v40, v11)
+            hir.exec @root_ns:root@1.0.0/hash_words/miden::core::crypto::hashes::rpo256::hash_words(v36, v40, v11)
             v42 = arith.constant 12 : u32;
             v41 = hir.bitcast v11 : u32;
             v43 = arith.add v41, v42 : u32 #[overflow = checked];
@@ -59,9 +59,9 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret v47;
         };
 
-        private builtin.function @std::crypto::hashes::rpo::hash_memory_words(v54: i32, v55: i32, v56: i32) {
+        private builtin.function @miden::core::crypto::hashes::rpo256::hash_words(v54: i32, v55: i32, v56: i32) {
         ^block8(v54: i32, v55: i32, v56: i32):
-            v57, v58, v59, v60 = hir.exec @std/crypto/hashes/rpo/hash_memory_words(v54, v55) : felt, felt, felt, felt
+            v57, v58, v59, v60 = hir.exec @miden/core/crypto/hashes/rpo256/hash_words(v54, v55) : felt, felt, felt, felt
             v61 = hir.bitcast v56 : u32;
             v62 = hir.int_to_ptr v61 : ptr<byte, felt>;
             hir.store v62, v57;
@@ -81,7 +81,7 @@ builtin.component root_ns:root@1.0.0 {
         };
 
         private builtin.function @<alloc::raw_vec::RawVecInner>::deallocate(v72: i32, v73: i32, v74: i32) {
-        ^block14(v72: i32, v73: i32, v74: i32):
+        ^block15(v72: i32, v73: i32, v74: i32):
             v76 = builtin.global_symbol @root_ns:root@1.0.0/hash_words/__stack_pointer : ptr<byte, u8>
             v77 = hir.bitcast v76 : ptr<byte, i32>;
             v78 = hir.load v77 : i32;
@@ -108,10 +108,10 @@ builtin.component root_ns:root@1.0.0 {
             v95 = hir.bitcast v94 : i32;
             v97 = arith.neq v95, v193 : i1;
             scf.if v97{
-            ^block27:
+            ^block28:
                 scf.yield ;
             } else {
-            ^block17:
+            ^block18:
                 v192 = arith.constant 4 : u32;
                 v98 = hir.bitcast v80 : u32;
                 v100 = arith.add v98, v192 : u32 #[overflow = checked];
@@ -140,7 +140,7 @@ builtin.component root_ns:root@1.0.0 {
         };
 
         private builtin.function @<alloc::raw_vec::RawVecInner>::current_memory(v117: i32, v118: i32, v119: i32, v120: i32) {
-        ^block18(v117: i32, v118: i32, v119: i32, v120: i32):
+        ^block19(v117: i32, v118: i32, v119: i32, v120: i32):
             v219 = arith.constant 0 : i32;
             v121 = arith.constant 0 : i32;
             v125 = arith.eq v120, v121 : i1;
@@ -148,12 +148,12 @@ builtin.component root_ns:root@1.0.0 {
             v127 = hir.bitcast v126 : i32;
             v129 = arith.neq v127, v219 : i1;
             v206, v207 = scf.if v129 : i32, i32 {
-            ^block30:
+            ^block31:
                 v218 = arith.constant 0 : i32;
                 v123 = arith.constant 4 : i32;
                 scf.yield v123, v218;
             } else {
-            ^block21:
+            ^block22:
                 v130 = hir.bitcast v118 : u32;
                 v165 = arith.constant 4 : u32;
                 v132 = arith.mod v130, v165 : u32;
@@ -167,11 +167,11 @@ builtin.component root_ns:root@1.0.0 {
                 v138 = hir.bitcast v137 : i32;
                 v140 = arith.neq v138, v216 : i1;
                 v204 = scf.if v140 : i32 {
-                ^block29:
+                ^block30:
                     v215 = arith.constant 0 : i32;
                     scf.yield v215;
                 } else {
-                ^block22:
+                ^block23:
                     v214 = arith.constant 4 : u32;
                     v141 = hir.bitcast v117 : u32;
                     v143 = arith.add v141, v214 : u32 #[overflow = checked];
@@ -213,7 +213,7 @@ builtin.component root_ns:root@1.0.0 {
         };
 
         private builtin.function @<alloc::alloc::Global as core::alloc::Allocator>::deallocate(v168: i32, v169: i32, v170: i32) {
-        ^block23(v168: i32, v169: i32, v170: i32):
+        ^block24(v168: i32, v169: i32, v170: i32):
             v221 = arith.constant 0 : i32;
             v171 = arith.constant 0 : i32;
             v172 = arith.eq v170, v171 : i1;
@@ -221,10 +221,10 @@ builtin.component root_ns:root@1.0.0 {
             v174 = hir.bitcast v173 : i32;
             v176 = arith.neq v174, v221 : i1;
             scf.if v176{
-            ^block25:
+            ^block26:
                 scf.yield ;
             } else {
-            ^block26:
+            ^block27:
                 hir.exec @root_ns:root@1.0.0/hash_words/__rustc::__rust_dealloc(v168, v170, v169)
                 scf.yield ;
             };

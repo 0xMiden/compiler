@@ -421,14 +421,14 @@ test_unary_op_total!(bnot, !, bool);
 #[test]
 fn test_hmerge() {
     let main_fn = r#"
-        (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
-            let digest1 = miden_stdlib_sys::Digest::new([f0, f1, f2, f3]);
-            let digest2 = miden_stdlib_sys::Digest::new([f4, f5, f6, f7]);
-            let digests = [digest1, digest2];
-            let res = miden_stdlib_sys::intrinsics::crypto::merge(digests);
-            res.inner.inner.0
-        }"#
-        .to_string();
+	        (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
+	            let digest1 = miden_stdlib_sys::Digest::new([f0, f1, f2, f3]);
+	            let digest2 = miden_stdlib_sys::Digest::new([f4, f5, f6, f7]);
+	            let digests = [digest1, digest2];
+	            let res = miden_stdlib_sys::intrinsics::crypto::merge(digests);
+	            res.inner[0]
+	        }"#
+	        .to_string();
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_fn_body_with_stdlib_sys("hmerge", &main_fn, config, []);
 

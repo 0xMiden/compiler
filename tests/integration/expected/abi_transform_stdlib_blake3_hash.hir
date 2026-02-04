@@ -50,7 +50,7 @@ builtin.component root_ns:root@1.0.0 {
             v47 = arith.add v45, v46 : u32 #[overflow = checked];
             v48 = hir.int_to_ptr v47 : ptr<byte, i32>;
             v49 = hir.load v48 : i32;
-            hir.exec @root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/std::crypto::hashes::blake3::hash_1to1(v14, v19, v24, v29, v34, v39, v44, v49, v9)
+            hir.exec @root_ns:root@1.0.0/abi_transform_stdlib_blake3_hash/miden::core::crypto::hashes::blake3::hash(v14, v19, v24, v29, v34, v39, v44, v49, v9)
             v138 = arith.constant 24 : u32;
             v52 = hir.bitcast v9 : u32;
             v54 = arith.add v52, v138 : u32 #[overflow = checked];
@@ -105,9 +105,9 @@ builtin.component root_ns:root@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @std::crypto::hashes::blake3::hash_1to1(v92: i32, v93: i32, v94: i32, v95: i32, v96: i32, v97: i32, v98: i32, v99: i32, v100: i32) {
+        private builtin.function @miden::core::crypto::hashes::blake3::hash(v92: i32, v93: i32, v94: i32, v95: i32, v96: i32, v97: i32, v98: i32, v99: i32, v100: i32) {
         ^block6(v92: i32, v93: i32, v94: i32, v95: i32, v96: i32, v97: i32, v98: i32, v99: i32, v100: i32):
-            v101, v102, v103, v104, v105, v106, v107, v108 = hir.exec @std/crypto/hashes/blake3/hash_1to1(v92, v93, v94, v95, v96, v97, v98, v99) : i32, i32, i32, i32, i32, i32, i32, i32
+            v101, v102, v103, v104, v105, v106, v107, v108 = hir.exec @miden/core/crypto/hashes/blake3/hash(v92, v93, v94, v95, v96, v97, v98, v99) : i32, i32, i32, i32, i32, i32, i32, i32
             v109 = hir.bitcast v100 : u32;
             v110 = hir.int_to_ptr v109 : ptr<byte, i32>;
             hir.store v110, v101;

@@ -10,11 +10,11 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-/// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
-pub use miden_felt_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
-/// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
-pub use miden_felt_repr_derive::DeriveToFeltRepr as ToFeltRepr;
 pub use miden_field::Felt;
+/// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
+pub use miden_field_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
+/// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
+pub use miden_field_repr_derive::DeriveToFeltRepr as ToFeltRepr;
 
 /// A reader that wraps a slice of `Felt` elements and tracks the current position.
 pub struct FeltReader<'a> {
@@ -217,15 +217,6 @@ impl ToFeltRepr for bool {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         writer.write(Felt::from_u64_unchecked(*self as u64));
-    }
-}
-
-#[cfg(not(target_family = "wasm"))]
-impl ToFeltRepr for miden_objects::account::AccountId {
-    #[inline(always)]
-    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(self.prefix().as_felt().into());
-        writer.write(self.suffix().into());
     }
 }
 

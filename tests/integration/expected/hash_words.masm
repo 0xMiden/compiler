@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -10,7 +10,7 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::hash_words
+# mod ::"root_ns:root@1.0.0"::hash_words
 
 @callconv("C")
 proc __rustc::__rust_dealloc(i32, i32, i32)
@@ -92,7 +92,7 @@ pub proc entrypoint(i32) -> felt
     swap.2
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_words::std::crypto::hashes::rpo::hash_memory_words
+    exec.::"root_ns:root@1.0.0"::hash_words::"miden::core::crypto::hashes::rpo256::hash_words"
     trace.252
     nop
     push.12
@@ -118,7 +118,7 @@ pub proc entrypoint(i32) -> felt
     swap.4
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_words::<alloc::raw_vec::RawVecInner>::deallocate
+    exec.::"root_ns:root@1.0.0"::hash_words::<alloc::raw_vec::RawVecInner>::deallocate
     trace.252
     nop
     push.16
@@ -134,10 +134,10 @@ pub proc entrypoint(i32) -> felt
 end
 
 @callconv("C")
-proc std::crypto::hashes::rpo::hash_memory_words(i32, i32, i32)
+proc miden::core::crypto::hashes::rpo256::hash_words(i32, i32, i32)
     trace.240
     nop
-    exec.::std::crypto::hashes::rpo::hash_memory_words
+    exec.::miden::core::crypto::hashes::rpo256::hash_words
     trace.252
     nop
     movup.4
@@ -225,7 +225,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     swap.1
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::hash_words::<alloc::raw_vec::RawVecInner>::current_memory
+    exec.::"root_ns:root@1.0.0"::hash_words::"<alloc::raw_vec::RawVecInner>::current_memory"
     trace.252
     nop
     push.8
@@ -290,7 +290,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         movdn.2
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_words::<alloc::alloc::Global as core::alloc::Allocator>::deallocate
+        exec.::"root_ns:root@1.0.0"::hash_words::"<alloc::alloc::Global as core::alloc::Allocator>::deallocate"
         trace.252
         nop
     end
@@ -458,7 +458,7 @@ proc <alloc::alloc::Global as core::alloc::Allocator>::deallocate(
         swap.1
         trace.240
         nop
-        exec.::root_ns:root@1.0.0::hash_words::__rustc::__rust_dealloc
+        exec.::"root_ns:root@1.0.0"::hash_words::__rustc::__rust_dealloc
         trace.252
         nop
     end
