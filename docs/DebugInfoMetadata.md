@@ -237,6 +237,128 @@ salvage_debug_info(&old_val, &SalvageAction::Deref { new_value: ptr }, &mut buil
 - `collect_debug_ops(op)` — recursively collects all debug ops within an
   operation's regions
 
+## Guide for Pass Authors
+
+Debug info operations are **observational** — they observe SSA values but don't
+consume them or affect program semantics. This has implications for how passes
+should handle them:
+
+### The Golden Rule
+
+**Debug uses should never prevent optimizations.** If a value is dead except for
+debug uses, treat it as dead. If an operation can be sunk/moved except for debug
+uses, sink/move it anyway.
+
+### What You Get for Free
+
+1. **Value replacements propagate automatically.** When you call
+   `replace_all_uses_with(old, new)`, debug uses are updated too. No action needed.
+
+2. **The verifier catches mistakes.** If you delete an operation without handling
+   its debug uses, the verifier will report dangling references. This is
+   intentional — silent debug info loss is worse than a loud failure.
+
+### What You Must Handle
+
+#### 1. Dead Code Elimination
+
+When determining if a value is dead, exclude debug uses:
+
+```rust
+use crate::sink::{has_only_debug_uses, erase_debug_users};
+
+// Wrong: debug uses keep the value "alive"
+if !value.is_used() { ... }
+
+// Right: only non-debug uses matter
+if has_only_debug_uses(&*value.borrow()) {
+    erase_debug_users(value);  // Clean up debug ops first
+    defining_op.erase();        // Then erase the definition
+}
+```
+
+#### 2. Sinking / Code Motion
+
+When checking if an operation can be moved, exclude debug uses from the
+dominance check:
+
+```rust
+fn can_sink(&self, op: &Operation, target_region: &Region) -> bool {
+    op.results().iter().all(|result| {
+        result.borrow().iter_uses().all(|user| {
+            // Skip debug uses — they're observational
+            if is_debug_info_op(&user.owner.borrow()) {
+                return true;
+            }
+            self.dominates(target_region, &user.owner)
+        })
+    })
+}
+```
+
+Before moving an operation, erase debug uses that would violate dominance:
+
+```rust
+// Erase debug uses outside target region before moving
+for result in op.borrow().results().iter() {
+    erase_debug_users(result.borrow().as_value_ref());
+}
+move_op_into_region(op, target_region);
+```
+
+#### 3. Value Transformations
+
+When a transform changes how a value is computed (not just replaces it), use
+`salvage_debug_info()` to update the debug expressions:
+
+```rust
+use midenc_dialect_debuginfo::transform::{salvage_debug_info, SalvageAction};
+
+// Value was promoted to a stack slot:
+let ptr = builder.alloca(ty, span)?;
+builder.store(old_val, ptr, span)?;
+salvage_debug_info(&old_val, &SalvageAction::Deref { new_value: ptr }, &mut builder);
+
+// Value was completely optimized away:
+salvage_debug_info(&old_val, &SalvageAction::Undef, &mut builder);
+```
+
+#### 4. Deleting Operations
+
+Always erase debug users before erasing the defining operation:
+
+```rust
+for result in op.borrow().results().iter() {
+    erase_debug_users(result.borrow().as_value_ref());
+}
+op.borrow_mut().erase();
+```
+
+### Quick Reference
+
+| Scenario | Action |
+|----------|--------|
+| Replacing value A with B | Just use `replace_all_uses_with` — automatic |
+| Checking if value is dead | Use `has_only_debug_uses()`, not `is_used()` |
+| Moving/sinking an op | Exclude debug uses from dominance checks |
+| Before moving an op | Call `erase_debug_users()` on results |
+| Before deleting an op | Call `erase_debug_users()` on results |
+| Value computation changed | Use `salvage_debug_info()` with appropriate action |
+| Value optimized to constant | Use `SalvageAction::Constant` or `::Undef` |
+
+### Defense in Depth
+
+The MASM codegen has additional hardening:
+
+- `DebugValue::emit()` skips emission if the value is not on the stack and has
+  no location expression (gracefully handles orphaned debug ops)
+- `emit_inst()` silently skips debuginfo-dialect ops that have no `HirLowering`
+  implementation (e.g., `debuginfo.kill`, `debuginfo.declare`)
+- `MasmFunctionBuilder::build()` strips debug-only procedure bodies that would
+  be rejected by the assembler
+
+These are safety nets, not substitutes for proper debug info handling in passes.
+
 ## Kinda Fallback Behavior/Best Effort cases
 
 - If DWARF lookup fails entirely, we still emit attrs but populate
@@ -273,6 +395,29 @@ salvage_debug_info(&old_val, &SalvageAction::Deref { new_value: ptr }, &mut buil
   (`DebugVarLocation::Stack`, `Local`, etc.), source positions, and type
   information. These decorators are embedded in the MAST instruction stream,
   enabling debuggers to track variable values at specific execution points.
+
+  **Local variable FMP offset handling** uses a two-phase approach:
+
+  1. **During lowering** (`DebugValue::emit()` in `lowering.rs`): When a value
+     is not on the operand stack (i.e., it was spilled to memory), the emitter
+     records `DebugVarLocation::Local(wasm_idx)` using the raw WASM local index
+     from the `DIExpressionOp::WasmLocal` attribute. This index is stable and
+     known from DWARF.
+
+  2. **After body is built** (`patch_debug_var_locals_in_block()` in
+     `component.rs`): Once the entire procedure body is emitted and `num_locals`
+     is finalized, a fixup pass converts `Local(wasm_idx)` to `Local(fmp_offset)`
+     where `fmp_offset = wasm_idx - num_wasm_locals`. The FMP offset is negative,
+     pointing below the frame pointer where spilled locals reside.
+
+  This separation keeps lowering simple (no need to thread `num_locals` through
+  the emitter) while ensuring correct FMP-relative offsets in the final output.
+
+  **Debug-only procedure bodies**: If a procedure body contains only `DebugVar`
+  decorators and no real instructions, the MASM codegen strips the decorators
+  entirely. The Miden assembler rejects such bodies because decorators don't
+  affect MAST digests—two empty procedures with different decorators would be
+  indistinguishable.
 
 These refinements can be implemented without changing the public HIR surface; we
 would only update the metadata collector and the builder helpers.
