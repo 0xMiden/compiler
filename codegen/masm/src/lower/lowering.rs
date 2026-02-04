@@ -1231,6 +1231,18 @@ impl HirLowering for arith::Split {
 }
 
 impl HirLowering for debuginfo::DebugValue {
+    fn schedule_operands(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        // Debug value operations are purely observational — they do not consume their
+        // operand from the stack. Skip operand scheduling entirely; the emit() method
+        // will look up the value's current stack position (if any) on its own.
+        Ok(())
+    }
+
+    fn required_operands(&self) -> ValueRange<'_, 4> {
+        // No operands need to be scheduled on the stack for debug ops.
+        ValueRange::Empty
+    }
+
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use miden_core::{DebugVarInfo, DebugVarLocation, Felt};
         use midenc_hir::DIExpressionOp;

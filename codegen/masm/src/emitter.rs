@@ -108,9 +108,16 @@ impl BlockEmitter<'_> {
         // operand stack space on operands that will never be used.
         //self.drop_unused_operands_at(op);
 
-        let lowering = op.as_trait::<dyn HirLowering>().unwrap_or_else(|| {
-            panic!("illegal operation: no lowering has been defined for '{}'", op.name())
-        });
+        let Some(lowering) = op.as_trait::<dyn HirLowering>() else {
+            // Skip debug info ops that have no lowering (e.g. debuginfo.kill,
+            // debuginfo.declare) rather than panicking. These ops carry no
+            // semantic meaning for code generation.
+            if op.name().dialect().as_str() == "debuginfo" {
+                log::trace!(target: "codegen", "skipping debug info op with no lowering: {}", op.name());
+                return;
+            }
+            panic!("illegal operation: no lowering has been defined for '{}'", op.name());
+        };
 
         // Schedule operands for this instruction
         lowering

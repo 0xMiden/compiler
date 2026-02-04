@@ -637,12 +637,37 @@ impl MasmFunctionBuilder {
         // Now convert to FMP offset: idx - num_wasm_locals
         patch_debug_var_locals_in_block(&mut body, num_wasm_locals);
 
+        // Strip DebugVar-only procedure bodies.
+        // The Miden assembler rejects procedures whose bodies contain only decorators
+        // (like DebugVar) and no real instructions, because decorators don't affect
+        // MAST digests — two empty procedures with different decorators would be
+        // indistinguishable. If there are no real instructions, the debug info is
+        // meaningless anyway, so just drop it.
+        if !block_has_real_instructions(&body) {
+            body = masm::Block::new(body.span(), vec![]);
+        }
+
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
         procedure.extend_invoked(invoked);
 
         Ok(procedure)
     }
+}
+
+/// Returns true if the block contains at least one real (non-decorator) instruction.
+///
+/// DebugVar instructions are decorator-only and don't produce MAST nodes. If a procedure
+/// body contains only DebugVar ops, the assembler will reject it.
+fn block_has_real_instructions(block: &masm::Block) -> bool {
+    block.iter().any(|op| match op {
+        masm::Op::Inst(inst) => inst.has_textual_representation(),
+        masm::Op::If {
+            then_blk, else_blk, ..
+        } => block_has_real_instructions(then_blk) || block_has_real_instructions(else_blk),
+        masm::Op::While { body, .. } => block_has_real_instructions(body),
+        masm::Op::Repeat { body, .. } => block_has_real_instructions(body),
+    })
 }
 
 /// Recursively patch DebugVar Local locations in a block.

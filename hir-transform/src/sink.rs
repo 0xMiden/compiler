@@ -3,13 +3,56 @@ use alloc::vec::Vec;
 use midenc_hir::{
     Backward, Builder, EntityMut, Forward, FxHashSet, OpBuilder, Operation, OperationName,
     OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface,
-    RegionBranchTerminatorOpInterface, RegionRef, Report, SmallVec, Usable, ValueRef,
+    RegionBranchTerminatorOpInterface, RegionRef, Report, SmallVec, Usable, Value, ValueRef,
     adt::SmallDenseMap,
     dominance::DominanceInfo,
     matchers::{self, Matcher},
     pass::{Pass, PassExecutionState, PostPassStatus},
     traits::{ConstantLike, Terminator},
 };
+
+/// Returns `true` if the given operation belongs to the debuginfo dialect.
+///
+/// Debug info operations (debuginfo.value, debuginfo.kill, etc.) are purely
+/// observational and should not prevent optimizations such as sinking or DCE.
+#[inline]
+fn is_debug_info_op(op: &Operation) -> bool {
+    op.name().dialect().as_str() == "debuginfo"
+}
+
+/// Check whether `operation` is the sole *non-debug-info* user of `value`.
+///
+/// Debug uses are excluded because they are observational and should never
+/// prevent value-producing operations from being moved or eliminated.
+fn is_sole_non_debug_user(value: &dyn Value, operation: OperationRef) -> bool {
+    value.iter_uses().all(|user| {
+        user.owner == operation || is_debug_info_op(&user.owner.borrow())
+    })
+}
+
+/// Returns `true` if the only remaining uses of the given value are debug info uses
+/// (or the value is entirely unused).
+fn has_only_debug_uses(value: &dyn Value) -> bool {
+    value.iter_uses().all(|user| is_debug_info_op(&user.owner.borrow()))
+}
+
+/// Erase all debug info operations that reference the given value.
+///
+/// This is used before erasing a defining op whose result is only kept alive by
+/// debug uses. The debug ops are simply removed; the codegen emitter is also
+/// hardened to skip orphaned debug ops, so this is a best-effort cleanup.
+fn erase_debug_users(value: ValueRef) {
+    let debug_ops: Vec<OperationRef> = {
+        let v = value.borrow();
+        v.iter_uses()
+            .filter(|user| is_debug_info_op(&user.owner.borrow()))
+            .map(|user| user.owner)
+            .collect()
+    };
+    for mut op in debug_ops {
+        op.borrow_mut().erase();
+    }
+}
 
 /// This transformation sinks operations as close as possible to their uses, one of two ways:
 ///
@@ -211,7 +254,9 @@ impl Pass for SinkOperandDefs {
             for operand in op.operands().iter().rev() {
                 let value = operand.borrow();
                 let value = value.value();
-                let is_sole_user = value.iter_uses().all(|user| user.owner == operation);
+                // Exclude debug info uses when determining whether this is the sole
+                // user — debug ops are observational and should not prevent sinking.
+                let is_sole_user = is_sole_non_debug_user(&*value, operation);
 
                 let Some(defining_op) = value.get_defining_op() else {
                     // Skip block arguments, nothing to move in that situation
@@ -266,10 +311,13 @@ impl Pass for SinkOperandDefs {
             let mut operation = sink_state.operation;
             let op = operation.borrow();
 
-            // If this operation is unused, remove it now if it has no side effects
+            // If this operation is unused (or only has debug info uses), remove it
+            // now if it has no side effects.
             let is_memory_effect_free =
                 op.is_memory_effect_free() || op.implements::<dyn ConstantLike>();
-            if !op.is_used()
+            let only_debug_uses = !op.is_used()
+                || op.results().iter().all(|r| has_only_debug_uses(&*r.borrow()));
+            if only_debug_uses
                 && is_memory_effect_free
                 && !op.implements::<dyn Terminator>()
                 && !op.implements::<dyn RegionBranchTerminatorOpInterface>()
@@ -277,6 +325,10 @@ impl Pass for SinkOperandDefs {
             {
                 log::debug!(target: "sink-operand-defs", "erasing unused, effect-free, non-terminator op {op}");
                 drop(op);
+                // Erase any remaining debug uses before erasing the defining op
+                for result in operation.borrow().results().iter() {
+                    erase_debug_users(result.borrow().as_value_ref());
+                }
                 operation.borrow_mut().erase();
                 continue;
             }
@@ -313,10 +365,11 @@ impl Pass for SinkOperandDefs {
                         operand.borrow_mut().set(replacement);
 
                         changed = PostPassStatus::Changed;
-                        // If no other uses of this value remain, then remove the original
-                        // operation, as it is now dead.
-                        if !operand_value.borrow().is_used() {
+                        // If no other non-debug uses of this value remain, then remove
+                        // the original operation, as it is now dead.
+                        if has_only_debug_uses(&*operand_value.borrow()) {
                             log::trace!(target: "sink-operand-defs", "    {operand_value} is no longer used, erasing definition");
+                            erase_debug_users(operand_value);
                             // Replacements are only ever for op results
                             let mut defining_op = operand_value.borrow().get_defining_op().unwrap();
                             defining_op.borrow_mut().erase();
@@ -326,7 +379,8 @@ impl Pass for SinkOperandDefs {
                 }
 
                 let value = operand_value.borrow();
-                let is_sole_user = value.iter_uses().all(|user| user.owner == operation);
+                // Exclude debug info uses when determining sole-user status.
+                let is_sole_user = is_sole_non_debug_user(&*value, operation);
 
                 let Some(mut defining_op) = value.get_defining_op() else {
                     // Skip block arguments, nothing to move in that situation
@@ -470,8 +524,11 @@ where
     }
 
     /// Given a region and an op which dominates the region, returns true if all
-    /// users of the given op are dominated by the entry block of the region, and
-    /// thus the operation can be sunk into the region.
+    /// *non-debug-info* users of the given op are dominated by the entry block
+    /// of the region, and thus the operation can be sunk into the region.
+    ///
+    /// Debug info uses are excluded because they are observational and should
+    /// not prevent control-flow sinking.
     fn all_users_dominated_by(&self, op: &Operation, region: &Region) -> bool {
         assert!(
             region.find_ancestor_op(op.as_operation_ref()).is_none(),
@@ -481,6 +538,11 @@ where
         op.results().iter().all(|result| {
             let result = result.borrow();
             result.iter_uses().all(|user| {
+                // Skip debug info users — they are observational and should not
+                // prevent sinking.
+                if is_debug_info_op(&user.owner.borrow()) {
+                    return true;
+                }
                 // The user is dominated by the region if its containing block is dominated
                 // by the region's entry block.
                 self.dominfo.dominates(&region_entry, &user.owner.parent().unwrap())
@@ -521,6 +583,13 @@ where
                 (all_users_dominated_by, should_move_into_region)
             };
             if all_users_dominated_by && should_move_into_region {
+                // Before moving, erase any debug info ops outside the target region
+                // that reference results of this op — they would violate dominance
+                // after the move.
+                for result in op.borrow().results().iter() {
+                    erase_debug_users(result.borrow().as_value_ref());
+                }
+
                 (self.move_into_region)(op, region);
 
                 self.num_sunk += 1;
