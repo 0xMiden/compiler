@@ -1,5 +1,5 @@
 name = "compiler"
-patterns = ["*.wat", "*.masm"]
+patterns = ["*.wat", "*.masm", "*.stderr"]
 
 [substitutions]
 "midenc" = "$$MIDENC_BIN_DIR/midenc"
