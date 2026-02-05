@@ -14,6 +14,7 @@ use syn::{
     spanned::Spanned,
 };
 
+pub(crate) use crate::component_macro::storage::typecheck_storage_field;
 use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
     boilerplate::runtime_boilerplate,

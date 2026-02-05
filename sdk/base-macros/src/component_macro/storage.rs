@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use quote::quote;
 use syn::{Field, Type, spanned::Spanned};
 
-use crate::account_component_metadata::AccountComponentMetadataBuilder;
+use crate::{account_component_metadata::AccountComponentMetadataBuilder, types::StorageFieldType};
 
 /// Normalizes a storage slot name component into a valid identifier-like segment.
 ///
@@ -172,12 +172,7 @@ pub fn process_storage_fields(
             slot_names.insert(slot_name_str, field_name_str.clone());
             slot_ids.insert(slot_id_key, field_name_str);
 
-            builder.add_storage_entry(
-                slot_name.clone(),
-                args.description,
-                field_type,
-                args.type_attr,
-            );
+            builder.add_storage_entry(slot_name.clone(), args.description, field, args.type_attr);
 
             field_infos.push((field_name.clone(), field_type.clone(), slot_id));
         } else {
@@ -211,7 +206,7 @@ pub fn process_storage_fields(
 ///
 /// * A developer defines their own `StorageMap` or `Value`
 /// * A developer uses a valid type from miden but aliases it
-fn typecheck_storage_field(field: &Field) -> Result<(), syn::Error> {
+pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType, syn::Error> {
     let type_path = match &field.ty {
         Type::Path(type_path) => type_path,
         _ => {
@@ -231,8 +226,10 @@ fn typecheck_storage_field(field: &Field) -> Result<(), syn::Error> {
     const TYPENAME_VALUE: &str = "Value";
 
     match segments.as_slice() {
-        [a] if a == TYPENAME_MAP || a == TYPENAME_VALUE => Ok(()),
-        [a, b] if a == BASE_CRATE && (b == TYPENAME_MAP || b == TYPENAME_VALUE) => Ok(()),
+        [a] if a == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
+        [a] if a == TYPENAME_VALUE => Ok(StorageFieldType::Value),
+        [a, b] if a == BASE_CRATE && b == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
+        [a, b] if a == BASE_CRATE && b == TYPENAME_VALUE => Ok(StorageFieldType::Value),
         _ => Err(syn::Error::new(
             field.span(),
             format!(
