@@ -5,7 +5,7 @@ use midenc_hir::{
 };
 
 use super::{OpEmitter, masm};
-use crate::lower::NativePtr;
+use crate::{OperandStack, lower::NativePtr};
 
 /// Allocation
 impl OpEmitter<'_> {
@@ -681,11 +681,86 @@ impl OpEmitter<'_> {
         let ty = src.ty();
         assert!(ty.is_pointer());
         assert_eq!(ty, dst.ty(), "expected src and dst operands to have the same type");
-        let value_ty = ty.pointee().unwrap();
+        let value_ty = ty.pointee().unwrap().clone();
         let value_size = u32::try_from(value_ty.size_in_bytes()).expect("invalid value size");
 
         // Use optimized intrinsics when available
         match value_size {
+            // Byte copies (Wasm `memory.copy`) can often be performed more efficiently by copying
+            // whole felt elements when the source, destination, and length are all
+            // element-aligned.
+            1 => {
+                // Compute: use_elements = (src % 4 == 0) && (dst % 4 == 0) && (count % 4 == 0)
+                //
+                // Stack: [src, dst, count]
+                self.emit_all(
+                    [
+                        // src % 4 == 0
+                        masm::Instruction::Dup0,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Swap1,
+                        masm::Instruction::Drop,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        // dst % 4 == 0
+                        masm::Instruction::Dup2,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Swap1,
+                        masm::Instruction::Drop,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::And,
+                        // count % 4 == 0
+                        masm::Instruction::Dup3,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Swap1,
+                        masm::Instruction::Drop,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::And,
+                    ],
+                    span,
+                );
+
+                // then: convert byte addresses/count to element units and delegate to core
+                let mut then_ops = Vec::default();
+                let mut then_stack = OperandStack::default();
+                let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
+                then_emitter.emit_all(
+                    [
+                        // Convert `src` to element address
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                        // Convert `dst` to an element address
+                        masm::Instruction::Swap1,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                        // Bring `count` to top to convert to element count
+                        masm::Instruction::Swap2,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                    ],
+                    span,
+                );
+                then_emitter.raw_exec("::miden::core::mem::memcopy_elements", span);
+
+                // else: fall back to the generic implementation
+                let mut else_ops = Vec::default();
+                let mut else_stack = OperandStack::default();
+                let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
+                else_emitter.emit_memcpy_fallback_loop(
+                    src.clone(),
+                    dst.clone(),
+                    count.clone(),
+                    value_ty.clone(),
+                    value_size,
+                    span,
+                );
+
+                self.current_block.push(masm::Op::If {
+                    span,
+                    then_blk: masm::Block::new(span, then_ops),
+                    else_blk: masm::Block::new(span, else_ops),
+                });
+                return;
+            }
             // Word-sized values have an optimized intrinsic we can lean on
             16 => {
                 // We have to convert byte addresses to element addresses
@@ -743,6 +818,19 @@ impl OpEmitter<'_> {
             _ => (),
         }
 
+        self.emit_memcpy_fallback_loop(src, dst, count, value_ty, value_size, span);
+    }
+
+    /// Emit the default memcpy loop for types which do not have a specialized intrinsic.
+    fn emit_memcpy_fallback_loop(
+        &mut self,
+        src: crate::Operand,
+        dst: crate::Operand,
+        count: crate::Operand,
+        value_ty: Type,
+        value_size: u32,
+        span: SourceSpan,
+    ) {
         // Create new block for loop body and switch to it temporarily
         let mut body = Vec::default();
         let mut body_emitter = OpEmitter::new(self.invoked, &mut body, self.stack);
