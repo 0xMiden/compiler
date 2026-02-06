@@ -43,6 +43,16 @@ pub(crate) struct ExportedTypeDef {
     pub(crate) kind: ExportedTypeKind,
 }
 
+/// Represents the types that can be used as storage fields.
+///
+/// During macro expansion struct field types correspond to strings, as types haven't been
+/// resolved yet. After validating a field type, use this enum instead of strings.
+#[derive(Clone, Debug)]
+pub(crate) enum StorageFieldType {
+    StorageMap,
+    Value,
+}
+
 pub(crate) fn register_export_type(def: ExportedTypeDef, _span: Span) -> Result<(), syn::Error> {
     let registry = EXPORTED_TYPES.get_or_init(|| Mutex::new(Vec::new()));
     let mut registry = registry.lock().expect("mutex poisoned");
