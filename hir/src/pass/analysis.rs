@@ -236,8 +236,13 @@ impl PreservedAnalyses {
     }
 
     fn insert(&mut self, id: TypeId) {
-        if let Err(index) = self.preserved.binary_search_by_key(&id, |probe| *probe) {
-            self.preserved.insert(index, id);
+        match self.preserved.binary_search_by_key(&id, |probe| *probe) {
+            Ok(index) => {
+                self.preserved[index] = id;
+            }
+            Err(index) => {
+                self.preserved.insert(index, id);
+            }
         }
     }
 
