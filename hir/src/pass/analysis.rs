@@ -237,8 +237,12 @@ impl PreservedAnalyses {
 
     fn insert(&mut self, id: TypeId) {
         match self.preserved.binary_search_by_key(&id, |probe| *probe) {
-            Ok(index) => self.preserved.insert(index, id),
-            Err(index) => self.preserved.insert(index, id),
+            Ok(index) => {
+                self.preserved[index] = id;
+            }
+            Err(index) => {
+                self.preserved.insert(index, id);
+            }
         }
     }
 
@@ -702,5 +706,31 @@ impl AnalysisMap {
         // Using `retain`, we preserve the original insertion order, and dependencies always go
         // before users, so we need only a single pass through.
         self.analyses.retain(|_, a| !a.invalidate(preserved_analyses));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct DummyAnalysis;
+
+    #[test]
+    fn preserved_analyses_no_duplicates() {
+        let mut preserved = PreservedAnalyses::default();
+
+        // Insert the same type multiple times
+        preserved.preserve::<DummyAnalysis>();
+        preserved.preserve::<DummyAnalysis>();
+        preserved.preserve::<DummyAnalysis>();
+
+        // Should only have one entry, not three
+        assert_eq!(preserved.preserved.len(), 1);
+        assert!(preserved.is_preserved::<DummyAnalysis>());
+
+        // After removal, it should be completely gone
+        preserved.unpreserve::<DummyAnalysis>();
+        assert!(!preserved.is_preserved::<DummyAnalysis>());
+        assert!(preserved.preserved.is_empty());
     }
 }
