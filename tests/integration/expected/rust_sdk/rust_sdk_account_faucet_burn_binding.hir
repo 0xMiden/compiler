@@ -26,7 +26,7 @@ builtin.component miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-fa
             hir.store_local v253 #[local = lv1];
             v245 = arith.constant 0 : felt;
             hir.store_local v245 #[local = lv2];
-            scf.while {
+            scf.while  {
             ^block12:
                 v11 = hir.load_local  : i32 #[local = lv1];
                 v282 = arith.constant 0 : i32;

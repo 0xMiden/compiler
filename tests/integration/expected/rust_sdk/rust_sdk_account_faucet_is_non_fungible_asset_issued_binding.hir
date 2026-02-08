@@ -26,7 +26,7 @@ builtin.component miden:rust-sdk-account-faucet-is-non-fungible-asset-issued-bin
             hir.store_local v147 #[local = lv1];
             v140 = arith.constant 0 : felt;
             hir.store_local v140 #[local = lv2];
-            scf.while {
+            scf.while  {
             ^block12:
                 v11 = hir.load_local  : i32 #[local = lv1];
                 v178 = arith.constant 0 : i32;

@@ -571,7 +571,7 @@ builtin.component miden:base/note-script@1.0.0 {
             hir.assertz v399 #[code = 250];
             v400 = hir.int_to_ptr v397 : ptr<byte, i32>;
             hir.store v400, v396;
-            scf.while {
+            scf.while  {
             ^block50:
                 v401 = hir.load_local  : i32 #[local = lv3];
                 v1160 = arith.constant 0 : i32;

@@ -5,7 +5,7 @@ builtin.component root_ns:root@1.0.0 {
             hir.store_local v0 #[local = lv0];
             v36 = arith.constant 0 : i32;
             hir.store_local v36 #[local = lv1];
-            scf.while {
+            scf.while  {
             ^block6:
                 v4 = hir.load_local  : i32 #[local = lv0];
                 v57 = arith.constant 0 : i32;

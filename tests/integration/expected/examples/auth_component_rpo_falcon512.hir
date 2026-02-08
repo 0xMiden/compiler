@@ -263,7 +263,7 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
             v783 = arith.constant 32 : i32;
             v212 = arith.add v210, v783 : i32 #[overflow = wrapping];
             hir.store_local v212 #[local = lv16];
-            scf.while {
+            scf.while  {
             ^block12:
                 v213 = hir.load_local  : i32 #[local = lv11];
                 v782 = arith.constant 0 : i32;
@@ -279,7 +279,7 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
                 ^block14:
                     v781 = arith.constant 0 : i32;
                     hir.store_local v781 #[local = lv14];
-                    scf.while {
+                    scf.while  {
                     ^block16:
                         v221 = hir.load_local  : i32 #[local = lv14];
                         v779 = arith.constant 0 : i32;

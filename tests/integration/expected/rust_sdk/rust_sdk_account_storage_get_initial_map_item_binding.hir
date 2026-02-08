@@ -56,7 +56,7 @@ builtin.component miden:rust-sdk-account-storage-get-initial-map-item-binding/ru
             hir.store_local v269 #[local = lv1];
             v258 = arith.constant 0 : felt;
             hir.store_local v258 #[local = lv2];
-            scf.while {
+            scf.while  {
             ^block14:
                 v32 = hir.load_local  : i32 #[local = lv1];
                 v329 = arith.constant 0 : i32;

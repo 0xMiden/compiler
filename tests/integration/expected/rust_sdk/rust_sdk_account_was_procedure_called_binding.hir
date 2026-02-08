@@ -26,7 +26,7 @@ builtin.component miden:rust-sdk-account-was-procedure-called-binding/rust-sdk-a
             hir.store_local v113 #[local = lv1];
             v107 = arith.constant 0 : felt;
             hir.store_local v107 #[local = lv2];
-            scf.while {
+            scf.while  {
             ^block12:
                 v11 = hir.load_local  : i32 #[local = lv1];
                 v141 = arith.constant 0 : i32;

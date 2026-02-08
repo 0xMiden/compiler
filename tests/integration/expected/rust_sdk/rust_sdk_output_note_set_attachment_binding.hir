@@ -32,7 +32,7 @@ builtin.component miden:rust-sdk-output-note-set-attachment-binding/rust-sdk-out
             hir.store_local v189 #[local = lv4];
             v188 = arith.constant 0 : felt;
             hir.store_local v188 #[local = lv5];
-            scf.while {
+            scf.while  {
             ^block12:
                 v17 = hir.load_local  : i32 #[local = lv1];
                 v187 = arith.constant 0 : i32;

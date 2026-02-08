@@ -197,11 +197,7 @@ impl OpPrinter for While {
         use formatter::*;
 
         let result_types = print::render_operation_result_types(self.as_operation());
-        let result_types = if result_types.is_empty() {
-            result_types
-        } else {
-            result_types + const_text(" ")
-        };
+        let result_types = result_types + const_text(" ");
         let results = print::render_operation_results(self.as_operation());
         let operands = print::render_operation_operands(self.as_operation());
         let header = results + display(self.op.name()) + const_text(" ") + operands + result_types;

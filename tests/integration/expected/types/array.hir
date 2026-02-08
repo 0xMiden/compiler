@@ -30,7 +30,7 @@ builtin.component root_ns:root@1.0.0 {
                 scf.yield ;
             } else {
             ^block11:
-                scf.while {
+                scf.while  {
                 ^block12:
                     v19 = hir.load_local  : i32 #[local = lv0];
                     v20 = hir.bitcast v19 : u32;

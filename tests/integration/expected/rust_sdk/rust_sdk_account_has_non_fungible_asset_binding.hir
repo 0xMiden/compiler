@@ -26,7 +26,7 @@ builtin.component miden:rust-sdk-account-has-non-fungible-asset-binding/rust-sdk
             hir.store_local v148 #[local = lv1];
             v141 = arith.constant 0 : felt;
             hir.store_local v141 #[local = lv2];
-            scf.while {
+            scf.while  {
             ^block12:
                 v11 = hir.load_local  : i32 #[local = lv1];
                 v179 = arith.constant 0 : i32;

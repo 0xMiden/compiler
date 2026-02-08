@@ -16,7 +16,7 @@ builtin.component root_ns:root@1.0.0 {
             v10 = arith.add v8, v9 : i32 #[overflow = wrapping];
             v12 = arith.add v10, v549 : i32 #[overflow = wrapping];
             hir.store_local v12 #[local = lv1];
-            scf.while {
+            scf.while  {
             ^block7:
                 v13 = hir.load_local  : i32 #[local = lv2];
                 v566 = arith.constant 0 : i32;
@@ -315,7 +315,7 @@ builtin.component root_ns:root@1.0.0 {
             v225 = arith.add v222, v768 : i32 #[overflow = wrapping];
             v231 = hir.int_to_ptr v228 : ptr<byte, i32>;
             hir.store v231, v225;
-            scf.while {
+            scf.while  {
             ^block18:
                 v232 = hir.load_local  : i32 #[local = lv2];
                 v652 = arith.constant 32 : i32;
@@ -552,7 +552,7 @@ builtin.component root_ns:root@1.0.0 {
             v417 = arith.add v414, v731 : i32 #[overflow = wrapping];
             v423 = hir.int_to_ptr v420 : ptr<byte, i32>;
             hir.store v423, v417;
-            scf.while {
+            scf.while  {
             ^block22:
                 v424 = hir.load_local  : i32 #[local = lv2];
                 v599 = arith.constant 108 : i32;
