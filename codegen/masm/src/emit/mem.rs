@@ -64,7 +64,7 @@ impl OpEmitter<'_> {
                     Type::I128 => self.load_quad_word(None, span),
                     Type::I64 | Type::U64 => self.load_double_word_int(None, span),
                     Type::Felt => self.load_felt(None, span),
-                    Type::I32 | Type::U32 => self.load_word(None, span),
+                    Type::I32 | Type::U32 | Type::Ptr(_) => self.load_word(None, span),
                     ty @ (Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1) => {
                         self.load_small(ty, None, span);
                     }
@@ -89,7 +89,7 @@ impl OpEmitter<'_> {
             Type::I128 => self.load_quad_word(Some(ptr), span),
             Type::I64 | Type::U64 => self.load_double_word_int(Some(ptr), span),
             Type::Felt => self.load_felt(Some(ptr), span),
-            Type::I32 | Type::U32 => self.load_word(Some(ptr), span),
+            Type::I32 | Type::U32 | Type::Ptr(_) => self.load_word(Some(ptr), span),
             Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1 => {
                 self.load_small(&ty, Some(ptr), span);
             }
@@ -546,7 +546,7 @@ impl OpEmitter<'_> {
                     Type::I128 => self.store_quad_word(None, span),
                     Type::I64 | Type::U64 => self.store_double_word_int(None, span),
                     Type::Felt => self.store_felt(None, span),
-                    Type::I32 | Type::U32 => self.store_word(None, span),
+                    Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(None, span),
                     ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, None, span),
                     Type::Array(ref array_ty) => self.store_array(array_ty, None, span),
                     Type::Struct(ref struct_ty) => self.store_struct(struct_ty, None, span),
@@ -574,7 +574,7 @@ impl OpEmitter<'_> {
             Type::I128 => self.store_quad_word(Some(ptr), span),
             Type::I64 | Type::U64 => self.store_double_word_int(Some(ptr), span),
             Type::Felt => self.store_felt(Some(ptr), span),
-            Type::I32 | Type::U32 => self.store_word(Some(ptr), span),
+            Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(Some(ptr), span),
             ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, Some(ptr), span),
             Type::Array(ref array_ty) => self.store_array(array_ty, Some(ptr), span),
             Type::Struct(ref struct_ty) => self.store_struct(struct_ty, Some(ptr), span),
