@@ -35,10 +35,10 @@ impl Pattern for FoldRedundantYields {
 impl RewritePattern for FoldRedundantYields {
     fn match_and_rewrite(
         &self,
-        mut op_ref: OperationRef,
+        op_ref: OperationRef,
         rewriter: &mut dyn Rewriter,
     ) -> Result<bool, Report> {
-        let mut op = op_ref.borrow_mut();
+        let op = op_ref.borrow();
 
         let Some(br_op) = op.as_trait::<dyn RegionBranchOpInterface>() else {
             return Ok(false);
@@ -56,6 +56,7 @@ impl RewritePattern for FoldRedundantYields {
             // Several assertions follow: an SCF region always has a single block, that block must
             // have a terminator which then implements RegionBranchTerminatorOpInterface.
             let region = region_ref.borrow();
+
             assert!(region.has_one_block());
 
             let block = region.entry();
@@ -137,8 +138,11 @@ impl RewritePattern for FoldRedundantYields {
             // Next remove the redundant results.  Iterate for each position in reverse to avoid
             // invalidating offsets as we go.
             redundant_result_positions.sort_unstable_by(|a, b| b.cmp(a));
-            for idx in &redundant_result_positions {
-                op.results_mut().group_mut(0).erase(*idx);
+            {
+                let mut op = op.into_entity_mut().unwrap();
+                for idx in &redundant_result_positions {
+                    op.results_mut().group_mut(0).erase(*idx);
+                }
             }
 
             // And remove the redundant terminator operands.

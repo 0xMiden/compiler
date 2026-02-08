@@ -38,17 +38,24 @@ impl Pass for SparseConditionalConstantPropagation {
 
     fn run_on_operation(
         &mut self,
-        mut op: EntityMut<'_, Self::Target>,
+        op: EntityMut<'_, Self::Target>,
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         // Run sparse constant propagation + dead code analysis
+        let op = op.into_entity_ref();
         let mut solver = DataFlowSolver::default();
         solver.load::<DeadCodeAnalysis>();
         solver.load::<SparseConstantPropagation>();
         solver.initialize_and_run(&op, state.analysis_manager().clone())?;
 
         // Rewrite based on results of analysis
-        self.rewrite(&mut op, state, &solver)
+        let context = op.context_rc();
+        let op = {
+            let op_ref = op.as_operation_ref();
+            drop(op);
+            op_ref
+        };
+        self.rewrite(op, context, state, &solver)
     }
 }
 
@@ -57,7 +64,8 @@ impl SparseConditionalConstantPropagation {
     /// that have been computed to be constant, and erases as many newly dead operations.
     fn rewrite(
         &mut self,
-        op: &mut Operation,
+        op: OperationRef,
+        context: Rc<Context>,
         state: &mut PassExecutionState,
         solver: &DataFlowSolver,
     ) -> Result<(), Report> {
@@ -72,20 +80,20 @@ impl SparseConditionalConstantPropagation {
         };
 
         // An operation folder used to create and unique constants.
-        let context = op.context_rc();
         let mut folder = OperationFolder::new(context.clone(), TracingRewriterListener);
         let mut builder = OpBuilder::new(context.clone());
 
-        add_to_worklist(op.regions(), &mut worklist);
+        {
+            let op = op.borrow();
+            add_to_worklist(op.regions(), &mut worklist);
+        }
 
         let mut replaced_any = false;
-        while let Some(mut block) = worklist.pop() {
-            let mut block = block.borrow_mut();
-            let body = block.body_mut();
-            let mut ops = body.front();
+        while let Some(block) = worklist.pop() {
+            let mut current_op = { block.borrow().body().front().as_pointer() };
 
-            while let Some(mut op) = ops.as_pointer() {
-                ops.move_next();
+            while let Some(op) = current_op.take() {
+                current_op = op.next();
 
                 builder.set_insertion_point_after(op);
 
@@ -102,9 +110,10 @@ impl SparseConditionalConstantPropagation {
 
                 // If all of the results of the operation were replaced, try to erase the operation
                 // completely.
-                let mut op = op.borrow_mut();
+                let op = op.borrow();
                 if replaced_all && op.would_be_trivially_dead() {
                     assert!(!op.is_used(), "expected all uses to be replaced");
+                    let mut op = op.into_entity_mut().unwrap();
                     op.erase();
                     continue;
                 }
@@ -114,15 +123,11 @@ impl SparseConditionalConstantPropagation {
             }
 
             // Replace any block arguments with constants
-            builder.set_insertion_point_to_start(block.as_block_ref());
+            builder.set_insertion_point_to_start(block);
 
-            for arg in block.arguments() {
-                replaced_any |= replace_with_constant(
-                    solver,
-                    &mut builder,
-                    &mut folder,
-                    arg.borrow().as_value_ref(),
-                );
+            let block_arguments = SmallVec::<[_; 4]>::from_iter(block.borrow().argument_values());
+            for arg in block_arguments {
+                replaced_any |= replace_with_constant(solver, &mut builder, &mut folder, arg);
             }
         }
 
