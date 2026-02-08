@@ -455,3 +455,864 @@ impl PartialEq for OpKey {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloc::{boxed::Box, format, string::ToString, sync::Arc};
+
+    use litcheck_filecheck::filecheck;
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{
+        AbiParam, Context, Ident, OpBuilder, OpPrinter, PointerType, Signature, SourceSpan, Type,
+        dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder, FunctionRef},
+        pass::PassManager,
+    };
+
+    use super::*;
+
+    #[test]
+    fn simple_constant() {
+        let mut test = Test::new("simple_constant", &[], &[Type::I32, Type::I32]);
+        {
+            let mut builder = test.function_builder();
+            let v0 = builder.i32(1, SourceSpan::UNKNOWN);
+            let v1 = builder.i32(1, SourceSpan::UNKNOWN);
+            builder.ret([v0, v1], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_cse(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @simple_constant() -> (i32, i32) {
+^block0:
+    // CHECK: [[V0:v\d+]] = arith.constant 1 : i32;
+    v0 = arith.constant 1 : i32;
+
+    // CHECK-NEXT: builtin.ret [[V0]], [[V0]];
+    v1 = arith.constant 1 : i32;
+    builtin.ret v0, v1;
+};
+            "#
+        );
+    }
+
+    #[test]
+    fn basic() {
+        let mut test = Test::new("basic", &[], &[Type::I32, Type::I32]);
+        {
+            let mut builder = test.function_builder();
+            let v0 = builder.i32(0, SourceSpan::UNKNOWN);
+            let v1 = builder.i32(0, SourceSpan::UNKNOWN);
+            let v2 = builder.i32(1, SourceSpan::UNKNOWN);
+            let v3 = builder.mul(v0, v2, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.mul(v1, v2, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v3, v4], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_cse(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @basic() -> (i32, i32) {
+^block0:
+    // CHECK: [[V0:v\d+]] = arith.constant 0 : i32;
+    v0 = arith.constant 0 : i32;
+    v1 = arith.constant 0 : i32;
+
+    // CHECK-NEXT: [[V2:v\d+]] = arith.constant 1 : i32;
+    v2 = arith.constant 1 : i32;
+
+    // CHECK-NEXT: [[V3:v\d+]] = arith.mul [[V0]], [[V2]] : i32 #[overflow = checked];
+    v3 = arith.mul v0, v2 : i32 #[overflow = checked];
+    v4 = arith.mul v1, v2 : i32 #[overflow = checked];
+
+    // CHECK-NEXT: builtin.ret [[V3]], [[V3]];
+    builtin.ret v3, v3;
+};
+            "#
+        );
+    }
+
+    #[test]
+    fn many() {
+        let mut test = Test::new("many", &[Type::I32, Type::I32], &[Type::I32]);
+        {
+            let mut builder = test.function_builder();
+            let [v0, v1] = *builder.entry_block().borrow().arguments()[0..2].as_array().unwrap();
+            let v0 = v0 as ValueRef;
+            let v1 = v1 as ValueRef;
+            let v2 = builder.add(v0, v1, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.add(v0, v1, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.add(v0, v1, SourceSpan::UNKNOWN).unwrap();
+            let v5 = builder.add(v0, v1, SourceSpan::UNKNOWN).unwrap();
+            let v6 = builder.add(v2, v3, SourceSpan::UNKNOWN).unwrap();
+            let v7 = builder.add(v4, v5, SourceSpan::UNKNOWN).unwrap();
+            let v8 = builder.add(v2, v4, SourceSpan::UNKNOWN).unwrap();
+            let v9 = builder.add(v6, v7, SourceSpan::UNKNOWN).unwrap();
+            let v10 = builder.add(v7, v8, SourceSpan::UNKNOWN).unwrap();
+            let v11 = builder.add(v9, v10, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v11], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_cse(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @many(v0: i32, v1: i32) -> i32 {
+^block0(v0: i32, v1: i32):
+    // CHECK: [[V2:v\d+]] = arith.add v{{\d+}}, v{{\d+}} : i32 #[overflow = checked];
+    v2 = arith.add v0 v1 : i32 #[overflow = checked];
+    v3 = arith.add v0 v1 : i32 #[overflow = checked];
+    v4 = arith.add v0 v1 : i32 #[overflow = checked];
+    v5 = arith.add v0 v1 : i32 #[overflow = checked];
+
+    // CHECK-NEXT: [[V6:v\d+]] = arith.add [[V2]], [[V2]] : i32 #[overflow = checked];
+    v6 = arith.add v2, v3 : i32 #[overflow = checked];
+    v7 = arith.add v4, v5 : i32 #[overflow = checked];
+    v8 = arith.add v2, v4 : i32 #[overflow = checked];
+
+    // CHECK-NEXT: [[V9:v\d+]] = arith.add [[V6]], [[V6]] : i32 #[overflow = checked];
+    v9 = arith.add v6, v7 : i32 #[overflow = checked];
+    v10 = arith.add v7, v8 : i32 #[overflow = checked];
+
+    // CHECK-NEXT: [[V11:v\d+]] = arith.add [[V9]], [[V9]] : i32 #[overflow = checked];
+    v11 = arith.add v9, v10 : i32 #[overflow = checked];
+
+    // CHECK-NEXT: builtin.ret [[V11]];
+    builtin.ret v11;
+};
+            "#
+        );
+    }
+
+    /// Check that operations are not eliminated if they have different operands.
+    #[test]
+    fn ops_with_different_operands_are_not_elimited() {
+        let mut test = Test::new("different_operands", &[], &[Type::I32, Type::I32]);
+        {
+            let mut builder = test.function_builder();
+            let v0 = builder.i32(0, SourceSpan::UNKNOWN);
+            let v1 = builder.i32(1, SourceSpan::UNKNOWN);
+            builder.ret([v0, v1], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_cse(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @different_operands() -> (i32, i32) {
+^block0:
+    // CHECK: [[V0:v\d+]] = arith.constant 0 : i32;
+    // CHECK-NEXT: [[V1:v\d+]] = arith.constant 1 : i32;
+    v0 = arith.constant 0 : i32;
+    v1 = arith.constant 1 : i32;
+
+    // CHECK-NEXT: builtin.ret [[V0]], [[V1]];
+    builtin.ret v0, v1;
+};
+            "#
+        );
+    }
+
+    /// Check that operations are not eliminated if they have different result types.
+    #[test]
+    fn ops_with_different_result_types_are_not_elimited() {
+        let mut test = Test::new("different_results", &[Type::I32], &[Type::I64, Type::I128]);
+        {
+            let mut builder = test.function_builder();
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v1 = builder.sext(v0, Type::I64, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.sext(v0, Type::I128, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v1, v2], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_cse(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @different_results(v0: i32) -> (i64, i128) {
+^block0(v0: i32):
+    // CHECK: [[V1:v\d+]] = arith.sext v0 : i64;
+    // CHECK-NEXT: [[V2:v\d+]] = arith.sext v0 : i128;
+    v1 = arith.cast v0 : i64;
+    v2 = arith.cast v0 : i128;
+
+    // CHECK-NEXT: builtin.ret [[V1]], [[V2]];
+    builtin.ret v1, v2;
+};
+            "#
+        );
+    }
+
+    /// Check that operations are not eliminated if they have different attributes.
+    #[test]
+    fn ops_with_different_attributes_are_not_elimited() {
+        let mut test = Test::new("different_attributes", &[Type::I32], &[Type::I32, Type::I32]);
+        {
+            let mut builder = test.function_builder();
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v1 = builder.i32(1, SourceSpan::UNKNOWN);
+            let v2 = builder.add(v0, v1, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.add_unchecked(v0, v1, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v2, v3], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_cse(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @different_attributes(v0: i32) -> (i32, i32) {
+^block0(v0: i32):
+    // CHECK: [[V1:v\d+]] = arith.constant 1 : i32;
+    v1 = arith.constant 1 : i32;
+
+    // CHECK-NEXT: [[V2:v\d+]] = arith.add v0, v1 : i32 #[overflow = checked];
+    v2 = arith.add v0, v1 : i32 #[overflow = checked];
+
+    // CHECK-NEXT: [[V3:v\d+]] = arith.add v0, v1 : i32 #[overflow = unchecked];
+    v3 = arith.add v0, v1 : i32 #[overflow = unchecked];
+
+    // CHECK-NEXT: builtin.ret [[V2]], [[V3]];
+    builtin.ret v2, v3;
+};
+            "#
+        );
+    }
+
+    /// Check that operations with side effects are not eliminated.
+    #[test]
+    fn ops_with_side_effects_are_not_elimited() {
+        use midenc_dialect_hir::HirOpBuilder;
+
+        let byte_ptr = Type::Ptr(Arc::new(PointerType::new(Type::U8)));
+        let mut test =
+            Test::new("side_effect", core::slice::from_ref(&byte_ptr), &[Type::U8, Type::U8]);
+        {
+            let mut builder = test.function_builder();
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v1 = builder.u8(1, SourceSpan::UNKNOWN);
+            builder.store(v0, v1, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.load(v0, SourceSpan::UNKNOWN).unwrap();
+            builder.store(v0, v1, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.load(v0, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v2, v3], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_cse(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @side_effect(v0: ptr<u8, byte>) -> (u8, u8) {
+^block0(v0: ptr<u8, byte>):
+    // CHECK: [[V1:v\d+]] = arith.constant 1 : u8;
+    v1 = arith.constant 1 : u8;
+
+    // CHECK-NEXT: hir.store v0, v1;
+    // CHECK-NEXT: [[V2:v\d+]] = hir.load v0 : u8;
+    hir.store v0, v1;
+    v2 = hir.load v0 : u8;
+
+    // CHECK-NEXT: hir.store v0, v1;
+    // CHECK-NEXT: [[V3:v\d+]] = hir.load v0 : u8;
+    hir.store v0, v1;
+    v3 = hir.load v0 : u8;
+
+    // CHECK-NEXT: builtin.ret [[V2]], [[V3]];
+    builtin.ret v2, v3;
+};
+            "#
+        );
+    }
+
+    /// Check that operation definitions are properly propagated down the dominance tree.
+    #[test]
+    fn proper_propagation_of_ops_down_dominance_tree() {
+        use midenc_dialect_scf::StructuredControlFlowOpBuilder;
+
+        let mut test = Test::new("down_propagate_while", &[], &[]);
+        {
+            let mut builder = test.function_builder();
+            let v0 = builder.i32(0, SourceSpan::UNKNOWN);
+            let v1 = builder.i32(1, SourceSpan::UNKNOWN);
+            let v2 = builder.i32(4, SourceSpan::UNKNOWN);
+            let while_op = builder.r#while([v0, v1], &[], SourceSpan::UNKNOWN).unwrap();
+            builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+            {
+                let before_block = while_op.borrow().before().entry().as_block_ref();
+                let after_block = while_op.borrow().after().entry().as_block_ref();
+                builder.switch_to_block(before_block);
+                let [v3, v4] = *before_block.borrow().arguments()[0..2].as_array().unwrap();
+                let v3 = v3 as ValueRef;
+                let v4 = v4 as ValueRef;
+                let v5 = builder.i32(1, SourceSpan::UNKNOWN);
+                let v6 = builder.add(v3, v5, SourceSpan::UNKNOWN).unwrap();
+                let v7 = builder.lt(v6, v2, SourceSpan::UNKNOWN).unwrap();
+                builder.condition(v7, [v6, v4], SourceSpan::UNKNOWN).unwrap();
+
+                builder.switch_to_block(after_block);
+                let v8 = builder.append_block_param(after_block, Type::I32, SourceSpan::UNKNOWN);
+                let v9 = builder.append_block_param(after_block, Type::I32, SourceSpan::UNKNOWN);
+                builder.r#yield([v8 as ValueRef, v9 as ValueRef], SourceSpan::UNKNOWN).unwrap();
+            }
+        }
+
+        test.run_cse(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        std::println!("output: {output}");
+        filecheck!(
+            output,
+            r#"
+builtin.function @down_propagate_while() {
+^block0:
+    // CHECK: [[V0:v\d+]] = arith.constant 0 : i32;
+    v0 = arith.constant 0 : i32;
+    // CHECK: [[V1:v\d+]] = arith.constant 1 : i32;
+    v1 = arith.constant 1 : i32;
+    // CHECK: [[V2:v\d+]] = arith.constant 4 : i32;
+    v2 = arith.constant 4 : i32;
+
+    // CHECK-NEXT: scf.while v0, v1 {
+    // CHECK-NEXT: ^block{{\d}}([[V3:v\d+]]: i32, [[V4:v\d+]]: i32):
+    scf.while v0, v1 {
+    ^block1(v3: i32, v4: i32):
+        // CHECK-NEXT: [[V6:v\d+]] = arith.add [[V3]], [[V1]] : i32 #[overflow = checked];
+        v5 = arith.constant 1 : i32;
+        v6 = arith.add v3, v5 : i32 #[overflow = checked];
+        // CHECK-NEXT: [[V7:v\d+]] = arith.lt [[V6]], [[V2]] : i1;
+        v7 = arith.lt v6, v2 : i1;
+        // CHECK-NEXT: scf.condition [[V7]], [[V6]], [[V4]];
+        scf.condition v7, v6, v4;
+    } do {
+    ^block2(v8: i32, v9: i32):
+        // CHECK-NEXT: } do {
+        // CHECK-NEXT: ^block{{\d}}([[V8:v\d+]]: i32, [[V9:v\d+]]: i32):
+        // CHECK-NEXT: scf.yield [[V8]], [[V9]];
+        scf.yield v8, v9;
+    }
+
+    // CHECK: builtin.ret ;
+    builtin.ret;
+};
+            "#
+        );
+    }
+
+    fn enable_compiler_instrumentation() {
+        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+    }
+
+    struct Test {
+        context: Rc<Context>,
+        builder: OpBuilder,
+        function: FunctionRef,
+    }
+
+    impl Test {
+        pub fn new(name: &'static str, params: &[Type], results: &[Type]) -> Self {
+            enable_compiler_instrumentation();
+
+            let context = Rc::new(Context::default());
+            let mut builder = OpBuilder::new(context.clone());
+            let function = builder
+                .create_function(
+                    Ident::with_empty_span(name.into()),
+                    Signature::new(
+                        params.iter().cloned().map(AbiParam::new),
+                        results.iter().cloned().map(AbiParam::new),
+                    ),
+                )
+                .unwrap();
+
+            Self {
+                context,
+                builder,
+                function,
+            }
+        }
+
+        pub fn function(&self) -> FunctionRef {
+            self.function
+        }
+
+        pub fn function_builder(&mut self) -> FunctionBuilder<'_, OpBuilder> {
+            FunctionBuilder::new(self.function, &mut self.builder)
+        }
+
+        pub fn run_cse(&self, verify: bool) -> Result<(), Report> {
+            let mut pm = PassManager::on::<Function>(
+                self.context.clone(),
+                midenc_hir::pass::Nesting::Explicit,
+            );
+            pm.add_pass(Box::new(CommonSubexpressionElimination));
+            pm.enable_verifier(verify);
+            pm.run(self.function.as_operation_ref())
+        }
+    }
+}
+
+//------------ TESTS TO FINISH TRANSLATING
+/*
+
+// CHECK-LABEL: @down_propagate
+func.func @down_propagate() -> i32 {
+  // CHECK-NEXT: %[[VAR_c1_i32:[0-9a-zA-Z_]+]] = arith.constant 1 : i32
+  %0 = arith.constant 1 : i32
+
+  // CHECK-NEXT: %[[VAR_true:[0-9a-zA-Z_]+]] = arith.constant true
+  %cond = arith.constant true
+
+  // CHECK-NEXT: cf.cond_br %[[VAR_true]], ^bb1, ^bb2(%[[VAR_c1_i32]] : i32)
+  cf.cond_br %cond, ^bb1, ^bb2(%0 : i32)
+
+^bb1: // CHECK: ^bb1:
+  // CHECK-NEXT: cf.br ^bb2(%[[VAR_c1_i32]] : i32)
+  %1 = arith.constant 1 : i32
+  cf.br ^bb2(%1 : i32)
+
+^bb2(%arg : i32):
+  return %arg : i32
+}
+
+// -----
+
+/// Check that operation definitions are NOT propagated up the dominance tree.
+// CHECK-LABEL: @up_propagate_for
+func.func @up_propagate_for() -> i32 {
+  // CHECK: affine.for {{.*}} = 0 to 4 {
+  affine.for %i = 0 to 4 {
+    // CHECK-NEXT: %[[VAR_c1_i32_0:[0-9a-zA-Z_]+]] = arith.constant 1 : i32
+    // CHECK-NEXT: "foo"(%[[VAR_c1_i32_0]]) : (i32) -> ()
+    %0 = arith.constant 1 : i32
+    "foo"(%0) : (i32) -> ()
+  }
+
+  // CHECK: %[[VAR_c1_i32:[0-9a-zA-Z_]+]] = arith.constant 1 : i32
+  // CHECK-NEXT: return %[[VAR_c1_i32]] : i32
+  %1 = arith.constant 1 : i32
+  return %1 : i32
+}
+
+// -----
+
+// CHECK-LABEL: func @up_propagate
+func.func @up_propagate() -> i32 {
+  // CHECK-NEXT:  %[[VAR_c0_i32:[0-9a-zA-Z_]+]] = arith.constant 0 : i32
+  %0 = arith.constant 0 : i32
+
+  // CHECK-NEXT: %[[VAR_true:[0-9a-zA-Z_]+]] = arith.constant true
+  %cond = arith.constant true
+
+  // CHECK-NEXT: cf.cond_br %[[VAR_true]], ^bb1, ^bb2(%[[VAR_c0_i32]] : i32)
+  cf.cond_br %cond, ^bb1, ^bb2(%0 : i32)
+
+^bb1: // CHECK: ^bb1:
+  // CHECK-NEXT: %[[VAR_c1_i32:[0-9a-zA-Z_]+]] = arith.constant 1 : i32
+  %1 = arith.constant 1 : i32
+
+  // CHECK-NEXT: cf.br ^bb2(%[[VAR_c1_i32]] : i32)
+  cf.br ^bb2(%1 : i32)
+
+^bb2(%arg : i32): // CHECK: ^bb2
+  // CHECK-NEXT: %[[VAR_c1_i32_0:[0-9a-zA-Z_]+]] = arith.constant 1 : i32
+  %2 = arith.constant 1 : i32
+
+  // CHECK-NEXT: %[[VAR_1:[0-9a-zA-Z_]+]] = arith.addi %{{.*}}, %[[VAR_c1_i32_0]] : i32
+  %add = arith.addi %arg, %2 : i32
+
+  // CHECK-NEXT: return %[[VAR_1]] : i32
+  return %add : i32
+}
+
+// -----
+
+/// The same test as above except that we are testing on a cfg embedded within
+/// an operation region.
+// CHECK-LABEL: func @up_propagate_region
+func.func @up_propagate_region() -> i32 {
+  // CHECK-NEXT: {{.*}} "foo.region"
+  %0 = "foo.region"() ({
+    // CHECK-NEXT:  %[[VAR_c0_i32:[0-9a-zA-Z_]+]] = arith.constant 0 : i32
+    // CHECK-NEXT: %[[VAR_true:[0-9a-zA-Z_]+]] = arith.constant true
+    // CHECK-NEXT: cf.cond_br
+
+    %1 = arith.constant 0 : i32
+    %true = arith.constant true
+    cf.cond_br %true, ^bb1, ^bb2(%1 : i32)
+
+  ^bb1: // CHECK: ^bb1:
+    // CHECK-NEXT: %[[VAR_c1_i32:[0-9a-zA-Z_]+]] = arith.constant 1 : i32
+    // CHECK-NEXT: cf.br
+
+    %c1_i32 = arith.constant 1 : i32
+    cf.br ^bb2(%c1_i32 : i32)
+
+  ^bb2(%arg : i32): // CHECK: ^bb2(%[[VAR_1:.*]]: i32):
+    // CHECK-NEXT: %[[VAR_c1_i32_0:[0-9a-zA-Z_]+]] = arith.constant 1 : i32
+    // CHECK-NEXT: %[[VAR_2:[0-9a-zA-Z_]+]] = arith.addi %[[VAR_1]], %[[VAR_c1_i32_0]] : i32
+    // CHECK-NEXT: "foo.yield"(%[[VAR_2]]) : (i32) -> ()
+
+    %c1_i32_0 = arith.constant 1 : i32
+    %2 = arith.addi %arg, %c1_i32_0 : i32
+    "foo.yield" (%2) : (i32) -> ()
+  }) : () -> (i32)
+  return %0 : i32
+}
+
+// -----
+
+/// This test checks that nested regions that are isolated from above are
+/// properly handled.
+// CHECK-LABEL: @nested_isolated
+func.func @nested_isolated() -> i32 {
+  // CHECK-NEXT: arith.constant 1
+  %0 = arith.constant 1 : i32
+
+  // CHECK-NEXT: builtin.module
+  // CHECK-NEXT: @nested_func
+  builtin.module {
+    func.func @nested_func() {
+      // CHECK-NEXT: arith.constant 1
+      %foo = arith.constant 1 : i32
+      "foo.yield"(%foo) : (i32) -> ()
+    }
+  }
+
+  // CHECK: "foo.region"
+  "foo.region"() ({
+    // CHECK-NEXT: arith.constant 1
+    %foo = arith.constant 1 : i32
+    "foo.yield"(%foo) : (i32) -> ()
+  }) : () -> ()
+
+  return %0 : i32
+}
+
+// -----
+
+/// This test is checking that CSE gracefully handles values in graph regions
+/// where the use occurs before the def, and one of the defs could be CSE'd with
+/// the other.
+// CHECK-LABEL: @use_before_def
+func.func @use_before_def() {
+  // CHECK-NEXT: test.graph_region
+  test.graph_region {
+    // CHECK-NEXT: arith.addi
+    %0 = arith.addi %1, %2 : i32
+
+    // CHECK-NEXT: arith.constant 1
+    // CHECK-NEXT: arith.constant 1
+    %1 = arith.constant 1 : i32
+    %2 = arith.constant 1 : i32
+
+    // CHECK-NEXT: "foo.yield"(%{{.*}}) : (i32) -> ()
+    "foo.yield"(%0) : (i32) -> ()
+  }
+  return
+}
+
+// -----
+
+/// This test is checking that CSE is removing duplicated read op that follow
+/// other.
+// CHECK-LABEL: @remove_direct_duplicated_read_op
+func.func @remove_direct_duplicated_read_op() -> i32 {
+  // CHECK-NEXT: %[[READ_VALUE:.*]] = "test.op_with_memread"() : () -> i32
+  %0 = "test.op_with_memread"() : () -> (i32)
+  %1 = "test.op_with_memread"() : () -> (i32)
+  // CHECK-NEXT: %{{.*}} = arith.addi %[[READ_VALUE]], %[[READ_VALUE]] : i32
+  %2 = arith.addi %0, %1 : i32
+  return %2 : i32
+}
+
+// -----
+
+/// This test is checking that CSE is removing duplicated read op that follow
+/// other.
+// CHECK-LABEL: @remove_multiple_duplicated_read_op
+func.func @remove_multiple_duplicated_read_op() -> i64 {
+  // CHECK: %[[READ_VALUE:.*]] = "test.op_with_memread"() : () -> i64
+  %0 = "test.op_with_memread"() : () -> (i64)
+  %1 = "test.op_with_memread"() : () -> (i64)
+  // CHECK-NEXT: %{{.*}} = arith.addi %{{.*}}, %[[READ_VALUE]] : i64
+  %2 = arith.addi %0, %1 : i64
+  %3 = "test.op_with_memread"() : () -> (i64)
+  // CHECK-NEXT: %{{.*}} = arith.addi %{{.*}}, %{{.*}} : i64
+  %4 = arith.addi %2, %3 : i64
+  %5 = "test.op_with_memread"() : () -> (i64)
+  // CHECK-NEXT: %{{.*}} = arith.addi %{{.*}}, %{{.*}} : i64
+  %6 = arith.addi %4, %5 : i64
+  // CHECK-NEXT: return %{{.*}} : i64
+  return %6 : i64
+}
+
+// -----
+
+/// This test is checking that CSE is not removing duplicated read op that
+/// have write op in between.
+// CHECK-LABEL: @dont_remove_duplicated_read_op_with_sideeffecting
+func.func @dont_remove_duplicated_read_op_with_sideeffecting() -> i32 {
+  // CHECK-NEXT: %[[READ_VALUE0:.*]] = "test.op_with_memread"() : () -> i32
+  %0 = "test.op_with_memread"() : () -> (i32)
+  "test.op_with_memwrite"() : () -> ()
+  // CHECK: %[[READ_VALUE1:.*]] = "test.op_with_memread"() : () -> i32
+  %1 = "test.op_with_memread"() : () -> (i32)
+  // CHECK-NEXT: %{{.*}} = arith.addi %[[READ_VALUE0]], %[[READ_VALUE1]] : i32
+  %2 = arith.addi %0, %1 : i32
+  return %2 : i32
+}
+
+// -----
+
+// Check that an operation with a single region can CSE.
+func.func @cse_single_block_ops(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>)
+  -> (tensor<?x?xf32>, tensor<?x?xf32>) {
+  %0 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32):
+    test.region_yield %arg0 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  %1 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32):
+    test.region_yield %arg0 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  return %0, %1 : tensor<?x?xf32>, tensor<?x?xf32>
+}
+// CHECK-LABEL: func @cse_single_block_ops
+//       CHECK:   %[[OP:.+]] = test.cse_of_single_block_op
+//   CHECK-NOT:   test.cse_of_single_block_op
+//       CHECK:   return %[[OP]], %[[OP]]
+
+// -----
+
+// Operations with different number of bbArgs dont CSE.
+func.func @no_cse_varied_bbargs(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>)
+  -> (tensor<?x?xf32>, tensor<?x?xf32>) {
+  %0 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32, %arg1 : f32):
+    test.region_yield %arg0 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  %1 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32):
+    test.region_yield %arg0 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  return %0, %1 : tensor<?x?xf32>, tensor<?x?xf32>
+}
+// CHECK-LABEL: func @no_cse_varied_bbargs
+//       CHECK:   %[[OP0:.+]] = test.cse_of_single_block_op
+//       CHECK:   %[[OP1:.+]] = test.cse_of_single_block_op
+//       CHECK:   return %[[OP0]], %[[OP1]]
+
+// -----
+
+// Operations with different regions dont CSE
+func.func @no_cse_region_difference_simple(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>)
+  -> (tensor<?x?xf32>, tensor<?x?xf32>) {
+  %0 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32, %arg1 : f32):
+    test.region_yield %arg0 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  %1 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32, %arg1 : f32):
+    test.region_yield %arg1 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  return %0, %1 : tensor<?x?xf32>, tensor<?x?xf32>
+}
+// CHECK-LABEL: func @no_cse_region_difference_simple
+//       CHECK:   %[[OP0:.+]] = test.cse_of_single_block_op
+//       CHECK:   %[[OP1:.+]] = test.cse_of_single_block_op
+//       CHECK:   return %[[OP0]], %[[OP1]]
+
+// -----
+
+// Operation with identical region with multiple statements CSE.
+func.func @cse_single_block_ops_identical_bodies(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>, %c : f32, %d : i1)
+  -> (tensor<?x?xf32>, tensor<?x?xf32>) {
+  %0 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32, %arg1 : f32):
+    %1 = arith.divf %arg0, %arg1 : f32
+    %2 = arith.remf %arg0, %c : f32
+    %3 = arith.select %d, %1, %2 : f32
+    test.region_yield %3 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  %1 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32, %arg1 : f32):
+    %1 = arith.divf %arg0, %arg1 : f32
+    %2 = arith.remf %arg0, %c : f32
+    %3 = arith.select %d, %1, %2 : f32
+    test.region_yield %3 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  return %0, %1 : tensor<?x?xf32>, tensor<?x?xf32>
+}
+// CHECK-LABEL: func @cse_single_block_ops_identical_bodies
+//       CHECK:   %[[OP:.+]] = test.cse_of_single_block_op
+//   CHECK-NOT:   test.cse_of_single_block_op
+//       CHECK:   return %[[OP]], %[[OP]]
+
+// -----
+
+// Operation with non-identical regions dont CSE.
+func.func @no_cse_single_block_ops_different_bodies(%a : tensor<?x?xf32>, %b : tensor<?x?xf32>, %c : f32, %d : i1)
+  -> (tensor<?x?xf32>, tensor<?x?xf32>) {
+  %0 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32, %arg1 : f32):
+    %1 = arith.divf %arg0, %arg1 : f32
+    %2 = arith.remf %arg0, %c : f32
+    %3 = arith.select %d, %1, %2 : f32
+    test.region_yield %3 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  %1 = test.cse_of_single_block_op inputs(%a, %b) {
+    ^bb0(%arg0 : f32, %arg1 : f32):
+    %1 = arith.divf %arg0, %arg1 : f32
+    %2 = arith.remf %arg0, %c : f32
+    %3 = arith.select %d, %2, %1 : f32
+    test.region_yield %3 : f32
+  } : tensor<?x?xf32>, tensor<?x?xf32> -> tensor<?x?xf32>
+  return %0, %1 : tensor<?x?xf32>, tensor<?x?xf32>
+}
+// CHECK-LABEL: func @no_cse_single_block_ops_different_bodies
+//       CHECK:   %[[OP0:.+]] = test.cse_of_single_block_op
+//       CHECK:   %[[OP1:.+]] = test.cse_of_single_block_op
+//       CHECK:   return %[[OP0]], %[[OP1]]
+
+// -----
+
+func.func @failing_issue_59135(%arg0: tensor<2x2xi1>, %arg1: f32, %arg2 : tensor<2xi1>) -> (tensor<2xi1>, tensor<2xi1>) {
+  %false_2 = arith.constant false
+  %true_5 = arith.constant true
+  %9 = test.cse_of_single_block_op inputs(%arg2) {
+  ^bb0(%out: i1):
+    %true_144 = arith.constant true
+    test.region_yield %true_144 : i1
+  } : tensor<2xi1> -> tensor<2xi1>
+  %15 = test.cse_of_single_block_op inputs(%arg2) {
+  ^bb0(%out: i1):
+    %true_144 = arith.constant true
+    test.region_yield %true_144 : i1
+  } : tensor<2xi1> -> tensor<2xi1>
+  %93 = arith.maxsi %false_2, %true_5 : i1
+  return %9, %15 : tensor<2xi1>, tensor<2xi1>
+}
+// CHECK-LABEL: func @failing_issue_59135
+//       CHECK:   %[[TRUE:.+]] = arith.constant true
+//       CHECK:   %[[OP:.+]] = test.cse_of_single_block_op
+//       CHECK:     test.region_yield %[[TRUE]]
+//       CHECK:   return %[[OP]], %[[OP]]
+
+// -----
+
+func.func @cse_multiple_regions(%c: i1, %t: tensor<5xf32>) -> (tensor<5xf32>, tensor<5xf32>) {
+  %r1 = scf.if %c -> (tensor<5xf32>) {
+    %0 = tensor.empty() : tensor<5xf32>
+    scf.yield %0 : tensor<5xf32>
+  } else {
+    scf.yield %t : tensor<5xf32>
+  }
+  %r2 = scf.if %c -> (tensor<5xf32>) {
+    %0 = tensor.empty() : tensor<5xf32>
+    scf.yield %0 : tensor<5xf32>
+  } else {
+    scf.yield %t : tensor<5xf32>
+  }
+  return %r1, %r2 : tensor<5xf32>, tensor<5xf32>
+}
+// CHECK-LABEL: func @cse_multiple_regions
+//       CHECK:   %[[if:.*]] = scf.if {{.*}} {
+//       CHECK:     tensor.empty
+//       CHECK:     scf.yield
+//       CHECK:   } else {
+//       CHECK:     scf.yield
+//       CHECK:   }
+//   CHECK-NOT:   scf.if
+//       CHECK:   return %[[if]], %[[if]]
+
+// -----
+
+// CHECK-LABEL: @cse_recursive_effects_success
+func.func @cse_recursive_effects_success() -> (i32, i32, i32) {
+  // CHECK-NEXT: %[[READ_VALUE:.*]] = "test.op_with_memread"() : () -> i32
+  %0 = "test.op_with_memread"() : () -> (i32)
+
+  // do something with recursive effects, containing no side effects
+  %true = arith.constant true
+  // CHECK-NEXT: %[[TRUE:.+]] = arith.constant true
+  // CHECK-NEXT: %[[IF:.+]] = scf.if %[[TRUE]] -> (i32) {
+  %1 = scf.if %true -> (i32) {
+    %c42 = arith.constant 42 : i32
+    scf.yield %c42 : i32
+    // CHECK-NEXT: %[[C42:.+]] = arith.constant 42 : i32
+    // CHECK-NEXT: scf.yield %[[C42]]
+    // CHECK-NEXT: } else {
+  } else {
+    %c24 = arith.constant 24 : i32
+    scf.yield %c24 : i32
+    // CHECK-NEXT: %[[C24:.+]] = arith.constant 24 : i32
+    // CHECK-NEXT: scf.yield %[[C24]]
+    // CHECK-NEXT: }
+  }
+
+  // %2 can be removed
+  // CHECK-NEXT: return %[[READ_VALUE]], %[[READ_VALUE]], %[[IF]] : i32, i32, i32
+  %2 = "test.op_with_memread"() : () -> (i32)
+  return %0, %2, %1 : i32, i32, i32
+}
+
+// -----
+
+// CHECK-LABEL: @cse_recursive_effects_failure
+func.func @cse_recursive_effects_failure() -> (i32, i32, i32) {
+  // CHECK-NEXT: %[[READ_VALUE:.*]] = "test.op_with_memread"() : () -> i32
+  %0 = "test.op_with_memread"() : () -> (i32)
+
+  // do something with recursive effects, containing a write effect
+  %true = arith.constant true
+  // CHECK-NEXT: %[[TRUE:.+]] = arith.constant true
+  // CHECK-NEXT: %[[IF:.+]] = scf.if %[[TRUE]] -> (i32) {
+  %1 = scf.if %true -> (i32) {
+    "test.op_with_memwrite"() : () -> ()
+    // CHECK-NEXT: "test.op_with_memwrite"() : () -> ()
+    %c42 = arith.constant 42 : i32
+    scf.yield %c42 : i32
+    // CHECK-NEXT: %[[C42:.+]] = arith.constant 42 : i32
+    // CHECK-NEXT: scf.yield %[[C42]]
+    // CHECK-NEXT: } else {
+  } else {
+    %c24 = arith.constant 24 : i32
+    scf.yield %c24 : i32
+    // CHECK-NEXT: %[[C24:.+]] = arith.constant 24 : i32
+    // CHECK-NEXT: scf.yield %[[C24]]
+    // CHECK-NEXT: }
+  }
+
+  // %2 can not be be removed because of the write
+  // CHECK-NEXT: %[[READ_VALUE2:.*]] = "test.op_with_memread"() : () -> i32
+  // CHECK-NEXT: return %[[READ_VALUE]], %[[READ_VALUE2]], %[[IF]] : i32, i32, i32
+  %2 = "test.op_with_memread"() : () -> (i32)
+  return %0, %2, %1 : i32, i32, i32
+}
+*/

@@ -16,3 +16,11 @@ log.workspace = true
 midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true
 midenc-session.workspace = true
+
+[dev-dependencies]
+litcheck.workspace = true
+litcheck-filecheck.workspace = true
+midenc-dialect-arith.workspace = true
+midenc-dialect-hir.workspace = true
+midenc-dialect-scf.workspace = true
+midenc-log.workspace = true

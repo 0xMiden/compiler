@@ -2006,29 +2006,37 @@ dependencies = [
 
 [[package]]
 name = "litcheck-core"
-version = "0.3.2"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2238928da958420f1662522c0d366b6e26742ada4a5ab14511293c444325c3f4"
+checksum = "e96692d50994f26d57417be79b6719ee179fd8e6b93b3fd2014c1aa60342cc9d"
 dependencies = [
+ "Inflector",
  "anyhow",
  "clap",
+ "compact_str 0.9.0",
  "either",
  "glob",
+ "hashbrown 0.15.5",
+ "lock_api",
+ "log",
  "memchr",
  "miette",
+ "parking_lot",
+ "paste",
  "rustc-hash",
  "serde",
+ "serde_spanned 1.0.4",
  "smallvec",
- "string-interner",
  "thiserror",
+ "toml 0.9.11+spec-1.1.0",
  "walkdir",
 ]
 
 [[package]]
 name = "litcheck-filecheck"
-version = "0.3.2"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d82cc7224aef6a1d203b75924733bf0ea0fb868ba33f36719b0502d85fd55a8"
+checksum = "51f8835f8046b2cfe2da332500562112991828f00716328a993e728beab8e0ad"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -3008,6 +3016,7 @@ dependencies = [
 name = "midenc-dialect-hir"
 version = "0.6.0"
 dependencies = [
+ "litcheck-core",
  "litcheck-filecheck",
  "log",
  "midenc-dialect-arith",
@@ -3175,9 +3184,15 @@ dependencies = [
 name = "midenc-hir-transform"
 version = "0.6.0"
 dependencies = [
+ "litcheck-core",
+ "litcheck-filecheck",
  "log",
+ "midenc-dialect-arith",
+ "midenc-dialect-hir",
+ "midenc-dialect-scf",
  "midenc-hir",
  "midenc-hir-analysis",
+ "midenc-log",
  "midenc-session",
 ]
 
@@ -4677,16 +4692,6 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
-name = "string-interner"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23de088478b31c349c9ba67816fa55d9355232d63c3afea8bf513e31f0f1d2c0"
-dependencies = [
- "hashbrown 0.15.5",
- "serde",
-]
 
 [[package]]
 name = "string_cache"
