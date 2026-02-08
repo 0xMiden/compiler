@@ -30,9 +30,9 @@ pub type RegionRef = UnsafeIntrusiveEntityRef<Region>;
 /// An intrusive, doubly-linked list of [Region]s
 pub type RegionList = EntityList<Region>;
 /// A cursor in a [RegionList]
-pub type RegionCursor<'a> = EntityCursor<'a, Region>;
+pub type RegionCursor<'a> = EntityListCursor<'a, Region>;
 /// A mutable cursor in a [RegionList]
-pub type RegionCursorMut<'a> = EntityCursorMut<'a, Region>;
+pub type RegionCursorMut<'a> = EntityListCursorMut<'a, Region>;
 
 /// A region is a container for [Block], in one of two forms:
 ///

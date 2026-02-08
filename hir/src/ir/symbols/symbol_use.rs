@@ -6,9 +6,9 @@ use crate::{Entity, EntityListItem, EntityRef, OperationRef, UnsafeIntrusiveEnti
 
 pub type SymbolUseRef = UnsafeIntrusiveEntityRef<SymbolUse>;
 pub type SymbolUseList = crate::EntityList<SymbolUse>;
-pub type SymbolUseIter<'a> = crate::EntityIter<'a, SymbolUse>;
-pub type SymbolUseCursor<'a> = crate::EntityCursor<'a, SymbolUse>;
-pub type SymbolUseCursorMut<'a> = crate::EntityCursorMut<'a, SymbolUse>;
+pub type SymbolUseIter<'a> = crate::EntityListIter<'a, SymbolUse>;
+pub type SymbolUseCursor<'a> = crate::EntityListCursor<'a, SymbolUse>;
+pub type SymbolUseCursorMut<'a> = crate::EntityListCursorMut<'a, SymbolUse>;
 
 /// A [SymbolUse] represents a use of a [Symbol] by an [Operation]
 #[derive(Copy, Clone)]

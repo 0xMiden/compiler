@@ -6,11 +6,11 @@ use crate::{EntityRef, OperationRef, Type, UnsafeIntrusiveEntityRef, Value, Valu
 pub type OpOperand = UnsafeIntrusiveEntityRef<OpOperandImpl>;
 pub type OpOperandList = crate::EntityList<OpOperandImpl>;
 #[allow(unused)]
-pub type OpOperandIter<'a> = crate::EntityIter<'a, OpOperandImpl>;
+pub type OpOperandIter<'a> = crate::EntityListIter<'a, OpOperandImpl>;
 #[allow(unused)]
-pub type OpOperandCursor<'a> = crate::EntityCursor<'a, OpOperandImpl>;
+pub type OpOperandCursor<'a> = crate::EntityListCursor<'a, OpOperandImpl>;
 #[allow(unused)]
-pub type OpOperandCursorMut<'a> = crate::EntityCursorMut<'a, OpOperandImpl>;
+pub type OpOperandCursorMut<'a> = crate::EntityListCursorMut<'a, OpOperandImpl>;
 
 /// An [OpOperand] represents a use of a [Value] by an [Operation]
 pub struct OpOperandImpl {

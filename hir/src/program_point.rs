@@ -1,8 +1,8 @@
 use core::fmt;
 
 use crate::{
-    Block, BlockRef, EntityCursor, EntityCursorMut, EntityMut, EntityRef, Operation, OperationRef,
-    Spanned,
+    Block, BlockRef, EntityListCursor, EntityListCursorMut, EntityMut, EntityRef, Operation,
+    OperationRef, Spanned,
     entity::{EntityProjection, EntityProjectionMut},
 };
 
@@ -315,7 +315,7 @@ impl ProgramPoint {
     /// returned [EntityProjection].
     pub fn cursor<'a, 'b: 'a, 'c: 'b>(
         &'c self,
-    ) -> Option<EntityProjection<'b, EntityCursor<'a, Operation>>> {
+    ) -> Option<EntityProjection<'b, EntityListCursor<'a, Operation>>> {
         match self {
             Self::Invalid => None,
             Self::Block {
@@ -350,7 +350,7 @@ impl ProgramPoint {
     /// of the returned [EntityProjectionMut].
     pub fn cursor_mut<'a, 'b: 'a, 'c: 'b>(
         &'c mut self,
-    ) -> Option<EntityProjectionMut<'b, EntityCursorMut<'a, Operation>>> {
+    ) -> Option<EntityProjectionMut<'b, EntityListCursorMut<'a, Operation>>> {
         match self {
             Self::Invalid => None,
             Self::Block {

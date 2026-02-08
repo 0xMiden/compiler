@@ -22,8 +22,8 @@ use crate::{AttributeSet, AttributeValue, Forward, ProgramPoint, patterns::Rewri
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
 pub type OpList = EntityList<Operation>;
-pub type OpCursor<'a> = EntityCursor<'a, Operation>;
-pub type OpCursorMut<'a> = EntityCursorMut<'a, Operation>;
+pub type OpCursor<'a> = EntityListCursor<'a, Operation>;
+pub type OpCursorMut<'a> = EntityListCursorMut<'a, Operation>;
 
 /// The [Operation] struct provides the common foundation for all [Op] implementations.
 ///
