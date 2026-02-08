@@ -49,9 +49,7 @@ extern crate std;
 
 extern crate self as midenc_hir;
 
-pub use compact_str::{
-    CompactString as SmallStr, CompactStringExt as SmallStrExt, ToCompactString as ToSmallStr,
-};
+pub use compact_str::{CompactString, CompactStringExt, ToCompactString};
 pub use hashbrown;
 pub use smallvec::{SmallVec, ToSmallVec, smallvec};
 
