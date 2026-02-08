@@ -370,11 +370,7 @@ fn auth_component_rpo_falcon512() {
     let mut test = CompilerTest::rust_source_cargo_miden(
         "../../examples/auth-component-rpo-falcon512",
         config,
-        [
-            "-Zprint-ir-after-all".to_string(),
-            "-Zprint-ir-after-modified".to_string(),
-            "-Zprint-ir-filter=symbol:auth-procedure".to_string(),
-        ],
+        [],
     );
     test.expect_wasm(expect_file![format!(
         "../../expected/examples/auth_component_rpo_falcon512.wat"

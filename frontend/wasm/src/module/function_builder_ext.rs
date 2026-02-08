@@ -10,7 +10,7 @@ use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
     OpBuilder, OperationRef, ProgramPoint, RegionRef, Signature, SmallVec, SourceSpan, Type,
     ValueRef,
-    dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, FunctionRef},
+    dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, FunctionRef, LocalVariable},
     traits::{BranchOpInterface, Terminator},
 };
 
@@ -21,6 +21,7 @@ pub struct FunctionBuilderContext {
     ssa: SSABuilder,
     status: FxHashMap<BlockRef, BlockStatus>,
     types: SecondaryMap<Variable, Type>,
+    locals: FxHashMap<Variable, LocalVariable>,
 }
 
 impl FunctionBuilderContext {
@@ -29,6 +30,7 @@ impl FunctionBuilderContext {
             ssa: SSABuilder::new(context),
             status: Default::default(),
             types: SecondaryMap::with_default(Type::Unknown),
+            locals: Default::default(),
         }
     }
 
@@ -40,6 +42,7 @@ impl FunctionBuilderContext {
         self.ssa.clear();
         self.status.clear();
         self.types.clear();
+        self.locals.clear();
     }
 
     /// Returns `true` if and only if no instructions have been added and the block is empty.
@@ -283,6 +286,24 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     #[inline]
     pub fn variable_type(&self, var: Variable) -> Type {
         self.func_ctx.borrow().types[var].clone()
+    }
+
+    #[inline]
+    pub fn get_local(&self, var: Variable) -> LocalVariable {
+        self.func_ctx.borrow().locals[&var]
+    }
+
+    pub fn declare_local(&mut self, var: Variable, ty: Type) -> LocalVariable {
+        let mut ctx = self.func_ctx.borrow_mut();
+        assert_eq!(
+            ctx.types[var],
+            Type::Unknown,
+            "attempted to declare a local for the same variable {var:?} twice"
+        );
+        let local = self.inner.alloc_local(ty.clone());
+        ctx.types[var] = ty;
+        ctx.locals.insert(var, local);
+        local
     }
 
     /// Declares the type of a variable, so that it can be used later (by calling
