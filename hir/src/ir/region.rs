@@ -246,14 +246,18 @@ impl Region {
 
     /// Returns true if this region may be a graph region without SSA dominance
     pub fn may_be_graph_region(&self) -> bool {
-        if let Some(owner) = self.parent() {
-            owner
-                .borrow()
-                .as_trait::<dyn RegionKindInterface>()
-                .is_some_and(|rki| rki.has_graph_regions())
-        } else {
-            true
-        }
+        let op = self.parent().expect("orphaned region");
+        op.borrow()
+            .as_trait::<dyn RegionKindInterface>()
+            .is_some_and(|rki| rki.has_graph_regions())
+    }
+
+    /// Returns true if this region is known or assumed to have SSA dominance
+    pub fn has_ssa_dominance(&self) -> bool {
+        let op = self.parent().expect("orphaned region");
+        op.borrow()
+            .as_trait::<dyn RegionKindInterface>()
+            .is_none_or(|rki| rki.has_ssa_dominance())
     }
 
     /// Returns true if this region has only one block
