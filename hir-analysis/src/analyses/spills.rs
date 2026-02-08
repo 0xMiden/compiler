@@ -608,9 +608,6 @@ impl SpillAnalysis {
             assert!(_deferred.is_empty());
             Ok(())
         } else {
-            // We generally expect that control flow lifting will have removed all but the entry
-            // block, but in some cases there can be some remaining unstructured control flow, so
-            // we handle that in the usual way here
             let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
             let loops = analysis_manager.get_analysis::<LoopInfo>()?;
             let entry_region = function.body().as_region_ref();
@@ -645,7 +642,10 @@ impl SpillAnalysis {
         analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
         // Visit the blocks of the CFG in reverse postorder (top-down)
-        let mut block_q = VecDeque::from(domtree.reverse_postorder());
+        let mut block_q = VecDeque::with_capacity(32);
+        for block in midenc_hir::PostOrderBlockIter::new(domtree.root()) {
+            block_q.push_front(block);
+        }
         log::debug!(
             target: &self.trace_target,
             symbol = self.trace_target.relevant_symbol();
@@ -658,11 +658,7 @@ impl SpillAnalysis {
         // track deferred edges for each block.
         let mut deferred = Vec::<(BlockRef, SmallVec<[BlockRef; 2]>)>::default();
 
-        while let Some(node) = block_q.pop_front() {
-            let Some(block_ref) = node.block() else {
-                continue;
-            };
-
+        while let Some(block_ref) = block_q.pop_front() {
             self.visit_single_block(
                 op,
                 &block_ref.borrow(),
@@ -1326,15 +1322,13 @@ impl SpillAnalysis {
         // set of predecessors differently than unstructured CFG ops.
         let mut predecessor_count = 0;
         log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "loading predecessor state for {}", ProgramPoint::at_start_of(block));
+        let predecessors = liveness
+            .solver()
+            .get::<PredecessorState, _>(&ProgramPoint::at_start_of(block))
+            .expect("expected all predecessors of block to be known");
+        assert!(predecessors.all_predecessors_known(), "unexpected unresolved region successors");
+
         if op.implements::<dyn RegionBranchOpInterface>() && block.is_entry_block() {
-            let predecessors = liveness
-                .solver()
-                .get::<PredecessorState, _>(&ProgramPoint::at_start_of(block))
-                .expect("expected all predecessors of region block to be known");
-            assert!(
-                predecessors.all_predecessors_known(),
-                "unexpected unresolved region successors"
-            );
             let operation = op.as_operation_ref();
             for predecessor in predecessors.known_predecessors().iter().copied() {
                 if predecessor == operation {
@@ -1366,20 +1360,20 @@ impl SpillAnalysis {
                 }
             }
         } else {
-            for pred in block.predecessors() {
-                let predecessor = pred.predecessor();
+            for predecessor in predecessors.known_predecessors() {
+                let predecessor_block = predecessor.parent().unwrap();
 
                 // Skip control edges that aren't executable.
-                let edge = CfgEdge::new(predecessor, pred.successor(), block.span());
+                let edge = CfgEdge::new(predecessor_block, block.as_block_ref(), block.span());
                 if !liveness.solver().get::<Executable, _>(&edge).is_none_or(|exe| exe.is_live()) {
                     continue;
                 }
 
                 predecessor_count += 1;
-                let end_of_pred = ProgramPoint::at_end_of(predecessor);
+                let end_of_pred = ProgramPoint::at_end_of(predecessor_block);
                 for o in self.w_exits[&end_of_pred].iter().copied() {
                     // Do not add candidates which are not live-after the predecessor
-                    if liveness.is_live_at_end(o, predecessor) {
+                    if liveness.is_live_at_end(o, predecessor_block) {
                         *freq.entry(o).or_insert(0) += 1;
                         cand.insert(o);
                     }
