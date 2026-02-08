@@ -59,6 +59,7 @@ proc cross_ctx_note::bindings::__link_custom_section_describing_imports(
     nop
 end
 
+@locals("6")
 @callconv("C")
 proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     drop
@@ -73,20 +74,44 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     trace.240
     nop
     exec.::"miden:base/note-script@1.0.0"::cross_ctx_note::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.1048588
     u32wrapping_add
+    dup.0
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -94,23 +119,65 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    dup.0
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.11
-    dup.1
     assert_eq
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     trace.240
     nop
     exec.::"miden:base/note-script@1.0.0"::cross_ctx_note::cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1
     trace.252
     nop
+    dup.0
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.53
-    dup.1
     assert_eq
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    swap.1
     push.4
-    dup.2
+    dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    swap.1
     u32split
     drop
     swap.1
@@ -123,6 +190,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -164,9 +232,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:base/note-script@1.0.0"::cross_ctx_note::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1

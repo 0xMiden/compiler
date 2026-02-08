@@ -2,13 +2,13 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_473cae57ec6aea1b2fa1e6ffdabf82016fbf6e38e3acdf12f2f612d1044a9d0c {
         public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
         ^block6(v0: i32, v1: i32):
-            v9 = arith.constant 0 : i32;
-            v3 = arith.lt v1, v0 : i1;
-            v4 = arith.zext v3 : u32;
-            v5 = hir.bitcast v4 : i32;
-            v7 = arith.neq v5, v9 : i1;
-            v8 = cf.select v7, v1, v0 : i32;
-            builtin.ret v8;
+            v13 = arith.constant 0 : i32;
+            v7 = arith.lt v1, v0 : i1;
+            v8 = arith.zext v7 : u32;
+            v9 = hir.bitcast v8 : i32;
+            v11 = arith.neq v9, v13 : i1;
+            v12 = cf.select v11, v1, v0 : i32;
+            builtin.ret v12;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

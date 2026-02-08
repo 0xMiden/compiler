@@ -2,39 +2,50 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @fibonacci {
         public builtin.function @entrypoint(v0: i32) -> i32 {
         ^block4(v0: i32):
-            v18 = arith.constant 0 : i32;
-            v19 = arith.constant 1 : i32;
-            v63, v64, v65, v66 = scf.while v19, v0, v18 : i32, i32, i32, i32 {
-            ^block18(v67: i32, v68: i32, v69: i32):
-                v75 = arith.constant 0 : i32;
-                v76 = arith.constant 0 : i32;
-                v8 = arith.eq v68, v76 : i1;
-                v9 = arith.zext v8 : u32;
-                v10 = hir.bitcast v9 : i32;
-                v12 = arith.neq v10, v75 : i1;
-                v58, v59 = scf.if v12 : i32, i32 {
-                ^block17:
-                    v30 = ub.poison i32 : i32;
-                    scf.yield v30, v30;
+            hir.store_local v0 #[local = lv0];
+            v22 = arith.constant 0 : i32;
+            hir.store_local v22 #[local = lv1];
+            v21 = arith.constant 1 : i32;
+            hir.store_local v21 #[local = lv2];
+            scf.while {
+            ^block7:
+                v4 = hir.load_local  : i32 #[local = lv2];
+                hir.store_local v4 #[local = lv3];
+                v5 = hir.load_local  : i32 #[local = lv0];
+                v35 = arith.constant 0 : i32;
+                v36 = arith.constant 0 : i32;
+                v7 = arith.eq v5, v36 : i1;
+                v8 = arith.zext v7 : u32;
+                v9 = hir.bitcast v8 : i32;
+                v11 = arith.neq v9, v35 : i1;
+                scf.if v11{
+                ^block16:
+                    scf.yield ;
                 } else {
                 ^block9:
-                    v17 = arith.constant -1 : i32;
-                    v14 = arith.add v68, v17 : i32 #[overflow = wrapping];
-                    v16 = arith.add v69, v67 : i32 #[overflow = wrapping];
-                    scf.yield v16, v14;
+                    v12 = hir.load_local  : i32 #[local = lv0];
+                    v20 = arith.constant -1 : i32;
+                    v14 = arith.add v12, v20 : i32 #[overflow = wrapping];
+                    hir.store_local v14 #[local = lv0];
+                    v15 = hir.load_local  : i32 #[local = lv1];
+                    v16 = hir.load_local  : i32 #[local = lv3];
+                    v17 = arith.add v15, v16 : i32 #[overflow = wrapping];
+                    hir.store_local v17 #[local = lv2];
+                    v18 = hir.load_local  : i32 #[local = lv3];
+                    hir.store_local v18 #[local = lv1];
+                    scf.yield ;
                 };
-                v74 = ub.poison i32 : i32;
-                v60 = cf.select v12, v74, v67 : i32;
                 v29 = arith.constant 1 : u32;
-                v23 = arith.constant 0 : u32;
-                v62 = cf.select v12, v23, v29 : u32;
-                v52 = arith.trunc v62 : i1;
-                scf.condition v52, v58, v59, v60, v69;
+                v26 = arith.constant 0 : u32;
+                v34 = cf.select v11, v26, v29 : u32;
+                v30 = arith.trunc v34 : i1;
+                scf.condition v30;
             } do {
-            ^block19(v70: i32, v71: i32, v72: i32, v73: i32):
-                scf.yield v70, v71, v72;
+            ^block15:
+                scf.yield ;
             };
-            builtin.ret v66;
+            v19 = hir.load_local  : i32 #[local = lv1];
+            builtin.ret v19;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

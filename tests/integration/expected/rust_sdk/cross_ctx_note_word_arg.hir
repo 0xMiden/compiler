@@ -42,27 +42,29 @@ builtin.component miden:base/note-script@1.0.0 {
 
         private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block14:
-            v57 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/GOT.data.internal.__memory_base : ptr<byte, u8>
-            v58 = hir.bitcast v57 : ptr<byte, i32>;
-            v59 = hir.load v58 : i32;
-            v119 = arith.constant 1048588 : i32;
-            v61 = arith.add v59, v119 : i32 #[overflow = wrapping];
-            v62 = hir.bitcast v61 : u32;
-            v63 = hir.int_to_ptr v62 : ptr<byte, u8>;
-            v64 = hir.load v63 : u8;
-            v120 = arith.constant 0 : i32;
-            v65 = arith.zext v64 : u32;
-            v66 = hir.bitcast v65 : i32;
-            v68 = arith.neq v66, v120 : i1;
-            scf.if v68{
+            v56 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v57 = hir.bitcast v56 : ptr<byte, i32>;
+            v58 = hir.load v57 : i32;
+            v120 = arith.constant 1048588 : i32;
+            v60 = arith.add v58, v120 : i32 #[overflow = wrapping];
+            v61 = hir.bitcast v60 : u32;
+            v62 = hir.int_to_ptr v61 : ptr<byte, u8>;
+            v63 = hir.load v62 : u8;
+            v119 = arith.constant 0 : i32;
+            v64 = arith.zext v63 : u32;
+            v65 = hir.bitcast v64 : i32;
+            v67 = arith.neq v65, v119 : i1;
+            scf.if v67{
             ^block16:
                 scf.yield ;
             } else {
             ^block17:
-                v69 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/GOT.data.internal.__memory_base : ptr<byte, u8>
-                v70 = hir.bitcast v69 : ptr<byte, i32>;
-                v71 = hir.load v70 : i32;
+                v68 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v69 = hir.bitcast v68 : ptr<byte, i32>;
+                v70 = hir.load v69 : i32;
+                hir.store_local v70 #[local = lv0];
                 hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/__wasm_call_ctors()
+                v71 = hir.load_local  : i32 #[local = lv0];
                 v118 = arith.constant 1 : u8;
                 v123 = arith.constant 1048588 : i32;
                 v73 = arith.add v71, v123 : i32 #[overflow = wrapping];

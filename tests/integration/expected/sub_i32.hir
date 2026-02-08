@@ -2,8 +2,8 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_6fc6fd0b2e86628d32094545ba25215329fcd62cd1f981d0dbdd2c989eed3a52 {
         public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
         ^block6(v0: i32, v1: i32):
-            v3 = arith.sub v0, v1 : i32 #[overflow = wrapping];
-            builtin.ret v3;
+            v5 = arith.sub v0, v1 : i32 #[overflow = wrapping];
+            builtin.ret v5;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

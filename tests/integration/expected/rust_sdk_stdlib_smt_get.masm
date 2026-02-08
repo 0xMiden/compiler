@@ -12,18 +12,51 @@ end
 
 # mod ::"root_ns:root@1.0.0"::rust_sdk_stdlib_smt_get
 
+@locals("3")
 @callconv("C")
 proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
     i32,
     i32
 ) -> i32
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.0
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -31,14 +64,20 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.2
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -48,18 +87,24 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
     nop
     push.0
     push.1
-    movup.4
+    movup.3
     movup.3
     eq
     neq
     neq
     if.true
-        drop
-        drop
-        push.0
+        nop
     else
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
         push.4
-        dup.2
+        swap.1
         add
         u32assert
         push.4
@@ -75,8 +120,16 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
+        locaddr.1
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
         push.4
-        dup.2
+        swap.1
         add
         u32assert
         push.4
@@ -100,12 +153,18 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
         neq
         neq
         if.true
-            drop
-            drop
-            push.0
+            nop
         else
+            locaddr.0
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
             push.8
-            dup.2
+            swap.1
             add
             u32assert
             push.4
@@ -121,8 +180,16 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
             exec.::intrinsics::mem::load_felt
             trace.252
             nop
+            locaddr.1
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
             push.8
-            dup.2
+            swap.1
             add
             u32assert
             push.4
@@ -146,12 +213,18 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
             neq
             neq
             if.true
-                drop
-                drop
-                push.0
+                nop
             else
+                locaddr.0
+                push.0
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::load_sw
+                trace.252
+                nop
                 push.12
-                movup.2
+                swap.1
                 add
                 u32assert
                 push.4
@@ -167,8 +240,16 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
                 exec.::intrinsics::mem::load_felt
                 trace.252
                 nop
+                locaddr.1
+                push.0
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::load_sw
+                trace.252
+                nop
                 push.12
-                movup.2
+                swap.1
                 add
                 u32assert
                 push.4
@@ -188,13 +269,66 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
                 movdn.2
                 eq
                 eq
+                locaddr.2
+                push.0
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::store_sw
+                trace.252
+                nop
             end
         end
     end
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("16")
 @callconv("C")
 pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
+    movup.4
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    movup.4
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    movup.4
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    movup.4
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.1114112
     u32divmod.4
     swap.1
@@ -203,15 +337,47 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    dup.0
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.9
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4294967264
     push.96
-    dup.2
+    movup.2
     swap.1
     u32wrapping_sub
     u32and
-    push.1114112
-    dup.1
+    dup.0
+    locaddr.8
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
@@ -219,9 +385,24 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.0
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.28
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -230,17 +411,31 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    dup.11
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
     push.24
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -249,17 +444,31 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    dup.10
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
     push.20
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -268,17 +477,31 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    dup.9
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
     push.16
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -287,8 +510,6 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    dup.8
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -296,30 +517,73 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.64
-    dup.2
     u32wrapping_add
     movup.3
-    swap.11
-    swap.4
+    swap.5
     movdn.3
     movup.2
-    swap.10
-    swap.5
+    swap.6
     movdn.2
     swap.1
-    swap.9
-    swap.6
+    swap.7
     swap.1
     swap.8
-    swap.7
     trace.240
     nop
     exec.::"root_ns:root@1.0.0"::rust_sdk_stdlib_smt_get::"miden::core::collections::smt::get"
     trace.252
     nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.88
-    dup.1
+    swap.1
     add
     u32assert
     push.8
@@ -336,8 +600,16 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     swap.1
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.80
-    dup.3
+    swap.1
     add
     u32assert
     push.8
@@ -354,8 +626,16 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     swap.1
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.72
-    dup.5
+    swap.1
     add
     u32assert
     push.8
@@ -372,8 +652,16 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     swap.1
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.64
-    dup.7
+    dup.1
     add
     u32assert
     push.8
@@ -391,7 +679,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     nop
     swap.1
     push.40
-    dup.9
+    movup.3
     add
     u32assert
     push.8
@@ -411,8 +699,17 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    movdn.2
     push.32
-    dup.7
+    movup.3
     add
     u32assert
     push.8
@@ -432,8 +729,17 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    movdn.2
     push.56
-    dup.5
+    movup.3
     add
     u32assert
     push.8
@@ -453,8 +759,17 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    movdn.2
     push.48
-    dup.3
+    movup.3
     add
     u32assert
     push.8
@@ -472,10 +787,54 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    push.10
+    push.0
+    mul.4294967296
+    add
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.11
+    push.0
+    mul.4294967296
+    add
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.12
+    push.0
+    mul.4294967296
+    add
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.76
-    dup.1
+    swap.1
     add
     u32assert
     push.4
@@ -496,8 +855,24 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.72
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -506,20 +881,31 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    push.12
-    push.0
-    mul.4294967296
-    add
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
     push.68
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -528,11 +914,6 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    push.11
-    push.0
-    mul.4294967296
-    add
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -540,7 +921,24 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.64
+    movup.2
     add
     u32assert
     push.4
@@ -549,23 +947,26 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    push.10
-    push.0
-    mul.4294967296
-    add
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.64
     dup.1
     u32wrapping_add
     push.32
-    dup.2
+    movup.2
     u32wrapping_add
     trace.240
     nop
@@ -578,10 +979,16 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     eq
     neq
     if.true
-        drop
-        drop
         push.0
     else
+        locaddr.8
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
         push.16
         dup.1
         u32wrapping_add
@@ -600,12 +1007,17 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
         neq
         dup.0
         if.true
-            swap.1
-            drop
+            nop
         else
-            push.1114112
-            movup.2
+            locaddr.9
+            push.0
             swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
+            push.1114112
             u32divmod.4
             swap.1
             trace.240

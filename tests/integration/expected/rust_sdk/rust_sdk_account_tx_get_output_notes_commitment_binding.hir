@@ -12,21 +12,24 @@ builtin.component miden:base/transaction-script@1.0.0 {
 
         private builtin.function @miden:base/transaction-script@1.0.0#run(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
-            v5 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
-            v6 = hir.bitcast v5 : ptr<byte, i32>;
-            v7 = hir.load v6 : i32;
-            v100 = arith.constant 16 : i32;
-            v9 = arith.sub v7, v100 : i32 #[overflow = wrapping];
-            v10 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
-            v11 = hir.bitcast v10 : ptr<byte, i32>;
-            hir.store v11, v9;
+            v4 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
+            v5 = hir.bitcast v4 : ptr<byte, i32>;
+            v6 = hir.load v5 : i32;
+            v106 = arith.constant 16 : i32;
+            v8 = arith.sub v6, v106 : i32 #[overflow = wrapping];
+            hir.store_local v8 #[local = lv4];
+            v9 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
+            v10 = hir.bitcast v9 : ptr<byte, i32>;
+            hir.store v10, v8;
             hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/wit_bindgen::rt::run_ctors_once()
-            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/miden_base_sys::bindings::tx::get_output_notes_commitment(v9)
-            v102 = arith.constant 16 : i32;
-            v13 = arith.add v9, v102 : i32 #[overflow = wrapping];
-            v14 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
-            v15 = hir.bitcast v14 : ptr<byte, i32>;
-            hir.store v15, v13;
+            v11 = hir.load_local  : i32 #[local = lv4];
+            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/miden_base_sys::bindings::tx::get_output_notes_commitment(v11)
+            v12 = hir.load_local  : i32 #[local = lv4];
+            v108 = arith.constant 16 : i32;
+            v14 = arith.add v12, v108 : i32 #[overflow = wrapping];
+            v15 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
+            v16 = hir.bitcast v15 : ptr<byte, i32>;
+            hir.store v16, v14;
             builtin.ret ;
         };
 
@@ -35,15 +38,15 @@ builtin.component miden:base/transaction-script@1.0.0 {
             v17 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v18 = hir.bitcast v17 : ptr<byte, i32>;
             v19 = hir.load v18 : i32;
-            v106 = arith.constant 1048584 : i32;
-            v21 = arith.add v19, v106 : i32 #[overflow = wrapping];
+            v113 = arith.constant 1048584 : i32;
+            v21 = arith.add v19, v113 : i32 #[overflow = wrapping];
             v22 = hir.bitcast v21 : u32;
             v23 = hir.int_to_ptr v22 : ptr<byte, u8>;
             v24 = hir.load v23 : u8;
-            v107 = arith.constant 0 : i32;
+            v112 = arith.constant 0 : i32;
             v25 = arith.zext v24 : u32;
             v26 = hir.bitcast v25 : i32;
-            v28 = arith.neq v26, v107 : i1;
+            v28 = arith.neq v26, v112 : i1;
             scf.if v28{
             ^block13:
                 scf.yield ;
@@ -52,85 +55,97 @@ builtin.component miden:base/transaction-script@1.0.0 {
                 v29 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
                 v30 = hir.bitcast v29 : ptr<byte, i32>;
                 v31 = hir.load v30 : i32;
+                hir.store_local v31 #[local = lv0];
                 hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__wasm_call_ctors()
-                v105 = arith.constant 1 : u8;
-                v110 = arith.constant 1048584 : i32;
-                v33 = arith.add v31, v110 : i32 #[overflow = wrapping];
-                v37 = hir.bitcast v33 : u32;
-                v38 = hir.int_to_ptr v37 : ptr<byte, u8>;
-                hir.store v38, v105;
+                v32 = hir.load_local  : i32 #[local = lv0];
+                v111 = arith.constant 1 : u8;
+                v116 = arith.constant 1048584 : i32;
+                v34 = arith.add v32, v116 : i32 #[overflow = wrapping];
+                v38 = hir.bitcast v34 : u32;
+                v39 = hir.int_to_ptr v38 : ptr<byte, u8>;
+                hir.store v39, v111;
                 scf.yield ;
             };
             builtin.ret ;
         };
 
-        private builtin.function @miden_base_sys::bindings::tx::get_output_notes_commitment(v39: i32) {
-        ^block15(v39: i32):
+        private builtin.function @miden_base_sys::bindings::tx::get_output_notes_commitment(v40: i32) {
+        ^block15(v40: i32):
+            hir.store_local v40 #[local = lv0];
             v41 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
             v42 = hir.bitcast v41 : ptr<byte, i32>;
             v43 = hir.load v42 : i32;
-            v118 = arith.constant 16 : i32;
-            v45 = arith.sub v43, v118 : i32 #[overflow = wrapping];
+            v124 = arith.constant 16 : i32;
+            v45 = arith.sub v43, v124 : i32 #[overflow = wrapping];
+            hir.store_local v45 #[local = lv1];
             v46 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
             v47 = hir.bitcast v46 : ptr<byte, i32>;
             hir.store v47, v45;
-            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/miden::protocol::tx::get_output_notes_commitment(v45)
-            v48 = hir.bitcast v45 : u32;
-            v117 = arith.constant 8 : u32;
-            v50 = arith.mod v48, v117 : u32;
-            hir.assertz v50 #[code = 250];
-            v51 = hir.int_to_ptr v48 : ptr<byte, i64>;
-            v52 = hir.load v51 : i64;
-            v114, v115 = arith.split v52 : felt, felt;
-            v56 = hir.bitcast v39 : u32;
-            v130 = arith.constant 8 : u32;
-            v58 = arith.add v56, v130 : u32 #[overflow = checked];
-            v129 = arith.constant 8 : u32;
-            v60 = arith.mod v58, v129 : u32;
-            hir.assertz v60 #[code = 250];
-            v116 = arith.join v115, v114 : i64;
-            v61 = hir.int_to_ptr v58 : ptr<byte, i64>;
-            hir.store v61, v116;
-            v128 = arith.constant 8 : u32;
-            v64 = arith.add v48, v128 : u32 #[overflow = checked];
-            v127 = arith.constant 8 : u32;
-            v66 = arith.mod v64, v127 : u32;
-            hir.assertz v66 #[code = 250];
-            v67 = hir.int_to_ptr v64 : ptr<byte, i64>;
-            v68 = hir.load v67 : i64;
-            v111, v112 = arith.split v68 : felt, felt;
-            v126 = arith.constant 8 : u32;
-            v74 = arith.mod v56, v126 : u32;
-            hir.assertz v74 #[code = 250];
-            v113 = arith.join v112, v111 : i64;
-            v75 = hir.int_to_ptr v56 : ptr<byte, i64>;
-            hir.store v75, v113;
-            v125 = arith.constant 16 : i32;
-            v77 = arith.add v45, v125 : i32 #[overflow = wrapping];
-            v78 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
-            v79 = hir.bitcast v78 : ptr<byte, i32>;
-            hir.store v79, v77;
+            v48 = hir.load_local  : i32 #[local = lv1];
+            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/miden::protocol::tx::get_output_notes_commitment(v48)
+            v49 = hir.load_local  : i32 #[local = lv0];
+            v50 = hir.load_local  : i32 #[local = lv1];
+            v51 = hir.bitcast v50 : u32;
+            v123 = arith.constant 8 : u32;
+            v53 = arith.mod v51, v123 : u32;
+            hir.assertz v53 #[code = 250];
+            v54 = hir.int_to_ptr v51 : ptr<byte, i64>;
+            v55 = hir.load v54 : i64;
+            v120, v121 = arith.split v55 : felt, felt;
+            v136 = arith.constant 8 : u32;
+            v59 = hir.bitcast v49 : u32;
+            v61 = arith.add v59, v136 : u32 #[overflow = checked];
+            v135 = arith.constant 8 : u32;
+            v63 = arith.mod v61, v135 : u32;
+            hir.assertz v63 #[code = 250];
+            v122 = arith.join v121, v120 : i64;
+            v64 = hir.int_to_ptr v61 : ptr<byte, i64>;
+            hir.store v64, v122;
+            v65 = hir.load_local  : i32 #[local = lv0];
+            v66 = hir.load_local  : i32 #[local = lv1];
+            v134 = arith.constant 8 : u32;
+            v67 = hir.bitcast v66 : u32;
+            v69 = arith.add v67, v134 : u32 #[overflow = checked];
+            v133 = arith.constant 8 : u32;
+            v71 = arith.mod v69, v133 : u32;
+            hir.assertz v71 #[code = 250];
+            v72 = hir.int_to_ptr v69 : ptr<byte, i64>;
+            v73 = hir.load v72 : i64;
+            v117, v118 = arith.split v73 : felt, felt;
+            v77 = hir.bitcast v65 : u32;
+            v132 = arith.constant 8 : u32;
+            v79 = arith.mod v77, v132 : u32;
+            hir.assertz v79 #[code = 250];
+            v119 = arith.join v118, v117 : i64;
+            v80 = hir.int_to_ptr v77 : ptr<byte, i64>;
+            hir.store v80, v119;
+            v81 = hir.load_local  : i32 #[local = lv1];
+            v131 = arith.constant 16 : i32;
+            v83 = arith.add v81, v131 : i32 #[overflow = wrapping];
+            v84 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/__stack_pointer : ptr<byte, u8>
+            v85 = hir.bitcast v84 : ptr<byte, i32>;
+            hir.store v85, v83;
             builtin.ret ;
         };
 
-        private builtin.function @miden::protocol::tx::get_output_notes_commitment(v80: i32) {
-        ^block17(v80: i32):
-            v81, v82, v83, v84 = hir.exec @miden/protocol/tx/get_output_notes_commitment() : felt, felt, felt, felt
-            v85 = hir.bitcast v80 : u32;
-            v86 = hir.int_to_ptr v85 : ptr<byte, felt>;
-            hir.store v86, v81;
-            v133 = arith.constant 4 : u32;
-            v88 = arith.add v85, v133 : u32 #[overflow = checked];
-            v89 = hir.int_to_ptr v88 : ptr<byte, felt>;
-            hir.store v89, v82;
-            v132 = arith.constant 8 : u32;
-            v91 = arith.add v85, v132 : u32 #[overflow = checked];
+        private builtin.function @miden::protocol::tx::get_output_notes_commitment(v86: i32) {
+        ^block17(v86: i32):
+            v87, v88, v89, v90 = hir.exec @miden/protocol/tx/get_output_notes_commitment() : felt, felt, felt, felt
+            v91 = hir.bitcast v86 : u32;
             v92 = hir.int_to_ptr v91 : ptr<byte, felt>;
-            hir.store v92, v83;
-            v131 = arith.constant 12 : u32;
-            v94 = arith.add v85, v131 : u32 #[overflow = checked];
+            hir.store v92, v87;
+            v139 = arith.constant 4 : u32;
+            v94 = arith.add v91, v139 : u32 #[overflow = checked];
             v95 = hir.int_to_ptr v94 : ptr<byte, felt>;
-            hir.store v95, v84;
+            hir.store v95, v88;
+            v138 = arith.constant 8 : u32;
+            v97 = arith.add v91, v138 : u32 #[overflow = checked];
+            v98 = hir.int_to_ptr v97 : ptr<byte, felt>;
+            hir.store v98, v89;
+            v137 = arith.constant 12 : u32;
+            v100 = arith.add v91, v137 : u32 #[overflow = checked];
+            v101 = hir.int_to_ptr v100 : ptr<byte, felt>;
+            hir.store v101, v90;
             builtin.ret ;
         };
 
@@ -145,9 +160,9 @@ builtin.component miden:base/transaction-script@1.0.0 {
         builtin.segment @1048576 = 0x0000000100000001;
     };
 
-    public builtin.function @run(v96: felt, v97: felt, v98: felt, v99: felt) {
-    ^block22(v96: felt, v97: felt, v98: felt, v99: felt):
-        hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/miden:base/transaction-script@1.0.0#run(v96, v97, v98, v99)
+    public builtin.function @run(v102: felt, v103: felt, v104: felt, v105: felt) {
+    ^block22(v102: felt, v103: felt, v104: felt, v105: felt):
+        hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_output_notes_commitment_binding/miden:base/transaction-script@1.0.0#run(v102, v103, v104, v105)
         builtin.ret ;
     };
 };

@@ -12,6 +12,7 @@ end
 
 # mod ::"root_ns:root@1.0.0"::func_arg_same
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(i32, i32) -> i32
     swap.1
@@ -24,6 +25,7 @@ pub proc entrypoint(i32, i32) -> i32
     nop
 end
 
+@locals("2")
 @callconv("C")
 pub proc intrinsic(i32, i32) -> i32
     swap.1

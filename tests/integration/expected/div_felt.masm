@@ -12,6 +12,7 @@ end
 
 # mod ::"root_ns:root@1.0.0"::div_felt
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(felt, felt) -> felt
     swap.1

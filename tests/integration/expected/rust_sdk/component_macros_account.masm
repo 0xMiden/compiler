@@ -135,6 +135,7 @@ proc component_macros_account::bindings::__link_custom_section_describing_import
     nop
 end
 
+@locals("13")
 @callconv("C")
 proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-types(
     felt,
@@ -170,6 +171,22 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     drop
     movup.2
     drop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.1114148
     u32divmod.4
     swap.1
@@ -178,16 +195,48 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     trace.240
     nop
     exec.::"miden:component-macros-account/component-macros-account@0.1.0"::component_macros_account::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.1048584
     u32wrapping_add
     dup.0
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.4
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -196,8 +245,6 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     u32mod
     u32assert
     assertz
-    movup.4
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -205,14 +252,29 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    swap.1
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    movup.2
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -220,8 +282,17 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("13")
 @callconv("C")
 proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-types2(
     felt,
@@ -257,6 +328,22 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     drop
     movup.2
     drop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.1114148
     u32divmod.4
     swap.1
@@ -265,16 +352,48 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     trace.240
     nop
     exec.::"miden:component-macros-account/component-macros-account@0.1.0"::component_macros_account::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.1048584
     u32wrapping_add
     dup.0
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.4
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -283,8 +402,6 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     u32mod
     u32assert
     assertz
-    movup.4
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -292,14 +409,29 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    swap.1
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    movup.2
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -307,8 +439,17 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.12
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -350,9 +491,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:component-macros-account/component-macros-account@0.1.0"::component_macros_account::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1

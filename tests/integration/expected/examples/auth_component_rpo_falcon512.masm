@@ -48,6 +48,7 @@ proc auth_component_rpo_falcon512::bindings::__link_custom_section_describing_im
     nop
 end
 
+@locals("24")
 @callconv("C")
 proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-procedure(
     felt,
@@ -69,9 +70,16 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     nop
     push.112
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.4
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -84,9 +92,41 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    push.4045568291
+    push.1845198578
+    mul.4294967296
+    add
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.3452188003
+    push.1421857722
+    mul.4294967296
+    add
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_block_number
+    trace.252
+    nop
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
     trace.252
     nop
     trace.240
@@ -94,17 +134,39 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"miden::protocol::native_account::incr_nonce"
     trace.252
     nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.32
-    dup.3
     u32wrapping_add
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"miden::protocol::native_account::compute_delta_commitment"
     trace.252
     nop
-    dup.2
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.40
-    dup.1
+    swap.1
     add
     u32assert
     push.8
@@ -121,8 +183,26 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     trace.252
     nop
     swap.1
+    locaddr.9
+    push.0
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.32
-    dup.3
+    swap.1
     add
     u32assert
     push.8
@@ -139,22 +219,81 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     trace.252
     nop
     swap.1
-    dup.7
+    locaddr.11
+    push.0
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_input_notes_commitment
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.16
-    dup.8
     u32wrapping_add
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::miden_base_sys::bindings::tx::get_output_notes_commitment
     trace.252
     nop
+    push.0
+    locaddr.13
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.0
+    locaddr.14
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.0
+    locaddr.15
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.5
+    dup.1
     add
     u32assert
     push.8
@@ -172,7 +311,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     nop
     swap.1
     push.56
-    dup.10
+    movup.3
     u32wrapping_add
     push.8
     dup.1
@@ -189,8 +328,16 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.24
-    dup.5
+    dup.1
     add
     u32assert
     push.8
@@ -208,7 +355,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     nop
     swap.1
     push.72
-    dup.10
+    movup.3
     u32wrapping_add
     push.8
     dup.1
@@ -225,8 +372,25 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.11
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
     push.40
-    dup.5
+    movup.3
     add
     u32assert
     push.8
@@ -246,8 +410,25 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.9
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
     push.32
-    dup.3
+    movup.3
     add
     u32assert
     push.8
@@ -267,13 +448,21 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    dup.0
     push.8
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -283,7 +472,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     nop
     swap.1
     push.48
-    dup.3
+    movup.3
     add
     u32assert
     push.8
@@ -299,6 +488,14 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
@@ -320,7 +517,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     nop
     swap.1
     push.64
-    dup.3
+    movup.3
     add
     u32assert
     push.8
@@ -338,8 +535,24 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.92
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -348,17 +561,31 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32mod
     u32assert
     assertz
-    movup.2
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
     push.88
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -367,17 +594,31 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32mod
     u32assert
     assertz
-    movup.2
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.15
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
     push.84
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -386,8 +627,6 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32mod
     u32assert
     assertz
-    push.0
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -395,8 +634,24 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.14
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.80
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -405,8 +660,6 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32mod
     u32assert
     assertz
-    push.0
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -417,18 +670,49 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     push.0
     dup.0
     assert_eq
-    push.32
-    dup.2
-    u32wrapping_add
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.2
-    dup.1
+    push.32
+    movup.2
+    u32wrapping_add
     swap.1
     u32shr
+    dup.0
+    locaddr.16
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.16
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.96
-    dup.4
     u32wrapping_add
     push.16
-    dup.2
+    movup.2
     u32wrapping_add
     movup.2
     trace.240
@@ -436,8 +720,16 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"miden::core::crypto::hashes::rpo256::hash_words"
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.108
-    dup.2
+    swap.1
     add
     u32assert
     push.4
@@ -451,10 +743,26 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.104
-    dup.3
+    swap.1
     add
     u32assert
     push.4
@@ -468,10 +776,26 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.100
-    dup.4
+    swap.1
     add
     u32assert
     push.4
@@ -485,10 +809,26 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.14
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.96
-    movup.5
+    swap.1
     add
     u32assert
     push.4
@@ -504,100 +844,121 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.4045568291
-    push.1845198578
-    mul.4294967296
-    add
-    push.3452188003
-    push.1421857722
-    mul.4294967296
-    add
-    push.80
-    dup.8
-    u32wrapping_add
+    locaddr.15
     push.0
-    movup.3
-    swap.9
-    movdn.3
     swap.1
-    swap.2
-    swap.8
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.80
+    u32wrapping_add
+    locaddr.17
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.32
+    u32wrapping_add
+    locaddr.18
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1
     while.true
+        locaddr.13
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
         push.0
         push.2
-        dup.2
+        movup.2
         eq
         neq
         dup.0
         if.true
-            movdn.3
-            drop
-            drop
-            drop
-            push.3735929054
-            push.3735929054
-            dup.0
-            dup.1
-            dup.2
-            dup.4
-            dup.5
-            dup.6
-            dup.7
-            dup.8
-            swap.9
-            swap.4
-            swap.5
-            swap.3
-            swap.6
-            swap.2
-            swap.7
-            swap.1
-            swap.8
+            nop
         else
             push.0
-            dup.11
-            dup.11
-            dup.11
-            dup.11
-            dup.11
-            dup.11
-            dup.11
-            swap.4
-            swap.8
-            swap.11
-            swap.2
-            swap.6
-            swap.10
+            locaddr.16
+            push.0
             swap.1
-            swap.5
-            swap.9
-            swap.3
-            swap.7
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_sw
+            trace.252
+            nop
             push.1
             while.true
+                locaddr.16
+                push.0
+                swap.1
+                trace.240
+                nop
+                exec.::intrinsics::mem::load_sw
+                trace.252
+                nop
                 push.0
                 push.16
-                dup.2
+                movup.2
                 eq
                 neq
                 dup.0
                 if.true
-                    swap.1
-                    drop
-                    push.3735929054
+                    nop
                 else
-                    dup.2
-                    dup.2
+                    locaddr.18
+                    push.0
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::load_sw
+                    trace.252
+                    nop
+                    locaddr.16
+                    push.0
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::load_sw
+                    trace.252
+                    nop
                     u32wrapping_add
+                    dup.0
                     push.4
                     dup.1
                     swap.1
                     u32mod
                     u32assert
                     assertz
-                    dup.0
                     u32divmod.4
                     swap.1
                     trace.240
@@ -605,16 +966,30 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
                     exec.::intrinsics::mem::load_sw
                     trace.252
                     nop
-                    dup.5
-                    dup.4
+                    locaddr.17
+                    push.0
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::load_sw
+                    trace.252
+                    nop
+                    locaddr.16
+                    push.0
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::load_sw
+                    trace.252
+                    nop
                     u32wrapping_add
+                    dup.0
                     push.4
                     dup.1
                     swap.1
                     u32mod
                     u32assert
                     assertz
-                    dup.0
                     u32divmod.4
                     swap.1
                     trace.240
@@ -622,13 +997,13 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
                     exec.::intrinsics::mem::load_sw
                     trace.252
                     nop
-                    push.4
-                    dup.4
-                    swap.1
-                    u32mod
-                    u32assert
-                    assertz
                     movup.3
+                    push.4
+                    dup.1
+                    swap.1
+                    u32mod
+                    u32assert
+                    assertz
                     u32divmod.4
                     swap.1
                     trace.240
@@ -649,164 +1024,122 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
                     exec.::intrinsics::mem::store_sw
                     trace.252
                     nop
+                    locaddr.16
+                    push.0
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::load_sw
+                    trace.252
+                    nop
                     push.4
-                    movup.2
                     u32wrapping_add
+                    locaddr.16
+                    push.0
+                    swap.1
+                    trace.240
+                    nop
+                    exec.::intrinsics::mem::store_sw
+                    trace.252
+                    nop
                 end
-                push.3735929054
-                dup.2
-                dup.13
-                swap.2
-                swap.1
-                cdrop
-                push.3735929054
-                dup.3
-                dup.13
-                swap.2
-                swap.1
-                cdrop
-                push.3735929054
-                dup.4
-                dup.13
-                swap.2
-                swap.1
-                cdrop
-                push.3735929054
-                dup.5
-                dup.13
-                swap.2
-                swap.1
-                cdrop
-                push.3735929054
-                dup.6
-                dup.13
-                swap.2
-                swap.1
-                cdrop
-                push.3735929054
-                dup.7
-                dup.13
-                swap.2
-                swap.1
-                cdrop
-                push.3735929054
-                dup.8
-                dup.13
-                swap.2
-                swap.1
-                cdrop
-                push.3735929054
-                dup.9
-                dup.13
-                swap.2
-                swap.1
-                cdrop
-                push.3735929054
-                dup.10
-                dup.13
-                swap.2
-                swap.1
-                cdrop
-                push.3735929054
-                dup.11
-                dup.13
-                swap.2
-                swap.1
-                cdrop
                 push.1
                 push.0
-                movup.13
+                movup.2
                 cdrop
                 push.1
                 u32and
-                movup.11
-                swap.1
                 if.true
-                    movup.11
-                    drop
-                    movup.11
-                    drop
-                    movup.11
-                    drop
-                    movup.11
-                    drop
-                    movup.11
-                    drop
-                    movup.11
-                    drop
-                    movup.11
-                    drop
-                    movup.11
-                    drop
-                    movup.11
-                    drop
-                    movup.11
-                    drop
                     push.1
                 else
                     push.0
                 end
             end
-            drop
-            drop
-            drop
-            drop
-            drop
-            drop
-            drop
-            drop
-            drop
-            drop
-            drop
+            locaddr.17
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
             push.4294967280
-            movup.2
             u32wrapping_add
+            locaddr.17
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_sw
+            trace.252
+            nop
+            locaddr.18
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
             push.16
-            movup.2
             u32wrapping_add
+            locaddr.18
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_sw
+            trace.252
+            nop
+            locaddr.13
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
             push.1
-            movup.3
             u32wrapping_add
+            locaddr.13
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_sw
+            trace.252
+            nop
         end
         push.1
         push.0
-        movup.12
+        movup.2
         cdrop
         push.1
         u32and
         if.true
-            movup.10
-            drop
-            movup.10
-            drop
-            movup.10
-            drop
-            movup.10
-            drop
-            movup.10
-            drop
-            movup.10
-            drop
-            movup.10
-            drop
             push.1
         else
             push.0
         end
     end
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    dup.0
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.15
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.108
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -815,17 +1148,31 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32mod
     u32assert
     assertz
-    dup.3
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.14
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
     push.104
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -834,18 +1181,31 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32mod
     u32assert
     assertz
-    dup.0
-    dup.5
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
     push.100
-    dup.2
+    movup.2
     add
     u32assert
     push.4
@@ -854,9 +1214,6 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32mod
     u32assert
     assertz
-    dup.0
-    dup.7
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -864,8 +1221,24 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
     push.96
-    dup.3
+    movup.2
     add
     u32assert
     push.4
@@ -874,9 +1247,6 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     u32mod
     u32assert
     assertz
-    dup.0
-    dup.9
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -884,73 +1254,100 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.96
-    dup.5
-    u32wrapping_add
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
     push.32
-    dup.7
-    u32wrapping_add
     dup.2
+    u32wrapping_add
+    push.96
+    movup.3
+    u32wrapping_add
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::miden_stdlib_sys::intrinsics::advice::adv_insert
     trace.252
     nop
+    locaddr.6
+    push.0
     swap.1
-    swap.11
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.5
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.96
+    u32wrapping_add
     swap.2
-    swap.10
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"miden::protocol::active_account::get_item"
     trace.252
     nop
-    push.4
-    dup.9
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.8
-    u32divmod.4
+    locaddr.15
+    push.0
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.4
-    dup.9
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.8
-    u32divmod.4
+    locaddr.14
+    push.0
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.4
-    dup.3
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.2
-    u32divmod.4
+    locaddr.8
+    push.0
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.108
-    movup.4
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.96
+    swap.1
     add
     u32assert
     push.4
@@ -967,31 +1364,216 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     trace.252
     nop
     dup.0
-    dup.2
-    dup.4
-    dup.6
-    dup.12
-    dup.12
-    dup.12
-    dup.12
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.100
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    dup.0
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.104
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    dup.0
+    locaddr.22
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.108
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    dup.0
+    locaddr.23
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    movup.3
+    swap.4
+    movdn.3
+    movup.2
+    swap.5
+    movdn.2
+    swap.1
+    swap.6
+    swap.1
+    swap.7
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"intrinsics::advice::emit_falcon_sig_to_stack"
     trace.252
     nop
-    movup.4
-    swap.8
-    swap.7
-    swap.6
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.22
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.23
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.15
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.14
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    movup.3
+    swap.4
+    movdn.3
+    movup.2
     swap.5
-    movdn.4
+    movdn.2
     swap.1
-    swap.2
+    swap.6
     swap.1
-    swap.3
+    swap.7
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"miden::core::crypto::dsa::rpo_falcon512::verify"
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.112
@@ -1006,6 +1588,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -1047,9 +1630,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1
@@ -1091,10 +1690,19 @@ proc miden_base_sys::bindings::tx::get_block_number(
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     i32
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114144
     u32divmod.4
     swap.1
@@ -1105,9 +1713,16 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.1
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1115,20 +1730,41 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.0
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"miden::protocol::tx::get_input_notes_commitment"
     trace.252
     nop
-    dup.0
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -1137,19 +1773,17 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     trace.252
     nop
     swap.1
-    movup.4
     push.8
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.2
     movup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
     movup.2
     u32divmod.4
     swap.1
@@ -1160,8 +1794,24 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    movup.2
+    swap.1
     add
     u32assert
     push.8
@@ -1178,13 +1828,14 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     trace.252
     nop
     swap.1
+    movup.2
     push.8
-    dup.3
+    dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    swap.1
+    swap.2
     movup.2
     u32divmod.4
     swap.1
@@ -1193,6 +1844,14 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
@@ -1207,10 +1866,19 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     i32
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114144
     u32divmod.4
     swap.1
@@ -1221,9 +1889,16 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.1
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -1231,20 +1906,41 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.0
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     trace.240
     nop
     exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"miden::protocol::tx::get_output_notes_commitment"
     trace.252
     nop
-    dup.0
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -1253,19 +1949,17 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     trace.252
     nop
     swap.1
-    movup.4
     push.8
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.2
     movup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
     movup.2
     u32divmod.4
     swap.1
@@ -1276,8 +1970,24 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    movup.2
+    swap.1
     add
     u32assert
     push.8
@@ -1294,13 +2004,14 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     trace.252
     nop
     swap.1
+    movup.2
     push.8
-    dup.3
+    dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    swap.1
+    swap.2
     movup.2
     u32divmod.4
     swap.1
@@ -1309,6 +2020,14 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
@@ -1323,14 +2042,31 @@ proc miden_base_sys::bindings::tx::get_output_notes_commitment(
     nop
 end
 
+@locals("3")
 @callconv("C")
 proc miden_stdlib_sys::intrinsics::advice::adv_insert(
     i32,
     i32,
     i32
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.12
-    dup.1
+    swap.1
     add
     u32assert
     push.4
@@ -1344,10 +2080,18 @@ proc miden_stdlib_sys::intrinsics::advice::adv_insert(
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.8
-    dup.2
+    swap.1
     add
     u32assert
     push.4
@@ -1363,8 +2107,16 @@ proc miden_stdlib_sys::intrinsics::advice::adv_insert(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
-    dup.3
+    swap.1
     add
     u32assert
     push.4
@@ -1380,13 +2132,20 @@ proc miden_stdlib_sys::intrinsics::advice::adv_insert(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
-    dup.4
+    dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    movup.3
     u32divmod.4
     swap.1
     trace.240
@@ -1398,11 +2157,27 @@ proc miden_stdlib_sys::intrinsics::advice::adv_insert(
     movup.5
     swap.1
     u32shr
+    dup.0
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.2
-    movup.6
+    movup.7
     swap.1
     u32shl
-    dup.1
     u32wrapping_add
     movup.2
     swap.3
@@ -1445,6 +2220,7 @@ proc intrinsics::advice::emit_falcon_sig_to_stack(
     nop
 end
 
+@locals("8")
 @callconv("C")
 proc miden::core::crypto::dsa::rpo_falcon512::verify(
     felt,

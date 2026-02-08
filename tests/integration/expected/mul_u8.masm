@@ -18,6 +18,7 @@ end
 
 # mod ::"root_ns:root@1.0.0"::test_rust_3332f4e22611553fee6834bdfb5edc7af11b545fb7a55941be9fef2efaecf059
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(i32, i32) -> i32
     push.255

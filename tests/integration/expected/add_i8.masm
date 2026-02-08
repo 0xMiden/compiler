@@ -18,6 +18,7 @@ end
 
 # mod ::"root_ns:root@1.0.0"::test_rust_62ba1afb3113b5a2557098b909eff557cd716bf21b07843db3bfb765ff41e9f7
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(i32, i32) -> i32
     u32wrapping_add

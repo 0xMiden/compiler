@@ -25,12 +25,16 @@ builtin.component miden:base/note-script@1.0.0 {
         private builtin.function @miden:base/note-script@1.0.0#run(v2: felt, v3: felt, v4: felt, v5: felt) {
         ^block14(v2: felt, v3: felt, v4: felt, v5: felt):
             hir.exec @miden:base/note-script@1.0.0/counter_note/wit_bindgen::rt::run_ctors_once()
-            v7 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0() : felt
-            v8 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0() : felt
+            v6 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0() : felt
+            hir.store_local v6 #[local = lv4];
+            v7 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0() : felt
+            v8 = hir.load_local  : felt #[local = lv4];
+            v42 = arith.constant 1 : felt;
+            v11 = arith.add v8, v42 : felt #[overflow = unchecked];
+            hir.store_local v11 #[local = lv4];
             v12 = hir.exec @miden:base/note-script@1.0.0/counter_note/counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0() : felt
-            v41 = arith.constant 1 : felt;
-            v11 = arith.add v7, v41 : felt #[overflow = unchecked];
-            hir.assert_eq v12, v11;
+            v13 = hir.load_local  : felt #[local = lv4];
+            hir.assert_eq v12, v13;
             builtin.ret ;
         };
 
@@ -39,8 +43,8 @@ builtin.component miden:base/note-script@1.0.0 {
             v14 = builtin.global_symbol @miden:base/note-script@1.0.0/counter_note/GOT.data.internal.__memory_base : ptr<byte, u8>
             v15 = hir.bitcast v14 : ptr<byte, i32>;
             v16 = hir.load v15 : i32;
-            v45 = arith.constant 1048588 : i32;
-            v18 = arith.add v16, v45 : i32 #[overflow = wrapping];
+            v47 = arith.constant 1048588 : i32;
+            v18 = arith.add v16, v47 : i32 #[overflow = wrapping];
             v19 = hir.bitcast v18 : u32;
             v20 = hir.int_to_ptr v19 : ptr<byte, u8>;
             v21 = hir.load v20 : u8;
@@ -56,13 +60,15 @@ builtin.component miden:base/note-script@1.0.0 {
                 v26 = builtin.global_symbol @miden:base/note-script@1.0.0/counter_note/GOT.data.internal.__memory_base : ptr<byte, u8>
                 v27 = hir.bitcast v26 : ptr<byte, i32>;
                 v28 = hir.load v27 : i32;
+                hir.store_local v28 #[local = lv0];
                 hir.exec @miden:base/note-script@1.0.0/counter_note/__wasm_call_ctors()
-                v44 = arith.constant 1 : u8;
-                v49 = arith.constant 1048588 : i32;
-                v30 = arith.add v28, v49 : i32 #[overflow = wrapping];
-                v34 = hir.bitcast v30 : u32;
-                v35 = hir.int_to_ptr v34 : ptr<byte, u8>;
-                hir.store v35, v44;
+                v29 = hir.load_local  : i32 #[local = lv0];
+                v45 = arith.constant 1 : u8;
+                v50 = arith.constant 1048588 : i32;
+                v31 = arith.add v29, v50 : i32 #[overflow = wrapping];
+                v35 = hir.bitcast v31 : u32;
+                v36 = hir.int_to_ptr v35 : ptr<byte, u8>;
+                hir.store v36, v45;
                 scf.yield ;
             };
             builtin.ret ;
@@ -79,9 +85,9 @@ builtin.component miden:base/note-script@1.0.0 {
         builtin.segment @1048576 = 0x000000010000000100000001;
     };
 
-    public builtin.function @run(v36: felt, v37: felt, v38: felt, v39: felt) {
-    ^block20(v36: felt, v37: felt, v38: felt, v39: felt):
-        hir.exec @miden:base/note-script@1.0.0/counter_note/miden:base/note-script@1.0.0#run(v36, v37, v38, v39)
+    public builtin.function @run(v37: felt, v38: felt, v39: felt, v40: felt) {
+    ^block20(v37: felt, v38: felt, v39: felt, v40: felt):
+        hir.exec @miden:base/note-script@1.0.0/counter_note/miden:base/note-script@1.0.0#run(v37, v38, v39, v40)
         builtin.ret ;
     };
 };

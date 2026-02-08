@@ -2,13 +2,13 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @eq_felt {
         public builtin.function @entrypoint(v0: felt, v1: felt) -> i32 {
         ^block4(v0: felt, v1: felt):
-            v9 = arith.constant 1 : i32;
-            v3 = arith.eq v0, v1 : i1;
-            v4 = hir.cast v3 : i32;
-            v6 = arith.eq v4, v9 : i1;
-            v7 = arith.zext v6 : u32;
-            v8 = hir.bitcast v7 : i32;
-            builtin.ret v8;
+            v11 = arith.constant 1 : i32;
+            v5 = arith.eq v0, v1 : i1;
+            v6 = hir.cast v5 : i32;
+            v8 = arith.eq v6, v11 : i1;
+            v9 = arith.zext v8 : u32;
+            v10 = hir.bitcast v9 : i32;
+            builtin.ret v10;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

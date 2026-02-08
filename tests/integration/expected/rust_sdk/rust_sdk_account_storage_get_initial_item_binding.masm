@@ -102,12 +102,29 @@ proc rust_sdk_account_storage_get_initial_item_binding::bindings::__link_custom_
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc <rust_sdk_account_storage_get_initial_item_binding::TestAccount as core::default::Default>::default(
     i32
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
-    dup.1
+    swap.1
     add
     u32assert
     push.4
@@ -126,6 +143,14 @@ proc <rust_sdk_account_storage_get_initial_item_binding::TestAccount as core::de
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.4
@@ -148,6 +173,7 @@ proc <rust_sdk_account_storage_get_initial_item_binding::TestAccount as core::de
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1#binding(
 
@@ -162,9 +188,16 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     nop
     push.32
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -177,23 +210,44 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::"miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1"::rust_sdk_account_storage_get_initial_item_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.1
     u32wrapping_add
     trace.240
     nop
     exec.::"miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1"::rust_sdk_account_storage_get_initial_item_binding::<rust_sdk_account_storage_get_initial_item_binding::TestAccount as core::default::Default>::default
     trace.252
     nop
-    dup.0
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     trace.240
     nop
     exec.::"miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1"::rust_sdk_account_storage_get_initial_item_binding::<rust_sdk_account_storage_get_initial_item_binding::TestAccount as core::default::Default>::default
     trace.252
     nop
-    dup.0
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
-    dup.1
+    swap.1
     add
     u32assert
     push.4
@@ -209,13 +263,20 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
-    dup.2
+    dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    dup.1
     u32divmod.4
     swap.1
     trace.240
@@ -223,8 +284,15 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.16
-    dup.4
     u32wrapping_add
     swap.2
     trace.240
@@ -242,8 +310,25 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     nop
     push.1048584
     u32wrapping_add
+    dup.0
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.16
-    dup.2
+    swap.1
     add
     u32assert
     push.4
@@ -259,9 +344,8 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.1
     push.12
-    dup.1
+    movup.2
     add
     u32assert
     push.4
@@ -270,8 +354,6 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     u32mod
     u32assert
     assertz
-    movup.2
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -279,8 +361,24 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.20
-    dup.3
+    swap.1
     add
     u32assert
     push.4
@@ -297,7 +395,7 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     trace.252
     nop
     push.8
-    dup.2
+    movup.2
     add
     u32assert
     push.4
@@ -311,10 +409,26 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.24
-    dup.3
+    swap.1
     add
     u32assert
     push.4
@@ -331,7 +445,7 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     trace.252
     nop
     push.4
-    dup.2
+    movup.2
     add
     u32assert
     push.4
@@ -345,10 +459,26 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.28
-    movup.3
+    swap.1
     add
     u32assert
     push.4
@@ -364,13 +494,13 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    swap.1
     push.4
-    dup.2
+    dup.1
     swap.1
     u32mod
     u32assert
     assertz
-    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -378,8 +508,15 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.32
-    movup.2
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -389,8 +526,17 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -432,9 +578,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1"::rust_sdk_account_storage_get_initial_item_binding::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1

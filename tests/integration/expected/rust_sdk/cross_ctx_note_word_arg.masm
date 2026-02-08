@@ -74,6 +74,7 @@ proc cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports
     nop
 end
 
+@locals("4")
 @callconv("C")
 proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     drop
@@ -117,6 +118,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     assert_eq
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -158,9 +160,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word_arg::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1

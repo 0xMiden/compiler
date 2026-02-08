@@ -18,12 +18,18 @@ end
 
 # mod ::"root_ns:root@1.0.0"::test_rust_aef84d8c0f31ef839006490963a826949aaedc9315fd0ca99dc18ddcd7c7205b
 
-@locals("2")
+@locals("11")
 @callconv("C")
 pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
-    dup.6
-    dup.6
     locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.1
     push.0
     swap.1
     movup.2
@@ -33,12 +39,50 @@ pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    dup.2
-    dup.2
+    movdn.3
+    movdn.3
+    locaddr.5
+    push.0
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
     push.0
     push.0
-    movup.10
-    movup.10
+    movdn.5
+    movdn.5
+    movdn.5
+    movdn.5
     push.0
     push.0
     trace.240
@@ -55,7 +99,7 @@ pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     assertz
     movup.4
     movup.4
-    dup.2
+    movup.2
     u32divmod.4
     swap.1
     movup.2
@@ -65,16 +109,15 @@ pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    push.8
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
     locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.5
     push.0
     swap.1
     trace.240
@@ -83,19 +126,29 @@ pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     trace.252
     nop
     swap.1
-    movup.10
-    movup.10
-    movup.8
-    movup.8
+    locaddr.1
+    push.0
+    swap.1
     trace.240
     nop
-    exec.::intrinsics::i64::wrapping_mul
+    exec.::intrinsics::mem::load_dw
     trace.252
     nop
-    movdn.8
-    movdn.8
-    movup.6
-    movup.6
+    swap.1
+    push.8
+    movup.5
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    movup.10
+    movup.10
+    movup.4
+    movup.4
     trace.240
     nop
     exec.::intrinsics::i64::wrapping_mul
@@ -103,13 +156,20 @@ pub proc entrypoint(i32, [u32; 2], [u32; 2], [u32; 2], [u32; 2])
     nop
     movup.4
     movup.4
+    movup.8
+    movup.8
+    trace.240
+    nop
+    exec.::intrinsics::i64::wrapping_mul
+    trace.252
+    nop
+    movup.6
+    movup.6
     trace.240
     nop
     exec.::miden::core::math::u64::wrapping_add
     trace.252
     nop
-    movup.4
-    movup.4
     trace.240
     nop
     exec.::miden::core::math::u64::wrapping_add

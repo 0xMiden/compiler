@@ -18,6 +18,7 @@ end
 
 # mod ::"root_ns:root@1.0.0"::test_rust_c2e6cec606b20447e4c5accdc801c32098f0d7cda3811f8c4e38f16911210b8f
 
+@locals("4")
 @callconv("C")
 pub proc entrypoint([u32; 2], [u32; 2]) -> [u32; 2]
     movdn.3

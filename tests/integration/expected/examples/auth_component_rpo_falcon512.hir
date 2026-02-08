@@ -12,430 +12,502 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
 
         private builtin.function @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-procedure(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
-            v11 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
-            v12 = hir.bitcast v11 : ptr<byte, i32>;
-            v13 = hir.load v12 : i32;
-            v611 = arith.constant 112 : i32;
-            v15 = arith.sub v13, v611 : i32 #[overflow = wrapping];
-            v16 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
-            v17 = hir.bitcast v16 : ptr<byte, i32>;
-            hir.store v17, v15;
+            v4 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
+            v5 = hir.bitcast v4 : ptr<byte, i32>;
+            v6 = hir.load v5 : i32;
+            v678 = arith.constant 112 : i32;
+            v8 = arith.sub v6, v678 : i32 #[overflow = wrapping];
+            hir.store_local v8 #[local = lv4];
+            v9 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
+            v10 = hir.bitcast v9 : ptr<byte, i32>;
+            hir.store v10, v8;
             hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/wit_bindgen::rt::run_ctors_once()
-            v22 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_base_sys::bindings::tx::get_block_number() : felt
-            v23 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::native_account::incr_nonce() : felt
-            v608 = arith.constant 32 : i32;
-            v25 = arith.add v15, v608 : i32 #[overflow = wrapping];
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::native_account::compute_delta_commitment(v25)
-            v26 = hir.bitcast v15 : u32;
-            v607 = arith.constant 40 : u32;
-            v28 = arith.add v26, v607 : u32 #[overflow = checked];
-            v606 = arith.constant 8 : u32;
-            v30 = arith.mod v28, v606 : u32;
-            hir.assertz v30 #[code = 250];
-            v31 = hir.int_to_ptr v28 : ptr<byte, i64>;
-            v32 = hir.load v31 : i64;
-            v605 = arith.constant 32 : u32;
-            v35 = arith.add v26, v605 : u32 #[overflow = checked];
-            v1112 = arith.constant 8 : u32;
-            v37 = arith.mod v35, v1112 : u32;
-            hir.assertz v37 #[code = 250];
-            v38 = hir.int_to_ptr v35 : ptr<byte, i64>;
-            v39 = hir.load v38 : i64;
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_base_sys::bindings::tx::get_input_notes_commitment(v15)
-            v604 = arith.constant 16 : i32;
-            v41 = arith.add v15, v604 : i32 #[overflow = wrapping];
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_base_sys::bindings::tx::get_output_notes_commitment(v41)
-            v1111 = arith.constant 8 : u32;
-            v51 = arith.add v26, v1111 : u32 #[overflow = checked];
-            v1110 = arith.constant 8 : u32;
-            v53 = arith.mod v51, v1110 : u32;
+            v677 = arith.constant 7925067551181273379 : i64;
+            v12 = arith.trunc v677 : felt;
+            hir.store_local v12 #[local = lv5];
+            v676 = arith.constant 6106832419007247715 : i64;
+            v14 = arith.trunc v676 : felt;
+            hir.store_local v14 #[local = lv6];
+            v15 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_base_sys::bindings::tx::get_block_number() : felt
+            hir.store_local v15 #[local = lv7];
+            v16 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::native_account::incr_nonce() : felt
+            hir.store_local v16 #[local = lv8];
+            v17 = hir.load_local  : i32 #[local = lv4];
+            v675 = arith.constant 32 : i32;
+            v19 = arith.add v17, v675 : i32 #[overflow = wrapping];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::native_account::compute_delta_commitment(v19)
+            v20 = hir.load_local  : i32 #[local = lv4];
+            v674 = arith.constant 40 : u32;
+            v21 = hir.bitcast v20 : u32;
+            v23 = arith.add v21, v674 : u32 #[overflow = checked];
+            v673 = arith.constant 8 : u32;
+            v25 = arith.mod v23, v673 : u32;
+            hir.assertz v25 #[code = 250];
+            v26 = hir.int_to_ptr v23 : ptr<byte, i64>;
+            v27 = hir.load v26 : i64;
+            hir.store_local v27 #[local = lv9];
+            v28 = hir.load_local  : i32 #[local = lv4];
+            v672 = arith.constant 32 : u32;
+            v29 = hir.bitcast v28 : u32;
+            v31 = arith.add v29, v672 : u32 #[overflow = checked];
+            v808 = arith.constant 8 : u32;
+            v33 = arith.mod v31, v808 : u32;
+            hir.assertz v33 #[code = 250];
+            v34 = hir.int_to_ptr v31 : ptr<byte, i64>;
+            v35 = hir.load v34 : i64;
+            hir.store_local v35 #[local = lv10];
+            v36 = hir.load_local  : i32 #[local = lv4];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_base_sys::bindings::tx::get_input_notes_commitment(v36)
+            v37 = hir.load_local  : i32 #[local = lv4];
+            v671 = arith.constant 16 : i32;
+            v39 = arith.add v37, v671 : i32 #[overflow = wrapping];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_base_sys::bindings::tx::get_output_notes_commitment(v39)
+            v670 = arith.constant 0 : i32;
+            hir.store_local v670 #[local = lv11];
+            v648 = arith.constant 0 : felt;
+            hir.store_local v648 #[local = lv12];
+            v807 = arith.constant 0 : felt;
+            hir.store_local v807 #[local = lv13];
+            v45 = hir.load_local  : i32 #[local = lv4];
+            v806 = arith.constant 8 : u32;
+            v49 = hir.bitcast v45 : u32;
+            v51 = arith.add v49, v806 : u32 #[overflow = checked];
+            v805 = arith.constant 8 : u32;
+            v53 = arith.mod v51, v805 : u32;
             hir.assertz v53 #[code = 250];
             v54 = hir.int_to_ptr v51 : ptr<byte, i64>;
             v55 = hir.load v54 : i64;
-            v603 = arith.constant 56 : i32;
-            v48 = arith.add v15, v603 : i32 #[overflow = wrapping];
-            v56 = hir.bitcast v48 : u32;
-            v1109 = arith.constant 8 : u32;
-            v58 = arith.mod v56, v1109 : u32;
+            v669 = arith.constant 56 : i32;
+            v47 = arith.add v45, v669 : i32 #[overflow = wrapping];
+            v56 = hir.bitcast v47 : u32;
+            v804 = arith.constant 8 : u32;
+            v58 = arith.mod v56, v804 : u32;
             hir.assertz v58 #[code = 250];
             v59 = hir.int_to_ptr v56 : ptr<byte, i64>;
             hir.store v59, v55;
-            v601 = arith.constant 24 : u32;
-            v64 = arith.add v26, v601 : u32 #[overflow = checked];
-            v1108 = arith.constant 8 : u32;
-            v66 = arith.mod v64, v1108 : u32;
-            hir.assertz v66 #[code = 250];
-            v67 = hir.int_to_ptr v64 : ptr<byte, i64>;
-            v68 = hir.load v67 : i64;
-            v602 = arith.constant 72 : i32;
-            v61 = arith.add v15, v602 : i32 #[overflow = wrapping];
-            v69 = hir.bitcast v61 : u32;
-            v1107 = arith.constant 8 : u32;
-            v71 = arith.mod v69, v1107 : u32;
-            hir.assertz v71 #[code = 250];
-            v72 = hir.int_to_ptr v69 : ptr<byte, i64>;
-            hir.store v72, v68;
-            v576, v577 = arith.split v39 : felt, felt;
-            v1106 = arith.constant 40 : u32;
-            v78 = arith.add v26, v1106 : u32 #[overflow = checked];
-            v1105 = arith.constant 8 : u32;
-            v80 = arith.mod v78, v1105 : u32;
-            hir.assertz v80 #[code = 250];
-            v578 = arith.join v577, v576 : i64;
-            v81 = hir.int_to_ptr v78 : ptr<byte, i64>;
-            hir.store v81, v578;
-            v573, v574 = arith.split v32 : felt, felt;
-            v1104 = arith.constant 32 : u32;
-            v87 = arith.add v26, v1104 : u32 #[overflow = checked];
-            v1103 = arith.constant 8 : u32;
-            v89 = arith.mod v87, v1103 : u32;
-            hir.assertz v89 #[code = 250];
-            v575 = arith.join v574, v573 : i64;
-            v90 = hir.int_to_ptr v87 : ptr<byte, i64>;
-            hir.store v90, v575;
-            v1102 = arith.constant 8 : u32;
-            v93 = arith.mod v26, v1102 : u32;
-            hir.assertz v93 #[code = 250];
-            v94 = hir.int_to_ptr v26 : ptr<byte, i64>;
-            v95 = hir.load v94 : i64;
-            v600 = arith.constant 48 : u32;
-            v98 = arith.add v26, v600 : u32 #[overflow = checked];
-            v1101 = arith.constant 8 : u32;
-            v100 = arith.mod v98, v1101 : u32;
-            hir.assertz v100 #[code = 250];
-            v101 = hir.int_to_ptr v98 : ptr<byte, i64>;
-            hir.store v101, v95;
-            v599 = arith.constant 16 : u32;
-            v104 = arith.add v26, v599 : u32 #[overflow = checked];
-            v1100 = arith.constant 8 : u32;
-            v106 = arith.mod v104, v1100 : u32;
-            hir.assertz v106 #[code = 250];
-            v107 = hir.int_to_ptr v104 : ptr<byte, i64>;
-            v108 = hir.load v107 : i64;
-            v598 = arith.constant 64 : u32;
-            v111 = arith.add v26, v598 : u32 #[overflow = checked];
-            v1099 = arith.constant 8 : u32;
-            v113 = arith.mod v111, v1099 : u32;
-            hir.assertz v113 #[code = 250];
-            v114 = hir.int_to_ptr v111 : ptr<byte, i64>;
-            hir.store v114, v108;
-            v597 = arith.constant 92 : u32;
-            v117 = arith.add v26, v597 : u32 #[overflow = checked];
-            v596 = arith.constant 4 : u32;
-            v119 = arith.mod v117, v596 : u32;
-            hir.assertz v119 #[code = 250];
-            v120 = hir.int_to_ptr v117 : ptr<byte, felt>;
-            hir.store v120, v23;
-            v595 = arith.constant 88 : u32;
-            v123 = arith.add v26, v595 : u32 #[overflow = checked];
-            v1098 = arith.constant 4 : u32;
-            v125 = arith.mod v123, v1098 : u32;
-            hir.assertz v125 #[code = 250];
-            v126 = hir.int_to_ptr v123 : ptr<byte, felt>;
-            hir.store v126, v22;
-            v594 = arith.constant 84 : u32;
-            v129 = arith.add v26, v594 : u32 #[overflow = checked];
-            v1097 = arith.constant 4 : u32;
-            v131 = arith.mod v129, v1097 : u32;
+            v60 = hir.load_local  : i32 #[local = lv4];
+            v667 = arith.constant 24 : u32;
+            v64 = hir.bitcast v60 : u32;
+            v66 = arith.add v64, v667 : u32 #[overflow = checked];
+            v803 = arith.constant 8 : u32;
+            v68 = arith.mod v66, v803 : u32;
+            hir.assertz v68 #[code = 250];
+            v69 = hir.int_to_ptr v66 : ptr<byte, i64>;
+            v70 = hir.load v69 : i64;
+            v668 = arith.constant 72 : i32;
+            v62 = arith.add v60, v668 : i32 #[overflow = wrapping];
+            v71 = hir.bitcast v62 : u32;
+            v802 = arith.constant 8 : u32;
+            v73 = arith.mod v71, v802 : u32;
+            hir.assertz v73 #[code = 250];
+            v74 = hir.int_to_ptr v71 : ptr<byte, i64>;
+            hir.store v74, v70;
+            v75 = hir.load_local  : i32 #[local = lv4];
+            v76 = hir.load_local  : i64 #[local = lv10];
+            v642, v643 = arith.split v76 : felt, felt;
+            v801 = arith.constant 40 : u32;
+            v80 = hir.bitcast v75 : u32;
+            v82 = arith.add v80, v801 : u32 #[overflow = checked];
+            v800 = arith.constant 8 : u32;
+            v84 = arith.mod v82, v800 : u32;
+            hir.assertz v84 #[code = 250];
+            v644 = arith.join v643, v642 : i64;
+            v85 = hir.int_to_ptr v82 : ptr<byte, i64>;
+            hir.store v85, v644;
+            v86 = hir.load_local  : i32 #[local = lv4];
+            v87 = hir.load_local  : i64 #[local = lv9];
+            v639, v640 = arith.split v87 : felt, felt;
+            v799 = arith.constant 32 : u32;
+            v91 = hir.bitcast v86 : u32;
+            v93 = arith.add v91, v799 : u32 #[overflow = checked];
+            v798 = arith.constant 8 : u32;
+            v95 = arith.mod v93, v798 : u32;
+            hir.assertz v95 #[code = 250];
+            v641 = arith.join v640, v639 : i64;
+            v96 = hir.int_to_ptr v93 : ptr<byte, i64>;
+            hir.store v96, v641;
+            v97 = hir.load_local  : i32 #[local = lv4];
+            v99 = hir.bitcast v97 : u32;
+            v797 = arith.constant 8 : u32;
+            v101 = arith.mod v99, v797 : u32;
+            hir.assertz v101 #[code = 250];
+            v102 = hir.int_to_ptr v99 : ptr<byte, i64>;
+            v103 = hir.load v102 : i64;
+            v666 = arith.constant 48 : u32;
+            v104 = hir.bitcast v97 : u32;
+            v106 = arith.add v104, v666 : u32 #[overflow = checked];
+            v796 = arith.constant 8 : u32;
+            v108 = arith.mod v106, v796 : u32;
+            hir.assertz v108 #[code = 250];
+            v109 = hir.int_to_ptr v106 : ptr<byte, i64>;
+            hir.store v109, v103;
+            v110 = hir.load_local  : i32 #[local = lv4];
+            v665 = arith.constant 16 : u32;
+            v112 = hir.bitcast v110 : u32;
+            v114 = arith.add v112, v665 : u32 #[overflow = checked];
+            v795 = arith.constant 8 : u32;
+            v116 = arith.mod v114, v795 : u32;
+            hir.assertz v116 #[code = 250];
+            v117 = hir.int_to_ptr v114 : ptr<byte, i64>;
+            v118 = hir.load v117 : i64;
+            v664 = arith.constant 64 : u32;
+            v119 = hir.bitcast v110 : u32;
+            v121 = arith.add v119, v664 : u32 #[overflow = checked];
+            v794 = arith.constant 8 : u32;
+            v123 = arith.mod v121, v794 : u32;
+            hir.assertz v123 #[code = 250];
+            v124 = hir.int_to_ptr v121 : ptr<byte, i64>;
+            hir.store v124, v118;
+            v125 = hir.load_local  : i32 #[local = lv4];
+            v126 = hir.load_local  : felt #[local = lv8];
+            v663 = arith.constant 92 : u32;
+            v127 = hir.bitcast v125 : u32;
+            v129 = arith.add v127, v663 : u32 #[overflow = checked];
+            v662 = arith.constant 4 : u32;
+            v131 = arith.mod v129, v662 : u32;
             hir.assertz v131 #[code = 250];
-            v582 = arith.constant 0 : felt;
             v132 = hir.int_to_ptr v129 : ptr<byte, felt>;
-            hir.store v132, v582;
-            v593 = arith.constant 80 : u32;
-            v135 = arith.add v26, v593 : u32 #[overflow = checked];
-            v1096 = arith.constant 4 : u32;
-            v137 = arith.mod v135, v1096 : u32;
-            hir.assertz v137 #[code = 250];
-            v1095 = arith.constant 0 : felt;
-            v138 = hir.int_to_ptr v135 : ptr<byte, felt>;
-            hir.store v138, v1095;
-            v1094 = arith.constant 0 : felt;
-            hir.assert_eq v1094, v1094;
-            v1093 = arith.constant 32 : i32;
-            v144 = arith.add v15, v1093 : i32 #[overflow = wrapping];
-            v581 = arith.constant 2 : u32;
-            v146 = hir.bitcast v144 : u32;
-            v148 = arith.shr v146, v581 : u32;
-            v149 = hir.bitcast v148 : i32;
-            v591 = arith.constant 96 : i32;
-            v153 = arith.add v15, v591 : i32 #[overflow = wrapping];
-            v1092 = arith.constant 16 : i32;
-            v151 = arith.add v149, v1092 : i32 #[overflow = wrapping];
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::core::crypto::hashes::rpo256::hash_words(v149, v151, v153)
-            v590 = arith.constant 108 : u32;
-            v156 = arith.add v26, v590 : u32 #[overflow = checked];
-            v1091 = arith.constant 4 : u32;
-            v158 = arith.mod v156, v1091 : u32;
-            hir.assertz v158 #[code = 250];
-            v159 = hir.int_to_ptr v156 : ptr<byte, felt>;
-            v160 = hir.load v159 : felt;
-            v589 = arith.constant 104 : u32;
-            v163 = arith.add v26, v589 : u32 #[overflow = checked];
-            v1090 = arith.constant 4 : u32;
-            v165 = arith.mod v163, v1090 : u32;
-            hir.assertz v165 #[code = 250];
-            v166 = hir.int_to_ptr v163 : ptr<byte, felt>;
-            v167 = hir.load v166 : felt;
-            v588 = arith.constant 100 : u32;
-            v170 = arith.add v26, v588 : u32 #[overflow = checked];
-            v1089 = arith.constant 4 : u32;
-            v172 = arith.mod v170, v1089 : u32;
-            hir.assertz v172 #[code = 250];
-            v173 = hir.int_to_ptr v170 : ptr<byte, felt>;
-            v174 = hir.load v173 : felt;
-            v587 = arith.constant 96 : u32;
-            v177 = arith.add v26, v587 : u32 #[overflow = checked];
-            v1088 = arith.constant 4 : u32;
-            v179 = arith.mod v177, v1088 : u32;
-            hir.assertz v179 #[code = 250];
-            v180 = hir.int_to_ptr v177 : ptr<byte, felt>;
-            v181 = hir.load v180 : felt;
-            v610 = arith.constant 7925067551181273379 : i64;
-            v19 = arith.trunc v610 : felt;
-            v609 = arith.constant 6106832419007247715 : i64;
-            v21 = arith.trunc v609 : felt;
-            v586 = arith.constant 80 : i32;
-            v183 = arith.add v15, v586 : i32 #[overflow = wrapping];
-            v612 = arith.constant 0 : i32;
-            v1005, v1006, v1007, v1008, v1009, v1010, v1011, v1012, v1013, v1014, v1015, v1016, v1017, v1018, v1019, v1020, v1021 = scf.while v612, v144, v183, v15, v181, v174, v167, v160, v21, v19 : i32, i32, i32, i32, felt, felt, felt, felt, felt, felt, i32, felt, felt, felt, felt, felt, felt {
-            ^block79(v1022: i32, v1023: i32, v1024: i32, v1025: i32, v1026: felt, v1027: felt, v1028: felt, v1029: felt, v1030: felt, v1031: felt):
-                v1087 = arith.constant 0 : i32;
-                v592 = arith.constant 2 : i32;
-                v188 = arith.eq v1022, v592 : i1;
-                v189 = arith.zext v188 : u32;
-                v190 = hir.bitcast v189 : i32;
-                v192 = arith.neq v190, v1087 : i1;
-                v993, v994, v995, v996, v997, v998, v999, v1000, v1001, v1002 = scf.if v192 : i32, i32, i32, i32, felt, felt, felt, felt, felt, felt {
+            hir.store v132, v126;
+            v133 = hir.load_local  : i32 #[local = lv4];
+            v134 = hir.load_local  : felt #[local = lv7];
+            v661 = arith.constant 88 : u32;
+            v135 = hir.bitcast v133 : u32;
+            v137 = arith.add v135, v661 : u32 #[overflow = checked];
+            v793 = arith.constant 4 : u32;
+            v139 = arith.mod v137, v793 : u32;
+            hir.assertz v139 #[code = 250];
+            v140 = hir.int_to_ptr v137 : ptr<byte, felt>;
+            hir.store v140, v134;
+            v141 = hir.load_local  : i32 #[local = lv4];
+            v142 = hir.load_local  : felt #[local = lv13];
+            v660 = arith.constant 84 : u32;
+            v143 = hir.bitcast v141 : u32;
+            v145 = arith.add v143, v660 : u32 #[overflow = checked];
+            v792 = arith.constant 4 : u32;
+            v147 = arith.mod v145, v792 : u32;
+            hir.assertz v147 #[code = 250];
+            v148 = hir.int_to_ptr v145 : ptr<byte, felt>;
+            hir.store v148, v142;
+            v149 = hir.load_local  : i32 #[local = lv4];
+            v150 = hir.load_local  : felt #[local = lv12];
+            v659 = arith.constant 80 : u32;
+            v151 = hir.bitcast v149 : u32;
+            v153 = arith.add v151, v659 : u32 #[overflow = checked];
+            v791 = arith.constant 4 : u32;
+            v155 = arith.mod v153, v791 : u32;
+            hir.assertz v155 #[code = 250];
+            v156 = hir.int_to_ptr v153 : ptr<byte, felt>;
+            hir.store v156, v150;
+            v790 = arith.constant 0 : felt;
+            hir.assert_eq v790, v790;
+            v161 = hir.load_local  : i32 #[local = lv4];
+            v647 = arith.constant 2 : u32;
+            v789 = arith.constant 32 : i32;
+            v163 = arith.add v161, v789 : i32 #[overflow = wrapping];
+            v165 = hir.bitcast v163 : u32;
+            v167 = arith.shr v165, v647 : u32;
+            v168 = hir.bitcast v167 : i32;
+            hir.store_local v168 #[local = lv14];
+            v169 = hir.load_local  : i32 #[local = lv14];
+            v172 = hir.load_local  : i32 #[local = lv4];
+            v657 = arith.constant 96 : i32;
+            v174 = arith.add v172, v657 : i32 #[overflow = wrapping];
+            v788 = arith.constant 16 : i32;
+            v171 = arith.add v169, v788 : i32 #[overflow = wrapping];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::core::crypto::hashes::rpo256::hash_words(v168, v171, v174)
+            v175 = hir.load_local  : i32 #[local = lv4];
+            v656 = arith.constant 108 : u32;
+            v176 = hir.bitcast v175 : u32;
+            v178 = arith.add v176, v656 : u32 #[overflow = checked];
+            v787 = arith.constant 4 : u32;
+            v180 = arith.mod v178, v787 : u32;
+            hir.assertz v180 #[code = 250];
+            v181 = hir.int_to_ptr v178 : ptr<byte, felt>;
+            v182 = hir.load v181 : felt;
+            hir.store_local v182 #[local = lv7];
+            v183 = hir.load_local  : i32 #[local = lv4];
+            v655 = arith.constant 104 : u32;
+            v184 = hir.bitcast v183 : u32;
+            v186 = arith.add v184, v655 : u32 #[overflow = checked];
+            v786 = arith.constant 4 : u32;
+            v188 = arith.mod v186, v786 : u32;
+            hir.assertz v188 #[code = 250];
+            v189 = hir.int_to_ptr v186 : ptr<byte, felt>;
+            v190 = hir.load v189 : felt;
+            hir.store_local v190 #[local = lv8];
+            v191 = hir.load_local  : i32 #[local = lv4];
+            v654 = arith.constant 100 : u32;
+            v192 = hir.bitcast v191 : u32;
+            v194 = arith.add v192, v654 : u32 #[overflow = checked];
+            v785 = arith.constant 4 : u32;
+            v196 = arith.mod v194, v785 : u32;
+            hir.assertz v196 #[code = 250];
+            v197 = hir.int_to_ptr v194 : ptr<byte, felt>;
+            v198 = hir.load v197 : felt;
+            hir.store_local v198 #[local = lv12];
+            v199 = hir.load_local  : i32 #[local = lv4];
+            v653 = arith.constant 96 : u32;
+            v200 = hir.bitcast v199 : u32;
+            v202 = arith.add v200, v653 : u32 #[overflow = checked];
+            v784 = arith.constant 4 : u32;
+            v204 = arith.mod v202, v784 : u32;
+            hir.assertz v204 #[code = 250];
+            v205 = hir.int_to_ptr v202 : ptr<byte, felt>;
+            v206 = hir.load v205 : felt;
+            hir.store_local v206 #[local = lv13];
+            v207 = hir.load_local  : i32 #[local = lv4];
+            v652 = arith.constant 80 : i32;
+            v209 = arith.add v207, v652 : i32 #[overflow = wrapping];
+            hir.store_local v209 #[local = lv15];
+            v210 = hir.load_local  : i32 #[local = lv4];
+            v783 = arith.constant 32 : i32;
+            v212 = arith.add v210, v783 : i32 #[overflow = wrapping];
+            hir.store_local v212 #[local = lv16];
+            scf.while {
+            ^block12:
+                v213 = hir.load_local  : i32 #[local = lv11];
+                v782 = arith.constant 0 : i32;
+                v658 = arith.constant 2 : i32;
+                v215 = arith.eq v213, v658 : i1;
+                v216 = arith.zext v215 : u32;
+                v217 = hir.bitcast v216 : i32;
+                v219 = arith.neq v217, v782 : i1;
+                scf.if v219{
                 ^block75:
-                    v679 = ub.poison felt : felt;
-                    v678 = ub.poison i32 : i32;
-                    scf.yield v678, v678, v678, v678, v679, v679, v679, v679, v679, v679;
+                    scf.yield ;
                 } else {
                 ^block14:
-                    v1086 = arith.constant 0 : i32;
-                    hir.store_local v1028 #[local = lv0];
-                    hir.store_local v1029 #[local = lv1];
-                    hir.store_local v1030 #[local = lv2];
-                    hir.store_local v1031 #[local = lv3];
-                    v940, v941, v942, v943, v944, v945, v946, v947, v948, v949, v950, v951, v952, v953, v954, v955, v956, v957, v958, v959, v960 = scf.while v1086, v1023, v1024, v1022, v1025, v1026, v1027, v1028, v1029, v1030, v1031 : i32, i32, i32, i32, i32, felt, felt, felt, felt, felt, felt, i32, i32, i32, i32, felt, felt, felt, felt, felt, felt {
-                    ^block77(v961: i32, v962: i32, v963: i32, v964: i32, v965: i32, v966: felt, v967: felt, v968: felt, v969: felt, v970: felt, v971: felt):
-                        v1084 = arith.constant 0 : i32;
-                        v1085 = arith.constant 16 : i32;
-                        v196 = arith.eq v961, v1085 : i1;
-                        v197 = arith.zext v196 : u32;
-                        v198 = hir.bitcast v197 : i32;
-                        v200 = arith.neq v198, v1084 : i1;
-                        v927 = scf.if v200 : i32 {
+                    v781 = arith.constant 0 : i32;
+                    hir.store_local v781 #[local = lv14];
+                    scf.while {
+                    ^block16:
+                        v221 = hir.load_local  : i32 #[local = lv14];
+                        v779 = arith.constant 0 : i32;
+                        v780 = arith.constant 16 : i32;
+                        v223 = arith.eq v221, v780 : i1;
+                        v224 = arith.zext v223 : u32;
+                        v225 = hir.bitcast v224 : i32;
+                        v227 = arith.neq v225, v779 : i1;
+                        scf.if v227{
                         ^block76:
-                            v1083 = ub.poison i32 : i32;
-                            scf.yield v1083;
+                            scf.yield ;
                         } else {
                         ^block18:
-                            v202 = arith.add v962, v961 : i32 #[overflow = wrapping];
-                            v203 = hir.bitcast v202 : u32;
-                            v1082 = arith.constant 4 : u32;
-                            v205 = arith.mod v203, v1082 : u32;
-                            hir.assertz v205 #[code = 250];
-                            v206 = hir.int_to_ptr v203 : ptr<byte, i32>;
-                            v207 = hir.load v206 : i32;
-                            v209 = arith.add v963, v961 : i32 #[overflow = wrapping];
-                            v210 = hir.bitcast v209 : u32;
-                            v1081 = arith.constant 4 : u32;
-                            v212 = arith.mod v210, v1081 : u32;
-                            hir.assertz v212 #[code = 250];
-                            v213 = hir.int_to_ptr v210 : ptr<byte, i32>;
-                            v214 = hir.load v213 : i32;
-                            v1080 = arith.constant 4 : u32;
-                            v217 = arith.mod v203, v1080 : u32;
-                            hir.assertz v217 #[code = 250];
-                            v218 = hir.int_to_ptr v203 : ptr<byte, i32>;
-                            hir.store v218, v214;
-                            v1079 = arith.constant 4 : u32;
-                            v221 = arith.mod v210, v1079 : u32;
-                            hir.assertz v221 #[code = 250];
-                            v222 = hir.int_to_ptr v210 : ptr<byte, i32>;
-                            hir.store v222, v207;
-                            v613 = arith.constant 4 : i32;
-                            v224 = arith.add v961, v613 : i32 #[overflow = wrapping];
-                            scf.yield v224;
+                            v228 = hir.load_local  : i32 #[local = lv16];
+                            v229 = hir.load_local  : i32 #[local = lv14];
+                            v230 = arith.add v228, v229 : i32 #[overflow = wrapping];
+                            v231 = hir.bitcast v230 : u32;
+                            v778 = arith.constant 4 : u32;
+                            v233 = arith.mod v231, v778 : u32;
+                            hir.assertz v233 #[code = 250];
+                            v234 = hir.int_to_ptr v231 : ptr<byte, i32>;
+                            v235 = hir.load v234 : i32;
+                            v237 = hir.load_local  : i32 #[local = lv15];
+                            v238 = hir.load_local  : i32 #[local = lv14];
+                            v239 = arith.add v237, v238 : i32 #[overflow = wrapping];
+                            v240 = hir.bitcast v239 : u32;
+                            v777 = arith.constant 4 : u32;
+                            v242 = arith.mod v240, v777 : u32;
+                            hir.assertz v242 #[code = 250];
+                            v243 = hir.int_to_ptr v240 : ptr<byte, i32>;
+                            v244 = hir.load v243 : i32;
+                            v245 = hir.bitcast v230 : u32;
+                            v776 = arith.constant 4 : u32;
+                            v247 = arith.mod v245, v776 : u32;
+                            hir.assertz v247 #[code = 250];
+                            v248 = hir.int_to_ptr v245 : ptr<byte, i32>;
+                            hir.store v248, v244;
+                            v251 = hir.bitcast v239 : u32;
+                            v775 = arith.constant 4 : u32;
+                            v253 = arith.mod v251, v775 : u32;
+                            hir.assertz v253 #[code = 250];
+                            v254 = hir.int_to_ptr v251 : ptr<byte, i32>;
+                            hir.store v254, v235;
+                            v255 = hir.load_local  : i32 #[local = lv14];
+                            v679 = arith.constant 4 : i32;
+                            v257 = arith.add v255, v679 : i32 #[overflow = wrapping];
+                            hir.store_local v257 #[local = lv14];
+                            scf.yield ;
                         };
-                        v1069 = ub.poison felt : felt;
-                        v937 = cf.select v200, v1069, v971 : felt;
-                        v1070 = ub.poison felt : felt;
-                        v936 = cf.select v200, v1070, v970 : felt;
-                        v1071 = ub.poison felt : felt;
-                        v935 = cf.select v200, v1071, v969 : felt;
-                        v1072 = ub.poison felt : felt;
-                        v934 = cf.select v200, v1072, v968 : felt;
-                        hir.store_local v934 #[local = lv4];
-                        v1073 = ub.poison felt : felt;
-                        v933 = cf.select v200, v1073, v967 : felt;
-                        hir.store_local v933 #[local = lv5];
-                        v1074 = ub.poison felt : felt;
-                        v932 = cf.select v200, v1074, v966 : felt;
-                        hir.store_local v932 #[local = lv6];
-                        v1075 = ub.poison i32 : i32;
-                        v931 = cf.select v200, v1075, v965 : i32;
-                        hir.store_local v931 #[local = lv7];
-                        v1076 = ub.poison i32 : i32;
-                        v930 = cf.select v200, v1076, v964 : i32;
-                        hir.store_local v930 #[local = lv8];
-                        v1077 = ub.poison i32 : i32;
-                        v929 = cf.select v200, v1077, v963 : i32;
-                        hir.store_local v929 #[local = lv9];
-                        v1078 = ub.poison i32 : i32;
-                        v928 = cf.select v200, v1078, v962 : i32;
-                        hir.store_local v928 #[local = lv10];
-                        v677 = arith.constant 1 : u32;
-                        hir.store_local v935 #[local = lv11];
-                        v664 = arith.constant 0 : u32;
-                        v939 = cf.select v200, v664, v677 : u32;
-                        v901 = arith.trunc v939 : i1;
-                        v1131 = hir.load_local  : i32 #[local = lv10];
-                        v1132 = hir.load_local  : i32 #[local = lv9];
-                        v1133 = hir.load_local  : i32 #[local = lv8];
-                        v1134 = hir.load_local  : i32 #[local = lv7];
-                        v1135 = hir.load_local  : felt #[local = lv6];
-                        v1136 = hir.load_local  : felt #[local = lv5];
-                        v1137 = hir.load_local  : felt #[local = lv4];
-                        v1138 = hir.load_local  : felt #[local = lv11];
-                        scf.condition v901, v927, v1131, v1132, v1133, v1134, v1135, v1136, v1137, v1138, v936, v937, v962, v963, v964, v965, v966, v967, v968, v969, v970, v971;
+                        v738 = arith.constant 1 : u32;
+                        v735 = arith.constant 0 : u32;
+                        v748 = cf.select v227, v735, v738 : u32;
+                        v742 = arith.trunc v748 : i1;
+                        scf.condition v742;
                     } do {
-                    ^block78(v972: i32, v973: i32, v974: i32, v975: i32, v976: i32, v977: felt, v978: felt, v979: felt, v980: felt, v981: felt, v982: felt, v983: i32, v984: i32, v985: i32, v986: i32, v987: felt, v988: felt, v989: felt, v990: felt, v991: felt, v992: felt):
-                        scf.yield v972, v973, v974, v975, v976, v977, v978, v979, v980, v981, v982;
+                    ^block74:
+                        scf.yield ;
                     };
-                    hir.store_local v956 #[local = lv16];
-                    hir.store_local v957 #[local = lv15];
-                    hir.store_local v958 #[local = lv14];
-                    hir.store_local v959 #[local = lv13];
-                    hir.store_local v960 #[local = lv12];
-                    v584 = arith.constant -16 : i32;
-                    v228 = arith.add v952, v584 : i32 #[overflow = wrapping];
-                    v1068 = arith.constant 16 : i32;
-                    v230 = arith.add v951, v1068 : i32 #[overflow = wrapping];
-                    v583 = arith.constant 1 : i32;
-                    v233 = arith.add v953, v583 : i32 #[overflow = wrapping];
-                    v1139 = hir.load_local  : felt #[local = lv16];
-                    v1140 = hir.load_local  : felt #[local = lv15];
-                    v1141 = hir.load_local  : felt #[local = lv14];
-                    v1142 = hir.load_local  : felt #[local = lv13];
-                    v1143 = hir.load_local  : felt #[local = lv12];
-                    scf.yield v233, v230, v228, v954, v955, v1139, v1140, v1141, v1142, v1143;
+                    v258 = hir.load_local  : i32 #[local = lv15];
+                    v650 = arith.constant -16 : i32;
+                    v260 = arith.add v258, v650 : i32 #[overflow = wrapping];
+                    hir.store_local v260 #[local = lv15];
+                    v261 = hir.load_local  : i32 #[local = lv16];
+                    v774 = arith.constant 16 : i32;
+                    v263 = arith.add v261, v774 : i32 #[overflow = wrapping];
+                    hir.store_local v263 #[local = lv16];
+                    v264 = hir.load_local  : i32 #[local = lv11];
+                    v649 = arith.constant 1 : i32;
+                    v266 = arith.add v264, v649 : i32 #[overflow = wrapping];
+                    hir.store_local v266 #[local = lv11];
+                    scf.yield ;
                 };
-                hir.store_local v1029 #[local = lv1];
-                v1066 = arith.constant 1 : u32;
-                hir.store_local v1028 #[local = lv0];
-                v1067 = arith.constant 0 : u32;
-                v1004 = cf.select v192, v1067, v1066 : u32;
-                v772 = arith.trunc v1004 : i1;
-                v1144 = hir.load_local  : felt #[local = lv0];
-                v1145 = hir.load_local  : felt #[local = lv1];
-                v1146 = hir.load_local  : felt #[local = lv2];
-                v1147 = hir.load_local  : felt #[local = lv3];
-                scf.condition v772, v993, v994, v995, v996, v997, v998, v999, v1000, v1001, v1002, v1025, v1026, v1027, v1144, v1145, v1146, v1147;
+                v772 = arith.constant 1 : u32;
+                v773 = arith.constant 0 : u32;
+                v750 = cf.select v219, v773, v772 : u32;
+                v739 = arith.trunc v750 : i1;
+                scf.condition v739;
             } do {
-            ^block80(v1032: i32, v1033: i32, v1034: i32, v1035: i32, v1036: felt, v1037: felt, v1038: felt, v1039: felt, v1040: felt, v1041: felt, v1042: i32, v1043: felt, v1044: felt, v1045: felt, v1046: felt, v1047: felt, v1048: felt):
-                scf.yield v1032, v1033, v1034, v1035, v1036, v1037, v1038, v1039, v1040, v1041;
+            ^block69:
+                scf.yield ;
             };
-            hir.store_local v1021 #[local = lv17];
-            v238 = hir.bitcast v1015 : u32;
-            v1065 = arith.constant 108 : u32;
-            v240 = arith.add v238, v1065 : u32 #[overflow = checked];
-            v1064 = arith.constant 4 : u32;
-            v242 = arith.mod v240, v1064 : u32;
-            hir.assertz v242 #[code = 250];
-            v243 = hir.int_to_ptr v240 : ptr<byte, felt>;
-            hir.store v243, v1016;
-            v1063 = arith.constant 104 : u32;
-            v248 = arith.add v238, v1063 : u32 #[overflow = checked];
-            v1062 = arith.constant 4 : u32;
-            v250 = arith.mod v248, v1062 : u32;
-            hir.assertz v250 #[code = 250];
-            v251 = hir.int_to_ptr v248 : ptr<byte, felt>;
-            hir.store v251, v1017;
-            v1061 = arith.constant 100 : u32;
-            v256 = arith.add v238, v1061 : u32 #[overflow = checked];
-            v1060 = arith.constant 4 : u32;
-            v258 = arith.mod v256, v1060 : u32;
-            hir.assertz v258 #[code = 250];
-            v259 = hir.int_to_ptr v256 : ptr<byte, felt>;
-            hir.store v259, v1018;
-            v1059 = arith.constant 96 : u32;
-            v264 = arith.add v238, v1059 : u32 #[overflow = checked];
-            v1058 = arith.constant 4 : u32;
-            v266 = arith.mod v264, v1058 : u32;
-            hir.assertz v266 #[code = 250];
-            v267 = hir.int_to_ptr v264 : ptr<byte, felt>;
-            hir.store v267, v1019;
-            v1057 = arith.constant 96 : i32;
-            v269 = arith.add v1015, v1057 : i32 #[overflow = wrapping];
-            v1055 = arith.constant 4 : i32;
-            v1056 = arith.constant 32 : i32;
-            v271 = arith.add v1015, v1056 : i32 #[overflow = wrapping];
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_stdlib_sys::intrinsics::advice::adv_insert(v269, v271, v1055)
-            v1148 = hir.load_local  : felt #[local = lv17];
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::active_account::get_item(v1020, v1148, v269)
-            v1054 = arith.constant 4 : u32;
-            v283 = arith.mod v264, v1054 : u32;
-            hir.assertz v283 #[code = 250];
-            v284 = hir.int_to_ptr v264 : ptr<byte, felt>;
-            v285 = hir.load v284 : felt;
-            v1053 = arith.constant 4 : u32;
-            v290 = arith.mod v256, v1053 : u32;
-            hir.assertz v290 #[code = 250];
-            v291 = hir.int_to_ptr v256 : ptr<byte, felt>;
-            v292 = hir.load v291 : felt;
-            v1052 = arith.constant 4 : u32;
-            v297 = arith.mod v248, v1052 : u32;
+            v267 = hir.load_local  : i32 #[local = lv4];
+            v268 = hir.load_local  : felt #[local = lv13];
+            v771 = arith.constant 108 : u32;
+            v269 = hir.bitcast v267 : u32;
+            v271 = arith.add v269, v771 : u32 #[overflow = checked];
+            v770 = arith.constant 4 : u32;
+            v273 = arith.mod v271, v770 : u32;
+            hir.assertz v273 #[code = 250];
+            v274 = hir.int_to_ptr v271 : ptr<byte, felt>;
+            hir.store v274, v268;
+            v275 = hir.load_local  : i32 #[local = lv4];
+            v276 = hir.load_local  : felt #[local = lv12];
+            v769 = arith.constant 104 : u32;
+            v277 = hir.bitcast v275 : u32;
+            v279 = arith.add v277, v769 : u32 #[overflow = checked];
+            v768 = arith.constant 4 : u32;
+            v281 = arith.mod v279, v768 : u32;
+            hir.assertz v281 #[code = 250];
+            v282 = hir.int_to_ptr v279 : ptr<byte, felt>;
+            hir.store v282, v276;
+            v283 = hir.load_local  : i32 #[local = lv4];
+            v284 = hir.load_local  : felt #[local = lv8];
+            v767 = arith.constant 100 : u32;
+            v285 = hir.bitcast v283 : u32;
+            v287 = arith.add v285, v767 : u32 #[overflow = checked];
+            v766 = arith.constant 4 : u32;
+            v289 = arith.mod v287, v766 : u32;
+            hir.assertz v289 #[code = 250];
+            v290 = hir.int_to_ptr v287 : ptr<byte, felt>;
+            hir.store v290, v284;
+            v291 = hir.load_local  : i32 #[local = lv4];
+            v292 = hir.load_local  : felt #[local = lv7];
+            v765 = arith.constant 96 : u32;
+            v293 = hir.bitcast v291 : u32;
+            v295 = arith.add v293, v765 : u32 #[overflow = checked];
+            v764 = arith.constant 4 : u32;
+            v297 = arith.mod v295, v764 : u32;
             hir.assertz v297 #[code = 250];
-            v298 = hir.int_to_ptr v248 : ptr<byte, felt>;
-            v299 = hir.load v298 : felt;
-            v1051 = arith.constant 108 : u32;
-            v302 = arith.add v238, v1051 : u32 #[overflow = checked];
-            v1050 = arith.constant 4 : u32;
-            v304 = arith.mod v302, v1050 : u32;
-            hir.assertz v304 #[code = 250];
-            v305 = hir.int_to_ptr v302 : ptr<byte, felt>;
-            v306 = hir.load v305 : felt;
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/intrinsics::advice::emit_falcon_sig_to_stack(v1016, v1017, v1018, v1019, v285, v292, v299, v306)
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::core::crypto::dsa::rpo_falcon512::verify(v285, v292, v299, v306, v1016, v1017, v1018, v1019)
-            v1049 = arith.constant 112 : i32;
-            v308 = arith.add v1015, v1049 : i32 #[overflow = wrapping];
-            v309 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
-            v310 = hir.bitcast v309 : ptr<byte, i32>;
-            hir.store v310, v308;
+            v298 = hir.int_to_ptr v295 : ptr<byte, felt>;
+            hir.store v298, v292;
+            v299 = hir.load_local  : i32 #[local = lv4];
+            v761 = arith.constant 4 : i32;
+            v762 = arith.constant 32 : i32;
+            v304 = arith.add v299, v762 : i32 #[overflow = wrapping];
+            v763 = arith.constant 96 : i32;
+            v301 = arith.add v299, v763 : i32 #[overflow = wrapping];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden_stdlib_sys::intrinsics::advice::adv_insert(v301, v304, v761)
+            v306 = hir.load_local  : felt #[local = lv6];
+            v307 = hir.load_local  : felt #[local = lv5];
+            v308 = hir.load_local  : i32 #[local = lv4];
+            v760 = arith.constant 96 : i32;
+            v310 = arith.add v308, v760 : i32 #[overflow = wrapping];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::active_account::get_item(v306, v307, v310)
+            v311 = hir.load_local  : felt #[local = lv13];
+            v312 = hir.load_local  : felt #[local = lv12];
+            v313 = hir.load_local  : felt #[local = lv8];
+            v314 = hir.load_local  : felt #[local = lv7];
+            v315 = hir.load_local  : i32 #[local = lv4];
+            v759 = arith.constant 96 : u32;
+            v316 = hir.bitcast v315 : u32;
+            v318 = arith.add v316, v759 : u32 #[overflow = checked];
+            v758 = arith.constant 4 : u32;
+            v320 = arith.mod v318, v758 : u32;
+            hir.assertz v320 #[code = 250];
+            v321 = hir.int_to_ptr v318 : ptr<byte, felt>;
+            v322 = hir.load v321 : felt;
+            hir.store_local v322 #[local = lv5];
+            v323 = hir.load_local  : i32 #[local = lv4];
+            v757 = arith.constant 100 : u32;
+            v324 = hir.bitcast v323 : u32;
+            v326 = arith.add v324, v757 : u32 #[overflow = checked];
+            v756 = arith.constant 4 : u32;
+            v328 = arith.mod v326, v756 : u32;
+            hir.assertz v328 #[code = 250];
+            v329 = hir.int_to_ptr v326 : ptr<byte, felt>;
+            v330 = hir.load v329 : felt;
+            hir.store_local v330 #[local = lv6];
+            v331 = hir.load_local  : i32 #[local = lv4];
+            v755 = arith.constant 104 : u32;
+            v332 = hir.bitcast v331 : u32;
+            v334 = arith.add v332, v755 : u32 #[overflow = checked];
+            v754 = arith.constant 4 : u32;
+            v336 = arith.mod v334, v754 : u32;
+            hir.assertz v336 #[code = 250];
+            v337 = hir.int_to_ptr v334 : ptr<byte, felt>;
+            v338 = hir.load v337 : felt;
+            hir.store_local v338 #[local = lv20];
+            v339 = hir.load_local  : i32 #[local = lv4];
+            v753 = arith.constant 108 : u32;
+            v340 = hir.bitcast v339 : u32;
+            v342 = arith.add v340, v753 : u32 #[overflow = checked];
+            v752 = arith.constant 4 : u32;
+            v344 = arith.mod v342, v752 : u32;
+            hir.assertz v344 #[code = 250];
+            v345 = hir.int_to_ptr v342 : ptr<byte, felt>;
+            v346 = hir.load v345 : felt;
+            hir.store_local v346 #[local = lv21];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/intrinsics::advice::emit_falcon_sig_to_stack(v311, v312, v313, v314, v322, v330, v338, v346)
+            v347 = hir.load_local  : felt #[local = lv5];
+            v348 = hir.load_local  : felt #[local = lv6];
+            v349 = hir.load_local  : felt #[local = lv20];
+            v350 = hir.load_local  : felt #[local = lv21];
+            v351 = hir.load_local  : felt #[local = lv13];
+            v352 = hir.load_local  : felt #[local = lv12];
+            v353 = hir.load_local  : felt #[local = lv8];
+            v354 = hir.load_local  : felt #[local = lv7];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::core::crypto::dsa::rpo_falcon512::verify(v347, v348, v349, v350, v351, v352, v353, v354)
+            v355 = hir.load_local  : i32 #[local = lv4];
+            v751 = arith.constant 112 : i32;
+            v357 = arith.add v355, v751 : i32 #[overflow = wrapping];
+            v358 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
+            v359 = hir.bitcast v358 : ptr<byte, i32>;
+            hir.store v359, v357;
             builtin.ret ;
         };
 
         private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block19:
-            v312 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/GOT.data.internal.__memory_base : ptr<byte, u8>
-            v313 = hir.bitcast v312 : ptr<byte, i32>;
-            v314 = hir.load v313 : i32;
-            v1152 = arith.constant 1048584 : i32;
-            v316 = arith.add v314, v1152 : i32 #[overflow = wrapping];
-            v317 = hir.bitcast v316 : u32;
-            v318 = hir.int_to_ptr v317 : ptr<byte, u8>;
-            v319 = hir.load v318 : u8;
-            v1153 = arith.constant 0 : i32;
-            v320 = arith.zext v319 : u32;
-            v321 = hir.bitcast v320 : i32;
-            v323 = arith.neq v321, v1153 : i1;
-            scf.if v323{
+            v360 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v361 = hir.bitcast v360 : ptr<byte, i32>;
+            v362 = hir.load v361 : i32;
+            v813 = arith.constant 1048584 : i32;
+            v364 = arith.add v362, v813 : i32 #[overflow = wrapping];
+            v365 = hir.bitcast v364 : u32;
+            v366 = hir.int_to_ptr v365 : ptr<byte, u8>;
+            v367 = hir.load v366 : u8;
+            v812 = arith.constant 0 : i32;
+            v368 = arith.zext v367 : u32;
+            v369 = hir.bitcast v368 : i32;
+            v371 = arith.neq v369, v812 : i1;
+            scf.if v371{
             ^block21:
                 scf.yield ;
             } else {
             ^block22:
-                v324 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/GOT.data.internal.__memory_base : ptr<byte, u8>
-                v325 = hir.bitcast v324 : ptr<byte, i32>;
-                v326 = hir.load v325 : i32;
+                v372 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v373 = hir.bitcast v372 : ptr<byte, i32>;
+                v374 = hir.load v373 : i32;
+                hir.store_local v374 #[local = lv0];
                 hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__wasm_call_ctors()
-                v1151 = arith.constant 1 : u8;
-                v1156 = arith.constant 1048584 : i32;
-                v328 = arith.add v326, v1156 : i32 #[overflow = wrapping];
-                v332 = hir.bitcast v328 : u32;
-                v333 = hir.int_to_ptr v332 : ptr<byte, u8>;
-                hir.store v333, v1151;
+                v375 = hir.load_local  : i32 #[local = lv0];
+                v811 = arith.constant 1 : u8;
+                v816 = arith.constant 1048584 : i32;
+                v377 = arith.add v375, v816 : i32 #[overflow = wrapping];
+                v381 = hir.bitcast v377 : u32;
+                v382 = hir.int_to_ptr v381 : ptr<byte, u8>;
+                hir.store v382, v811;
                 scf.yield ;
             };
             builtin.ret ;
@@ -443,279 +515,309 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
 
         private builtin.function @miden_base_sys::bindings::tx::get_block_number() -> felt {
         ^block23:
-            v335 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::tx::get_block_number() : felt
-            builtin.ret v335;
+            v384 = hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::tx::get_block_number() : felt
+            builtin.ret v384;
         };
 
-        private builtin.function @miden_base_sys::bindings::tx::get_input_notes_commitment(v336: i32) {
-        ^block25(v336: i32):
-            v338 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
-            v339 = hir.bitcast v338 : ptr<byte, i32>;
-            v340 = hir.load v339 : i32;
-            v1164 = arith.constant 16 : i32;
-            v342 = arith.sub v340, v1164 : i32 #[overflow = wrapping];
-            v343 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
-            v344 = hir.bitcast v343 : ptr<byte, i32>;
-            hir.store v344, v342;
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::tx::get_input_notes_commitment(v342)
-            v345 = hir.bitcast v342 : u32;
-            v1163 = arith.constant 8 : u32;
-            v347 = arith.mod v345, v1163 : u32;
-            hir.assertz v347 #[code = 250];
-            v348 = hir.int_to_ptr v345 : ptr<byte, i64>;
-            v349 = hir.load v348 : i64;
-            v1160, v1161 = arith.split v349 : felt, felt;
-            v353 = hir.bitcast v336 : u32;
-            v1176 = arith.constant 8 : u32;
-            v355 = arith.add v353, v1176 : u32 #[overflow = checked];
-            v1175 = arith.constant 8 : u32;
-            v357 = arith.mod v355, v1175 : u32;
-            hir.assertz v357 #[code = 250];
-            v1162 = arith.join v1161, v1160 : i64;
-            v358 = hir.int_to_ptr v355 : ptr<byte, i64>;
-            hir.store v358, v1162;
-            v1174 = arith.constant 8 : u32;
-            v361 = arith.add v345, v1174 : u32 #[overflow = checked];
-            v1173 = arith.constant 8 : u32;
-            v363 = arith.mod v361, v1173 : u32;
-            hir.assertz v363 #[code = 250];
-            v364 = hir.int_to_ptr v361 : ptr<byte, i64>;
-            v365 = hir.load v364 : i64;
-            v1157, v1158 = arith.split v365 : felt, felt;
-            v1172 = arith.constant 8 : u32;
-            v371 = arith.mod v353, v1172 : u32;
-            hir.assertz v371 #[code = 250];
-            v1159 = arith.join v1158, v1157 : i64;
-            v372 = hir.int_to_ptr v353 : ptr<byte, i64>;
-            hir.store v372, v1159;
-            v1171 = arith.constant 16 : i32;
-            v374 = arith.add v342, v1171 : i32 #[overflow = wrapping];
-            v375 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
-            v376 = hir.bitcast v375 : ptr<byte, i32>;
-            hir.store v376, v374;
-            builtin.ret ;
-        };
-
-        private builtin.function @miden_base_sys::bindings::tx::get_output_notes_commitment(v377: i32) {
-        ^block27(v377: i32):
-            v379 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
-            v380 = hir.bitcast v379 : ptr<byte, i32>;
-            v381 = hir.load v380 : i32;
-            v1184 = arith.constant 16 : i32;
-            v383 = arith.sub v381, v1184 : i32 #[overflow = wrapping];
-            v384 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
-            v385 = hir.bitcast v384 : ptr<byte, i32>;
-            hir.store v385, v383;
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::tx::get_output_notes_commitment(v383)
-            v386 = hir.bitcast v383 : u32;
-            v1183 = arith.constant 8 : u32;
-            v388 = arith.mod v386, v1183 : u32;
-            hir.assertz v388 #[code = 250];
-            v389 = hir.int_to_ptr v386 : ptr<byte, i64>;
-            v390 = hir.load v389 : i64;
-            v1180, v1181 = arith.split v390 : felt, felt;
-            v394 = hir.bitcast v377 : u32;
-            v1196 = arith.constant 8 : u32;
-            v396 = arith.add v394, v1196 : u32 #[overflow = checked];
-            v1195 = arith.constant 8 : u32;
-            v398 = arith.mod v396, v1195 : u32;
+        private builtin.function @miden_base_sys::bindings::tx::get_input_notes_commitment(v385: i32) {
+        ^block25(v385: i32):
+            hir.store_local v385 #[local = lv0];
+            v386 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
+            v387 = hir.bitcast v386 : ptr<byte, i32>;
+            v388 = hir.load v387 : i32;
+            v824 = arith.constant 16 : i32;
+            v390 = arith.sub v388, v824 : i32 #[overflow = wrapping];
+            hir.store_local v390 #[local = lv1];
+            v391 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
+            v392 = hir.bitcast v391 : ptr<byte, i32>;
+            hir.store v392, v390;
+            v393 = hir.load_local  : i32 #[local = lv1];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::tx::get_input_notes_commitment(v393)
+            v394 = hir.load_local  : i32 #[local = lv0];
+            v395 = hir.load_local  : i32 #[local = lv1];
+            v396 = hir.bitcast v395 : u32;
+            v823 = arith.constant 8 : u32;
+            v398 = arith.mod v396, v823 : u32;
             hir.assertz v398 #[code = 250];
-            v1182 = arith.join v1181, v1180 : i64;
             v399 = hir.int_to_ptr v396 : ptr<byte, i64>;
-            hir.store v399, v1182;
-            v1194 = arith.constant 8 : u32;
-            v402 = arith.add v386, v1194 : u32 #[overflow = checked];
-            v1193 = arith.constant 8 : u32;
-            v404 = arith.mod v402, v1193 : u32;
-            hir.assertz v404 #[code = 250];
-            v405 = hir.int_to_ptr v402 : ptr<byte, i64>;
-            v406 = hir.load v405 : i64;
-            v1177, v1178 = arith.split v406 : felt, felt;
-            v1192 = arith.constant 8 : u32;
-            v412 = arith.mod v394, v1192 : u32;
-            hir.assertz v412 #[code = 250];
-            v1179 = arith.join v1178, v1177 : i64;
-            v413 = hir.int_to_ptr v394 : ptr<byte, i64>;
-            hir.store v413, v1179;
-            v1191 = arith.constant 16 : i32;
-            v415 = arith.add v383, v1191 : i32 #[overflow = wrapping];
-            v416 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
-            v417 = hir.bitcast v416 : ptr<byte, i32>;
-            hir.store v417, v415;
+            v400 = hir.load v399 : i64;
+            v820, v821 = arith.split v400 : felt, felt;
+            v836 = arith.constant 8 : u32;
+            v404 = hir.bitcast v394 : u32;
+            v406 = arith.add v404, v836 : u32 #[overflow = checked];
+            v835 = arith.constant 8 : u32;
+            v408 = arith.mod v406, v835 : u32;
+            hir.assertz v408 #[code = 250];
+            v822 = arith.join v821, v820 : i64;
+            v409 = hir.int_to_ptr v406 : ptr<byte, i64>;
+            hir.store v409, v822;
+            v410 = hir.load_local  : i32 #[local = lv0];
+            v411 = hir.load_local  : i32 #[local = lv1];
+            v834 = arith.constant 8 : u32;
+            v412 = hir.bitcast v411 : u32;
+            v414 = arith.add v412, v834 : u32 #[overflow = checked];
+            v833 = arith.constant 8 : u32;
+            v416 = arith.mod v414, v833 : u32;
+            hir.assertz v416 #[code = 250];
+            v417 = hir.int_to_ptr v414 : ptr<byte, i64>;
+            v418 = hir.load v417 : i64;
+            v817, v818 = arith.split v418 : felt, felt;
+            v422 = hir.bitcast v410 : u32;
+            v832 = arith.constant 8 : u32;
+            v424 = arith.mod v422, v832 : u32;
+            hir.assertz v424 #[code = 250];
+            v819 = arith.join v818, v817 : i64;
+            v425 = hir.int_to_ptr v422 : ptr<byte, i64>;
+            hir.store v425, v819;
+            v426 = hir.load_local  : i32 #[local = lv1];
+            v831 = arith.constant 16 : i32;
+            v428 = arith.add v426, v831 : i32 #[overflow = wrapping];
+            v429 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
+            v430 = hir.bitcast v429 : ptr<byte, i32>;
+            hir.store v430, v428;
             builtin.ret ;
         };
 
-        private builtin.function @miden_stdlib_sys::intrinsics::advice::adv_insert(v418: i32, v419: i32, v420: i32) {
-        ^block29(v418: i32, v419: i32, v420: i32):
-            v421 = hir.bitcast v418 : u32;
-            v1202 = arith.constant 12 : u32;
-            v423 = arith.add v421, v1202 : u32 #[overflow = checked];
-            v1201 = arith.constant 4 : u32;
-            v425 = arith.mod v423, v1201 : u32;
-            hir.assertz v425 #[code = 250];
-            v426 = hir.int_to_ptr v423 : ptr<byte, felt>;
-            v427 = hir.load v426 : felt;
-            v1200 = arith.constant 8 : u32;
-            v430 = arith.add v421, v1200 : u32 #[overflow = checked];
-            v1212 = arith.constant 4 : u32;
-            v432 = arith.mod v430, v1212 : u32;
-            hir.assertz v432 #[code = 250];
-            v433 = hir.int_to_ptr v430 : ptr<byte, felt>;
-            v434 = hir.load v433 : felt;
-            v1211 = arith.constant 4 : u32;
-            v437 = arith.add v421, v1211 : u32 #[overflow = checked];
-            v1210 = arith.constant 4 : u32;
-            v439 = arith.mod v437, v1210 : u32;
-            hir.assertz v439 #[code = 250];
-            v440 = hir.int_to_ptr v437 : ptr<byte, felt>;
-            v441 = hir.load v440 : felt;
-            v1209 = arith.constant 4 : u32;
-            v444 = arith.mod v421, v1209 : u32;
+        private builtin.function @miden_base_sys::bindings::tx::get_output_notes_commitment(v431: i32) {
+        ^block27(v431: i32):
+            hir.store_local v431 #[local = lv0];
+            v432 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
+            v433 = hir.bitcast v432 : ptr<byte, i32>;
+            v434 = hir.load v433 : i32;
+            v844 = arith.constant 16 : i32;
+            v436 = arith.sub v434, v844 : i32 #[overflow = wrapping];
+            hir.store_local v436 #[local = lv1];
+            v437 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
+            v438 = hir.bitcast v437 : ptr<byte, i32>;
+            hir.store v438, v436;
+            v439 = hir.load_local  : i32 #[local = lv1];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden::protocol::tx::get_output_notes_commitment(v439)
+            v440 = hir.load_local  : i32 #[local = lv0];
+            v441 = hir.load_local  : i32 #[local = lv1];
+            v442 = hir.bitcast v441 : u32;
+            v843 = arith.constant 8 : u32;
+            v444 = arith.mod v442, v843 : u32;
             hir.assertz v444 #[code = 250];
-            v445 = hir.int_to_ptr v421 : ptr<byte, felt>;
-            v446 = hir.load v445 : felt;
-            v1199 = arith.constant 2 : u32;
-            v448 = hir.bitcast v419 : u32;
-            v450 = arith.shr v448, v1199 : u32;
-            v451 = hir.bitcast v450 : i32;
-            v1208 = arith.constant 2 : u32;
-            v454 = arith.shl v420, v1208 : i32;
-            v455 = arith.add v451, v454 : i32 #[overflow = wrapping];
-            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/intrinsics::advice::adv_insert_mem(v427, v434, v441, v446, v451, v455)
+            v445 = hir.int_to_ptr v442 : ptr<byte, i64>;
+            v446 = hir.load v445 : i64;
+            v840, v841 = arith.split v446 : felt, felt;
+            v856 = arith.constant 8 : u32;
+            v450 = hir.bitcast v440 : u32;
+            v452 = arith.add v450, v856 : u32 #[overflow = checked];
+            v855 = arith.constant 8 : u32;
+            v454 = arith.mod v452, v855 : u32;
+            hir.assertz v454 #[code = 250];
+            v842 = arith.join v841, v840 : i64;
+            v455 = hir.int_to_ptr v452 : ptr<byte, i64>;
+            hir.store v455, v842;
+            v456 = hir.load_local  : i32 #[local = lv0];
+            v457 = hir.load_local  : i32 #[local = lv1];
+            v854 = arith.constant 8 : u32;
+            v458 = hir.bitcast v457 : u32;
+            v460 = arith.add v458, v854 : u32 #[overflow = checked];
+            v853 = arith.constant 8 : u32;
+            v462 = arith.mod v460, v853 : u32;
+            hir.assertz v462 #[code = 250];
+            v463 = hir.int_to_ptr v460 : ptr<byte, i64>;
+            v464 = hir.load v463 : i64;
+            v837, v838 = arith.split v464 : felt, felt;
+            v468 = hir.bitcast v456 : u32;
+            v852 = arith.constant 8 : u32;
+            v470 = arith.mod v468, v852 : u32;
+            hir.assertz v470 #[code = 250];
+            v839 = arith.join v838, v837 : i64;
+            v471 = hir.int_to_ptr v468 : ptr<byte, i64>;
+            hir.store v471, v839;
+            v472 = hir.load_local  : i32 #[local = lv1];
+            v851 = arith.constant 16 : i32;
+            v474 = arith.add v472, v851 : i32 #[overflow = wrapping];
+            v475 = builtin.global_symbol @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/__stack_pointer : ptr<byte, u8>
+            v476 = hir.bitcast v475 : ptr<byte, i32>;
+            hir.store v476, v474;
             builtin.ret ;
         };
 
-        private builtin.function @intrinsics::advice::adv_insert_mem(v456: felt, v457: felt, v458: felt, v459: felt, v460: i32, v461: i32) {
-        ^block31(v456: felt, v457: felt, v458: felt, v459: felt, v460: i32, v461: i32):
-            hir.exec @intrinsics/advice/adv_insert_mem(v456, v457, v458, v459, v460, v461)
+        private builtin.function @miden_stdlib_sys::intrinsics::advice::adv_insert(v477: i32, v478: i32, v479: i32) {
+        ^block29(v477: i32, v478: i32, v479: i32):
+            hir.store_local v477 #[local = lv0];
+            v480 = hir.load_local  : i32 #[local = lv0];
+            v862 = arith.constant 12 : u32;
+            v481 = hir.bitcast v480 : u32;
+            v483 = arith.add v481, v862 : u32 #[overflow = checked];
+            v861 = arith.constant 4 : u32;
+            v485 = arith.mod v483, v861 : u32;
+            hir.assertz v485 #[code = 250];
+            v486 = hir.int_to_ptr v483 : ptr<byte, felt>;
+            v487 = hir.load v486 : felt;
+            v488 = hir.load_local  : i32 #[local = lv0];
+            v860 = arith.constant 8 : u32;
+            v489 = hir.bitcast v488 : u32;
+            v491 = arith.add v489, v860 : u32 #[overflow = checked];
+            v872 = arith.constant 4 : u32;
+            v493 = arith.mod v491, v872 : u32;
+            hir.assertz v493 #[code = 250];
+            v494 = hir.int_to_ptr v491 : ptr<byte, felt>;
+            v495 = hir.load v494 : felt;
+            v496 = hir.load_local  : i32 #[local = lv0];
+            v871 = arith.constant 4 : u32;
+            v497 = hir.bitcast v496 : u32;
+            v499 = arith.add v497, v871 : u32 #[overflow = checked];
+            v870 = arith.constant 4 : u32;
+            v501 = arith.mod v499, v870 : u32;
+            hir.assertz v501 #[code = 250];
+            v502 = hir.int_to_ptr v499 : ptr<byte, felt>;
+            v503 = hir.load v502 : felt;
+            v504 = hir.load_local  : i32 #[local = lv0];
+            v505 = hir.bitcast v504 : u32;
+            v869 = arith.constant 4 : u32;
+            v507 = arith.mod v505, v869 : u32;
+            hir.assertz v507 #[code = 250];
+            v508 = hir.int_to_ptr v505 : ptr<byte, felt>;
+            v509 = hir.load v508 : felt;
+            v859 = arith.constant 2 : u32;
+            v512 = hir.bitcast v478 : u32;
+            v514 = arith.shr v512, v859 : u32;
+            v515 = hir.bitcast v514 : i32;
+            hir.store_local v515 #[local = lv0];
+            v516 = hir.load_local  : i32 #[local = lv0];
+            v868 = arith.constant 2 : u32;
+            v520 = arith.shl v479, v868 : i32;
+            v521 = arith.add v516, v520 : i32 #[overflow = wrapping];
+            hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/intrinsics::advice::adv_insert_mem(v487, v495, v503, v509, v515, v521)
             builtin.ret ;
         };
 
-        private builtin.function @intrinsics::advice::emit_falcon_sig_to_stack(v462: felt, v463: felt, v464: felt, v465: felt, v466: felt, v467: felt, v468: felt, v469: felt) {
-        ^block35(v462: felt, v463: felt, v464: felt, v465: felt, v466: felt, v467: felt, v468: felt, v469: felt):
-            hir.exec @intrinsics/advice/emit_falcon_sig_to_stack(v462, v463, v464, v465, v466, v467, v468, v469)
+        private builtin.function @intrinsics::advice::adv_insert_mem(v522: felt, v523: felt, v524: felt, v525: felt, v526: i32, v527: i32) {
+        ^block31(v522: felt, v523: felt, v524: felt, v525: felt, v526: i32, v527: i32):
+            hir.exec @intrinsics/advice/adv_insert_mem(v522, v523, v524, v525, v526, v527)
             builtin.ret ;
         };
 
-        private builtin.function @miden::core::crypto::dsa::rpo_falcon512::verify(v470: felt, v471: felt, v472: felt, v473: felt, v474: felt, v475: felt, v476: felt, v477: felt) {
-        ^block37(v470: felt, v471: felt, v472: felt, v473: felt, v474: felt, v475: felt, v476: felt, v477: felt):
+        private builtin.function @intrinsics::advice::emit_falcon_sig_to_stack(v528: felt, v529: felt, v530: felt, v531: felt, v532: felt, v533: felt, v534: felt, v535: felt) {
+        ^block35(v528: felt, v529: felt, v530: felt, v531: felt, v532: felt, v533: felt, v534: felt, v535: felt):
+            hir.exec @intrinsics/advice/emit_falcon_sig_to_stack(v528, v529, v530, v531, v532, v533, v534, v535)
+            builtin.ret ;
+        };
+
+        private builtin.function @miden::core::crypto::dsa::rpo_falcon512::verify(v536: felt, v537: felt, v538: felt, v539: felt, v540: felt, v541: felt, v542: felt, v543: felt) {
+        ^block37(v536: felt, v537: felt, v538: felt, v539: felt, v540: felt, v541: felt, v542: felt, v543: felt):
             ub.unreachable ;
         };
 
-        private builtin.function @miden::core::crypto::hashes::rpo256::hash_words(v478: i32, v479: i32, v480: i32) {
-        ^block39(v478: i32, v479: i32, v480: i32):
-            v481, v482, v483, v484 = hir.exec @miden/core/crypto/hashes/rpo256/hash_words(v478, v479) : felt, felt, felt, felt
-            v485 = hir.bitcast v480 : u32;
-            v486 = hir.int_to_ptr v485 : ptr<byte, felt>;
-            hir.store v486, v481;
-            v1215 = arith.constant 4 : u32;
-            v488 = arith.add v485, v1215 : u32 #[overflow = checked];
-            v489 = hir.int_to_ptr v488 : ptr<byte, felt>;
-            hir.store v489, v482;
-            v1214 = arith.constant 8 : u32;
-            v491 = arith.add v485, v1214 : u32 #[overflow = checked];
-            v492 = hir.int_to_ptr v491 : ptr<byte, felt>;
-            hir.store v492, v483;
-            v1213 = arith.constant 12 : u32;
-            v494 = arith.add v485, v1213 : u32 #[overflow = checked];
-            v495 = hir.int_to_ptr v494 : ptr<byte, felt>;
-            hir.store v495, v484;
+        private builtin.function @miden::core::crypto::hashes::rpo256::hash_words(v544: i32, v545: i32, v546: i32) {
+        ^block39(v544: i32, v545: i32, v546: i32):
+            v547, v548, v549, v550 = hir.exec @miden/core/crypto/hashes/rpo256/hash_words(v544, v545) : felt, felt, felt, felt
+            v551 = hir.bitcast v546 : u32;
+            v552 = hir.int_to_ptr v551 : ptr<byte, felt>;
+            hir.store v552, v547;
+            v875 = arith.constant 4 : u32;
+            v554 = arith.add v551, v875 : u32 #[overflow = checked];
+            v555 = hir.int_to_ptr v554 : ptr<byte, felt>;
+            hir.store v555, v548;
+            v874 = arith.constant 8 : u32;
+            v557 = arith.add v551, v874 : u32 #[overflow = checked];
+            v558 = hir.int_to_ptr v557 : ptr<byte, felt>;
+            hir.store v558, v549;
+            v873 = arith.constant 12 : u32;
+            v560 = arith.add v551, v873 : u32 #[overflow = checked];
+            v561 = hir.int_to_ptr v560 : ptr<byte, felt>;
+            hir.store v561, v550;
             builtin.ret ;
         };
 
-        private builtin.function @miden::protocol::active_account::get_item(v496: felt, v497: felt, v498: i32) {
-        ^block46(v496: felt, v497: felt, v498: i32):
-            v499, v500, v501, v502 = hir.exec @miden/protocol/active_account/get_item(v496, v497) : felt, felt, felt, felt
-            v503 = hir.bitcast v498 : u32;
-            v504 = hir.int_to_ptr v503 : ptr<byte, felt>;
-            hir.store v504, v499;
-            v1218 = arith.constant 4 : u32;
-            v506 = arith.add v503, v1218 : u32 #[overflow = checked];
-            v507 = hir.int_to_ptr v506 : ptr<byte, felt>;
-            hir.store v507, v500;
-            v1217 = arith.constant 8 : u32;
-            v509 = arith.add v503, v1217 : u32 #[overflow = checked];
-            v510 = hir.int_to_ptr v509 : ptr<byte, felt>;
-            hir.store v510, v501;
-            v1216 = arith.constant 12 : u32;
-            v512 = arith.add v503, v1216 : u32 #[overflow = checked];
-            v513 = hir.int_to_ptr v512 : ptr<byte, felt>;
-            hir.store v513, v502;
+        private builtin.function @miden::protocol::active_account::get_item(v562: felt, v563: felt, v564: i32) {
+        ^block46(v562: felt, v563: felt, v564: i32):
+            v565, v566, v567, v568 = hir.exec @miden/protocol/active_account/get_item(v562, v563) : felt, felt, felt, felt
+            v569 = hir.bitcast v564 : u32;
+            v570 = hir.int_to_ptr v569 : ptr<byte, felt>;
+            hir.store v570, v565;
+            v878 = arith.constant 4 : u32;
+            v572 = arith.add v569, v878 : u32 #[overflow = checked];
+            v573 = hir.int_to_ptr v572 : ptr<byte, felt>;
+            hir.store v573, v566;
+            v877 = arith.constant 8 : u32;
+            v575 = arith.add v569, v877 : u32 #[overflow = checked];
+            v576 = hir.int_to_ptr v575 : ptr<byte, felt>;
+            hir.store v576, v567;
+            v876 = arith.constant 12 : u32;
+            v578 = arith.add v569, v876 : u32 #[overflow = checked];
+            v579 = hir.int_to_ptr v578 : ptr<byte, felt>;
+            hir.store v579, v568;
             builtin.ret ;
         };
 
-        private builtin.function @miden::protocol::native_account::compute_delta_commitment(v514: i32) {
-        ^block50(v514: i32):
-            v515, v516, v517, v518 = hir.exec @miden/protocol/native_account/compute_delta_commitment() : felt, felt, felt, felt
-            v519 = hir.bitcast v514 : u32;
-            v520 = hir.int_to_ptr v519 : ptr<byte, felt>;
-            hir.store v520, v515;
-            v1221 = arith.constant 4 : u32;
-            v522 = arith.add v519, v1221 : u32 #[overflow = checked];
-            v523 = hir.int_to_ptr v522 : ptr<byte, felt>;
-            hir.store v523, v516;
-            v1220 = arith.constant 8 : u32;
-            v525 = arith.add v519, v1220 : u32 #[overflow = checked];
-            v526 = hir.int_to_ptr v525 : ptr<byte, felt>;
-            hir.store v526, v517;
-            v1219 = arith.constant 12 : u32;
-            v528 = arith.add v519, v1219 : u32 #[overflow = checked];
-            v529 = hir.int_to_ptr v528 : ptr<byte, felt>;
-            hir.store v529, v518;
+        private builtin.function @miden::protocol::native_account::compute_delta_commitment(v580: i32) {
+        ^block50(v580: i32):
+            v581, v582, v583, v584 = hir.exec @miden/protocol/native_account/compute_delta_commitment() : felt, felt, felt, felt
+            v585 = hir.bitcast v580 : u32;
+            v586 = hir.int_to_ptr v585 : ptr<byte, felt>;
+            hir.store v586, v581;
+            v881 = arith.constant 4 : u32;
+            v588 = arith.add v585, v881 : u32 #[overflow = checked];
+            v589 = hir.int_to_ptr v588 : ptr<byte, felt>;
+            hir.store v589, v582;
+            v880 = arith.constant 8 : u32;
+            v591 = arith.add v585, v880 : u32 #[overflow = checked];
+            v592 = hir.int_to_ptr v591 : ptr<byte, felt>;
+            hir.store v592, v583;
+            v879 = arith.constant 12 : u32;
+            v594 = arith.add v585, v879 : u32 #[overflow = checked];
+            v595 = hir.int_to_ptr v594 : ptr<byte, felt>;
+            hir.store v595, v584;
             builtin.ret ;
         };
 
         private builtin.function @miden::protocol::native_account::incr_nonce() -> felt {
         ^block53:
-            v530 = hir.exec @miden/protocol/native_account/incr_nonce() : felt
-            builtin.ret v530;
+            v596 = hir.exec @miden/protocol/native_account/incr_nonce() : felt
+            builtin.ret v596;
         };
 
         private builtin.function @miden::protocol::tx::get_block_number() -> felt {
         ^block55:
-            v532 = hir.exec @miden/protocol/tx/get_block_number() : felt
-            builtin.ret v532;
+            v598 = hir.exec @miden/protocol/tx/get_block_number() : felt
+            builtin.ret v598;
         };
 
-        private builtin.function @miden::protocol::tx::get_input_notes_commitment(v534: i32) {
-        ^block58(v534: i32):
-            v535, v536, v537, v538 = hir.exec @miden/protocol/tx/get_input_notes_commitment() : felt, felt, felt, felt
-            v539 = hir.bitcast v534 : u32;
-            v540 = hir.int_to_ptr v539 : ptr<byte, felt>;
-            hir.store v540, v535;
-            v1224 = arith.constant 4 : u32;
-            v542 = arith.add v539, v1224 : u32 #[overflow = checked];
-            v543 = hir.int_to_ptr v542 : ptr<byte, felt>;
-            hir.store v543, v536;
-            v1223 = arith.constant 8 : u32;
-            v545 = arith.add v539, v1223 : u32 #[overflow = checked];
-            v546 = hir.int_to_ptr v545 : ptr<byte, felt>;
-            hir.store v546, v537;
-            v1222 = arith.constant 12 : u32;
-            v548 = arith.add v539, v1222 : u32 #[overflow = checked];
-            v549 = hir.int_to_ptr v548 : ptr<byte, felt>;
-            hir.store v549, v538;
+        private builtin.function @miden::protocol::tx::get_input_notes_commitment(v600: i32) {
+        ^block58(v600: i32):
+            v601, v602, v603, v604 = hir.exec @miden/protocol/tx/get_input_notes_commitment() : felt, felt, felt, felt
+            v605 = hir.bitcast v600 : u32;
+            v606 = hir.int_to_ptr v605 : ptr<byte, felt>;
+            hir.store v606, v601;
+            v884 = arith.constant 4 : u32;
+            v608 = arith.add v605, v884 : u32 #[overflow = checked];
+            v609 = hir.int_to_ptr v608 : ptr<byte, felt>;
+            hir.store v609, v602;
+            v883 = arith.constant 8 : u32;
+            v611 = arith.add v605, v883 : u32 #[overflow = checked];
+            v612 = hir.int_to_ptr v611 : ptr<byte, felt>;
+            hir.store v612, v603;
+            v882 = arith.constant 12 : u32;
+            v614 = arith.add v605, v882 : u32 #[overflow = checked];
+            v615 = hir.int_to_ptr v614 : ptr<byte, felt>;
+            hir.store v615, v604;
             builtin.ret ;
         };
 
-        private builtin.function @miden::protocol::tx::get_output_notes_commitment(v550: i32) {
-        ^block60(v550: i32):
-            v551, v552, v553, v554 = hir.exec @miden/protocol/tx/get_output_notes_commitment() : felt, felt, felt, felt
-            v555 = hir.bitcast v550 : u32;
-            v556 = hir.int_to_ptr v555 : ptr<byte, felt>;
-            hir.store v556, v551;
-            v1227 = arith.constant 4 : u32;
-            v558 = arith.add v555, v1227 : u32 #[overflow = checked];
-            v559 = hir.int_to_ptr v558 : ptr<byte, felt>;
-            hir.store v559, v552;
-            v1226 = arith.constant 8 : u32;
-            v561 = arith.add v555, v1226 : u32 #[overflow = checked];
-            v562 = hir.int_to_ptr v561 : ptr<byte, felt>;
-            hir.store v562, v553;
-            v1225 = arith.constant 12 : u32;
-            v564 = arith.add v555, v1225 : u32 #[overflow = checked];
-            v565 = hir.int_to_ptr v564 : ptr<byte, felt>;
-            hir.store v565, v554;
+        private builtin.function @miden::protocol::tx::get_output_notes_commitment(v616: i32) {
+        ^block60(v616: i32):
+            v617, v618, v619, v620 = hir.exec @miden/protocol/tx/get_output_notes_commitment() : felt, felt, felt, felt
+            v621 = hir.bitcast v616 : u32;
+            v622 = hir.int_to_ptr v621 : ptr<byte, felt>;
+            hir.store v622, v617;
+            v887 = arith.constant 4 : u32;
+            v624 = arith.add v621, v887 : u32 #[overflow = checked];
+            v625 = hir.int_to_ptr v624 : ptr<byte, felt>;
+            hir.store v625, v618;
+            v886 = arith.constant 8 : u32;
+            v627 = arith.add v621, v886 : u32 #[overflow = checked];
+            v628 = hir.int_to_ptr v627 : ptr<byte, felt>;
+            hir.store v628, v619;
+            v885 = arith.constant 12 : u32;
+            v630 = arith.add v621, v885 : u32 #[overflow = checked];
+            v631 = hir.int_to_ptr v630 : ptr<byte, felt>;
+            hir.store v631, v620;
             builtin.ret ;
         };
 
@@ -730,9 +832,9 @@ builtin.component miden:auth-component-rpo-falcon512/auth-component-rpo-falcon51
         builtin.segment @1048576 = 0x0000000100000001;
     };
 
-    public builtin.function @auth__procedure(v566: felt, v567: felt, v568: felt, v569: felt) {
-    ^block62(v566: felt, v567: felt, v568: felt, v569: felt):
-        hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-procedure(v566, v567, v568, v569)
+    public builtin.function @auth__procedure(v632: felt, v633: felt, v634: felt, v635: felt) {
+    ^block62(v632: felt, v633: felt, v634: felt, v635: felt):
+        hir.exec @miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0/auth_component_rpo_falcon512/miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-procedure(v632, v633, v634, v635)
         builtin.ret ;
     };
 };

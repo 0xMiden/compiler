@@ -18,6 +18,7 @@ end
 
 # mod ::"root_ns:root@1.0.0"::test_rust_774ac315a535180c25b481293c43de2ad5b38b8ed718ccd906a367b8df969453
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(i32, i32) -> i32
     trace.240

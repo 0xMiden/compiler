@@ -102,6 +102,7 @@ proc rust_sdk_account_get_procedure_root_binding::bindings::__link_custom_sectio
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-procedure-root-binding@0.0.1#binding(
 
@@ -116,9 +117,16 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -137,7 +145,14 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     exec.::"miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-procedure-root-binding@0.0.1"::rust_sdk_account_get_procedure_root_binding::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
     trace.252
     nop
-    dup.1
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     swap.1
     trace.240
     nop
@@ -154,45 +169,23 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     nop
     push.1048584
     u32wrapping_add
-    dup.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
     dup.0
-    u32divmod.4
+    locaddr.1
+    push.0
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_felt
+    exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.2
-    push.12
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.2
-    swap.1
-    u32divmod.4
+    locaddr.0
+    push.0
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_felt
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4
-    dup.2
-    add
-    u32assert
     push.4
     dup.1
     swap.1
@@ -204,57 +197,6 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.8
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.4
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
     trace.252
     nop
     push.12
@@ -271,25 +213,165 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_felt
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.4
-    dup.2
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    u32divmod.4
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.8
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
     u32divmod.4
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.4
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.12
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    swap.1
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
-    movup.2
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -299,8 +381,17 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -342,9 +433,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-procedure-root-binding@0.0.1"::rust_sdk_account_get_procedure_root_binding::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1
@@ -375,6 +482,7 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
+@locals("1")
 @callconv("C")
 proc <miden_field::wasm32::Felt as core::convert::From<u8>>::from(
     i32
