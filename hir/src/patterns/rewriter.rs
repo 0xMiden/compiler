@@ -144,10 +144,7 @@ pub trait Rewriter: Builder + RewriterListener {
         self.notify_block_erased(block);
 
         // Remove block from parent region
-        let mut region = block.parent().expect("expected 'block' to have a parent region");
-        let mut region_mut = region.borrow_mut();
-        let mut cursor = unsafe { region_mut.body_mut().cursor_mut_from_ptr(block) };
-        cursor.remove();
+        block.borrow_mut().erase();
     }
 
     /// Move the blocks that belong to `region` before the given insertion point in another region,
