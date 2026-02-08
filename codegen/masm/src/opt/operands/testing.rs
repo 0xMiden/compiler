@@ -9,9 +9,7 @@ use super::*;
 use crate::Constraint;
 
 pub fn logger_setup() {
-    use log::LevelFilter;
-    let _ = env_logger::builder()
-        .filter_level(LevelFilter::Trace)
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -306,7 +304,7 @@ prop_compose! {
 }
 
 pub fn solve_problem(problem: ProblemInputs) -> Result<(), TestCaseError> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE").is_test(true).try_init();
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE").is_test(true).try_init();
     let block = problem.block.borrow();
     let block_args = block.arguments();
     match OperandMovementConstraintSolver::new_with_options(

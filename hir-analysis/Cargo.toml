@@ -23,4 +23,4 @@ midenc-dialect-arith = { path = "../dialects/arith" }
 midenc-dialect-cf = { path = "../dialects/cf" }
 midenc-dialect-scf = { path = "../dialects/scf" }
 midenc-expect-test = { path = "../tools/expect-test" }
-env_logger.workspace = true
+midenc-log.workspace = true

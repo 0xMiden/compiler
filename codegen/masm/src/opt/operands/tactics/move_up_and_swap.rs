@@ -19,10 +19,14 @@ use super::*;
 /// solved with this tactic (alone anyway).
 #[derive(Default)]
 pub struct MoveUpAndSwap;
+
 impl Tactic for MoveUpAndSwap {
     fn apply(&mut self, builder: &mut SolutionBuilder) -> TacticResult {
+        let trace_target = builder.trace_target().clone().with_topic("solver:move-up-and-swap");
+
         if builder.requires_copies() || builder.arity() < 2 {
             log::trace!(
+                target: &trace_target,
                 "cannot apply tactic when there are required copies ({}) or fewer than 2 operands \
                  ({})",
                 builder.requires_copies(),
@@ -36,6 +40,7 @@ impl Tactic for MoveUpAndSwap {
         if actual0 == expected0 {
             let Some(expected1) = builder.get_expected(1) else {
                 log::trace!(
+                    target: &trace_target,
                     "top two operands on the stack are already in position, returning possible \
                      solution"
                 );
@@ -43,10 +48,11 @@ impl Tactic for MoveUpAndSwap {
             };
             let move_from = builder.unwrap_current_position(&expected1);
             if move_from == 1 {
-                log::trace!("abandoning tactic because operand at index 1 is already in position");
+                log::trace!(target: &trace_target, "abandoning tactic because operand at index 1 is already in position");
                 return Err(TacticError::NotApplicable);
             }
             log::trace!(
+                target: &trace_target,
                 "moving {expected1:?} to top of stack from index {move_from}, then swapping with \
                  {expected0:?}"
             );
@@ -56,7 +62,7 @@ impl Tactic for MoveUpAndSwap {
             // The tactic was successfully applied, but it is
             // up to the solver to determine if a solution was
             // found
-            log::trace!("returning possible solution");
+            log::trace!(target: &trace_target, "returning possible solution");
             return Ok(());
         }
 
@@ -113,6 +119,7 @@ impl Tactic for MoveUpAndSwap {
             // If the pair includes `a` itself, then just move `a` to the top
             if a_expected == 0 {
                 log::trace!(
+                    target: &trace_target,
                     "moving {:?} to the top of stack, shifting {:?} down",
                     builder.stack()[a_actual as usize],
                     builder.stack()[0]
@@ -121,6 +128,7 @@ impl Tactic for MoveUpAndSwap {
             } else {
                 if b_actual > 0 {
                     log::trace!(
+                        target: &trace_target,
                         "moving {:?} to the top of stack, shifting {:?} down",
                         builder.stack()[b_actual as usize],
                         builder.stack()[0]
@@ -129,6 +137,7 @@ impl Tactic for MoveUpAndSwap {
                 }
                 let expected0_at = builder.unwrap_current_position(&expected0);
                 log::trace!(
+                    target: &trace_target,
                     "moving {:?} to the top of stack, shifting {:?} down",
                     builder.stack()[expected0_at as usize],
                     builder.stack()[0]
@@ -147,6 +156,7 @@ impl Tactic for MoveUpAndSwap {
             // of which focus on moving elements from the top first,
             // and handle the various patterns that might arise there.
             log::trace!(
+                target: &trace_target,
                 "abandoning tactic because by implication, operands are in order, and an unused \
                  operand must need eviction"
             );

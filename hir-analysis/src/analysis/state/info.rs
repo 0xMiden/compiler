@@ -167,6 +167,7 @@ impl AnalysisStateSubscription {
         A: alloc::alloc::Allocator,
     {
         log::trace!(
+            target: "analysis:subscription",
             "handling analysis state change to anchor '{anchor}' for {}",
             core::any::type_name::<T>()
         );
@@ -175,7 +176,7 @@ impl AnalysisStateSubscription {
             Self::OnUpdate { analysis: _ } => (),
             // Re-run `analysis` at `point`
             Self::AtPoint { analysis, point } => {
-                log::trace!("enqueuing {} at {point}", unsafe { analysis.as_ref().debug_name() });
+                log::trace!(target: "analysis:subscription", "enqueuing {} at {point}", unsafe { analysis.as_ref().debug_name() });
                 worklist.push_back(QueuedAnalysis { point, analysis });
             }
             // Re-run `analysis` for all uses of the current value
@@ -216,6 +217,7 @@ pub trait AnalysisStateSubscriptionBehavior: AnalysisState {
     /// Called when an analysis subscribes to any changes to the current [AnalysisState].
     fn on_subscribe(&self, subscriber: NonNull<dyn DataFlowAnalysis>, info: &AnalysisStateInfo) {
         log::trace!(
+            target: "analysis:subscription",
             "subscribing {} to state updates for analysis state {} at {}",
             unsafe { subscriber.as_ref().debug_name() },
             info.debug_name(),
@@ -250,6 +252,7 @@ impl<T: AnalysisState> AnalysisStateSubscriptionBehavior for T {
         info: &AnalysisStateInfo,
     ) {
         log::trace!(
+            target: "analysis:subscription",
             "subscribing {} to state updates for analysis state {} at {}",
             unsafe { subscriber.as_ref().debug_name() },
             info.debug_name(),
@@ -265,6 +268,7 @@ impl<T: AnalysisState> AnalysisStateSubscriptionBehavior for T {
     /// may be directly/indirectly affected by the changes.
     default fn on_update(&self, info: &mut AnalysisStateInfo, worklist: &mut AnalysisQueue) {
         log::trace!(
+            target: "analysis:subscription",
             "notifying {} subscribers of update to sparse lattice at {}",
             info.on_update_subscribers_count(),
             info.anchor()
@@ -296,6 +300,7 @@ pub fn on_require_analysis_fallback(
     dependent: ProgramPoint,
 ) {
     log::trace!(
+        target: "analysis:subscription",
         "applying default subscriptions for {} at {} for {dependent} for analysis state {}",
         unsafe { current_analysis.as_ref().debug_name() },
         info.anchor(),

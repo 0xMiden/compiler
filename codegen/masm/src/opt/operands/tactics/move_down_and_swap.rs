@@ -21,10 +21,14 @@ use super::*;
 /// desired order, then this tactic was successful.
 #[derive(Default)]
 pub struct MoveDownAndSwap;
+
 impl Tactic for MoveDownAndSwap {
     fn apply(&mut self, builder: &mut SolutionBuilder) -> TacticResult {
+        let trace_target = builder.trace_target().clone().with_topic("solver:move-down-and-swap");
+
         if builder.requires_copies() || builder.arity() < 2 {
             log::trace!(
+                target: &trace_target,
                 "cannot apply tactic when there are required copies ({}) or fewer than 2 operands \
                  ({})",
                 builder.requires_copies(),
@@ -35,7 +39,7 @@ impl Tactic for MoveDownAndSwap {
 
         // If the top operand is already in position, this tactic cannot be applied
         if builder.is_expected(0) {
-            log::trace!("abandoning tactic: operand at index 0 is already in position");
+            log::trace!(target: &trace_target, "abandoning tactic: operand at index 0 is already in position");
             return Err(TacticError::NotApplicable);
         }
 
@@ -44,9 +48,11 @@ impl Tactic for MoveDownAndSwap {
             // Extend the target position past any operands which should
             // come before the operand currently on top of the stack
             log::trace!(
+                target: &trace_target,
                 "{actual0:?} expects to be at index {target_pos}, but is on top of the stack"
             );
             log::trace!(
+                target: &trace_target,
                 "looking for operands after index {target_pos} which need to come before \
                  {actual0:?} on the stack"
             );
@@ -71,6 +77,7 @@ impl Tactic for MoveDownAndSwap {
                 }) as u8;
             // Move the operand to the position we've identified
             log::trace!(
+                target: &trace_target,
                 "moving {actual0:?} to {}, shifting {:?} to the top of stack",
                 target_pos + target_offset,
                 builder.unwrap_current(1)
@@ -80,6 +87,7 @@ impl Tactic for MoveDownAndSwap {
             let expected0 = builder.unwrap_expected(0);
             let expected0_at = builder.unwrap_current_position(&expected0);
             log::trace!(
+                target: &trace_target,
                 "{actual0:?} is not an expected operand, but is occupying index {expected0_at}, \
                  where we expect {expected0:?}, evicting.."
             );
@@ -96,6 +104,7 @@ impl Tactic for MoveDownAndSwap {
             // potentially try combining this tactic with another
             // to find a solution
             log::trace!(
+                target: &trace_target,
                 "item on top of the stack is now in position, so we cannot proceed further, \
                  returning possible solution"
             );
@@ -112,6 +121,7 @@ impl Tactic for MoveDownAndSwap {
                 Some(0) => {
                     // The target expects to be on top, so we can swap
                     log::trace!(
+                        target: &trace_target,
                         "{actual0:?} is expected at {target_pos}, the occupant of which is \
                          expected on top of the stack, swapping.."
                     );
@@ -120,13 +130,14 @@ impl Tactic for MoveDownAndSwap {
                 Some(pos) if pos == target_pos - 1 => {
                     // The target would be moved into place if we move the top down
                     log::trace!(
+                        target: &trace_target,
                         "moving {actual0:?} to {target_pos}, the occupant of which is expected at \
                          {pos}"
                     );
                     builder.movdn(target_pos);
                 }
                 Some(_) | None => {
-                    log::trace!("unable to apply tactic, operands do not match expected pattern");
+                    log::trace!(target: &trace_target, "unable to apply tactic, operands do not match expected pattern");
                     return Err(TacticError::NotApplicable);
                 }
             }
@@ -137,6 +148,7 @@ impl Tactic for MoveDownAndSwap {
             let expected0 = builder.unwrap_expected(0);
             let expected0_at = builder.unwrap_expected_position(&expected0);
             log::trace!(
+                target: &trace_target,
                 "{actual0:?} is not an expected operand, but is occupying index {expected0_at}, \
                  where we expect {expected0:?}, evicting.."
             );

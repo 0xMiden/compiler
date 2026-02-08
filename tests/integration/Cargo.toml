@@ -14,7 +14,7 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 cargo-util = "0.2"
-env_logger.workspace = true
+midenc-log.workspace = true
 midenc-expect-test.workspace = true
 filetime = "0.2.23"
 glob = "0.3.1"

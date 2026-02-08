@@ -98,7 +98,7 @@ fn fibonacci() {
 
 #[test]
 fn collatz() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -143,7 +143,7 @@ fn collatz() {
 
 #[test]
 fn is_prime() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();

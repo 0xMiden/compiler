@@ -29,7 +29,7 @@ fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
 
 #[test]
 fn test_all_templates() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
         .try_init();
@@ -152,7 +152,7 @@ fn build_new_project_from_template(template: &str) -> Package {
 
 #[test]
 fn new_project_integration_tests_pass() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
         .try_init();

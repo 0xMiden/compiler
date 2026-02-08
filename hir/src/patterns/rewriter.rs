@@ -1,12 +1,15 @@
 use alloc::{boxed::Box, format, rc::Rc};
 use core::ops::{Deref, DerefMut};
 
+use midenc_session::diagnostics::PrintDiagnostic;
 use smallvec::SmallVec;
 
 use crate::{
     BlockRef, Builder, Context, InsertionGuard, Listener, ListenerType, OpBuilder, OpOperandImpl,
     OperationRef, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan, Usable,
-    ValueRef, patterns::Pattern,
+    ValueRef,
+    formatter::{DisplayOptional, DisplayValues},
+    patterns::Pattern,
 };
 
 /// A [Rewriter] is a [Builder] extended with additional functionality that is of primary use when
@@ -153,6 +156,7 @@ pub trait Rewriter: Builder + RewriterListener {
     /// correct block arguments.
     fn inline_region_before(&mut self, mut region: RegionRef, mut ip: RegionRef) {
         assert!(!RegionRef::ptr_eq(&region, &ip), "cannot inline a region into itself");
+        log::trace!(target: "rewriter", "inlining blocks of {region} into {ip}");
         let region_body = region.borrow_mut().body_mut().take();
         if !self.has_listener() {
             let mut parent_region = ip.borrow_mut();
@@ -258,6 +262,11 @@ pub trait Rewriter: Builder + RewriterListener {
     /// The dest block must have no successors. Otherwise, the resulting IR will have unreachable
     /// operations.
     fn merge_blocks(&mut self, src: BlockRef, dest: BlockRef, args: &[Option<ValueRef>]) {
+        log::trace!(
+            target: "rewriter",
+            "merging {src} into {dest} replacing uses of its block arguments with {}",
+            DisplayValues::new(args.iter().map(|v| DisplayOptional(v.as_ref())))
+        );
         let ip = dest.borrow().body().back().as_pointer();
         self.inline_block_before(src, dest, ip, args);
     }
@@ -816,7 +825,216 @@ impl Listener for NoopRewriterListener {
     }
 }
 impl RewriterListener for NoopRewriterListener {
+    #[inline(always)]
     fn notify_operation_replaced(&self, _op: OperationRef, _replacement: OperationRef) {}
+}
+
+/// A listener of kind `Rewriter` that emits trace logging for events
+pub struct TracingRewriterListener;
+impl Listener for TracingRewriterListener {
+    #[inline]
+    fn kind(&self) -> ListenerType {
+        ListenerType::Rewriter
+    }
+
+    #[inline]
+    fn notify_operation_inserted(&self, _op: OperationRef, _prev: ProgramPoint) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            let name = _op.name();
+            let (event, direction) = if _prev.is_valid() {
+                ("moved", "from")
+            } else {
+                ("inserted", "at")
+            };
+            if let Some(symbol) = _op.borrow().as_symbol() {
+                log::trace!(
+                    target: "rewriter",
+                    symbol = symbol.name().as_str(),
+                    dialect = name.dialect().as_str(),
+                    op = name.name().as_str(),
+                    rewrite_event = event;
+                    "{event} '{name}' {direction} {_prev}"
+                );
+            } else {
+                log::trace!(
+                    target: "rewriter",
+                    dialect = name.dialect().as_str(),
+                    op = name.name().as_str(),
+                    rewrite_event = event;
+                    "{event} '{name}' {direction} {_prev}",
+                );
+            }
+        }
+    }
+
+    #[inline]
+    fn notify_block_inserted(
+        &self,
+        _block: BlockRef,
+        _prev: Option<RegionRef>,
+        _ip: Option<BlockRef>,
+    ) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            match (_prev, _ip) {
+                (None, None) => {
+                    log::trace!(
+                        target: "rewriter",
+                        rewrite_event = "created";
+                        "created {_block}"
+                    );
+                }
+                (None, Some(ip)) => {
+                    log::trace!(
+                        target: "rewriter",
+                        rewrite_event = "inserted";
+                        "inserted {_block} at {ip}"
+                    );
+                }
+                (Some(prev), Some(ip)) => {
+                    log::trace!(
+                        target: "rewriter",
+                        rewrite_event = "moved";
+                        "moved {_block} from {prev} to {ip}"
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+}
+impl RewriterListener for TracingRewriterListener {
+    fn notify_operation_replaced(&self, _op: OperationRef, _replacement: OperationRef) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            log::trace!(
+                target: "rewriter",
+                rewrite_event = "replaced";
+                "replaced {_op} with {_replacement}"
+            );
+        }
+    }
+
+    fn notify_block_erased(&self, _block: BlockRef) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            log::trace!(
+                target: "rewriter",
+                rewrite_event = "erased";
+                "erased {_block}"
+            );
+        }
+    }
+
+    fn notify_operation_modification_started(&self, _op: &OperationRef) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            let name = _op.name();
+            log::trace!(
+                target: "rewriter",
+                dialect = name.dialect().as_str(),
+                op = name.name().as_str(),
+                rewrite_event = "modification-started";
+                "starting modification of {_op}"
+            );
+        }
+    }
+
+    fn notify_operation_modification_canceled(&self, _op: &OperationRef) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            let name = _op.name();
+            log::trace!(
+                target: "rewriter",
+                dialect = name.dialect().as_str(),
+                op = name.name().as_str(),
+                rewrite_event = "modification-canceled";
+                "canceled modification"
+            );
+        }
+    }
+
+    fn notify_operation_modified(&self, _op: OperationRef) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            let name = _op.name();
+            log::trace!(
+                target: "rewriter",
+                dialect = name.dialect().as_str(),
+                op = name.name().as_str(),
+                rewrite_event = "modified";
+                "completed modification of {_op}"
+            );
+        }
+    }
+
+    fn notify_operation_replaced_with_values(
+        &self,
+        _op: OperationRef,
+        _replacement: &[Option<ValueRef>],
+    ) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            let name = _op.name();
+            log::trace!(
+                target: "rewriter",
+                dialect = name.dialect().as_str(),
+                op = name.name().as_str(),
+                rewrite_event = "replaced";
+                "replaced op with {}: {_op}",
+                DisplayValues::new(_replacement.iter().map(|v| {
+                    DisplayOptional(v.as_ref())
+                }))
+            );
+        }
+    }
+
+    fn notify_operation_erased(&self, _op: OperationRef) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            let name = _op.name();
+            log::trace!(
+                target: "rewriter",
+                dialect = name.dialect().as_str(),
+                op = name.name().as_str(),
+                rewrite_event = "erased";
+                "erased op {_op}"
+            );
+        }
+    }
+
+    fn notify_pattern_begin(&self, _pattern: &dyn Pattern, _op: OperationRef) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            let name = _op.name();
+            log::trace!(
+                target: "rewriter",
+                dialect = name.dialect().as_str(),
+                op = name.name().as_str(),
+                pattern = _pattern.name(),
+                rewrite_event = "pattern-begin";
+                "attempting pattern against {_op}"
+            );
+        }
+    }
+
+    fn notify_pattern_end(&self, _pattern: &dyn Pattern, _success: bool) {
+        if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+            let outcome = if _success {
+                "matched successfully"
+            } else {
+                "failed"
+            };
+            log::trace!(
+                target: "rewriter",
+                pattern = _pattern.name(),
+                rewrite_event = "pattern-end";
+                "pattern {outcome}"
+            );
+        }
+    }
+
+    fn notify_match_failure(&self, _span: SourceSpan, _reason: Report) {
+        if log::log_enabled!(target: "rewriter", log::Level::Error) {
+            let diag = PrintDiagnostic::new(_reason);
+            log::error!(
+                target: "rewriter",
+                rewrite_event = "match-failure";
+                "match failed with: {diag}",
+            );
+        }
+    }
 }
 
 pub struct ForwardingListener<Base, Derived> {
@@ -901,6 +1119,7 @@ impl<Base: RewriterListener, Derived: RewriterListener> RewriterListener
     }
 
     fn notify_match_failure(&self, span: SourceSpan, reason: Report) {
+        // This is necessary for now, as we cannot clone Report
         let err = Report::msg(format!("{reason}"));
         self.base.notify_match_failure(span, reason);
         self.derived.notify_match_failure(span, err);

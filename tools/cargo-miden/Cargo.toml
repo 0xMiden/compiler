@@ -24,7 +24,7 @@ path = "tests/mod.rs"
 [dependencies]
 midenc-compile.workspace = true
 midenc-session.workspace = true
-env_logger.workspace = true
+midenc-log.workspace = true
 log.workspace = true
 clap.workspace = true
 anyhow.workspace = true

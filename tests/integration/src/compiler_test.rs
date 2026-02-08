@@ -367,6 +367,8 @@ impl CompilerTestBuilder {
                     .map(|s| s.to_str().unwrap().to_string())
                     .collect();
                 args.extend(cmd_args);
+                log::debug!(target: "cargo-miden", "arguments: {args:#?}");
+                log::debug!(target: "cargo-miden", "env      : {:#?}", command.get_envs());
                 let build_output =
                     cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Wasm)
                         .unwrap()

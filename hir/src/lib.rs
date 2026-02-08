@@ -95,3 +95,124 @@ pub use self::{
     patterns::{Rewriter, RewriterExt},
     program_point::{Position, ProgramPoint},
 };
+
+/// Represents the target of a `log::trace!`/`log::debug!`/etc trace message.
+#[derive(Clone)]
+pub struct TraceTarget {
+    category: interner::Symbol,
+    topic: Option<interner::Symbol>,
+    relevant_symbol: Option<interner::Symbol>,
+    _cached: core::cell::Cell<Option<interner::Symbol>>,
+}
+
+impl Default for TraceTarget {
+    fn default() -> Self {
+        Self {
+            category: interner::symbols::Empty,
+            topic: None,
+            relevant_symbol: None,
+            _cached: core::cell::Cell::new(None),
+        }
+    }
+}
+
+impl TraceTarget {
+    pub fn category(category: impl Into<interner::Symbol>) -> Self {
+        Self {
+            category: category.into(),
+            ..Default::default()
+        }
+    }
+
+    pub fn with_topic(mut self, topic: impl Into<interner::Symbol>) -> Self {
+        self.topic = Some(topic.into());
+        self._cached.set(None);
+        self
+    }
+
+    pub fn with_relevant_symbol(mut self, symbol: impl Into<interner::Symbol>) -> Self {
+        self.relevant_symbol = Some(symbol.into());
+        self._cached.set(None);
+        self
+    }
+
+    pub fn relevant_symbol(&self) -> Option<&'static str> {
+        self.relevant_symbol.map(|sym| sym.as_str())
+    }
+}
+
+impl core::ops::Deref for TraceTarget {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+impl AsRef<str> for TraceTarget {
+    fn as_ref(&self) -> &str {
+        match self._cached.get() {
+            Some(cached) => cached.as_str(),
+            None => {
+                let cached = interner::Symbol::intern(self);
+                self._cached.set(Some(cached));
+                cached.as_str()
+            }
+        }
+    }
+}
+
+impl core::fmt::Debug for TraceTarget {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self {
+                category,
+                topic: None,
+                relevant_symbol: None,
+                _cached: _,
+            } => f.write_str(category.as_str()),
+            Self {
+                category,
+                topic: None,
+                relevant_symbol: Some(sym),
+                _cached: _,
+            } => write!(f, "{category}:{sym}"),
+            Self {
+                category,
+                topic: Some(topic),
+                relevant_symbol: None,
+                _cached: _,
+            } => write!(f, "{category}:{topic}"),
+            Self {
+                category,
+                topic: Some(topic),
+                relevant_symbol: Some(sym),
+                _cached: _,
+            } => write!(f, "{category}:{topic}:{sym}"),
+        }
+    }
+}
+
+impl core::fmt::Display for TraceTarget {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if let Some(cached) = self._cached.get() {
+            return f.write_str(cached.as_str());
+        }
+
+        match self {
+            Self {
+                category,
+                topic: None,
+                relevant_symbol: _,
+                _cached: _,
+            } => f.write_str(category.as_str()),
+            Self {
+                category,
+                topic: Some(topic),
+                relevant_symbol: _,
+                _cached: _,
+            } => write!(f, "{category}:{topic}"),
+        }
+    }
+}

@@ -21,7 +21,7 @@ type TestResult<T> = Result<T, Report>;
 /// materialized as `hir.store_local`/`hir.load_local`.
 #[test]
 fn materializes_spills_intra_block() -> TestResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -142,7 +142,7 @@ fn materializes_spills_intra_block() -> TestResult<()> {
 /// other are materialized as `store_local`/`load_local`, with edges split as needed.
 #[test]
 fn materializes_spills_branching_cfg() -> TestResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -307,7 +307,7 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
 /// in that order and we pick from the end, which means we currently spill `v5`.
 #[test]
 fn materializes_spills_nested_scf_if() -> TestResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -451,7 +451,7 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
 /// within it still require reloads to be preserved and rewritten correctly.
 #[test]
 fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();

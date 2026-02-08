@@ -1,8 +1,10 @@
+use alloc::rc::Rc;
+
 use midenc_hir::{
-    BlockRef, Builder, EntityMut, OpBuilder, Operation, OperationFolder, OperationName, RegionList,
-    Report, SmallVec, ValueRef,
+    BlockRef, Builder, Context, EntityMut, OpBuilder, Operation, OperationFolder, OperationName,
+    OperationRef, RegionList, Report, SmallVec, ValueRef,
     pass::{Pass, PassExecutionState},
-    patterns::NoopRewriterListener,
+    patterns::TracingRewriterListener,
 };
 use midenc_hir_analysis::{
     DataFlowSolver, Lattice,
@@ -71,7 +73,7 @@ impl SparseConditionalConstantPropagation {
 
         // An operation folder used to create and unique constants.
         let context = op.context_rc();
-        let mut folder = OperationFolder::new(context.clone(), None::<NoopRewriterListener>);
+        let mut folder = OperationFolder::new(context.clone(), TracingRewriterListener);
         let mut builder = OpBuilder::new(context.clone());
 
         add_to_worklist(op.regions(), &mut worklist);

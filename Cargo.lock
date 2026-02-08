@@ -388,11 +388,11 @@ dependencies = [
  "anyhow",
  "cargo_metadata",
  "clap",
- "env_logger",
  "liquid",
  "log",
  "miden-mast-package",
  "midenc-compile",
+ "midenc-log",
  "midenc-session",
  "path-absolutize",
  "semver 1.0.27",
@@ -2539,7 +2539,6 @@ dependencies = [
  "cargo-miden",
  "cargo-util",
  "concat-idents",
- "env_logger",
  "filetime",
  "glob",
  "log",
@@ -2559,6 +2558,7 @@ dependencies = [
  "midenc-frontend-wasm",
  "midenc-hir",
  "midenc-hir-eval",
+ "midenc-log",
  "midenc-session",
  "proptest",
  "sha2",
@@ -2921,9 +2921,9 @@ dependencies = [
 name = "midenc"
 version = "0.6.0"
 dependencies = [
- "env_logger",
  "human-panic",
  "midenc-driver",
+ "midenc-log",
 ]
 
 [[package]]
@@ -2940,7 +2940,6 @@ name = "midenc-codegen-masm"
 version = "0.6.0"
 dependencies = [
  "anyhow",
- "env_logger",
  "inventory",
  "itertools 0.14.0",
  "log",
@@ -2959,6 +2958,7 @@ dependencies = [
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
+ "midenc-log",
  "midenc-session",
  "petgraph 0.8.3",
  "proptest",
@@ -3008,7 +3008,6 @@ dependencies = [
 name = "midenc-dialect-hir"
 version = "0.6.0"
 dependencies = [
- "env_logger",
  "litcheck-filecheck",
  "log",
  "midenc-dialect-arith",
@@ -3018,6 +3017,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-analysis",
  "midenc-hir-transform",
+ "midenc-log",
 ]
 
 [[package]]
@@ -3025,7 +3025,6 @@ name = "midenc-dialect-scf"
 version = "0.6.0"
 dependencies = [
  "bitvec",
- "env_logger",
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
@@ -3033,6 +3032,7 @@ dependencies = [
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-transform",
+ "midenc-log",
 ]
 
 [[package]]
@@ -3096,7 +3096,6 @@ dependencies = [
  "bitvec",
  "blink-alloc",
  "compact_str 0.9.0",
- "env_logger",
  "hashbrown 0.15.5",
  "intrusive-collections",
  "inventory",
@@ -3106,6 +3105,7 @@ dependencies = [
  "midenc-hir-macros",
  "midenc-hir-symbol",
  "midenc-hir-type",
+ "midenc-log",
  "midenc-session",
  "pretty_assertions",
  "rustc-demangle",
@@ -3120,7 +3120,6 @@ version = "0.6.0"
 dependencies = [
  "bitvec",
  "blink-alloc",
- "env_logger",
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
@@ -3128,6 +3127,7 @@ dependencies = [
  "midenc-dialect-scf",
  "midenc-expect-test",
  "midenc-hir",
+ "midenc-log",
 ]
 
 [[package]]
@@ -3208,6 +3208,18 @@ dependencies = [
  "midenc-frontend-wasm",
  "rand",
  "tokio",
+]
+
+[[package]]
+name = "midenc-log"
+version = "0.6.0"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "jiff",
+ "log",
+ "regex",
+ "snapbox",
 ]
 
 [[package]]
@@ -3314,6 +3326,12 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
+
+[[package]]
+name = "normalize-line-endings"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
 
 [[package]]
 name = "ntapi"
@@ -4596,6 +4614,28 @@ name = "smawk"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
+
+[[package]]
+name = "snapbox"
+version = "0.6.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c1abc378119f77310836665f8523018532cf7e3faeb3b10b01da5a7321bf8e1"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "normalize-line-endings",
+ "similar",
+ "snapbox-macros",
+]
+
+[[package]]
+name = "snapbox-macros"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b750c344002d7cc69afb9da00ebd9b5c0f8ac2eb7d115d9d45d5b5f47718d74"
+dependencies = [
+ "anstream",
+]
 
 [[package]]
 name = "socket2"

@@ -1,0 +1,32 @@
+[package]
+name = "midenc-log"
+description = "Provides flexible trace logging for midenc"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["auto-color", "humantime", "regex"]
+color = ["dep:anstream", "dep:anstyle"]
+auto-color = ["color", "anstream/auto"]
+humantime = ["dep:jiff"]
+regex = ["dep:regex"]
+kv = ["log/kv"]
+
+[dependencies]
+anstream = { version = "0.6", default-features = false, features = ["wincon"], optional = true }
+anstyle = { version = "1.0", optional = true }
+log = { workspace = true, features = ["std"] }
+jiff = { version = "0.2.3", default-features = false, features = ["std"], optional = true }
+regex = { version = "1.0", default-features = false, features = ["std", "perf"], optional = true }
+
+[dev-dependencies]
+snapbox = "0.6"

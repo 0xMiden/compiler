@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn rewrite_pattern_api_test() {
-        let mut builder = env_logger::Builder::from_env("MIDENC_TRACE");
+        let mut builder = midenc_log::Builder::from_env("MIDENC_TRACE");
         builder.init();
 
         let context = Rc::new(Context::default());

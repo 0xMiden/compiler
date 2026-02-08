@@ -87,12 +87,12 @@ pub(super) fn initialize_recursively<A>(
 where
     A: SparseBackwardDataFlowAnalysis,
 {
-    log::trace!("initializing op recursively");
+    log::trace!(target: analysis.analysis.debug_name(), "initializing op recursively");
     visit_operation(analysis, op, solver)?;
 
     for region in op.regions() {
         for block in region.body() {
-            log::trace!("initializing analysis for block {}", block.id());
+            log::trace!(target: analysis.analysis.debug_name(), "initializing analysis for block {}", block.id());
             {
                 let state =
                     solver.get_or_create::<Executable, _>(ProgramPoint::at_start_of(&*block));
@@ -102,14 +102,14 @@ where
             // Initialize ops in reverse order, so we can do as much initial propagation as possible
             // without having to go through the solver queue.
             let mut ops = block.body().back();
-            log::trace!("initializing ops of {} bottom-up", block.id());
+            log::trace!(target: analysis.analysis.debug_name(), "initializing ops of {} bottom-up", block.id());
             while let Some(op) = ops.as_pointer() {
                 ops.move_prev();
 
                 let op = op.borrow();
                 initialize_recursively(analysis, &op, solver)?;
             }
-            log::trace!("all ops of {} have been initialized", block.id());
+            log::trace!(target: analysis.analysis.debug_name(), "all ops of {} have been initialized", block.id());
         }
     }
 
@@ -134,24 +134,25 @@ where
             .is_live()
     });
     if in_dead_block {
-        log::trace!("skipping analysis for op in dead/non-executable block: {op}");
+        log::trace!(target: analysis.analysis.debug_name(), "skipping analysis for op in dead/non-executable block: {op}");
         return Ok(());
     }
 
     let current_point = ProgramPoint::after(op);
-    let mut operands = get_lattice_elements_mut::<A>(op.operands().all(), solver);
-    let results = get_lattice_elements_for::<A>(current_point, op.results().all(), solver);
+    let mut operands = get_lattice_elements_mut::<A>(analysis, op.operands().all(), solver);
+    let results =
+        get_lattice_elements_for::<A>(analysis, current_point, op.results().all(), solver);
 
     // Block arguments of region branch operations flow back into the operands of the parent op
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
-        log::trace!("op implements RegionBranchOpInterface - handling as special case");
+        log::trace!(target: analysis.analysis.debug_name(), "op implements RegionBranchOpInterface - handling as special case");
         visit_region_successors(analysis, branch, solver);
         return Ok(());
     }
 
     // Block arguments of successor blocks flow back into our operands.
     if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
-        log::trace!("op implements BranchOpInterface - handling as special case");
+        log::trace!(target: analysis.analysis.debug_name(), "op implements BranchOpInterface - handling as special case");
 
         // We remember all operands not forwarded to any block in a bitvector.
         // We can't just cut out a range here, since the non-forwarded ops might be non-contiguous
@@ -168,9 +169,13 @@ where
                     if let Some(block_arg) =
                         branch.get_successor_block_argument(operand_index + num_produced)
                     {
-                        let mut operand_lattice =
-                            get_lattice_element_mut::<A>(operand.borrow().as_value_ref(), solver);
+                        let mut operand_lattice = get_lattice_element_mut::<A>(
+                            analysis,
+                            operand.borrow().as_value_ref(),
+                            solver,
+                        );
                         let result_lattice = get_lattice_element_for::<A>(
+                            analysis,
                             current_point,
                             block_arg.borrow().as_value_ref(),
                             solver,
@@ -194,15 +199,15 @@ where
     // For function calls, connect the arguments of the entry blocks to the operands of the call op
     // that are forwarded to these arguments.
     if let Some(call) = op.as_trait::<dyn CallOpInterface>() {
-        log::trace!("op implements CallOpInterface - handling as special case");
+        log::trace!(target: analysis.analysis.debug_name(), "op implements CallOpInterface - handling as special case");
 
         // TODO: resolve_in_symbol_table
         if let Some(callable_symbol) = call.resolve() {
             let callable_symbol = callable_symbol.borrow();
-            log::trace!("resolved callee as {}", callable_symbol.name());
+            log::trace!(target: analysis.analysis.debug_name(), "resolved callee as {}", callable_symbol.name());
             let callable_op = callable_symbol.as_symbol_operation();
             if let Some(callable) = callable_op.as_trait::<dyn CallableOpInterface>() {
-                log::trace!("{} implements CallableOpInterface", callable_symbol.name());
+                log::trace!(target: analysis.analysis.debug_name(), "{} implements CallableOpInterface", callable_symbol.name());
                 // Not all operands of a call op forward to arguments. Such operands are stored in
                 // `unaccounted`.
                 let mut unaccounted = bitvec![1; op.num_operands()];
@@ -215,21 +220,25 @@ where
                 if region.as_ref().is_none_or(|region| {
                     region.borrow().is_empty() || !solver.config().is_interprocedural()
                 }) {
-                    log::trace!("{} is an external callee", callable_symbol.name());
+                    log::trace!(target: analysis.analysis.debug_name(), "{} is an external callee", callable_symbol.name());
                     analysis.visit_external_call(call, &mut operands, &results, solver);
                     return Ok(());
                 }
 
                 // Otherwise, propagate information from the entry point of the function back to
                 // operands whenever possible.
-                log::trace!("propagating value lattices from callee entry to call operands");
+                log::trace!(target: analysis.analysis.debug_name(), "propagating value lattices from callee entry to call operands");
                 let region = region.unwrap();
                 let region = region.borrow();
                 let block = region.entry();
                 for (block_arg, arg_operand) in block.arguments().iter().zip(arg_operands.iter()) {
-                    let mut arg_lattice =
-                        get_lattice_element_mut::<A>(arg_operand.borrow().as_value_ref(), solver);
+                    let mut arg_lattice = get_lattice_element_mut::<A>(
+                        analysis,
+                        arg_operand.borrow().as_value_ref(),
+                        solver,
+                    );
                     let result_lattice = get_lattice_element_for::<A>(
+                        analysis,
                         current_point,
                         block_arg.borrow().as_value_ref(),
                         solver,
@@ -258,11 +267,12 @@ where
     // operands: the operands of this op itself and the operands of the terminators of the regions
     // of this op.
     if let Some(terminator) = op.as_trait::<dyn RegionBranchTerminatorOpInterface>() {
-        log::trace!("op implements RegionBranchTerminatorOpInterface");
+        log::trace!(target: analysis.analysis.debug_name(), "op implements RegionBranchTerminatorOpInterface");
         let parent_op = op.parent_op().unwrap();
         let parent_op = parent_op.borrow();
         if let Some(branch) = parent_op.as_trait::<dyn RegionBranchOpInterface>() {
             log::trace!(
+                target: analysis.analysis.debug_name(),
                 "op's parent implements RegionBranchOpInterface - handling as special case"
             );
             visit_region_successors_from_terminator(analysis, terminator, branch, solver);
@@ -271,27 +281,32 @@ where
     }
 
     if op.implements::<dyn ReturnLike>() {
-        log::trace!("op implements ReturnLike");
+        log::trace!(target: analysis.analysis.debug_name(), "op implements ReturnLike");
         // Going backwards, the operands of the return are derived from the results of all CallOps
         // calling this CallableOp.
         let parent_op = op.parent_op().unwrap();
         let parent_op = parent_op.borrow();
         if let Some(callable) = parent_op.as_trait::<dyn CallableOpInterface>() {
-            log::trace!("op's parent implements CallableOpInterface - visiting call sites");
+            log::trace!(target: analysis.analysis.debug_name(), "op's parent implements CallableOpInterface - visiting call sites");
             let callsites = solver.require::<PredecessorState, _>(
                 ProgramPoint::after(callable.as_operation()),
                 current_point,
             );
             if callsites.all_predecessors_known() {
                 log::trace!(
+                    target: analysis.analysis.debug_name(),
                     "found all {} call sites of the current callable op",
                     callsites.known_predecessors().len()
                 );
-                log::trace!("meeting lattices of return values and call site results");
+                log::trace!(target: analysis.analysis.debug_name(), "meeting lattices of return values and call site results");
                 for call in callsites.known_predecessors() {
                     let call = call.borrow();
-                    let call_result_lattices =
-                        get_lattice_elements_for::<A>(current_point, call.results().all(), solver);
+                    let call_result_lattices = get_lattice_elements_for::<A>(
+                        analysis,
+                        current_point,
+                        call.results().all(),
+                        solver,
+                    );
                     for (op, result) in operands.iter_mut().zip(call_result_lattices.into_iter()) {
                         op.meet(result.lattice());
                     }
@@ -301,6 +316,7 @@ where
                 // Note that, in particular, this will trigger for the return ops of any public
                 // functions.
                 log::trace!(
+                    target: analysis.analysis.debug_name(),
                     "not all call sites are known - setting return value lattices to exit state"
                 );
                 set_all_to_exit_states(analysis, &mut operands);
@@ -309,7 +325,7 @@ where
         }
     }
 
-    log::trace!("invoking {}::visit_operation", core::any::type_name::<A>());
+    log::trace!(target: analysis.analysis.debug_name(), "invoking {}::visit_operation", core::any::type_name::<A>());
     analysis.visit_operation(op, &mut operands, &results, solver)
 }
 
@@ -338,9 +354,11 @@ fn visit_region_successors<A>(
         for (operand, input) in operands.forwarded().iter().zip(inputs.iter()) {
             let operand = operand.borrow();
             let operand_index = operand.index as usize;
-            let mut operand_lattice = get_lattice_element_mut::<A>(operand.as_value_ref(), solver);
+            let mut operand_lattice =
+                get_lattice_element_mut::<A>(analysis, operand.as_value_ref(), solver);
             let point = ProgramPoint::after(op);
-            let input_lattice = get_lattice_element_for::<A>(point, input, solver);
+            let input_lattice = get_lattice_element_for::<A>(analysis, point, input, solver);
+
             operand_lattice.meet(input_lattice.lattice());
             unaccounted.set(operand_index, false);
         }
@@ -391,9 +409,10 @@ fn visit_region_successors_from_terminator<A>(
         let operands = terminator.get_successor_operands(*successor.branch_point());
         for (operand, input) in operands.forwarded().iter().zip(inputs.iter()) {
             let operand = operand.borrow();
-            let mut operand_lattice = get_lattice_element_mut::<A>(operand.as_value_ref(), solver);
+            let mut operand_lattice =
+                get_lattice_element_mut::<A>(analysis, operand.as_value_ref(), solver);
             let point = ProgramPoint::after(terminator_op);
-            let input_lattice = get_lattice_element_for::<A>(point, input, solver);
+            let input_lattice = get_lattice_element_for::<A>(analysis, point, input, solver);
             operand_lattice.meet(input_lattice.lattice());
             unaccounted.set(operand.index(), false);
         }
@@ -408,18 +427,20 @@ fn visit_region_successors_from_terminator<A>(
 
 #[inline]
 fn get_lattice_element_mut<'guard, A>(
+    analysis: &SparseDataFlowAnalysis<A, Backward>,
     value: ValueRef,
     solver: &mut DataFlowSolver,
 ) -> AnalysisStateGuardMut<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>
 where
     A: SparseBackwardDataFlowAnalysis,
 {
-    log::trace!("getting lattice for {value}");
+    log::trace!(target: analysis.debug_name(), "getting lattice for {value}");
     solver.get_or_create_mut::<_, _>(value)
 }
 
 #[inline]
 fn get_lattice_element_for<'guard, A>(
+    analysis: &SparseDataFlowAnalysis<A, Backward>,
     point: ProgramPoint,
     value: ValueRef,
     solver: &mut DataFlowSolver,
@@ -427,18 +448,19 @@ fn get_lattice_element_for<'guard, A>(
 where
     A: SparseBackwardDataFlowAnalysis,
 {
-    log::trace!("getting lattice for {value} at {point}");
+    log::trace!(target: analysis.debug_name(), "getting lattice for {value} at {point}");
     solver.require::<_, _>(value, point)
 }
 
 fn get_lattice_elements_mut<'guard, A>(
+    analysis: &SparseDataFlowAnalysis<A, Backward>,
     values: OpOperandRange<'_>,
     solver: &mut DataFlowSolver,
 ) -> SmallVec<[AnalysisStateGuardMut<'guard, <A as SparseBackwardDataFlowAnalysis>::Lattice>; 2]>
 where
     A: SparseBackwardDataFlowAnalysis,
 {
-    log::trace!("getting lattices for {:#?}", values.as_slice());
+    log::trace!(target: analysis.debug_name(), "getting lattices for {:#?}", values.as_slice());
     let mut results = SmallVec::with_capacity(values.len());
     for value in values.iter() {
         let lattice = solver.get_or_create_mut::<_, _>(value.borrow().as_value_ref());
@@ -450,6 +472,7 @@ where
 /// Get the lattice elements for a range of values, and also set up dependencies so that the
 /// analysis on the given ProgramPoint is re-invoked if any of the values change.
 fn get_lattice_elements_for<'guard, A>(
+    analysis: &SparseDataFlowAnalysis<A, Backward>,
     point: ProgramPoint,
     values: OpResultRange<'_>,
     solver: &mut DataFlowSolver,
@@ -457,7 +480,7 @@ fn get_lattice_elements_for<'guard, A>(
 where
     A: SparseBackwardDataFlowAnalysis,
 {
-    log::trace!("getting lattices for {:#?}", values.as_slice());
+    log::trace!(target: analysis.debug_name(), "getting lattices for {:#?}", values.as_slice());
     let mut results = SmallVec::with_capacity(values.len());
     for value in values.iter() {
         let lattice = solver.require(value.borrow().as_value_ref(), point);

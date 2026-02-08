@@ -18,7 +18,7 @@ pub use self::{
     specialization::PassTarget,
     statistics::{PassStatistic, Statistic, StatisticValue},
 };
-use crate::{EntityRef, Operation, OperationName, OperationRef, SmallVec};
+use crate::{EntityRef, Operation, OperationName, OperationRef, SmallVec, TraceTarget};
 
 /// Handles IR printing, based on the [`IRPrintingConfig`] passed in
 /// [Print::new]. Currently, this struct is managed by the [`PassManager`]'s [`PassInstrumentor`],
@@ -40,7 +40,6 @@ use crate::{EntityRef, Operation, OperationName, OperationRef, SmallVec};
 #[derive(Default)]
 pub struct Print {
     selected_passes: Option<SelectedPasses>,
-    target: Option<compact_str::CompactString>,
     filters: SmallVec<[OpFilter; 1]>,
     only_when_modified: bool,
 }
@@ -137,29 +136,28 @@ impl Print {
         self
     }
 
-    /// Specify the `log` target to write the IR output to.
-    ///
-    /// By default, the target is `printer`, unless the op is a `Symbol`, in which case it is the
-    /// `Symbol` name.
-    pub fn with_target(mut self, target: impl AsRef<str>) -> Self {
-        let target = compact_str::CompactString::new(target.as_ref());
-        self.target = Some(target);
-        self
-    }
-
-    pub fn print_ir(&self, op: EntityRef<'_, Operation>) {
+    pub fn print_ir(&self, op: EntityRef<'_, Operation>, topic: &'static str, phase: &str) {
+        let target = TraceTarget::category("pass").with_topic(topic);
         // Determine if any filter applies to `op`, and print accordingly
         if self.filters.is_empty() {
-            let target = self.target.as_deref().unwrap_or("printer");
-            log::trace!(target: target, "{op}");
+            let name = op.name();
+            if let Some(sym) = op.as_symbol() {
+                log::trace!(target: &target, symbol = sym.name().as_str(), dialect = name.dialect().as_str(), op = name.name().as_str(); "{phase}: {op}");
+            } else {
+                log::trace!(target: &target, dialect = name.dialect().as_str(), op = name.name().as_str(); "{phase}: {op}");
+            }
             return;
         }
 
         for filter in self.filters.iter() {
             match filter {
                 OpFilter::All => {
-                    let target = self.target.as_deref().unwrap_or("printer");
-                    log::trace!(target: target, "{op}");
+                    let name = op.name();
+                    if let Some(sym) = op.as_symbol() {
+                        log::trace!(target: &target, symbol = sym.name().as_str(), dialect = name.dialect().as_str(), op = name.name().as_str(); "{phase}: {op}");
+                    } else {
+                        log::trace!(target: &target, dialect = name.dialect().as_str(), op = name.name().as_str(); "{phase}: {op}");
+                    }
                     break;
                 }
                 OpFilter::Type {
@@ -168,16 +166,14 @@ impl Print {
                 } => {
                     let name = op.name();
                     if name.dialect() == *dialect && name.name() == *op_name {
-                        let target = self.target.as_deref().unwrap_or("printer");
-                        log::trace!(target: target, "{op}");
+                        log::trace!(target: &target, dialect = dialect.as_str(), op = op_name.as_str(); "{phase}: {op}");
                         break;
                     }
                 }
                 OpFilter::Symbol(None) => {
                     if let Some(sym) = op.as_symbol() {
-                        let name = sym.name().as_str();
-                        let target = self.target.as_deref().unwrap_or(name);
-                        log::trace!(target: target, "{}", sym.as_symbol_operation());
+                        let name = op.name();
+                        log::trace!(target: &target, symbol = sym.name().as_str(), dialect = name.dialect().as_str(), op = name.name().as_str(); "{phase}: {}", sym.as_symbol_operation());
                         break;
                     }
                 }
@@ -185,8 +181,8 @@ impl Print {
                     if let Some(sym) =
                         op.as_symbol().filter(|sym| sym.name().as_str().contains(filter.as_ref()))
                     {
-                        let target = self.target.as_deref().unwrap_or(filter.as_ref());
-                        log::trace!(target: target, "{}", sym.as_symbol_operation());
+                        let name = op.name();
+                        log::trace!(target: &target, symbol = sym.name().as_str(), dialect = name.dialect().as_str(), op = name.name().as_str(); "{phase}: {}", sym.as_symbol_operation());
                         break;
                     }
                 }
@@ -224,9 +220,8 @@ impl PassInstrumentation for Print {
             return;
         }
 
-        log::trace!("IR before the pass pipeline");
         let op = op.borrow();
-        self.print_ir(op);
+        self.print_ir(op, "pipeline", "before");
     }
 
     fn run_before_pass(&mut self, pass: &dyn OperationPass, op: &OperationRef) {
@@ -234,9 +229,8 @@ impl PassInstrumentation for Print {
             return;
         }
         if self.pass_filter(pass) {
-            log::trace!("Before the {} pass", pass.name());
             let op = op.borrow();
-            self.print_ir(op);
+            self.print_ir(op, pass.name(), "before");
         }
     }
 
@@ -249,9 +243,8 @@ impl PassInstrumentation for Print {
         let changed = post_execution_state.post_pass_status();
 
         if self.should_print(pass, changed) {
-            log::trace!("After the {} pass", pass.name());
             let op = op.borrow();
-            self.print_ir(op);
+            self.print_ir(op, pass.name(), "after");
         }
     }
 }

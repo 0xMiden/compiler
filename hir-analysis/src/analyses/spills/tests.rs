@@ -63,7 +63,7 @@ type AnalysisResult<T> = Result<T, Report>;
 /// ```
 #[test]
 fn spills_intra_block() -> AnalysisResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -226,7 +226,7 @@ fn spills_intra_block() -> AnalysisResult<()> {
 /// ```
 #[test]
 fn spills_branching_control_flow() -> AnalysisResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -439,7 +439,7 @@ fn spills_branching_control_flow() -> AnalysisResult<()> {
 /// ```
 #[test]
 fn spills_loop_nest() -> AnalysisResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -612,7 +612,7 @@ fn spills_loop_nest() -> AnalysisResult<()> {
 
 #[test]
 fn spills_entry_block_args_over_k() -> AnalysisResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -680,7 +680,7 @@ fn spills_entry_block_args_over_k() -> AnalysisResult<()> {
 
 #[test]
 fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();

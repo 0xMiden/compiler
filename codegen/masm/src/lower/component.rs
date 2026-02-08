@@ -3,8 +3,8 @@ use alloc::{collections::BTreeSet, sync::Arc};
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::parser::WordValue;
 use midenc_hir::{
-    CallConv, FunctionIdent, Op, SourceSpan, Span, Symbol, ValueRef, diagnostics::IntoDiagnostic,
-    dialects::builtin, pass::AnalysisManager,
+    CallConv, FunctionIdent, Op, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
+    diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::{
@@ -472,12 +472,15 @@ impl MasmModuleBuilder<'_> {
         // Emit the initializer block
         let initializer_region = gv.region(0);
         let initializer_block = initializer_region.entry();
+
         let mut block_emitter = BlockEmitter {
             liveness: &liveness,
             link_info: self.link_info,
             invoked: self.invoked_from_init,
             target: Default::default(),
             stack: Default::default(),
+            trace_target: TraceTarget::category("codegen")
+                .with_relevant_symbol(gv.name().as_symbol()),
         };
         block_emitter.emit_inline(&initializer_block);
 
@@ -572,7 +575,11 @@ impl MasmFunctionBuilder {
 
         use midenc_hir_analysis::analyses::LivenessAnalysis;
 
-        log::trace!(target: "codegen", "lowering {}", function.as_operation());
+        let demangled_symbol_name = midenc_hir::demangle::demangle(function.name());
+        let trace_target = TraceTarget::category("codegen")
+            .with_relevant_symbol(midenc_hir::SymbolName::intern(demangled_symbol_name));
+
+        log::trace!(target: &trace_target, "lowering {}", function.as_operation());
 
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
@@ -591,6 +598,7 @@ impl MasmFunctionBuilder {
             invoked: &mut invoked,
             target: Default::default(),
             stack,
+            trace_target,
         };
 
         // For component export functions, invoke the `init` procedure first if needed.

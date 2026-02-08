@@ -15,7 +15,7 @@ use super::format_report;
 
 /// Enable compiler-internal tracing and instrumentation during tests
 pub fn enable_compiler_instrumentation() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
