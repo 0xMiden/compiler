@@ -38,7 +38,8 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.3
+    movup.3
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -47,7 +48,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.4
-    dup.5
+    dup.2
     add
     u32assert
     u32divmod.4
@@ -58,7 +59,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.8
-    dup.6
+    dup.3
     add
     u32assert
     u32divmod.4
@@ -69,7 +70,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.12
-    dup.7
+    dup.4
     add
     u32assert
     u32divmod.4
@@ -80,7 +81,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.16
-    dup.8
+    dup.5
     add
     u32assert
     u32divmod.4
@@ -91,7 +92,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.20
-    dup.9
+    dup.6
     add
     u32assert
     u32divmod.4
@@ -102,7 +103,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.24
-    dup.10
+    dup.7
     add
     u32assert
     u32divmod.4
@@ -113,7 +114,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.28
-    movup.11
+    movup.8
     add
     u32assert
     u32divmod.4

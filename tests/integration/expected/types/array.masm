@@ -96,12 +96,16 @@ pub proc sum_arr(i32, i32) -> i32
             dup.3
             dup.3
             cdrop
-            push.3735929054
-            push.4
-            movup.6
-            u32wrapping_add
-            dup.4
-            cdrop
+            dup.2
+            if.true
+                push.4
+                movup.5
+                u32wrapping_add
+            else
+                movup.4
+                drop
+                push.3735929054
+            end
             push.0
             push.1
             movup.5

@@ -2,10 +2,10 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @le_felt {
         public builtin.function @entrypoint(v0: felt, v1: felt) -> i32 {
         ^block4(v0: felt, v1: felt):
-            v5 = arith.constant 0 : i32;
+            v9 = arith.constant 0 : i32;
             v3 = arith.lte v0, v1 : i1;
             v4 = hir.cast v3 : i32;
-            v6 = arith.neq v4, v5 : i1;
+            v6 = arith.neq v4, v9 : i1;
             v7 = arith.zext v6 : u32;
             v8 = hir.bitcast v7 : i32;
             builtin.ret v8;

@@ -13,8 +13,8 @@ builtin.component miden:base/transaction-script@1.0.0 {
         private builtin.function @miden:base/transaction-script@1.0.0#run(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block9(v0: felt, v1: felt, v2: felt, v3: felt):
             hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/wit_bindgen::rt::run_ctors_once()
-            v35 = arith.constant 42 : felt;
-            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/miden_base_sys::bindings::tx::update_expiration_block_delta(v35)
+            v36 = arith.constant 42 : felt;
+            hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/miden_base_sys::bindings::tx::update_expiration_block_delta(v36)
             builtin.ret ;
         };
 
@@ -23,15 +23,15 @@ builtin.component miden:base/transaction-script@1.0.0 {
             v7 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v8 = hir.bitcast v7 : ptr<byte, i32>;
             v9 = hir.load v8 : i32;
-            v10 = arith.constant 1048584 : i32;
-            v11 = arith.add v9, v10 : i32 #[overflow = wrapping];
+            v40 = arith.constant 1048584 : i32;
+            v11 = arith.add v9, v40 : i32 #[overflow = wrapping];
             v12 = hir.bitcast v11 : u32;
             v13 = hir.int_to_ptr v12 : ptr<byte, u8>;
             v14 = hir.load v13 : u8;
-            v6 = arith.constant 0 : i32;
+            v41 = arith.constant 0 : i32;
             v15 = arith.zext v14 : u32;
             v16 = hir.bitcast v15 : i32;
-            v18 = arith.neq v16, v6 : i1;
+            v18 = arith.neq v16, v41 : i1;
             scf.if v18{
             ^block13:
                 scf.yield ;
@@ -41,12 +41,12 @@ builtin.component miden:base/transaction-script@1.0.0 {
                 v20 = hir.bitcast v19 : ptr<byte, i32>;
                 v21 = hir.load v20 : i32;
                 hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_update_expiration_block_delta_binding/__wasm_call_ctors()
-                v37 = arith.constant 1 : u8;
-                v39 = arith.constant 1048584 : i32;
-                v23 = arith.add v21, v39 : i32 #[overflow = wrapping];
+                v39 = arith.constant 1 : u8;
+                v44 = arith.constant 1048584 : i32;
+                v23 = arith.add v21, v44 : i32 #[overflow = wrapping];
                 v27 = hir.bitcast v23 : u32;
                 v28 = hir.int_to_ptr v27 : ptr<byte, u8>;
-                hir.store v28, v37;
+                hir.store v28, v39;
                 scf.yield ;
             };
             builtin.ret ;

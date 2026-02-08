@@ -185,6 +185,7 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     nop
     push.1048584
     u32wrapping_add
+    dup.0
     push.4
     dup.1
     add
@@ -195,7 +196,7 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     u32mod
     u32assert
     assertz
-    movup.3
+    movup.4
     swap.1
     u32divmod.4
     swap.1
@@ -204,7 +205,6 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    dup.0
     push.4
     dup.1
     swap.1
@@ -272,6 +272,7 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     nop
     push.1048584
     u32wrapping_add
+    dup.0
     push.4
     dup.1
     add
@@ -282,7 +283,7 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     u32mod
     u32assert
     assertz
-    movup.3
+    movup.4
     swap.1
     u32divmod.4
     swap.1
@@ -291,7 +292,6 @@ proc miden:component-macros-account/component-macros-account@0.1.0#test-custom-t
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    dup.0
     push.4
     dup.1
     swap.1

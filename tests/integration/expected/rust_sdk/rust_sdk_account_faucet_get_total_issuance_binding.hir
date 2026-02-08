@@ -22,15 +22,15 @@ builtin.component miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-
             v3 = builtin.global_symbol @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v4 = hir.bitcast v3 : ptr<byte, i32>;
             v5 = hir.load v4 : i32;
-            v6 = arith.constant 1048584 : i32;
-            v7 = arith.add v5, v6 : i32 #[overflow = wrapping];
+            v30 = arith.constant 1048584 : i32;
+            v7 = arith.add v5, v30 : i32 #[overflow = wrapping];
             v8 = hir.bitcast v7 : u32;
             v9 = hir.int_to_ptr v8 : ptr<byte, u8>;
             v10 = hir.load v9 : u8;
-            v2 = arith.constant 0 : i32;
+            v31 = arith.constant 0 : i32;
             v11 = arith.zext v10 : u32;
             v12 = hir.bitcast v11 : i32;
-            v14 = arith.neq v12, v2 : i1;
+            v14 = arith.neq v12, v31 : i1;
             scf.if v14{
             ^block13:
                 scf.yield ;
@@ -40,12 +40,12 @@ builtin.component miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-
                 v16 = hir.bitcast v15 : ptr<byte, i32>;
                 v17 = hir.load v16 : i32;
                 hir.exec @miden:rust-sdk-account-faucet-get-total-issuance-binding/rust-sdk-account-faucet-get-total-issuance-binding@0.0.1/rust_sdk_account_faucet_get_total_issuance_binding/__wasm_call_ctors()
-                v28 = arith.constant 1 : u8;
-                v30 = arith.constant 1048584 : i32;
-                v19 = arith.add v17, v30 : i32 #[overflow = wrapping];
+                v29 = arith.constant 1 : u8;
+                v34 = arith.constant 1048584 : i32;
+                v19 = arith.add v17, v34 : i32 #[overflow = wrapping];
                 v23 = hir.bitcast v19 : u32;
                 v24 = hir.int_to_ptr v23 : ptr<byte, u8>;
-                hir.store v24, v28;
+                hir.store v24, v29;
                 scf.yield ;
             };
             builtin.ret ;

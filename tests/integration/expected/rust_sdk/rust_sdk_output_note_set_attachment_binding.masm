@@ -80,15 +80,6 @@ proc miden:rust-sdk-output-note-set-attachment-binding/rust-sdk-output-note-set-
     trace.252
     nop
     push.0
-    push.0
-    dup.1
-    dup.2
-    dup.3
-    swap.5
-    swap.1
-    swap.4
-    swap.2
-    swap.3
     push.1
     while.true
         push.0
@@ -113,7 +104,7 @@ proc miden:rust-sdk-output-note-set-attachment-binding/rust-sdk-output-note-set-
             u32mod
             u32assert
             assertz
-            dup.4
+            push.0
             swap.1
             u32divmod.4
             swap.1
@@ -128,57 +119,20 @@ proc miden:rust-sdk-output-note-set-attachment-binding/rust-sdk-output-note-set-
         end
         push.3735929054
         dup.2
-        dup.8
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.3
-        dup.8
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
         dup.4
-        dup.8
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.5
-        movup.2
-        swap.8
-        movdn.2
-        cdrop
-        push.3735929054
-        dup.5
-        dup.7
         swap.2
         swap.1
         cdrop
         push.1
         push.0
-        movup.7
+        movup.4
         cdrop
         push.1
         u32and
-        movup.4
-        swap.6
-        swap.7
-        movdn.4
-        swap.1
-        swap.2
-        swap.3
-        swap.5
+        movup.2
         swap.1
         if.true
-            movup.6
-            drop
-            movup.6
-            drop
-            movup.6
-            drop
-            movup.6
+            movup.2
             drop
             push.1
         else
@@ -187,10 +141,7 @@ proc miden:rust-sdk-output-note-set-attachment-binding/rust-sdk-output-note-set-
     end
     drop
     drop
-    drop
-    drop
-    drop
-    drop
+    dup.0
     push.24
     dup.1
     add
@@ -246,13 +197,13 @@ proc miden:rust-sdk-output-note-set-attachment-binding/rust-sdk-output-note-set-
     trace.252
     nop
     swap.1
-    dup.2
     push.8
-    dup.1
+    dup.3
     swap.1
     u32mod
     u32assert
     assertz
+    movup.2
     u32divmod.4
     swap.1
     movup.2
@@ -262,11 +213,13 @@ proc miden:rust-sdk-output-note-set-attachment-binding/rust-sdk-output-note-set-
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    dup.0
-    swap.3
+    push.0
+    dup.1
+    dup.1
+    dup.2
     swap.1
-    swap.4
     swap.2
+    swap.3
     trace.240
     nop
     exec.::"miden:rust-sdk-output-note-set-attachment-binding/rust-sdk-output-note-set-attachment-binding@0.0.1"::rust_sdk_output_note_set_attachment_binding::miden_base_sys::bindings::output_note::set_attachment
@@ -366,8 +319,9 @@ proc miden_base_sys::bindings::output_note::set_attachment(
     felt,
     i32
 )
+    movup.3
     push.12
-    dup.4
+    dup.1
     add
     u32assert
     push.4
@@ -384,7 +338,7 @@ proc miden_base_sys::bindings::output_note::set_attachment(
     trace.252
     nop
     push.8
-    dup.5
+    dup.2
     add
     u32assert
     push.4
@@ -401,7 +355,7 @@ proc miden_base_sys::bindings::output_note::set_attachment(
     trace.252
     nop
     push.4
-    dup.6
+    dup.3
     add
     u32assert
     push.4
@@ -417,13 +371,13 @@ proc miden_base_sys::bindings::output_note::set_attachment(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.6
     push.4
-    dup.1
+    dup.4
     swap.1
     u32mod
     u32assert
     assertz
+    movup.3
     u32divmod.4
     swap.1
     trace.240

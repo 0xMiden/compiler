@@ -457,6 +457,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-another-word(
     nop
     push.1048584
     u32wrapping_add
+    dup.0
     push.12
     dup.1
     add
@@ -468,7 +469,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-another-word(
     u32assert
     assertz
     push.5
-    movup.6
+    movup.7
     add
     swap.1
     u32divmod.4
@@ -489,7 +490,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-another-word(
     u32assert
     assertz
     push.4
-    movup.5
+    movup.6
     add
     swap.1
     u32divmod.4
@@ -510,7 +511,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-another-word(
     u32assert
     assertz
     push.3
-    movup.4
+    movup.5
     add
     swap.1
     u32divmod.4
@@ -520,7 +521,6 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-another-word(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    dup.0
     push.4
     dup.1
     swap.1
@@ -576,6 +576,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
     nop
     push.1048584
     u32wrapping_add
+    dup.0
     push.22
     dup.1
     add
@@ -587,7 +588,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
     u32assert
     assertz
     push.9
-    movup.10
+    movup.11
     u32wrapping_add
     push.65535
     u32and
@@ -615,7 +616,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
     mem_store
     push.0
     push.255
-    movup.9
+    movup.10
     u32and
     eq
     push.255
@@ -646,7 +647,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
     swap.1
     mem_store
     push.11
-    movup.7
+    movup.8
     u32wrapping_add
     push.255
     u32and
@@ -686,7 +687,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
     u32assert
     assertz
     push.7
-    movup.7
+    movup.8
     add
     swap.1
     u32divmod.4
@@ -707,7 +708,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
     u32assert
     assertz
     push.10
-    movup.6
+    movup.7
     u32wrapping_add
     swap.1
     u32divmod.4
@@ -728,7 +729,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
     u32assert
     assertz
     push.6
-    movup.5
+    movup.6
     add
     swap.1
     u32divmod.4
@@ -738,7 +739,6 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-mixed(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    dup.0
     push.8
     dup.1
     swap.1
@@ -787,7 +787,29 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-nested(
     nop
     push.1048584
     u32wrapping_add
+    dup.0
     push.8
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    push.8
+    movup.6
+    add
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
     dup.1
     add
     u32assert
@@ -808,28 +830,6 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-nested(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.4
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.8
-    movup.4
-    add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    dup.0
     push.4
     dup.1
     swap.1
@@ -866,6 +866,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-pair(felt, felt) -> i32
     nop
     push.1048584
     u32wrapping_add
+    dup.0
     push.4
     dup.1
     add
@@ -877,7 +878,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-pair(felt, felt) -> i32
     u32assert
     assertz
     push.4
-    movup.4
+    movup.5
     add
     swap.1
     u32divmod.4
@@ -887,7 +888,6 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-pair(felt, felt) -> i32
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    dup.0
     push.4
     dup.1
     swap.1
@@ -928,7 +928,29 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-triple(
     nop
     push.1048584
     u32wrapping_add
+    dup.0
     push.8
+    dup.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    push.5
+    movup.6
+    add
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.4
     dup.1
     add
     u32assert
@@ -949,28 +971,6 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-triple(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.4
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    push.5
-    movup.4
-    add
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    dup.0
     push.4
     dup.1
     swap.1
@@ -1012,6 +1012,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-word(
     nop
     push.1048584
     u32wrapping_add
+    dup.0
     push.12
     dup.1
     add
@@ -1023,7 +1024,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-word(
     u32assert
     assertz
     push.4
-    movup.6
+    movup.7
     add
     swap.1
     u32divmod.4
@@ -1044,7 +1045,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-word(
     u32assert
     assertz
     push.3
-    movup.5
+    movup.6
     add
     swap.1
     u32divmod.4
@@ -1065,7 +1066,7 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-word(
     u32assert
     assertz
     push.2
-    movup.4
+    movup.5
     add
     swap.1
     u32divmod.4
@@ -1075,7 +1076,6 @@ proc miden:cross-ctx-account-word/foo@1.0.0#process-word(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    dup.0
     push.4
     dup.1
     swap.1

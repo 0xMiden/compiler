@@ -161,6 +161,7 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     u32mod
     u32assert
     assertz
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -168,8 +169,9 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.12
     dup.2
+    push.12
+    dup.1
     add
     u32assert
     push.4
@@ -178,6 +180,8 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     u32mod
     u32assert
     assertz
+    movup.2
+    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -254,7 +258,7 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     trace.252
     nop
     push.12
-    dup.2
+    movup.2
     add
     u32assert
     push.4
@@ -270,13 +274,13 @@ proc miden:rust-sdk-account-get-procedure-root-binding/rust-sdk-account-get-proc
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.1
     push.4
-    dup.1
+    dup.2
     swap.1
     u32mod
     u32assert
     assertz
+    swap.1
     u32divmod.4
     swap.1
     trace.240

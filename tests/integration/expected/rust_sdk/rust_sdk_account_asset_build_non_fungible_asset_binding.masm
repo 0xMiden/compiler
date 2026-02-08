@@ -136,14 +136,6 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     nop
     push.0
     push.1
-    push.0
-    dup.2
-    movup.2
-    swap.3
-    movdn.2
-    swap.4
-    swap.1
-    push.1
     while.true
         push.0
         push.16
@@ -167,7 +159,7 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
             u32mod
             u32assert
             assertz
-            dup.4
+            push.0
             swap.1
             u32divmod.4
             swap.1
@@ -182,47 +174,20 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
         end
         push.3735929054
         dup.2
-        dup.7
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.3
-        dup.7
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
         dup.4
-        movup.2
-        swap.7
-        movdn.2
-        cdrop
-        push.3735929054
-        dup.4
-        dup.6
         swap.2
         swap.1
         cdrop
         push.1
         push.0
-        movup.6
+        movup.4
         cdrop
         push.1
         u32and
-        swap.1
-        swap.2
-        swap.3
-        swap.5
-        swap.6
-        swap.4
+        movup.2
         swap.1
         if.true
-            movup.5
-            drop
-            movup.5
-            drop
-            movup.5
+            movup.2
             drop
             push.1
         else
@@ -231,9 +196,7 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     end
     drop
     drop
-    drop
-    drop
-    drop
+    dup.0
     push.24
     dup.1
     add
@@ -289,13 +252,13 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     trace.252
     nop
     swap.1
-    dup.2
     push.8
-    dup.1
+    dup.3
     swap.1
     u32mod
     u32assert
     assertz
+    dup.2
     u32divmod.4
     swap.1
     movup.2
@@ -305,14 +268,14 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    push.0
+    push.1
     push.16
-    dup.1
+    dup.4
     u32wrapping_add
-    dup.1
-    movup.2
-    swap.4
-    movdn.2
+    dup.4
     swap.3
+    swap.2
     swap.1
     trace.240
     nop
@@ -347,8 +310,9 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     trace.252
     nop
     swap.1
+    dup.2
     push.8
-    dup.3
+    dup.1
     add
     u32assert
     push.4
@@ -357,6 +321,9 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     u32mod
     u32assert
     assertz
+    movup.3
+    movup.3
+    movup.2
     u32divmod.4
     swap.1
     movup.2
@@ -367,7 +334,7 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     trace.252
     nop
     push.16
-    dup.2
+    movup.3
     add
     u32assert
     push.8
@@ -384,13 +351,13 @@ proc miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-acco
     trace.252
     nop
     swap.1
-    dup.2
     push.4
-    dup.1
+    dup.3
     swap.1
     u32mod
     u32assert
     assertz
+    movup.2
     u32divmod.4
     swap.1
     movup.2
@@ -516,8 +483,9 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    movup.3
     push.12
-    dup.4
+    dup.1
     add
     u32assert
     push.4
@@ -534,7 +502,7 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     trace.252
     nop
     push.8
-    dup.5
+    dup.2
     add
     u32assert
     push.4
@@ -551,7 +519,7 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     trace.252
     nop
     push.4
-    dup.6
+    dup.3
     add
     u32assert
     push.4
@@ -567,13 +535,13 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.6
     push.4
-    dup.1
+    dup.4
     swap.1
     u32mod
     u32assert
     assertz
+    movup.3
     u32divmod.4
     swap.1
     trace.240
@@ -602,6 +570,7 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     u32mod
     u32assert
     assertz
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -610,8 +579,9 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     trace.252
     nop
     swap.1
+    movup.3
     push.8
-    dup.3
+    dup.1
     add
     u32assert
     push.8
@@ -620,7 +590,8 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     u32mod
     u32assert
     assertz
-    swap.2
+    movup.2
+    movup.3
     movup.2
     u32divmod.4
     swap.1
@@ -632,7 +603,7 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     trace.252
     nop
     push.8
-    dup.2
+    movup.2
     add
     u32assert
     push.8
@@ -649,14 +620,13 @@ proc miden_base_sys::bindings::asset::build_non_fungible_asset(
     trace.252
     nop
     swap.1
-    movup.2
     push.8
-    dup.1
+    dup.3
     swap.1
     u32mod
     u32assert
     assertz
-    swap.2
+    swap.1
     movup.2
     u32divmod.4
     swap.1

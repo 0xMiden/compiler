@@ -208,6 +208,7 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     u32mod
     u32assert
     assertz
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -216,8 +217,9 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     trace.252
     nop
     swap.1
+    movup.4
     push.8
-    dup.4
+    dup.1
     add
     u32assert
     push.8
@@ -226,7 +228,8 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     u32mod
     u32assert
     assertz
-    swap.2
+    movup.2
+    movup.3
     movup.2
     u32divmod.4
     swap.1
@@ -238,7 +241,7 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     trace.252
     nop
     push.8
-    dup.1
+    movup.2
     add
     u32assert
     push.8
@@ -255,14 +258,13 @@ proc miden_base_sys::bindings::tx::get_input_notes_commitment(
     trace.252
     nop
     swap.1
-    movup.3
     push.8
-    dup.1
+    dup.3
     swap.1
     u32mod
     u32assert
     assertz
-    swap.2
+    swap.1
     movup.2
     u32divmod.4
     swap.1

@@ -14,6 +14,7 @@ end
 
 @callconv("C")
 pub proc entrypoint(i32) -> i32
+    dup.0
     push.0
     push.2
     dup.2
@@ -21,6 +22,7 @@ pub proc entrypoint(i32) -> i32
     u32lt
     neq
     if.true
+        drop
         drop
         push.0
         push.0
@@ -33,17 +35,19 @@ pub proc entrypoint(i32) -> i32
         neq
         if.true
             drop
+            drop
             push.0
             push.1
         else
             push.0
             push.0
             push.1
-            dup.3
+            dup.4
             u32and
             eq
             neq
             if.true
+                drop
                 drop
                 push.0
                 push.0
@@ -51,7 +55,7 @@ pub proc entrypoint(i32) -> i32
                 push.0
                 push.0
                 push.3
-                dup.3
+                movup.3
                 swap.1
                 u32mod
                 u32assert
@@ -73,13 +77,14 @@ pub proc entrypoint(i32) -> i32
                         exec.::intrinsics::i32::wrapping_mul
                         trace.252
                         nop
-                        swap.1
+                        dup.1
                         u32gt
                         push.0
                         dup.1
                         neq
                         if.true
-                            movdn.2
+                            movdn.3
+                            drop
                             drop
                             drop
                             push.0
@@ -90,11 +95,12 @@ pub proc entrypoint(i32) -> i32
                         else
                             push.0
                             push.0
-                            dup.3
+                            dup.4
                             eq
                             neq
                             if.true
-                                movdn.2
+                                movdn.3
+                                drop
                                 drop
                                 drop
                                 push.0
@@ -105,15 +111,16 @@ pub proc entrypoint(i32) -> i32
                             else
                                 push.0
                                 push.0
-                                dup.3
-                                dup.5
+                                dup.4
+                                dup.4
                                 swap.1
                                 u32mod
                                 u32assert
                                 eq
                                 neq
                                 if.true
-                                    movdn.2
+                                    movdn.3
+                                    drop
                                     drop
                                     drop
                                     push.0
@@ -123,7 +130,7 @@ pub proc entrypoint(i32) -> i32
                                     swap.1
                                 else
                                     push.2
-                                    movup.2
+                                    movup.3
                                     u32wrapping_add
                                     push.0
                                     push.0
@@ -132,7 +139,8 @@ pub proc entrypoint(i32) -> i32
                                     neq
                                     if.true
                                         drop
-                                        swap.1
+                                        movdn.2
+                                        drop
                                         drop
                                         push.0
                                         push.2
@@ -142,7 +150,7 @@ pub proc entrypoint(i32) -> i32
                                     else
                                         push.0
                                         dup.1
-                                        dup.4
+                                        movup.4
                                         swap.1
                                         u32mod
                                         u32assert
@@ -162,12 +170,16 @@ pub proc entrypoint(i32) -> i32
                                         swap.7
                                         swap.1
                                         cdrop
-                                        push.3735929054
-                                        push.4
-                                        movup.5
-                                        u32wrapping_add
-                                        movup.4
-                                        cdrop
+                                        movup.2
+                                        if.true
+                                            push.4
+                                            movup.3
+                                            u32wrapping_add
+                                        else
+                                            movup.2
+                                            drop
+                                            push.3735929054
+                                        end
                                         movup.2
                                         swap.3
                                         swap.4

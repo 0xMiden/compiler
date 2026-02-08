@@ -22,28 +22,27 @@ builtin.component miden:base/note-script@1.0.0 {
             v9 = hir.bitcast v8 : ptr<byte, i32>;
             v10 = hir.load v9 : i32;
             hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/wit_bindgen::rt::run_ctors_once()
-            v11 = arith.constant 1048588 : i32;
-            v12 = arith.add v10, v11 : i32 #[overflow = wrapping];
+            v63 = arith.constant 1048588 : i32;
+            v12 = arith.add v10, v63 : i32 #[overflow = wrapping];
             v13 = hir.bitcast v12 : u32;
-            v14 = arith.constant 4 : u32;
-            v15 = arith.mod v13, v14 : u32;
+            v62 = arith.constant 4 : u32;
+            v15 = arith.mod v13, v62 : u32;
             hir.assertz v15 #[code = 250];
             v16 = hir.int_to_ptr v13 : ptr<byte, i32>;
             v17 = hir.load v16 : i32;
             v18 = hir.bitcast v17 : felt;
-            v59 = arith.constant 11 : felt;
-            hir.assert_eq v18, v59;
+            v61 = arith.constant 11 : felt;
+            hir.assert_eq v18, v61;
             v21 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1(v18) : felt
-            v58 = arith.constant 53 : felt;
-            hir.assert_eq v21, v58;
-            v27 = hir.bitcast v12 : u32;
-            v60 = arith.constant 4 : u32;
-            v29 = arith.mod v27, v60 : u32;
+            v60 = arith.constant 53 : felt;
+            hir.assert_eq v21, v60;
+            v65 = arith.constant 4 : u32;
+            v29 = arith.mod v13, v65 : u32;
             hir.assertz v29 #[code = 250];
             v24 = hir.cast v21 : i64;
             v25 = hir.bitcast v24 : u64;
             v26 = arith.trunc v25 : u32;
-            v30 = hir.int_to_ptr v27 : ptr<byte, u32>;
+            v30 = hir.int_to_ptr v13 : ptr<byte, u32>;
             hir.store v30, v26;
             builtin.ret ;
         };
@@ -53,15 +52,15 @@ builtin.component miden:base/note-script@1.0.0 {
             v32 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note/GOT.data.internal.__memory_base : ptr<byte, u8>
             v33 = hir.bitcast v32 : ptr<byte, i32>;
             v34 = hir.load v33 : i32;
-            v35 = arith.constant 1048592 : i32;
-            v36 = arith.add v34, v35 : i32 #[overflow = wrapping];
+            v69 = arith.constant 1048592 : i32;
+            v36 = arith.add v34, v69 : i32 #[overflow = wrapping];
             v37 = hir.bitcast v36 : u32;
             v38 = hir.int_to_ptr v37 : ptr<byte, u8>;
             v39 = hir.load v38 : u8;
-            v31 = arith.constant 0 : i32;
+            v70 = arith.constant 0 : i32;
             v40 = arith.zext v39 : u32;
             v41 = hir.bitcast v40 : i32;
-            v43 = arith.neq v41, v31 : i1;
+            v43 = arith.neq v41, v70 : i1;
             scf.if v43{
             ^block16:
                 scf.yield ;
@@ -71,12 +70,12 @@ builtin.component miden:base/note-script@1.0.0 {
                 v45 = hir.bitcast v44 : ptr<byte, i32>;
                 v46 = hir.load v45 : i32;
                 hir.exec @miden:base/note-script@1.0.0/cross_ctx_note/__wasm_call_ctors()
-                v62 = arith.constant 1 : u8;
-                v64 = arith.constant 1048592 : i32;
-                v48 = arith.add v46, v64 : i32 #[overflow = wrapping];
+                v68 = arith.constant 1 : u8;
+                v73 = arith.constant 1048592 : i32;
+                v48 = arith.add v46, v73 : i32 #[overflow = wrapping];
                 v52 = hir.bitcast v48 : u32;
                 v53 = hir.int_to_ptr v52 : ptr<byte, u8>;
-                hir.store v53, v62;
+                hir.store v53, v68;
                 scf.yield ;
             };
             builtin.ret ;

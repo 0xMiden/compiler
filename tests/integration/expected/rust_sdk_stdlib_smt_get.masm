@@ -17,13 +17,13 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
     i32,
     i32
 ) -> i32
-    dup.0
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -31,13 +31,14 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.2
+    movup.2
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -47,7 +48,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
     nop
     push.0
     push.1
-    movup.3
+    movup.4
     movup.3
     eq
     neq
@@ -58,7 +59,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
         push.0
     else
         push.4
-        dup.1
+        dup.2
         add
         u32assert
         push.4
@@ -75,7 +76,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
         trace.252
         nop
         push.4
-        dup.3
+        dup.2
         add
         u32assert
         push.4
@@ -104,7 +105,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
             push.0
         else
             push.8
-            dup.1
+            dup.2
             add
             u32assert
             push.4
@@ -121,7 +122,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
             trace.252
             nop
             push.8
-            dup.3
+            dup.2
             add
             u32assert
             push.4
@@ -150,7 +151,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
                 push.0
             else
                 push.12
-                swap.1
+                movup.2
                 add
                 u32assert
                 push.4
@@ -218,6 +219,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    dup.0
     push.28
     dup.1
     add
@@ -228,7 +230,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    dup.10
+    dup.11
     swap.1
     u32divmod.4
     swap.1
@@ -247,7 +249,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    dup.9
+    dup.10
     swap.1
     u32divmod.4
     swap.1
@@ -266,7 +268,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    dup.8
+    dup.9
     swap.1
     u32divmod.4
     swap.1
@@ -285,7 +287,7 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     u32mod
     u32assert
     assertz
-    dup.7
+    dup.8
     swap.1
     u32divmod.4
     swap.1
@@ -295,18 +297,22 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     push.64
-    dup.1
+    dup.2
     u32wrapping_add
+    movup.3
+    swap.11
+    swap.4
+    movdn.3
     movup.2
     swap.10
-    swap.4
+    swap.5
     movdn.2
     swap.1
     swap.9
-    swap.5
+    swap.6
     swap.1
     swap.8
-    swap.6
+    swap.7
     trace.240
     nop
     exec.::"root_ns:root@1.0.0"::rust_sdk_stdlib_smt_get::"miden::core::collections::smt::get"
@@ -535,7 +541,6 @@ pub proc entrypoint(felt, felt, felt, felt, felt, felt, felt, felt)
     trace.252
     nop
     push.64
-    dup.1
     add
     u32assert
     push.4

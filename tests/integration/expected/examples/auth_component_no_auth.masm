@@ -90,6 +90,7 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     exec.::"miden:auth-component-no-auth/auth-component-no-auth@0.1.0"::auth_component_no_auth::"miden::protocol::active_account::get_initial_commitment"
     trace.252
     nop
+    dup.0
     push.8
     dup.1
     add
@@ -117,6 +118,7 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     u32mod
     u32assert
     assertz
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -124,13 +126,15 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.2
     push.4
-    dup.1
+    dup.4
     swap.1
     u32mod
     u32assert
+    dup.0
     assertz
+    dup.4
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -139,7 +143,7 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     trace.252
     nop
     push.12
-    dup.4
+    dup.7
     add
     u32assert
     push.4
@@ -155,14 +159,14 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.4
+    dup.8
     trace.240
     nop
     exec.::"miden:auth-component-no-auth/auth-component-no-auth@0.1.0"::auth_component_no_auth::"miden::protocol::active_account::compute_commitment"
     trace.252
     nop
     push.8
-    dup.5
+    dup.8
     add
     u32assert
     push.4
@@ -179,15 +183,12 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     trace.252
     nop
     push.4
-    dup.6
-    add
-    u32assert
-    push.4
-    dup.1
+    dup.7
     swap.1
     u32mod
     u32assert
     assertz
+    movup.6
     u32divmod.4
     swap.1
     trace.240
@@ -195,13 +196,9 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.6
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
+    movup.5
     assertz
+    movup.4
     u32divmod.4
     swap.1
     trace.240
@@ -210,7 +207,7 @@ proc miden:auth-component-no-auth/auth-component-no-auth@0.1.0#auth-procedure(
     trace.252
     nop
     push.12
-    dup.8
+    movup.8
     add
     u32assert
     push.4

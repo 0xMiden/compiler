@@ -41,8 +41,9 @@ pub proc entrypoint(i32) -> felt
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    dup.1
     push.4
-    dup.2
+    dup.1
     add
     u32assert
     push.4
@@ -59,7 +60,7 @@ pub proc entrypoint(i32) -> felt
     trace.252
     nop
     push.8
-    dup.3
+    movup.2
     add
     u32assert
     push.4
@@ -228,6 +229,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     exec.::"root_ns:root@1.0.0"::hash_words::"<alloc::raw_vec::RawVecInner>::current_memory"
     trace.252
     nop
+    dup.0
     push.8
     dup.1
     add
@@ -252,6 +254,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
     neq
     if.true
         drop
+        drop
     else
         push.4
         dup.2
@@ -271,7 +274,7 @@ proc <alloc::raw_vec::RawVecInner>::deallocate(
         trace.252
         nop
         push.12
-        dup.3
+        movup.3
         add
         u32assert
         push.4
@@ -326,13 +329,14 @@ proc <alloc::raw_vec::RawVecInner>::current_memory(
         push.0
         push.4
     else
-        dup.1
+        swap.1
         push.4
         dup.1
         swap.1
         u32mod
         u32assert
         assertz
+        dup.0
         u32divmod.4
         swap.1
         trace.240
@@ -347,9 +351,8 @@ proc <alloc::raw_vec::RawVecInner>::current_memory(
         neq
         dup.0
         if.true
-            swap.1
+            movdn.2
             drop
-            movup.2
             drop
             movup.2
             drop
@@ -357,8 +360,9 @@ proc <alloc::raw_vec::RawVecInner>::current_memory(
             drop
             push.0
         else
-            push.4
             dup.3
+            push.4
+            dup.1
             add
             u32assert
             push.4
@@ -367,7 +371,7 @@ proc <alloc::raw_vec::RawVecInner>::current_memory(
             u32mod
             u32assert
             assertz
-            movup.5
+            movup.6
             swap.1
             u32divmod.4
             swap.1
@@ -393,13 +397,13 @@ proc <alloc::raw_vec::RawVecInner>::current_memory(
             exec.::intrinsics::mem::load_sw
             trace.252
             nop
-            dup.3
             push.4
-            dup.1
+            dup.2
             swap.1
             u32mod
             u32assert
             assertz
+            swap.1
             u32divmod.4
             swap.1
             trace.240

@@ -22,15 +22,15 @@ builtin.component miden:base/transaction-script@1.0.0 {
             v6 = builtin.global_symbol @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_expiration_block_delta_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v7 = hir.bitcast v6 : ptr<byte, i32>;
             v8 = hir.load v7 : i32;
-            v9 = arith.constant 1048584 : i32;
-            v10 = arith.add v8, v9 : i32 #[overflow = wrapping];
+            v39 = arith.constant 1048584 : i32;
+            v10 = arith.add v8, v39 : i32 #[overflow = wrapping];
             v11 = hir.bitcast v10 : u32;
             v12 = hir.int_to_ptr v11 : ptr<byte, u8>;
             v13 = hir.load v12 : u8;
-            v5 = arith.constant 0 : i32;
+            v40 = arith.constant 0 : i32;
             v14 = arith.zext v13 : u32;
             v15 = hir.bitcast v14 : i32;
-            v17 = arith.neq v15, v5 : i1;
+            v17 = arith.neq v15, v40 : i1;
             scf.if v17{
             ^block13:
                 scf.yield ;
@@ -40,12 +40,12 @@ builtin.component miden:base/transaction-script@1.0.0 {
                 v19 = hir.bitcast v18 : ptr<byte, i32>;
                 v20 = hir.load v19 : i32;
                 hir.exec @miden:base/transaction-script@1.0.0/rust_sdk_account_tx_get_expiration_block_delta_binding/__wasm_call_ctors()
-                v37 = arith.constant 1 : u8;
-                v39 = arith.constant 1048584 : i32;
-                v22 = arith.add v20, v39 : i32 #[overflow = wrapping];
+                v38 = arith.constant 1 : u8;
+                v43 = arith.constant 1048584 : i32;
+                v22 = arith.add v20, v43 : i32 #[overflow = wrapping];
                 v26 = hir.bitcast v22 : u32;
                 v27 = hir.int_to_ptr v26 : ptr<byte, u8>;
-                hir.store v27, v37;
+                hir.store v27, v38;
                 scf.yield ;
             };
             builtin.ret ;

@@ -58,20 +58,20 @@ proc miden:cross-ctx-account/foo@1.0.0#process-felt(felt) -> felt
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048584
-    u32wrapping_add
     trace.240
     nop
     exec.::"miden:cross-ctx-account/foo@1.0.0"::cross_ctx_account::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
-    dup.0
+    push.1048584
+    u32wrapping_add
     push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -81,17 +81,16 @@ proc miden:cross-ctx-account/foo@1.0.0#process-felt(felt) -> felt
     nop
     movup.2
     add
-    swap.1
     push.4
-    dup.1
+    dup.2
     swap.1
     u32mod
     u32assert
     assertz
-    dup.1
+    dup.0
     u32split
     drop
-    swap.1
+    movup.2
     u32divmod.4
     swap.1
     trace.240

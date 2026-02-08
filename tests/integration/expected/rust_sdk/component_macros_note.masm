@@ -130,8 +130,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     push.0
     mul.4294967296
     add
+    dup.1
     push.8
-    dup.2
+    dup.1
     add
     u32assert
     push.8
@@ -153,7 +154,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.8
-    dup.2
+    dup.3
     u32wrapping_add
     push.66
     push.77
@@ -171,7 +172,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     push.0
     mul.4294967296
     add
-    dup.8
+    dup.9
     dup.4
     dup.6
     dup.8
@@ -194,7 +195,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.12
-    dup.2
+    dup.1
     add
     u32assert
     push.4
@@ -211,7 +212,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.8
-    dup.3
+    movup.2
     add
     u32assert
     push.4

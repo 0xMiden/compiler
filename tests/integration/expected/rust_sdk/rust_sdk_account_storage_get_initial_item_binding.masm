@@ -191,6 +191,7 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::"miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-storage-get-initial-item-binding@0.0.1"::rust_sdk_account_storage_get_initial_item_binding::<rust_sdk_account_storage_get_initial_item_binding::TestAccount as core::default::Default>::default
     trace.252
     nop
+    dup.0
     push.4
     dup.1
     add
@@ -208,13 +209,13 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.1
     push.4
-    dup.1
+    dup.2
     swap.1
     u32mod
     u32assert
     assertz
+    dup.1
     u32divmod.4
     swap.1
     trace.240
@@ -223,7 +224,7 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     trace.252
     nop
     push.16
-    dup.3
+    dup.4
     u32wrapping_add
     swap.2
     trace.240
@@ -258,8 +259,9 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    dup.1
     push.12
-    dup.2
+    dup.1
     add
     u32assert
     push.4
@@ -268,6 +270,8 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     u32mod
     u32assert
     assertz
+    movup.2
+    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -276,7 +280,7 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     trace.252
     nop
     push.20
-    dup.2
+    dup.3
     add
     u32assert
     push.4
@@ -310,7 +314,7 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     trace.252
     nop
     push.24
-    dup.2
+    dup.3
     add
     u32assert
     push.4
@@ -344,7 +348,7 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     trace.252
     nop
     push.28
-    dup.2
+    movup.3
     add
     u32assert
     push.4
@@ -360,13 +364,13 @@ proc miden:rust-sdk-account-storage-get-initial-item-binding/rust-sdk-account-st
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.1
     push.4
-    dup.1
+    dup.2
     swap.1
     u32mod
     u32assert
     assertz
+    swap.1
     u32divmod.4
     swap.1
     trace.240

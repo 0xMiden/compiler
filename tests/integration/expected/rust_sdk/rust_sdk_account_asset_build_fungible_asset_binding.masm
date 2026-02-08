@@ -153,8 +153,9 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     nop
     push.1048584
     u32wrapping_add
+    dup.1
     push.8
-    dup.2
+    dup.1
     add
     u32assert
     push.8
@@ -171,8 +172,9 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     trace.252
     nop
     swap.1
-    push.8
     dup.3
+    push.8
+    dup.1
     add
     u32assert
     push.4
@@ -181,6 +183,9 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     u32mod
     u32assert
     assertz
+    movup.3
+    movup.3
+    movup.2
     u32divmod.4
     swap.1
     movup.2
@@ -190,13 +195,13 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    dup.1
     push.8
-    dup.1
+    dup.2
     swap.1
     u32mod
     u32assert
     assertz
+    swap.1
     u32divmod.4
     swap.1
     trace.240
@@ -205,13 +210,13 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     trace.252
     nop
     swap.1
-    dup.2
     push.4
-    dup.1
+    dup.3
     swap.1
     u32mod
     u32assert
     assertz
+    movup.2
     u32divmod.4
     swap.1
     movup.2
@@ -355,6 +360,7 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     u32mod
     u32assert
     assertz
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -363,8 +369,9 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     trace.252
     nop
     swap.1
+    movup.4
     push.8
-    dup.4
+    dup.1
     add
     u32assert
     push.8
@@ -373,7 +380,8 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     u32mod
     u32assert
     assertz
-    swap.2
+    movup.2
+    movup.3
     movup.2
     u32divmod.4
     swap.1
@@ -385,7 +393,7 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     trace.252
     nop
     push.8
-    dup.1
+    movup.2
     add
     u32assert
     push.8
@@ -402,14 +410,13 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     trace.252
     nop
     swap.1
-    movup.3
     push.8
-    dup.1
+    dup.3
     swap.1
     u32mod
     u32assert
     assertz
-    swap.2
+    swap.1
     movup.2
     u32divmod.4
     swap.1
