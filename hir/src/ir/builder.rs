@@ -1,5 +1,6 @@
 use alloc::{boxed::Box, rc::Rc};
 
+use super::OperationState;
 use crate::{
     BlockArgument, BlockRef, BuildableOp, Context, OperationRef, ProgramPoint, RegionRef,
     SourceSpan, Type, Value, diagnostics::Report,
@@ -149,6 +150,44 @@ pub trait Builder: Listener {
             ProgramPoint::Invalid => panic!("insertion point is invalid/unset"),
         }
         self.notify_operation_inserted(op, *self.insertion_point());
+    }
+
+    /// Create an [Operation] from the provided [OperationState]
+    fn create_operation(&mut self, state: &mut OperationState) -> Result<OperationRef, Report> {
+        let mut op = state.name.alloc_default(self.context_rc());
+        op.borrow_mut().set_span(state.span);
+
+        let mut builder = crate::GenericOperationBuilder::new(self, op);
+
+        for attr in state.attrs.drain(..) {
+            if state.name.has_property(attr.name) {
+                builder.with_property_boxed(attr.name, attr.value)?;
+            } else {
+                builder.with_attr_boxed(attr.name, attr.value);
+            }
+        }
+
+        /*
+        if !state.symbols.is_empty() {
+            let mut op = op.borrow_mut();
+            for (name, sym) in state.symbols.drain(..) {
+                op.set_symbol_attribute(name, sym);
+            }
+        }
+         */
+
+        // TODO: Properly handle operand groups
+        builder.with_operands(state.operands.drain(..));
+
+        if !state.regions.is_empty() {
+            let mut op = op.borrow_mut();
+            let regions = op.regions_mut();
+            for region in state.regions.drain(..) {
+                regions.push_back(region);
+            }
+        }
+
+        builder.build()
     }
 }
 

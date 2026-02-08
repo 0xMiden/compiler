@@ -14,6 +14,7 @@ pub mod loops;
 mod op;
 mod operands;
 mod operation;
+pub mod parse;
 pub mod print;
 mod region;
 mod successor;
@@ -57,6 +58,7 @@ pub use self::{
         AttrInfo, GenericOperationBuilder, OpCursor, OpCursorMut, OpList, Operation,
         OperationBuilder, OperationName, OperationRef, OperationState, equivalence,
     },
+    parse::{AsmParser, OpAsmParser, OpParser, ParseResult},
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
     region::{
         InvocationBounds, LoopLikeOpInterface, Region, RegionBranchOpInterface, RegionBranchPoint,
