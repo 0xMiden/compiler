@@ -3,13 +3,12 @@ name = "midenc-log"
 description = "Provides flexible trace logging for midenc"
 version.workspace = true
 rust-version.workspace = true
-authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 categories.workspace = true
 keywords.workspace = true
-license.workspace = true
+license = "MIT OR Apache-2.0"
 readme.workspace = true
 edition.workspace = true
 
