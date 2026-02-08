@@ -22,27 +22,6 @@ mod macros;
 mod stdlib;
 
 #[test]
-#[ignore = "until https://github.com/0xMiden/compiler/issues/439 is fixed"]
-fn account() {
-    let artifact_name = "miden_sdk_account_test";
-    let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/account-test",
-        config,
-        [],
-    );
-    test.expect_wasm(expect_file![format!(
-        "../../../expected/rust_sdk_account_test/{artifact_name}.wat"
-    )]);
-    test.expect_ir(expect_file![format!(
-        "../../../expected/rust_sdk_account_test/{artifact_name}.hir"
-    )]);
-    // test.expect_masm(expect_file![format!(
-    //     "../../../expected/rust_sdk_account_test/{artifact_name}.masm"
-    // )]);
-}
-
-#[test]
 fn rust_sdk_swapp_note_bindings() {
     let name = "rust_sdk_swapp_note_bindings";
     let sdk_path = sdk_crate_path();
