@@ -3,10 +3,9 @@ use core::fmt;
 
 use super::Component;
 use crate::{
-    FxHashMap, Signature, Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolTable, Type,
-    Visibility,
+    FxHashMap, Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolTable, Type, Visibility,
     diagnostics::{Diagnostic, miette},
-    dialects::builtin::{Function, Module},
+    dialects::builtin::{Function, Module, attributes::Signature},
     version::Version,
 };
 
@@ -129,7 +128,7 @@ impl From<&Component> for ComponentId {
     fn from(value: &Component) -> Self {
         let namespace = value.namespace().as_symbol();
         let name = value.name().as_symbol();
-        let version = value.version().clone();
+        let version = value.get_version().clone();
 
         Self {
             namespace,
@@ -249,7 +248,7 @@ impl ComponentInterface {
         Self {
             id,
             is_externally_defined,
-            visibility: *component.visibility(),
+            visibility: *component.get_visibility(),
             imports,
             exports,
         }
@@ -398,7 +397,7 @@ impl ModuleInterface {
             let symbol = symbol_ref.borrow();
             let name = symbol.name();
             if let Some(func) = symbol.as_symbol_operation().downcast_ref::<Function>() {
-                let signature = func.signature().clone();
+                let signature = func.get_signature().clone();
                 let visibility = signature.visibility;
                 let item = ModuleExport::Function { name, signature };
                 if func.is_declaration() {
@@ -418,7 +417,7 @@ impl ModuleInterface {
 
         Self {
             name: module.name().as_symbol(),
-            visibility: *module.visibility(),
+            visibility: *module.get_visibility(),
             is_abstract,
             imports,
             exports,

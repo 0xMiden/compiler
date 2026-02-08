@@ -1,82 +1,25 @@
-use alloc::format;
-
-use smallvec::SmallVec;
+use alloc::borrow::Cow;
 
 use crate::{
-    AttrPrinter, BlockRef, CallableOpInterface, Context, Ident, Immediate, Op, OpPrinter,
-    OpPrintingFlags, Operation, RegionKind, RegionKindInterface, RegionRef, Signature, Symbol,
-    SymbolName, SymbolUse, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, ValueRef,
-    Visibility, define_attr_type,
+    BlockRef, CallConv, CallableOpInterface, CallableSymbol, EntityRef, FunctionType, IdentAttr,
+    ImmediateAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, RegionRef,
+    SmallVec, Symbol, SymbolUse, SymbolUseList, ToCompactString, Type, UnsafeIntrusiveEntityRef,
+    Usable, Visibility,
     derive::operation,
-    dialects::builtin::BuiltinDialect,
+    dialects::builtin::{
+        BuiltinDialect,
+        attributes::{
+            ArrayAttr, FunctionTypeAttr, LocalVariable, Signature, SignatureAttr, VisibilityAttr,
+        },
+    },
+    interner,
+    print::AsmPrinter,
     traits::{AnyType, IsolatedFromAbove, ReturnLike, SingleRegion, Terminator},
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
 
 pub type FunctionRef = UnsafeIntrusiveEntityRef<Function>;
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct LocalVariable {
-    function: FunctionRef,
-    index: u16,
-}
-
-impl LocalVariable {
-    fn new(function: FunctionRef, id: usize) -> Self {
-        assert!(
-            id <= u16::MAX as usize,
-            "system limit: unable to allocate more than u16::MAX locals per function"
-        );
-        Self {
-            function,
-            index: id as u16,
-        }
-    }
-
-    #[inline(always)]
-    pub const fn as_usize(&self) -> usize {
-        self.index as usize
-    }
-
-    pub fn ty(&self) -> Type {
-        self.function.borrow().get_local(self).clone()
-    }
-
-    /// Compute the absolute offset from the start of the procedure locals for this local variable
-    pub fn absolute_offset(&self) -> usize {
-        let index = self.as_usize();
-        self.function.borrow().locals()[..index]
-            .iter()
-            .map(|ty| ty.size_in_felts())
-            .sum::<usize>()
-    }
-}
-
-impl core::fmt::Debug for LocalVariable {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("LocalVariable")
-            .field_with("function", |f| write!(f, "{}", self.function.borrow().name().as_str()))
-            .field("index", &self.index)
-            .finish()
-    }
-}
-
-impl core::fmt::Display for LocalVariable {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "lv{}", self.as_usize())
-    }
-}
-
-define_attr_type!(LocalVariable);
-
-impl AttrPrinter for LocalVariable {
-    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> crate::formatter::Document {
-        use crate::formatter::*;
-
-        text(format!("lv{}", self.as_usize()))
-    }
-}
 
 #[operation(
     dialect = BuiltinDialect,
@@ -85,108 +28,137 @@ impl AttrPrinter for LocalVariable {
         UsableSymbol,
         Symbol,
         CallableOpInterface,
+        CallableSymbol,
         RegionKindInterface,
         OpPrinter
     )
 )]
 pub struct Function {
     #[attr]
-    name: Ident,
+    name: IdentAttr,
     #[attr]
-    signature: Signature,
+    signature: SignatureAttr,
     #[region]
     body: RegionRef,
     /// The set of local variables allocated within this function
+    #[attr]
     #[default]
-    locals: SmallVec<[Type; 2]>,
+    locals: ArrayAttr<Type>,
     /// The uses of this function as a symbol
     #[default]
     uses: SymbolUseList,
 }
 
-impl OpPrinter for Function {
-    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> crate::formatter::Document {
-        use crate::formatter::*;
+impl OpParser for Function {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use alloc::string::ToString;
 
-        let signature = self.signature();
-        let prelude = display(signature.visibility)
-            + const_text(" ")
-            + display(self.as_operation().name())
-            + text(format!(" @{}", self.name().as_str()));
-        let arglist = if self.body().is_empty() {
-            // Declaration
-            signature.params().iter().enumerate().fold(const_text("("), |doc, (i, param)| {
-                let doc = if i > 0 { doc + const_text(", ") } else { doc };
-                let mut param_attrs = Document::Empty;
-                match param.purpose {
-                    crate::ArgumentPurpose::Default => (),
-                    crate::ArgumentPurpose::StructReturn => {
-                        param_attrs += const_text("sret ");
-                    }
+        use crate::parse::{Delimiter, ParserError, Token};
+
+        let visibility = match parser.parse_optional_keyword()? {
+            Some(tok) => match tok.inner() {
+                Token::BareIdent("public") => Visibility::Public,
+                Token::BareIdent("private") => Visibility::Private,
+                Token::BareIdent("internal") => Visibility::Internal,
+                invalid => {
+                    return Err(ParserError::UnexpectedToken {
+                        span: tok.span(),
+                        token: invalid.to_string(),
+                        expected: Some("visibility keyword".to_string()),
+                    });
                 }
-                match param.extension {
-                    crate::ArgumentExtension::None => (),
-                    crate::ArgumentExtension::Zext => {
-                        param_attrs += const_text("zext ");
-                    }
-                    crate::ArgumentExtension::Sext => {
-                        param_attrs += const_text("sext ");
-                    }
-                }
-                doc + display(&param.ty)
-            }) + const_text(")")
-        } else {
-            let body = self.body();
-            let entry = body.entry();
-            entry.arguments().iter().zip(signature.params().iter()).enumerate().fold(
-                const_text("("),
-                |doc, (i, (entry_arg, param))| {
-                    let doc = if i > 0 { doc + const_text(", ") } else { doc };
-                    let mut param_attrs = Document::Empty;
-                    match param.purpose {
-                        crate::ArgumentPurpose::Default => (),
-                        crate::ArgumentPurpose::StructReturn => {
-                            param_attrs += const_text("sret ");
-                        }
-                    }
-                    match param.extension {
-                        crate::ArgumentExtension::None => (),
-                        crate::ArgumentExtension::Zext => {
-                            param_attrs += const_text("zext ");
-                        }
-                        crate::ArgumentExtension::Sext => {
-                            param_attrs += const_text("sext ");
-                        }
-                    }
-                    doc + display(*entry_arg as ValueRef) + const_text(": ") + display(&param.ty)
-                },
-            ) + const_text(")")
+            },
+            None => Visibility::Private,
         };
 
-        let results =
-            signature
-                .results()
-                .iter()
-                .enumerate()
-                .fold(Document::Empty, |doc, (i, result)| {
-                    if i > 0 {
-                        doc + const_text(", ") + display(&result.ty)
-                    } else {
-                        doc + display(&result.ty)
-                    }
+        let extern_keyword = parser.parse_optional_keyword()?;
+        match extern_keyword.map(|tok| tok.into_parts()) {
+            None => (),
+            Some((_, Token::BareIdent("extern"))) => (),
+            Some((span, invalid)) => {
+                return Err(ParserError::UnexpectedToken {
+                    span,
+                    token: invalid.to_string(),
+                    expected: Some("extern keyword".to_string()),
                 });
-        let results = if results.is_empty() {
-            results
-        } else {
-            const_text(" -> ") + results
-        };
-
-        let signature = prelude + arglist + results;
-        if self.body().is_empty() {
-            signature + const_text(";")
-        } else {
-            signature + const_text(" ") + self.body().print(flags) + const_text(";")
+            }
         }
+
+        parser.parse_lparen()?;
+        let cc_string = parser.parse_string()?;
+        let cc = match cc_string.as_str() {
+            "fast" => CallConv::Fast,
+            "C" => CallConv::SystemV,
+            "wasm" => CallConv::Wasm,
+            "canon-lift" => CallConv::CanonLift,
+            "canon-lower" => CallConv::CanonLower,
+            "kernel" => CallConv::Kernel,
+            _ => {
+                let (span, cc_string) = cc_string.into_parts();
+                return Err(ParserError::UnexpectedToken {
+                    span,
+                    token: cc_string.into_string(),
+                    expected: Some("calling convention string".to_string()),
+                });
+            }
+        };
+        parser.parse_rparen()?;
+
+        let name = parser.parse_symbol_name()?;
+
+        let mut args = SmallVec::new_const();
+        parser.parse_argument_list(Delimiter::Paren, true, true, &mut args)?;
+
+        let mut results = SmallVec::new_const();
+        parser.parse_optional_arrow_type_list(&mut results)?;
+
+        let ty = FunctionType::new(cc, args.iter().map(|arg| arg.ty.clone()), results);
+
+        let name = parser.context_rc().create_attribute::<IdentAttr, _>(name);
+        state.add_attribute("name", name);
+
+        let visibility = parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility);
+        state.add_attribute("visibility", visibility);
+
+        let ty = parser.context_rc().create_attribute::<FunctionTypeAttr, _>(ty);
+        state.add_attribute("ty", ty);
+
+        if let Some(body) = parser.parse_optional_region(&args, false)? {
+            state.add_region(body);
+        }
+
+        Ok(())
+    }
+}
+
+impl OpPrinter for Function {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        let sig = self.get_signature();
+
+        printer.print_keyword(sig.visibility.as_str());
+        printer.print_space();
+        printer.print_keyword("extern");
+        printer.print_lparen();
+        printer.print_string(sig.cc.to_compact_string());
+        printer.print_rparen();
+        printer.print_space();
+
+        printer.print_symbol_name(self.get_name().as_symbol());
+        printer.print_type_list(sig.params().iter().map(|p| Cow::Borrowed(&p.ty)));
+        printer.print_space();
+        printer.print_arrow_type_list(
+            /*elide_single_type_parens*/ true,
+            sig.results().iter().map(|p| Cow::Borrowed(&p.ty)),
+        );
+
+        if self.is_declaration() {
+            return;
+        }
+
+        printer.print_region(&self.body());
     }
 }
 
@@ -200,11 +172,12 @@ impl Function {
     /// This function will panic if an entry block has already been created
     pub fn create_entry_block(&mut self) -> BlockRef {
         assert!(self.body().is_empty(), "entry block already exists");
-        let signature = self.signature();
+        let signature = self.get_signature();
         let block = self
             .as_operation()
-            .context()
+            .context_rc()
             .create_block_with_params(signature.params().iter().map(|p| p.ty.clone()));
+        drop(signature);
         let mut body = self.body_mut();
         body.push_back(block);
         block
@@ -231,41 +204,39 @@ impl Function {
     }
 
     pub fn num_locals(&self) -> usize {
-        self.locals.len()
+        self.locals().len()
     }
 
-    #[inline]
-    pub fn locals(&self) -> &[Type] {
-        &self.locals
-    }
-
-    #[inline]
-    pub fn get_local(&self, id: &LocalVariable) -> &Type {
+    pub fn get_local(&self, id: &LocalVariable) -> EntityRef<'_, Type> {
         assert_eq!(
             self.as_operation_ref(),
-            id.function.as_operation_ref(),
+            id.function().as_operation_ref(),
             "attempted to use local variable reference from different function"
         );
-        &self.locals[id.as_usize()]
+        EntityRef::map(self.get_locals(), |locals| &locals[id.as_usize()])
     }
 
     pub fn alloc_local(&mut self, ty: Type) -> LocalVariable {
-        let id = self.locals.len();
-        self.locals.push(ty);
+        let mut locals = self.get_locals_mut();
+        let id = locals.len();
+        locals.push(ty);
+        drop(locals);
         LocalVariable::new(self.as_function_ref(), id)
     }
 
-    pub fn iter_locals(&self) -> impl Iterator<Item = (LocalVariable, &Type)> {
-        let func = self.as_function_ref();
-        self.locals
-            .iter()
-            .enumerate()
-            .map(move |(i, t)| (LocalVariable::new(func, i), t))
+    pub fn iter_locals(&self) -> impl ExactSizeIterator<Item = LocalVariable> {
+        let fun = self.as_function_ref();
+        (0..self.locals().len()).map(move |i| LocalVariable::new(fun, i))
     }
 
     #[inline(always)]
     pub fn as_function_ref(&self) -> FunctionRef {
         unsafe { FunctionRef::from_raw(self) }
+    }
+
+    #[inline(always)]
+    pub const fn signature_ref(&self) -> UnsafeIntrusiveEntityRef<SignatureAttr> {
+        self.signature
     }
 }
 
@@ -301,20 +272,20 @@ impl Symbol for Function {
         &mut self.op
     }
 
-    fn name(&self) -> SymbolName {
-        Self::name(self).as_symbol()
+    fn name(&self) -> interner::Symbol {
+        self.get_name().as_symbol()
     }
 
-    fn set_name(&mut self, name: SymbolName) {
-        self.name_mut().name = name;
+    fn set_name(&mut self, name: interner::Symbol) {
+        self.get_name_mut().name = name;
     }
 
     fn visibility(&self) -> Visibility {
-        self.signature().visibility
+        self.get_signature().visibility
     }
 
     fn set_visibility(&mut self, visibility: Visibility) {
-        self.signature_mut().visibility = visibility;
+        self.get_signature_mut().visibility = visibility;
     }
 
     /// Returns true if this operation is a declaration, rather than a definition, of a symbol
@@ -335,9 +306,8 @@ impl CallableOpInterface for Function {
         }
     }
 
-    #[inline]
-    fn signature(&self) -> &Signature {
-        Function::signature(self)
+    fn signature(&self) -> Signature {
+        self.get_signature().clone()
     }
 }
 
@@ -359,13 +329,12 @@ pub struct Ret {
 )]
 pub struct RetImm {
     #[attr(hidden)]
-    value: Immediate,
+    value: ImmediateAttr,
 }
 
 impl OpPrinter for RetImm {
-    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> crate::formatter::Document {
-        use crate::formatter::*;
-
-        display(self.op.name()) + const_text(" ") + display(self.value()) + const_text(";")
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_space();
+        printer.print_attribute_value(&*self.value());
     }
 }

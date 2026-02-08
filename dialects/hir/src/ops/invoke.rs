@@ -1,4 +1,7 @@
-use midenc_hir::{derive::operation, traits::*, *};
+use midenc_hir::{
+    derive::operation, dialects::builtin::attributes::SignatureAttr, print::AsmPrinter, traits::*,
+    *,
+};
 
 use crate::HirDialect;
 
@@ -10,7 +13,7 @@ pub struct Exec {
     #[symbol(callable)]
     callee: SymbolPath,
     #[attr(hidden)]
-    signature: Signature,
+    signature: SignatureAttr,
     #[operands]
     arguments: AnyType,
 }
@@ -18,9 +21,9 @@ pub struct Exec {
 impl InferTypeOpInterface for Exec {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
         let span = self.span();
+        let sig = self.signature.borrow();
         let owner = self.as_operation_ref();
-        let signature = self.signature().clone();
-        for (i, result) in signature.results().iter().enumerate() {
+        for (i, result) in sig.results().iter().enumerate() {
             let value = context.make_result(span, result.ty.clone(), owner, i as u8);
             self.op.results.push(value);
         }
@@ -29,21 +32,15 @@ impl InferTypeOpInterface for Exec {
 }
 
 impl OpPrinter for Exec {
-    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
         use formatter::*;
 
-        let op = self.as_operation();
-        let prelude = print::render_operation_results(op) + display(op.name()) + const_text(" ");
-        let callee = const_text("@") + display(self.callee());
-        let args = op.operands().iter().enumerate().fold(const_text("("), |acc, (i, arg)| {
-            if i > 0 {
-                acc + const_text(", ") + display(arg.borrow().as_value_ref())
-            } else {
-                acc + display(arg.borrow().as_value_ref())
-            }
-        }) + const_text(")");
-        let results = print::render_operation_result_types(op);
-        prelude + callee + args + results
+        let callee = self.callee();
+        let callee_signature = self.get_signature();
+        printer.print_symbol_path(callee.path());
+        printer.print_operand_list(self.arguments());
+        *printer += const_text(" : ");
+        printer.print_signature(&callee_signature);
     }
 }
 
@@ -63,12 +60,31 @@ pub struct ExecIndirect {
 impl CallOpInterface for Exec {
     #[inline(always)]
     fn callable_for_callee(&self) -> Callable {
-        self.callee().into()
+        self.callee().path().into()
     }
 
     fn set_callee(&mut self, callable: Callable) {
         let callee = callable.unwrap_symbol_path();
-        self.callee_mut().path = callee;
+        let symbol_table = self
+            .as_operation()
+            .nearest_symbol_table()
+            .expect("cannot set callee outside of symbol table");
+        let resolved = symbol_table
+            .borrow()
+            .as_symbol_table()
+            .unwrap()
+            .resolve(&callee)
+            .expect("invalid callee: could not be resolved");
+        // SAFETY: This is guaranteed to be safe because the original reference was an UnsafeIntrusiveEntityRef;
+        let callable = unsafe {
+            let resolved = resolved.borrow();
+            let callable = resolved
+                .as_symbol_operation()
+                .as_trait::<dyn CallableSymbol>()
+                .expect("invalid callee: not a callable symbol");
+            CallableSymbolRef::from_raw(callable)
+        };
+        Exec::set_callee(self, callable).expect("invalid callee");
     }
 
     #[inline(always)]
@@ -86,12 +102,12 @@ impl CallOpInterface for Exec {
         let symbol_table = self.as_operation().nearest_symbol_table()?;
         let symbol_table = symbol_table.borrow();
         let symbol_table = symbol_table.as_symbol_table().unwrap();
-        symbol_table.resolve(&callee.path)
+        symbol_table.resolve(callee.path())
     }
 
     fn resolve_in_symbol_table(&self, symbols: &dyn SymbolTable) -> Option<SymbolRef> {
         let callee = self.callee();
-        symbols.resolve(&callee.path)
+        symbols.resolve(callee.path())
     }
 }
 
@@ -105,7 +121,7 @@ pub struct Call {
     #[symbol(callable)]
     callee: SymbolPath,
     #[attr]
-    signature: Signature,
+    signature: SignatureAttr,
     #[operands]
     arguments: AnyType,
 }
@@ -113,8 +129,8 @@ pub struct Call {
 impl InferTypeOpInterface for Call {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
         let span = self.span();
+        let signature = self.signature.borrow();
         let owner = self.as_operation_ref();
-        let signature = self.signature().clone();
         for (i, result) in signature.results().iter().enumerate() {
             let value = context.make_result(span, result.ty.clone(), owner, i as u8);
             self.op.results.push(value);
@@ -139,12 +155,31 @@ pub struct CallIndirect {
 impl CallOpInterface for Call {
     #[inline(always)]
     fn callable_for_callee(&self) -> Callable {
-        self.callee().into()
+        self.callee().path().into()
     }
 
     fn set_callee(&mut self, callable: Callable) {
         let callee = callable.unwrap_symbol_path();
-        self.callee_mut().path = callee;
+        let symbol_table = self
+            .as_operation()
+            .nearest_symbol_table()
+            .expect("cannot set callee outside of symbol table");
+        let resolved = symbol_table
+            .borrow()
+            .as_symbol_table()
+            .unwrap()
+            .resolve(&callee)
+            .expect("invalid callee: could not be resolved");
+        // SAFETY: This is guaranteed to be safe because the original reference was an UnsafeIntrusiveEntityRef;
+        let callable = unsafe {
+            let resolved = resolved.borrow();
+            let callable = resolved
+                .as_symbol_operation()
+                .as_trait::<dyn CallableSymbol>()
+                .expect("invalid callee: not a callable symbol");
+            CallableSymbolRef::from_raw(callable)
+        };
+        Call::set_callee(self, callable).expect("invalid callee");
     }
 
     #[inline(always)]
@@ -162,11 +197,11 @@ impl CallOpInterface for Call {
         let symbol_table = self.as_operation().nearest_symbol_table()?;
         let symbol_table = symbol_table.borrow();
         let symbol_table = symbol_table.as_symbol_table().unwrap();
-        symbol_table.resolve(&callee.path)
+        symbol_table.resolve(callee.path())
     }
 
     fn resolve_in_symbol_table(&self, symbols: &dyn SymbolTable) -> Option<SymbolRef> {
         let callee = self.callee();
-        symbols.resolve(&callee.path)
+        symbols.resolve(callee.path())
     }
 }

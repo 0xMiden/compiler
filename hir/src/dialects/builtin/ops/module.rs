@@ -1,9 +1,13 @@
 use crate::{
-    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
+    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
+    Visibility,
     derive::operation,
-    dialects::builtin::BuiltinDialect,
+    dialects::builtin::{
+        BuiltinDialect,
+        attributes::{IdentAttr, VisibilityAttr},
+    },
+    print::AsmPrinter,
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
@@ -62,10 +66,10 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 )]
 pub struct Module {
     #[attr]
-    name: Ident,
+    name: IdentAttr,
     #[attr]
     #[default]
-    visibility: Visibility,
+    visibility: VisibilityAttr,
     #[region]
     body: RegionRef,
     #[default]
@@ -82,20 +86,12 @@ impl Module {
 }
 
 impl OpPrinter for Module {
-    fn print(
-        &self,
-        flags: &crate::OpPrintingFlags,
-        _context: &crate::Context,
-    ) -> crate::formatter::Document {
-        use crate::formatter::*;
-
-        let header = display(self.op.name())
-            + const_text(" ")
-            + display(self.visibility())
-            + const_text(" @")
-            + display(self.name().as_str());
-        let body = crate::print::render_regions(&self.op, flags);
-        header + body
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_keyword(self.get_visibility().as_str());
+        printer.print_space();
+        printer.print_symbol_name(self.get_name().as_symbol());
+        printer.print_space();
+        printer.print_region(&self.body());
     }
 }
 
@@ -114,8 +110,11 @@ impl midenc_session::Emit for Module {
         _mode: midenc_session::OutputMode,
         _session: &midenc_session::Session,
     ) -> anyhow::Result<()> {
+        use crate::Op;
         let flags = crate::OpPrintingFlags::default();
-        let document = <Module as OpPrinter>::print(self, &flags, self.op.context());
+        let mut printer = AsmPrinter::new(self.as_operation().context_rc(), &flags);
+        <Self as OpPrinter>::print(self, &mut printer);
+        let document = printer.finish();
         writer.write_fmt(format_args!("{document}"))
     }
 }
@@ -153,20 +152,19 @@ impl Symbol for Module {
     }
 
     fn name(&self) -> SymbolName {
-        Module::name(self).as_symbol()
+        self.get_name().as_symbol()
     }
 
     fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.name = name;
+        Module::set_name(self, name)
     }
 
     fn visibility(&self) -> Visibility {
-        *Module::visibility(self)
+        *Module::get_visibility(self)
     }
 
     fn set_visibility(&mut self, visibility: Visibility) {
-        *self.visibility_mut() = visibility;
+        Module::set_visibility(self, visibility)
     }
 }
 

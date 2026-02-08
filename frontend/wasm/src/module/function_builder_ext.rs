@@ -9,9 +9,11 @@ use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
-    OpBuilder, OperationRef, ProgramPoint, RegionRef, Signature, SmallVec, SourceSpan, Type,
-    ValueRef,
-    dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, FunctionRef, LocalVariable},
+    OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Type, ValueRef,
+    dialects::builtin::{
+        BuiltinOpBuilder, FunctionBuilder, FunctionRef,
+        attributes::{LocalVariable, Signature},
+    },
     traits::{BranchOpInterface, Terminator},
 };
 
@@ -141,11 +143,11 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
 
 impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     pub fn name(&self) -> Ident {
-        *self.inner.func.borrow().name()
+        *self.inner.func.borrow().get_name()
     }
 
     pub fn signature(&self) -> EntityRef<'_, Signature> {
-        EntityRef::map(self.inner.func.borrow(), |f| f.signature())
+        EntityRef::map(self.inner.func.borrow().signature_ref().borrow(), |attr| attr.as_value())
     }
 
     #[inline]
@@ -180,7 +182,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     }
 
     pub fn create_detached_block(&mut self) -> BlockRef {
-        self.inner.builder().context().create_block()
+        self.inner.builder().context_rc().create_block()
     }
 
     /// Append parameters to the given `Block` corresponding to the function

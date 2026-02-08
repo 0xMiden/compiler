@@ -1,11 +1,10 @@
-use alloc::boxed::Box;
 use core::ptr::{DynMetadata, Pointee};
 
 use smallvec::SmallVec;
 
 use crate::{
-    AttributeValue, Op, OpFoldResult, OpOperand, Operation, OperationRef, UnsafeIntrusiveEntityRef,
-    ValueRef,
+    Attribute, AttributeRef, AttributeRegistration, Op, OpFoldResult, OpOperand, Operation,
+    OperationRef, UnsafeIntrusiveEntityRef, ValueRef, attributes::AttributeValue,
 };
 
 /// [Matcher] is a pattern matching abstraction with support for expressing both matching and
@@ -196,7 +195,7 @@ pub struct OpAttrMatcher<M> {
 
 impl<M> OpAttrMatcher<M>
 where
-    M: Matcher<dyn AttributeValue>,
+    M: Matcher<dyn Attribute>,
 {
     /// Create a new [OpAttrMatcher] from the given attribute name and matcher.
     pub const fn new(name: &'static str, matcher: M) -> Self {
@@ -206,12 +205,14 @@ where
 
 impl<M> Matcher<Operation> for OpAttrMatcher<M>
 where
-    M: Matcher<dyn AttributeValue>,
+    M: Matcher<dyn Attribute>,
 {
-    type Matched = <M as Matcher<dyn AttributeValue>>::Matched;
+    type Matched = <M as Matcher<dyn Attribute>>::Matched;
 
     fn matches(&self, entity: &Operation) -> Option<Self::Matched> {
-        entity.get_attribute(self.name).and_then(|value| self.matcher.matches(value))
+        entity
+            .get_attribute(self.name)
+            .and_then(|value| self.matcher.matches(&*value.borrow()))
     }
 }
 
@@ -222,17 +223,17 @@ pub type TypedOpAttrMatcher<A> = OpAttrMatcher<TypedAttrMatcher<A>>;
 
 /// Matches and binds any attribute value whose concrete type is `A`.
 pub struct TypedAttrMatcher<A>(core::marker::PhantomData<A>);
-impl<A: AttributeValue + Clone> Default for TypedAttrMatcher<A> {
+impl<A: AttributeRegistration + Clone> Default for TypedAttrMatcher<A> {
     #[inline(always)]
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
-impl<A: AttributeValue + Clone> Matcher<dyn AttributeValue> for TypedAttrMatcher<A> {
+impl<A: AttributeRegistration + Clone> Matcher<dyn Attribute> for TypedAttrMatcher<A> {
     type Matched = A;
 
     #[inline]
-    fn matches(&self, entity: &dyn AttributeValue) -> Option<Self::Matched> {
+    fn matches(&self, entity: &dyn Attribute) -> Option<Self::Matched> {
         entity.downcast_ref::<A>().cloned()
     }
 }
@@ -301,7 +302,7 @@ type ConstantOpMatcher = HasTraitMatcher<dyn crate::traits::ConstantLike>;
 #[derive(Default)]
 struct ConstantOpBinder;
 impl Matcher<Operation> for ConstantOpBinder {
-    type Matched = Box<dyn AttributeValue>;
+    type Matched = AttributeRef;
 
     fn matches(&self, entity: &Operation) -> Option<Self::Matched> {
         use crate::traits::Foldable;
@@ -322,9 +323,33 @@ impl Matcher<Operation> for ConstantOpBinder {
     }
 }
 
+/// An extension of [ConstantOpBinder] which only matches constant values implementing `Trait`
+struct ImplementsConstantOpBinder<Trait: ?Sized + 'static>(
+    core::marker::PhantomData<&'static Trait>,
+);
+impl<Trait: ?Sized + 'static> ImplementsConstantOpBinder<Trait> {
+    pub const fn new() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+impl<Trait> Matcher<Operation> for ImplementsConstantOpBinder<Trait>
+where
+    Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+{
+    type Matched = UnsafeIntrusiveEntityRef<Trait>;
+
+    fn matches(&self, entity: &Operation) -> Option<Self::Matched> {
+        ConstantOpBinder.matches(entity).and_then(|attr| {
+            let attr = attr.borrow();
+            let implementation = attr.as_attr().as_trait::<Trait>()?;
+            Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(implementation) })
+        })
+    }
+}
+
 /// An extension of [ConstantOpBinder] which only matches constant values of type `T`
 struct TypedConstantOpBinder<T>(core::marker::PhantomData<T>);
-impl<T: AttributeValue + Clone> TypedConstantOpBinder<T> {
+impl<T> TypedConstantOpBinder<T> {
     pub const fn new() -> Self {
         Self(core::marker::PhantomData)
     }
@@ -333,15 +358,9 @@ impl<T: AttributeValue + Clone> Matcher<Operation> for TypedConstantOpBinder<T> 
     type Matched = T;
 
     fn matches(&self, entity: &Operation) -> Option<Self::Matched> {
-        ConstantOpBinder.matches(entity).and_then(|value| {
-            if !value.is::<T>() {
-                None
-            } else {
-                Some(unsafe {
-                    let raw = Box::into_raw(value);
-                    *Box::from_raw(raw as *mut T)
-                })
-            }
+        ConstantOpBinder.matches(entity).and_then(|attr| {
+            let attr = attr.borrow();
+            attr.value().downcast_ref::<T>().cloned()
         })
     }
 }
@@ -427,7 +446,7 @@ impl Matcher<[OpOperand; 2]> for BinaryFoldResultBinder {
 /// A successful match binds the constant value of the operand for use by the [Foldable] impl.
 struct FoldableOperandBinder;
 impl Matcher<OpOperand> for FoldableOperandBinder {
-    type Matched = Box<dyn AttributeValue>;
+    type Matched = AttributeRef;
 
     fn matches(&self, operand: &OpOperand) -> Option<Self::Matched> {
         let operand = operand.borrow();
@@ -437,18 +456,41 @@ impl Matcher<OpOperand> for FoldableOperandBinder {
 }
 
 struct TypedFoldableOperandBinder<T>(core::marker::PhantomData<T>);
-impl<T: AttributeValue + Clone> Default for TypedFoldableOperandBinder<T> {
+impl<T> Default for TypedFoldableOperandBinder<T> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
-impl<T: AttributeValue + Clone> Matcher<OpOperand> for TypedFoldableOperandBinder<T> {
-    type Matched = Box<T>;
+impl<T: AttributeRegistration> Matcher<OpOperand> for TypedFoldableOperandBinder<T> {
+    type Matched = UnsafeIntrusiveEntityRef<T>;
 
     fn matches(&self, operand: &OpOperand) -> Option<Self::Matched> {
         FoldableOperandBinder
             .matches(operand)
-            .and_then(|value| value.downcast::<T>().ok())
+            .and_then(|value| value.try_downcast::<T>().ok())
+    }
+}
+
+struct ImplementsFoldableOperandBinder<Trait: ?Sized + 'static>(
+    core::marker::PhantomData<&'static Trait>,
+);
+impl<Trait: ?Sized + 'static> Default for ImplementsFoldableOperandBinder<Trait> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+impl<Trait> Matcher<OpOperand> for ImplementsFoldableOperandBinder<Trait>
+where
+    Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+{
+    type Matched = UnsafeIntrusiveEntityRef<Trait>;
+
+    fn matches(&self, operand: &OpOperand) -> Option<Self::Matched> {
+        FoldableOperandBinder.matches(operand).and_then(|attr| {
+            let attr = attr.borrow();
+            let implementation = attr.as_attr().as_trait::<Trait>()?;
+            Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(implementation) })
+        })
     }
 }
 
@@ -461,7 +503,7 @@ impl<T: AttributeValue + Clone> Matcher<OpOperand> for TypedFoldableOperandBinde
 /// constant operands.
 struct FoldableBinaryOpBinder;
 impl Matcher<[OpOperand; 2]> for FoldableBinaryOpBinder {
-    type Matched = [Box<dyn AttributeValue>; 2];
+    type Matched = [AttributeRef; 2];
 
     fn matches(&self, operands: &[OpOperand; 2]) -> Option<Self::Matched> {
         let binder = FoldableOperandBinder;
@@ -525,7 +567,7 @@ pub const fn constant_like() -> impl Matcher<Operation, Matched = OperationRef> 
 
 /// Matches any operation that implements [crate::traits::ConstantLike], and binds the constant
 /// value as the result of the match.
-pub const fn constant() -> impl Matcher<Operation, Matched = Box<dyn AttributeValue>> {
+pub const fn constant() -> impl Matcher<Operation, Matched = AttributeRef> {
     ConstantOpBinder
 }
 
@@ -533,7 +575,16 @@ pub const fn constant() -> impl Matcher<Operation, Matched = Box<dyn AttributeVa
 ///
 /// Typically, constant values will be [crate::Immediate], but any attribute value can be matched.
 pub const fn constant_of<T: AttributeValue + Clone>() -> impl Matcher<Operation, Matched = T> {
-    TypedConstantOpBinder::new()
+    TypedConstantOpBinder::<T>::new()
+}
+
+/// Like [constant], but only matches if the constant value implements `Trait`.
+pub const fn constant_of_trait<Trait>()
+-> impl Matcher<Operation, Matched = UnsafeIntrusiveEntityRef<Trait>>
+where
+    Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+{
+    ImplementsConstantOpBinder::<Trait>::new()
 }
 
 // Value Binders
@@ -558,7 +609,7 @@ pub const fn unary_fold_result() -> impl Matcher<Operation, Matched = OpFoldResu
 /// materialized constant, and thus a prime candidate for folding.
 ///
 /// The constant value is bound by this matcher, so it can be used immediately for folding.
-pub const fn unary_foldable() -> impl Matcher<Operation, Matched = Box<dyn AttributeValue>> {
+pub const fn unary_foldable() -> impl Matcher<Operation, Matched = AttributeRef> {
     match_chain(UnaryOpBinder, FoldableOperandBinder)
 }
 
@@ -582,7 +633,7 @@ pub const fn binary_fold_results() -> impl Matcher<Operation, Matched = [OpFoldR
 /// both materialized constants, and thus a prime candidate for folding.
 ///
 /// The constant values are bound by this matcher, so they can be used immediately for folding.
-pub const fn binary_foldable() -> impl Matcher<Operation, Matched = [Box<dyn AttributeValue>; 2]> {
+pub const fn binary_foldable() -> impl Matcher<Operation, Matched = [AttributeRef; 2]> {
     match_chain(BinaryOpBinder, FoldableBinaryOpBinder)
 }
 
@@ -598,15 +649,24 @@ pub const fn match_value(value: ValueRef) -> impl Matcher<ValueRef, Matched = Va
     ExactValueMatcher(value)
 }
 
-pub const fn foldable_operand() -> impl Matcher<OpOperand, Matched = Box<dyn AttributeValue>> {
+pub const fn foldable_operand() -> impl Matcher<OpOperand, Matched = AttributeRef> {
     FoldableOperandBinder
 }
 
-pub const fn foldable_operand_of<T>() -> impl Matcher<OpOperand, Matched = Box<T>>
+pub const fn foldable_operand_of<T>()
+-> impl Matcher<OpOperand, Matched = UnsafeIntrusiveEntityRef<T>>
 where
-    T: AttributeValue + Clone,
+    T: AttributeRegistration,
 {
     TypedFoldableOperandBinder(core::marker::PhantomData)
+}
+
+pub const fn foldable_operand_of_trait<Trait>()
+-> impl Matcher<OpOperand, Matched = UnsafeIntrusiveEntityRef<Trait>>
+where
+    Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+{
+    ImplementsFoldableOperandBinder(core::marker::PhantomData)
 }
 
 #[cfg(test)]
@@ -615,7 +675,13 @@ mod tests {
 
     use super::*;
     use crate::{
-        dialects::{builtin::*, test::*},
+        dialects::{
+            builtin::{
+                attributes::{AbiParam, Signature},
+                *,
+            },
+            test::*,
+        },
         *,
     };
 
@@ -712,7 +778,11 @@ mod tests {
         let [lhs_fr, rhs_fr] = binary_fold_results()
             .matches(&sum_op.borrow())
             .expect("expected to bind both operands of 'add'");
-        assert_eq!(lhs_fr, OpFoldResult::Attribute(Box::new(Immediate::U32(1))));
+        let lhs = match lhs_fr {
+            OpFoldResult::Attribute(attr) => attr.borrow().as_immediate().unwrap(),
+            OpFoldResult::Value(v) => panic!("expected immediate, got {v}"),
+        };
+        assert_eq!(lhs, Immediate::U32(1));
         assert_eq!(rhs_fr, OpFoldResult::Value(rhs));
     }
 
@@ -761,8 +831,8 @@ mod tests {
         let function = {
             let builder = builder.create::<Function, (_, _)>(SourceSpan::default());
             let name = Ident::new("test".into(), SourceSpan::default());
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
+            let sig = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
+            builder(name, sig).unwrap()
         };
 
         // Define function body

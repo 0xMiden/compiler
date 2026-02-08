@@ -177,9 +177,12 @@ mod tests {
     use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        AbiParam, BuilderExt, Context, Ident, OpBuilder, Report, Signature, SourceSpan, Type,
+        BuilderExt, Context, Ident, OpBuilder, Report, SourceSpan, Type,
         dialects::{
-            builtin::{self, BuiltinOpBuilder, FunctionBuilder},
+            builtin::{
+                self, BuiltinOpBuilder, FunctionBuilder,
+                attributes::{AbiParam, Signature},
+            },
             test::TestOpBuilder,
         },
         pass::{Pass, PassExecutionState},
@@ -329,17 +332,8 @@ mod tests {
         let then_non_redundant_val = builder.u32(22, span)?;
         builder.br(if_final, [redundant_val, then_non_redundant_val], span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
 
         builder.switch_to_block(if_else);
         builder.switch(
@@ -405,17 +399,8 @@ mod tests {
         let redundant_val0 = builder.u32(11, span)?;
         let redundant_val1 = builder.u32(22, span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
 
         builder.switch(
             input,
@@ -488,17 +473,8 @@ mod tests {
         let is_not_zero = builder.neq(input, zero, span)?;
         builder.cond_br(is_not_zero, if_then_block, [], if_else_block, [], span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
 
         builder.switch_to_block(if_then_block);
         builder.switch(
@@ -569,23 +545,9 @@ mod tests {
         let redundant_val22 = builder.u32(22, span)?;
         let redundant_val33 = builder.u32(33, span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_three_case = SwitchCase {
-            value: 3,
-            successor: switch_on_three_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
+        let switch_on_three_case = SwitchCase::create(3, switch_on_three_block, Default::default());
 
         builder.switch(
             input,
@@ -702,17 +664,8 @@ mod tests {
         let redundant_val11 = builder.u32(11, span)?;
         let redundant_val22 = builder.u32(22, span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
 
         builder.switch(
             input,
@@ -779,23 +732,9 @@ mod tests {
         let redundant_val22 = builder.u32(22, span)?;
         let redundant_val33 = builder.u32(33, span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_three_case = SwitchCase {
-            value: 3,
-            successor: switch_on_three_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
+        let switch_on_three_case = SwitchCase::create(3, switch_on_three_block, Default::default());
 
         builder.switch(
             input,

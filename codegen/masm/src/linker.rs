@@ -122,7 +122,7 @@ impl Linker {
                     if let Some(segment) = item.downcast_ref::<builtin::Segment>() {
                         log::debug!(target: "linker",
                             "inserting segment at offset {:#x}, size: {} bytes",
-                            segment.offset(),
+                            *segment.get_offset(),
                             segment.size_in_bytes()
                         );
                         self.segment_layout
@@ -276,7 +276,7 @@ impl GlobalVariableLayout {
         let key = unsafe { builtin::GlobalVariableRef::from_raw(gv) };
 
         // Ensure the stack pointer is tracked and uses the same offset globally
-        let is_stack_pointer = gv.name() == "__stack_pointer";
+        let is_stack_pointer = gv.get_name().as_symbol() == "__stack_pointer";
         if is_stack_pointer && let Some(offset) = self.stack_pointer {
             let _ = self.offsets.try_insert(key, offset);
             return;

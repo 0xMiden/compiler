@@ -10,7 +10,8 @@ use traits::BranchOpInterface;
 
 use super::{traits::BuildableTypeConstraint, *};
 use crate::{
-    FxHashMap,
+    AttributeRegistration, FxHashMap,
+    attributes::{AttributeName, DerivableTypeAttribute},
     constants::{ConstantData, ConstantId, ConstantPool},
 };
 
@@ -94,6 +95,21 @@ impl Context {
         self.registered_dialects.borrow()[&dialect].clone()
     }
 
+    pub fn get_registered_name<T>(&self) -> OperationName
+    where
+        T: OpRegistration,
+    {
+        self.get_registered_dialect(T::dialect_name()).expect_registered_name::<T>()
+    }
+
+    pub fn get_registered_attribute_name<T>(&self) -> AttributeName
+    where
+        T: AttributeRegistration,
+    {
+        self.get_registered_dialect(T::dialect_name())
+            .expect_registered_attribute_name::<T>()
+    }
+
     pub fn get_or_register_dialect<T>(&self) -> Rc<dyn Dialect>
     where
         T: DialectRegistration,
@@ -129,6 +145,26 @@ impl Context {
         let registered_hooks =
             dialect_hooks.entry(dialect_name).or_insert_with(|| Vec::with_capacity(1));
         registered_hooks.push(Box::new(hook));
+    }
+
+    pub fn create_attribute<T, V>(self: &Rc<Context>, value: V) -> UnsafeIntrusiveEntityRef<T>
+    where
+        T: AttributeRegistration,
+        <T as AttributeRegistration>::Value: From<V>,
+    {
+        <T as DerivableTypeAttribute>::create(self, value)
+    }
+
+    pub fn create_attribute_with_type<T, V>(
+        self: &Rc<Context>,
+        value: V,
+        ty: Type,
+    ) -> UnsafeIntrusiveEntityRef<T>
+    where
+        T: AttributeRegistration,
+        <T as AttributeRegistration>::Value: From<V>,
+    {
+        <T as AttributeRegistration>::create(self, value, ty)
     }
 
     pub fn create_constant(&self, data: impl Into<ConstantData>) -> ConstantId {
@@ -171,18 +207,18 @@ impl Context {
     }
 
     /// Create a new, detached and empty [Block] with no parameters
-    pub fn create_block(&self) -> BlockRef {
-        let block = Block::new(self.alloc_block_id());
+    pub fn create_block(self: &Rc<Self>) -> BlockRef {
+        let id = self.alloc_block_id();
+        let block = Block::new(Rc::clone(self), id);
         self.alloc_tracked(block)
     }
 
     /// Create a new, detached and empty [Block], with parameters corresponding to the given types
-    pub fn create_block_with_params<I>(&self, tys: I) -> BlockRef
+    pub fn create_block_with_params<I>(self: &Rc<Self>, tys: I) -> BlockRef
     where
         I: IntoIterator<Item = Type>,
     {
-        let block = Block::new(self.alloc_block_id());
-        let mut block = self.alloc_tracked(block);
+        let mut block = Rc::clone(self).create_block();
         let owner = block;
         let args = tys.into_iter().enumerate().map(|(index, ty)| {
             let id = self.alloc_value_id();

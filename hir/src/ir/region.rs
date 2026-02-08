@@ -5,6 +5,8 @@ mod kind;
 mod successor;
 mod transforms;
 
+use alloc::rc::Rc;
+
 use smallvec::SmallVec;
 
 pub use self::{
@@ -19,12 +21,7 @@ pub use self::{
     transforms::RegionTransformFailed,
 };
 use super::*;
-use crate::{
-    Forward,
-    adt::SmallSet,
-    patterns::RegionSimplificationLevel,
-    traits::{SingleBlock, SingleRegion},
-};
+use crate::{Forward, adt::SmallSet, patterns::RegionSimplificationLevel};
 
 pub type RegionRef = UnsafeIntrusiveEntityRef<Region>;
 /// An intrusive, doubly-linked list of [Region]s
@@ -700,54 +697,15 @@ impl Region {
 
 /// Printing
 impl Region {
-    pub fn print(&self, flags: &OpPrintingFlags) -> crate::formatter::Document {
-        use crate::formatter::PrettyPrint;
+    pub fn print(
+        &self,
+        context: Rc<Context>,
+        flags: &OpPrintingFlags,
+    ) -> crate::formatter::Document {
+        use crate::print::AsmPrinter;
 
-        let printer = RegionPrinter {
-            region: self,
-            flags,
-        };
-        printer.render()
-    }
-}
-
-struct RegionPrinter<'a> {
-    region: &'a Region,
-    flags: &'a OpPrintingFlags,
-}
-
-impl crate::formatter::PrettyPrint for RegionPrinter<'_> {
-    fn render(&self) -> crate::formatter::Document {
-        use crate::formatter::*;
-
-        if self.region.is_empty() {
-            return const_text("{ }");
-        }
-
-        let is_parent_op_single_block_single_region = self.region.parent().is_some_and(|op| {
-            let op = op.borrow();
-            op.implements::<dyn SingleBlock>() && op.implements::<dyn SingleRegion>()
-        });
-        self.region.body.iter().fold(Document::Empty, |acc, block| {
-            if acc.is_empty() {
-                if is_parent_op_single_block_single_region || !self.flags.print_entry_block_headers
-                {
-                    const_text("{") + indent(4, nl() + block.print(self.flags))
-                } else {
-                    const_text("{") + nl() + block.print(self.flags)
-                }
-            } else {
-                acc + nl() + block.print(self.flags)
-            }
-        }) + nl()
-            + const_text("}")
-    }
-}
-
-impl crate::formatter::PrettyPrint for Region {
-    fn render(&self) -> crate::formatter::Document {
-        let flags = OpPrintingFlags::default();
-
-        self.print(&flags)
+        let mut printer = AsmPrinter::new(context, flags);
+        printer.print_region(self);
+        printer.finish()
     }
 }

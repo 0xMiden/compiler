@@ -240,7 +240,7 @@ mod tests {
         // Take every permutation of a 5 element stack and each permutation of two operand
         // constraints and confirm that at most 2 actions are required to solve.
         let val_refs = generate_valrefs(&hir_ctx, 5);
-        let total_actions = permute_stacks(&val_refs, 2, true);
+        let total_actions = permute_stacks(&hir_ctx, &val_refs, 2, true);
 
         // This number should only ever go down as we add optimisations.
         assert!(
@@ -257,7 +257,7 @@ mod tests {
         // Take every permutation of a 5 element stack and each permutation of two operand
         // constraints and confirm that at most 2 actions are required for an unordered solution.
         let val_refs = generate_valrefs(&hir_ctx, 5);
-        let total_actions = permute_stacks(&val_refs, 2, false);
+        let total_actions = permute_stacks(&hir_ctx, &val_refs, 2, false);
 
         // This number should only ever go down as we add optimisations.
         //
@@ -279,7 +279,8 @@ mod tests {
         let expected = [val_refs[0], val_refs[1]];
         let constraints = [[Constraint::Move, Constraint::Move]];
 
-        let total_actions = permute_stacks_advanced(&val_refs, expected, &constraints, 1, false);
+        let total_actions =
+            permute_stacks_advanced(&hir_ctx, &val_refs, expected, &constraints, 1, false);
 
         // This number should only ever go down as we add optimisations.
         assert!(
@@ -341,7 +342,7 @@ mod tests {
         );
     }
 
-    fn duplicated_stack_single_util(context: &Context, strict: bool) -> usize {
+    fn duplicated_stack_single_util(context: &Rc<Context>, strict: bool) -> usize {
         // Take every permutation of a 4 element stack etc. where the two operands are the very
         // same value.  In this case it doesn't make sense for a Move/Move constraint to be used.
         //
@@ -354,10 +355,10 @@ mod tests {
             [Constraint::Copy, Constraint::Copy],
         ];
 
-        permute_stacks_advanced(&val_refs, expected, &constraints, 2, strict)
+        permute_stacks_advanced(context, &val_refs, expected, &constraints, 2, strict)
     }
 
-    fn duplicated_stack_double_util(context: &Context, strict: bool) -> usize {
+    fn duplicated_stack_double_util(context: &Rc<Context>, strict: bool) -> usize {
         // Take every permutation of a 5 element stack etc. where the two operands are the same value
         // but represented twice in the input.
 
@@ -368,10 +369,10 @@ mod tests {
 
         let expected = [v0, v0];
 
-        permute_stacks_advanced(&val_refs, expected, &ALL_CONSTRAINTS, 2, strict)
+        permute_stacks_advanced(context, &val_refs, expected, &ALL_CONSTRAINTS, 2, strict)
     }
 
-    fn generate_valrefs(context: &Context, k: usize) -> Vec<midenc_hir::ValueRef> {
+    fn generate_valrefs(context: &Rc<Context>, k: usize) -> Vec<midenc_hir::ValueRef> {
         // The easiest? way to create a bunch of ValueRefs is to create a block with args and use them.
         let block = context
             .create_block_with_params(core::iter::repeat_n(midenc_hir::Type::I32, k))
@@ -389,6 +390,7 @@ mod tests {
     //
     // Each solution must use a prescribed maximum number of actions and be valid.
     fn permute_stacks(
+        context: &Rc<Context>,
         val_refs: &[midenc_hir::ValueRef],
         max_actions: usize,
         strict: bool,
@@ -396,10 +398,11 @@ mod tests {
         // Use just v0 and v1 at the top.  The input is permuted so always using these is OK.
         let expected = [val_refs[0], val_refs[1]];
 
-        permute_stacks_advanced(val_refs, expected, &ALL_CONSTRAINTS, max_actions, strict)
+        permute_stacks_advanced(context, val_refs, expected, &ALL_CONSTRAINTS, max_actions, strict)
     }
 
     fn permute_stacks_advanced(
+        context: &Rc<Context>,
         val_refs: &[midenc_hir::ValueRef],
         expected: [midenc_hir::ValueRef; 2],
         constraints: &[[Constraint; 2]],
@@ -410,7 +413,7 @@ mod tests {
 
         // Permute every possible input stack variation and solve for each.
         for val_refs_perm in val_refs.iter().permutations(val_refs.len()).unique() {
-            let mut pending = OperandStack::default();
+            let mut pending = OperandStack::new(context.clone());
             for value in val_refs_perm.into_iter().rev() {
                 pending.push(*value);
             }

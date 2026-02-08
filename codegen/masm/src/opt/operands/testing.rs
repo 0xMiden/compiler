@@ -231,7 +231,7 @@ pub fn make_problem_inputs(raw_stack: Vec<usize>, arity: usize, copies: usize) -
         .into_iter()
         .map(|index| block_args[index] as hir::ValueRef)
         .collect::<Vec<hir::ValueRef>>();
-    let mut stack = crate::OperandStack::default();
+    let mut stack = crate::OperandStack::new(context.clone());
     let mut expected = SmallVec::with_capacity(arity);
     let mut constraints = SmallVec::with_capacity(arity);
     for value in raw_stack.into_iter().rev() {

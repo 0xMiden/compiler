@@ -5,8 +5,8 @@ use darling::{
     util::{Flag, SpannedValue},
 };
 use inflector::Inflector;
-use quote::{ToTokens, format_ident, quote};
-use syn::{Ident, Token, parse_quote, spanned::Spanned};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
+use syn::{Ident, Token, parse_quote, parse_quote_spanned, spanned::Spanned};
 
 pub fn derive_operation(input: syn::DeriveInput) -> darling::Result<proc_macro2::TokenStream> {
     let op = OpDefinition::from_derive_input(&input)?;
@@ -31,7 +31,7 @@ pub struct OpDefinition {
     implements: darling::util::PathList,
     /// The named regions declared for this op
     regions: Vec<Ident>,
-    /// The named attributes declared for this op
+    /// The inherent attributes declared for this op
     attrs: Vec<OpAttribute>,
     /// The named operands, and operand groups, declared for this op
     ///
@@ -205,17 +205,31 @@ impl OpDefinition {
                         colon_token: Some(syn::token::Colon(field_span)),
                         ty: field.ty,
                     });
-                    continue;
                 }
                 Some(OperationFieldType::Attr(kind)) => {
+                    let value_ty = parse_quote_spanned! { field_span =>
+                        <#field_ty as ::midenc_hir::AttributeRegistration>::Value
+                    };
+                    let ty = parse_quote_spanned! { field_span =>
+                        ::midenc_hir::UnsafeIntrusiveEntityRef<#field_ty>
+                    };
                     let attr = OpAttribute {
-                        name: field_name,
-                        ty: field_ty,
+                        name: field_name.clone(),
+                        ty: field_ty.clone(),
+                        value_ty,
                         kind: *kind,
                     };
                     create_params.push(OpCreateParam {
                         param_ty: OpCreateParamType::Attr(attr.clone()),
                         r#default: field.attrs.default.is_present(),
+                    });
+                    named_fields.push(syn::Field {
+                        attrs: field.attrs.forwarded,
+                        vis: field.vis,
+                        mutability: syn::FieldMutability::None,
+                        ident: Some(field_name),
+                        colon_token: Some(syn::token::Colon(field_span)),
+                        ty,
                     });
                     self.attrs.push(attr);
                 }
@@ -321,24 +335,52 @@ impl OpDefinition {
                     self.successors.push(SuccessorGroup::Keyed(field_name, field_ty));
                 }
                 Some(OperationFieldType::Symbol(None)) => {
+                    let symbol_path_attr_path: syn::Path = parse_quote_spanned! { field_span =>
+                        ::midenc_hir::dialects::builtin::attributes::SymbolRefAttr
+                    };
+                    let ty = parse_quote_spanned! { field_span =>
+                        ::midenc_hir::UnsafeIntrusiveEntityRef<#symbol_path_attr_path>
+                    };
                     let symbol = Symbol {
-                        name: field_name,
+                        name: field_name.clone(),
                         ty: SymbolType::Concrete(field_ty),
                     };
                     create_params.push(OpCreateParam {
                         param_ty: OpCreateParamType::Symbol(symbol.clone()),
                         r#default: field.attrs.default.is_present(),
                     });
+                    named_fields.push(syn::Field {
+                        attrs: field.attrs.forwarded,
+                        vis: field.vis,
+                        mutability: syn::FieldMutability::None,
+                        ident: Some(field_name),
+                        colon_token: Some(syn::token::Colon(field_span)),
+                        ty,
+                    });
                     self.symbols.push(symbol);
                 }
-                Some(OperationFieldType::Symbol(Some(ty))) => {
+                Some(OperationFieldType::Symbol(Some(symbol_ty))) => {
+                    let symbol_path_attr_path: syn::Path = parse_quote_spanned! { field_span =>
+                        ::midenc_hir::dialects::builtin::attributes::SymbolRefAttr
+                    };
+                    let ty = parse_quote_spanned! { field_span =>
+                        ::midenc_hir::UnsafeIntrusiveEntityRef<#symbol_path_attr_path>
+                    };
                     let symbol = Symbol {
-                        name: field_name,
-                        ty: ty.clone(),
+                        name: field_name.clone(),
+                        ty: symbol_ty.clone(),
                     };
                     create_params.push(OpCreateParam {
                         param_ty: OpCreateParamType::Symbol(symbol.clone()),
                         r#default: field.attrs.default.is_present(),
+                    });
+                    named_fields.push(syn::Field {
+                        attrs: field.attrs.forwarded,
+                        vis: field.vis,
+                        mutability: syn::FieldMutability::None,
+                        ident: Some(field_name),
+                        colon_token: Some(syn::token::Colon(field_span)),
+                        ty,
                     });
                     self.symbols.push(symbol);
                 }
@@ -365,16 +407,26 @@ struct OpCreateFn<'a> {
 impl<'a> OpCreateFn<'a> {
     pub fn new(op: &'a OpDefinition) -> Self {
         // Op::create generic parameters
-        let generics = syn::Generics {
+        let mut generics = syn::Generics {
             lt_token: Some(syn::token::Lt(op.span)),
             params: syn::punctuated::Punctuated::from_iter(
                 [syn::parse_str("B: ?Sized + ::midenc_hir::Builder").unwrap()]
                     .into_iter()
-                    .chain(op.op_builder_impl.buildable_op_impl.generics.params.iter().cloned()),
+                    .chain(op.op.generics.params.iter().cloned())
+                    .chain(
+                        op.op_builder_impl
+                            .create_params
+                            .iter()
+                            .flat_map(|p| p.all_generic_types(true)),
+                    ),
             ),
             gt_token: Some(syn::token::Gt(op.span)),
-            where_clause: op.op_builder_impl.buildable_op_impl.generics.where_clause.clone(),
+            where_clause: op.op.generics.where_clause.clone(),
         };
+        let where_clause = generics.make_where_clause();
+        for param in op.op_builder_impl.create_params.iter() {
+            param.extend_full_where_clause(where_clause, true);
+        }
 
         Self { op, generics }
     }
@@ -384,17 +436,36 @@ struct WithAttrs<'a>(&'a OpDefinition);
 impl quote::ToTokens for WithAttrs<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         for param in self.0.op_builder_impl.create_params.iter() {
-            if let OpCreateParamType::Attr(OpAttribute { name, kind, .. }) = &param.param_ty {
+            if let OpCreateParamType::Attr(OpAttribute { name, ty, .. }) = &param.param_ty {
+                let span = name.span();
+                let field_name = syn::Lit::Str(syn::LitStr::new(&format!("{name}"), span));
+                tokens.extend(quote_spanned! { span =>
+                    op_builder.with_property::<#ty, _>(#field_name, #name);
+                });
+            }
+        }
+    }
+}
+
+struct WithAttrInfos<'a>(&'a OpDefinition);
+impl quote::ToTokens for WithAttrInfos<'_> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let op_ty = &self.0.name;
+        for param in self.0.op_builder_impl.create_params.iter() {
+            if let OpCreateParamType::Attr(OpAttribute { name, kind, ty, .. }) = &param.param_ty {
+                let span = name.span();
                 let field_name = syn::Lit::Str(syn::LitStr::new(&format!("{name}"), name.span()));
-                if matches!(kind, AttrKind::Hidden) {
-                    tokens.extend(quote! {
-                        op_builder.with_hidden_attr(#field_name, #name);
-                    });
-                } else {
-                    tokens.extend(quote! {
-                        op_builder.with_attr(#field_name, #name);
-                    });
-                }
+                let hidden =
+                    syn::Lit::Bool(syn::LitBool::new(matches!(kind, AttrKind::Hidden), span));
+                tokens.extend(quote_spanned! { span =>
+                    unsafe {
+                        ::midenc_hir::AttrInfo::new::<#ty>(
+                            #field_name.into(),
+                            ::core::mem::offset_of!(#op_ty, #name) as u16,
+                            #hidden,
+                        )
+                    },
+                });
             }
         }
     }
@@ -405,15 +476,16 @@ impl quote::ToTokens for WithSymbols<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         for param in self.0.op_builder_impl.create_params.iter() {
             if let OpCreateParamType::Symbol(Symbol { name, ty }) = &param.param_ty {
+                let span = name.span();
                 let field_name = syn::Lit::Str(syn::LitStr::new(&format!("{name}"), name.span()));
                 match ty {
                     SymbolType::Any | SymbolType::Concrete(_) | SymbolType::Trait(_) => {
-                        tokens.extend(quote! {
+                        tokens.extend(quote_spanned! { span =>
                             op_builder.with_symbol(#field_name, #name);
                         });
                     }
                     SymbolType::Callable => {
-                        tokens.extend(quote! {
+                        tokens.extend(quote_spanned! { span =>
                             op_builder.with_callable_symbol(#field_name, #name);
                         });
                     }
@@ -429,10 +501,9 @@ impl quote::ToTokens for WithOperands<'_> {
         for (group_index, group) in self.0.operands.iter().enumerate() {
             match group {
                 OpOperandGroup::Unnamed(operands) => {
-                    let group_index = syn::Lit::Int(syn::LitInt::new(
-                        &format!("{group_index}usize"),
-                        operands[0].name.span(),
-                    ));
+                    let group_span = operands[0].name.span();
+                    let group_index =
+                        syn::Lit::Int(syn::LitInt::new(&format!("{group_index}usize"), group_span));
                     let operand_name = operands.iter().map(|o| &o.name).collect::<Vec<_>>();
                     let operand_constraint = operands.iter().map(|o| &o.constraint);
                     let constraint_violation = operands.iter().map(|o| {
@@ -441,13 +512,14 @@ impl quote::ToTokens for WithOperands<'_> {
                             o.name.span(),
                         ))
                     });
-                    tokens.extend(quote! {
+                    tokens.extend(quote_spanned! { group_span =>
                         #(
                             {
                                 let value = #operand_name.borrow();
                                 let value_ty = value.ty();
-                                if !<#operand_constraint as ::midenc_hir::traits::TypeConstraint>::matches(value_ty) {
-                                    let expected = <#operand_constraint as ::midenc_hir::traits::TypeConstraint>::description();
+                                let constraint = <#operand_constraint as ::midenc_hir::traits::TypeConstraint>::get();
+                                if !<#operand_constraint as ::midenc_hir::traits::TypeConstraint>::matches(&constraint, value_ty) {
+                                    let expected = <#operand_constraint as ::midenc_hir::traits::TypeConstraint>::description(&constraint);
                                     return Err(builder.context()
                                         .session()
                                         .diagnostics
@@ -463,21 +535,21 @@ impl quote::ToTokens for WithOperands<'_> {
                     });
                 }
                 OpOperandGroup::Named(group_name, group_constraint) => {
-                    let group_index = syn::Lit::Int(syn::LitInt::new(
-                        &format!("{group_index}usize"),
-                        group_name.span(),
-                    ));
+                    let group_span = group_name.span();
+                    let group_index =
+                        syn::Lit::Int(syn::LitInt::new(&format!("{group_index}usize"), group_span));
                     let constraint_violation = syn::Lit::Str(syn::LitStr::new(
                         &format!("type constraint violation for operand in '{group_name}'"),
-                        group_name.span(),
+                        group_span,
                     ));
-                    tokens.extend(quote! {
+                    tokens.extend(quote_spanned! { group_span =>
                         let #group_name = #group_name.into_iter().collect::<::alloc::vec::Vec<_>>();
                         for operand in #group_name.iter() {
                             let value = operand.borrow();
                             let value_ty = value.ty();
-                            if !<#group_constraint as ::midenc_hir::traits::TypeConstraint>::matches(value_ty) {
-                                let expected = <#group_constraint as ::midenc_hir::traits::TypeConstraint>::description();
+                            let constraint = <#group_constraint as ::midenc_hir::traits::TypeConstraint>::get();
+                            if !<#group_constraint as ::midenc_hir::traits::TypeConstraint>::matches(&constraint, value_ty) {
+                                let expected = <#group_constraint as ::midenc_hir::traits::TypeConstraint>::description(&constraint);
                                 return Err(builder.context()
                                     .session()
                                     .diagnostics
@@ -500,10 +572,69 @@ struct InitializeCustomFields<'a>(&'a OpDefinition);
 impl quote::ToTokens for InitializeCustomFields<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         for param in self.0.op_builder_impl.create_params.iter() {
-            if let OpCreateParamType::CustomField(id, ..) = &param.param_ty {
-                tokens.extend(quote! {
-                    core::ptr::addr_of_mut!((*__ptr).#id).write(#id);
-                });
+            match &param.param_ty {
+                OpCreateParamType::CustomField(id, ..) => {
+                    let span = id.span();
+                    tokens.extend(quote_spanned! { span =>
+                        core::ptr::addr_of_mut!((*__ptr).#id).write(#id);
+                    });
+                }
+                OpCreateParamType::Attr(OpAttribute { name, ty, .. }) => {
+                    let span = name.span();
+                    tokens.extend(quote_spanned! { span =>
+                        core::ptr::addr_of_mut!((*__ptr).#name).write(
+                            ::midenc_hir::UnsafeIntrusiveEntityRef::<#ty>::dangling()
+                        );
+                    });
+                }
+                OpCreateParamType::Symbol(sym) => {
+                    let span = sym.name.span();
+                    let id = &sym.name;
+                    tokens.extend(quote_spanned! { span =>
+                        core::ptr::addr_of_mut!((*__ptr).#id).write(
+                            ::midenc_hir::UnsafeIntrusiveEntityRef::<::midenc_hir::dialects::builtin::attributes::SymbolRefAttr>::dangling()
+                        );
+                    });
+                }
+                _ => continue,
+            }
+        }
+    }
+}
+
+struct DefaultInitializeCustomFields<'a>(&'a OpDefinition);
+impl quote::ToTokens for DefaultInitializeCustomFields<'_> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        for param in self.0.op_builder_impl.create_params.iter() {
+            match &param.param_ty {
+                OpCreateParamType::CustomField(id, ..) => {
+                    let span = id.span();
+                    tokens.extend(quote_spanned! { span =>
+                        core::ptr::addr_of_mut!((*__ptr).#id).write(Default::default());
+                    });
+                }
+                OpCreateParamType::Attr(attr) => {
+                    let span = attr.name.span();
+                    let id = &attr.name;
+                    let attr_type = &attr.ty;
+                    tokens.extend(quote_spanned! { span =>
+                        {
+                            core::ptr::addr_of_mut!((*__ptr).#id).write(
+                                ::midenc_hir::UnsafeIntrusiveEntityRef::<#attr_type>::dangling()
+                            );
+                        }
+                    });
+                }
+                OpCreateParamType::Symbol(sym) => {
+                    let span = sym.name.span();
+                    let id = &sym.name;
+                    tokens.extend(quote_spanned! { span =>
+                        core::ptr::addr_of_mut!((*__ptr).#id).write(
+                            ::midenc_hir::UnsafeIntrusiveEntityRef::<::midenc_hir::dialects::builtin::attributes::SymbolRefAttr>::dangling()
+                        );
+                    });
+                }
+                _ => continue,
             }
         }
     }
@@ -515,11 +646,10 @@ impl quote::ToTokens for WithResults<'_> {
         match self.0.results.as_ref() {
             None => (),
             Some(OpResultGroup::Unnamed(results)) => {
-                let num_results = syn::Lit::Int(syn::LitInt::new(
-                    &format!("{}usize", results.len()),
-                    results[0].name.span(),
-                ));
-                tokens.extend(quote! {
+                let group_span = results[0].name.span();
+                let num_results =
+                    syn::Lit::Int(syn::LitInt::new(&format!("{}usize", results.len()), group_span));
+                tokens.extend(quote_spanned! { group_span =>
                     op_builder.with_results(#num_results);
                 });
             }
@@ -546,12 +676,14 @@ impl quote::ToTokens for WithSuccessors<'_> {
                     });
                 }
                 SuccessorGroup::Named(name) => {
-                    tokens.extend(quote! {
+                    let span = name.span();
+                    tokens.extend(quote_spanned! { span =>
                         op_builder.with_successors(#name);
                     });
                 }
                 SuccessorGroup::Keyed(name, _) => {
-                    tokens.extend(quote! {
+                    let span = name.span();
+                    tokens.extend(quote_spanned! { span =>
                         op_builder.with_keyed_successors(#name);
                     });
                 }
@@ -574,17 +706,19 @@ impl quote::ToTokens for BuildOp<'_> {
                     OpResultGroup::Unnamed(results) => {
                         let verify_result = results.iter().map(|result| {
                             let result_name = &result.name;
+                            let result_span = result_name.span();
                             let result_constraint = &result.constraint;
                             let constraint_violation = syn::Lit::Str(syn::LitStr::new(
                                 &format!("type constraint violation for result '{result_name}'"),
                                 result_name.span(),
                             ));
-                            quote! {
+                            quote_spanned! { result_span =>
                                 {
                                     let op_result = op.#result_name();
                                     let value_ty = op_result.ty();
-                                    if !<#result_constraint as ::midenc_hir::traits::TypeConstraint>::matches(value_ty) {
-                                        let expected = <#result_constraint as ::midenc_hir::traits::TypeConstraint>::description();
+                                    let constraint = <#result_constraint as ::midenc_hir::traits::TypeConstraint>::get();
+                                    if !<#result_constraint as ::midenc_hir::traits::TypeConstraint>::matches(&constraint, value_ty) {
+                                        let expected = <#result_constraint as ::midenc_hir::traits::TypeConstraint>::description(&constraint);
                                         return Err(builder.context()
                                             .session()
                                             .diagnostics
@@ -604,18 +738,20 @@ impl quote::ToTokens for BuildOp<'_> {
                         }
                     }
                     OpResultGroup::Named(name, constraint) => {
+                        let span = name.span();
                         let constraint_violation = syn::Lit::Str(syn::LitStr::new(
                             &format!("type constraint violation for result in '{name}'"),
-                            name.span(),
+                            span,
                         ));
-                        quote! {
+                        quote_spanned! { span =>
                             {
                                 let results = op.#name();
                                 for result in results.iter() {
                                     let value = result.borrow();
                                     let value_ty = value.ty();
-                                    if !<#constraint as ::midenc_hir::traits::TypeConstraint>::matches(value_ty) {
-                                        let expected = <#constraint as ::midenc_hir::traits::TypeConstraint>::description();
+                                    let constraint = <#constraint as ::midenc_hir::traits::TypeConstraint>::get();
+                                    if !<#constraint as ::midenc_hir::traits::TypeConstraint>::matches(&constraint, value_ty) {
+                                        let expected = <#constraint as ::midenc_hir::traits::TypeConstraint>::description(&constraint);
                                         return Err(builder.context()
                                             .session()
                                             .diagnostics
@@ -649,42 +785,60 @@ impl quote::ToTokens for BuildOp<'_> {
 impl quote::ToTokens for OpCreateFn<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let dialect = &self.op.dialect;
-        let (impl_generics, _, where_clause) = self.generics.split_for_impl();
-        let param_names =
-            self.op.op_builder_impl.create_params.iter().flat_map(OpCreateParam::bindings);
-        let param_types = self
+        let (impl_generics_all, _ty_generics_all, where_clause_all) =
+            self.generics.split_for_impl();
+        let all_param_names = self
             .op
             .op_builder_impl
             .create_params
             .iter()
-            .flat_map(OpCreateParam::binding_types);
+            .flat_map(OpCreateParam::all_bindings);
+        let all_param_types = self
+            .op
+            .op_builder_impl
+            .create_params
+            .iter()
+            .flat_map(|p| p.all_binding_types(true));
         let initialize_custom_fields = InitializeCustomFields(self.op);
+        let default_initialize_custom_fields = DefaultInitializeCustomFields(self.op);
         let with_symbols = WithSymbols(self.op);
         let with_attrs = WithAttrs(self.op);
         let with_operands = WithOperands(self.op);
         let with_results = WithResults(self.op);
-        let with_regions = self.op.regions.iter().map(|_| {
-            quote! {
+        let with_regions = self.op.regions.iter().map(|r| {
+            let region_span = r.span();
+            quote_spanned! { region_span =>
                 op_builder.create_region();
             }
         });
         let with_successors = WithSuccessors(self.op);
         let build_op = BuildOp(self.op);
 
-        tokens.extend(quote! {
-            /// Manually construct a new [#op_ident]
+        let create_doc = syn::Lit::Str(syn::LitStr::new(
+            &format!("Manually construct a new [{}]", &self.op.name),
+            self.op.span,
+        ));
+        let alloc_default_doc = syn::Lit::Str(syn::LitStr::new(
+            &format!("Allocate a new, default-initialized [{}]", &self.op.name),
+            self.op.span,
+        ));
+
+        let op_span = self.op.span;
+        tokens.extend(quote_spanned! { op_span =>
+            #[doc = #create_doc]
             ///
             /// It is generally preferable to use [`::midenc_hir::Builder::create`] instead.
             #[allow(clippy::too_many_arguments)]
-            pub fn create #impl_generics(
+            pub fn create #impl_generics_all(
                 builder: &mut B,
                 span: ::midenc_hir::diagnostics::SourceSpan,
                 #(
-                    #param_names: #param_types,
+                    #all_param_names: #all_param_types,
                 )*
             ) -> Result<::midenc_hir::UnsafeIntrusiveEntityRef<Self>, ::midenc_hir::diagnostics::Report>
-            #where_clause
+            #where_clause_all
             {
+                #![allow(clippy::all)]
                 use ::midenc_hir::{Builder, Op};
                 let mut __this = {
                     let __operation_name = {
@@ -695,6 +849,7 @@ impl quote::ToTokens for OpCreateFn<'_> {
                     let __context = builder.context_rc();
                     let mut __op = __context.alloc_uninit_tracked::<Self>();
                     unsafe {
+                        let __assumed_init = ::midenc_hir::RawEntityRef::assume_init(__op);
                         {
                             let mut __uninit = __op.borrow_mut();
                             let __ptr = (*__uninit).as_mut_ptr();
@@ -703,9 +858,9 @@ impl quote::ToTokens for OpCreateFn<'_> {
                             __op_ptr.write(::midenc_hir::Operation::uninit::<Self>(__context, __operation_name, __offset));
                             #initialize_custom_fields
                         }
-                        let mut __this = ::midenc_hir::RawEntityRef::assume_init(__op);
-                        __this.borrow_mut().set_span(span);
-                        __this
+                        let mut __assumed_init = __assumed_init;
+                        __assumed_init.borrow_mut().set_span(span);
+                        __assumed_init
                     }
                 };
 
@@ -722,6 +877,31 @@ impl quote::ToTokens for OpCreateFn<'_> {
                 // Finalize construction of this op
                 #build_op
             }
+
+            #[doc = #alloc_default_doc]
+            ///
+            /// This method is used as part of op definition implementation, and should not be
+            /// used directly if at all possible.
+            pub fn alloc_default(context: ::alloc::rc::Rc<::midenc_hir::Context>) -> ::midenc_hir::UnsafeIntrusiveEntityRef<Self> {
+                #![allow(clippy::all)]
+                let __operation_name = {
+                    let dialect = context.get_or_register_dialect::<#dialect>();
+                    dialect.expect_registered_name::<Self>()
+                };
+                let mut __op = context.alloc_uninit_tracked::<Self>();
+                unsafe {
+                    let __assumed_init = ::midenc_hir::RawEntityRef::assume_init(__op);
+                    {
+                        let mut __uninit = __op.borrow_mut();
+                        let __ptr = (*__uninit).as_mut_ptr();
+                        let __offset = core::mem::offset_of!(Self, op);
+                        let __op_ptr = core::ptr::addr_of_mut!((*__ptr).op);
+                        __op_ptr.write(::midenc_hir::Operation::uninit::<Self>(context.clone(), __operation_name, __offset));
+                        #default_initialize_custom_fields
+                    }
+                    __assumed_init
+                }
+            }
         });
     }
 }
@@ -729,13 +909,15 @@ impl quote::ToTokens for OpCreateFn<'_> {
 impl quote::ToTokens for OpDefinition {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let op_ident = &self.name;
+        let op_span = op_ident.span();
         let (impl_generics, ty_generics, where_clause) = self.op.generics.split_for_impl();
 
         // struct $Op
+        #[allow(clippy::type_complexity)]
         self.op.to_tokens(tokens);
 
         // impl Spanned
-        tokens.extend(quote! {
+        tokens.extend(quote_spanned! { op_span =>
             impl #impl_generics ::midenc_hir::diagnostics::Spanned for #op_ident #ty_generics #where_clause {
                 fn span(&self) -> ::midenc_hir::diagnostics::SourceSpan {
                     ::midenc_hir::diagnostics::Spanned::span(&self.op)
@@ -744,7 +926,7 @@ impl quote::ToTokens for OpDefinition {
         });
 
         // impl AsRef<Operation>/AsMut<Operation>
-        tokens.extend(quote! {
+        tokens.extend(quote_spanned! { op_span =>
             impl #impl_generics AsRef<::midenc_hir::Operation> for #op_ident #ty_generics #where_clause {
                 #[inline(always)]
                 fn as_ref(&self) -> &::midenc_hir::Operation {
@@ -767,7 +949,8 @@ impl quote::ToTokens for OpDefinition {
         let opcode_str = syn::Lit::Str(syn::LitStr::new(&opcode.to_string(), opcode.span()));
         let traits = &self.traits;
         let implements = &self.implements;
-        tokens.extend(quote! {
+        let attrs = WithAttrInfos(self);
+        tokens.extend(quote_spanned! { op_span =>
             impl #impl_generics ::midenc_hir::Op for #op_ident #ty_generics #where_clause {
                 #[inline]
                 fn name(&self) -> ::midenc_hir::OperationName {
@@ -795,6 +978,12 @@ impl quote::ToTokens for OpDefinition {
                     ::midenc_hir::interner::Symbol::intern(#opcode_str)
                 }
 
+                fn attrs() -> ::alloc::boxed::Box<[::midenc_hir::AttrInfo]> {
+                    ::alloc::boxed::Box::from([
+                        #attrs
+                    ])
+                }
+
                 fn traits() -> ::alloc::boxed::Box<[::midenc_hir::traits::TraitInfo]> {
                     ::alloc::boxed::Box::from([
                         ::midenc_hir::traits::TraitInfo::new::<Self, dyn core::any::Any>(),
@@ -806,6 +995,10 @@ impl quote::ToTokens for OpDefinition {
                             ::midenc_hir::traits::TraitInfo::new::<Self, dyn #implements>(),
                         )*
                     ])
+                }
+
+                fn alloc_uninit(context: ::alloc::rc::Rc<::midenc_hir::Context>) -> ::midenc_hir::OperationRef {
+                    Self::alloc_default(context).as_operation_ref()
                 }
             }
         });
@@ -824,7 +1017,7 @@ impl quote::ToTokens for OpDefinition {
             let result_fns = OpResultFns(self);
             let region_fns = OpRegionFns(self);
             let successor_fns = OpSuccessorFns(self);
-            tokens.extend(quote! {
+            tokens.extend(quote_spanned! { op_span =>
                 /// Construction
                 #[allow(unused)]
                 impl #impl_generics #op_ident #ty_generics #where_clause {
@@ -877,7 +1070,8 @@ impl quote::ToTokens for OpDefinition {
 
         // impl $DerivedTrait
         for derived_trait in self.traits.iter() {
-            tokens.extend(quote! {
+            let span = derived_trait.span();
+            tokens.extend(quote_spanned! { span =>
                 impl #impl_generics #derived_trait for #op_ident #ty_generics #where_clause {}
             });
         }
@@ -893,6 +1087,7 @@ impl quote::ToTokens for OpCustomFieldFns<'_> {
         // User-defined fields
         for field in self.0.op.fields.iter() {
             let field_name = field.ident.as_ref().unwrap();
+            let field_span = field_name.span();
             // Do not generate field functions for custom fields with private visibility
             if matches!(field.vis, syn::Visibility::Inherited) {
                 continue;
@@ -912,7 +1107,7 @@ impl quote::ToTokens for OpCustomFieldFns<'_> {
                 field_name.span(),
             ));
             let field_ty = &field.ty;
-            tokens.extend(quote! {
+            tokens.extend(quote_spanned! { field_span =>
                 #[doc = #field_doc]
                 #[inline]
                 pub fn #field_name(&self) -> &#field_ty {
@@ -945,21 +1140,20 @@ impl quote::ToTokens for OpSymbolFns<'_> {
         } in self.0.symbols.iter()
         {
             let span = symbol.span();
-            let symbol_str = syn::Lit::Str(syn::LitStr::new(&symbol.to_string(), span));
             let symbol_mut = format_ident!("{symbol}_mut");
+            let get_symbol = format_ident!("get_{symbol}");
             let set_symbol = format_ident!("set_{symbol}");
-            let set_symbol_unchecked = format_ident!("set_{symbol}_unchecked");
             let symbol_symbol = format_ident!("{symbol}_symbol");
-            let symbol_symbol_doc = syn::Lit::Str(syn::LitStr::new(
-                &format!(" Get the symbol under which the `{symbol}` attribute is stored"),
-                span,
-            ));
             let symbol_doc = syn::Lit::Str(syn::LitStr::new(
-                &format!(" Get a reference to the value of the `{symbol}` attribute."),
+                &format!(" Get a reference to the `{symbol}` attribute."),
                 span,
             ));
             let symbol_mut_doc = syn::Lit::Str(syn::LitStr::new(
-                &format!(" Get a mutable reference to the value of the `{symbol}` attribute."),
+                &format!(" Get a mutable reference to the `{symbol}` attribute."),
+                span,
+            ));
+            let get_symbol_doc = syn::Lit::Str(syn::LitStr::new(
+                &format!(" Get a reference to the value of the `{symbol}` attribute."),
                 span,
             ));
             let set_symbol_doc_lines = [
@@ -973,48 +1167,21 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                     span,
                 )),
             ];
-            let set_symbol_unchecked_doc_lines = [
-                syn::Lit::Str(syn::LitStr::new(
-                    &format!(
-                        " Set the value of the `{symbol}` symbol without attempting to resolve it."
-                    ),
-                    span,
-                )),
-                syn::Lit::Str(syn::LitStr::new("", span)),
-                syn::Lit::Str(syn::LitStr::new(
-                    " Because this does not resolve the given symbol, the caller is responsible \
-                     for updating the symbol use list.",
-                    span,
-                )),
-            ];
 
-            tokens.extend(quote! {
-                #[doc = #symbol_symbol_doc]
-                #[inline(always)]
-                pub fn #symbol_symbol() -> ::midenc_hir::interner::Symbol {
-                    ::midenc_hir::interner::Symbol::intern(#symbol_str)
-                }
-
+            tokens.extend(quote_spanned! { span =>
                 #[doc = #symbol_doc]
-                pub fn #symbol(&self) -> &::midenc_hir::SymbolPathAttr {
-                    self.op.get_typed_attribute(Self::#symbol_symbol()).unwrap()
+                pub fn #symbol(&self) -> ::midenc_hir::EntityRef<'_, ::midenc_hir::dialects::builtin::attributes::SymbolRefAttr> {
+                    self.#symbol.borrow()
                 }
 
                 #[doc = #symbol_mut_doc]
-                pub fn #symbol_mut(&mut self) -> &mut ::midenc_hir::SymbolPathAttr {
-                    self.op.get_typed_attribute_mut(Self::#symbol_symbol()).unwrap()
-                }
-
-                #(
-                    #[doc = #set_symbol_unchecked_doc_lines]
-                )*
-                pub fn #set_symbol_unchecked(&mut self, value: ::midenc_hir::SymbolPathAttr) {
-                    self.op.set_attribute(Self::#symbol_symbol(), Some(value));
+                pub fn #symbol_mut(&mut self) -> ::midenc_hir::EntityMut<'_, ::midenc_hir::dialects::builtin::attributes::SymbolRefAttr> {
+                    self.#symbol.borrow_mut()
                 }
             });
 
             let is_concrete_ty = match symbol_kind {
-                SymbolType::Concrete(ty) => [quote! {
+                SymbolType::Concrete(ty) => [quote_spanned! { span =>
                     // The way we check the type depends on whether `symbol` is a reference to `self`
                     let (data_ptr, _) = ::midenc_hir::SymbolRef::as_ptr(&symbol).to_raw_parts();
                     if core::ptr::addr_eq(data_ptr, (self as *const Self as *const ())) {
@@ -1040,21 +1207,26 @@ impl quote::ToTokens for OpSymbolFns<'_> {
 
             match symbol_kind {
                 SymbolType::Any | SymbolType::Trait(_) | SymbolType::Concrete(_) => {
-                    tokens.extend(quote! {
+                    tokens.extend(quote_spanned! { span =>
+                        #[doc = #get_symbol_doc]
+                        pub fn #get_symbol(&self) -> ::midenc_hir::EntityRef<'_, ::midenc_hir::dialects::builtin::attributes::SymbolRef> {
+                            ::midenc_hir::EntityRef::map(self.#symbol.borrow(), ::midenc_hir::AttributeRegistration::underlying_value)
+                        }
+
                         #(
                             #[doc = #set_symbol_doc_lines]
                         )*
                         pub fn #set_symbol(&mut self, symbol: impl ::midenc_hir::AsSymbolRef) -> Result<(), ::midenc_hir::InvalidSymbolRefError> {
                             let symbol = symbol.as_symbol_ref();
                             #(#is_concrete_ty)*
-                            self.op.set_symbol_attribute(Self::#symbol_symbol(), symbol);
+                            self.op.set_symbol_attribute(stringify!(#symbol_symbol), symbol);
 
                             Ok(())
                         }
                     });
                 }
                 SymbolType::Callable => {
-                    tokens.extend(quote! {
+                    tokens.extend(quote_spanned! { span =>
                         #(
                             #[doc = #set_symbol_doc_lines]
                         )*
@@ -1077,7 +1249,7 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                                     });
                                 }
                             }
-                            self.op.set_symbol_attribute(Self::#symbol_symbol(), symbol.clone());
+                            self.op.set_symbol_attribute(stringify!(#symbol_symbol), symbol);
 
                             Ok(())
                         }
@@ -1095,22 +1267,28 @@ impl quote::ToTokens for OpAttrFns<'_> {
         for OpAttribute {
             name: attr,
             ty: attr_ty,
+            value_ty: attr_value_ty,
             ..
         } in self.0.attrs.iter()
         {
-            let attr_str = syn::Lit::Str(syn::LitStr::new(&attr.to_string(), attr.span()));
+            let span = attr.span();
             let attr_mut = format_ident!("{attr}_mut");
+            let get_attr = format_ident!("get_{attr}");
+            let get_attr_mut = format_ident!("get_{attr}_mut");
             let set_attr = format_ident!("set_{attr}");
-            let attr_symbol = format_ident!("{attr}_symbol");
-            let attr_symbol_doc = syn::Lit::Str(syn::LitStr::new(
-                &format!(" Get the symbol under which the `{attr}` attribute is stored"),
-                attr.span(),
-            ));
             let attr_doc = syn::Lit::Str(syn::LitStr::new(
-                &format!(" Get a reference to the value of the `{attr}` attribute."),
+                &format!(" Get a reference to the `{attr}` attribute."),
                 attr.span(),
             ));
             let attr_mut_doc = syn::Lit::Str(syn::LitStr::new(
+                &format!(" Get a mutable reference to the `{attr}` attribute."),
+                attr.span(),
+            ));
+            let get_attr_doc = syn::Lit::Str(syn::LitStr::new(
+                &format!(" Get a reference to the value of the `{attr}` attribute."),
+                attr.span(),
+            ));
+            let get_attr_mut_doc = syn::Lit::Str(syn::LitStr::new(
                 &format!(" Get a mutable reference to the value of the `{attr}` attribute."),
                 attr.span(),
             ));
@@ -1118,26 +1296,39 @@ impl quote::ToTokens for OpAttrFns<'_> {
                 &format!(" Set the value of the `{attr}` attribute."),
                 attr.span(),
             ));
-            tokens.extend(quote! {
-                #[doc = #attr_symbol_doc]
-                #[inline(always)]
-                pub fn #attr_symbol() -> ::midenc_hir::interner::Symbol {
-                    ::midenc_hir::interner::Symbol::intern(#attr_str)
+            tokens.extend(quote_spanned! { span =>
+                #[doc = #attr_doc]
+                #[inline]
+                pub fn #attr(&self) -> ::midenc_hir::EntityRef<'_, #attr_ty> {
+                    self.#attr.borrow()
                 }
 
-                #[doc = #attr_doc]
-                pub fn #attr(&self) -> &#attr_ty {
-                    self.op.get_typed_attribute::<#attr_ty>(Self::#attr_symbol()).unwrap()
+                #[doc = #get_attr_doc]
+                #[inline]
+                pub fn #get_attr(&self) -> ::midenc_hir::EntityRef<'_, #attr_value_ty> {
+                    ::midenc_hir::EntityRef::map(self.#attr.borrow(), ::midenc_hir::AttributeRegistration::underlying_value)
                 }
 
                 #[doc = #attr_mut_doc]
-                pub fn #attr_mut(&mut self) -> &mut #attr_ty {
-                    self.op.get_typed_attribute_mut::<#attr_ty>(Self::#attr_symbol()).unwrap()
+                #[inline]
+                pub fn #attr_mut(&mut self) -> ::midenc_hir::EntityMut<'_, #attr_ty> {
+                    self.#attr.borrow_mut()
+                }
+
+                #[doc = #get_attr_mut_doc]
+                #[inline]
+                pub fn #get_attr_mut(&mut self) -> ::midenc_hir::EntityMut<'_, #attr_value_ty> {
+                    ::midenc_hir::EntityMut::map(self.#attr.borrow_mut(), ::midenc_hir::AttributeRegistration::underlying_value_mut)
                 }
 
                 #[doc = #set_attr_doc]
-                pub fn #set_attr(&mut self, value: impl Into<#attr_ty>) {
-                    self.op.set_intrinsic_attribute(Self::#attr_symbol(), Some(value.into()));
+                #[inline]
+                pub fn #set_attr<AttrValue>(&mut self, value: AttrValue)
+                where
+                    #attr_value_ty: From<AttrValue>,
+                {
+                    let attr = self.op.context_rc().create_attribute::<#attr_ty, AttrValue>(value);
+                    self.#attr = attr;
                 }
             });
         }
@@ -1158,6 +1349,7 @@ impl quote::ToTokens for OpOperandFns<'_> {
                     for (operand_index, Operand { name: operand, .. }) in
                         operands.iter().enumerate()
                     {
+                        let span = operand.span();
                         let operand_index = syn::Lit::Int(syn::LitInt::new(
                             &format!("{operand_index}usize"),
                             proc_macro2::Span::call_site(),
@@ -1171,7 +1363,7 @@ impl quote::ToTokens for OpOperandFns<'_> {
                             &format!(" Get a mutable reference to the `{operand}` operand."),
                             operand.span(),
                         ));
-                        tokens.extend(quote!{
+                        tokens.extend(quote_spanned! { span =>
                             #[doc = #operand_doc]
                             #[inline]
                             pub fn #operand(&self) -> ::midenc_hir::EntityRef<'_, ::midenc_hir::OpOperandImpl> {
@@ -1188,6 +1380,7 @@ impl quote::ToTokens for OpOperandFns<'_> {
                 }
                 // User-defined operand groups
                 OpOperandGroup::Named(group_name, _) => {
+                    let span = group_name.span();
                     let group_name_mut = format_ident!("{group_name}_mut");
                     let group_doc = syn::Lit::Str(syn::LitStr::new(
                         &format!(" Get a reference to the `{group_name}` operand group."),
@@ -1197,7 +1390,7 @@ impl quote::ToTokens for OpOperandFns<'_> {
                         &format!(" Get a mutable reference to the `{group_name}` operand group."),
                         group_name.span(),
                     ));
-                    tokens.extend(quote! {
+                    tokens.extend(quote_spanned! { span =>
                         #[doc = #group_doc]
                         #[inline]
                         pub fn #group_name(&self) -> ::midenc_hir::OpOperandRange<'_> {
@@ -1223,6 +1416,7 @@ impl quote::ToTokens for OpResultFns<'_> {
             match group {
                 OpResultGroup::Unnamed(results) => {
                     for (index, OpResult { name: result, .. }) in results.iter().enumerate() {
+                        let span = result.span();
                         let index = syn::Lit::Int(syn::LitInt::new(
                             &format!("{index}usize"),
                             result.span(),
@@ -1236,7 +1430,7 @@ impl quote::ToTokens for OpResultFns<'_> {
                             &format!(" Get a mutable reference to the `{result}` result."),
                             result.span(),
                         ));
-                        tokens.extend(quote!{
+                        tokens.extend(quote_spanned! { span =>
                             #[doc = #result_doc]
                             #[inline]
                             pub fn #result(&self) -> ::midenc_hir::EntityRef<'_, ::midenc_hir::OpResult> {
@@ -1252,6 +1446,7 @@ impl quote::ToTokens for OpResultFns<'_> {
                     }
                 }
                 OpResultGroup::Named(group, _) => {
+                    let span = group.span();
                     let group_mut = format_ident!("{group}_mut");
                     let group_doc = syn::Lit::Str(syn::LitStr::new(
                         &format!(" Get a reference to the `{group}` result group."),
@@ -1261,7 +1456,7 @@ impl quote::ToTokens for OpResultFns<'_> {
                         &format!(" Get a mutable reference to the `{group}` result group."),
                         group.span(),
                     ));
-                    tokens.extend(quote! {
+                    tokens.extend(quote_spanned! { span =>
                         #[doc = #group_doc]
                         #[inline]
                         pub fn #group(&self) -> ::midenc_hir::OpResultRange<'_> {
@@ -1285,6 +1480,7 @@ impl quote::ToTokens for OpRegionFns<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         // Regions
         for (index, region) in self.0.regions.iter().enumerate() {
+            let span = region.span();
             let index = syn::Lit::Int(syn::LitInt::new(&format!("{index}usize"), region.span()));
             let region_mut = format_ident!("{region}_mut");
             let region_doc = syn::Lit::Str(syn::LitStr::new(
@@ -1295,7 +1491,7 @@ impl quote::ToTokens for OpRegionFns<'_> {
                 &format!(" Get a mutable reference to the `{region}` region."),
                 region.span(),
             ));
-            tokens.extend(quote! {
+            tokens.extend(quote_spanned! { span =>
                 #[doc = #region_doc]
                 #[inline]
                 pub fn #region(&self) -> ::midenc_hir::EntityRef<'_, ::midenc_hir::Region> {
@@ -1324,6 +1520,7 @@ impl quote::ToTokens for OpSuccessorFns<'_> {
                 // Successors
                 SuccessorGroup::Unnamed(successors) => {
                     for (index, successor) in successors.iter().enumerate() {
+                        let span = successor.span();
                         let index = syn::Lit::Int(syn::LitInt::new(
                             &format!("{index}usize"),
                             proc_macro2::Span::call_site(),
@@ -1337,7 +1534,7 @@ impl quote::ToTokens for OpSuccessorFns<'_> {
                             &format!(" Get a mutable reference to the `{successor}` successor."),
                             successor.span(),
                         ));
-                        tokens.extend(quote! {
+                        tokens.extend(quote_spanned! { span =>
                             #[doc = #successor_doc]
                             #[inline]
                             pub fn #successor(&self) -> ::midenc_hir::OpSuccessor<'_> {
@@ -1354,6 +1551,7 @@ impl quote::ToTokens for OpSuccessorFns<'_> {
                 }
                 // Variadic successor groups
                 SuccessorGroup::Named(group) => {
+                    let span = group.span();
                     let group_mut = format_ident!("{group}_mut");
                     let group_doc = syn::Lit::Str(syn::LitStr::new(
                         &format!(" Get a reference to the `{group}` successor group."),
@@ -1363,7 +1561,7 @@ impl quote::ToTokens for OpSuccessorFns<'_> {
                         &format!(" Get a mutable reference to the `{group}` successor group."),
                         group.span(),
                     ));
-                    tokens.extend(quote! {
+                    tokens.extend(quote_spanned! { span =>
                         #[doc = #group_doc]
                         #[inline]
                         pub fn #group(&self) -> ::midenc_hir::OpSuccessorRange<'_> {
@@ -1379,6 +1577,7 @@ impl quote::ToTokens for OpSuccessorFns<'_> {
                 }
                 // User-defined successor groups
                 SuccessorGroup::Keyed(group, group_ty) => {
+                    let span = group.span();
                     let group_mut = format_ident!("{group}_mut");
                     let group_doc = syn::Lit::Str(syn::LitStr::new(
                         &format!(" Get a reference to the `{group}` successor group."),
@@ -1388,7 +1587,7 @@ impl quote::ToTokens for OpSuccessorFns<'_> {
                         &format!(" Get a mutable reference to the `{group}` successor group."),
                         group.span(),
                     ));
-                    tokens.extend(quote! {
+                    tokens.extend(quote_spanned! { span =>
                         #[doc = #group_doc]
                         #[inline]
                         pub fn #group(&self) -> ::midenc_hir::KeyedSuccessorRange<'_, #group_ty> {
@@ -1415,8 +1614,10 @@ impl quote::ToTokens for OpSuccessorFns<'_> {
 pub struct OpAttribute {
     /// The attribute name
     pub name: Ident,
-    /// The value type of the attribute
+    /// The attribute type for this field
     pub ty: syn::Type,
+    /// The derived value type for the attribute this field contains
+    pub value_ty: syn::Type,
     /// The attribute kind
     pub kind: AttrKind,
 }
@@ -1516,14 +1717,15 @@ impl OpBuilderImpl {
             op_builder: name.clone(),
             op_generics: Default::default(),
             generics: Default::default(),
-            required_generics: None,
+            minimal_generics: None,
             params: Rc::clone(&create_params),
         };
         let fn_once_impl = OpBuilderFnOnceImpl {
             op: op.clone(),
             op_builder: name.clone(),
-            generics: Default::default(),
-            required_generics: None,
+            op_generics: Default::default(),
+            all_generics: Default::default(),
+            minimal_generics: None,
             params: Rc::clone(&create_params),
         };
         Self {
@@ -1543,62 +1745,87 @@ impl OpBuilderImpl {
         let create_params = Rc::from(params.into_boxed_slice());
         self.create_params = Rc::clone(&create_params);
 
-        let has_required_variant = self.create_params.iter().any(|param| param.default);
-
-        // BuildableOp generic parameters
-        self.buildable_op_impl.params = Rc::clone(&create_params);
-        self.buildable_op_impl.op_generics = op_generics.clone();
-        self.buildable_op_impl.required_generics = if has_required_variant {
-            Some(syn::Generics {
-                lt_token: Some(syn::token::Lt(span)),
-                params: syn::punctuated::Punctuated::from_iter(
-                    op_generics.params.iter().cloned().chain(
-                        self.create_params.iter().flat_map(OpCreateParam::required_generic_types),
-                    ),
-                ),
-                gt_token: Some(syn::token::Gt(span)),
-                where_clause: op_generics.where_clause.clone(),
-            })
-        } else {
-            None
-        };
-        self.buildable_op_impl.generics = syn::Generics {
-            lt_token: Some(syn::token::Lt(span)),
+        let mut all_generics = syn::Generics {
+            lt_token: Some(syn::token::Lt(op_generics.span())),
             params: syn::punctuated::Punctuated::from_iter(
                 op_generics
                     .params
                     .iter()
                     .cloned()
-                    .chain(self.create_params.iter().flat_map(OpCreateParam::generic_types)),
+                    .chain(create_params.iter().flat_map(|p| p.all_generic_types(false))),
             ),
-            gt_token: Some(syn::token::Gt(span)),
+            gt_token: Some(syn::token::Gt(op_generics.span())),
             where_clause: op_generics.where_clause.clone(),
         };
+        {
+            let full_where_clause = all_generics.make_where_clause();
+            for param in create_params.iter() {
+                param.extend_full_where_clause(full_where_clause, false);
+            }
+        }
 
-        // FnOnce generic parameters
-        self.fn_once_impl.params = create_params;
-        self.fn_once_impl.required_generics =
-            self.buildable_op_impl.required_generics.as_ref().map(
-                |buildable_op_impl_required_generics| syn::Generics {
-                    lt_token: Some(syn::token::Lt(span)),
+        let has_minimal_variant = self.create_params.iter().any(|param| param.default);
+        let minimal_generics = if has_minimal_variant {
+            let mut min_generics =
+                syn::Generics {
+                    lt_token: Some(syn::token::Lt(op_generics.span())),
                     params: syn::punctuated::Punctuated::from_iter(
-                        [
-                            syn::GenericParam::Lifetime(syn::LifetimeParam {
-                                attrs: vec![],
-                                lifetime: syn::Lifetime::new("'a", proc_macro2::Span::call_site()),
-                                colon_token: None,
-                                bounds: Default::default(),
-                            }),
-                            syn::parse_str("B: ?Sized + ::midenc_hir::Builder").unwrap(),
-                        ]
-                        .into_iter()
-                        .chain(buildable_op_impl_required_generics.params.iter().cloned()),
+                        op_generics.params.iter().cloned().chain(
+                            create_params.iter().flat_map(|p| p.minimal_generic_types(false)),
+                        ),
                     ),
-                    gt_token: Some(syn::token::Gt(span)),
-                    where_clause: buildable_op_impl_required_generics.where_clause.clone(),
-                },
-            );
-        self.fn_once_impl.generics = syn::Generics {
+                    gt_token: Some(syn::token::Gt(op_generics.span())),
+                    where_clause: op_generics.where_clause.clone(),
+                };
+            {
+                let minimal_where_clause = min_generics.make_where_clause();
+                for param in create_params.iter() {
+                    param.extend_minimal_where_clause(minimal_where_clause, false);
+                }
+            }
+            Some(min_generics)
+        } else {
+            None
+        };
+
+        // BuildableOp generic parameters
+        self.buildable_op_impl.params = Rc::clone(&create_params);
+        self.buildable_op_impl.op_generics = op_generics.clone();
+        self.buildable_op_impl.minimal_generics = minimal_generics;
+        self.buildable_op_impl.generics = all_generics;
+
+        let minimal_fn_once_generics = if has_minimal_variant {
+            let mut min_generics = syn::Generics {
+                lt_token: Some(syn::token::Lt(span)),
+                params: syn::punctuated::Punctuated::from_iter(
+                    [
+                        syn::GenericParam::Lifetime(syn::LifetimeParam {
+                            attrs: vec![],
+                            lifetime: syn::Lifetime::new("'a", proc_macro2::Span::call_site()),
+                            colon_token: None,
+                            bounds: Default::default(),
+                        }),
+                        syn::parse_str("B: ?Sized + ::midenc_hir::Builder").unwrap(),
+                    ]
+                    .into_iter()
+                    .chain(op_generics.params.iter().cloned())
+                    .chain(create_params.iter().flat_map(|p| p.minimal_generic_types(true))),
+                ),
+                gt_token: Some(syn::token::Gt(span)),
+                where_clause: op_generics.where_clause.clone(),
+            };
+            {
+                let minimal_where_clause = min_generics.make_where_clause();
+                for param in create_params.iter() {
+                    param.extend_minimal_where_clause(minimal_where_clause, true);
+                }
+            }
+            Some(min_generics)
+        } else {
+            None
+        };
+
+        let mut all_fn_once_generics = syn::Generics {
             lt_token: Some(syn::token::Lt(span)),
             params: syn::punctuated::Punctuated::from_iter(
                 [
@@ -1611,21 +1838,35 @@ impl OpBuilderImpl {
                     syn::parse_str("B: ?Sized + ::midenc_hir::Builder").unwrap(),
                 ]
                 .into_iter()
-                .chain(self.buildable_op_impl.generics.params.iter().cloned()),
+                .chain(op_generics.params.iter().cloned())
+                .chain(create_params.iter().flat_map(|p| p.all_generic_types(true))),
             ),
             gt_token: Some(syn::token::Gt(span)),
-            where_clause: self.buildable_op_impl.generics.where_clause.clone(),
+            where_clause: op_generics.where_clause.clone(),
         };
+        {
+            let where_clause = all_fn_once_generics.make_where_clause();
+            for param in create_params.iter() {
+                param.extend_full_where_clause(where_clause, true);
+            }
+        }
+
+        // FnOnce generic parameters
+        self.fn_once_impl.params = create_params;
+        self.fn_once_impl.op_generics = op_generics.clone();
+        self.fn_once_impl.minimal_generics = minimal_fn_once_generics;
+        self.fn_once_impl.all_generics = all_fn_once_generics;
     }
 }
 impl quote::ToTokens for OpBuilderImpl {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         // Emit `$OpBuilder`
         tokens.extend({
+            let span = self.name.span();
             let op_builder = &self.name;
             let op_builder_doc = &self.doc;
             let op_builder_new_doc = &self.new_doc;
-            quote! {
+            quote_spanned! { span =>
                 #op_builder_doc
                 pub struct #op_builder <'a, B: ?Sized> {
                     builder: &'a mut B,
@@ -1661,28 +1902,27 @@ pub struct BuildableOpImpl {
     op_builder: Ident,
     op_generics: syn::Generics,
     generics: syn::Generics,
-    required_generics: Option<syn::Generics>,
+    minimal_generics: Option<syn::Generics>,
     params: Rc<[OpCreateParam]>,
 }
 impl quote::ToTokens for BuildableOpImpl {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let op = &self.op;
         let op_builder = &self.op_builder;
+        let op_span = op.span();
 
         // Minimal builder (specify only required parameters)
         //
         // NOTE: This is only emitted if there are `default` parameters
-        if let Some(required_generics) = self.required_generics.as_ref() {
-            let required_params =
-                self.params.iter().flat_map(OpCreateParam::required_binding_types);
+        if let Some(min_generics) = self.minimal_generics.as_ref() {
+            let required_params = self.params.iter().flat_map(|p| p.minimal_binding_types(false));
             let (_, required_ty_generics, _) = self.op_generics.split_for_impl();
-            let (required_impl_generics, _, required_where_clause) =
-                required_generics.split_for_impl();
+            let (required_impl_generics, _, required_where_clause) = min_generics.split_for_impl();
             let required_params_ty = syn::TypeTuple {
-                paren_token: syn::token::Paren(op.span()),
+                paren_token: syn::token::Paren(op_span),
                 elems: syn::punctuated::Punctuated::from_iter(required_params),
             };
-            let quoted = quote! {
+            let quoted = quote_spanned! { op_span =>
                 impl #required_impl_generics ::midenc_hir::BuildableOp<#required_params_ty> for #op #required_ty_generics #required_where_clause {
                     type Builder<'a, T: ?Sized + ::midenc_hir::Builder + 'a> = #op_builder <'a, T>;
 
@@ -1702,14 +1942,14 @@ impl quote::ToTokens for BuildableOpImpl {
         }
 
         // Maximal builder (specify all parameters)
-        let params = self.params.iter().flat_map(OpCreateParam::binding_types);
+        let params = self.params.iter().flat_map(|p| p.all_binding_types(false));
         let (_, ty_generics, _) = self.op_generics.split_for_impl();
         let (impl_generics, _, where_clause) = self.generics.split_for_impl();
         let params_ty = syn::TypeTuple {
             paren_token: syn::token::Paren(op.span()),
             elems: syn::punctuated::Punctuated::from_iter(params),
         };
-        let quoted = quote! {
+        let quoted = quote_spanned! { op_span =>
             impl #impl_generics ::midenc_hir::BuildableOp<#params_ty> for #op #ty_generics #where_clause {
                 type Builder<'a, T: ?Sized + ::midenc_hir::Builder + 'a> = #op_builder <'a, T>;
 
@@ -1732,42 +1972,57 @@ impl quote::ToTokens for BuildableOpImpl {
 pub struct OpBuilderFnOnceImpl {
     op: Ident,
     op_builder: Ident,
-    generics: syn::Generics,
-    required_generics: Option<syn::Generics>,
+    all_generics: syn::Generics,
+    minimal_generics: Option<syn::Generics>,
+    op_generics: syn::Generics,
     params: Rc<[OpCreateParam]>,
 }
 impl quote::ToTokens for OpBuilderFnOnceImpl {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let op = &self.op;
+        let op_span = op.span();
         let op_builder = &self.op_builder;
 
-        let create_param_names =
-            self.params.iter().flat_map(OpCreateParam::bindings).collect::<Vec<_>>();
+        let all_param_names =
+            self.params.iter().flat_map(OpCreateParam::all_bindings).collect::<Vec<_>>();
+        let (_, op_ty_generics, _) = self.op_generics.split_for_impl();
 
         // Minimal builder (specify only required parameters)
         //
         // NOTE: This is only emitted if there are `default` parameters
-        if let Some(required_generics) = self.required_generics.as_ref() {
-            let required_param_names =
-                self.params.iter().flat_map(OpCreateParam::required_bindings);
+        if let Some(min_generics) = self.minimal_generics.as_ref() {
+            let required_param_names = self.params.iter().flat_map(|p| p.minimal_bindings());
+            let required_param_types =
+                self.params.iter().flat_map(|p| p.minimal_binding_types(true));
             let defaulted_param_names = self.params.iter().flat_map(|param| {
                 if param.default {
-                    param.bindings()
+                    param.all_bindings()
                 } else {
                     vec![]
                 }
             });
-            let required_param_types =
-                self.params.iter().flat_map(OpCreateParam::required_binding_types);
-            let (required_impl_generics, _required_ty_generics, required_where_clause) =
-                required_generics.split_for_impl();
+            let defaulted_param_types = self.params.iter().flat_map(|param| {
+                if param.default {
+                    param.all_binding_types(false)
+                } else {
+                    vec![]
+                }
+            });
+            let defaulted_param_stmts =
+                defaulted_param_names.zip(defaulted_param_types).map(|(name, ty)| {
+                    let stmt: syn::Stmt = parse_quote_spanned! { name.span() =>
+                        let #name: #ty = Default::default();
+                    };
+                    stmt
+                });
+            let (min_impl_generics, _, min_where_clause) = min_generics.split_for_impl();
             let required_params_ty = syn::TypeTuple {
-                paren_token: syn::token::Paren(op.span()),
+                paren_token: syn::token::Paren(op_span),
                 elems: syn::punctuated::Punctuated::from_iter(required_param_types),
             };
             let required_params_bound = syn::PatTuple {
                 attrs: Default::default(),
-                paren_token: syn::token::Paren(op.span()),
+                paren_token: syn::token::Paren(op_span),
                 elems: syn::punctuated::Punctuated::from_iter(
                     required_param_names.into_iter().map(|id| {
                         syn::Pat::Ident(syn::PatIdent {
@@ -1780,33 +2035,34 @@ impl quote::ToTokens for OpBuilderFnOnceImpl {
                     }),
                 ),
             };
-            tokens.extend(quote! {
-                impl #required_impl_generics ::core::ops::FnOnce<#required_params_ty> for #op_builder<'a, B> #required_where_clause {
-                    type Output = Result<::midenc_hir::UnsafeIntrusiveEntityRef<#op>, ::midenc_hir::diagnostics::Report>;
+            tokens.extend(quote_spanned! { op_span =>
+                #[allow(clippy::type_complexity)]
+                impl #min_impl_generics ::core::ops::FnOnce<#required_params_ty> for #op_builder<'a, B> #min_where_clause {
+                    type Output = Result<::midenc_hir::UnsafeIntrusiveEntityRef<#op #op_ty_generics>, ::midenc_hir::diagnostics::Report>;
 
                     #[inline]
                     extern "rust-call" fn call_once(self, args: #required_params_ty) -> Self::Output {
                         let #required_params_bound = args;
                         #(
-                            let #defaulted_param_names = Default::default();
+                            #defaulted_param_stmts
                         )*
-                        <#op>::create(self.builder, self.span, #(#create_param_names),*)
+                        <#op #op_ty_generics>::create(self.builder, self.span, #(#all_param_names),*)
                     }
                 }
             });
         }
 
         // Maximal builder (specify all parameters)
-        let param_types = self.params.iter().flat_map(OpCreateParam::binding_types);
-        let (impl_generics, _ty_generics, where_clause) = self.generics.split_for_impl();
+        let all_param_types = self.params.iter().flat_map(|p| p.all_binding_types(true));
+        let (impl_generics, _, where_clause) = self.all_generics.split_for_impl();
         let params_ty = syn::TypeTuple {
-            paren_token: syn::token::Paren(op.span()),
-            elems: syn::punctuated::Punctuated::from_iter(param_types),
+            paren_token: syn::token::Paren(op_span),
+            elems: syn::punctuated::Punctuated::from_iter(all_param_types),
         };
         let params_bound = syn::PatTuple {
             attrs: Default::default(),
-            paren_token: syn::token::Paren(op.span()),
-            elems: syn::punctuated::Punctuated::from_iter(create_param_names.iter().map(|id| {
+            paren_token: syn::token::Paren(op_span),
+            elems: syn::punctuated::Punctuated::from_iter(all_param_names.iter().map(|id| {
                 syn::Pat::Ident(syn::PatIdent {
                     attrs: Default::default(),
                     by_ref: None,
@@ -1816,14 +2072,15 @@ impl quote::ToTokens for OpBuilderFnOnceImpl {
                 })
             })),
         };
-        tokens.extend(quote! {
+        tokens.extend(quote_spanned! { op_span =>
+            #[allow(clippy::type_complexity)]
             impl #impl_generics ::core::ops::FnOnce<#params_ty> for #op_builder<'a, B> #where_clause {
-                type Output = Result<::midenc_hir::UnsafeIntrusiveEntityRef<#op>, ::midenc_hir::diagnostics::Report>;
+                type Output = Result<::midenc_hir::UnsafeIntrusiveEntityRef<#op #op_ty_generics>, ::midenc_hir::diagnostics::Report>;
 
                 #[inline]
                 extern "rust-call" fn call_once(self, args: #params_ty) -> Self::Output {
                     let #params_bound = args;
-                    <#op>::create(self.builder, self.span, #(#create_param_names),*)
+                    <#op #op_ty_generics>::create(self.builder, self.span, #(#all_param_names),*)
                 }
             }
         });
@@ -1851,8 +2108,9 @@ impl OpVerifierImpl {
 impl quote::ToTokens for OpVerifierImpl {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let op = &self.op;
+        let span = op.span();
         if self.traits.is_empty() && self.implements.is_empty() {
-            tokens.extend(quote! {
+            tokens.extend(quote_spanned! { span =>
                 /// No-op verifier implementation generated via `#[operation]` derive
                 ///
                 /// This implementation was chosen as no op traits were indicated as being derived _or_
@@ -1868,7 +2126,6 @@ impl quote::ToTokens for OpVerifierImpl {
         }
 
         let op_verifier_doc_lines = {
-            let span = self.op.span();
             let mut lines = vec![
                 syn::Lit::Str(syn::LitStr::new(
                     " Generated verifier implementation via `#[operation]` attribute",
@@ -1901,7 +2158,7 @@ impl quote::ToTokens for OpVerifierImpl {
 
         let derived_traits = &self.traits;
         let implemented_traits = &self.implements;
-        tokens.extend(quote! {
+        tokens.extend(quote_spanned! { span =>
             #(
                 #[doc = #op_verifier_doc_lines]
             )*
@@ -1918,7 +2175,7 @@ impl quote::ToTokens for OpVerifierImpl {
                     struct OpVerifierImpl<'a, T> {
                         op: &'a ::midenc_hir::Operation,
                         _t: ::core::marker::PhantomData<T>,
-                        #[allow(unused_parens)]
+                        #[allow(unused_parens, clippy::type_complexity)]
                         _derived: ::core::marker::PhantomData<(#(&'a dyn #derived_traits,)* #(&'a dyn #implemented_traits),*)>,
                     }
                     impl<'a, T> OpVerifierImpl<'a, T> {
@@ -1938,7 +2195,7 @@ impl quote::ToTokens for OpVerifierImpl {
                         }
                     }
 
-                    #[allow(unused_parens)]
+                    #[allow(unused_parens, clippy::type_complexity)]
                     impl<'a> ::midenc_hir::OpVerifier for OpVerifierImpl<'a, #op>
                     where
                         #(
@@ -2346,6 +2603,7 @@ pub struct OpCreateParam {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum OpCreateParamType {
     Attr(OpAttribute),
     Operand(Operand),
@@ -2359,7 +2617,7 @@ pub enum OpCreateParamType {
 }
 impl OpCreateParam {
     /// Returns the names of all bindings implied by this parameter.
-    pub fn bindings(&self) -> Vec<Ident> {
+    pub fn all_bindings(&self) -> Vec<Ident> {
         match &self.param_ty {
             OpCreateParamType::Attr(OpAttribute { name, .. })
             | OpCreateParamType::CustomField(name, _)
@@ -2375,18 +2633,23 @@ impl OpCreateParam {
     }
 
     /// Returns the names of all required (i.e. non-defaulted) bindings implied by this parameter.
-    pub fn required_bindings(&self) -> Vec<Ident> {
+    pub fn minimal_bindings(&self) -> Vec<Ident> {
         if self.default {
             return vec![];
         }
-        self.bindings()
+        self.all_bindings()
     }
 
     /// Returns the types assigned to the bindings returned by [Self::bindings]
-    pub fn binding_types(&self) -> Vec<syn::Type> {
+    pub fn all_binding_types(&self, allow_attr_conversions: bool) -> Vec<syn::Type> {
         match &self.param_ty {
-            OpCreateParamType::Attr(OpAttribute { ty, .. })
-            | OpCreateParamType::CustomField(_, ty) => {
+            OpCreateParamType::Attr(OpAttribute { name, .. }) if allow_attr_conversions => {
+                vec![make_type(format!("T{}Value", name.to_string().to_pascal_case()))]
+            }
+            OpCreateParamType::Attr(OpAttribute { value_ty, .. }) => {
+                vec![value_ty.clone()]
+            }
+            OpCreateParamType::CustomField(_, ty) => {
                 vec![ty.clone()]
             }
             OpCreateParamType::Operand(_) => vec![make_type("::midenc_hir::ValueRef")],
@@ -2411,16 +2674,64 @@ impl OpCreateParam {
     }
 
     /// Returns the types assigned to the bindings returned by [Self::required_bindings]
-    pub fn required_binding_types(&self) -> Vec<syn::Type> {
+    pub fn minimal_binding_types(&self, allow_attr_conversions: bool) -> Vec<syn::Type> {
         if self.default {
             return vec![];
         }
-        self.binding_types()
+        self.all_binding_types(allow_attr_conversions)
+    }
+
+    pub fn extend_minimal_where_clause(
+        &self,
+        where_clause: &mut syn::WhereClause,
+        allow_attr_conversions: bool,
+    ) {
+        if self.default {
+            return;
+        }
+        self.extend_full_where_clause(where_clause, allow_attr_conversions);
+    }
+
+    pub fn extend_full_where_clause(
+        &self,
+        where_clause: &mut syn::WhereClause,
+        allow_attr_conversions: bool,
+    ) {
+        #[allow(clippy::single_match)]
+        match &self.param_ty {
+            OpCreateParamType::Attr(OpAttribute { name, value_ty, .. })
+                if allow_attr_conversions =>
+            {
+                let param_ty = format_ident!(
+                    "T{}Value",
+                    name.to_string().to_pascal_case(),
+                    span = name.span()
+                );
+                where_clause.predicates.push(parse_quote_spanned! { name.span() =>
+                    #value_ty: From<#param_ty>
+                });
+            }
+            _ => (),
+        }
     }
 
     /// Returns the generic type parameters bound for use by the types in [Self::binding_typess]
-    pub fn generic_types(&self) -> Vec<syn::GenericParam> {
+    pub fn all_generic_types(&self, allow_attr_conversions: bool) -> Vec<syn::GenericParam> {
         match &self.param_ty {
+            OpCreateParamType::Attr(OpAttribute { name, .. }) if allow_attr_conversions => {
+                vec![syn::GenericParam::Type(syn::TypeParam {
+                    attrs: vec![],
+                    ident: format_ident!(
+                        "T{}Value",
+                        &name.to_string().to_pascal_case(),
+                        span = name.span()
+                    ),
+                    colon_token: Some(syn::token::Colon(name.span())),
+                    bounds: syn::punctuated::Punctuated::new(),
+                    eq_token: None,
+                    r#default: None,
+                })]
+            }
             OpCreateParamType::OperandGroup(name, _) => {
                 let value_iter_bound: syn::TypeParamBound =
                     syn::parse_str("IntoIterator<Item = ::midenc_hir::ValueRef>").unwrap();
@@ -2527,11 +2838,11 @@ impl OpCreateParam {
     }
 
     /// Returns the generic type parameters bound for use by the types in [Self::required_binding_typess]
-    pub fn required_generic_types(&self) -> Vec<syn::GenericParam> {
+    pub fn minimal_generic_types(&self, allow_attr_conversions: bool) -> Vec<syn::GenericParam> {
         if self.default {
             return vec![];
         }
-        self.generic_types()
+        self.all_generic_types(allow_attr_conversions)
     }
 }
 
@@ -2651,94 +2962,5 @@ fn make_path<'a>(parts: impl IntoIterator<Item = &'a str>, style: PathStyle) -> 
                 arguments: syn::PathArguments::None,
             }
         })),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #![allow(dead_code)]
-
-    #[test]
-    fn operation_impl_test() {
-        let item_input: syn::DeriveInput = syn::parse_quote! {
-            /// Two's complement sum
-            #[operation(
-                dialect = HirDialect,
-                traits(BinaryOp, Commutative, SameTypeOperands),
-                implements(InferTypeOpInterface),
-            )]
-            pub struct Add {
-                /// The left-hand operand
-                #[operand]
-                lhs: AnyInteger,
-                #[operand]
-                rhs: AnyInteger,
-                #[result]
-                result: AnyInteger,
-                #[attr]
-                overflow: Overflow,
-            }
-        };
-
-        let output = super::derive_operation(item_input);
-        match output {
-            Ok(output) => {
-                let formatted = format_output(&output.to_string());
-                println!("{formatted}");
-            }
-            Err(err) => {
-                panic!("{err}");
-            }
-        }
-    }
-
-    fn format_output(input: &str) -> String {
-        use std::{
-            io::{Read, Write},
-            process::{Command, Stdio},
-        };
-
-        let mut child = Command::new("rustfmt")
-            .args(["--edition", "2024"])
-            .args([
-                "--config",
-                "unstable_features=true,normalize_doc_attributes=true,\
-                 use_field_init_shorthand=true,condense_wildcard_suffixes=true,\
-                 format_strings=true,group_imports=StdExternalCrate,imports_granularity=Crate",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("failed to spawn 'rustfmt'");
-
-        {
-            let mut stdin = child.stdin.take().unwrap();
-            stdin.write_all(input.as_bytes()).expect("failed to write input to 'rustfmt'");
-        }
-        let mut buf = String::new();
-        let mut stdout = child.stdout.take().unwrap();
-        stdout.read_to_string(&mut buf).expect("failed to read output from 'rustfmt'");
-        match child.wait() {
-            Ok(status) => {
-                if status.success() {
-                    buf
-                } else {
-                    let mut stderr = child.stderr.take().unwrap();
-                    let mut err_buf = String::new();
-                    let _ = stderr.read_to_string(&mut err_buf).ok();
-                    panic!(
-                        "command 'rustfmt' failed with status {:?}\n\nReason: {}",
-                        status.code(),
-                        if err_buf.is_empty() {
-                            "<no output>"
-                        } else {
-                            err_buf.as_str()
-                        },
-                    );
-                }
-            }
-            Err(err) => panic!("command 'rustfmt' failed with {err}"),
-        }
     }
 }

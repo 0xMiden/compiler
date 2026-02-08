@@ -6,6 +6,7 @@ use miden_processor::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
 use midenc_compile::LinkOutput;
+use midenc_hir::dialects::builtin::attributes::Signature;
 use midenc_session::{STDLIB, Session};
 use proptest::test_runner::TestCaseError;
 
@@ -175,7 +176,7 @@ where
 
 /// Helper function to compile a test module with the given signature and build function
 pub fn compile_test_module(
-    signature: midenc_hir::Signature,
+    signature: Signature,
     build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
 ) -> (miden_mast_package::Package, std::rc::Rc<midenc_hir::Context>) {
     let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);

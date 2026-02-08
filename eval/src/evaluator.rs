@@ -7,7 +7,7 @@ use alloc::{format, rc::Rc, string::ToString, vec, vec::Vec};
 use midenc_hir::{
     CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint, RegionRef,
     Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange, ValueRef,
-    dialects::builtin::{ComponentId, LocalVariable},
+    dialects::builtin::{ComponentId, attributes::LocalVariable},
     formatter::DisplayValues,
     smallvec,
 };

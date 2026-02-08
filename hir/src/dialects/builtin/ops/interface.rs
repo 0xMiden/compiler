@@ -1,9 +1,9 @@
 use midenc_session::LibraryPath;
 
 use crate::{
-    Ident, Op, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
-    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
-    Visibility,
+    IdentAttr, Op, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
     dialects::builtin::{self, BuiltinDialect},
     traits::{
@@ -50,7 +50,7 @@ pub type InterfaceRef = UnsafeIntrusiveEntityRef<Interface>;
 )]
 pub struct Interface {
     #[attr]
-    name: Ident,
+    name: IdentAttr,
     #[region]
     body: RegionRef,
     #[default]
@@ -96,8 +96,7 @@ impl Symbol for Interface {
     }
 
     fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.name = name;
+        Interface::set_name(self, name)
     }
 
     fn visibility(&self) -> Visibility {

@@ -1,7 +1,7 @@
 use crate::{
-    Context, Report, Spanned, Type, Value,
+    Context, Report, Spanned, Value,
     derive::operation,
-    dialects::builtin::BuiltinDialect,
+    dialects::builtin::{BuiltinDialect, attributes::TypeAttr},
     effects::{EffectIterator, EffectOpInterface, MemoryEffect, MemoryEffectOpInterface},
     traits::{AnyType, InferTypeOpInterface, UnaryOp},
 };
@@ -14,15 +14,15 @@ use crate::{
 pub struct UnrealizedConversionCast {
     #[operand]
     operand: AnyType,
-    #[attr(hidden)]
-    ty: Type,
+    #[attr]
+    ty: TypeAttr,
     #[result]
     result: AnyType,
 }
 
 impl InferTypeOpInterface for UnrealizedConversionCast {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
+        let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
     }

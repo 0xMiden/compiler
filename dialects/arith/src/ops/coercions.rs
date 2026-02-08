@@ -1,7 +1,8 @@
-use alloc::{boxed::Box, format};
+use alloc::format;
 
 use midenc_hir::{
-    derive::operation, effects::MemoryEffectOpInterface, matchers::Matcher, traits::*, *,
+    derive::operation, dialects::builtin::attributes::TypeAttr, effects::MemoryEffectOpInterface,
+    matchers::Matcher, traits::*, *,
 };
 
 use crate::*;
@@ -15,7 +16,7 @@ pub struct Trunc {
     #[operand]
     operand: AnyInteger,
     #[attr(hidden)]
-    ty: Type,
+    ty: TypeAttr,
     #[result]
     result: AnyInteger,
 }
@@ -24,7 +25,7 @@ has_no_effects!(Trunc);
 
 impl InferTypeOpInterface for Trunc {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
+        let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
     }
@@ -32,10 +33,12 @@ impl InferTypeOpInterface for Trunc {
 
 impl Foldable for Trunc {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        if let Some(mut value) =
-            matchers::foldable_operand_of::<Immediate>().matches(&self.operand().as_operand_ref())
+        if let Some(mut attr_value) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
+            .matches(&self.operand().as_operand_ref())
         {
-            let truncated = match self.ty() {
+            let mut attr_value_mut = attr_value.borrow_mut();
+            let value = attr_value_mut.as_immediate();
+            let truncated = match &*self.get_ty() {
                 Type::I1 => value.as_u64().map(|v| Immediate::I1((v & 0x01u64) == 1)),
                 Type::I8 => value.as_i64().map(|v| Immediate::I8(v as i8)),
                 Type::U8 => value.as_u64().map(|v| Immediate::U8(v as u8)),
@@ -49,8 +52,8 @@ impl Foldable for Trunc {
             };
 
             if let Some(truncated) = truncated {
-                *value = truncated;
-                results.push(OpFoldResult::Attribute(value));
+                attr_value_mut.set_from_immediate_lossy(truncated);
+                results.push(OpFoldResult::Attribute(attr_value as AttributeRef));
                 return FoldResult::Ok(());
             }
         }
@@ -60,11 +63,19 @@ impl Foldable for Trunc {
 
     fn fold_with(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>()) {
-            let truncated = match self.ty() {
+        if let Some(attr) = operands[0].as_ref().and_then(|o| {
+            let attr = EntityRef::map(o.borrow(), |o| o.as_attr());
+            if attr.implements::<dyn IntegerLikeAttr>() {
+                Some(EntityRef::map(attr, |attr| attr.as_trait::<dyn IntegerLikeAttr>().unwrap()))
+            } else {
+                None
+            }
+        }) {
+            let value = attr.as_immediate();
+            let truncated = match &*self.get_ty() {
                 Type::I1 => value.as_u64().map(|v| Immediate::I1((v & 0x01u64) == 1)),
                 Type::I8 => value.as_i64().map(|v| Immediate::I8(v as i8)),
                 Type::U8 => value.as_u64().map(|v| Immediate::U8(v as u8)),
@@ -77,7 +88,14 @@ impl Foldable for Trunc {
                 _ => return FoldResult::Failed,
             };
             if let Some(truncated) = truncated {
-                results.push(OpFoldResult::Attribute(Box::new(truncated)));
+                let mut new_attr = attr.name().dyn_clone(&*attr);
+                let mut new_attr_mut = new_attr.borrow_mut();
+                new_attr_mut
+                    .as_attr_mut()
+                    .as_trait_mut::<dyn IntegerLikeAttr>()
+                    .unwrap()
+                    .set_from_immediate_lossy(truncated);
+                results.push(OpFoldResult::Attribute(new_attr));
                 return FoldResult::Ok(());
             }
         }
@@ -95,7 +113,7 @@ pub struct Zext {
     #[operand]
     operand: AnyUnsignedInteger,
     #[attr(hidden)]
-    ty: Type,
+    ty: TypeAttr,
     #[result]
     result: AnyUnsignedInteger,
 }
@@ -104,7 +122,7 @@ has_no_effects!(Zext);
 
 impl InferTypeOpInterface for Zext {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
+        let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
     }
@@ -112,10 +130,12 @@ impl InferTypeOpInterface for Zext {
 
 impl Foldable for Zext {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        if let Some(mut value) =
-            matchers::foldable_operand_of::<Immediate>().matches(&self.operand().as_operand_ref())
+        if let Some(mut attr) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
+            .matches(&self.operand().as_operand_ref())
         {
-            let extended = match self.ty() {
+            let mut attr_mut = attr.borrow_mut();
+            let value = attr_mut.as_immediate();
+            let extended = match &*self.get_ty() {
                 Type::U8 => value.as_u32().and_then(|v| u8::try_from(v).ok()).map(Immediate::U8),
                 Type::U16 => value.as_u32().and_then(|v| u16::try_from(v).ok()).map(Immediate::U16),
                 Type::U32 => value.as_u32().map(Immediate::U32),
@@ -125,8 +145,8 @@ impl Foldable for Zext {
             };
 
             if let Some(extended) = extended {
-                *value = extended;
-                results.push(OpFoldResult::Attribute(value));
+                attr_mut.set_from_immediate_lossy(extended);
+                results.push(OpFoldResult::Attribute(attr));
                 return FoldResult::Ok(());
             }
         }
@@ -136,11 +156,19 @@ impl Foldable for Zext {
 
     fn fold_with(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>()) {
-            let extended = match self.ty() {
+        if let Some(attr) = operands[0].as_ref().and_then(|o| {
+            let attr = EntityRef::map(o.borrow(), |o| o.as_attr());
+            if attr.implements::<dyn IntegerLikeAttr>() {
+                Some(EntityRef::map(attr, |attr| attr.as_trait::<dyn IntegerLikeAttr>().unwrap()))
+            } else {
+                None
+            }
+        }) {
+            let value = attr.as_immediate();
+            let extended = match &*self.get_ty() {
                 Type::U8 => value.as_u32().and_then(|v| u8::try_from(v).ok()).map(Immediate::U8),
                 Type::U16 => value.as_u32().and_then(|v| u16::try_from(v).ok()).map(Immediate::U16),
                 Type::U32 => value.as_u32().map(Immediate::U32),
@@ -149,7 +177,14 @@ impl Foldable for Zext {
                 _ => return FoldResult::Failed,
             };
             if let Some(extended) = extended {
-                results.push(OpFoldResult::Attribute(Box::new(extended)));
+                let mut new_attr = attr.name().dyn_clone(&*attr);
+                let mut new_attr_mut = new_attr.borrow_mut();
+                new_attr_mut
+                    .as_attr_mut()
+                    .as_trait_mut::<dyn IntegerLikeAttr>()
+                    .unwrap()
+                    .set_from_immediate_lossy(extended);
+                results.push(OpFoldResult::Attribute(new_attr));
                 return FoldResult::Ok(());
             }
         }
@@ -167,7 +202,7 @@ pub struct Sext {
     #[operand]
     operand: AnySignedInteger,
     #[attr(hidden)]
-    ty: Type,
+    ty: TypeAttr,
     #[result]
     result: AnySignedInteger,
 }
@@ -176,7 +211,7 @@ has_no_effects!(Sext);
 
 impl InferTypeOpInterface for Sext {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
+        let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
     }
@@ -184,10 +219,12 @@ impl InferTypeOpInterface for Sext {
 
 impl Foldable for Sext {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        if let Some(mut value) =
-            matchers::foldable_operand_of::<Immediate>().matches(&self.operand().as_operand_ref())
+        if let Some(mut attr) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
+            .matches(&self.operand().as_operand_ref())
         {
-            let extended = match self.ty() {
+            let mut attr_mut = attr.borrow_mut();
+            let value = attr_mut.as_immediate();
+            let extended = match &*self.get_ty() {
                 Type::I8 => value.as_i32().and_then(|v| i8::try_from(v).ok()).map(Immediate::I8),
                 Type::I16 => value.as_i32().and_then(|v| i16::try_from(v).ok()).map(Immediate::I16),
                 Type::I32 => value.as_i32().map(Immediate::I32),
@@ -197,8 +234,8 @@ impl Foldable for Sext {
             };
 
             if let Some(extended) = extended {
-                *value = extended;
-                results.push(OpFoldResult::Attribute(value));
+                attr_mut.set_from_immediate_lossy(extended);
+                results.push(OpFoldResult::Attribute(attr));
                 return FoldResult::Ok(());
             }
         }
@@ -208,11 +245,19 @@ impl Foldable for Sext {
 
     fn fold_with(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>()) {
-            let extended = match self.ty() {
+        if let Some(attr) = operands[0].as_ref().and_then(|o| {
+            let attr = EntityRef::map(o.borrow(), |o| o.as_attr());
+            if attr.implements::<dyn IntegerLikeAttr>() {
+                Some(EntityRef::map(attr, |attr| attr.as_trait::<dyn IntegerLikeAttr>().unwrap()))
+            } else {
+                None
+            }
+        }) {
+            let value = attr.as_immediate();
+            let extended = match &*self.get_ty() {
                 Type::I8 => value.as_i32().and_then(|v| i8::try_from(v).ok()).map(Immediate::I8),
                 Type::I16 => value.as_i32().and_then(|v| i16::try_from(v).ok()).map(Immediate::I16),
                 Type::I32 => value.as_i32().map(Immediate::I32),
@@ -221,7 +266,14 @@ impl Foldable for Sext {
                 _ => return FoldResult::Failed,
             };
             if let Some(extended) = extended {
-                results.push(OpFoldResult::Attribute(Box::new(extended)));
+                let mut new_attr = attr.name().dyn_clone(&*attr);
+                let mut new_attr_mut = new_attr.borrow_mut();
+                new_attr_mut
+                    .as_attr_mut()
+                    .as_trait_mut::<dyn IntegerLikeAttr>()
+                    .unwrap()
+                    .set_from_immediate_lossy(extended);
+                results.push(OpFoldResult::Attribute(new_attr));
                 return FoldResult::Ok(());
             }
         }
@@ -258,7 +310,7 @@ pub struct Join {
     #[operands]
     limbs: AnyInteger,
     #[attr(hidden)]
-    ty: Type,
+    ty: TypeAttr,
     #[result]
     result: AnyInteger,
 }
@@ -267,7 +319,7 @@ has_no_effects!(Join);
 
 impl InferTypeOpInterface for Join {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
+        let ty = self.get_ty().clone();
         self.result_mut().set_type(ty.clone());
 
         let num_limbs = self.limbs().len();
@@ -315,7 +367,7 @@ pub struct Split {
     #[operand]
     operand: AnyInteger,
     #[attr(hidden)]
-    limb_ty: Type,
+    limb_ty: TypeAttr,
     #[results]
     limbs: AnyInteger,
 }
@@ -325,7 +377,7 @@ has_no_effects!(Split);
 impl InferTypeOpInterface for Split {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
         let operand_ty = self.operand().as_value_ref().borrow().ty().clone();
-        let limb_ty = self.limb_ty().clone();
+        let limb_ty = self.get_limb_ty().clone();
 
         let num_limbs = match operand_ty {
             Type::I64 | Type::U64 if is_32bit_limb(&limb_ty) => 2,

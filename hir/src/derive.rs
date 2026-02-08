@@ -1,4 +1,4 @@
-pub use midenc_hir_macros::operation;
+pub use midenc_hir_macros::{DialectAttribute, operation};
 
 /// This macro is used to generate the boilerplate for operation trait implementations.
 /// Super traits have to be declared as a comma separated list of traits, instead of the traditional
@@ -148,8 +148,10 @@ mod tests {
 
     use crate::{
         Builder, BuilderExt, Context, Op, Operation, Report, Spanned, Value,
-        attributes::Overflow,
-        dialects::test::{self, Add},
+        dialects::{
+            builtin::attributes::Overflow,
+            test::{self, Add},
+        },
         pass::{Nesting, PassManager},
     };
 

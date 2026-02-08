@@ -1,17 +1,19 @@
-use midenc_hir::{derive::operation, effects::*, traits::*, *};
+use midenc_hir::{
+    derive::operation, dialects::builtin::attributes::U32Attr, effects::*, traits::*, *,
+};
 
 use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    implements(OpPrinter, MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface)
 )]
 pub struct Assert {
     #[operand]
     value: Bool,
-    #[attr(hidden)]
+    #[attr]
     #[default]
-    code: u32,
+    code: U32Attr,
 }
 
 impl EffectOpInterface<MemoryEffect> for Assert {
@@ -20,49 +22,21 @@ impl EffectOpInterface<MemoryEffect> for Assert {
     }
 }
 
-impl OpPrinter for Assert {
-    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
-        use formatter::*;
-
-        let doc = display(self.op.name()) + const_text(" ") + display(self.value().as_value_ref());
-        let code = *self.code();
-        if code == 0 {
-            doc + const_text(";")
-        } else {
-            doc + const_text(" #[code = ") + display(code) + const_text("];")
-        }
-    }
-}
-
 #[operation(
     dialect = HirDialect,
-    implements(OpPrinter, MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface)
 )]
 pub struct Assertz {
     #[operand]
     value: Bool,
-    #[attr(hidden)]
+    #[attr]
     #[default]
-    code: u32,
+    code: U32Attr,
 }
 
 impl EffectOpInterface<MemoryEffect> for Assertz {
     fn effects(&self) -> EffectIterator<MemoryEffect> {
         EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
-    }
-}
-
-impl OpPrinter for Assertz {
-    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
-        use formatter::*;
-
-        let doc = display(self.op.name()) + const_text(" ") + display(self.value().as_value_ref());
-        let code = *self.code();
-        if code == 0 {
-            doc + const_text(";")
-        } else {
-            doc + const_text(" #[code = ") + display(code) + const_text("];")
-        }
     }
 }
 

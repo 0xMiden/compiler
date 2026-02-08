@@ -1,5 +1,5 @@
 use crate::{
-    dialects::builtin::{FunctionRef, LocalVariable},
+    dialects::builtin::{FunctionRef, attributes::LocalVariable},
     *,
 };
 

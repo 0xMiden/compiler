@@ -143,7 +143,7 @@ impl Operation {
             || self.num_successors() != rhs.num_successors()
             || self.num_operands() != rhs.num_operands()
             || self.num_results() != rhs.num_results()
-            || self.attrs != rhs.attrs
+            || self.attributes() != rhs.attributes()
         {
             return false;
         }

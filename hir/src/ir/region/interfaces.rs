@@ -1,9 +1,6 @@
-use alloc::boxed::Box;
-
 use super::*;
 use crate::{
-    Op, SuccessorOperandRange, SuccessorOperandRangeMut, Type, attributes::AttributeValue,
-    traits::Terminator,
+    AttributeRef, Op, SuccessorOperandRange, SuccessorOperandRangeMut, Type, traits::Terminator,
 };
 
 /// An op interface that indicates what types of regions it holds
@@ -92,7 +89,7 @@ pub trait RegionBranchOpInterface: Op {
     #[allow(unused_variables)]
     fn get_entry_successor_regions(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> RegionSuccessorIter<'_> {
         self.get_successor_regions(RegionBranchPoint::Parent)
     }
@@ -128,7 +125,7 @@ pub trait RegionBranchOpInterface: Op {
     #[allow(unused_variables)]
     fn get_region_invocation_bounds(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> SmallVec<[InvocationBounds; 1]> {
         use smallvec::smallvec;
 
@@ -186,7 +183,7 @@ pub trait RegionBranchTerminatorOpInterface: Op + Terminator {
     #[allow(unused_variables)]
     fn get_successor_regions(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> SmallVec<[RegionSuccessorInfo; 2]> {
         let parent_region =
             self.parent_region().expect("expected operation to have a parent region");

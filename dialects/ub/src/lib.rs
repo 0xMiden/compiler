@@ -12,14 +12,12 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
-use alloc::boxed::Box;
-
 mod attributes;
 mod builders;
 mod ops;
 
 use midenc_hir::{
-    AttributeValue, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, OperationRef,
+    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, OperationRef,
     SourceSpan, Type,
 };
 
@@ -46,13 +44,14 @@ impl Dialect for UndefinedBehaviorDialect {
     fn materialize_constant(
         &self,
         builder: &mut dyn Builder,
-        attr: Box<dyn AttributeValue>,
+        attr: AttributeRef,
         _ty: &Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
-        if let Some(attr) = attr.downcast_ref::<PoisonAttr>() {
+        if let Ok(poison_attr) = attr.try_downcast::<PoisonAttr>() {
+            let poison_value = poison_attr.borrow().as_value().clone();
             let op_builder = builder.create::<Poison, _>(span);
-            return op_builder(attr.clone()).ok().map(|op| op.as_operation_ref());
+            return op_builder(poison_value).ok().map(|op| op.as_operation_ref());
         }
         None
     }
@@ -69,5 +68,9 @@ impl DialectRegistration for UndefinedBehaviorDialect {
     fn register_operations(info: &mut DialectInfo) {
         info.register_operation::<ops::Poison>();
         info.register_operation::<ops::Unreachable>();
+    }
+
+    fn register_attributes(info: &mut DialectInfo) {
+        info.register_attribute::<attributes::PoisonAttr>();
     }
 }

@@ -1,15 +1,18 @@
-use smallvec::smallvec;
-
 use crate::{
-    AsSymbolRef, Context, Ident, Op, OpPrinter, Operation, PointerType, Report, Spanned, Symbol,
+    AsSymbolRef, Context, IdentAttr, OpPrinter, Operation, PointerType, Report, Spanned, Symbol,
     SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
     Visibility,
     derive::operation,
-    dialects::builtin::BuiltinDialect,
+    dialects::builtin::{
+        BuiltinDialect,
+        attributes::{I32Attr, TypeAttr, VisibilityAttr},
+    },
     effects::{
         AlwaysSpeculatable, ConditionallySpeculatable, EffectIterator, EffectOpInterface,
         MemoryEffect, MemoryEffectOpInterface, Pure,
     },
+    print::AsmPrinter,
+    smallvec,
     traits::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
         SingleRegion, UInt8,
@@ -39,11 +42,11 @@ pub type GlobalVariableRef = UnsafeIntrusiveEntityRef<GlobalVariable>;
 )]
 pub struct GlobalVariable {
     #[attr]
-    name: Ident,
+    name: IdentAttr,
     #[attr]
-    visibility: Visibility,
+    visibility: VisibilityAttr,
     #[attr]
-    ty: Type,
+    ty: TypeAttr,
     #[region]
     initializer: RegionRef,
     #[default]
@@ -87,16 +90,15 @@ impl Symbol for GlobalVariable {
     }
 
     fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.name = name;
+        GlobalVariable::set_name(self, name)
     }
 
     fn visibility(&self) -> Visibility {
-        *GlobalVariable::visibility(self)
+        *self.get_visibility()
     }
 
     fn set_visibility(&mut self, visibility: Visibility) {
-        *self.visibility_mut() = visibility;
+        GlobalVariable::set_visibility(self, visibility);
     }
 
     /// Returns true if this operation is a declaration, rather than a definition, of a symbol
@@ -115,22 +117,20 @@ impl AsSymbolRef for GlobalVariable {
 }
 
 impl OpPrinter for GlobalVariable {
-    fn print(
-        &self,
-        flags: &crate::OpPrintingFlags,
-        _context: &crate::Context,
-    ) -> crate::formatter::Document {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
         use crate::formatter::*;
 
-        let header = display(self.op.name())
-            + const_text(" ")
-            + display(self.visibility())
-            + const_text(" @")
-            + display(self.name())
-            + const_text(" : ")
-            + display(self.ty());
-        let body = crate::print::render_regions(&self.op, flags);
-        header + body
+        printer.print_space();
+        printer.print_keyword(self.get_visibility().as_str());
+        printer.print_space();
+        printer.print_symbol_name(self.get_name().as_symbol());
+        *printer += const_text(" : ");
+        printer.print_type(&self.get_ty());
+        if self.is_declaration() {
+            return;
+        }
+        printer.print_space();
+        printer.print_region(&self.initializer());
     }
 }
 
@@ -152,34 +152,28 @@ pub struct GlobalSymbol {
     /// A constant offset, in bytes, from the address of the symbol
     #[attr]
     #[default]
-    offset: i32,
+    offset: I32Attr,
     #[result]
     addr: PointerOf<UInt8>,
 }
 
 impl OpPrinter for GlobalSymbol {
-    fn print(
-        &self,
-        _flags: &crate::OpPrintingFlags,
-        _context: &crate::Context,
-    ) -> crate::formatter::Document {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
         use crate::formatter::*;
 
-        let results = crate::print::render_operation_results(self.as_operation());
-        let prefix = results
-            + display(self.op.name())
-            + const_text(" ")
-            + const_text("@")
-            + display(&self.symbol().path);
-
-        let offset = *self.offset();
-        let doc = match *self.offset() {
-            0 => prefix,
-            n if n > 0 => prefix + const_text("+") + display(offset),
-            _ => prefix + const_text("-") + display(offset),
+        printer.print_space();
+        printer.print_symbol_path(&self.get_symbol().path);
+        let offset = *self.get_offset();
+        match offset {
+            0 => (),
+            n if n > 0 => {
+                *printer += const_text("+") + display(n);
+            }
+            n => *printer += display(n),
         };
 
-        doc + const_text(" : ") + display(self.addr().ty())
+        *printer += const_text(" : ");
+        printer.print_type(self.addr().ty());
     }
 }
 

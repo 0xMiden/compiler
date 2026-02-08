@@ -2,7 +2,7 @@ use alloc::{boxed::Box, rc::Rc};
 
 use crate::{
     BlockArgument, BlockRef, BuildableOp, Context, OperationRef, ProgramPoint, RegionRef,
-    SourceSpan, Type, Value,
+    SourceSpan, Type, Value, diagnostics::Report,
 };
 
 /// The [Builder] trait encompasses all of the functionality needed to construct and insert blocks
@@ -82,7 +82,7 @@ pub trait Builder: Listener {
     /// Panics if `ip` is in a different region than `parent`, or if the position it refers to is no
     /// longer valid.
     fn create_block(&mut self, parent: RegionRef, ip: Option<BlockRef>, args: &[Type]) -> BlockRef {
-        let mut block = self.context().create_block_with_params(args.iter().cloned());
+        let mut block = self.context_rc().create_block_with_params(args.iter().cloned());
         if let Some(at) = ip {
             let region = at.parent().unwrap();
             assert!(
@@ -106,7 +106,7 @@ pub trait Builder: Listener {
     ///
     /// The block is inserted before `before`.
     fn create_block_before(&mut self, before: BlockRef, args: &[Type]) -> BlockRef {
-        let mut block = self.context().create_block_with_params(args.iter().cloned());
+        let mut block = self.context_rc().create_block_with_params(args.iter().cloned());
         block.borrow_mut().insert_before(before);
         self.notify_block_inserted(block, None, None);
         self.set_insertion_point_to_end(block);

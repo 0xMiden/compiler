@@ -544,6 +544,14 @@ impl<T: crate::Op> RawEntityRef<T, list::IntrusiveLink> {
     }
 }
 
+impl<T: crate::Attribute> RawEntityRef<T, list::IntrusiveLink> {
+    /// Convert this reference to an [crate::AttributeRef]
+    #[inline(always)]
+    pub fn as_attribute_ref(self) -> crate::AttributeRef {
+        self as crate::AttributeRef
+    }
+}
+
 impl<T, U, Metadata> core::ops::CoerceUnsized<RawEntityRef<U, Metadata>>
     for RawEntityRef<T, Metadata>
 where

@@ -1,4 +1,10 @@
-use crate::{derive::operation, dialects::test::TestDialect, effects::*, traits::*, *};
+use crate::{
+    derive::operation,
+    dialects::{builtin::attributes::OverflowAttr, test::TestDialect},
+    effects::*,
+    traits::*,
+    *,
+};
 
 macro_rules! infer_return_ty_for_binary_op {
     ($Op:ty) => {
@@ -49,7 +55,7 @@ pub struct Add {
     #[result]
     result: AnyInteger,
     #[attr]
-    overflow: Overflow,
+    overflow: OverflowAttr,
 }
 
 infer_return_ty_for_binary_op!(Add);
@@ -69,7 +75,7 @@ pub struct Mul {
     #[result]
     result: AnyInteger,
     #[attr]
-    overflow: Overflow,
+    overflow: OverflowAttr,
 }
 
 infer_return_ty_for_binary_op!(Mul);

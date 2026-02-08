@@ -3,9 +3,10 @@ use std::{path::PathBuf, rc::Rc};
 
 use midenc_compile::LinkOutput;
 use midenc_hir::{
-    BuilderExt, Context, Ident, Op, OpBuilder, Signature, SourceSpan,
+    BuilderExt, Context, Ident, Op, OpBuilder, SourceSpan,
     dialects::builtin::{
         self, ComponentBuilder, FunctionBuilder, FunctionRef, ModuleBuilder, WorldBuilder,
+        attributes::Signature,
     },
     version::Version,
 };

@@ -5,7 +5,8 @@ use core::ptr::{DynMetadata, Pointee};
 
 pub use self::info::DialectInfo;
 use crate::{
-    AttributeValue, Builder, OperationName, OperationRef, SourceSpan, Type, any::AsAny, interner,
+    AttributeRef, Builder, OperationName, OperationRef, SourceSpan, Type, any::AsAny,
+    attributes::AttributeName, interner,
 };
 
 pub type DialectRegistrationHook = Box<dyn Fn(&mut DialectInfo, &super::Context)>;
@@ -27,7 +28,12 @@ pub trait Dialect {
         self.info().operations()
     }
 
-    /// A hook to materialize a single constant operation from a given attribute value and type.
+    /// Get the set of registered attributes associated with this dialect
+    fn registered_attrs(&self) -> &[AttributeName] {
+        self.info().attributes()
+    }
+
+    /// A hook to materialize a single constant operation from a given attribute value.
     ///
     /// This method should use the provided builder to create the operation without changing the
     /// insertion point. The generated operation is expected to be constant-like, i.e. single result
@@ -39,7 +45,7 @@ pub trait Dialect {
     fn materialize_constant(
         &self,
         builder: &mut dyn Builder,
-        attr: Box<dyn AttributeValue>,
+        attr: AttributeRef,
         ty: &Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
@@ -57,6 +63,15 @@ impl dyn Dialect {
         self.registered_ops().iter().find(|op| op.name() == opcode).cloned()
     }
 
+    /// Get the [AttributeName] of the attribute type `T`, if registered with this dialect.
+    pub fn registered_attribute_name<T>(&self) -> Option<AttributeName>
+    where
+        T: crate::AttributeRegistration,
+    {
+        let name = <T as crate::AttributeRegistration>::name();
+        self.registered_attrs().iter().find(|attr| attr.name() == name).cloned()
+    }
+
     /// Get the [OperationName] of the operation type `T`.
     ///
     /// Panics if the operation is not registered with this dialect.
@@ -65,6 +80,22 @@ impl dyn Dialect {
         T: crate::OpRegistration,
     {
         self.registered_name::<T>().unwrap_or_else(|| {
+            panic!(
+                "{} is not registered with dialect '{}'",
+                core::any::type_name::<T>(),
+                self.name()
+            )
+        })
+    }
+
+    /// Get the [AttributeName] of the operation type `T`.
+    ///
+    /// Panics if the attribute is not registered with this dialect.
+    pub fn expect_registered_attribute_name<T>(&self) -> AttributeName
+    where
+        T: crate::AttributeRegistration,
+    {
+        self.registered_attribute_name::<T>().unwrap_or_else(|| {
             panic!(
                 "{} is not registered with dialect '{}'",
                 core::any::type_name::<T>(),
@@ -111,4 +142,10 @@ pub trait DialectRegistration: AsAny + Dialect {
     ///
     /// This is called _before_ [DialectRegistration::init].
     fn register_operations(info: &mut DialectInfo);
+
+    /// This is called when registering a dialect, to register attributes of the dialect.
+    ///
+    /// This is called _before_ [DialectRegistration::init].
+    #[allow(unused_variables)]
+    fn register_attributes(info: &mut DialectInfo) {}
 }

@@ -2,7 +2,7 @@ mod builder;
 pub mod equivalence;
 mod name;
 
-use alloc::{boxed::Box, rc::Rc};
+use alloc::rc::Rc;
 use core::{
     fmt,
     ptr::{DynMetadata, NonNull, Pointee},
@@ -11,14 +11,22 @@ use core::{
 
 use smallvec::SmallVec;
 
-pub use self::{builder::OperationBuilder, name::OperationName};
+pub use self::{
+    builder::{GenericOperationBuilder, OperationBuilder},
+    name::{AttrInfo, OperationName, ParseAssemblyFn},
+    state::OperationState,
+};
 use super::{
     effects::{
         Effect, EffectInstance, HasRecursiveMemoryEffects, MemoryEffect, MemoryEffectOpInterface,
     },
     *,
 };
-use crate::{AttributeSet, AttributeValue, Forward, ProgramPoint, patterns::RewritePatternSet};
+use crate::{
+    Attribute, AttributeRef, AttributeRegistration, Forward, NamedAttribute, ProgramPoint,
+    attributes::OpAttribute, dialects::builtin::attributes::SymbolRefAttr,
+    patterns::RewritePatternSet,
+};
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
 pub type OpList = EntityList<Operation>;
@@ -95,8 +103,8 @@ pub struct Operation {
     order: AtomicU32,
     #[span]
     pub span: SourceSpan,
-    /// Attributes that apply to this operation
-    pub attrs: AttributeSet,
+    /// The attribute dictionary for this operation (does not include properties)
+    pub attrs: EntityMap<OpAttribute>,
     /// The set of operands for this operation
     ///
     /// NOTE: If the op supports immediate operands, the storage for the immediates is handled
@@ -180,7 +188,7 @@ impl EntityWithParent for Operation {
     type Parent = Block;
 }
 impl EntityListItem for Operation {
-    fn on_inserted(this: OperationRef, _cursor: &mut EntityCursorMut<'_, Self>) {
+    fn on_inserted(this: OperationRef, _cursor: &mut EntityListCursorMut<'_, Self>) {
         // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
         if this.name().implements::<dyn Symbol>() {
             let parent = this.nearest_symbol_table();
@@ -221,7 +229,7 @@ impl EntityListItem for Operation {
         to.borrow_mut().invalidate_op_order();
     }
 
-    fn on_removed(this: OperationRef, _list: &mut EntityCursorMut<'_, Self>) {
+    fn on_removed(this: OperationRef, _list: &mut EntityListCursorMut<'_, Self>) {
         // NOTE: We use OperationName, instead of the Operation itself, to avoid borrowing.
         if this.name().implements::<dyn Symbol>() {
             let parent = this.nearest_symbol_table();
@@ -486,84 +494,159 @@ impl Operation {
     }
 }
 
+/// Properties
+impl Operation {
+    #[inline]
+    pub fn has_properties(&self) -> bool {
+        !self.name.properties().is_empty()
+    }
+
+    /// Iterate over the properties (i.e. intrinsic attributes) of this operation
+    pub fn properties(&self) -> impl Iterator<Item = NamedAttribute> {
+        struct PropertyIter<'a> {
+            op: &'a Operation,
+            infos: &'a [AttrInfo],
+            index: usize,
+        }
+
+        impl Iterator for PropertyIter<'_> {
+            type Item = NamedAttribute;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                let index = self.index;
+                if let Some(info) = self.infos.get(index) {
+                    self.index += 1;
+                    let value = unsafe { (info.get_raw)(self.op.container(), info) };
+                    Some(NamedAttribute {
+                        name: info.name,
+                        value,
+                    })
+                } else {
+                    None
+                }
+            }
+        }
+
+        let infos = self.name.properties();
+        PropertyIter {
+            op: self,
+            infos,
+            index: 0,
+        }
+    }
+
+    /// Returns true if this operation has property `name`
+    #[inline]
+    pub fn has_property(&self, name: impl Into<interner::Symbol>) -> bool {
+        self.name.has_property(name.into())
+    }
+
+    /// Get the value of intrinsic attribute (i.e. property) `name`.
+    #[track_caller]
+    pub fn get_property<'a>(
+        &'a self,
+        name: impl Into<interner::Symbol>,
+    ) -> EntityRef<'a, dyn Attribute> {
+        let name = name.into();
+        let Some(prop) = self.name.get_property(name) else {
+            panic!("{name} is not a valid property for '{}'", &self.name);
+        };
+        unsafe { (prop.get)(self.container(), prop, core::marker::PhantomData) }
+    }
+
+    /// Get the value of intrinsic attribute (i.e. property) `name`, mutably.
+    #[track_caller]
+    pub fn get_property_mut<'a>(
+        &'a mut self,
+        name: impl Into<interner::Symbol>,
+    ) -> EntityMut<'a, dyn Attribute> {
+        let name = name.into();
+        let Some(prop) = self.name.get_property(name) else {
+            panic!("{name} is not a valid property for '{}'", &self.name);
+        };
+        unsafe { (prop.get_mut)(self.container().cast_mut(), prop, core::marker::PhantomData) }
+    }
+
+    /// Set the intrinsic attribute (i.e. property) `name` with `value`.
+    ///
+    /// This function will panic if `name` is not a valid property of this operation.
+    #[track_caller]
+    pub fn set_property(
+        &mut self,
+        name: impl Into<interner::Symbol>,
+        value: AttributeRef,
+    ) -> Result<(), Report> {
+        let name = name.into();
+        let Some(prop) = self.name.get_property(name) else {
+            panic!("{name} is not a valid property for '{}'", &self.name);
+        };
+        unsafe { (prop.try_from)(self.container().cast_mut(), prop, value) }
+    }
+}
+
 /// Attributes
 impl Operation {
     /// Get the underlying attribute set for this operation
     #[inline(always)]
-    pub fn attributes(&self) -> &AttributeSet {
+    pub fn attributes(&self) -> &EntityMap<OpAttribute> {
         &self.attrs
     }
 
     /// Get a mutable reference to the underlying attribute set for this operation
     #[inline(always)]
-    pub fn attributes_mut(&mut self) -> &mut AttributeSet {
+    pub fn attributes_mut(&mut self) -> &mut EntityMap<OpAttribute> {
         &mut self.attrs
     }
 
     /// Return the value associated with attribute `name` for this function
-    pub fn get_attribute(&self, name: impl Into<interner::Symbol>) -> Option<&dyn AttributeValue> {
-        self.attrs.get_any(name.into())
-    }
-
-    /// Return the value associated with attribute `name` for this function
-    pub fn get_attribute_mut(
-        &mut self,
-        name: impl Into<interner::Symbol>,
-    ) -> Option<&mut dyn AttributeValue> {
-        self.attrs.get_any_mut(name.into())
-    }
-
-    /// Return the value associated with attribute `name` for this function, as its concrete type
-    /// `T`, _if_ the attribute by that name, is of that type.
-    pub fn get_typed_attribute<T>(&self, name: impl Into<interner::Symbol>) -> Option<&T>
-    where
-        T: AttributeValue,
-    {
-        self.attrs.get(name.into())
+    pub fn get_attribute(&self, name: impl Into<interner::Symbol>) -> Option<AttributeRef> {
+        let name = name.into();
+        if let Some(prop) = self.name.get_property(name) {
+            Some(unsafe { (prop.get_raw)(self.container(), prop) })
+        } else {
+            let cursor = self.attrs.find(&name);
+            if let Some(found) = cursor.get() {
+                Some(found.as_named_attribute().value)
+            } else {
+                None
+            }
+        }
     }
 
     /// Return the value associated with attribute `name` for this function, as its concrete type
     /// `T`, _if_ the attribute by that name, is of that type.
-    pub fn get_typed_attribute_mut<T>(
-        &mut self,
+    pub fn get_typed_attribute<T>(
+        &self,
         name: impl Into<interner::Symbol>,
-    ) -> Option<&mut T>
+    ) -> Option<UnsafeIntrusiveEntityRef<T>>
     where
-        T: AttributeValue,
+        T: AttributeRegistration,
     {
-        self.attrs.get_mut(name.into())
+        self.get_attribute(name.into()).and_then(|attr_ref| {
+            attr_ref
+                .borrow()
+                .downcast_ref::<T>()
+                .map(|t| unsafe { UnsafeIntrusiveEntityRef::from_raw(t) })
+        })
     }
 
     /// Return true if this function has an attributed named `name`
     pub fn has_attribute(&self, name: impl Into<interner::Symbol>) -> bool {
-        self.attrs.has(name.into())
+        self.get_attribute(name.into()).is_some()
     }
 
     /// Set the attribute `name` with `value` for this function.
-    pub fn set_attribute(
-        &mut self,
-        name: impl Into<interner::Symbol>,
-        value: Option<impl AttributeValue>,
-    ) {
-        self.attrs.insert(name, value);
-    }
-
-    /// Set the intrinsic attribute `name` with `value` for this function.
-    pub fn set_intrinsic_attribute(
-        &mut self,
-        name: impl Into<interner::Symbol>,
-        value: Option<impl AttributeValue>,
-    ) {
-        self.attrs.set(crate::Attribute {
-            name: name.into(),
-            value: value.map(|v| Box::new(v) as Box<dyn AttributeValue>),
-            intrinsic: true,
-        });
+    pub fn set_attribute(&mut self, name: impl Into<interner::Symbol>, value: AttributeRef) {
+        let name = name.into();
+        let attr = OpAttribute::from(NamedAttribute::new(name, value));
+        let attr = self.context().alloc_map_item(attr);
+        self.attrs.insert(attr);
     }
 
     /// Remove any attribute with the given name from this function
     pub fn remove_attribute(&mut self, name: impl Into<interner::Symbol>) {
-        self.attrs.remove(name.into());
+        let name = name.into();
+        self.attrs.find_mut(&name).remove();
     }
 }
 
@@ -596,25 +679,23 @@ impl Operation {
         });
 
         // Store the underlying attribute value
-        if self.has_attribute(attr_name) {
-            let attr = self.get_typed_attribute_mut::<SymbolPathAttr>(attr_name).unwrap();
+        if self.has_property(attr_name) {
+            let mut prop = self.get_property_mut(attr_name);
+            let attr = prop.downcast_mut::<SymbolRefAttr>().unwrap();
             let symbol = symbol.borrow();
-            assert!(
-                !attr.user.is_linked(),
-                "attempted to replace symbol use without unlinking the previously used symbol \
-                 first"
-            );
-            attr.user = user;
-            attr.path = symbol.path();
+            attr.set_user(user);
+            attr.set_path(symbol.path());
+        } else if self.has_attribute(attr_name) {
+            let mut attr = self.get_typed_attribute::<SymbolRefAttr>(attr_name).unwrap();
+            let mut attr = attr.borrow_mut();
+            let symbol = symbol.borrow();
+            attr.set_user(user);
+            attr.set_path(symbol.path());
         } else {
-            let attr = {
-                let symbol = symbol.borrow();
-                SymbolPathAttr {
-                    user,
-                    path: symbol.path(),
-                }
-            };
-            self.set_attribute(attr_name, Some(attr));
+            let path = symbol.borrow().path();
+            let symbol_ref = crate::dialects::builtin::attributes::SymbolRef { path, user };
+            let attr = self.context_rc().create_attribute::<SymbolRefAttr, _>(symbol_ref);
+            self.set_attribute(attr_name, attr.as_attribute_ref());
         }
 
         symbol.borrow_mut().insert_use(user);
@@ -1468,7 +1549,7 @@ impl crate::traits::Foldable for Operation {
 
     fn fold_with<'operands>(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut smallvec::SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
         use crate::traits::Foldable;

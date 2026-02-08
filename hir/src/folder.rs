@@ -3,7 +3,7 @@ use alloc::{boxed::Box, rc::Rc};
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
-    AttributeValue, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
+    AttributeRef, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
     OperationRef, ProgramPoint, RegionRef, Rewriter, SourceSpan, Spanned, Type, Value, ValueRef,
     adt::SmallDenseMap,
     matchers::Matcher,
@@ -14,19 +14,19 @@ use crate::{
 /// Represents a constant value uniqued by dialect, value, and type.
 struct UniquedConstant {
     dialect: Rc<dyn Dialect>,
-    value: Box<dyn AttributeValue>,
+    value: AttributeRef,
     ty: Type,
 }
 impl Eq for UniquedConstant {}
 impl PartialEq for UniquedConstant {
     fn eq(&self, other: &Self) -> bool {
         self.dialect.name() == other.dialect.name()
-            && self.value.eq(&other.value)
             && self.ty == other.ty
+            && self.value.borrow().dyn_eq(&other.value.borrow())
     }
 }
 impl UniquedConstant {
-    pub fn new(op: &OperationRef, value: Box<dyn AttributeValue>) -> Self {
+    pub fn new(op: &OperationRef, value: AttributeRef) -> Self {
         let op = op.borrow();
         let dialect = op.dialect();
         let ty = op.results()[0].borrow().ty().clone();
@@ -37,8 +37,8 @@ impl UniquedConstant {
 impl core::hash::Hash for UniquedConstant {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.dialect.name().hash(state);
-        self.value.hash(state);
         self.ty.hash(state);
+        self.value.borrow().dyn_hash(state);
     }
 }
 
@@ -159,7 +159,7 @@ impl OperationFolder {
                     if let Some(mut const_op) = self.try_get_or_create_constant(
                         insert_region,
                         dialect.clone(),
-                        attr_repl.clone_value(),
+                        *attr_repl,
                         op_result.borrow().ty().clone(),
                         self.erased_folded_location,
                     ) {
@@ -221,7 +221,7 @@ impl OperationFolder {
         for dialect in referenced_dialects.drain(..) {
             let uniqued_constant = UniquedConstant {
                 dialect,
-                value: value.clone_value(),
+                value,
                 ty: ty.clone(),
             };
             uniqued_constants.remove(&uniqued_constant);
@@ -246,7 +246,7 @@ impl OperationFolder {
     pub fn insert_known_constant(
         &mut self,
         mut op: OperationRef,
-        value: Option<Box<dyn AttributeValue>>,
+        value: Option<AttributeRef>,
     ) -> bool {
         let block = op.parent().unwrap();
 
@@ -320,7 +320,7 @@ impl OperationFolder {
         &mut self,
         block: BlockRef,
         dialect: Rc<dyn Dialect>,
-        value: Box<dyn AttributeValue>,
+        value: AttributeRef,
         ty: Type,
     ) -> Option<ValueRef> {
         // Find an insertion point for the constant.
@@ -347,7 +347,7 @@ impl OperationFolder {
         &mut self,
         insert_region: RegionRef,
         dialect: Rc<dyn Dialect>,
-        value: Box<dyn AttributeValue>,
+        value: AttributeRef,
         ty: Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
@@ -371,7 +371,7 @@ impl OperationFolder {
         let const_op = materialize_constant(
             self.rewriter.as_mut(),
             dialect.clone(),
-            uniqued_constant.value.clone_value(),
+            uniqued_constant.value,
             &uniqued_constant.ty,
             span,
         )?;
@@ -387,7 +387,7 @@ impl OperationFolder {
         // If it isn't, then we also need to make sure that the mapping for the new dialect is valid
         let new_uniqued_constant = UniquedConstant {
             dialect: new_dialect.clone(),
-            value: uniqued_constant.value.clone_value(),
+            value: uniqued_constant.value,
             ty: uniqued_constant.ty.clone(),
         };
         let maybe_existing_op = uniqued_constants.get(&new_uniqued_constant).cloned();
@@ -425,12 +425,16 @@ impl OperationFolder {
 fn materialize_constant(
     builder: &mut dyn Builder,
     dialect: Rc<dyn Dialect>,
-    value: Box<dyn AttributeValue>,
+    mut value: AttributeRef,
     ty: &Type,
     span: SourceSpan,
 ) -> Option<OperationRef> {
     let ip = *builder.insertion_point();
 
+    {
+        let mut attr = value.borrow_mut();
+        attr.set_type(ty.clone());
+    }
     // Ask the dialect to materialize a constant operation for this value.
     let const_op = dialect.materialize_constant(builder, value, ty, span)?;
     assert_eq!(ip, *builder.insertion_point());

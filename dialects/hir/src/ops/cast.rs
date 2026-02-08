@@ -1,7 +1,11 @@
-use alloc::boxed::Box;
-
 use midenc_hir::{
-    derive::operation, effects::MemoryEffectOpInterface, matchers::Matcher, traits::*, *,
+    attributes::IntegerLikeAttr,
+    derive::operation,
+    dialects::builtin::attributes::{I32Attr, TypeAttr, U32Attr},
+    effects::MemoryEffectOpInterface,
+    matchers::Matcher,
+    traits::*,
+    *,
 };
 
 use crate::{HirDialect, PointerAttr};
@@ -44,7 +48,7 @@ pub struct PtrToInt {
     #[operand]
     operand: AnyPointer,
     #[attr(hidden)]
-    ty: Type,
+    ty: TypeAttr,
     #[result]
     result: AnyInteger,
 }
@@ -53,7 +57,7 @@ has_no_effects!(PtrToInt);
 
 impl InferTypeOpInterface for PtrToInt {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
+        let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
     }
@@ -65,40 +69,52 @@ impl Foldable for PtrToInt {
         if let Some(value) =
             matchers::foldable_operand_of::<PointerAttr>().matches(&self.operand().as_operand_ref())
         {
+            let input = value.borrow();
             // Support folding just pointer -> 32-bit integer types for now
-            let value = match self.ty() {
-                Type::U32 => value.addr().as_u32().map(Immediate::U32),
-                Type::I32 => value.addr().as_u32().map(|v| Immediate::I32(v as i32)),
+            let output = match &*self.get_ty() {
+                Type::U32 => input
+                    .context_rc()
+                    .create_attribute::<U32Attr, _>(input.addr())
+                    .as_attribute_ref(),
+                Type::I32 => input
+                    .context_rc()
+                    .create_attribute::<I32Attr, _>(input.addr() as i32)
+                    .as_attribute_ref(),
                 _ => return FoldResult::Failed,
             };
-            if let Some(value) = value {
-                results.push(OpFoldResult::Attribute(Box::new(value)));
-                return FoldResult::Ok(());
-            }
+            results.push(OpFoldResult::Attribute(output));
+            FoldResult::Ok(())
+        } else {
+            FoldResult::Failed
         }
-
-        FoldResult::Failed
     }
 
     #[inline(always)]
     fn fold_with(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<PointerAttr>()) {
+        if let Some(value) = operands[0].as_ref().and_then(|o| o.try_downcast::<PointerAttr>().ok())
+        {
+            let input = value.borrow();
             // Support folding just pointer -> 32-bit integer types for now
-            let value = match self.ty() {
-                Type::U32 => value.addr().as_u32().map(Immediate::U32),
-                Type::I32 => value.addr().as_u32().map(|v| Immediate::I32(v as i32)),
+            let output = match &*self.get_ty() {
+                Type::U32 => input
+                    .context_rc()
+                    .create_attribute::<U32Attr, _>(input.addr())
+                    .as_attribute_ref(),
+                Type::I32 => input
+                    .context_rc()
+                    .create_attribute::<I32Attr, _>(input.addr() as i32)
+                    .as_attribute_ref(),
                 _ => return FoldResult::Failed,
             };
-            if let Some(value) = value {
-                results.push(OpFoldResult::Attribute(Box::new(value)));
-                return FoldResult::Ok(());
-            }
+            results.push(OpFoldResult::Attribute(output));
+            FoldResult::Ok(())
+        } else {
+            FoldResult::Failed
         }
-        FoldResult::Failed
     }
 }
 
@@ -111,7 +127,7 @@ pub struct IntToPtr {
     #[operand]
     operand: AnyInteger,
     #[attr(hidden)]
-    ty: Type,
+    ty: TypeAttr,
     #[result]
     result: AnyPointer,
 }
@@ -120,7 +136,7 @@ has_no_effects!(IntToPtr);
 
 impl InferTypeOpInterface for IntToPtr {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
+        let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
     }
@@ -129,8 +145,8 @@ impl InferTypeOpInterface for IntToPtr {
 impl Foldable for IntToPtr {
     #[inline]
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        if let Some(value) =
-            matchers::foldable_operand_of::<Immediate>().matches(&self.operand().as_operand_ref())
+        if let Some(value) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
+            .matches(&self.operand().as_operand_ref())
         {
             results.push(OpFoldResult::Attribute(value));
             FoldResult::Ok(())
@@ -142,12 +158,21 @@ impl Foldable for IntToPtr {
     #[inline(always)]
     fn fold_with(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>()) {
-            let attr = PointerAttr::new(*value, Type::from(PointerType::new(self.ty().clone())));
-            results.push(OpFoldResult::Attribute(Box::new(attr)));
+        let Some(attr) = operands[0].as_ref() else {
+            return FoldResult::Failed;
+        };
+
+        let attr_borrowed = attr.borrow();
+        if let Some(integer_like) = attr_borrowed.as_attr().as_trait::<dyn IntegerLikeAttr>()
+            && let Some(addr) = integer_like.as_immediate().as_u32()
+        {
+            let ty = self.get_ty().clone();
+            let ptr = crate::attributes::Pointer::new(addr, ty);
+            let attr = integer_like.context_rc().create_attribute::<PointerAttr, _>(ptr);
+            results.push(OpFoldResult::Attribute(attr));
             FoldResult::Ok(())
         } else {
             FoldResult::Failed
@@ -164,7 +189,7 @@ pub struct Cast {
     #[operand]
     operand: AnyInteger,
     #[attr(hidden)]
-    ty: Type,
+    ty: TypeAttr,
     #[result]
     result: AnyInteger,
 }
@@ -173,7 +198,7 @@ has_no_effects!(Cast);
 
 impl InferTypeOpInterface for Cast {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
+        let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
     }
@@ -188,7 +213,7 @@ pub struct Bitcast {
     #[operand]
     operand: AnyPointerOrInteger,
     #[attr(hidden)]
-    ty: Type,
+    ty: TypeAttr,
     #[result]
     result: AnyPointerOrInteger,
 }
@@ -197,7 +222,7 @@ has_no_effects!(Bitcast);
 
 impl InferTypeOpInterface for Bitcast {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.ty().clone();
+        let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
     }
@@ -206,12 +231,15 @@ impl InferTypeOpInterface for Bitcast {
 impl Foldable for Bitcast {
     #[inline]
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        if let Some(value) = matchers::foldable_operand().matches(&self.operand().as_operand_ref())
-            && (value.is::<Immediate>() || value.is::<PointerAttr>())
-        {
-            // Lean on materialize_constant to handle the conversion details
-            results.push(OpFoldResult::Attribute(value));
-            return FoldResult::Ok(());
+        if let Some(attr) = matchers::foldable_operand().matches(&self.operand().as_operand_ref()) {
+            let attr_borrowed = attr.borrow();
+            if attr_borrowed.as_attr().implements::<dyn IntegerLikeAttr>()
+                || attr_borrowed.is::<PointerAttr>()
+            {
+                // Lean on materialize_constant to handle the conversion details
+                results.push(OpFoldResult::Attribute(attr));
+                return FoldResult::Ok(());
+            }
         }
 
         FoldResult::Failed
@@ -220,13 +248,19 @@ impl Foldable for Bitcast {
     #[inline(always)]
     fn fold_with(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) =
-            operands[0].as_deref().filter(|o| o.is::<Immediate>() || o.is::<PointerAttr>())
+        let Some(attr) = operands[0].as_ref() else {
+            return FoldResult::Failed;
+        };
+
+        let attr_borrowed = attr.borrow();
+        if attr_borrowed.as_attr().implements::<dyn IntegerLikeAttr>()
+            || attr_borrowed.is::<PointerAttr>()
         {
-            results.push(OpFoldResult::Attribute(value.clone_value()));
+            // Lean on materialize_constant to handle the conversion details
+            results.push(OpFoldResult::Attribute(*attr));
             FoldResult::Ok(())
         } else {
             FoldResult::Failed

@@ -7,9 +7,12 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder as Scf;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AbiParam, AddressSpace, BlockRef, Builder, Context, Ident, Op, OpBuilder, OperationRef,
-    PointerType, ProgramPoint, Report, Signature, SourceSpan, SymbolTable, Type, ValueRef,
-    dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
+    AddressSpace, BlockRef, Builder, Context, Ident, Op, OpBuilder, OperationRef, PointerType,
+    ProgramPoint, Report, SourceSpan, SymbolTable, Type, ValueRef,
+    dialects::builtin::{
+        BuiltinOpBuilder, Function, FunctionBuilder,
+        attributes::{AbiParam, Signature},
+    },
     pass::AnalysisManager,
 };
 

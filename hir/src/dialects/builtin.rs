@@ -1,16 +1,12 @@
+pub mod attributes;
 mod builders;
 mod ops;
-
-use alloc::boxed::Box;
 
 pub use self::{
     builders::{BuiltinOpBuilder, ComponentBuilder, FunctionBuilder, ModuleBuilder, WorldBuilder},
     ops::*,
 };
-use crate::{
-    AttributeValue, Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan,
-    Type,
-};
+use crate::{Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan};
 
 #[derive(Debug)]
 pub struct BuiltinDialect {
@@ -44,6 +40,36 @@ impl DialectRegistration for BuiltinDialect {
         info.register_operation::<ops::Ret>();
         info.register_operation::<ops::RetImm>();
     }
+
+    fn register_attributes(info: &mut DialectInfo) {
+        info.register_attribute::<attributes::BoolAttr>();
+        info.register_attribute::<attributes::BytesAttr>();
+        info.register_attribute::<attributes::I8Attr>();
+        info.register_attribute::<attributes::U8Attr>();
+        info.register_attribute::<attributes::I16Attr>();
+        info.register_attribute::<attributes::U16Attr>();
+        info.register_attribute::<attributes::I32Attr>();
+        info.register_attribute::<attributes::U32Attr>();
+        info.register_attribute::<attributes::I64Attr>();
+        info.register_attribute::<attributes::U64Attr>();
+        info.register_attribute::<attributes::I128Attr>();
+        info.register_attribute::<attributes::U128Attr>();
+        info.register_attribute::<attributes::ImmediateAttr>();
+        info.register_attribute::<attributes::IdentAttr>();
+        info.register_attribute::<attributes::LocationAttr>();
+        info.register_attribute::<attributes::OverflowAttr>();
+        info.register_attribute::<attributes::StringAttr>();
+        info.register_attribute::<attributes::SymbolRefAttr>();
+        info.register_attribute::<attributes::TypeAttr>();
+        info.register_attribute::<attributes::FunctionTypeAttr>();
+        info.register_attribute::<attributes::UnitAttr>();
+        info.register_attribute::<attributes::VersionAttr>();
+        info.register_attribute::<attributes::VisibilityAttr>();
+        info.register_attribute::<attributes::SignatureAttr>();
+        info.register_attribute::<attributes::SretAttr>();
+        info.register_attribute::<attributes::ZextAttr>();
+        info.register_attribute::<attributes::SextAttr>();
+    }
 }
 
 impl Dialect for BuiltinDialect {
@@ -55,8 +81,8 @@ impl Dialect for BuiltinDialect {
     fn materialize_constant(
         &self,
         _builder: &mut dyn Builder,
-        _attr: Box<dyn AttributeValue>,
-        _ty: &Type,
+        _attr: crate::AttributeRef,
+        _ty: &crate::Type,
         _span: SourceSpan,
     ) -> Option<OperationRef> {
         None

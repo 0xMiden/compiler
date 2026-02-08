@@ -3,7 +3,7 @@ mod foldable;
 mod info;
 mod types;
 
-use alloc::{boxed::Box, format};
+use alloc::format;
 
 use midenc_session::diagnostics::Severity;
 
@@ -14,7 +14,7 @@ pub use self::{
     types::*,
 };
 use super::BlockRef;
-use crate::{AttributeValue, Context, Operation, Report, Spanned, derive};
+use crate::{AttributeRef, Context, Operation, Report, Spanned, derive};
 
 /// Marker trait for commutative ops, e.g. `X op Y == Y op X`
 pub trait Commutative {}
@@ -136,7 +136,7 @@ pub trait BranchOpInterface: crate::Op {
     #[allow(unused_variables)]
     fn get_successor_for_operands(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> Option<crate::SuccessorInfo> {
         None
     }

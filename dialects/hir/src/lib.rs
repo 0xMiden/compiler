@@ -18,12 +18,10 @@ mod builders;
 mod ops;
 pub mod transforms;
 
-use alloc::boxed::Box;
-
 use midenc_dialect_arith as arith;
 use midenc_hir::{
-    AttributeValue, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, Immediate,
-    OperationRef, SourceSpan, Type,
+    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, OperationRef,
+    SourceSpan, Type, attributes::IntegerLikeAttr,
 };
 
 pub use self::{attributes::*, builders::HirOpBuilder, ops::*};
@@ -49,7 +47,7 @@ impl Dialect for HirDialect {
     fn materialize_constant(
         &self,
         builder: &mut dyn Builder,
-        attr: Box<dyn AttributeValue>,
+        attr: AttributeRef,
         ty: &Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
@@ -57,13 +55,12 @@ impl Dialect for HirDialect {
         let mut builder = midenc_hir::InsertionGuard::new(builder);
 
         // Check for `PointerAttr`
-        if let Some(attr) = attr.downcast_ref::<PointerAttr>() {
+        if let Ok(attr) = attr.try_downcast::<PointerAttr>() {
             let pointee_type = ty
                 .pointee()
                 .expect("unexpected pointer constant given when materializing non-pointer value")
                 .clone();
-            let mut attr = attr.clone();
-            attr.set_pointee_type(pointee_type);
+            let attr = attributes::Pointer::new(attr.borrow().addr(), pointee_type);
             let op_builder = builder.create::<ConstantPointer, _>(span);
             return op_builder(attr).ok().map(|op| op.as_operation_ref());
         }
@@ -79,22 +76,22 @@ impl Dialect for HirDialect {
             return None;
         }
 
-        // Currently, we expect folds to produce `Immediate`-valued attributes for integer-likes
-        if let Some(&imm) = attr.downcast_ref::<Immediate>() {
-            // We're materializing a constant pointer from a integer immediate
-            if let Some(pointee_type) = ty.pointee() {
-                if let Some(addr) = imm.as_u32() {
-                    let op_builder = builder.create::<ConstantPointer, _>(span);
-                    let attr = PointerAttr::new(Immediate::U32(addr), pointee_type.clone());
-                    return op_builder(attr).ok().map(|op| op.as_operation_ref());
-                } else {
-                    // Invalid pointer immediate
-                    return None;
-                }
+        // Currently, we expect folds to produce `IntegerLikeAttr`-valued attributes
+        let attr = attr.borrow();
+        if let Some(imm) = attr.as_attr().as_trait::<dyn IntegerLikeAttr>() {
+            // We're materializing a constant pointer from an integer immediate
+            let pointee_type = ty.pointee().unwrap();
+            if let Some(addr) = imm.as_immediate().as_u32() {
+                let attr = attributes::Pointer::new(addr, pointee_type.clone());
+                let op_builder = builder.create::<ConstantPointer, _>(span);
+                op_builder(attr).ok().map(|op| op.as_operation_ref())
+            } else {
+                // Invalid pointer immediate
+                None
             }
+        } else {
+            None
         }
-
-        None
     }
 }
 
@@ -128,5 +125,9 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::Spill>();
         info.register_operation::<ops::Reload>();
         info.register_operation::<ops::Breakpoint>();
+    }
+
+    fn register_attributes(info: &mut DialectInfo) {
+        info.register_attribute::<attributes::PointerAttr>();
     }
 }

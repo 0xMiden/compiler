@@ -46,16 +46,16 @@ pub use self::{
         RawEntityRef, StorableEntity, UnsafeEntityRef, UnsafeIntrusiveEntityRef,
         UnsafeIntrusiveMapEntityRef,
     },
-    ident::{FunctionIdent, Ident},
-    immediates::{Felt, FieldElement, Immediate, StarkField},
+    ident::{FunctionIdent, Ident, IdentAttr},
+    immediates::{Felt, FieldElement, Immediate, ImmediateAttr, StarkField},
     op::{BuildableOp, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,
         OpOperandStorage,
     },
     operation::{
-        OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName, OperationRef,
-        equivalence,
+        AttrInfo, GenericOperationBuilder, OpCursor, OpCursorMut, OpList, Operation,
+        OperationBuilder, OperationName, OperationRef, OperationState, equivalence,
     },
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
     region::{

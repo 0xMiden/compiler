@@ -4,7 +4,8 @@ use core::{fmt, ops::Index};
 
 use cranelift_entity::PrimaryMap;
 use midenc_hir::{
-    self as hir, AbiParam, CallConv, FxHashMap, Immediate, Signature, SmallVec, Visibility,
+    self as hir, CallConv, FxHashMap, Immediate, SmallVec, Visibility,
+    dialects::builtin::attributes::{AbiParam, Signature},
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 use wasmparser::types::CoreTypeId;

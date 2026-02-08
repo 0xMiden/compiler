@@ -463,9 +463,13 @@ mod tests {
     use litcheck_filecheck::filecheck;
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        AbiParam, Context, Ident, OpBuilder, OpPrinter, PointerType, Signature, SourceSpan, Type,
-        dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder, FunctionRef},
+        Context, Ident, OpBuilder, OpPrinter, PointerType, SourceSpan, Type,
+        dialects::builtin::{
+            BuiltinOpBuilder, Function, FunctionBuilder, FunctionRef,
+            attributes::{AbiParam, Signature},
+        },
         pass::PassManager,
+        print::AsmPrinter,
     };
 
     use super::*;
@@ -482,8 +486,10 @@ mod tests {
 
         test.run_cse(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -515,8 +521,10 @@ builtin.function @simple_constant() -> (i32, i32) {
 
         test.run_cse(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -563,8 +571,10 @@ builtin.function @basic() -> (i32, i32) {
 
         test.run_cse(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -608,8 +618,10 @@ builtin.function @many(v0: i32, v1: i32) -> i32 {
 
         test.run_cse(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -641,8 +653,10 @@ builtin.function @different_operands() -> (i32, i32) {
 
         test.run_cse(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -675,8 +689,10 @@ builtin.function @different_results(v0: i32) -> (i64, i128) {
 
         test.run_cse(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -719,8 +735,10 @@ builtin.function @different_attributes(v0: i32) -> (i32, i32) {
 
         test.run_cse(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -780,8 +798,10 @@ builtin.function @side_effect(v0: ptr<u8, byte>) -> (u8, u8) {
 
         test.run_cse(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         std::println!("output: {output}");
         filecheck!(
             output,

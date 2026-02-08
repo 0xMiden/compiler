@@ -3,7 +3,7 @@ use alloc::rc::Rc;
 use midenc_hir::{
     Backward, CallOpInterface, EntityMut, FxHashMap, Op, OperationName, OperationRef, ProgramPoint,
     RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec, Symbol, TraceTarget, ValueRef,
-    dialects::builtin::{Function, LocalVariable},
+    dialects::builtin::{Function, attributes::LocalVariable},
     pass::{Pass, PassExecutionState, PostPassStatus},
     patterns::{RewriterImpl, TracingRewriterListener},
     traits::BranchOpInterface,
@@ -73,7 +73,7 @@ impl Pass for Local2Reg {
             return Ok(());
         }
 
-        let locals = SmallVec::<[_; 4]>::from_iter(function.iter_locals().map(|(l, _)| l));
+        let locals = SmallVec::<[_; 4]>::from_iter(function.iter_locals());
         let op = function.as_operation_ref();
         let context = function.as_operation().context_rc();
         drop(function);
@@ -87,7 +87,7 @@ impl Pass for Local2Reg {
         op.raw_postwalk_all::<Backward, _>(|op: OperationRef| {
             let operation = op.borrow();
             if let Some(load) = operation.downcast_ref::<LoadLocal>() {
-                let local = *load.local();
+                let local = *load.get_local();
                 log::trace!(
                     target: &trace_target,
                     sym = trace_target.relevant_symbol();
@@ -97,7 +97,7 @@ impl Pass for Local2Reg {
                 loaded.entry(local).or_default().push(op);
             } else if let Some(store) = operation.downcast_ref::<StoreLocal>() {
                 let stored_value = store.value().as_value_ref();
-                let local = *store.local();
+                let local = *store.get_local();
                 log::trace!(
                     target: &trace_target,
                     sym = trace_target.relevant_symbol();
@@ -240,10 +240,13 @@ mod tests {
     use litcheck_filecheck::filecheck;
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        AbiParam, Context, Ident, OpBuilder, OpPrinter, Report, Signature, SourceSpan, Type,
-        ValueRef,
-        dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder, FunctionRef},
+        Context, Ident, OpBuilder, OpPrinter, Report, SourceSpan, Type, ValueRef,
+        dialects::builtin::{
+            BuiltinOpBuilder, Function, FunctionBuilder, FunctionRef,
+            attributes::{AbiParam, Signature},
+        },
         pass::PassManager,
+        print::AsmPrinter,
     };
 
     use super::Local2Reg;
@@ -270,8 +273,10 @@ mod tests {
 
         test.run_local2reg(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -305,8 +310,10 @@ builtin.function @promotes_redundant(v0: i32, v1: i32) -> i32 {
 
         test.run_local2reg(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -344,8 +351,10 @@ builtin.function @erases_dead_stores(v0: i32) -> i32 {
 
         test.run_local2reg(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         std::println!("output: {output}");
         filecheck!(
             output,
@@ -394,8 +403,10 @@ builtin.function @ignores_multiple_loads(v0: i32, v1: i32) -> i32 {
 
         test.run_local2reg(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         std::println!("output: {output}");
         filecheck!(
             output,
@@ -435,8 +446,10 @@ builtin.function @ignores_multiple_stores(v0: i32, v1: i32) -> i32 {
 
         test.run_local2reg(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
@@ -478,8 +491,10 @@ builtin.function @ignores_poison_loads(v0: i32, v1: i32) -> i32 {
 
         test.run_local2reg(true).expect("invalid ir");
 
-        let output =
-            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        test.function().borrow().print(&mut printer);
+        let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"

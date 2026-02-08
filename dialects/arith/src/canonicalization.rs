@@ -150,8 +150,11 @@ mod tests {
     use alloc::rc::Rc;
 
     use midenc_hir::{
-        AbiParam, BuilderExt, Context, Ident, OpBuilder, Report, Signature, SourceSpan, Type,
-        dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
+        BuilderExt, Context, Ident, OpBuilder, Report, SourceSpan, Type,
+        dialects::builtin::{
+            BuiltinOpBuilder, Function, FunctionBuilder,
+            attributes::{AbiParam, Signature},
+        },
         patterns::{
             FrozenRewritePatternSet, GreedyRewriteConfig, RegionSimplificationLevel,
             RewritePatternSet, apply_patterns_and_fold_greedily,
@@ -174,9 +177,8 @@ mod tests {
         let function = {
             let builder = builder.create::<Function, (_, _)>(span);
             let name = Ident::new("test".into(), span);
-            let signature =
-                Signature::new([AbiParam::new(ty.clone())], [AbiParam::new(ty.clone())]);
-            builder(name, signature)?
+            let ty = Signature::new([AbiParam::new(ty.clone())], [AbiParam::new(ty.clone())]);
+            builder(name, ty)?
         };
 
         {
@@ -252,7 +254,7 @@ mod tests {
         let (hi, lo) = {
             let split = split.borrow();
             let split = split.downcast_ref::<Split>().unwrap();
-            assert_eq!(split.limb_ty(), &Type::Felt, "expected split to use `felt` limbs");
+            assert_eq!(&*split.get_limb_ty(), &Type::Felt, "expected split to use `felt` limbs");
             let [hi, lo] = split.limbs().as_slice() else {
                 panic!("expected arith.split to produce 2 limbs for i64/u64");
             };
@@ -262,7 +264,11 @@ mod tests {
         let (high, low) = {
             let join = join.borrow();
             let join = join.downcast_ref::<Join>().unwrap();
-            assert_eq!(join.ty(), &ty, "expected join to reconstruct the original rotate type");
+            assert_eq!(
+                &*join.get_ty(),
+                &ty,
+                "expected join to reconstruct the original rotate type"
+            );
             let [high, low] = join.limbs().as_slice() else {
                 panic!("expected arith.join to consume 2 limbs for i64/u64");
             };

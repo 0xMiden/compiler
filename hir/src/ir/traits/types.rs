@@ -1,10 +1,10 @@
-use alloc::format;
+use alloc::{format, string::ToString};
 use core::fmt;
 
 use midenc_hir_type::PointerType;
 use midenc_session::diagnostics::Severity;
 
-use crate::{Context, Op, Operation, Report, Type, derive, ir::value::Value};
+use crate::{CompactString, Context, Op, Operation, Report, Type, derive, ir::value::Value};
 
 /// OpInterface to compute the return type(s) of an operation.
 pub trait InferTypeOpInterface: Op {
@@ -158,10 +158,11 @@ impl<C: TypeConstraint> crate::Verify<dyn Variadic<C>> for Operation {
             let operand = operand.borrow();
             let value = operand.value();
             let ty = value.ty();
-            if <C as TypeConstraint>::matches(ty) {
+            let constraint = <C as TypeConstraint>::get();
+            if constraint.matches(ty) {
                 continue;
             } else {
-                let description = <C as TypeConstraint>::description();
+                let description = constraint.description();
                 return Err(context
                     .diagnostics()
                     .diagnostic(Severity::Error)
@@ -179,8 +180,11 @@ impl<C: TypeConstraint> crate::Verify<dyn Variadic<C>> for Operation {
 }
 
 pub trait TypeConstraint: 'static {
-    fn description() -> impl fmt::Display;
-    fn matches(ty: &crate::Type) -> bool;
+    fn get() -> Self
+    where
+        Self: Sized;
+    fn description(&self) -> CompactString;
+    fn matches(&self, ty: &crate::Type) -> bool;
 }
 
 /// A type that can be constructed as a [crate::Type]
@@ -194,12 +198,17 @@ macro_rules! type_constraint {
         pub struct $Constraint;
         impl TypeConstraint for $Constraint {
             #[inline(always)]
-            fn description() -> impl core::fmt::Display {
-                $description
+            fn get() -> Self {
+                Self
             }
 
             #[inline(always)]
-            fn matches(_ty: &$crate::Type) -> bool {
+            fn description(&self) -> $crate::CompactString {
+                $crate::CompactString::const_new($description)
+            }
+
+            #[inline]
+            fn matches(&self, _ty: &$crate::Type) -> bool {
                 $matcher
             }
         }
@@ -210,12 +219,17 @@ macro_rules! type_constraint {
         pub struct $Constraint;
         impl TypeConstraint for $Constraint {
             #[inline(always)]
-            fn description() -> impl core::fmt::Display {
-                $description
+            fn get() -> Self {
+                Self
             }
 
             #[inline(always)]
-            fn matches(ty: &$crate::Type) -> bool {
+            fn description(&self) -> $crate::CompactString {
+                $crate::CompactString::const_new($description)
+            }
+
+            #[inline]
+            fn matches(&self, ty: &$crate::Type) -> bool {
                 $matcher(ty)
             }
         }
@@ -226,12 +240,17 @@ macro_rules! type_constraint {
         pub struct $Constraint;
         impl TypeConstraint for $Constraint {
             #[inline(always)]
-            fn description() -> impl core::fmt::Display {
-                $description
+            fn get() -> Self {
+                Self
             }
 
             #[inline(always)]
-            fn matches($matcher_input: &$crate::Type) -> bool {
+            fn description(&self) -> $crate::CompactString {
+                $crate::CompactString::const_new($description)
+            }
+
+            #[inline]
+            fn matches(&self, $matcher_input: &$crate::Type) -> bool {
                 $matcher
             }
         }
@@ -374,11 +393,16 @@ impl<const N: usize> fmt::Display for SizedInt<N> {
     }
 }
 impl<const N: usize> TypeConstraint for SizedInt<N> {
-    fn description() -> impl fmt::Display {
+    #[inline(always)]
+    fn get() -> Self {
         Self(core::marker::PhantomData)
     }
 
-    fn matches(ty: &crate::Type) -> bool {
+    fn description(&self) -> CompactString {
+        CompactString::from(self.to_string())
+    }
+
+    fn matches(&self, ty: &crate::Type) -> bool {
         ty.is_integer()
     }
 }
@@ -418,18 +442,23 @@ impl<T> fmt::Debug for PointerOf<T> {
 }
 impl<T: TypeConstraint> fmt::Display for PointerOf<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let pointee = <T as TypeConstraint>::description();
+        let pointee = <T as TypeConstraint>::get().description();
         write!(f, "a pointer to {pointee}")
     }
 }
 impl<T: TypeConstraint> TypeConstraint for PointerOf<T> {
     #[inline(always)]
-    fn description() -> impl fmt::Display {
+    fn get() -> Self {
         Self(core::marker::PhantomData)
     }
 
-    fn matches(ty: &crate::Type) -> bool {
-        ty.pointee().is_some_and(|pointee| <T as TypeConstraint>::matches(pointee))
+    fn description(&self) -> CompactString {
+        CompactString::from(self.to_string())
+    }
+
+    fn matches(&self, ty: &crate::Type) -> bool {
+        ty.pointee()
+            .is_some_and(|pointee| <T as TypeConstraint>::get().matches(pointee))
     }
 }
 impl<T: BuildableTypeConstraint> BuildableTypeConstraint for PointerOf<T> {
@@ -453,19 +482,23 @@ impl<T> fmt::Debug for AnyArrayOf<T> {
 }
 impl<T: TypeConstraint> fmt::Display for AnyArrayOf<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let element = <T as TypeConstraint>::description();
+        let element = <T as TypeConstraint>::get().description();
         write!(f, "an array of {element}")
     }
 }
 impl<T: TypeConstraint> TypeConstraint for AnyArrayOf<T> {
     #[inline(always)]
-    fn description() -> impl fmt::Display {
+    fn get() -> Self {
         Self(core::marker::PhantomData)
     }
 
-    fn matches(ty: &crate::Type) -> bool {
+    fn description(&self) -> CompactString {
+        CompactString::from(self.to_string())
+    }
+
+    fn matches(&self, ty: &crate::Type) -> bool {
         match ty {
-            crate::Type::Array(ty) => <T as TypeConstraint>::matches(ty.element_type()),
+            crate::Type::Array(ty) => <T as TypeConstraint>::get().matches(ty.element_type()),
             _ => false,
         }
     }
@@ -486,20 +519,24 @@ impl<const N: usize, T> fmt::Debug for ArrayOf<N, T> {
 }
 impl<const N: usize, T: TypeConstraint> fmt::Display for ArrayOf<N, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let element = <T as TypeConstraint>::description();
+        let element = <T as TypeConstraint>::get().description();
         write!(f, "an array of {N} {element}")
     }
 }
 impl<const N: usize, T: TypeConstraint> TypeConstraint for ArrayOf<N, T> {
     #[inline(always)]
-    fn description() -> impl fmt::Display {
+    fn get() -> Self {
         Self(core::marker::PhantomData)
     }
 
-    fn matches(ty: &crate::Type) -> bool {
+    fn description(&self) -> CompactString {
+        CompactString::from(self.to_string())
+    }
+
+    fn matches(&self, ty: &crate::Type) -> bool {
         match ty {
             crate::Type::Array(ty) if ty.len() == N => {
-                <T as TypeConstraint>::matches(ty.element_type())
+                <T as TypeConstraint>::get().matches(ty.element_type())
             }
             _ => false,
         }
@@ -529,24 +566,23 @@ impl<T, U> fmt::Debug for And<T, U> {
     }
 }
 impl<T: TypeConstraint, U: TypeConstraint> TypeConstraint for And<T, U> {
-    fn description() -> impl fmt::Display {
-        struct Both<L, R> {
-            left: L,
-            right: R,
+    #[inline(always)]
+    fn get() -> Self {
+        Self {
+            _left: core::marker::PhantomData,
+            _right: core::marker::PhantomData,
         }
-        impl<L: fmt::Display, R: fmt::Display> fmt::Display for Both<L, R> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "both {} and {}", &self.left, &self.right)
-            }
-        }
-        let left = <T as TypeConstraint>::description();
-        let right = <U as TypeConstraint>::description();
-        Both { left, right }
+    }
+
+    fn description(&self) -> CompactString {
+        let left = <T as TypeConstraint>::get().description();
+        let right = <U as TypeConstraint>::get().description();
+        CompactString::from(format!("both {left} and {right}"))
     }
 
     #[inline]
-    fn matches(ty: &crate::Type) -> bool {
-        <T as TypeConstraint>::matches(ty) && <U as TypeConstraint>::matches(ty)
+    fn matches(&self, ty: &crate::Type) -> bool {
+        <T as TypeConstraint>::get().matches(ty) && <U as TypeConstraint>::get().matches(ty)
     }
 }
 
@@ -567,23 +603,22 @@ impl<T, U> fmt::Debug for Or<T, U> {
     }
 }
 impl<T: TypeConstraint, U: TypeConstraint> TypeConstraint for Or<T, U> {
-    fn description() -> impl fmt::Display {
-        struct Either<L, R> {
-            left: L,
-            right: R,
+    #[inline(always)]
+    fn get() -> Self {
+        Self {
+            _left: core::marker::PhantomData,
+            _right: core::marker::PhantomData,
         }
-        impl<L: fmt::Display, R: fmt::Display> fmt::Display for Either<L, R> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "either {} or {}", &self.left, &self.right)
-            }
-        }
-        let left = <T as TypeConstraint>::description();
-        let right = <U as TypeConstraint>::description();
-        Either { left, right }
+    }
+
+    fn description(&self) -> CompactString {
+        let left = <T as TypeConstraint>::get().description();
+        let right = <U as TypeConstraint>::get().description();
+        CompactString::from(format!("either {left} or {right}"))
     }
 
     #[inline]
-    fn matches(ty: &crate::Type) -> bool {
-        <T as TypeConstraint>::matches(ty) || <U as TypeConstraint>::matches(ty)
+    fn matches(&self, ty: &crate::Type) -> bool {
+        <T as TypeConstraint>::get().matches(ty) || <U as TypeConstraint>::get().matches(ty)
     }
 }

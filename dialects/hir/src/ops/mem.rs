@@ -1,7 +1,6 @@
-use alloc::boxed::Box;
-
 use midenc_hir::{
-    derive::operation, dialects::builtin::LocalVariable, effects::*, smallvec, traits::*, *,
+    derive::operation, dialects::builtin::attributes::LocalVariableAttr, effects::*, smallvec,
+    traits::*, *,
 };
 use midenc_hir_transform::SpillLike;
 
@@ -35,16 +34,17 @@ impl EffectOpInterface<MemoryEffect> for Store {
 )]
 pub struct StoreLocal {
     #[attr]
-    local: LocalVariable,
+    local: LocalVariableAttr,
     #[operand]
     value: AnyType,
 }
 
 impl EffectOpInterface<MemoryEffect> for StoreLocal {
     fn effects(&self) -> EffectIterator<MemoryEffect> {
+        let local = self.local.as_attribute_ref();
         EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
             MemoryEffect::Write,
-            Box::new(*self.local()) as Box<dyn AttributeValue>
+            local
         )])
     }
 }
@@ -123,23 +123,24 @@ impl InferTypeOpInterface for Load {
 )]
 pub struct LoadLocal {
     #[attr]
-    local: LocalVariable,
+    local: LocalVariableAttr,
     #[result]
     result: AnyType,
 }
 
 impl EffectOpInterface<MemoryEffect> for LoadLocal {
     fn effects(&self) -> EffectIterator<MemoryEffect> {
+        let local = self.local.as_attribute_ref();
         EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
             MemoryEffect::Read,
-            Box::new(*self.local()) as Box<dyn AttributeValue>
+            local
         )])
     }
 }
 
 impl InferTypeOpInterface for LoadLocal {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.local().ty();
+        let ty = self.get_local().ty();
         self.result_mut().set_type(ty);
 
         Ok(())

@@ -1,5 +1,3 @@
-use alloc::boxed::Box;
-
 use midenc_hir::{derive::operation, effects::MemoryEffectOpInterface, traits::*, *};
 
 use crate::*;
@@ -14,7 +12,7 @@ use crate::*;
 )]
 pub struct Constant {
     #[attr(hidden)]
-    value: Immediate,
+    value: ImmediateAttr,
     #[result]
     result: AnyInteger,
 }
@@ -23,7 +21,7 @@ has_no_effects!(Constant);
 
 impl InferTypeOpInterface for Constant {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.value().ty();
+        let ty = self.value().ty().clone();
         self.result_mut().set_type(ty);
 
         Ok(())
@@ -33,14 +31,14 @@ impl InferTypeOpInterface for Constant {
 impl Foldable for Constant {
     #[inline]
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        results.push(OpFoldResult::Attribute(self.get_attribute("value").unwrap().clone_value()));
+        results.push(OpFoldResult::Attribute(self.value));
         FoldResult::Ok(())
     }
 
     #[inline(always)]
     fn fold_with(
         &self,
-        _operands: &[Option<Box<dyn AttributeValue>>],
+        _operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
         self.fold(results)

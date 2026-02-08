@@ -1,8 +1,13 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use super::{OpOperandStorage, StorableEntity, Usable, ValueRange};
-use crate::{AttributeValue, BlockOperandRef, BlockRef, OpOperandRange, OpOperandRangeMut};
+use super::{
+    EntityRef, OpOperandStorage, StorableEntity, UnsafeIntrusiveEntityRef, Usable, ValueRange,
+};
+use crate::{
+    AttributeRef, AttributeRegistration, BlockOperandRef, BlockRef, OpOperandRange,
+    OpOperandRangeMut,
+};
 
 pub type OpSuccessorStorage = crate::EntityStorage<SuccessorInfo, 0>;
 pub type OpSuccessorRange<'a> = crate::EntityRange<'a, SuccessorInfo>;
@@ -231,8 +236,10 @@ impl SuccessorOperand {
 /// each key and its associated successor index. This allows requesting the successor details and
 /// getting back the correct key, destination, and operands.
 pub trait KeyedSuccessor {
-    /// The type of key this successor
-    type Key: AttributeValue + Clone + Eq;
+    /// The value type of the successor key.
+    type Key: Sized + Clone + Eq;
+    /// The attribute used to store the successor key
+    type KeyStorage: AttributeRegistration;
     /// The type of value which will represent a reference to this successor.
     ///
     /// You should use [OpSuccessor] if this successor is not keyed.
@@ -249,20 +256,22 @@ pub trait KeyedSuccessor {
     /// If `None` is returned, this successor is to be treated like a regular successor argument,
     /// i.e. a destination block and associated operands. If a key is returned, the key must be
     /// unique across the set of keyed successors.
-    fn key(&self) -> &Self::Key;
+    fn key(&self) -> Self::Key;
     /// Convert this value into the raw parts comprising the successor information:
     ///
     /// * The (optional) key under which this successor is selected
     /// * The destination block
     /// * The destination operands
-    fn into_parts(self) -> (Self::Key, BlockRef, Vec<super::ValueRef>);
+    fn into_parts(
+        self,
+    ) -> (UnsafeIntrusiveEntityRef<Self::KeyStorage>, BlockRef, Vec<super::ValueRef>);
     fn into_repr(
-        key: Self::Key,
+        key: UnsafeIntrusiveEntityRef<Self::KeyStorage>,
         block: BlockOperandRef,
         operands: OpOperandRange<'_>,
     ) -> Self::Repr<'_>;
     fn into_repr_mut(
-        key: Self::Key,
+        key: UnsafeIntrusiveEntityRef<Self::KeyStorage>,
         block: BlockOperandRef,
         operands: OpOperandRangeMut<'_>,
     ) -> Self::ReprMut<'_>;
@@ -272,7 +281,7 @@ pub trait KeyedSuccessor {
 #[derive(Copy, Clone)]
 pub struct SuccessorInfo {
     pub block: BlockOperandRef,
-    pub(crate) key: Option<core::ptr::NonNull<()>>,
+    pub(crate) key: Option<AttributeRef>,
     pub(crate) operand_group: u8,
 }
 
@@ -501,16 +510,33 @@ pub struct SuccessorWithKey<'a, T> {
     operands: OpOperandRange<'a>,
     _marker: core::marker::PhantomData<T>,
 }
-impl<'a, T: KeyedSuccessor> SuccessorWithKey<'a, T> {
+impl<'a, T: KeyedSuccessor> SuccessorWithKey<'a, T>
+where
+    T: KeyedSuccessor,
+    <T as KeyedSuccessor>::Key: Sized + Clone + Eq,
+    <T as KeyedSuccessor>::KeyStorage: AttributeRegistration<Value = <T as KeyedSuccessor>::Key>,
+{
     #[inline]
     pub fn info(&self) -> &SuccessorInfo {
         self.info
     }
 
-    pub fn key(&self) -> Option<&<T as KeyedSuccessor>::Key> {
+    pub fn key(&self) -> Option<EntityRef<'_, <T as KeyedSuccessor>::Key>> {
+        self.info.key.and_then(|storage| {
+            let storage = storage.try_downcast::<<T as KeyedSuccessor>::KeyStorage>().ok()?;
+            Some(EntityRef::map(
+                storage.borrow(),
+                <<T as KeyedSuccessor>::KeyStorage as AttributeRegistration>::underlying_value,
+            ))
+        })
+    }
+
+    pub fn key_storage(
+        &self,
+    ) -> Option<UnsafeIntrusiveEntityRef<<T as KeyedSuccessor>::KeyStorage>> {
         self.info
             .key
-            .map(|ptr| unsafe { &*(ptr.as_ptr() as *mut <T as KeyedSuccessor>::Key) })
+            .and_then(|storage| storage.try_downcast::<<T as KeyedSuccessor>::KeyStorage>().ok())
     }
 
     pub fn block(&self) -> BlockRef {
@@ -536,11 +562,20 @@ pub struct SuccessorWithKeyMut<'a, T> {
     operands: OpOperandRangeMut<'a>,
     _marker: core::marker::PhantomData<T>,
 }
-impl<'a, T: KeyedSuccessor> SuccessorWithKeyMut<'a, T> {
-    pub fn key(&self) -> Option<&<T as KeyedSuccessor>::Key> {
-        self.info
-            .key
-            .map(|ptr| unsafe { &*(ptr.as_ptr() as *mut <T as KeyedSuccessor>::Key) })
+impl<'a, T: KeyedSuccessor> SuccessorWithKeyMut<'a, T>
+where
+    T: KeyedSuccessor,
+    <T as KeyedSuccessor>::Key: Sized + Clone + Eq,
+    <T as KeyedSuccessor>::KeyStorage: AttributeRegistration<Value = <T as KeyedSuccessor>::Key>,
+{
+    pub fn key(&self) -> Option<EntityRef<'_, <T as KeyedSuccessor>::Key>> {
+        self.info.key.and_then(|storage| {
+            let storage = storage.try_downcast::<<T as KeyedSuccessor>::KeyStorage>().ok()?;
+            Some(EntityRef::map(
+                storage.borrow(),
+                <<T as KeyedSuccessor>::KeyStorage as AttributeRegistration>::underlying_value,
+            ))
+        })
     }
 
     pub fn block(&self) -> BlockRef {

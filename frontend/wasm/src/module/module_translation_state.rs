@@ -1,8 +1,10 @@
 use midenc_hir::{
-    AbiParam, CallConv, FunctionType, FxHashMap, Signature, SymbolNameComponent, SymbolPath,
-    Visibility,
+    CallConv, FunctionType, FxHashMap, SymbolNameComponent, SymbolPath, Visibility,
     diagnostics::WrapErr,
-    dialects::builtin::{FunctionRef, ModuleBuilder, WorldBuilder},
+    dialects::builtin::{
+        FunctionRef, ModuleBuilder, WorldBuilder,
+        attributes::{AbiParam, Signature},
+    },
     interner::Symbol,
     smallvec,
 };

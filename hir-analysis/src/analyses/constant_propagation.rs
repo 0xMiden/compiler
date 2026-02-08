@@ -1,8 +1,8 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::rc::Rc;
 use core::fmt;
 
 use midenc_hir::{
-    AttributeValue, Dialect, FoldResult, Forward, OpFoldResult, Operation, Report, SmallVec,
+    AttributeRef, Dialect, FoldResult, Forward, OpFoldResult, Operation, Report, SmallVec,
     traits::Foldable,
 };
 
@@ -16,7 +16,7 @@ use crate::{
 #[derive(Default)]
 pub struct ConstantValue {
     /// The constant value
-    constant: Option<Option<Box<dyn AttributeValue>>>,
+    constant: Option<Option<AttributeRef>>,
     /// The dialect that can be used to materialize this constant
     dialect: Option<Rc<dyn Dialect>>,
 }
@@ -37,9 +37,8 @@ impl fmt::Debug for ConstantValue {
 
 impl Clone for ConstantValue {
     fn clone(&self) -> Self {
-        let constant = self.constant.as_ref().map(|c| c.as_deref().map(|c| c.clone_value()));
         Self {
-            constant,
+            constant: self.constant,
             dialect: self.dialect.clone(),
         }
     }
@@ -47,7 +46,7 @@ impl Clone for ConstantValue {
 
 #[allow(unused)]
 impl ConstantValue {
-    pub fn new(constant: Box<dyn AttributeValue>, dialect: Rc<dyn Dialect>) -> Self {
+    pub fn new(constant: AttributeRef, dialect: Rc<dyn Dialect>) -> Self {
         Self {
             constant: Some(Some(constant)),
             dialect: Some(dialect),
@@ -71,12 +70,8 @@ impl ConstantValue {
         self.constant.is_none()
     }
 
-    pub fn constant_value(&self) -> Option<Box<dyn AttributeValue>> {
-        self.constant
-            .as_ref()
-            .expect("expected constant value to be initialized")
-            .as_deref()
-            .map(|c| c.clone_value())
+    pub fn constant_value(&self) -> Option<AttributeRef> {
+        self.constant.expect("expected constant value to be initialized")
     }
 
     pub fn constant_dialect(&self) -> Option<Rc<dyn Dialect>> {
@@ -166,7 +161,7 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
         }
 
         let mut constant_operands =
-            SmallVec::<[Option<Box<dyn AttributeValue>>; 8]>::with_capacity(op.num_operands());
+            SmallVec::<[Option<AttributeRef>; 8]>::with_capacity(op.num_operands());
         for (index, operand_lattice) in operands.iter().enumerate() {
             log::trace!(
                 target: self.debug_name(),

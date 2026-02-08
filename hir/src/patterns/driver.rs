@@ -8,10 +8,11 @@ use super::{
     RewriterListener,
 };
 use crate::{
-    AttrPrinter, BlockRef, Builder, Context, Forward, InsertionGuard, Listener, OpFoldResult,
-    OperationFolder, OperationRef, ProgramPoint, RawWalk, Region, RegionRef, Report, SourceSpan,
-    Spanned, Value, ValueRef, WalkResult,
+    BlockRef, Builder, Context, Forward, InsertionGuard, Listener, OpFoldResult, OperationFolder,
+    OperationRef, ProgramPoint, RawWalk, Region, RegionRef, Report, SourceSpan, Spanned, Value,
+    ValueRef, WalkResult,
     adt::SmallSet,
+    formatter::DisplayValues,
     patterns::{PatternApplicationError, RewritePattern, TracingRewriterListener},
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
 };
@@ -512,7 +513,7 @@ impl GreedyPatternRewriteDriver {
                     log::trace!(
                         target: "pattern-rewrite-driver",
                         "operation was succesfully folded away, to be replaced with: {}",
-                        results.as_slice().print(&crate::OpPrintingFlags::default(), op.context())
+                        DisplayValues::new(results.iter())
                     );
                 }
 
@@ -546,8 +547,7 @@ impl GreedyPatternRewriteDriver {
                             let span = op.span();
                             log::trace!(
                                 target: "pattern-rewrite-driver",
-                                "materializing constant for value '{}' and type '{result_ty}'",
-                                attr.print(&crate::OpPrintingFlags::default(), op.context())
+                                "materializing constant for value '{attr:?}' and type '{result_ty}'",
                             );
                             let constant_op = op.dialect().materialize_constant(
                                 &mut *rewriter,

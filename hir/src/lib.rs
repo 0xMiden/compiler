@@ -59,7 +59,7 @@ pub use rustc_hash::{FxBuildHasher, FxHasher};
 
 pub mod adt;
 mod any;
-mod attributes;
+pub mod attributes;
 pub mod constants;
 pub mod demangle;
 pub mod derive;
@@ -75,15 +75,15 @@ pub mod matchers;
 pub mod pass;
 pub mod patterns;
 mod program_point;
-pub mod version;
 
 pub use midenc_session::diagnostics;
 
 pub use self::{
     attributes::{
-        ArrayAttr, Attribute, AttributeSet, AttributeValue, DictAttr, Overflow, SetAttr,
-        Visibility, markers::*,
+        Attribute, AttributeName, AttributeRef, AttributeRegistration, NamedAttribute,
+        NamedAttributeList,
     },
+    dialects::builtin::attributes::{Location, Overflow, Visibility, version},
     direction::{Backward, Direction, Forward},
     eq::DynPartialEq,
     folder::OperationFolder,

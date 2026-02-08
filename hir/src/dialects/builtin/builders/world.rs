@@ -1,8 +1,8 @@
-use alloc::format;
+use alloc::{format, rc::Rc};
 
 use crate::{
-    Builder, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolNameComponent, SymbolPath,
-    SymbolTable, UnsafeIntrusiveEntityRef,
+    Builder, Context, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolNameComponent,
+    SymbolPath, SymbolTable, UnsafeIntrusiveEntityRef,
     dialects::builtin::{
         Component, ComponentId, ComponentRef, Module, ModuleBuilder, ModuleRef,
         PrimComponentBuilder, PrimModuleBuilder, World, WorldRef,
@@ -33,6 +33,10 @@ impl WorldBuilder {
             world: world_ref,
             builder,
         }
+    }
+
+    pub fn context_rc(&self) -> Rc<Context> {
+        self.builder.context_rc()
     }
 
     pub fn define_component(

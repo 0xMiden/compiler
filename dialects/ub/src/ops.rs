@@ -1,5 +1,3 @@
-use alloc::boxed::Box;
-
 use midenc_hir::{derive::operation, effects::*, smallvec, traits::*, *};
 
 use crate::*;
@@ -32,23 +30,23 @@ impl EffectOpInterface<MemoryEffect> for Poison {
 
 impl Foldable for Poison {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        results.push(OpFoldResult::Attribute(Box::new(self.value().clone())));
+        results.push(OpFoldResult::Attribute(self.value));
         FoldResult::Ok(())
     }
 
     fn fold_with(
         &self,
-        _operands: &[Option<Box<dyn AttributeValue>>],
+        _operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        results.push(OpFoldResult::Attribute(Box::new(self.value().clone())));
+        results.push(OpFoldResult::Attribute(self.value));
         FoldResult::Ok(())
     }
 }
 
 impl InferTypeOpInterface for Poison {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let poison_ty = self.value().ty().clone();
+        let poison_ty = self.get_value().clone();
         self.result_mut().set_type(poison_ty);
         Ok(())
     }

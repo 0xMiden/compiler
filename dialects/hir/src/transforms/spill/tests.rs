@@ -5,9 +5,12 @@ use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_dialect_scf::{ScfDialect, StructuredControlFlowOpBuilder};
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AbiParam, AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, ProgramPoint,
-    Report, Signature, SourceSpan, Type, ValueRef,
-    dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
+    AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, ProgramPoint, Report,
+    SourceSpan, Type, ValueRef,
+    dialects::builtin::{
+        BuiltinOpBuilder, Function, FunctionBuilder,
+        attributes::{AbiParam, Signature},
+    },
     pass::{Nesting, PassManager},
 };
 

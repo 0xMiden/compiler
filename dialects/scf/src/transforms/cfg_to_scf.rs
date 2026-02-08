@@ -311,10 +311,8 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
             .iter()
             .copied()
             .zip(case_destinations.iter().copied().zip(case_arguments))
-            .map(|(value, (successor, args))| cf::SwitchCase {
-                value,
-                successor,
-                arguments: args.to_vec(),
+            .map(|(value, (successor, args))| {
+                cf::SwitchCase::create(value, successor, args.to_vec())
             })
             .collect::<SmallVec<[_; 4]>>();
 
@@ -379,8 +377,12 @@ mod tests {
     use builtin::{BuiltinOpBuilder, FunctionBuilder};
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        AbiParam, BuilderExt, Context, Ident, OpBuilder, PointerType, Report, Signature,
-        SourceSpan, Type, dialects::builtin, pass,
+        BuilderExt, Context, Ident, OpBuilder, PointerType, Report, SourceSpan, Type,
+        dialects::builtin::{
+            self,
+            attributes::{AbiParam, Signature},
+        },
+        pass,
     };
 
     use super::*;

@@ -1,6 +1,6 @@
 use midenc_hir::{
-    ArrayAttr, Builder, BuilderExt, OpBuilder, Region, Report, SourceSpan, Type,
-    UnsafeIntrusiveEntityRef, ValueRef, dialects::builtin::FunctionBuilder,
+    Builder, BuilderExt, OpBuilder, Report, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
+    dialects::builtin::{FunctionBuilder, attributes::Array},
 };
 
 use crate::*;
@@ -48,11 +48,11 @@ pub trait StructuredControlFlowOpBuilder<'f, B: ?Sized + Builder> {
             let mut while_op = while_op.borrow_mut();
             let before_block = self
                 .builder()
-                .context()
+                .context_rc()
                 .create_block_with_params(while_op.inits().iter().map(|v| v.borrow().ty()));
             while_op.before_mut().body_mut().push_back(before_block);
             let after_block =
-                self.builder().context().create_block_with_params(results.iter().cloned());
+                self.builder().context_rc().create_block_with_params(results.iter().cloned());
             while_op.after_mut().body_mut().push_back(after_block);
         }
         Ok(while_op)
@@ -68,7 +68,7 @@ pub trait StructuredControlFlowOpBuilder<'f, B: ?Sized + Builder> {
     where
         T: IntoIterator<Item = u32>,
     {
-        let cases = ArrayAttr::from_iter(cases);
+        let cases = Array::from_iter(cases);
         let num_cases = cases.len();
         let op_builder = self.builder_mut().create::<IndexSwitch, (_, _)>(span);
         let switch_op = op_builder(selector, cases)?;

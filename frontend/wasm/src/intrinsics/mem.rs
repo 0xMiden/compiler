@@ -1,8 +1,10 @@
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    AbiParam, Builder, CallConv, FunctionType, Signature, SmallVec, SourceSpan,
-    SymbolNameComponent, Type, ValueRef,
-    dialects::builtin::FunctionRef,
+    Builder, CallConv, FunctionType, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
+    dialects::builtin::{
+        FunctionRef,
+        attributes::{AbiParam, Signature},
+    },
     interner::{Symbol, symbols},
 };
 
@@ -49,7 +51,7 @@ pub(crate) fn convert_mem_intrinsics<B: ?Sized + Builder>(
             let func = function_ref.borrow();
             assert_eq!(args.len(), 0, "{} takes no arguments", &func.name());
 
-            let signature = func.signature().clone();
+            let signature = func.get_signature().clone();
             drop(func);
             let exec = builder.exec(function_ref, signature, args.iter().copied(), span)?;
             let borrow = exec.borrow();

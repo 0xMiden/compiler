@@ -229,7 +229,14 @@ mod tests {
 
     use super::*;
     use crate::{
-        dialects::{builtin::*, test::*},
+        attributes::IntegerLikeAttr,
+        dialects::{
+            builtin::{
+                attributes::{AbiParam, Signature},
+                *,
+            },
+            test::*,
+        },
         patterns::*,
         *,
     };
@@ -274,8 +281,10 @@ mod tests {
                 );
                 let op = op.borrow();
                 let shift = op.shift().as_operand_ref();
-                let matched = matchers::foldable_operand_of::<Immediate>().matches(&shift);
+                let matched =
+                    matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>().matches(&shift);
                 matched.and_then(|imm| {
+                    let imm = imm.borrow().as_immediate();
                     log::trace!("`shift` operand is an immediate: {imm}");
                     let imm = imm.as_u64();
                     if imm.is_none() {

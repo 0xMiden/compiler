@@ -3,7 +3,8 @@
 use miden_core::{Felt, FieldElement};
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_hir::{
-    AbiParam, Builder, CallConv, FunctionType, Signature, SourceSpan, Type, ValueRef, Visibility,
+    Builder, CallConv, FunctionType, SourceSpan, Type, ValueRef, Visibility,
+    dialects::builtin::attributes::{AbiParam, Signature},
 };
 use midenc_session::DiagnosticsHandler;
 

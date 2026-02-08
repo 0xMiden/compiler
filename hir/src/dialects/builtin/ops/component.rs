@@ -4,16 +4,18 @@ pub use self::interface::{
     ComponentExport, ComponentId, ComponentInterface, ModuleExport, ModuleInterface,
 };
 use crate::{
-    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    IdentAttr, Op, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    SymbolManagerMut, SymbolMap, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef,
+    Usable, Visibility,
     derive::operation,
-    dialects::builtin::BuiltinDialect,
+    dialects::builtin::{BuiltinDialect, attributes::VisibilityAttr},
+    interner,
+    print::AsmPrinter,
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
     },
-    version::Version,
+    version::VersionAttr,
 };
 
 pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
@@ -74,14 +76,14 @@ pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
 )]
 pub struct Component {
     #[attr]
-    namespace: Ident,
+    namespace: IdentAttr,
     #[attr]
-    name: Ident,
+    name: IdentAttr,
     #[attr]
-    version: Version,
+    version: VersionAttr,
     #[attr]
     #[default]
-    visibility: Visibility,
+    visibility: VisibilityAttr,
     #[region]
     body: RegionRef,
     #[default]
@@ -91,16 +93,13 @@ pub struct Component {
 }
 
 impl OpPrinter for Component {
-    fn print(
-        &self,
-        flags: &crate::OpPrintingFlags,
-        _context: &crate::Context,
-    ) -> crate::formatter::Document {
-        use crate::formatter::*;
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use alloc::string::ToString;
 
-        let header = display(self.op.name()) + const_text(" ") + display(self.id());
-        let body = crate::print::render_regions(&self.op, flags);
-        header + body
+        printer.print_keyword(self.get_visibility().as_str());
+        printer.print_space();
+        printer.print_symbol_name(interner::Symbol::intern(self.id().to_string()));
+        printer.print_region(&self.body());
     }
 }
 
@@ -119,9 +118,11 @@ impl midenc_session::Emit for Component {
         _mode: midenc_session::OutputMode,
         _session: &midenc_session::Session,
     ) -> anyhow::Result<()> {
+        use crate::OpPrinter;
         let flags = crate::OpPrintingFlags::default();
-        let document = <Component as OpPrinter>::print(self, &flags, self.op.context());
-        writer.write_fmt(format_args!("{document}"))
+        let mut printer = AsmPrinter::new(self.as_operation().context_rc(), &flags);
+        <Self as OpPrinter>::print(self, &mut printer);
+        writer.write_fmt(format_args!("{}", printer.finish()))
     }
 }
 
@@ -157,16 +158,16 @@ impl Symbol for Component {
         &mut self.op
     }
 
-    fn name(&self) -> SymbolName {
+    fn name(&self) -> interner::Symbol {
         let id = ComponentId {
-            namespace: self.namespace().as_symbol(),
-            name: Component::name(self).as_symbol(),
-            version: self.version().clone(),
+            namespace: self.get_namespace().as_symbol(),
+            name: self.get_name().as_symbol(),
+            version: self.get_version().clone(),
         };
-        SymbolName::intern(id)
+        interner::Symbol::intern(id)
     }
 
-    fn set_name(&mut self, name: SymbolName) {
+    fn set_name(&mut self, name: interner::Symbol) {
         let ComponentId {
             name,
             namespace,
@@ -174,15 +175,15 @@ impl Symbol for Component {
         } = name.as_str().parse::<ComponentId>().expect("invalid component identifier");
         self.name_mut().name = name;
         self.namespace_mut().name = namespace;
-        *self.version_mut() = version;
+        *self.get_version_mut() = version;
     }
 
     fn visibility(&self) -> Visibility {
-        *Component::visibility(self)
+        *self.get_visibility()
     }
 
     fn set_visibility(&mut self, visibility: Visibility) {
-        *self.visibility_mut() = visibility;
+        *self.get_visibility_mut() = visibility;
     }
 }
 
@@ -206,21 +207,15 @@ impl SymbolTable for Component {
     }
 
     #[inline]
-    fn get(&self, name: SymbolName) -> Option<SymbolRef> {
+    fn get(&self, name: interner::Symbol) -> Option<SymbolRef> {
         self.symbols.get(name)
     }
 }
 
 impl Component {
+    #[inline]
     pub fn id(&self) -> ComponentId {
-        let namespace = self.namespace().as_symbol();
-        let name = self.name().as_symbol();
-        let version = self.version().clone();
-        ComponentId {
-            namespace,
-            name,
-            version,
-        }
+        ComponentId::from(self)
     }
 
     #[inline(always)]

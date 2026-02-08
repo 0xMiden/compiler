@@ -1,7 +1,7 @@
-use alloc::{boxed::Box, collections::VecDeque, vec::Vec};
+use alloc::{collections::VecDeque, vec::Vec};
 
 use midenc_hir::{
-    AttributeValue, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
+    AttributeRef, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
     OperationRef, ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorOperands,
     TraceTarget, Value, ValueOrAlias, ValueRange, ValueRef,
@@ -1089,9 +1089,8 @@ impl SpillAnalysis {
 
         // Compute the constant values for operands of `branch`, in case it allows us to elide
         // a subset of successor regions.
-        let mut operands = SmallVec::<[Option<Box<dyn AttributeValue>>; 4]>::with_capacity(
-            branch.operands().group(0).len(),
-        );
+        let mut operands =
+            SmallVec::<[Option<AttributeRef>; 4]>::with_capacity(branch.operands().group(0).len());
         for operand in branch.operands().group(0).iter() {
             let value = operand.borrow().as_value_ref();
             let constant_prop_lattice = liveness.solver().get::<Lattice<ConstantValue>, _>(&value);
@@ -2456,9 +2455,8 @@ impl SpillAnalysis {
         if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
             log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  op is a control flow branch, attempting to resolve a single successor");
             // Try to determine if we can select a single successor here
-            let mut operands = SmallVec::<[Option<Box<dyn AttributeValue>>; 4]>::with_capacity(
-                op.operands().group(0).len(),
-            );
+            let mut operands =
+                SmallVec::<[Option<AttributeRef>; 4]>::with_capacity(op.operands().group(0).len());
             for operand in op.operands().group(0).iter() {
                 let value = operand.borrow().as_value_ref();
                 let constant_prop_lattice =

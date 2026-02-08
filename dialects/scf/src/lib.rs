@@ -12,15 +12,13 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
-use alloc::boxed::Box;
-
 mod builders;
 mod canonicalization;
 mod ops;
 pub mod transforms;
 
 use midenc_hir::{
-    AttributeValue, Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan,
+    AttributeRef, Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan,
     Type,
 };
 
@@ -47,7 +45,7 @@ impl Dialect for ScfDialect {
     fn materialize_constant(
         &self,
         _builder: &mut dyn Builder,
-        _attr: Box<dyn AttributeValue>,
+        _attr: AttributeRef,
         _ty: &Type,
         _span: SourceSpan,
     ) -> Option<OperationRef> {

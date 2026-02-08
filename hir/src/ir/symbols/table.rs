@@ -1,9 +1,9 @@
-use super::{
-    Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolPathAttr, SymbolRef,
-    generate_symbol_name,
-};
+use smallvec::SmallVec;
+
+use super::{Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, generate_symbol_name};
 use crate::{
     FxHashMap, Op, Operation, OperationRef, ProgramPoint, Report, UnsafeIntrusiveEntityRef,
+    dialects::builtin::attributes::SymbolRefAttr,
     traits::{GraphRegionNoTerminator, NoTerminator, Terminator},
 };
 
@@ -227,6 +227,15 @@ impl SymbolMap {
         } else {
             self.resolve_components(components)
         }
+    }
+
+    pub fn resolve_all_in(
+        &self,
+        _symbol_table: &Operation,
+        _attr: &SymbolPath,
+        _nested_references: &mut SmallVec<[OperationRef; 4]>,
+    ) -> Option<OperationRef> {
+        todo!()
     }
 
     fn resolve_components(
@@ -686,23 +695,19 @@ impl<'a> SymbolManagerMut<'a> {
     ///
     /// NOTE: This is not the same as replacing uses of one symbol with another, this used while
     /// renaming the symbol name of `op`, while preserving its uses.
-    pub fn replace_all_symbol_uses(
-        &mut self,
-        mut op: SymbolRef,
-        to: SymbolName,
-    ) -> Result<(), Report> {
+    pub fn replace_all_symbol_uses(&mut self, op: SymbolRef, to: SymbolName) -> Result<(), Report> {
         // Visit all users of `symbol`, and rewrite the name used with `to`
-        let mut symbol = op.borrow_mut();
-        let mut users = symbol.uses_mut().front_mut();
-        while let Some(mut user) = users.as_pointer() {
+        let symbol = op.borrow();
+        let mut users = symbol.uses().front();
+        while let Some(user) = users.as_pointer() {
             users.move_next();
 
-            let mut user = user.borrow_mut();
-            let mut user_op = user.owner.borrow_mut();
-            let symbol_name_attr = user_op
-                .get_typed_attribute_mut::<SymbolPathAttr>(user.attr)
+            let user = user.borrow();
+            let user_op = user.owner.borrow();
+            let mut symbol_name_attr = user_op
+                .get_typed_attribute::<SymbolRefAttr>(user.attr)
                 .expect("invalid symbol use");
-            symbol_name_attr.path.set_name(to);
+            symbol_name_attr.borrow_mut().path.set_name(to);
         }
 
         Ok(())

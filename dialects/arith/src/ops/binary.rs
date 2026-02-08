@@ -1,6 +1,8 @@
 use alloc::rc::Rc;
 
-use midenc_hir::{derive::operation, effects::*, traits::*, *};
+use midenc_hir::{
+    derive::operation, dialects::builtin::attributes::OverflowAttr, effects::*, traits::*, *,
+};
 
 use crate::ArithDialect;
 
@@ -67,7 +69,7 @@ pub struct Add {
     #[result]
     result: AnyInteger,
     #[attr]
-    overflow: Overflow,
+    overflow: OverflowAttr,
 }
 
 infer_return_ty_for_binary_op!(Add);
@@ -107,7 +109,7 @@ pub struct Sub {
     #[result]
     result: AnyInteger,
     #[attr]
-    overflow: Overflow,
+    overflow: OverflowAttr,
 }
 
 infer_return_ty_for_binary_op!(Sub);
@@ -147,7 +149,7 @@ pub struct Mul {
     #[result]
     result: AnyInteger,
     #[attr]
-    overflow: Overflow,
+    overflow: OverflowAttr,
 }
 
 infer_return_ty_for_binary_op!(Mul);

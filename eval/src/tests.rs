@@ -5,9 +5,12 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
-    AbiParam, Builder, Context, Ident, Op, OpBuilder, ProgramPoint, Report, Signature, SourceSpan,
-    SymbolTable, Type, ValueRef,
-    dialects::builtin::{BuiltinOpBuilder, FunctionBuilder},
+    Builder, Context, Ident, Op, OpBuilder, ProgramPoint, Report, SourceSpan, SymbolTable, Type,
+    ValueRef,
+    dialects::builtin::{
+        BuiltinOpBuilder, FunctionBuilder,
+        attributes::{AbiParam, Signature},
+    },
 };
 
 use crate::*;
@@ -35,7 +38,7 @@ fn eval_test() -> Result<(), Report> {
     let mut builder = OpBuilder::new(test_context.context.clone());
 
     let op = {
-        let block = builder.context().create_block_with_params([Type::I1]);
+        let block = builder.context_rc().create_block_with_params([Type::I1]);
         let cond = block.borrow().arguments()[0] as ValueRef;
         let conditional = builder.r#if(cond, &[Type::U32], SourceSpan::default())?;
 

@@ -1,8 +1,10 @@
 use alloc::collections::VecDeque;
 use core::fmt;
 
-use super::SymbolPathAttr;
-use crate::{Entity, EntityListItem, EntityRef, OperationRef, UnsafeIntrusiveEntityRef};
+use crate::{
+    Entity, EntityListItem, OperationRef, UnsafeIntrusiveEntityRef,
+    dialects::builtin::attributes::SymbolRefAttr,
+};
 
 pub type SymbolUseRef = UnsafeIntrusiveEntityRef<SymbolUse>;
 pub type SymbolUseList = crate::EntityList<SymbolUse>;
@@ -27,16 +29,18 @@ impl SymbolUse {
         }
     }
 
-    pub fn symbol(&self) -> EntityRef<'_, SymbolPathAttr> {
-        EntityRef::map(self.owner.borrow(), |owner| {
-            owner.get_typed_attribute::<SymbolPathAttr>(self.attr).expect("expected symbol")
-        })
+    pub fn symbol(&self) -> UnsafeIntrusiveEntityRef<SymbolRefAttr> {
+        self.owner
+            .borrow()
+            .get_typed_attribute::<SymbolRefAttr>(self.attr)
+            .expect("expected symbol")
     }
 }
 impl fmt::Debug for SymbolUse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let op = self.owner.borrow();
-        let value = op.get_typed_attribute::<SymbolPathAttr>(self.attr);
+        let value = op.get_typed_attribute::<SymbolRefAttr>(self.attr);
+        let value = value.as_ref().map(|v| v.borrow());
         f.debug_struct("SymbolUse")
             .field("attr", &self.attr)
             .field("symbol", &value.as_ref().map(|value| &value.path))

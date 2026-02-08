@@ -1,11 +1,8 @@
-use alloc::{boxed::Box, sync::Arc};
+use alloc::sync::Arc;
 
 use midenc_hir::{
-    constants::{ConstantData, ConstantId},
-    derive::operation,
-    effects::MemoryEffectOpInterface,
-    traits::*,
-    *,
+    constants::ConstantData, derive::operation, dialects::builtin::attributes::BytesAttr,
+    effects::MemoryEffectOpInterface, traits::*, *,
 };
 
 use crate::{HirDialect, PointerAttr};
@@ -39,14 +36,14 @@ impl InferTypeOpInterface for ConstantPointer {
 impl Foldable for ConstantPointer {
     #[inline]
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        results.push(OpFoldResult::Attribute(self.get_attribute("value").unwrap().clone_value()));
+        results.push(OpFoldResult::Attribute(self.value));
         FoldResult::Ok(())
     }
 
     #[inline(always)]
     fn fold_with(
         &self,
-        _operands: &[Option<Box<dyn AttributeValue>>],
+        _operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
         self.fold(results)
@@ -67,7 +64,7 @@ impl Foldable for ConstantPointer {
 )]
 pub struct ConstantBytes {
     #[attr(hidden)]
-    id: ConstantId,
+    bytes: BytesAttr,
     #[result]
     result: AnyArrayOf<UInt8>,
 }
@@ -86,14 +83,14 @@ impl InferTypeOpInterface for ConstantBytes {
 impl Foldable for ConstantBytes {
     #[inline]
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        results.push(OpFoldResult::Attribute(self.get_attribute("id").unwrap().clone_value()));
+        results.push(OpFoldResult::Attribute(self.bytes));
         FoldResult::Ok(())
     }
 
     #[inline(always)]
     fn fold_with(
         &self,
-        _operands: &[Option<Box<dyn AttributeValue>>],
+        _operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
         self.fold(results)
@@ -102,10 +99,10 @@ impl Foldable for ConstantBytes {
 
 impl ConstantBytes {
     pub fn size_in_bytes(&self) -> usize {
-        self.as_operation().context().get_constant_size_in_bytes(*self.id())
+        self.get_bytes().len()
     }
 
     pub fn value(&self) -> Arc<ConstantData> {
-        self.as_operation().context().get_constant(*self.id())
+        self.get_bytes().clone()
     }
 }

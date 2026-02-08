@@ -971,11 +971,7 @@ fn translate_br_table<B: ?Sized + Builder>(
             frame.br_destination()
         };
         let args = state.peekn_mut(argc).to_vec();
-        let case = SwitchCase {
-            value: label_idx as u32,
-            successor: block,
-            arguments: args,
-        };
+        let case = SwitchCase::create(label_idx as u32, block, args);
         cases.push(case);
     }
 

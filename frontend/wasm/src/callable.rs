@@ -1,4 +1,8 @@
-use midenc_hir::{Signature, SymbolPath, dialects::builtin::FunctionRef, interner::Symbol};
+use midenc_hir::{
+    SymbolPath,
+    dialects::builtin::{FunctionRef, attributes::Signature},
+    interner::Symbol,
+};
 
 use crate::intrinsics::Intrinsic;
 

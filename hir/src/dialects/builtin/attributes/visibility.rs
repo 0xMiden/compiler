@@ -1,9 +1,12 @@
 use core::{fmt, str::FromStr};
 
-use crate::define_attr_type;
+use crate::{
+    AttrPrinter, derive::DialectAttribute, dialects::builtin::BuiltinDialect, print::AsmPrinter,
+};
 
 /// The types of visibility that a [Symbol] may have
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(DialectAttribute, Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
 #[repr(u8)]
 pub enum Visibility {
     /// The symbol is public and may be referenced anywhere internal or external to the visible
@@ -28,7 +31,13 @@ pub enum Visibility {
     /// in other symbol tables in addition to the current one.
     Internal,
 }
-define_attr_type!(Visibility);
+
+impl AttrPrinter for VisibilityAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_keyword(self.value.as_str());
+    }
+}
+
 impl Visibility {
     #[inline]
     pub fn is_public(&self) -> bool {
@@ -44,7 +53,23 @@ impl Visibility {
     pub fn is_internal(&self) -> bool {
         matches!(self, Self::Internal)
     }
+
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Private => "private",
+            Self::Internal => "internal",
+        }
+    }
 }
+
+impl AsRef<str> for Visibility {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl crate::formatter::PrettyPrint for Visibility {
     fn render(&self) -> crate::formatter::Document {
         use crate::formatter::*;
@@ -55,15 +80,13 @@ impl crate::formatter::PrettyPrint for Visibility {
         }
     }
 }
+
 impl fmt::Display for Visibility {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Public => f.write_str("public"),
-            Self::Private => f.write_str("private"),
-            Self::Internal => f.write_str("internal"),
-        }
+        f.write_str(self.as_ref())
     }
 }
+
 impl FromStr for Visibility {
     type Err = ();
 

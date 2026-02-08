@@ -1,6 +1,9 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::rc::Rc;
 
-use midenc_hir::{derive::operation, effects::*, patterns::RewritePatternSet, traits::*, *};
+use midenc_hir::{
+    derive::operation, dialects::builtin::attributes::ArrayAttr, effects::*,
+    patterns::RewritePatternSet, print::AsmPrinter, traits::*, *,
+};
 
 use crate::ScfDialect;
 
@@ -30,7 +33,8 @@ pub struct If {
 }
 
 impl OpPrinter for If {
-    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+    fn print(&self, _printer: &mut AsmPrinter<'_>) {
+        /*
         use formatter::*;
 
         let result_types = print::render_operation_result_types(self.as_operation());
@@ -51,6 +55,8 @@ impl OpPrinter for If {
             then_body + const_text(" else ") + self.else_body().print(flags) + const_text(";")
         };
         header + body
+         */
+        todo!()
     }
 }
 
@@ -87,9 +93,9 @@ impl Canonicalizable for If {
 impl RegionBranchOpInterface for If {
     fn get_entry_successor_regions(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> RegionSuccessorIter<'_> {
-        let condition = operands[0].as_deref().and_then(|v| v.as_bool());
+        let condition = operands[0].as_ref().and_then(|v| v.borrow().as_bool());
         let has_then = condition.is_none_or(|v| v);
         let else_possible = condition.is_none_or(|v| !v);
         let has_else = else_possible && !self.else_body().is_empty();
@@ -139,9 +145,9 @@ impl RegionBranchOpInterface for If {
 
     fn get_region_invocation_bounds(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> SmallVec<[InvocationBounds; 1]> {
-        let condition = operands[0].as_deref().and_then(|v| v.as_bool());
+        let condition = operands[0].as_ref().and_then(|v| v.borrow().as_bool());
 
         if let Some(condition) = condition {
             if condition {
@@ -193,7 +199,8 @@ pub struct While {
 }
 
 impl OpPrinter for While {
-    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+    fn print(&self, _printer: &mut AsmPrinter<'_>) {
+        /*
         use formatter::*;
 
         let result_types = print::render_operation_result_types(self.as_operation());
@@ -206,6 +213,8 @@ impl OpPrinter for While {
             + self.after().print(flags)
             + const_text(";");
         header + body
+         */
+        todo!()
     }
 }
 
@@ -334,7 +343,7 @@ impl RegionBranchOpInterface for While {
     #[inline]
     fn get_region_invocation_bounds(
         &self,
-        _operands: &[Option<Box<dyn AttributeValue>>],
+        _operands: &[Option<AttributeRef>],
     ) -> SmallVec<[InvocationBounds; 1]> {
         smallvec![InvocationBounds::Unknown; self.num_regions()]
     }
@@ -391,7 +400,8 @@ pub struct IndexSwitch {
 }
 
 impl OpPrinter for IndexSwitch {
-    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+    fn print(&self, _printer: &mut AsmPrinter<'_>) {
+        /*
         use formatter::*;
 
         let result_types = print::render_operation_result_types(self.as_operation());
@@ -418,6 +428,8 @@ impl OpPrinter for IndexSwitch {
         let fallback =
             nl() + const_text("default ") + self.default_region().print(flags) + const_text(";");
         header + cases + fallback
+         */
+        todo!()
     }
 }
 
@@ -464,9 +476,9 @@ impl IndexSwitch {
 impl RegionBranchOpInterface for IndexSwitch {
     fn get_entry_successor_regions(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> RegionSuccessorIter<'_> {
-        let selector = operands[0].as_deref().and_then(|v| v.as_u32());
+        let selector = operands[0].as_ref().and_then(|v| v.borrow().as_u32());
         let selected = selector.map(|s| self.get_case_index_for_selector(s));
 
         match selected {
@@ -515,9 +527,9 @@ impl RegionBranchOpInterface for IndexSwitch {
 
     fn get_region_invocation_bounds(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> SmallVec<[InvocationBounds; 1]> {
-        let selector = operands[0].as_deref().and_then(|v| v.as_u32());
+        let selector = operands[0].as_ref().and_then(|v| v.borrow().as_u32());
 
         if let Some(selector) = selector {
             let mut bounds = smallvec![InvocationBounds::Never; self.num_cases()];
@@ -585,7 +597,7 @@ impl RegionBranchTerminatorOpInterface for Condition {
 
     fn get_successor_regions(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> SmallVec<[RegionSuccessorInfo; 2]> {
         // A [While] loop has two regions: `before` (containing this op), and `after`, which this
         // op branches to when the condition is true. If the condition is false, control is
@@ -594,7 +606,7 @@ impl RegionBranchTerminatorOpInterface for Condition {
         //
         // We can return a single statically-known region if we were given a constant condition
         // value, otherwise we must return both possible regions.
-        let cond = operands[0].as_deref().and_then(|v| v.as_bool());
+        let cond = operands[0].as_ref().and_then(|v| v.borrow().as_bool());
         let mut regions = SmallVec::<[RegionSuccessorInfo; 2]>::default();
 
         let parent_op = self.parent_op().unwrap();
@@ -668,7 +680,7 @@ impl RegionBranchTerminatorOpInterface for Yield {
 
     fn get_successor_regions(
         &self,
-        _operands: &[Option<Box<dyn AttributeValue>>],
+        _operands: &[Option<AttributeRef>],
     ) -> SmallVec<[RegionSuccessorInfo; 2]> {
         // Depending on the type of operation containing this yield, the set of successor regions
         // is always known.

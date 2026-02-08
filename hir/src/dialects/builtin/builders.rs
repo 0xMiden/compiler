@@ -4,9 +4,9 @@ mod module;
 mod world;
 
 pub use self::{component::*, function::*, module::*, world::*};
-use super::ops::*;
+use super::{attributes::Signature, ops::*};
 use crate::{
-    Builder, BuilderExt, Ident, Immediate, OpBuilder, Report, Signature, SourceSpan, Spanned, Type,
+    Builder, BuilderExt, Ident, Immediate, OpBuilder, Report, SourceSpan, Spanned, Type,
     UnsafeIntrusiveEntityRef, ValueRef, Visibility, constants::ConstantData,
 };
 
@@ -47,7 +47,8 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
         readonly: bool,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<Segment>, Report> {
-        let data = self.builder().context().create_constant(data);
+        let id = self.builder().context().create_constant(data);
+        let data = self.builder().context().get_constant(id);
         let op_builder = self.builder_mut().create::<Segment, (_, _, _)>(span);
         op_builder(offset, data, readonly)
     }

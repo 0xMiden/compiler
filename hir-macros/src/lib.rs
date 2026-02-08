@@ -2,11 +2,14 @@
 
 extern crate proc_macro;
 
+mod dialect;
 mod operation;
 mod spanned;
+#[cfg(test)]
+mod tests;
 
 use inflector::cases::kebabcase::to_kebab_case;
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::{Data, DeriveInput, Error, Ident, Token, parse_macro_input, spanned::Spanned};
 
 #[proc_macro_derive(Spanned, attributes(span))]
@@ -25,6 +28,18 @@ pub fn derive_spanned(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     match result {
         Ok(ts) => ts,
         Err(err) => err.into_compile_error().into(),
+    }
+}
+
+#[proc_macro_derive(DialectAttribute, attributes(attribute))]
+pub fn derive_dialect_attribute(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    // Parse into syntax tree
+    let derive = parse_macro_input!(input as DeriveInput);
+    // Structure name
+    let result = dialect::derive_attribute(&derive);
+    match result {
+        Ok(ts) => proc_macro::TokenStream::from(ts.into_token_stream()),
+        Err(err) => err.write_errors().into(),
     }
 }
 

@@ -9,9 +9,12 @@ use std::cell::RefCell;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
-    AbiParam, FunctionType, Op, Signature, SmallVec, SymbolPath, ValueRef,
+    FunctionType, Op, SmallVec, SymbolPath, ValueRef,
     diagnostics::WrapErr,
-    dialects::builtin::{BuiltinOpBuilder, FunctionRef, ModuleBuilder},
+    dialects::builtin::{
+        BuiltinOpBuilder, FunctionRef, ModuleBuilder,
+        attributes::{AbiParam, Signature},
+    },
 };
 use wasmparser::{FunctionBody, Operator};
 
@@ -84,7 +87,7 @@ pub fn maybe_lower_linker_stub(
     // Classify intrinsics and obtain signature when needed
     let (import_sig, intrinsic): (Signature, Option<Intrinsic>) =
         match Intrinsic::try_from(&import_path) {
-            Ok(intr) => (function_ref.borrow().signature().clone(), Some(intr)),
+            Ok(intr) => (function_ref.borrow().get_signature().clone(), Some(intr)),
             Err(_) => {
                 let import_ft: FunctionType = miden_abi_function_type(&import_path);
                 (

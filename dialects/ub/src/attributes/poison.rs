@@ -1,29 +1,27 @@
-use alloc::boxed::Box;
+use midenc_hir::{
+    AttrPrinter, Felt, Immediate, Type, derive::DialectAttribute, formatter, print::AsmPrinter,
+};
 
-use midenc_hir::{AttributeValue, Felt, Immediate, Type, formatter};
+use crate::UndefinedBehaviorDialect;
 
 /// Represents the constant value of the 'hir.poison' operation
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PoisonAttr {
-    /// The value type that was poisoned
-    ty: Type,
+#[derive(DialectAttribute)]
+#[attribute(
+    dialect = UndefinedBehaviorDialect,
+    remote = "Type",
+    default = "poison_value",
+    implements(AttrPrinter)
+)]
+#[allow(unused)]
+struct Poison;
+
+const fn poison_value() -> Type {
+    Type::Unknown
 }
 
 impl PoisonAttr {
-    pub fn new(ty: Type) -> Self {
-        Self { ty }
-    }
-
-    pub fn ty(&self) -> &Type {
-        &self.ty
-    }
-
-    pub fn into_type(self) -> Type {
-        self.ty
-    }
-
-    pub fn as_immediate(&self) -> Result<Immediate, Type> {
-        Ok(match &self.ty {
+    pub fn as_immediate(&self) -> Option<Immediate> {
+        Some(match &self.value {
             Type::I1 => Immediate::I1(false),
             Type::U8 => Immediate::U8(0xde),
             Type::I8 => Immediate::I8(0xdeu8 as i8),
@@ -38,7 +36,7 @@ impl PoisonAttr {
             Type::I128 => Immediate::I128(0xdeadc0dedeadc0dedeadc0dedeadc0deu128 as i128),
             // We emit a pointer that can never refer to a valid object in memory
             Type::Ptr(_) => Immediate::U32(u32::MAX),
-            ty => return Err(ty.clone()),
+            _ty => return None,
         })
     }
 }
@@ -47,20 +45,12 @@ impl formatter::PrettyPrint for PoisonAttr {
     fn render(&self) -> formatter::Document {
         use formatter::*;
 
-        display(&self.ty)
+        display(&self.value)
     }
 }
 
-impl AttributeValue for PoisonAttr {
-    fn as_any(&self) -> &dyn core::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn core::any::Any {
-        self
-    }
-
-    fn clone_value(&self) -> Box<dyn AttributeValue> {
-        Box::new(self.clone())
+impl AttrPrinter for PoisonAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_type(&self.value);
     }
 }

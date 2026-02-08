@@ -511,8 +511,11 @@ mod tests {
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        AbiParam, Context, Ident, OpBuilder, Signature, TraceTarget, Type,
-        dialects::builtin::{self, BuiltinOpBuilder, FunctionBuilder, FunctionRef},
+        Context, Ident, OpBuilder, TraceTarget, Type,
+        dialects::builtin::{
+            self, BuiltinOpBuilder, FunctionBuilder, FunctionRef,
+            attributes::{AbiParam, Signature},
+        },
         formatter::PrettyPrint,
         pass::AnalysisManager,
         version::Version,
@@ -580,7 +583,7 @@ mod tests {
             version: Version::new(1, 0, 0),
         });
 
-        let mut stack = OperandStack::default();
+        let mut stack = OperandStack::new(context.clone());
         stack.push(b);
         stack.push(a);
 
@@ -681,7 +684,7 @@ mod tests {
             version: Version::new(1, 0, 0),
         });
 
-        let mut stack = OperandStack::default();
+        let mut stack = OperandStack::new(context.clone());
         stack.push(b);
         stack.push(a);
 
@@ -901,7 +904,7 @@ mod tests {
             version: Version::new(1, 0, 0),
         });
 
-        let mut stack = OperandStack::default();
+        let mut stack = OperandStack::new(context.clone());
         stack.push(b);
         stack.push(a);
 

@@ -1,6 +1,8 @@
 use core::fmt;
 
-use crate::define_attr_type;
+use crate::{
+    AttrPrinter, derive::DialectAttribute, dialects::builtin::BuiltinDialect, print::AsmPrinter,
+};
 
 /// This enumeration represents the various ways in which arithmetic operations
 /// can be configured to behave when either the operands or results over/underflow
@@ -9,7 +11,8 @@ use crate::define_attr_type;
 /// Always check the documentation of the specific instruction involved to see if there
 /// are any specific differences in how this enum is interpreted compared to the default
 /// meaning of each variant.
-#[derive(Copy, Clone, Default, Debug, PartialEq, Eq, Hash)]
+#[derive(DialectAttribute, Copy, Clone, Default, Debug, PartialEq, Eq, Hash)]
+#[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
 pub enum Overflow {
     /// Typically, this means the operation is performed using the equivalent field element
     /// operation, rather than a dedicated operation for the given type. Because of this, the
@@ -30,6 +33,13 @@ pub enum Overflow {
     /// operation over/underflowed; either 1 if over/underflow occurred, or 0 otherwise.
     Overflowing,
 }
+
+impl AttrPrinter for OverflowAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_keyword(self.value.as_str());
+    }
+}
+
 impl Overflow {
     /// Returns true if overflow is unchecked
     pub fn is_unchecked(&self) -> bool {
@@ -45,22 +55,33 @@ impl Overflow {
     pub fn is_overflowing(&self) -> bool {
         matches!(self, Self::Overflowing)
     }
-}
-impl fmt::Display for Overflow {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::Unchecked => f.write_str("unchecked"),
-            Self::Checked => f.write_str("checked"),
-            Self::Wrapping => f.write_str("wrapping"),
-            Self::Overflowing => f.write_str("overflow"),
+            Self::Unchecked => "unchecked",
+            Self::Checked => "checked",
+            Self::Wrapping => "wrapping",
+            Self::Overflowing => "overflow",
         }
     }
 }
+
+impl AsRef<str> for Overflow {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for Overflow {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_ref())
+    }
+}
+
 impl crate::formatter::PrettyPrint for Overflow {
     fn render(&self) -> crate::formatter::Document {
         use crate::formatter::*;
         display(self)
     }
 }
-
-define_attr_type!(Overflow);

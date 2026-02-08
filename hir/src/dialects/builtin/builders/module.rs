@@ -1,11 +1,11 @@
 use super::BuiltinOpBuilder;
 use crate::{
-    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, SymbolName, SymbolTable,
-    Type, UnsafeIntrusiveEntityRef, Visibility,
+    Builder, Ident, Op, OpBuilder, Report, SourceSpan, Spanned, SymbolName, SymbolTable, Type,
+    UnsafeIntrusiveEntityRef, Visibility,
     constants::ConstantData,
     dialects::builtin::{
         Function, FunctionRef, GlobalVariable, GlobalVariableRef, Module, ModuleRef,
-        PrimModuleBuilder, Segment,
+        PrimModuleBuilder, Segment, attributes::Signature,
     },
 };
 
@@ -51,8 +51,7 @@ impl ModuleBuilder {
         name: Ident,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        let function_ref = self.builder.create_function(name, signature)?;
-        Ok(function_ref)
+        self.builder.create_function(name, signature)
     }
 
     /// Declare a new [GlobalVariable] in this module with the given name, visibility, and type.
@@ -100,7 +99,7 @@ impl ModuleBuilder {
                 let mut op = symbol_ref.borrow_mut();
                 match op.as_symbol_operation_mut().downcast_mut::<Function>() {
                     Some(function) => {
-                        function.signature_mut().visibility = visibility;
+                        function.get_signature_mut().visibility = visibility;
                     }
                     None => panic!("expected {name} to be a function"),
                 }

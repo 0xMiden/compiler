@@ -1,7 +1,9 @@
 use super::BuiltinOpBuilder;
 use crate::{
-    Builder, Ident, Op, OpBuilder, Report, Signature, SymbolName, SymbolPath, SymbolTable,
-    dialects::builtin::{ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef},
+    Builder, Ident, Op, OpBuilder, Report, SymbolName, SymbolPath, SymbolTable,
+    dialects::builtin::{
+        ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef, attributes::Signature,
+    },
 };
 
 pub struct ComponentBuilder {
@@ -56,7 +58,6 @@ impl ComponentBuilder {
         name: Ident,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        let function_ref = self.builder.create_function(name, signature)?;
-        Ok(function_ref)
+        self.builder.create_function(name, signature)
     }
 }
