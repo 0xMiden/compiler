@@ -1,8 +1,8 @@
 use super::*;
 
-/// Marker trait for ops with recursive memory effects, i.e. the effects of the operation includes
-/// the effects of operations nested within its regions. If the operation does not implement any
-/// effect markers, e.g. `MemoryWrite`, then it can be assumed to have no memory effects itself.
+/// Marker trait for ops with recursive memory effects.
+///
+/// See [HasRecursiveEffects] for more details on the semantics of recursive effects.
 pub trait HasRecursiveMemoryEffects {}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -26,6 +26,13 @@ pub enum MemoryEffect {
     /// An 'allocate' effect implies only de-allocation of the resource, and not any visible
     /// allocation, mutation or dereference.
     Free,
+}
+
+impl PartialEq<MemoryEffect> for &MemoryEffect {
+    #[inline]
+    fn eq(&self, other: &MemoryEffect) -> bool {
+        (**self).eq(other)
+    }
 }
 
 impl Effect for MemoryEffect {}
