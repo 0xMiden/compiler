@@ -266,6 +266,22 @@ impl Context {
         self.alloc(OpResult::new(span, id, ty, owner, index))
     }
 
+    /// Create a new [OpResult] named `name`, with the given type, owner, and index
+    ///
+    /// NOTE: This does not attach the result to the operation, it is expected that the caller will
+    /// do so.
+    pub fn make_named_result(
+        &self,
+        span: SourceSpan,
+        ty: Type,
+        owner: OperationRef,
+        name: interner::Symbol,
+        index: u8,
+    ) -> OpResultRef {
+        let id = ValueId::from_symbol(name).with_result_index(index);
+        self.alloc(OpResult::new(span, id, ty, owner, index))
+    }
+
     /// Appends `value` as an argument to the `branch_inst` instruction arguments list if the
     /// destination block of the `branch_inst` is `dest`.
     ///

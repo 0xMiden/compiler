@@ -23,29 +23,67 @@ pub type PostOrderBlockIter = cfg::PostOrderIter<BlockRef>;
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct BlockId(u32);
+
 impl BlockId {
+    const USER_DEFINED_TAG: u32 = 1u32 << 31;
+
+    /// Create a [BlockId] from a [Symbol](interner::Symbol) representing a user-defined name.
+    ///
+    /// This is used when parsing IR, so that we can preserve the user-provided names.
+    pub const fn from_symbol(sym: interner::Symbol) -> Self {
+        assert!(
+            sym.as_u32() & Self::USER_DEFINED_TAG == 0,
+            "cannot convert symbol id to block id: out of range"
+        );
+        Self(sym.as_u32())
+    }
+
+    pub const fn is_user_defined(self) -> bool {
+        self.0 & Self::USER_DEFINED_TAG == Self::USER_DEFINED_TAG
+    }
+
     pub const fn from_u32(id: u32) -> Self {
+        assert!(
+            id & Self::USER_DEFINED_TAG == 0,
+            "invalid block id: value must be less than 2^31"
+        );
         Self(id)
     }
 
     pub const fn as_u32(&self) -> u32 {
-        self.0
+        self.0 & !Self::USER_DEFINED_TAG
     }
 }
+
 impl EntityId for BlockId {
     #[inline(always)]
     fn as_usize(&self) -> usize {
         self.0 as usize
     }
 }
+
 impl fmt::Debug for BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "^block{}", &self.0)
+        if f.alternate() {
+            f.debug_struct("BlockId")
+                .field("is_user_defined", &self.is_user_defined())
+                .field("id", &self.as_u32())
+                .finish()
+        } else {
+            fmt::Display::fmt(self, f)
+        }
     }
 }
+
 impl fmt::Display for BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "^block{}", &self.0)
+        if self.is_user_defined() {
+            write!(f, "^{}", unsafe {
+                core::mem::transmute::<u32, interner::Symbol>(self.as_u32())
+            })
+        } else {
+            write!(f, "^block{}", self.as_u32())
+        }
     }
 }
 
