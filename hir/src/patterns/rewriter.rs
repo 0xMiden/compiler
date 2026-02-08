@@ -130,7 +130,7 @@ pub trait Rewriter: Builder + RewriterListener {
     }
 
     /// This method erases all operations in a block.
-    fn erase_block(&mut self, block: BlockRef) {
+    fn erase_block(&mut self, mut block: BlockRef) {
         assert!(!block.borrow().is_used(), "expected 'block' to be unused");
 
         let mut next_op = block.borrow().body().back().as_pointer();

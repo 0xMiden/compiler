@@ -139,11 +139,8 @@ impl RewritePattern for WhileUnusedResult {
             rewriter.r#while(inits, &new_result_types, span)?
         };
 
-        let new_after_block = rewriter.create_block(
-            new_while.borrow().after().as_region_ref(),
-            None,
-            &new_result_types,
-        );
+        let new_after_region = { new_while.borrow().after().as_region_ref() };
+        let new_after_block = new_after_region.borrow().entry_block_ref().unwrap();
 
         // Build new results list and new after block args (unused entries will be None)
         let num_results = while_op.num_results();
@@ -161,10 +158,19 @@ impl RewritePattern for WhileUnusedResult {
         }
 
         let before_region = while_op.before().as_region_ref();
-        let new_before_region = new_while.borrow().before().as_region_ref();
+        let (new_before_region, new_before_block) = {
+            let new_while = new_while.borrow();
+            (
+                new_while.before().as_region_ref(),
+                new_while.before().entry_block_ref().unwrap(),
+            )
+        };
         let after_block = while_op.after().entry_block_ref().unwrap();
+        drop(operation);
 
+        // Inline the old before region, but clear the new before region as we replacing it
         rewriter.inline_region_before(before_region, new_before_region);
+        rewriter.erase_block(new_before_block);
         rewriter.merge_blocks(after_block, new_after_block, &new_after_block_args);
         rewriter.replace_op_with_values(op, &new_results);
 
