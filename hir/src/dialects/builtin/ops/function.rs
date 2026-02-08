@@ -62,6 +62,12 @@ impl core::fmt::Debug for LocalVariable {
     }
 }
 
+impl core::fmt::Display for LocalVariable {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "lv{}", self.as_usize())
+    }
+}
+
 define_attr_type!(LocalVariable);
 
 impl AttrPrinter for LocalVariable {
@@ -247,6 +253,14 @@ impl Function {
         let id = self.locals.len();
         self.locals.push(ty);
         LocalVariable::new(self.as_function_ref(), id)
+    }
+
+    pub fn iter_locals(&self) -> impl Iterator<Item = (LocalVariable, &Type)> {
+        let func = self.as_function_ref();
+        self.locals
+            .iter()
+            .enumerate()
+            .map(move |(i, t)| (LocalVariable::new(func, i), t))
     }
 
     #[inline(always)]

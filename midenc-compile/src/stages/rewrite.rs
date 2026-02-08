@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use midenc_dialect_hir::transforms::TransformSpills;
+use midenc_dialect_hir::transforms::{Local2Reg, TransformSpills};
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_hir::{
     Op,
@@ -70,6 +70,7 @@ impl Stage for ApplyRewritesStage {
                 func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
                 func_pm.add_pass(Box::new(SinkOperandDefs));
                 //func_pm.add_pass(Box::new(ControlFlowSink));
+                func_pm.add_pass(Box::new(Local2Reg));
                 func_pm.add_pass(Box::new(TransformSpills));
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
@@ -87,6 +88,7 @@ impl Stage for ApplyRewritesStage {
                 func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
                 func_pm.add_pass(Box::new(SinkOperandDefs));
                 //func_pm.add_pass(Box::new(ControlFlowSink));
+                func_pm.add_pass(Box::new(Local2Reg));
                 func_pm.add_pass(Box::new(TransformSpills));
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
