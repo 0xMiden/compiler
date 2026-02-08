@@ -917,7 +917,7 @@ fn rewrite_spill_pseudo_instructions(
             log::trace!(
                 target: trace_target,
                 symbol = trace_target.relevant_symbol();
-                "convert reload to load {:?}",
+                "convert reload to load {}",
                 reload.place
             );
             builder.set_insertion_point_after(operation);
@@ -926,7 +926,7 @@ fn rewrite_spill_pseudo_instructions(
             log::trace!(
                 target: trace_target,
                 symbol = trace_target.relevant_symbol();
-                "erase unused reload {:?}",
+                "erase unused reload {}",
                 reload.value
             );
             builder.erase_op(operation);

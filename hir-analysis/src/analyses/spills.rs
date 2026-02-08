@@ -437,6 +437,15 @@ pub enum Placement {
     Split(Split),
 }
 
+impl core::fmt::Display for Placement {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::At(point) => core::fmt::Display::fmt(point, f),
+            Self::Split(split) => write!(f, "split({})", split.as_usize()),
+        }
+    }
+}
+
 /// The maximum number of operand stack slots which can be assigned without spills.
 const K: usize = 16;
 
