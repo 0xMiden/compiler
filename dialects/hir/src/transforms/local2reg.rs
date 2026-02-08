@@ -203,6 +203,7 @@ impl Pass for Local2Reg {
                 // remove the store, and replace the load with the stored value.
                 rewriter.erase_op(*store);
                 rewriter.replace_all_op_uses_with_values(load, &[Some(*stored_value)]);
+                rewriter.erase_op(load);
                 changed = PostPassStatus::Changed;
             } else if let Some(stores) = stored.get(&local) {
                 // We've found a local which is stored to, but never loaded - these stores are all
@@ -229,5 +230,412 @@ impl Pass for Local2Reg {
         state.set_post_pass_status(changed);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{boxed::Box, format, rc::Rc, string::ToString};
+
+    use litcheck_filecheck::filecheck;
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{
+        AbiParam, Context, Ident, OpBuilder, OpPrinter, Report, Signature, SourceSpan, Type,
+        ValueRef,
+        dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder, FunctionRef},
+        pass::PassManager,
+    };
+
+    use super::Local2Reg;
+    use crate::HirOpBuilder;
+
+    #[test]
+    fn promotes_redundant_load_store_pairs() {
+        let mut test = Test::new("promotes_redundant", &[Type::I32, Type::I32], &[Type::I32]);
+
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let local1 = builder.alloc_local(Type::I32);
+            let [v0, v1] = *builder.entry_block().borrow().arguments()[0..2].as_array().unwrap();
+            let v0 = v0 as ValueRef;
+            let v1 = v1 as ValueRef;
+            builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local1, v1, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.load_local(local1, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.add(v2, v3, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v4], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_local2reg(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @promotes_redundant(v0: i32, v1: i32) -> i32 {
+// CHECK-LABEL: ^block0
+^block0(v0: i32, v1: i32):
+    hir.store_local v0 #[local = lv0];
+    hir.store_local v1 #[local = lv1];
+    v2 = hir.load_local : i32 #[local = lv0];
+    v3 = hir.load_local : i32 #[local = lv1];
+    // CHECK-NEXT: [[V4:v\d+]] = arith.add v0, v1 : i32 #[overflow = checked];
+    v4 = arith.add v2, v3 : i32 #[overflow = checked]
+    // CHECK-NEXT: builtin.ret [[V4]];
+    builtin.ret v4;
+};
+            "#
+        );
+    }
+
+    #[test]
+    fn erases_dead_stores() {
+        let mut test = Test::new("erases_dead_stores", &[Type::I32], &[Type::I32]);
+
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v0], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_local2reg(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @erases_dead_stores(v0: i32) -> i32 {
+// CHECK-LABEL: ^block0
+^block0(v0: i32):
+    hir.store_local v0 #[local = lv0];
+    // CHECK-NEXT: builtin.ret v0;
+    builtin.ret v0;
+};
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_multiply_loaded_locals() {
+        let mut test = Test::new("ignores_multiple_loads", &[Type::I32, Type::I32], &[Type::I32]);
+
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let local1 = builder.alloc_local(Type::I32);
+            let [v0, v1] = *builder.entry_block().borrow().arguments()[0..2].as_array().unwrap();
+            let v0 = v0 as ValueRef;
+            let v1 = v1 as ValueRef;
+            builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local1, v1, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.load_local(local1, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.load_local(local1, SourceSpan::UNKNOWN).unwrap();
+            let v5 = builder.add(v2, v3, SourceSpan::UNKNOWN).unwrap();
+            let v6 = builder.add(v5, v4, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v6], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_local2reg(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        std::println!("output: {output}");
+        filecheck!(
+            output,
+            r#"
+builtin.function @ignores_multiple_loads(v0: i32, v1: i32) -> i32 {
+// CHECK-LABEL: ^block0
+^block0(v0: i32, v1: i32):
+    hir.store_local v0 #[local = lv0];
+    // CHECK-NEXT: hir.store_local v1 #[local = lv1]
+    hir.store_local v1 #[local = lv1];
+    v2 = hir.load_local #[local = lv0] : i32;
+    // CHECK-NEXT: [[V3:v\d+]] = hir.load_local  : i32 #[local = lv1];
+    // CHECK-NEXT: [[V4:v\d+]] = hir.load_local  : i32 #[local = lv1];
+    v3 = hir.load_local : i32 #[local = lv1];
+    v4 = hir.load_local : i32 #[local = lv1];
+    // CHECK-NEXT: [[V5:v\d+]] = arith.add v0, [[V3]] : i32 #[overflow = checked];
+    v5 = arith.add v2, v3 : i32 #[overflow = checked]
+    // CHECK-NEXT: [[V6:v\d+]] = arith.add [[V5]], [[V4]] : i32 #[overflow = checked];
+    v6 = arith.add v5, v4 : i32 #[overflow = checked]
+    // CHECK-NEXT: builtin.ret [[V6]];
+    builtin.ret v6;
+};
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_multiply_stored_locals() {
+        let mut test = Test::new("ignores_multiple_stores", &[Type::I32, Type::I32], &[Type::I32]);
+
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let local1 = builder.alloc_local(Type::I32);
+            let [v0, v1] = *builder.entry_block().borrow().arguments()[0..2].as_array().unwrap();
+            let v0 = v0 as ValueRef;
+            let v1 = v1 as ValueRef;
+            builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local1, v1, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.load_local(local1, SourceSpan::UNKNOWN).unwrap();
+            builder.store_local(local1, v1, SourceSpan::UNKNOWN).unwrap();
+            let v4 = builder.add(v2, v3, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v4], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_local2reg(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        std::println!("output: {output}");
+        filecheck!(
+            output,
+            r#"
+builtin.function @ignores_multiple_stores(v0: i32, v1: i32) -> i32 {
+// CHECK-LABEL: ^block0
+^block0(v0: i32, v1: i32):
+    hir.store_local v0 #[local = lv0];
+    // CHECK-NEXT: hir.store_local v1 #[local = lv1]
+    hir.store_local v1 #[local = lv1];
+    v2 = hir.load_local #[local = lv0] : i32;
+    // CHECK-NEXT: [[V3:v\d+]] = hir.load_local  : i32 #[local = lv1];
+    v3 = hir.load_local : i32 #[local = lv1];
+    // CHECK-NEXT: hir.store_local v1 #[local = lv1]
+    hir.store_local v1 #[local = lv1];
+    // CHECK-NEXT: [[V4:v\d+]] = arith.add v0, [[V3]] : i32 #[overflow = checked];
+    v4 = arith.add v2, v3 : i32 #[overflow = checked]
+    // CHECK-NEXT: builtin.ret [[V4]];
+    builtin.ret v4;
+};
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_poison_loads() {
+        let mut test = Test::new("ignores_poison_loads", &[Type::I32, Type::I32], &[Type::I32]);
+
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let v2 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.add(v0, v2, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v3], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_local2reg(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @ignores_poison_loads(v0: i32, v1: i32) -> i32 {
+// CHECK-LABEL: ^block0
+^block0(v0: i32, v1: i32):
+    // CHECK-NEXT: [[V2:v\d+]] = hir.load_local  : i32 #[local = lv0];
+    v2 = hir.load_local  : i32 #[local = lv0];
+    // CHECK-NEXT: [[V3:v\d+]] = arith.add v0, [[V2]] : i32 #[overflow = checked];
+    v3 = arith.add v0, v2 : i32 #[overflow = checked]
+    // CHECK-NEXT: builtin.ret [[V3]];
+    builtin.ret v3;
+};
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_across_blocks() {
+        use midenc_dialect_cf::ControlFlowOpBuilder;
+
+        let mut test = Test::new("ignores_inter_block_candidates", &[Type::I32], &[Type::I32]);
+
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+
+            let block1 = builder.create_block();
+            builder.br(block1, None, SourceSpan::UNKNOWN).unwrap();
+
+            builder.switch_to_block(block1);
+
+            let v1 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.add(v0, v1, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v2], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_local2reg(true).expect("invalid ir");
+
+        let output =
+            format!("{}", test.function().borrow().print(&Default::default(), &test.context));
+        filecheck!(
+            output,
+            r#"
+builtin.function @ignores_inter_block_candidates(v0: i32) -> i32 {
+// CHECK-LABEL: ^block0
+^block0(v0: i32):
+    // CHECK-NEXT: hir.store_local v0 #[local = lv0];
+    hir.store_local v0 #[local = lv0];
+    // CHECK-NEXT: cf.br ^block1;
+    cf.br ^block1
+// CHECK-LABEL: ^block1:
+^block1:
+    // CHECK-NEXT: [[V1:v\d+]] = hir.load_local  : i32 #[local = lv0];
+    v1 = hir.load_local : i32 #[local = lv0];
+    // CHECK-NEXT: [[V2:v\d+]] = arith.add v0, [[V1]] : i32 #[overflow = checked];
+    v2 = arith.add v0, v1 : i32 #[overflow = checked]
+    // CHECK-NEXT: builtin.ret [[V2]];
+    builtin.ret v2;
+};
+            "#
+        );
+    }
+
+    #[test]
+    fn does_not_promote_across_region_control_flow() {
+        use midenc_dialect_scf::StructuredControlFlowOpBuilder;
+        use midenc_hir::Op;
+
+        let mut test = Test::new("ignores_intervening_scf", &[Type::I32, Type::I1], &[Type::I32]);
+
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let [v0, v1] = *builder.entry_block().borrow().arguments()[0..2].as_array().unwrap();
+            let v0 = v0 as ValueRef;
+            let v1 = v1 as ValueRef;
+            builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+
+            let if_op = builder.r#if(v1, &[Type::I32], SourceSpan::UNKNOWN).unwrap();
+            let v2 = if_op.borrow().results()[0] as ValueRef;
+            let entry_block = builder.current_block();
+
+            {
+                let then_region = if_op.borrow().then_body().as_region_ref();
+                let then_block = builder.create_block_in_region(then_region);
+                builder.switch_to_block(then_block);
+                let v3 = builder.i32(1, SourceSpan::UNKNOWN);
+                builder.r#yield(Some(v3), SourceSpan::UNKNOWN).unwrap();
+
+                let else_region = if_op.borrow().else_body().as_region_ref();
+                let else_block = builder.create_block_in_region(else_region);
+                builder.switch_to_block(else_block);
+                let v4 = builder.i32(2, SourceSpan::UNKNOWN);
+                builder.r#yield(Some(v4), SourceSpan::UNKNOWN).unwrap();
+            }
+            builder.switch_to_block(entry_block);
+
+            let v5 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v6 = builder.add(v5, v2, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v6], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.run_local2reg(true).expect("invalid ir");
+
+        let output =
+            format!("{}", <Function as Op>::print(&test.function().borrow(), &Default::default()));
+        std::println!("output: {output}");
+        filecheck!(
+            output,
+            r#"
+builtin.function @ignores_intervening_scf(v0: i32, v1: i1) -> i32 {
+// CHECK-LABEL: ^block0
+^block0(v0: i32, v1: i1):
+    // CHECK-NEXT: hir.store_local v0 #[local = lv0];
+    hir.store_local v0 #[local = lv0];
+    // CHECK-NEXT: [[V2:v\d+]] = scf.if v1 : i32 {
+    // CHECK-NEXT: ^block{{\d+}}:
+    v2 = scf.if v1 : i32 {
+    ^block1:
+        // CHECK-NEXT: [[V3:v\d+]] = arith.constant 1 : i32;
+        v3 = arith.constant 1 : i32;
+        // CHECK-NEXT: scf.yield [[V3]];
+        scf.yield v3;
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: ^block2:
+    } else {
+    ^block2:
+        // CHECK-NEXT: [[V4:v\d+]] = arith.constant 2 : i32;
+        v4 = arith.constant 2 : i32;
+        // CHECK-NEXT: scf.yield [[V4]];
+        scf.yield v4;
+    // CHECK-NEXT: };
+    };
+    // CHECK-NEXT: [[V5:v\d+]] = hir.load_local  : i32 #[local = lv0];
+    v5 = hir.load_local : i32 #[local = lv0];
+    // CHECK-NEXT: [[V6:v\d+]] = arith.add [[V5]], [[V2]] : i32 #[overflow = checked];
+    v6 = arith.add v5, v2 : i32 #[overflow = checked];
+    // CHECK-NEXT: builtin.ret [[V6]];
+    builtin.ret v6;
+};
+            "#
+        );
+    }
+
+    fn enable_compiler_instrumentation() {
+        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+    }
+
+    struct Test {
+        context: Rc<Context>,
+        builder: OpBuilder,
+        function: FunctionRef,
+    }
+
+    impl Test {
+        pub fn new(name: &'static str, params: &[Type], results: &[Type]) -> Self {
+            enable_compiler_instrumentation();
+
+            let context = Rc::new(Context::default());
+            let mut builder = OpBuilder::new(context.clone());
+            let function = builder
+                .create_function(
+                    Ident::with_empty_span(name.into()),
+                    Signature::new(
+                        params.iter().cloned().map(AbiParam::new),
+                        results.iter().cloned().map(AbiParam::new),
+                    ),
+                )
+                .unwrap();
+
+            Self {
+                context,
+                builder,
+                function,
+            }
+        }
+
+        pub fn function(&self) -> FunctionRef {
+            self.function
+        }
+
+        pub fn function_builder(&mut self) -> FunctionBuilder<'_, OpBuilder> {
+            FunctionBuilder::new(self.function, &mut self.builder)
+        }
+
+        pub fn run_local2reg(&self, verify: bool) -> Result<(), Report> {
+            let mut pm = PassManager::on::<Function>(
+                self.context.clone(),
+                midenc_hir::pass::Nesting::Explicit,
+            );
+            pm.add_pass(Box::new(Local2Reg));
+            pm.enable_verifier(verify);
+            pm.run(self.function.as_operation_ref())
+        }
     }
 }

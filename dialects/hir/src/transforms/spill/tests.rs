@@ -1,5 +1,4 @@
-use alloc::{boxed::Box, rc::Rc, sync::Arc};
-use std::string::ToString;
+use alloc::{boxed::Box, format, rc::Rc, string::ToString, sync::Arc};
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
