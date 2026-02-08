@@ -86,7 +86,7 @@ pub trait StructuredControlFlowOpBuilder<'f, B: ?Sized + Builder> {
         // Create regions for all cases
         {
             for _ in 0..num_cases {
-                let region = self.builder().context().alloc_tracked(Region::default());
+                let region = self.builder().context().create_region();
                 owner.borrow_mut().regions_mut().push_back(region);
             }
         }

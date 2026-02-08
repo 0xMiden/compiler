@@ -165,6 +165,11 @@ impl Context {
         OpBuilder::new(Rc::clone(&self))
     }
 
+    /// Create a new, detached and empty [Region]
+    pub fn create_region(&self) -> RegionRef {
+        self.alloc_tracked(Region::default())
+    }
+
     /// Create a new, detached and empty [Block] with no parameters
     pub fn create_block(&self) -> BlockRef {
         let block = Block::new(self.alloc_block_id());
