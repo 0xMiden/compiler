@@ -40,8 +40,8 @@ struct MyFoo;
 
 impl foo::Guest for MyFoo {
     fn process_felt(input: Felt) -> Felt {
-        let res = input + Felt::from_u32(unsafe { FOO });
-        unsafe { FOO = res.as_u64() as u32 };
+        let res = input + Felt::new(unsafe { FOO } as u64);
+        unsafe { FOO = res.as_canonical_u64() as u32 };
         res
     }
 }

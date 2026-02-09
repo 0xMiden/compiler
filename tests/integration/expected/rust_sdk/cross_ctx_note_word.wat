@@ -76,17 +76,17 @@
       local.tee 4
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 2
-      call $intrinsics::felt::from_u32
+      i64.const 2
+      call $intrinsics::felt::from_u64_unchecked
       local.tee 5
-      i32.const 3
-      call $intrinsics::felt::from_u32
+      i64.const 3
+      call $intrinsics::felt::from_u64_unchecked
       local.tee 6
-      i32.const 4
-      call $intrinsics::felt::from_u32
+      i64.const 4
+      call $intrinsics::felt::from_u64_unchecked
       local.tee 7
-      i32.const 5
-      call $intrinsics::felt::from_u32
+      i64.const 5
+      call $intrinsics::felt::from_u64_unchecked
       local.tee 8
       local.get 4
       i32.const 8
@@ -103,20 +103,20 @@
       local.set 11
       local.get 4
       f32.load offset=8
-      i32.const 3
-      call $intrinsics::felt::from_u32
+      i64.const 3
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 11
-      i32.const 5
-      call $intrinsics::felt::from_u32
+      i64.const 5
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 10
-      i32.const 7
-      call $intrinsics::felt::from_u32
+      i64.const 7
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 9
-      i32.const 9
-      call $intrinsics::felt::from_u32
+      i64.const 9
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 5
       local.get 6
@@ -137,32 +137,32 @@
       local.set 7
       local.get 4
       f32.load offset=8
-      i32.const 4
-      call $intrinsics::felt::from_u32
+      i64.const 4
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 7
-      i32.const 6
-      call $intrinsics::felt::from_u32
+      i64.const 6
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 6
-      i32.const 8
-      call $intrinsics::felt::from_u32
+      i64.const 8
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 5
-      i32.const 10
-      call $intrinsics::felt::from_u32
+      i64.const 10
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
-      i32.const 9
-      call $intrinsics::felt::from_u32
+      i64.const 9
+      call $intrinsics::felt::from_u64_unchecked
       call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_felt::wit_import1
-      i32.const 12
-      call $intrinsics::felt::from_u32
+      i64.const 12
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
-      i32.const 10
-      call $intrinsics::felt::from_u32
+      i64.const 10
+      call $intrinsics::felt::from_u64_unchecked
       local.set 5
-      i32.const 20
-      call $intrinsics::felt::from_u32
+      i64.const 20
+      call $intrinsics::felt::from_u64_unchecked
       local.set 6
       local.get 4
       i64.const 0
@@ -178,19 +178,19 @@
       local.set 5
       local.get 4
       f32.load offset=8
-      i32.const 14
-      call $intrinsics::felt::from_u32
+      i64.const 14
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 5
-      i32.const 24
-      call $intrinsics::felt::from_u32
+      i64.const 24
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
-      i32.const 100
-      call $intrinsics::felt::from_u32
-      i32.const 200
-      call $intrinsics::felt::from_u32
-      i32.const 300
-      call $intrinsics::felt::from_u32
+      i64.const 100
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 200
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 300
+      call $intrinsics::felt::from_u64_unchecked
       local.get 4
       i32.const 8
       i32.add
@@ -203,23 +203,23 @@
       local.set 6
       local.get 4
       f32.load offset=8
-      i32.const 105
-      call $intrinsics::felt::from_u32
+      i64.const 105
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 6
-      i32.const 205
-      call $intrinsics::felt::from_u32
+      i64.const 205
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 5
-      i32.const 305
-      call $intrinsics::felt::from_u32
+      i64.const 305
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       i64.const -1001
       i64.const -4294967302
       call $intrinsics::felt::from_u64_unchecked
       i32.const -11
-      i32.const 50
-      call $intrinsics::felt::from_u32
+      i64.const 50
+      call $intrinsics::felt::from_u64_unchecked
       i32.const 111
       i32.const 0
       i32.const 3
@@ -256,39 +256,40 @@
       call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 15
-      call $<miden_field::wasm32::Felt as core::convert::From<u32>>::from
-      i32.const -1
-      call $intrinsics::felt::from_u32
+      call $<miden_field::wasm_miden::Felt>::from_u32
+      i64.const 4294967295
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 5
-      i32.const 57
-      call $intrinsics::felt::from_u32
+      i64.const 57
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 14
-      call $<miden_field::wasm32::Felt as core::convert::From<u8>>::from
-      i32.const 122
-      call $intrinsics::felt::from_u32
+      call $<miden_field::wasm_miden::Felt as core::convert::From<u8>>::from
+      i64.const 122
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 13
       i32.const 255
       i32.and
       i32.const 0
       i32.ne
-      call $intrinsics::felt::from_u32
-      i32.const 1
-      call $intrinsics::felt::from_u32
+      i64.extend_i32_u
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 1
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 12
-      call $<miden_field::wasm32::Felt as core::convert::From<u16>>::from
-      i32.const 12
-      call $intrinsics::felt::from_u32
+      call $<miden_field::wasm_miden::Felt as core::convert::From<u16>>::from
+      i64.const 12
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
-      i32.const 30
-      call $intrinsics::felt::from_u32
-      i32.const 40
-      call $intrinsics::felt::from_u32
-      i32.const 50
-      call $intrinsics::felt::from_u32
+      i64.const 30
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 40
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 50
+      call $intrinsics::felt::from_u64_unchecked
       local.get 4
       i32.const 8
       i32.add
@@ -301,16 +302,16 @@
       local.set 6
       local.get 4
       f32.load offset=8
-      i32.const 38
-      call $intrinsics::felt::from_u32
+      i64.const 38
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 6
-      i32.const 48
-      call $intrinsics::felt::from_u32
+      i64.const 48
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 5
-      i32.const 58
-      call $intrinsics::felt::from_u32
+      i64.const 58
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 4
       i32.const 32
@@ -344,21 +345,21 @@
     (func $intrinsics::felt::from_u64_unchecked (;13;) (type 9) (param i64) (result f32)
       unreachable
     )
-    (func $<miden_field::wasm32::Felt as core::convert::From<u32>>::from (;14;) (type 8) (param i32) (result f32)
+    (func $<miden_field::wasm_miden::Felt>::from_u32 (;14;) (type 8) (param i32) (result f32)
       local.get 0
-      f32.reinterpret_i32
+      call $intrinsics::felt::from_u32
     )
-    (func $<miden_field::wasm32::Felt as core::convert::From<u16>>::from (;15;) (type 8) (param i32) (result f32)
+    (func $<miden_field::wasm_miden::Felt as core::convert::From<u16>>::from (;15;) (type 8) (param i32) (result f32)
       local.get 0
       i32.const 65535
       i32.and
-      f32.reinterpret_i32
+      call $intrinsics::felt::from_u32
     )
-    (func $<miden_field::wasm32::Felt as core::convert::From<u8>>::from (;16;) (type 8) (param i32) (result f32)
+    (func $<miden_field::wasm_miden::Felt as core::convert::From<u8>>::from (;16;) (type 8) (param i32) (result f32)
       local.get 0
       i32.const 255
       i32.and
-      f32.reinterpret_i32
+      call $intrinsics::felt::from_u32
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00")
   )

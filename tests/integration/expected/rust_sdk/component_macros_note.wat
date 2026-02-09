@@ -36,8 +36,7 @@
     (type (;1;) (func))
     (type (;2;) (func (param f32 f32 f32 f32)))
     (type (;3;) (func (param f32 f32) (result i32)))
-    (type (;4;) (func (param i32) (result f32)))
-    (type (;5;) (func (param i64) (result f32)))
+    (type (;4;) (func (param i64) (result f32)))
     (import "miden:component-macros-account/component-macros-account@0.1.0" "test-custom-types" (func $component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22 (;0;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -68,17 +67,17 @@
       i64.const 44
       call $intrinsics::felt::from_u64_unchecked
       local.set 8
-      i32.const 99
-      call $intrinsics::felt::from_u32
+      i64.const 99
+      call $intrinsics::felt::from_u64_unchecked
       local.set 9
-      i32.const 88
-      call $intrinsics::felt::from_u32
+      i64.const 88
+      call $intrinsics::felt::from_u64_unchecked
       local.set 10
-      i32.const 77
-      call $intrinsics::felt::from_u32
+      i64.const 77
+      call $intrinsics::felt::from_u64_unchecked
       local.set 11
-      i32.const 66
-      call $intrinsics::felt::from_u32
+      i64.const 66
+      call $intrinsics::felt::from_u64_unchecked
       local.set 12
       local.get 4
       i64.const 0
@@ -145,10 +144,7 @@
     (func $intrinsics::felt::eq (;5;) (type 3) (param f32 f32) (result i32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;6;) (type 4) (param i32) (result f32)
-      unreachable
-    )
-    (func $intrinsics::felt::from_u64_unchecked (;7;) (type 5) (param i64) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;6;) (type 4) (param i64) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00")

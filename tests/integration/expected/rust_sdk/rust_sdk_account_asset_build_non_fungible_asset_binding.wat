@@ -15,7 +15,7 @@
     (type (;0;) (func))
     (type (;1;) (func (result i32)))
     (type (;2;) (func (param i32 f32 f32 i32)))
-    (type (;3;) (func (param i32) (result f32)))
+    (type (;3;) (func (param i64) (result f32)))
     (type (;4;) (func (param f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -27,41 +27,41 @@
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $rust_sdk_account_asset_build_non_fungible_asset_binding::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:rust-sdk-account-asset-build-non-fungible-asset-binding/rust-sdk-account-asset-build-non-fungible-asset-binding@0.0.1#binding (;2;) (type 1) (result i32)
-      (local i32 i32 f32 f32 f32)
+      (local i32 f32 f32 i32 f32)
       global.get $__stack_pointer
       i32.const 32
       i32.sub
       local.tee 0
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 0
+      i64.const 1
+      call $intrinsics::felt::from_u64_unchecked
       local.set 1
-      i32.const 1
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
       i32.const 0
-      call $intrinsics::felt::from_u32
       local.set 3
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 4
       block ;; label = @1
         loop ;; label = @2
-          local.get 1
+          local.get 3
           i32.const 16
           i32.eq
           br_if 1 (;@1;)
           local.get 0
           i32.const 16
           i32.add
-          local.get 1
+          local.get 3
           i32.add
           local.get 4
           f32.store
-          local.get 1
+          local.get 3
           i32.const 4
           i32.add
-          local.set 1
+          local.set 3
           br 0 (;@2;)
         end
       end
@@ -76,18 +76,18 @@
       local.get 0
       i32.const 16
       i32.add
+      local.get 1
       local.get 2
-      local.get 3
       local.get 0
       call $miden_base_sys::bindings::asset::build_non_fungible_asset
       global.get $GOT.data.internal.__memory_base
       i32.const 1048584
       i32.add
-      local.tee 1
+      local.tee 3
       local.get 0
       i64.load offset=24
       i64.store offset=8 align=4
-      local.get 1
+      local.get 3
       local.get 0
       i64.load offset=16
       i64.store align=4
@@ -95,7 +95,7 @@
       i32.const 32
       i32.add
       global.set $__stack_pointer
-      local.get 1
+      local.get 3
     )
     (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
       (local i32)
@@ -150,7 +150,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;5;) (type 3) (param i64) (result f32)
       unreachable
     )
     (func $miden::protocol::asset::build_non_fungible_asset (;6;) (type 4) (param f32 f32 f32 f32 f32 i32)

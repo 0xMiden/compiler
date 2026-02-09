@@ -116,6 +116,6 @@ pub fn is_non_fungible_asset_issued(asset: Asset) -> bool {
             asset.inner[1],
             asset.inner[0],
         );
-        result != Felt::from_u32(0)
+        result != Felt::new(0)
     }
 }

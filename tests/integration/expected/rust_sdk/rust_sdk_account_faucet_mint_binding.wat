@@ -15,7 +15,7 @@
     (type (;0;) (func))
     (type (;1;) (func (result i32)))
     (type (;2;) (func (param i32 i32)))
-    (type (;3;) (func (param i32) (result f32)))
+    (type (;3;) (func (param i64) (result f32)))
     (type (;4;) (func (param f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -36,8 +36,8 @@
       call $wit_bindgen::rt::run_ctors_once
       i32.const 0
       local.set 1
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
       block ;; label = @1
         loop ;; label = @2
@@ -65,7 +65,7 @@
       local.get 0
       i32.const 16
       i32.add
-      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
       local.get 0
       i32.const 16
       i32.add
@@ -140,7 +140,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from (;5;) (type 2) (param i32 i32)
+    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from (;5;) (type 2) (param i32 i32)
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -150,7 +150,7 @@
       i64.load align=4
       i64.store
     )
-    (func $intrinsics::felt::from_u32 (;6;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;6;) (type 3) (param i64) (result f32)
       unreachable
     )
     (func $miden::protocol::faucet::mint (;7;) (type 4) (param f32 f32 f32 f32 i32)

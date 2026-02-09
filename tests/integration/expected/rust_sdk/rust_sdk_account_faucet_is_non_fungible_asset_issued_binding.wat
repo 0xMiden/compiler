@@ -11,7 +11,7 @@
     (type (;1;) (func (result f32)))
     (type (;2;) (func (param i32 i32)))
     (type (;3;) (func (param f32 f32) (result i32)))
-    (type (;4;) (func (param i32) (result f32)))
+    (type (;4;) (func (param i64) (result f32)))
     (type (;5;) (func (param f32 f32 f32 f32) (result f32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -32,8 +32,8 @@
       call $wit_bindgen::rt::run_ctors_once
       i32.const 0
       local.set 1
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
       block ;; label = @1
         loop ;; label = @2
@@ -59,7 +59,7 @@
       local.get 0
       i32.const 16
       i32.add
-      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
       local.get 0
       f32.load offset=12
       local.get 0
@@ -69,12 +69,13 @@
       local.get 0
       f32.load
       call $miden::protocol::faucet::is_non_fungible_asset_issued
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::eq
       i32.const 1
       i32.ne
-      call $intrinsics::felt::from_u32
+      i64.extend_i32_u
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
       local.get 0
       i32.const 32
@@ -100,7 +101,7 @@
         i32.store8
       end
     )
-    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from (;4;) (type 2) (param i32 i32)
+    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from (;4;) (type 2) (param i32 i32)
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -113,7 +114,7 @@
     (func $intrinsics::felt::eq (;5;) (type 3) (param f32 f32) (result i32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;6;) (type 4) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;6;) (type 4) (param i64) (result f32)
       unreachable
     )
     (func $miden::protocol::faucet::is_non_fungible_asset_issued (;7;) (type 5) (param f32 f32 f32 f32) (result f32)

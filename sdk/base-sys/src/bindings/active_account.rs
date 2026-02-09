@@ -139,7 +139,7 @@ pub fn has_non_fungible_asset(asset: Asset) -> bool {
             asset.inner[2],
             asset.inner[1],
             asset.inner[0],
-        ) != Felt::from_u32(0)
+        ) != Felt::new(0)
     }
 }
 
@@ -174,7 +174,7 @@ pub fn get_num_procedures() -> Felt {
 pub fn get_procedure_root(index: u8) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        extern_active_account_get_procedure_root(index.into(), ret_area.as_mut_ptr());
+        extern_active_account_get_procedure_root(Felt::new(index as u64), ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }
 }
@@ -184,7 +184,7 @@ pub fn get_procedure_root(index: u8) -> Word {
 pub fn has_procedure(proc_root: Word) -> bool {
     unsafe {
         extern_active_account_has_procedure(proc_root[3], proc_root[2], proc_root[1], proc_root[0])
-            != Felt::from_u32(0)
+            != Felt::new(0)
     }
 }
 

@@ -46,7 +46,7 @@ impl InvalidStackOffsetMovupNote {
 
         let note_assets = active_note::get_assets();
         let num_assets = note_assets.len();
-        assert_eq(Felt::from_u32(num_assets as u32), felt!(1));
+        assert_eq(Felt::new(num_assets as u64), felt!(1));
 
         let note_asset = note_assets[0];
         let assets_match = if offered_asset_word == note_asset {
@@ -102,7 +102,7 @@ impl InvalidStackOffsetMovupNote {
 
 /// Calculates the output amount for the given swap parameters.
 fn calculate_output_amount(offered_total: Felt, requested_total: Felt, input_amount: Felt) -> Felt {
-    let precision_factor = Felt::from_u32(100000);
+    let precision_factor = Felt::new(100000);
 
     if offered_total > requested_total {
         let ratio = (offered_total * precision_factor) / requested_total;
@@ -124,10 +124,10 @@ fn create_p2id_note(serial_num: Word, input_asset: Asset, recipient_id: AccountI
     let note_type = get_note_type();
 
     let _p2id_note_root_digest = Digest::from_word(Word::new([
-        Felt::from_u64_unchecked(6412241294473976817),
-        Felt::from_u64_unchecked(10671567784403105513),
-        Felt::from_u64_unchecked(4275774806771663409),
-        Felt::from_u64_unchecked(17933276983439992403),
+        Felt::new(6412241294473976817),
+        Felt::new(10671567784403105513),
+        Felt::new(4275774806771663409),
+        Felt::new(17933276983439992403),
     ]));
 
     let recipient = Recipient::compute(
@@ -190,8 +190,8 @@ fn create_swapp_note(
 /// Extracts the note tag from the active note metadata.
 fn get_note_tag() -> Tag {
     let metadata = active_note::get_metadata().header;
-    let left_shifted_32 = metadata[2] * Felt::from_u32(2u32.pow(32));
-    let tag_felt = left_shifted_32 / (Felt::from_u32(2u32.pow(32)));
+    let left_shifted_32 = metadata[2] * Felt::new(2u32.pow(32));
+    let tag_felt = left_shifted_32 / (Felt::new(2u32.pow(32)));
     Tag::from(tag_felt)
 }
 
@@ -199,7 +199,9 @@ fn get_note_tag() -> Tag {
 fn get_note_type() -> NoteType {
     let metadata = active_note::get_metadata().header;
     let second_felt = metadata[1];
-    let left_shifted_56 = second_felt * Felt::from_u32(2u32.pow(56));
-    let note_type_felt = left_shifted_56 / Felt::from_u32(2u32.pow(62));
+    let pow_56 = Felt::new(2u64.pow(56));
+    let pow_62 = Felt::new(2u64.pow(62));
+    let left_shifted_56 = second_felt * pow_56;
+    let note_type_felt = left_shifted_56 / pow_62;
     NoteType::from(note_type_felt)
 }

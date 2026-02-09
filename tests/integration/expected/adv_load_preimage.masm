@@ -282,11 +282,20 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
     nop
     u32split
     push.0
+    push.0
+    mul.4294967296
+    add
     push.3
-    dup.3
-    dup.3
-    drop
-    u32and
+    push.0
+    dup.4
+    dup.4
+    trace.240
+    nop
+    exec.::miden::core::math::u64::and
+    trace.252
+    nop
+    mul.4294967296
+    add
     assert_eq
     locaddr.5
     push.0
@@ -683,6 +692,9 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
             trace.252
             nop
             push.1
+            push.0
+            mul.4294967296
+            add
             assert_eq
             locaddr.11
             push.0
@@ -710,6 +722,9 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
             trace.252
             nop
             push.2
+            push.0
+            mul.4294967296
+            add
             assert_eq
             locaddr.9
             push.0
@@ -754,6 +769,9 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
                 trace.252
                 nop
                 push.6
+                push.0
+                mul.4294967296
+                add
                 assert_eq
                 locaddr.9
                 push.0
@@ -799,6 +817,9 @@ pub proc entrypoint(i32, felt, felt, felt, felt)
                     trace.252
                     nop
                     push.15
+                    push.0
+                    mul.4294967296
+                    add
                     assert_eq
                     locaddr.5
                     push.0

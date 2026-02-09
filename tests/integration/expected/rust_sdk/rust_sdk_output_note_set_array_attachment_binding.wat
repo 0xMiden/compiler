@@ -10,7 +10,7 @@
     (type (;0;) (func))
     (type (;1;) (func (result f32)))
     (type (;2;) (func (param f32 f32 i32)))
-    (type (;3;) (func (param i32) (result f32)))
+    (type (;3;) (func (param i64) (result f32)))
     (type (;4;) (func (param f32 f32 f32 f32 f32 f32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -22,41 +22,41 @@
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $rust_sdk_output_note_set_array_attachment_binding::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:rust-sdk-output-note-set-array-attachment-binding/rust-sdk-output-note-set-array-attachment-binding@0.0.1#binding (;2;) (type 1) (result f32)
-      (local i32 i32 f32 f32 f32)
+      (local i32 f32 f32 i32 f32)
       global.get $__stack_pointer
       i32.const 32
       i32.sub
       local.tee 0
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 0
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 1
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
       i32.const 0
-      call $intrinsics::felt::from_u32
       local.set 3
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 4
       block ;; label = @1
         loop ;; label = @2
-          local.get 1
+          local.get 3
           i32.const 16
           i32.eq
           br_if 1 (;@1;)
           local.get 0
           i32.const 16
           i32.add
-          local.get 1
+          local.get 3
           i32.add
           local.get 4
           f32.store
-          local.get 1
+          local.get 3
           i32.const 4
           i32.add
-          local.set 1
+          local.set 3
           br 0 (;@2;)
         end
       end
@@ -68,12 +68,12 @@
       local.get 0
       i64.load offset=16 align=4
       i64.store
+      local.get 1
       local.get 2
-      local.get 3
       local.get 0
       call $miden_base_sys::bindings::output_note::set_array_attachment
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 4
       local.get 0
       i32.const 32
@@ -112,7 +112,7 @@
       f32.load
       call $miden::protocol::output_note::set_array_attachment
     )
-    (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;5;) (type 3) (param i64) (result f32)
       unreachable
     )
     (func $miden::protocol::output_note::set_array_attachment (;6;) (type 4) (param f32 f32 f32 f32 f32 f32)

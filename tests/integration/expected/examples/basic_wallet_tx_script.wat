@@ -121,7 +121,7 @@
       call $core::slice::index::slice_index_fail::do_panic::runtime
       unreachable
     )
-    (func $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index (;7;) (type 4) (param i32 i32 i32 i32)
+    (func $<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index (;7;) (type 4) (param i32 i32 i32 i32)
       (local i32)
       block ;; label = @1
         local.get 3
@@ -168,9 +168,9 @@
       i32.wrap_i64
       i32.const 3
       i32.and
-      call $intrinsics::felt::from_u32
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      call $<miden_field::wasm_miden::Felt>::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 4
       i32.const 64
@@ -237,7 +237,7 @@
           i32.add
           i32.const 2
           i32.const 6
-          call $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+          call $<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
           local.get 4
           i32.load offset=12
           i32.const 4
@@ -265,7 +265,7 @@
           local.get 4
           i32.const 32
           i32.add
-          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
           local.get 1
           local.get 0
           local.get 4
@@ -279,7 +279,7 @@
           i32.add
           i32.const 6
           i32.const 10
-          call $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+          call $<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
           local.get 4
           i32.load offset=4
           i32.const 4
@@ -307,7 +307,7 @@
           local.get 4
           i32.const 48
           i32.add
-          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
           local.get 4
           f32.load offset=64
           local.get 4
@@ -321,11 +321,11 @@
           local.get 4
           i32.const 20
           i32.add
-          call $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+          call $<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop
           local.get 4
           i32.const 20
           i32.add
-          call $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+          call $<alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop
           local.get 4
           i32.const 80
           i32.add
@@ -435,7 +435,7 @@
     (func $intrinsics::mem::heap_base (;12;) (type 7) (result i32)
       unreachable
     )
-    (func $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;13;) (type 8) (param i32)
+    (func $<alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop (;13;) (type 8) (param i32)
       local.get 0
       i32.const 4
       i32.const 4
@@ -454,7 +454,7 @@
       f32.load
       call $miden::protocol::output_note::create
     )
-    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from (;15;) (type 10) (param i32 i32)
+    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from (;15;) (type 10) (param i32 i32)
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -464,7 +464,7 @@
       i64.load align=4
       i64.store
     )
-    (func $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;16;) (type 8) (param i32))
+    (func $<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop (;16;) (type 8) (param i32))
     (func $intrinsics::advice::adv_push_mapvaln (;17;) (type 11) (param f32 f32 f32 f32) (result f32)
       unreachable
     )
@@ -483,7 +483,11 @@
     (func $miden::core::mem::pipe_preimage_to_memory (;22;) (type 16) (param f32 i32 f32 f32 f32 f32) (result i32)
       unreachable
     )
-    (func $<alloc::alloc::Global>::alloc_impl (;23;) (type 4) (param i32 i32 i32 i32)
+    (func $<miden_field::wasm_miden::Felt>::from_u32 (;23;) (type 14) (param i32) (result f32)
+      local.get 0
+      call $intrinsics::felt::from_u32
+    )
+    (func $<alloc::alloc::Global>::alloc_impl (;24;) (type 4) (param i32 i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -510,7 +514,7 @@
       local.get 1
       i32.store
     )
-    (func $<alloc::raw_vec::RawVecInner>::deallocate (;24;) (type 3) (param i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::deallocate (;25;) (type 3) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -542,7 +546,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVecInner>::current_memory (;25;) (type 4) (param i32 i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::current_memory (;26;) (type 4) (param i32 i32 i32 i32)
       (local i32 i32 i32)
       i32.const 0
       local.set 4
@@ -577,7 +581,7 @@
       local.get 4
       i32.store
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;26;) (type 3) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;27;) (type 3) (param i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -588,7 +592,7 @@
         call $__rustc::__rust_dealloc
       end
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;27;) (type 3) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;28;) (type 3) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -617,7 +621,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVecInner>::try_allocate_in (;28;) (type 17) (param i32 i32 i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::try_allocate_in (;29;) (type 17) (param i32 i32 i32 i32 i32)
       (local i32 i64)
       global.get $__stack_pointer
       i32.const 16
@@ -728,13 +732,13 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::raw_vec::handle_error (;29;) (type 10) (param i32 i32)
+    (func $alloc::raw_vec::handle_error (;30;) (type 10) (param i32 i32)
       unreachable
     )
-    (func $core::slice::index::slice_index_fail::do_panic::runtime (;30;) (type 3) (param i32 i32 i32)
+    (func $core::slice::index::slice_index_fail::do_panic::runtime (;31;) (type 3) (param i32 i32 i32)
       unreachable
     )
-    (func $<core::ptr::alignment::Alignment>::max (;31;) (type 2) (param i32 i32) (result i32)
+    (func $<core::ptr::alignment::Alignment>::max (;32;) (type 2) (param i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 0
@@ -742,7 +746,7 @@
       i32.gt_u
       select
     )
-    (func $miden::protocol::output_note::create (;32;) (type 18) (param f32 f32 f32 f32 f32 f32) (result f32)
+    (func $miden::protocol::output_note::create (;33;) (type 18) (param f32 f32 f32 f32 f32 f32) (result f32)
       unreachable
     )
     (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00")

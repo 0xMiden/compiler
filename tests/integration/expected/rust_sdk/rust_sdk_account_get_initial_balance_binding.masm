@@ -60,7 +60,13 @@ proc miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-ini
     trace.252
     nop
     push.0
+    push.0
+    mul.4294967296
+    add
     push.1
+    push.0
+    mul.4294967296
+    add
     trace.240
     nop
     exec.::"miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1"::rust_sdk_account_get_initial_balance_binding::"miden::protocol::active_account::get_initial_balance"

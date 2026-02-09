@@ -17,7 +17,7 @@
     (type (;4;) (func (param f32 f32 f32) (result i32)))
     (type (;5;) (func (param f32 f32) (result i32)))
     (type (;6;) (func (param f32 f32) (result f32)))
-    (type (;7;) (func (param i32) (result f32)))
+    (type (;7;) (func (param i64) (result f32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -39,18 +39,18 @@
       local.set 4
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 2
-      call $intrinsics::felt::from_u32
+      i64.const 2
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 0
       local.get 1
-      i32.const 3
-      call $intrinsics::felt::from_u32
+      i64.const 3
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 1
       local.get 2
-      i32.const 4
-      call $intrinsics::felt::from_u32
+      i64.const 4
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 2
       local.get 4
@@ -58,8 +58,8 @@
       i32.add
       local.tee 4
       local.get 3
-      i32.const 5
-      call $intrinsics::felt::from_u32
+      i64.const 5
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       f32.store offset=12
       local.get 4
@@ -76,8 +76,8 @@
     (func $miden:cross-ctx-account-word/foo@1.0.0#process-felt (;3;) (type 2) (param f32) (result f32)
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 3
-      call $intrinsics::felt::from_u32
+      i64.const 3
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
     )
     (func $miden:cross-ctx-account-word/foo@1.0.0#process-mixed (;4;) (type 3) (param i64 f32 i32 f32 i32 i32 i32) (result i32)
@@ -86,13 +86,13 @@
       local.set 7
       call $wit_bindgen::rt::run_ctors_once
       local.get 1
-      i32.const 6
-      call $intrinsics::felt::from_u32
+      i64.const 6
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 1
       local.get 3
-      i32.const 7
-      call $intrinsics::felt::from_u32
+      i64.const 7
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 3
       local.get 7
@@ -138,13 +138,13 @@
       local.set 3
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 8
-      call $intrinsics::felt::from_u32
+      i64.const 8
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 0
       local.get 1
-      i32.const 8
-      call $intrinsics::felt::from_u32
+      i64.const 8
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 1
       local.get 3
@@ -152,8 +152,8 @@
       i32.add
       local.tee 3
       local.get 2
-      i32.const 8
-      call $intrinsics::felt::from_u32
+      i64.const 8
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       f32.store offset=8
       local.get 3
@@ -170,8 +170,8 @@
       local.set 2
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 4
-      call $intrinsics::felt::from_u32
+      i64.const 4
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 0
       local.get 2
@@ -179,8 +179,8 @@
       i32.add
       local.tee 2
       local.get 1
-      i32.const 4
-      call $intrinsics::felt::from_u32
+      i64.const 4
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       f32.store offset=4
       local.get 2
@@ -194,13 +194,13 @@
       local.set 3
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 5
-      call $intrinsics::felt::from_u32
+      i64.const 5
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 0
       local.get 1
-      i32.const 5
-      call $intrinsics::felt::from_u32
+      i64.const 5
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 1
       local.get 3
@@ -208,8 +208,8 @@
       i32.add
       local.tee 3
       local.get 2
-      i32.const 5
-      call $intrinsics::felt::from_u32
+      i64.const 5
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       f32.store offset=8
       local.get 3
@@ -226,18 +226,18 @@
       local.set 4
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 1
-      call $intrinsics::felt::from_u32
+      i64.const 1
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 0
       local.get 1
-      i32.const 2
-      call $intrinsics::felt::from_u32
+      i64.const 2
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 1
       local.get 2
-      i32.const 3
-      call $intrinsics::felt::from_u32
+      i64.const 3
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 2
       local.get 4
@@ -245,8 +245,8 @@
       i32.add
       local.tee 4
       local.get 3
-      i32.const 4
-      call $intrinsics::felt::from_u32
+      i64.const 4
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       f32.store offset=12
       local.get 4
@@ -281,7 +281,7 @@
     (func $intrinsics::felt::add (;10;) (type 6) (param f32 f32) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;11;) (type 7) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;11;) (type 7) (param i64) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

@@ -11,7 +11,7 @@
     (type (;1;) (func (param f32) (result f32)))
     (type (;2;) (func (param f32 f32) (result f32)))
     (type (;3;) (func (param f32) (result i64)))
-    (type (;4;) (func (param i32) (result f32)))
+    (type (;4;) (func (param i64) (result f32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -31,8 +31,8 @@
       local.get 1
       local.get 0
       local.get 1
-      i32.load
-      call $intrinsics::felt::from_u32
+      i64.load32_u
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.tee 0
       call $intrinsics::felt::as_u64
@@ -63,7 +63,7 @@
     (func $intrinsics::felt::as_u64 (;5;) (type 3) (param f32) (result i64)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;6;) (type 4) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;6;) (type 4) (param i64) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00*\00\00\00")

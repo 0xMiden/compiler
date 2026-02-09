@@ -2,7 +2,8 @@
   (type (;0;) (func (param i32 i32 i32)))
   (type (;1;) (func (param i32) (result f32)))
   (type (;2;) (func (param f32 f32)))
-  (type (;3;) (func (param i32 i32 i32 i32)))
+  (type (;3;) (func (param i64) (result f32)))
+  (type (;4;) (func (param i32 i32 i32 i32)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 16)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -22,10 +23,10 @@
     local.get 0
     i32.load offset=8
     local.set 3
-    i32.const 0
-    call $intrinsics::felt::from_u32
-    i32.const 0
-    call $intrinsics::felt::from_u32
+    i64.const 0
+    call $intrinsics::felt::from_u64_unchecked
+    i64.const 0
+    call $intrinsics::felt::from_u64_unchecked
     call $intrinsics::felt::assert_eq
     local.get 2
     i32.const 2
@@ -54,7 +55,7 @@
   (func $intrinsics::felt::assert_eq (;2;) (type 2) (param f32 f32)
     unreachable
   )
-  (func $intrinsics::felt::from_u32 (;3;) (type 1) (param i32) (result f32)
+  (func $intrinsics::felt::from_u64_unchecked (;3;) (type 3) (param i64) (result f32)
     unreachable
   )
   (func $miden::core::crypto::hashes::rpo256::hash_words (;4;) (type 0) (param i32 i32 i32)
@@ -92,7 +93,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $<alloc::raw_vec::RawVecInner>::current_memory (;6;) (type 3) (param i32 i32 i32 i32)
+  (func $<alloc::raw_vec::RawVecInner>::current_memory (;6;) (type 4) (param i32 i32 i32 i32)
     (local i32 i32 i32)
     i32.const 0
     local.set 4

@@ -17,7 +17,6 @@ members = [
     "midenc-log",
     "midenc-session",
     "sdk/field-repr/*",
-    "sdk/field",
     "sdk/alloc",
     "sdk/base",
     "sdk/base-macros",
@@ -156,6 +155,8 @@ miden-integration-tests = { path = "tests/integration" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-test-harness = { path = "test-harness/test-harness-lib" }
 miden-test-harness-macros = { path = "test-harness/test-harness-macros" }
+# TODO: switch to version after miden-crypto release
+miden-field = { git = "https://github.com/0xMiden/crypto", rev = "ba5aa2b78923b40b50d8170fd287b36808b11ec5", version = "0.22" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }

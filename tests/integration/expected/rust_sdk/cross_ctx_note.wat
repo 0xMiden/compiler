@@ -25,7 +25,7 @@
     (type (;2;) (func (param f32 f32 f32 f32)))
     (type (;3;) (func (param f32) (result i64)))
     (type (;4;) (func (param f32 f32)))
-    (type (;5;) (func (param i32) (result f32)))
+    (type (;5;) (func (param i64) (result f32)))
     (import "miden:cross-ctx-account/foo@1.0.0" "process-felt" (func $cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1 (;0;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -45,17 +45,17 @@
       i32.const 1048588
       i32.add
       local.tee 4
-      i32.load
-      call $intrinsics::felt::from_u32
+      i64.load32_u
+      call $intrinsics::felt::from_u64_unchecked
       local.tee 5
-      i32.const 11
-      call $intrinsics::felt::from_u32
+      i64.const 11
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 5
       call $cross_ctx_note::bindings::miden::cross_ctx_account::foo::process_felt::wit_import1
       local.tee 5
-      i32.const 53
-      call $intrinsics::felt::from_u32
+      i64.const 53
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
       local.get 4
       local.get 5
@@ -86,7 +86,7 @@
     (func $intrinsics::felt::assert_eq (;6;) (type 4) (param f32 f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;7;) (type 5) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;7;) (type 5) (param i64) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00\0b\00\00\00")

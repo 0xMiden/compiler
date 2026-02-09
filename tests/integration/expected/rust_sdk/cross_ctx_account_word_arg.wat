@@ -13,7 +13,7 @@
     (type (;0;) (func))
     (type (;1;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
     (type (;2;) (func (param f32 f32) (result f32)))
-    (type (;3;) (func (param i32) (result f32)))
+    (type (;3;) (func (param i64) (result f32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -26,77 +26,77 @@
     (func $miden:cross-ctx-account-word-arg/foo@1.0.0#process-word (;2;) (type 1) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 1
-      call $intrinsics::felt::from_u32
+      i64.const 1
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       local.get 1
-      i32.const 2
-      call $intrinsics::felt::from_u32
+      i64.const 2
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.get 2
-      i32.const 4
-      call $intrinsics::felt::from_u32
+      i64.const 4
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.get 3
-      i32.const 8
-      call $intrinsics::felt::from_u32
+      i64.const 8
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.set 3
       local.get 4
-      i32.const 16
-      call $intrinsics::felt::from_u32
+      i64.const 16
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       local.get 5
-      i32.const 32
-      call $intrinsics::felt::from_u32
+      i64.const 32
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.get 6
-      i32.const 64
-      call $intrinsics::felt::from_u32
+      i64.const 64
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.get 7
-      i32.const 128
-      call $intrinsics::felt::from_u32
+      i64.const 128
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.set 7
       local.get 8
-      i32.const 256
-      call $intrinsics::felt::from_u32
+      i64.const 256
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       local.get 9
-      i32.const 512
-      call $intrinsics::felt::from_u32
+      i64.const 512
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.get 10
-      i32.const 1024
-      call $intrinsics::felt::from_u32
+      i64.const 1024
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.get 11
-      i32.const 2048
-      call $intrinsics::felt::from_u32
+      i64.const 2048
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.set 11
       local.get 12
-      i32.const 4096
-      call $intrinsics::felt::from_u32
+      i64.const 4096
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       local.get 13
-      i32.const 8192
-      call $intrinsics::felt::from_u32
+      i64.const 8192
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.get 14
-      i32.const 16384
-      call $intrinsics::felt::from_u32
+      i64.const 16384
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::mul
       call $intrinsics::felt::add
       local.set 14
@@ -131,7 +131,7 @@
     (func $intrinsics::felt::add (;4;) (type 2) (param f32 f32) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;5;) (type 3) (param i64) (result f32)
       unreachable
     )
     (func $intrinsics::felt::mul (;6;) (type 2) (param f32 f32) (result f32)

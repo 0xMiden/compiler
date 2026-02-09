@@ -121,6 +121,9 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     trace.252
     nop
     push.0
+    push.0
+    mul.4294967296
+    add
     push.8
     movup.2
     u32wrapping_add

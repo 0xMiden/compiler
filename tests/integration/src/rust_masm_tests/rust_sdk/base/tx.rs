@@ -122,7 +122,7 @@ fn rust_sdk_account_tx_get_expiration_block_delta_binding() {
 fn rust_sdk_account_tx_update_expiration_block_delta_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_update_expiration_block_delta_binding",
-        "tx::update_expiration_block_delta(Felt::from_u32(42));",
+        "tx::update_expiration_block_delta(Felt::new(42));",
     );
 }
 

@@ -13,7 +13,7 @@
     (type (;0;) (func))
     (type (;1;) (func (result i32)))
     (type (;2;) (func (param i32 f32)))
-    (type (;3;) (func (param i32) (result f32)))
+    (type (;3;) (func (param i64) (result f32)))
     (type (;4;) (func (param f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -33,8 +33,8 @@
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       local.get 0
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       call $miden_base_sys::bindings::input_note::get_script_root
       global.get $GOT.data.internal.__memory_base
       i32.const 1048584
@@ -98,7 +98,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;5;) (type 3) (param i64) (result f32)
       unreachable
     )
     (func $miden::protocol::input_note::get_script_root (;6;) (type 4) (param f32 i32)

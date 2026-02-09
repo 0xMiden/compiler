@@ -9,7 +9,7 @@
   (core module $main (;0;)
     (type (;0;) (func))
     (type (;1;) (func (result f32)))
-    (type (;2;) (func (param i32) (result f32)))
+    (type (;2;) (func (param i64) (result f32)))
     (type (;3;) (func (param f32 f32) (result f32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -22,10 +22,10 @@
     (func $rust_sdk_account_get_initial_balance_binding::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1#binding (;2;) (type 1) (result f32)
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 1
-      call $intrinsics::felt::from_u32
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 1
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       call $miden::protocol::active_account::get_initial_balance
     )
     (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
@@ -46,7 +46,7 @@
         i32.store8
       end
     )
-    (func $intrinsics::felt::from_u32 (;4;) (type 2) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;4;) (type 2) (param i64) (result f32)
       unreachable
     )
     (func $miden::protocol::active_account::get_initial_balance (;5;) (type 3) (param f32 f32) (result f32)

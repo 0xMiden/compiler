@@ -18,11 +18,10 @@
     (type (;3;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32)))
     (type (;4;) (func (param i32 f32)))
     (type (;5;) (func (param f32 f32) (result i32)))
-    (type (;6;) (func (param i32) (result f32)))
-    (type (;7;) (func (param i64) (result f32)))
-    (type (;8;) (func (param f32 f32 i32)))
-    (type (;9;) (func (param f32 f32 f32 f32 f32 f32 i32)))
-    (type (;10;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
+    (type (;6;) (func (param i64) (result f32)))
+    (type (;7;) (func (param f32 f32 i32)))
+    (type (;8;) (func (param f32 f32 f32 f32 f32 f32 i32)))
+    (type (;9;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -152,7 +151,7 @@
         i32.const 16
         i32.add
         local.get 8
-        call $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
+        call $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm_miden::Felt>>::from
         local.get 0
         local.get 1
         local.get 7
@@ -195,16 +194,16 @@
         i32.store8
       end
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from (;6;) (type 4) (param i32 f32)
+    (func $<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm_miden::Felt>>::from (;6;) (type 4) (param i32 f32)
       (local f32 f32 f32)
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 3
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 4
       local.get 0
       local.get 1
@@ -222,19 +221,16 @@
     (func $intrinsics::felt::eq (;7;) (type 5) (param f32 f32) (result i32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;8;) (type 6) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;8;) (type 6) (param i64) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u64_unchecked (;9;) (type 7) (param i64) (result f32)
+    (func $miden::protocol::active_account::get_item (;9;) (type 7) (param f32 f32 i32)
       unreachable
     )
-    (func $miden::protocol::active_account::get_item (;10;) (type 8) (param f32 f32 i32)
+    (func $miden::protocol::active_account::get_map_item (;10;) (type 8) (param f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::protocol::active_account::get_map_item (;11;) (type 9) (param f32 f32 f32 f32 f32 f32 i32)
-      unreachable
-    )
-    (func $miden::protocol::native_account::set_map_item (;12;) (type 10) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
+    (func $miden::protocol::native_account::set_map_item (;11;) (type 9) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

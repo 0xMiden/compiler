@@ -61,6 +61,9 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.42
+    push.0
+    mul.4294967296
+    add
     trace.240
     nop
     exec.::"miden:base/transaction-script@1.0.0"::rust_sdk_account_tx_update_expiration_block_delta_binding::miden_base_sys::bindings::tx::update_expiration_block_delta

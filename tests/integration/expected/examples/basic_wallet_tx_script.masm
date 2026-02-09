@@ -428,7 +428,7 @@ end
 
 @locals("5")
 @callconv("C")
-proc <alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index(
+proc <alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index(
     i32,
     i32,
     i32,
@@ -764,12 +764,20 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     u32split
-    push.0
     push.3
-    dup.3
-    dup.3
+    dup.2
+    dup.2
     drop
     u32and
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::wasm_miden::Felt>::from_u32
+    trace.252
+    nop
+    push.0
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.4
     push.0
@@ -1227,7 +1235,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
             u32wrapping_add
             trace.240
             nop
-            exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+            exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
             trace.252
             nop
             locaddr.4
@@ -1398,7 +1406,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+                exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
                 trace.252
                 nop
                 locaddr.1
@@ -1457,7 +1465,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 movup.3
                 trace.240
                 nop
-                exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+                exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
                 trace.252
                 nop
                 locaddr.4
@@ -1626,7 +1634,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
                     trace.252
                     nop
                     locaddr.4
@@ -1758,7 +1766,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     locaddr.4
@@ -1773,7 +1781,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     locaddr.4
@@ -2302,7 +2310,7 @@ end
 
 @locals("1")
 @callconv("C")
-proc <alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(
+proc <alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
     push.4
@@ -2442,7 +2450,7 @@ end
 
 @locals("2")
 @callconv("C")
-proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from(
+proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from(
     i32,
     i32
 )
@@ -2565,7 +2573,7 @@ end
 
 @locals("1")
 @callconv("C")
-proc <alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(
+proc <alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
     drop
@@ -2597,6 +2605,13 @@ proc miden::core::mem::pipe_preimage_to_memory(
 end
 
 @locals("4")
+@callconv("C")
+proc <miden_field::wasm_miden::Felt>::from_u32(
+    i32
+) -> felt
+    nop
+end
+
 @callconv("C")
 proc <alloc::alloc::Global>::alloc_impl(
     i32,

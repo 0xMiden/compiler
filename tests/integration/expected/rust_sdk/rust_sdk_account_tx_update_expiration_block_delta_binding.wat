@@ -13,7 +13,7 @@
     (type (;0;) (func))
     (type (;1;) (func (param f32 f32 f32 f32)))
     (type (;2;) (func (param f32)))
-    (type (;3;) (func (param i32) (result f32)))
+    (type (;3;) (func (param i64) (result f32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -25,8 +25,8 @@
     (func $rust_sdk_account_tx_update_expiration_block_delta_binding::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:base/transaction-script@1.0.0#run (;2;) (type 1) (param f32 f32 f32 f32)
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 42
-      call $intrinsics::felt::from_u32
+      i64.const 42
+      call $intrinsics::felt::from_u64_unchecked
       call $miden_base_sys::bindings::tx::update_expiration_block_delta
     )
     (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
@@ -51,7 +51,7 @@
       local.get 0
       call $miden::protocol::tx::update_expiration_block_delta
     )
-    (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;5;) (type 3) (param i64) (result f32)
       unreachable
     )
     (func $miden::protocol::tx::update_expiration_block_delta (;6;) (type 2) (param f32)

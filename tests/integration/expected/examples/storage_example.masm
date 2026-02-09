@@ -939,7 +939,7 @@ proc miden:storage-example/foo@1.0.0#set-asset-qty(
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::"miden:storage-example/foo@1.0.0"::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
+                    exec.::"miden:storage-example/foo@1.0.0"::storage_example::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm_miden::Felt>>::from
                     trace.252
                     nop
                     locaddr.0
@@ -1235,7 +1235,7 @@ end
 
 @locals("5")
 @callconv("C")
-proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from(
+proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm_miden::Felt>>::from(
     i32,
     felt
 )
@@ -1291,6 +1291,9 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_fiel
     u32assert
     assertz
     push.0
+    push.0
+    mul.4294967296
+    add
     swap.1
     u32divmod.4
     swap.1
@@ -1318,6 +1321,9 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_fiel
     u32assert
     assertz
     push.0
+    push.0
+    mul.4294967296
+    add
     swap.1
     u32divmod.4
     swap.1
@@ -1341,6 +1347,9 @@ proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_fiel
     u32assert
     assertz
     push.0
+    push.0
+    mul.4294967296
+    add
     swap.1
     u32divmod.4
     swap.1

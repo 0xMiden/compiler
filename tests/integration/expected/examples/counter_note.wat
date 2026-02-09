@@ -26,7 +26,7 @@
     (type (;2;) (func (param f32 f32 f32 f32)))
     (type (;3;) (func (param f32 f32) (result f32)))
     (type (;4;) (func (param f32 f32)))
-    (type (;5;) (func (param i32) (result f32)))
+    (type (;5;) (func (param i64) (result f32)))
     (import "miden:counter-contract/counter-contract@0.1.0" "get-count" (func $counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0 (;0;) (type 0)))
     (import "miden:counter-contract/counter-contract@0.1.0" "increment-count" (func $counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0 (;1;) (type 0)))
     (table (;0;) 2 2 funcref)
@@ -46,8 +46,8 @@
       call $counter_note::bindings::miden::counter_contract::counter_contract::increment_count::wit_import0
       drop
       local.get 4
-      i32.const 1
-      call $intrinsics::felt::from_u32
+      i64.const 1
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::add
       local.set 4
       call $counter_note::bindings::miden::counter_contract::counter_contract::get_count::wit_import0
@@ -78,7 +78,7 @@
     (func $intrinsics::felt::assert_eq (;7;) (type 4) (param f32 f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;8;) (type 5) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;8;) (type 5) (param i64) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00")

@@ -27,7 +27,7 @@
     (type (;1;) (func))
     (type (;2;) (func (param f32 f32 f32 f32)))
     (type (;3;) (func (param f32 f32)))
-    (type (;4;) (func (param i32) (result f32)))
+    (type (;4;) (func (param i64) (result f32)))
     (import "miden:cross-ctx-account-word-arg/foo@1.0.0" "process-word" (func $cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22 (;0;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -40,41 +40,41 @@
     (func $cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports (;2;) (type 1))
     (func $miden:base/note-script@1.0.0#run (;3;) (type 2) (param f32 f32 f32 f32)
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 1
-      call $intrinsics::felt::from_u32
-      i32.const 2
-      call $intrinsics::felt::from_u32
-      i32.const 3
-      call $intrinsics::felt::from_u32
-      i32.const 4
-      call $intrinsics::felt::from_u32
-      i32.const 5
-      call $intrinsics::felt::from_u32
-      i32.const 6
-      call $intrinsics::felt::from_u32
-      i32.const 7
-      call $intrinsics::felt::from_u32
-      i32.const 8
-      call $intrinsics::felt::from_u32
-      i32.const 9
-      call $intrinsics::felt::from_u32
-      i32.const 10
-      call $intrinsics::felt::from_u32
-      i32.const 11
-      call $intrinsics::felt::from_u32
-      i32.const 12
-      call $intrinsics::felt::from_u32
-      i32.const 13
-      call $intrinsics::felt::from_u32
-      i32.const 14
-      call $intrinsics::felt::from_u32
-      i32.const 15
-      call $intrinsics::felt::from_u32
-      i32.const 7
-      call $intrinsics::felt::from_u32
+      i64.const 1
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 2
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 3
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 4
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 5
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 6
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 7
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 8
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 9
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 10
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 11
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 12
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 13
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 14
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 15
+      call $intrinsics::felt::from_u64_unchecked
+      i64.const 7
+      call $intrinsics::felt::from_u64_unchecked
       call $cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
-      i32.const 458760
-      call $intrinsics::felt::from_u32
+      i64.const 458760
+      call $intrinsics::felt::from_u64_unchecked
       call $intrinsics::felt::assert_eq
     )
     (func $wit_bindgen::rt::run_ctors_once (;4;) (type 1)
@@ -98,7 +98,7 @@
     (func $intrinsics::felt::assert_eq (;5;) (type 3) (param f32 f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u32 (;6;) (type 4) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;6;) (type 4) (param i64) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00")
