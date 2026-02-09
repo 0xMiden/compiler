@@ -121,7 +121,7 @@ pub fn was_procedure_called(proc_root: Word) -> bool {
             proc_root[2],
             proc_root[1],
             proc_root[0],
-        ) != Felt::from_u32(0)
+        ) != Felt::new(0)
     }
 }
 

@@ -42,10 +42,10 @@ struct MyNote;
 
 impl Guest for MyNote {
     fn run(_arg: Word) {
-        let input = Felt::from_u32(unsafe { BAR });
+        let input = Felt::new(unsafe { BAR } as u64);
         assert_eq(input, felt!(11));
         let output = process_felt(input);
         assert_eq(output, felt!(53));
-        unsafe { BAR = output.as_u64() as u32 };
+        unsafe { BAR = output.as_canonical_u64() as u32 };
     }
 }

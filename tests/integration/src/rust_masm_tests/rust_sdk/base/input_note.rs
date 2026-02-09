@@ -78,7 +78,7 @@ fn rust_sdk_input_note_get_assets_info_binding() {
     run_input_note_binding_test(
         "rust_sdk_input_note_get_assets_info_binding",
         "pub fn binding(&self) -> Felt {
-        let info = input_note::get_assets_info(NoteIdx { inner: Felt::from_u32(0) });
+        let info = input_note::get_assets_info(NoteIdx { inner: Felt::new(0) });
         info.num_assets
     }",
     );
@@ -89,8 +89,8 @@ fn rust_sdk_input_note_get_assets_binding() {
     run_input_note_binding_test(
         "rust_sdk_input_note_get_assets_binding",
         "pub fn binding(&self) -> Felt {
-        let assets = input_note::get_assets(NoteIdx { inner: Felt::from_u32(0) });
-        Felt::from_u32(assets.len() as u32)
+        let assets = input_note::get_assets(NoteIdx { inner: Felt::new(0) });
+        Felt::new(assets.len() as u64)
     }",
     );
 }
@@ -100,7 +100,7 @@ fn rust_sdk_input_note_get_recipient_binding() {
     run_input_note_binding_test(
         "rust_sdk_input_note_get_recipient_binding",
         "pub fn binding(&self) -> Recipient {
-        input_note::get_recipient(NoteIdx { inner: Felt::from_u32(0) })
+        input_note::get_recipient(NoteIdx { inner: Felt::new(0) })
     }",
     );
 }
@@ -110,7 +110,7 @@ fn rust_sdk_input_note_get_metadata_binding() {
     run_input_note_binding_test(
         "rust_sdk_input_note_get_metadata_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_metadata(NoteIdx { inner: Felt::from_u32(0) }).header
+        input_note::get_metadata(NoteIdx { inner: Felt::new(0) })
     }",
     );
 }
@@ -120,7 +120,7 @@ fn rust_sdk_input_note_get_sender_binding() {
     run_input_note_binding_test(
         "rust_sdk_input_note_get_sender_binding",
         "pub fn binding(&self) -> AccountId {
-        input_note::get_sender(NoteIdx { inner: Felt::from_u32(0) })
+        input_note::get_sender(NoteIdx { inner: Felt::new(0) })
     }",
     );
 }
@@ -130,7 +130,7 @@ fn rust_sdk_input_note_get_inputs_info_binding() {
     run_input_note_binding_test(
         "rust_sdk_input_note_get_inputs_info_binding",
         "pub fn binding(&self) -> Felt {
-        let info = input_note::get_inputs_info(NoteIdx { inner: Felt::from_u32(0) });
+        let info = input_note::get_inputs_info(NoteIdx { inner: Felt::new(0) });
         info.num_inputs
     }",
     );
@@ -141,7 +141,7 @@ fn rust_sdk_input_note_get_script_root_binding() {
     run_input_note_binding_test(
         "rust_sdk_input_note_get_script_root_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_script_root(NoteIdx { inner: Felt::from_u32(0) })
+        input_note::get_script_root(NoteIdx { inner: Felt::new(0) })
     }",
     );
 }
@@ -151,7 +151,7 @@ fn rust_sdk_input_note_get_serial_number_binding() {
     run_input_note_binding_test(
         "rust_sdk_input_note_get_serial_number_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_serial_number(NoteIdx { inner: Felt::from_u32(0) })
+        input_note::get_serial_number(NoteIdx { inner: Felt::new(0) })
     }",
     );
 }
