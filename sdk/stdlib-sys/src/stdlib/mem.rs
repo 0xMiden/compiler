@@ -185,7 +185,7 @@ pub fn pipe_double_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
 #[cfg(all(target_family = "wasm", miden))]
 pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
     // Allocate a Vec with the specified capacity
-    let num_words_usize = num_words.as_u64() as usize;
+    let num_words_usize = num_words.as_canonical_u64() as usize;
     let num_felts = num_words_usize * 4;
     let mut result: Vec<Felt> = Vec::with_capacity(num_felts);
 
