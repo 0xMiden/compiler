@@ -1,5 +1,7 @@
 use core::num::NonZeroU8;
 
+use midenc_hir::TraceTarget;
+
 use super::{Action, Operand, SolverContext, Stack, ValueOrAlias};
 
 mod copy_all;
@@ -123,6 +125,11 @@ impl<'a> SolutionBuilder<'a> {
     #[inline(always)]
     pub fn context(&self) -> &'a SolverContext {
         self.context
+    }
+
+    #[inline]
+    pub fn trace_target(&self) -> &TraceTarget {
+        &self.context.options().trace_target
     }
 
     /// Get a reference to the state of the stack after applying the pending solution

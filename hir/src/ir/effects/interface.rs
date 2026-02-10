@@ -1,7 +1,17 @@
 use smallvec::SmallVec;
 
 use super::*;
-use crate::{SymbolRef, ValueRef};
+use crate::{OperationRef, SymbolRef, ValueRef};
+
+/// Marker trait for ops with recursive effects of a given [Effect] type.
+///
+/// Ops with recursive effects are considered to have any of the effects of operations nested within
+/// its regions, in addition to any effects it declares on itself. Only when the operation and none
+/// of its nested operations carry effects of the given type, can it be assumed that the operation
+/// is free of that effect.
+pub trait HasRecursiveEffects<T: Effect> {}
+
+impl<T: HasRecursiveMemoryEffects> HasRecursiveEffects<MemoryEffect> for T {}
 
 pub trait EffectOpInterface<T: Effect> {
     /// Return the set all of the operation's effects
@@ -170,6 +180,76 @@ impl<T> Iterator for ResourceEffectIterator<'_, T> {
         while let Some(instance) = self.iter.next() {
             if instance.resource().dyn_eq(self.resource) {
                 return Some(instance);
+            }
+        }
+
+        None
+    }
+}
+
+/// An iterator over the recursive effects of an [crate::Operation].
+///
+/// The value produced by the iterator is `(OperationRef, Option<EffectInterface<T>>)`, where the
+/// operation reference is the effecting op, and the second element is the identified effect:
+///
+/// * `Some` represents an effect on the operation or one of its nested operations
+/// * `None` indicates that we have identified that the given operation has unknown effects, and
+///   thus the entire operation could have unknown effects.
+///
+/// Note that in the case of discovering that an operation has unknown effects, the iterator can
+/// continue to visit all effects recursively - it is up to the caller to stop iteration if the
+/// presence of unknown effects makes further search wasteful.
+pub struct RecursiveEffectIterator<T> {
+    buffer: crate::adt::SmallDeque<(OperationRef, Option<EffectInstance<T>>), 2>,
+    effecting_ops: SmallVec<[OperationRef; 4]>,
+}
+
+impl<T: Effect> RecursiveEffectIterator<T> {
+    /// Iterate over the recursive effects of `op`
+    pub fn new(op: OperationRef) -> Self {
+        Self {
+            buffer: Default::default(),
+            effecting_ops: SmallVec::from_iter([op]),
+        }
+    }
+}
+
+impl<T: Effect> core::iter::FusedIterator for RecursiveEffectIterator<T> {}
+
+impl<T: Effect> Iterator for RecursiveEffectIterator<T> {
+    type Item = (OperationRef, Option<EffectInstance<T>>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(next) = self.buffer.pop_front() {
+                return Some(next);
+            }
+
+            if let Some(op) = self.effecting_ops.pop() {
+                let operation = op.borrow();
+
+                let has_recursive_effects = operation.implements::<dyn HasRecursiveEffects<T>>();
+                if has_recursive_effects {
+                    for region in operation.regions() {
+                        for block in region.body() {
+                            let mut next = block.body().front().as_pointer();
+                            while let Some(nested) = next.take() {
+                                next = nested.next();
+                                self.effecting_ops.push(nested);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(effect_interface) = operation.as_trait::<dyn EffectOpInterface<T>>() {
+                    self.buffer.extend(effect_interface.effects().map(|eff| (op, Some(eff))));
+                } else if !has_recursive_effects {
+                    // The operation does not have recursive memory effects or implement
+                    // EffectOpInterface, so its effects are unknown.
+                    self.buffer.push_back((op, None));
+                }
+            } else {
+                break;
             }
         }
 

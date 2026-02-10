@@ -156,15 +156,19 @@ impl Pass for ControlFlowSink {
 /// ranges of values that are trivial to materialize on-demand.
 pub struct SinkOperandDefs;
 
+impl SinkOperandDefs {
+    const NAME: &str = "sink-operand-defs";
+}
+
 impl Pass for SinkOperandDefs {
     type Target = Operation;
 
     fn name(&self) -> &'static str {
-        "sink-operand-defs"
+        Self::NAME
     }
 
     fn argument(&self) -> &'static str {
-        "sink-operand-defs"
+        Self::NAME
     }
 
     fn can_schedule_on(&self, _name: &OperationName) -> bool {
@@ -179,7 +183,7 @@ impl Pass for SinkOperandDefs {
         let operation = op.as_operation_ref();
         drop(op);
 
-        log::debug!(target: "sink-operand-defs", "sinking operand defs for regions of {}", operation.borrow());
+        log::debug!(target: Self::NAME, "sinking operand defs for regions of {}", operation.borrow());
 
         // For each operation, we enqueue it in this worklist, we then recurse on each of it's
         // dependency operations until all dependencies have been visited. We move up blocks from
@@ -206,7 +210,7 @@ impl Pass for SinkOperandDefs {
             // result will reduce the amount of unnecessary stack movement.
             let op = operation.borrow();
 
-            log::trace!(target: "sink-operand-defs", "visiting {op}");
+            log::trace!(target: Self::NAME, "visiting {op}");
 
             for operand in op.operands().iter().rev() {
                 let value = operand.borrow();
@@ -219,15 +223,15 @@ impl Pass for SinkOperandDefs {
                     // NOTE: In theory, we could move effect-free operations _up_ the block to place
                     // them closer to the block arguments they use, but that's unlikely to be all
                     // that profitable of a rewrite in practice.
-                    log::trace!(target: "sink-operand-defs", "  ignoring block argument operand '{value}'");
+                    log::trace!(target: Self::NAME, "  ignoring block argument operand '{value}'");
                     continue;
                 };
 
-                log::trace!(target: "sink-operand-defs", "  evaluating operand '{value}'");
+                log::trace!(target: Self::NAME, "  evaluating operand '{value}'");
 
                 let def = defining_op.borrow();
                 if def.implements::<dyn ConstantLike>() {
-                    log::trace!(target: "sink-operand-defs", "    defining '{}' is constant-like", def.name());
+                    log::trace!(target: Self::NAME, "    defining '{}' is constant-like", def.name());
                     worklist.push_back(OpOperandSink::new(operation));
                     break;
                 }
@@ -240,16 +244,16 @@ impl Pass for SinkOperandDefs {
                     // NOTE: For now we do not move ops that produce more than a single result, but
                     // if the other results are unused, or the users would still be dominated by
                     // the new location, then we could still move those ops.
-                    log::trace!(target: "sink-operand-defs", "    defining '{}' cannot be moved:", def.name());
-                    log::trace!(target: "sink-operand-defs", "      * op has multiple uses");
+                    log::trace!(target: Self::NAME, "    defining '{}' cannot be moved:", def.name());
+                    log::trace!(target: Self::NAME, "      * op has multiple uses");
                     if incorrect_result_count {
-                        log::trace!(target: "sink-operand-defs", "      * op has incorrect number of results ({})", def.num_results());
+                        log::trace!(target: Self::NAME, "      * op has incorrect number of results ({})", def.num_results());
                     }
                     if has_effects {
-                        log::trace!(target: "sink-operand-defs", "      * op has memory effects");
+                        log::trace!(target: Self::NAME, "      * op has memory effects");
                     }
                 } else {
-                    log::trace!(target: "sink-operand-defs", "    defining '{}' is moveable, but is non-constant", def.name());
+                    log::trace!(target: Self::NAME, "    defining '{}' is moveable, but is non-constant", def.name());
                     worklist.push_back(OpOperandSink::new(operation));
                     break;
                 }
@@ -257,7 +261,7 @@ impl Pass for SinkOperandDefs {
         });
 
         for sinker in worklist.iter() {
-            log::debug!(target: "sink-operand-defs", "sink scheduled for {}", sinker.operation.borrow());
+            log::debug!(target: Self::NAME, "sink scheduled for {}", sinker.operation.borrow());
         }
 
         let mut visited = FxHashSet::default();
@@ -275,7 +279,7 @@ impl Pass for SinkOperandDefs {
                 && !op.implements::<dyn RegionBranchTerminatorOpInterface>()
                 && erased.insert(operation)
             {
-                log::debug!(target: "sink-operand-defs", "erasing unused, effect-free, non-terminator op {op}");
+                log::debug!(target: Self::NAME, "erasing unused, effect-free, non-terminator op {op}");
                 drop(op);
                 operation.borrow_mut().erase();
                 continue;
@@ -283,10 +287,10 @@ impl Pass for SinkOperandDefs {
 
             // If we've already worked this operation, skip it
             if !visited.insert(operation) && sink_state.next_operand_index == op.num_operands() {
-                log::trace!(target: "sink-operand-defs", "already visited {}", operation.borrow());
+                log::trace!(target: Self::NAME, "already visited {}", operation.borrow());
                 continue;
             } else {
-                log::trace!(target: "sink-operand-defs", "visiting {}", operation.borrow());
+                log::trace!(target: Self::NAME, "visiting {}", operation.borrow());
             }
 
             let mut builder = OpBuilder::new(op.context_rc());
@@ -299,24 +303,24 @@ impl Pass for SinkOperandDefs {
                     break;
                 };
 
-                log::debug!(target: "sink-operand-defs", "  sinking next operand def for {op} at index {next_operand_index}");
+                log::debug!(target: Self::NAME, "  sinking next operand def for {op} at index {next_operand_index}");
 
                 let mut operand = op.operands()[next_operand_index];
                 sink_state.next_operand_index = next_operand_index;
                 let operand_value = operand.borrow().as_value_ref();
-                log::trace!(target: "sink-operand-defs", "  visiting operand {operand_value}");
+                log::trace!(target: Self::NAME, "  visiting operand {operand_value}");
 
                 // Reuse moved/materialized replacements when the same operand is used multiple times
                 if let Some(replacement) = sink_state.replacements.get(&operand_value).copied() {
                     if replacement != operand_value {
-                        log::trace!(target: "sink-operand-defs", "    rewriting operand {operand_value} as {replacement}");
+                        log::trace!(target: Self::NAME, "    rewriting operand {operand_value} as {replacement}");
                         operand.borrow_mut().set(replacement);
 
                         changed = PostPassStatus::Changed;
                         // If no other uses of this value remain, then remove the original
                         // operation, as it is now dead.
                         if !operand_value.borrow().is_used() {
-                            log::trace!(target: "sink-operand-defs", "    {operand_value} is no longer used, erasing definition");
+                            log::trace!(target: Self::NAME, "    {operand_value} is no longer used, erasing definition");
                             // Replacements are only ever for op results
                             let mut defining_op = operand_value.borrow().get_defining_op().unwrap();
                             defining_op.borrow_mut().erase();
@@ -334,34 +338,34 @@ impl Pass for SinkOperandDefs {
                     // NOTE: In theory, we could move effect-free operations _up_ the block to place
                     // them closer to the block arguments they use, but that's unlikely to be all
                     // that profitable of a rewrite in practice.
-                    log::trace!(target: "sink-operand-defs", "    {value} is a block argument, ignoring..");
+                    log::trace!(target: Self::NAME, "    {value} is a block argument, ignoring..");
                     continue 'next_operand;
                 };
 
-                log::trace!(target: "sink-operand-defs", "    is sole user of {value}? {is_sole_user}");
+                log::trace!(target: Self::NAME, "    is sole user of {value}? {is_sole_user}");
 
                 let def = defining_op.borrow();
                 if let Some(attr) = matchers::constant().matches(&*def) {
                     if !is_sole_user {
-                        log::trace!(target: "sink-operand-defs", "    defining op is a constant with multiple uses, materializing fresh copy");
+                        log::trace!(target: Self::NAME, "    defining op is a constant with multiple uses, materializing fresh copy");
                         // Materialize a fresh copy of the original constant
                         let span = value.span();
                         let ty = value.ty();
                         let Some(new_def) =
                             def.dialect().materialize_constant(&mut builder, attr, ty, span)
                         else {
-                            log::trace!(target: "sink-operand-defs", "    unable to materialize copy, skipping rewrite of this operand");
+                            log::trace!(target: Self::NAME, "    unable to materialize copy, skipping rewrite of this operand");
                             continue 'next_operand;
                         };
                         drop(def);
                         drop(value);
                         let replacement = new_def.borrow().results()[0] as ValueRef;
-                        log::trace!(target: "sink-operand-defs", "    rewriting operand {operand_value} as {replacement}");
+                        log::trace!(target: Self::NAME, "    rewriting operand {operand_value} as {replacement}");
                         sink_state.replacements.insert(operand_value, replacement);
                         operand.borrow_mut().set(replacement);
                         changed = PostPassStatus::Changed;
                     } else {
-                        log::trace!(target: "sink-operand-defs", "    defining op is a constant with no other uses, moving into place");
+                        log::trace!(target: Self::NAME, "    defining op is a constant with no other uses, moving into place");
                         // The original op can be moved
                         drop(def);
                         drop(value);
@@ -374,7 +378,7 @@ impl Pass for SinkOperandDefs {
                     // NOTE: For now we do not move ops that produce more than a single result, but
                     // if the other results are unused, or the users would still be dominated by
                     // the new location, then we could still move those ops.
-                    log::trace!(target: "sink-operand-defs", "    defining op is unsuitable for sinking, ignoring this operand");
+                    log::trace!(target: Self::NAME, "    defining op is unsuitable for sinking, ignoring this operand");
                 } else {
                     // The original op can be moved
                     //
@@ -388,12 +392,12 @@ impl Pass for SinkOperandDefs {
                     // 2.
                     drop(def);
                     drop(value);
-                    log::trace!(target: "sink-operand-defs", "    defining op can be moved and has no other uses, moving into place");
+                    log::trace!(target: Self::NAME, "    defining op can be moved and has no other uses, moving into place");
                     defining_op.borrow_mut().move_to(*builder.insertion_point());
                     sink_state.replacements.insert(operand_value, operand_value);
 
                     // Enqueue the defining op to be visited before continuing with this op's operands
-                    log::trace!(target: "sink-operand-defs", "    enqueing defining op for immediate processing");
+                    log::trace!(target: Self::NAME, "    enqueing defining op for immediate processing");
                     //sink_state.ip = *builder.insertion_point();
                     sink_state.ip = ProgramPoint::before(operation);
                     worklist.push_front(sink_state);

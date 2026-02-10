@@ -2,48 +2,55 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @collatz {
         public builtin.function @entrypoint(v0: i32) -> i32 {
         ^block4(v0: i32):
-            v2 = arith.constant 0 : i32;
-            v59, v60, v61 = scf.while v0, v2 : i32, i32, i32 {
-            ^block17(v62: i32, v63: i32):
-                v76 = arith.constant 0 : i32;
-                v6 = arith.constant 1 : i32;
-                v7 = arith.neq v62, v6 : i1;
-                v8 = arith.zext v7 : u32;
-                v9 = hir.bitcast v8 : i32;
-                v11 = arith.neq v9, v76 : i1;
-                v67, v68 = scf.if v11 : i32, i32 {
+            hir.store_local v0 #[local = lv0];
+            v36 = arith.constant 0 : i32;
+            hir.store_local v36 #[local = lv1];
+            scf.while  {
+            ^block6:
+                v4 = hir.load_local  : i32 #[local = lv0];
+                v57 = arith.constant 0 : i32;
+                v35 = arith.constant 1 : i32;
+                v6 = arith.neq v4, v35 : i1;
+                v7 = arith.zext v6 : u32;
+                v8 = hir.bitcast v7 : i32;
+                v10 = arith.neq v8, v57 : i1;
+                scf.if v10{
                 ^block8:
-                    v72 = arith.constant 1 : i32;
-                    v28 = arith.add v63, v72 : i32 #[overflow = wrapping];
-                    v36 = arith.constant 1 : u32;
-                    v18 = hir.bitcast v62 : u32;
-                    v20 = arith.shr v18, v36 : u32;
-                    v21 = hir.bitcast v20 : i32;
-                    v73 = arith.constant 1 : i32;
-                    v13 = arith.constant 3 : i32;
-                    v14 = arith.mul v62, v13 : i32 #[overflow = wrapping];
-                    v16 = arith.add v14, v73 : i32 #[overflow = wrapping];
-                    v74 = arith.constant 0 : i32;
-                    v75 = arith.constant 1 : i32;
-                    v23 = arith.band v62, v75 : i32;
-                    v25 = arith.neq v23, v74 : i1;
-                    v26 = cf.select v25, v16, v21 : i32;
-                    scf.yield v26, v28;
+                    v12 = hir.load_local  : i32 #[local = lv0];
+                    v46 = arith.constant 1 : u32;
+                    v19 = hir.bitcast v12 : u32;
+                    v21 = arith.shr v19, v46 : u32;
+                    v22 = hir.bitcast v21 : i32;
+                    v54 = arith.constant 1 : i32;
+                    v34 = arith.constant 3 : i32;
+                    v14 = arith.mul v12, v34 : i32 #[overflow = wrapping];
+                    v16 = arith.add v14, v54 : i32 #[overflow = wrapping];
+                    v55 = arith.constant 0 : i32;
+                    v56 = arith.constant 1 : i32;
+                    v25 = arith.band v12, v56 : i32;
+                    v27 = arith.neq v25, v55 : i1;
+                    v28 = cf.select v27, v16, v22 : i32;
+                    hir.store_local v28 #[local = lv0];
+                    v29 = hir.load_local  : i32 #[local = lv1];
+                    v53 = arith.constant 1 : i32;
+                    v31 = arith.add v29, v53 : i32 #[overflow = wrapping];
+                    hir.store_local v31 #[local = lv1];
+                    scf.yield ;
                 } else {
                 ^block16:
-                    v37 = ub.poison i32 : i32;
-                    scf.yield v37, v37;
+                    scf.yield ;
                 };
-                v31 = arith.constant 0 : u32;
-                v71 = arith.constant 1 : u32;
-                v70 = cf.select v11, v71, v31 : u32;
-                v54 = arith.trunc v70 : i1;
-                scf.condition v54, v67, v68, v63;
+                v43 = arith.constant 0 : u32;
+                v52 = arith.constant 1 : u32;
+                v51 = cf.select v10, v52, v43 : u32;
+                v47 = arith.trunc v51 : i1;
+                scf.condition v47;
             } do {
-            ^block18(v64: i32, v65: i32, v66: i32):
-                scf.yield v64, v65;
+            ^block15:
+                scf.yield ;
             };
-            builtin.ret v61;
+            v11 = hir.load_local  : i32 #[local = lv1];
+            builtin.ret v11;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

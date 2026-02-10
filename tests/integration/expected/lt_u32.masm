@@ -18,6 +18,7 @@ end
 
 # mod ::"root_ns:root@1.0.0"::test_rust_1fcb2f151e54a93413cfbf27b720161db50a02b59d060ed448c3ffe2c3c9cc6c
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(i32, i32) -> i32
     swap.1

@@ -173,9 +173,9 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
     where
         F: FnOnce(&mut T) -> ChangeResult,
     {
-        log::trace!("starting analysis state change of type {}", core::any::type_name::<T>());
+        log::trace!(target: "analysis:state", "starting analysis state change of type {}", core::any::type_name::<T>());
         let result = callback(unsafe { self.state.as_mut() });
-        log::trace!("analysis state changed: {}", result.changed());
+        log::trace!(target: "analysis:state", "analysis state changed: {}", result.changed());
         self.changed |= result;
         result
     }
@@ -197,6 +197,24 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
         let analysis = analysis as *const dyn DataFlowAnalysis;
         let analysis = unsafe { NonNull::new_unchecked(analysis.cast_mut()) };
         Self::subscribe_nonnull(guard, analysis);
+    }
+
+    /// Require this analysis state at `dependent`
+    ///
+    /// This is meant to be used in cases where calling `DataFlowSolver::require` is not possible
+    /// because you already hold an `AnalysisStateGuardMut` for the state, but you still need to
+    /// ensure that we execute the `on_require_analysis` hook for `dependent`.
+    pub fn require<A>(&mut self, analysis: &A, dependent: ProgramPoint)
+    where
+        A: DataFlowAnalysis + 'static,
+    {
+        let analysis = analysis as *const dyn DataFlowAnalysis;
+        let analysis = unsafe { NonNull::new_unchecked(analysis.cast_mut()) };
+        let info = unsafe { self.info.as_mut() };
+        let state = unsafe { self.state.as_ref() };
+        <T as AnalysisStateSubscriptionBehavior>::on_require_analysis(
+            state, info, analysis, dependent,
+        );
     }
 
     /// Subscribe `analysis` to any changes of the lattice anchor.
@@ -224,12 +242,14 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
             let mut worklist = self.worklist.borrow_mut();
             let anchor = info.anchor();
             log::trace!(
+                target: "analysis:state",
                 "committing changes to analysis state {} at {anchor}",
                 core::any::type_name::<T>()
             );
             let state = unsafe { self.state.as_ref() };
             // Handle the change for each subscriber to this analysis state
             log::trace!(
+                target: "analysis:state",
                 "there are {} subscriptions to notify of this change",
                 info.subscriptions().len()
             );
@@ -240,7 +260,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
                 }
             }
             // Invoke any custom on-update logic for this analysis state type
-            log::trace!("invoking on_update callback to notify user-defined subscriptions");
+            log::trace!(target: "analysis:state", "invoking on_update callback to notify user-defined subscriptions");
             <T as AnalysisStateSubscriptionBehavior>::on_update(state, info, &mut worklist);
         }
     }

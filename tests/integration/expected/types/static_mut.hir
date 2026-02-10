@@ -3,58 +3,62 @@ builtin.component root_ns:root@1.0.0 {
         public builtin.function @__main() -> i32 {
         ^block6:
             hir.exec @root_ns:root@1.0.0/test_rust_2512f26a084edd4aa11742f4c2ef0985a5681361fee42216136cb00d26224778/global_var_update()
-            v1 = arith.constant 0 : i32;
-            v3 = arith.constant -9 : i32;
-            v70, v71, v72 = scf.while v3, v1 : i32, i32, i32 {
-            ^block21(v73: i32, v74: i32):
-                v5 = arith.constant 1048585 : i32;
-                v6 = arith.add v73, v5 : i32 #[overflow = wrapping];
-                v7 = hir.bitcast v6 : u32;
-                v8 = hir.int_to_ptr v7 : ptr<byte, u8>;
-                v9 = hir.load v8 : u8;
-                v10 = arith.zext v9 : u32;
-                v11 = hir.bitcast v10 : i32;
-                v13 = arith.add v11, v74 : i32 #[overflow = wrapping];
-                v14 = arith.constant 1 : i32;
-                v15 = arith.add v73, v14 : i32 #[overflow = wrapping];
-                v79 = arith.constant 0 : i32;
-                v17 = arith.neq v15, v79 : i1;
-                v78 = ub.poison i32 : i32;
-                v67 = cf.select v17, v13, v78 : i32;
-                v44 = ub.poison i32 : i32;
-                v66 = cf.select v17, v15, v44 : i32;
-                v38 = arith.constant 0 : u32;
-                v43 = arith.constant 1 : u32;
-                v69 = cf.select v17, v43, v38 : u32;
-                v61 = arith.trunc v69 : i1;
-                scf.condition v61, v66, v67, v13;
+            v43 = arith.constant 0 : i32;
+            hir.store_local v43 #[local = lv0];
+            v42 = arith.constant -9 : i32;
+            hir.store_local v42 #[local = lv1];
+            scf.while  {
+            ^block8:
+                v3 = hir.load_local  : i32 #[local = lv1];
+                v41 = arith.constant 1048585 : i32;
+                v5 = arith.add v3, v41 : i32 #[overflow = wrapping];
+                v6 = hir.bitcast v5 : u32;
+                v7 = hir.int_to_ptr v6 : ptr<byte, u8>;
+                v8 = hir.load v7 : u8;
+                v11 = hir.load_local  : i32 #[local = lv0];
+                v9 = arith.zext v8 : u32;
+                v10 = hir.bitcast v9 : i32;
+                v12 = arith.add v10, v11 : i32 #[overflow = wrapping];
+                hir.store_local v12 #[local = lv0];
+                v13 = hir.load_local  : i32 #[local = lv1];
+                v40 = arith.constant 1 : i32;
+                v15 = arith.add v13, v40 : i32 #[overflow = wrapping];
+                hir.store_local v15 #[local = lv1];
+                v46 = arith.constant 0 : u32;
+                v49 = arith.constant 1 : u32;
+                v55 = arith.constant 0 : i32;
+                v18 = arith.neq v15, v55 : i1;
+                v54 = cf.select v18, v49, v46 : u32;
+                v50 = arith.trunc v54 : i1;
+                scf.condition v50;
             } do {
-            ^block22(v75: i32, v76: i32, v77: i32):
-                scf.yield v75, v76;
+            ^block19:
+                scf.yield ;
             };
-            v18 = arith.constant 255 : i32;
-            v19 = arith.band v72, v18 : i32;
-            builtin.ret v19;
+            v19 = hir.load_local  : i32 #[local = lv0];
+            v39 = arith.constant 255 : i32;
+            v21 = arith.band v19, v39 : i32;
+            builtin.ret v21;
         };
 
         public builtin.function @global_var_update() {
         ^block11:
-            v23 = arith.constant 1048577 : u32;
-            v81 = arith.constant 0 : u32;
-            v24 = arith.add v81, v23 : u32 #[overflow = checked];
-            v25 = hir.int_to_ptr v24 : ptr<byte, u8>;
-            v26 = hir.load v25 : u8;
-            v29 = arith.constant 1 : i32;
-            v27 = arith.zext v26 : u32;
-            v28 = hir.bitcast v27 : i32;
-            v30 = arith.add v28, v29 : i32 #[overflow = wrapping];
-            v31 = hir.bitcast v30 : u32;
-            v32 = arith.trunc v31 : u8;
-            v34 = arith.constant 1048576 : u32;
-            v82 = arith.constant 0 : u32;
-            v35 = arith.add v82, v34 : u32 #[overflow = checked];
-            v36 = hir.int_to_ptr v35 : ptr<byte, u8>;
-            hir.store v36, v32;
+            v60 = arith.constant 1048577 : u32;
+            v61 = arith.constant 0 : u32;
+            v26 = arith.add v61, v60 : u32 #[overflow = checked];
+            v27 = hir.int_to_ptr v26 : ptr<byte, u8>;
+            v28 = hir.load v27 : u8;
+            v59 = arith.constant 1 : i32;
+            v29 = arith.zext v28 : u32;
+            v30 = hir.bitcast v29 : i32;
+            v32 = arith.add v30, v59 : i32 #[overflow = wrapping];
+            v33 = hir.bitcast v32 : u32;
+            v34 = arith.trunc v33 : u8;
+            v58 = arith.constant 1048576 : u32;
+            v63 = arith.constant 0 : u32;
+            v37 = arith.add v63, v58 : u32 #[overflow = checked];
+            v38 = hir.int_to_ptr v37 : ptr<byte, u8>;
+            hir.store v38, v34;
             builtin.ret ;
         };
 

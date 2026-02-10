@@ -2,7 +2,7 @@ use midenc_dialect_scf as scf;
 use midenc_hir::{Op, Operation, Region, Report, Spanned, ValueRef};
 use smallvec::SmallVec;
 
-use crate::{Constraint, emitter::BlockEmitter, masm};
+use crate::{Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
 
 /// Emit a conditonal branch-like region, e.g. `scf.if`.
 ///
@@ -467,9 +467,11 @@ pub fn schedule_stack_realignment(
 
     assert_eq!(lhs.len(), rhs.len());
 
-    log::trace!(target: "codegen", "stack realignment required, scheduling moves..");
-    log::trace!(target: "codegen", "  desired stack state:    {lhs:#?}");
-    log::trace!(target: "codegen", "  misaligned stack state: {rhs:#?}");
+    let trace_target = emitter.trace_target.clone().with_topic("operand-scheduling");
+
+    log::trace!(target: &trace_target, "stack realignment required, scheduling moves..");
+    log::trace!(target: &trace_target, "  desired stack state:    {lhs:#?}");
+    log::trace!(target: &trace_target, "  misaligned stack state: {rhs:#?}");
 
     let mut constraints = SmallVec::<[Constraint; 8]>::with_capacity(lhs.len());
     constraints.resize(lhs.len(), Constraint::Move);
@@ -479,7 +481,11 @@ pub fn schedule_stack_realignment(
         .rev()
         .map(|o| o.as_value().expect("unexpected operand type"))
         .collect::<SmallVec<[_; 8]>>();
-    match OperandMovementConstraintSolver::new(&expected, &constraints, rhs) {
+    let options = SolverOptions {
+        trace_target: emitter.trace_target.clone().with_topic("solver"),
+        ..SolverOptions::default()
+    };
+    match OperandMovementConstraintSolver::new_with_options(&expected, &constraints, rhs, options) {
         Ok(solver) => {
             solver
                 .solve_and_apply(&mut emitter.emitter(), Default::default())
@@ -505,7 +511,7 @@ mod tests {
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        AbiParam, Context, Ident, OpBuilder, Signature, Type,
+        AbiParam, Context, Ident, OpBuilder, Signature, TraceTarget, Type,
         dialects::builtin::{self, BuiltinOpBuilder, FunctionBuilder, FunctionRef},
         formatter::PrettyPrint,
         pass::AnalysisManager,
@@ -523,8 +529,9 @@ mod tests {
 
         let mut builder = OpBuilder::new(context.clone());
 
+        let function_name = Ident::with_empty_span("test".into());
         let function_ref = builder.create_function(
-            Ident::with_empty_span("test".into()),
+            function_name,
             Signature::new(
                 [AbiParam::new(Type::U32), AbiParam::new(Type::U32)],
                 [AbiParam::new(Type::U32)],
@@ -585,6 +592,8 @@ mod tests {
             invoked: &mut invoked,
             target: Default::default(),
             stack,
+            trace_target: TraceTarget::category("codegen")
+                .with_relevant_symbol(function_name.as_symbol()),
         };
 
         // Lower input
@@ -609,8 +618,9 @@ mod tests {
 
         let mut builder = OpBuilder::new(context.clone());
 
+        let function_name = Ident::with_empty_span("test".into());
         let function_ref = builder.create_function(
-            Ident::with_empty_span("test".into()),
+            function_name,
             Signature::new(
                 [AbiParam::new(Type::U32), AbiParam::new(Type::U32)],
                 [AbiParam::new(Type::U32)],
@@ -683,6 +693,8 @@ mod tests {
             invoked: &mut invoked,
             target: Default::default(),
             stack,
+            trace_target: TraceTarget::category("codegen")
+                .with_relevant_symbol(function_name.as_symbol()),
         };
 
         // Lower input
@@ -702,7 +714,7 @@ mod tests {
 
     #[test]
     fn util_emit_binary_search_single_case_test() -> Result<(), Report> {
-        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
             .format_timestamp(None)
             .is_test(true)
             .try_init();
@@ -724,7 +736,7 @@ mod tests {
 
     #[test]
     fn util_emit_binary_search_two_cases_test() -> Result<(), Report> {
-        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
             .format_timestamp(None)
             .is_test(true)
             .try_init();
@@ -746,7 +758,7 @@ mod tests {
 
     #[test]
     fn util_emit_binary_search_three_cases_test() -> Result<(), Report> {
-        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
             .format_timestamp(None)
             .is_test(true)
             .try_init();
@@ -768,7 +780,7 @@ mod tests {
 
     #[test]
     fn util_emit_binary_search_four_cases_test() -> Result<(), Report> {
-        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
             .format_timestamp(None)
             .is_test(true)
             .try_init();
@@ -790,7 +802,7 @@ mod tests {
 
     #[test]
     fn util_emit_binary_search_five_cases_test() -> Result<(), Report> {
-        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
             .format_timestamp(None)
             .is_test(true)
             .try_init();
@@ -812,7 +824,7 @@ mod tests {
 
     #[test]
     fn util_emit_binary_search_seven_cases_test() -> Result<(), Report> {
-        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
             .format_timestamp(None)
             .is_test(true)
             .try_init();
@@ -838,8 +850,9 @@ mod tests {
     ) -> Result<(FunctionRef, masm::Block), Report> {
         let mut builder = OpBuilder::new(context.clone());
 
+        let function_name = Ident::with_empty_span("test".into());
         let function_ref = builder.create_function(
-            Ident::with_empty_span("test".into()),
+            function_name,
             Signature::new(
                 [AbiParam::new(Type::U32), AbiParam::new(Type::U32)],
                 [AbiParam::new(Type::U32)],
@@ -900,6 +913,8 @@ mod tests {
             invoked: &mut invoked,
             target: Default::default(),
             stack,
+            trace_target: TraceTarget::category("codegen")
+                .with_relevant_symbol(function_name.as_symbol()),
         };
 
         // Lower input

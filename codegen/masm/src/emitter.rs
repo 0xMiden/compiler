@@ -1,7 +1,7 @@
 use alloc::collections::BTreeSet;
 
 use miden_assembly::diagnostics::WrapErr;
-use midenc_hir::{Block, Operation, ProgramPoint, ValueRange, ValueRef};
+use midenc_hir::{Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef};
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
@@ -20,6 +20,7 @@ pub(crate) struct BlockEmitter<'b> {
     pub invoked: &'b mut BTreeSet<masm::Invoke>,
     pub target: Vec<masm::Op>,
     pub stack: OperandStack,
+    pub trace_target: TraceTarget,
 }
 
 impl BlockEmitter<'_> {
@@ -30,6 +31,7 @@ impl BlockEmitter<'_> {
             invoked: self.invoked,
             target: Default::default(),
             stack: self.stack.clone(),
+            trace_target: self.trace_target.clone(),
         }
     }
 
@@ -65,6 +67,7 @@ impl BlockEmitter<'_> {
         }
 
         // Continue normally, by emitting the contents of the block based on the given schedule
+        let scheduling_target = self.trace_target.clone().with_topic("operand-scheduling");
         for op in block.body() {
             self.emit_inst(&op);
 
@@ -79,7 +82,11 @@ impl BlockEmitter<'_> {
                         continue;
                     }
 
-                    log::trace!(target: "codegen", "dropping dead instruction result {next_result} at index {index}");
+                    log::trace!(
+                        target: &scheduling_target,
+                        symbol = self.trace_target.relevant_symbol();
+                        "dropping dead instruction result {next_result} at index {index}"
+                    );
 
                     self.emitter().drop_operand_at_position(index, span);
                 }
@@ -133,7 +140,12 @@ impl BlockEmitter<'_> {
     where
         F: Fn(ValueRef) -> bool,
     {
-        log::trace!(target: "codegen", "dropping unused operands at: {op}");
+        let trace_target = self.trace_target.clone().with_topic("operand-scheduling");
+        log::trace!(
+            target: &trace_target,
+            symbol = self.trace_target.relevant_symbol();
+            "dropping unused operands at: {op}"
+        );
         // We start by computing the set of unused operands on the stack at this point
         // in the program. We will use the resulting vectors to schedule instructions
         // that will move those operands to the top of the stack to be discarded
@@ -142,13 +154,22 @@ impl BlockEmitter<'_> {
         for operand in self.stack.iter().rev() {
             let value = operand.as_value().expect("unexpected non-ssa value on stack");
             if !is_live(value) {
-                log::trace!(target: "codegen", "should drop {value} at {}", ProgramPoint::before(op));
+                log::trace!(
+                    target: &trace_target,
+                    symbol = self.trace_target.relevant_symbol();
+                    "should drop {value} at {}",
+                    ProgramPoint::before(op)
+                );
                 unused.push(value);
                 constraints.push(Constraint::Move);
             }
         }
 
-        log::trace!(target: "codegen", "found unused operands {unused:?} with constraints {constraints:?}");
+        log::trace!(
+            target: &trace_target,
+            symbol = self.trace_target.relevant_symbol();
+            "found unused operands {unused:?} with constraints {constraints:?}"
+        );
 
         // Next, emit the optimal set of moves to get the unused operands to the top
         if !unused.is_empty() {
@@ -156,7 +177,11 @@ impl BlockEmitter<'_> {
             // of used operands, then we will schedule manually, since this
             // is a pathological use case for the operand scheduler.
             let num_used = self.stack.len() - unused.len();
-            log::trace!(target: "codegen", "there are {num_used} used operands out of {}", self.stack.len());
+            log::trace!(
+                target: &trace_target,
+                symbol = self.trace_target.relevant_symbol();
+                "there are {num_used} used operands out of {}", self.stack.len()
+            );
             if unused.len() > num_used {
                 // In this case, we emit code starting from the top
                 // of the stack, i.e. if we encounter an unused value
@@ -261,7 +286,12 @@ impl BlockEmitter<'_> {
                 // We may have accumulated a batch comprising the rest of the stack, handle that
                 // here.
                 if unused_batch && batch_size > 0 {
-                    log::trace!(target: "codegen", "dropping {batch_size} operands from {:?}", &self.stack);
+                    log::trace!(
+                        target: &trace_target,
+                        symbol = self.trace_target.relevant_symbol();
+                        "dropping {batch_size} operands from {:?}",
+                        &self.stack
+                    );
                     // It should only be possible to hit this point if the entire stack is unused
                     assert_eq!(batch_size, self.stack.len());
                     match batch_size {

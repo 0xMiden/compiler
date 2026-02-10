@@ -60,6 +60,7 @@ pub trait HirLowering: Op {
     /// and provide a custom schedule.
     fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let op = self.as_operation();
+        let trace_target = emitter.trace_target.clone().with_topic("operand-scheduling");
 
         // Move instruction operands into place, minimizing unnecessary stack manipulation ops
         //
@@ -84,11 +85,11 @@ pub trait HirLowering: Op {
             constraints.swap(0, 1);
         }
 
-        log::trace!(target: "codegen", "scheduling operands for {op}");
+        log::trace!(target: &trace_target, "scheduling operands for {op}");
         for arg in args.iter() {
-            log::trace!(target: "codegen", "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
+            log::trace!(target: &trace_target, "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
         }
-        log::trace!(target: "codegen", "starting with stack: {:#?}", &emitter.stack);
+        log::trace!(target: &trace_target, "starting with stack: {:#?}", &emitter.stack);
         emitter
             .schedule_operands(
                 &args,
@@ -107,7 +108,7 @@ pub trait HirLowering: Op {
                     &emitter.stack,
                 )
             });
-        log::trace!(target: "codegen", "stack after scheduling: {:#?}", &emitter.stack);
+        log::trace!(target: &trace_target, "stack after scheduling: {:#?}", &emitter.stack);
 
         Ok(())
     }
@@ -416,7 +417,6 @@ impl HirLowering for scf::Yield {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.yield' is a no-op, as it is simply forwarding operands to another region,
         // and the semantics of that are handled by the lowering of the containing op
-        log::trace!(target: "codegen", "yielding {:#?}", &_emitter.stack);
         Ok(())
     }
 }
@@ -425,7 +425,6 @@ impl HirLowering for scf::Condition {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.condition' is a no-op, as it is simply forwarding operands to another
         // region, and the semantics of that are handled by the lowering of the containing op
-        log::trace!(target: "codegen", "conditionally yielding {:#?}", &_emitter.stack);
         Ok(())
     }
 }

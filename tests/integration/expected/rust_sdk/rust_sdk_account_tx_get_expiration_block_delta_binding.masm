@@ -48,6 +48,7 @@ proc rust_sdk_account_tx_get_expiration_block_delta_binding::bindings::__link_cu
     nop
 end
 
+@locals("4")
 @callconv("C")
 proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     drop
@@ -67,6 +68,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     drop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -108,9 +110,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:base/transaction-script@1.0.0"::rust_sdk_account_tx_get_expiration_block_delta_binding::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1

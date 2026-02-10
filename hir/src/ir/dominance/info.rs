@@ -82,6 +82,11 @@ impl DominanceInfo {
         self.info.node(block)
     }
 
+    /// Returns true if blocks in `region` are known to follow SSA dominance rules
+    pub fn has_ssa_dominance(&self, region: RegionRef) -> bool {
+        self.info.region_has_ssa_dominance(region)
+    }
+
     /// Get the dominance tree for `region`
     pub fn dominance(&self, region: RegionRef) -> Rc<DomTreeBase<false>> {
         self.info.dominance(region)

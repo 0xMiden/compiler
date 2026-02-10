@@ -105,6 +105,7 @@ proc rust_sdk_account_faucet_burn_binding::bindings::__link_custom_section_descr
     nop
 end
 
+@locals("3")
 @callconv("C")
 proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1#binding(
 
@@ -119,9 +120,16 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     nop
     push.32
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -135,26 +143,70 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     trace.252
     nop
     push.0
+    locaddr.1
     push.0
-    movup.2
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.0
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.1
     while.true
+        locaddr.1
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
         push.0
         push.16
-        dup.2
+        movup.2
         eq
         neq
         dup.0
         if.true
-            swap.1
-            drop
-            push.3735929054
+            nop
         else
+            locaddr.0
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
+            locaddr.1
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
+            locaddr.2
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_felt
+            trace.252
+            nop
             push.16
-            dup.3
+            movup.3
             u32wrapping_add
-            dup.2
+            movup.2
             u32wrapping_add
             push.4
             dup.1
@@ -162,8 +214,6 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
             u32mod
             u32assert
             assertz
-            dup.4
-            swap.1
             u32divmod.4
             swap.1
             trace.240
@@ -171,41 +221,37 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
             exec.::intrinsics::mem::store_felt
             trace.252
             nop
+            locaddr.1
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
             push.4
-            movup.2
             u32wrapping_add
+            locaddr.1
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_sw
+            trace.252
+            nop
         end
-        push.3735929054
-        dup.2
-        movup.2
-        swap.5
-        movdn.2
-        cdrop
-        push.3735929054
-        dup.2
-        dup.4
-        swap.2
-        swap.1
-        cdrop
         push.1
         push.0
-        movup.4
+        movup.2
         cdrop
         push.1
         u32and
-        movup.4
-        swap.1
         if.true
-            movup.3
-            drop
             push.1
         else
             push.0
         end
     end
-    drop
-    drop
-    drop
     push.1114148
     u32divmod.4
     swap.1
@@ -214,29 +260,76 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.16
-    dup.2
+    dup.1
     u32wrapping_add
-    dup.2
+    swap.1
     trace.240
     nop
     exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
     trace.252
     nop
-    push.16
-    dup.2
-    u32wrapping_add
-    dup.2
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    dup.1
+    u32wrapping_add
     trace.240
     nop
     exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::miden_base_sys::bindings::faucet::burn
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.1048584
     u32wrapping_add
+    dup.0
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.24
-    dup.2
+    swap.1
     add
     u32assert
     push.8
@@ -254,7 +347,7 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     nop
     swap.1
     push.8
-    dup.3
+    movup.3
     add
     u32assert
     push.4
@@ -270,10 +363,26 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
-    dup.2
+    swap.1
     add
     u32assert
     push.8
@@ -290,7 +399,7 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     trace.252
     nop
     swap.1
-    dup.2
+    movup.2
     push.4
     dup.1
     swap.1
@@ -306,8 +415,15 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.32
-    movup.2
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -317,8 +433,17 @@ proc miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-bin
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -360,9 +485,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1
@@ -393,8 +534,25 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
+@locals("3")
 @callconv("C")
 proc miden_base_sys::bindings::faucet::burn(i32, i32)
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114144
     u32divmod.4
     swap.1
@@ -405,9 +563,16 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.2
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -415,8 +580,16 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.12
-    dup.3
+    swap.1
     add
     u32assert
     push.4
@@ -430,10 +603,18 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.8
-    dup.4
+    swap.1
     add
     u32assert
     push.4
@@ -449,8 +630,16 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
-    dup.5
+    swap.1
     add
     u32assert
     push.4
@@ -466,7 +655,14 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.5
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
@@ -480,7 +676,14 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.4
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     swap.1
     swap.3
     swap.1
@@ -490,7 +693,22 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     exec.::"miden:rust-sdk-account-faucet-burn-binding/rust-sdk-account-faucet-burn-binding@0.0.1"::rust_sdk_account_faucet_burn_binding::"miden::protocol::faucet::burn"
     trace.252
     nop
-    dup.0
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
     dup.1
     swap.1
@@ -506,45 +724,9 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     nop
     swap.1
     push.8
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    swap.2
-    movup.2
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
     movup.3
+    add
+    u32assert
     push.8
     dup.1
     swap.1
@@ -560,6 +742,66 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    swap.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    movup.2
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
+    movup.2
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
@@ -574,13 +816,46 @@ proc miden_base_sys::bindings::faucet::burn(i32, i32)
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from(
     i32,
     i32
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.2
+    swap.1
     add
     u32assert
     push.4
@@ -598,7 +873,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field
     nop
     swap.1
     push.8
-    dup.3
+    movup.3
     add
     u32assert
     push.8
@@ -616,7 +891,22 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
@@ -649,6 +939,7 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field
     nop
 end
 
+@locals("5")
 @callconv("C")
 proc miden::protocol::faucet::burn(felt, felt, felt, felt, i32)
     drop

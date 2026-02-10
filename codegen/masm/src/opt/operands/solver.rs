@@ -1,4 +1,4 @@
-use midenc_hir::{self as hir, SourceSpan};
+use midenc_hir::{self as hir, SourceSpan, TraceTarget};
 use smallvec::SmallVec;
 
 use super::{tactics::Tactic, *};
@@ -14,8 +14,14 @@ pub enum SolverError {
 }
 
 /// Configures the behavior of the [OperandMovementConstraintSolver].
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct SolverOptions {
+    /// Used for tracing to enable filtering trace messages by symbol
+    pub trace_target: TraceTarget,
+    /// An integer representing the amount of optimization fuel we have available
+    ///
+    /// The more fuel, the more effort will be spent attempting to find an optimal solution.
+    pub fuel: usize,
     /// This flag conveys to the solver that the solution(s) it computes must adhere strictly to
     /// the order of the expected operands provided to the solver.
     ///
@@ -30,15 +36,12 @@ pub struct SolverOptions {
     /// the instruction semantics are equivalent in any permutation. Using non-strict operation in
     /// any other use case is likely to lead to miscompilation.
     pub strict: bool,
-    /// An integer representing the amount of optimization fuel we have available
-    ///
-    /// The more fuel, the more effort will be spent attempting to find an optimal solution.
-    pub fuel: usize,
 }
 
 impl Default for SolverOptions {
     fn default() -> Self {
         Self {
+            trace_target: TraceTarget::category("codegen").with_topic("solver"),
             strict: true,
             fuel: 40,
         }
@@ -170,6 +173,7 @@ impl OperandMovementConstraintSolver {
 
     /// Construct a new solver for the given expected operands, constraints, and operand stack
     /// state.
+    #[cfg(test)]
     pub fn new(
         expected: &[hir::ValueRef],
         constraints: &[Constraint],
@@ -195,6 +199,11 @@ impl OperandMovementConstraintSolver {
             tactics: Default::default(),
             fuel,
         })
+    }
+
+    #[inline]
+    fn trace_target(&self) -> &TraceTarget {
+        &self.context.options().trace_target
     }
 
     /// Compute a solution that can be used to get the stack into the correct state
@@ -265,6 +274,8 @@ impl OperandMovementConstraintSolver {
                             self.context.stack(),
                         ) {
                             log::trace!(
+                                target: self.trace_target(),
+                                symbol = self.trace_target().relevant_symbol();
                                 "a solution was found using tactic {}, but it requires stack \
                                  access deeper than supported by MASM; rejecting it",
                                 tactic.name()
@@ -276,6 +287,8 @@ impl OperandMovementConstraintSolver {
                                 Some(best_size) if best_size > solution_size => {
                                     best_solution = Some(solution);
                                     log::trace!(
+                                        target: self.trace_target(),
+                                        symbol = self.trace_target().relevant_symbol();
                                         "a better solution ({solution_size} vs {best_size}) was \
                                          found using tactic {}",
                                         tactic.name()
@@ -283,6 +296,8 @@ impl OperandMovementConstraintSolver {
                                 }
                                 Some(best_size) => {
                                     log::trace!(
+                                        target: self.trace_target(),
+                                        symbol = self.trace_target().relevant_symbol();
                                         "a solution of size {solution_size} was found using \
                                          tactic {}, but it is no better than the best found so \
                                          far ({best_size})",
@@ -292,6 +307,8 @@ impl OperandMovementConstraintSolver {
                                 None => {
                                     best_solution = Some(solution);
                                     log::trace!(
+                                        target: self.trace_target(),
+                                        symbol = self.trace_target().relevant_symbol();
                                         "an initial solution of size {solution_size} was found \
                                          using tactic {}",
                                         tactic.name()
@@ -301,6 +318,8 @@ impl OperandMovementConstraintSolver {
                         }
                     } else {
                         log::trace!(
+                            target: self.trace_target(),
+                            symbol = self.trace_target().relevant_symbol();
                             "a partial solution was found using tactic {}, but is not sufficient \
                              on its own",
                             tactic.name()
@@ -309,7 +328,7 @@ impl OperandMovementConstraintSolver {
                     }
                 }
                 Err(_) => {
-                    log::trace!("tactic {} could not be applied", tactic.name());
+                    log::trace!(target: self.trace_target(), symbol = self.trace_target().relevant_symbol(); "tactic {} could not be applied", tactic.name());
                     builder.discard();
                 }
             }
@@ -320,7 +339,11 @@ impl OperandMovementConstraintSolver {
             // supported solution. However, once we have a candidate solution, we stop searching
             // for better ones.
             if remaining_fuel == 0 && best_solution.is_some() {
-                log::trace!("no more optimization fuel, using the best solution found so far");
+                log::trace!(
+                    target: self.trace_target(),
+                    symbol = self.trace_target().relevant_symbol();
+                    "no more optimization fuel, using the best solution found so far"
+                );
                 break;
             }
         }
@@ -351,6 +374,8 @@ impl OperandMovementConstraintSolver {
                     }
                 } else {
                     log::trace!(
+                        target: self.trace_target(),
+                        symbol = self.trace_target().relevant_symbol();
                         "a partial solution was found using tactic {}, but is not sufficient on \
                          its own",
                         tactic.name()
@@ -359,7 +384,7 @@ impl OperandMovementConstraintSolver {
                 }
             }
             Err(_) => {
-                log::trace!("tactic {} could not be applied", tactic.name());
+                log::trace!(target: self.trace_target(), symbol = self.trace_target().relevant_symbol(); "tactic {} could not be applied", tactic.name());
                 Err(SolverError::NoSolution)
             }
         }

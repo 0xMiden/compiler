@@ -143,12 +143,26 @@ pub enum PostPassStatus {
     Changed,
 }
 
+impl PostPassStatus {
+    pub const fn ir_changed(&self) -> bool {
+        matches!(self, Self::Changed)
+    }
+}
+
 impl From<bool> for PostPassStatus {
     fn from(ir_was_changed: bool) -> Self {
         if ir_was_changed {
             PostPassStatus::Changed
         } else {
             PostPassStatus::Unchanged
+        }
+    }
+}
+
+impl core::ops::BitOrAssign for PostPassStatus {
+    fn bitor_assign(&mut self, rhs: Self) {
+        if rhs.ir_changed() {
+            *self = PostPassStatus::Changed;
         }
     }
 }

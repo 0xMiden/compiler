@@ -373,6 +373,11 @@ impl Session {
             || self.options.print_ir_after_pass.iter().any(|p| p == pass)
     }
 
+    /// Returns true if IR should be printed to stdout, at the start of `stage`
+    pub fn should_print_ir_before_stage(&self, stage: &str) -> bool {
+        self.options.print_ir_before_stage.iter().any(|s| s == stage)
+    }
+
     /// Returns true if CFG should be printed to stdout, after executing a pass named `pass`
     pub fn should_print_cfg(&self, pass: &str) -> bool {
         self.options.print_cfg_after_all

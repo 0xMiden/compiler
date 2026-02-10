@@ -105,6 +105,7 @@ proc rust_sdk_input_note_get_recipient_binding::bindings::__link_custom_section_
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1#binding(
 
@@ -119,9 +120,16 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -134,8 +142,16 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     exec.::"miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1"::rust_sdk_input_note_get_recipient_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.0
     push.0
-    dup.1
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.0
+    swap.1
     trace.240
     nop
     exec.::"miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1"::rust_sdk_input_note_get_recipient_binding::miden_base_sys::bindings::input_note::get_recipient
@@ -151,8 +167,25 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     nop
     push.1048584
     u32wrapping_add
+    dup.0
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.2
+    swap.1
     add
     u32assert
     push.8
@@ -170,7 +203,7 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     nop
     swap.1
     push.8
-    dup.3
+    movup.3
     add
     u32assert
     push.4
@@ -188,7 +221,22 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    dup.1
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
     dup.1
     swap.1
@@ -203,7 +251,7 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     trace.252
     nop
     swap.1
-    dup.2
+    movup.2
     push.4
     dup.1
     swap.1
@@ -217,10 +265,17 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
-    movup.2
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -230,8 +285,17 @@ proc miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-rec
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -273,9 +337,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1"::rust_sdk_input_note_get_recipient_binding::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1
@@ -306,11 +386,20 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
+@locals("3")
 @callconv("C")
 proc miden_base_sys::bindings::input_note::get_recipient(
     i32,
     felt
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114144
     u32divmod.4
     swap.1
@@ -321,9 +410,16 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.2
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -331,14 +427,36 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.0
-    movup.3
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    swap.1
     trace.240
     nop
     exec.::"miden:rust-sdk-input-note-get-recipient-binding/rust-sdk-input-note-get-recipient-binding@0.0.1"::rust_sdk_input_note_get_recipient_binding::"miden::protocol::input_note::get_recipient"
     trace.252
     nop
-    dup.0
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
     dup.1
     swap.1
@@ -354,45 +472,9 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     nop
     swap.1
     push.8
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    swap.2
-    movup.2
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
     movup.3
+    add
+    u32assert
     push.8
     dup.1
     swap.1
@@ -408,6 +490,66 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    swap.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    movup.2
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
+    movup.2
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
@@ -422,6 +564,7 @@ proc miden_base_sys::bindings::input_note::get_recipient(
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden::protocol::input_note::get_recipient(felt, i32)
     drop

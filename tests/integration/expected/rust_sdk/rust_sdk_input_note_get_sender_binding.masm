@@ -75,6 +75,7 @@ proc rust_sdk_input_note_get_sender_binding::bindings::__link_custom_section_des
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1#binding(
 
@@ -89,9 +90,16 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -104,9 +112,17 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     exec.::"miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1"::rust_sdk_input_note_get_sender_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.0
     push.8
-    dup.2
+    movup.2
     u32wrapping_add
     trace.240
     nop
@@ -123,8 +139,16 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     nop
     push.1048584
     u32wrapping_add
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.2
+    swap.1
     add
     u32assert
     push.8
@@ -157,8 +181,15 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.16
-    movup.2
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -170,6 +201,7 @@ proc miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender
     nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -211,9 +243,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1"::rust_sdk_input_note_get_sender_binding::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1
@@ -244,11 +292,20 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
+@locals("3")
 @callconv("C")
 proc miden_base_sys::bindings::input_note::get_sender(
     i32,
     felt
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114144
     u32divmod.4
     swap.1
@@ -259,9 +316,16 @@ proc miden_base_sys::bindings::input_note::get_sender(
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.2
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -269,17 +333,40 @@ proc miden_base_sys::bindings::input_note::get_sender(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.1
     u32wrapping_add
-    movup.3
+    swap.1
     trace.240
     nop
     exec.::"miden:rust-sdk-input-note-get-sender-binding/rust-sdk-input-note-get-sender-binding@0.0.1"::rust_sdk_input_note_get_sender_binding::"miden::protocol::input_note::get_sender"
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.1
+    swap.1
     add
     u32assert
     push.4
@@ -296,7 +383,7 @@ proc miden_base_sys::bindings::input_note::get_sender(
     trace.252
     nop
     swap.1
-    movup.3
+    movup.2
     push.8
     dup.1
     swap.1
@@ -312,6 +399,14 @@ proc miden_base_sys::bindings::input_note::get_sender(
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.16
     u32wrapping_add
     push.1114144
@@ -324,6 +419,7 @@ proc miden_base_sys::bindings::input_note::get_sender(
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden::protocol::input_note::get_sender(felt, i32)
     drop

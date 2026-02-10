@@ -14,33 +14,12 @@ use crate::{
     CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
-    testing::executor_with_std,
+    testing::{self, executor_with_std},
 };
 
 mod base;
 mod macros;
 mod stdlib;
-
-#[test]
-#[ignore = "until https://github.com/0xMiden/compiler/issues/439 is fixed"]
-fn account() {
-    let artifact_name = "miden_sdk_account_test";
-    let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/account-test",
-        config,
-        [],
-    );
-    test.expect_wasm(expect_file![format!(
-        "../../../expected/rust_sdk_account_test/{artifact_name}.wat"
-    )]);
-    test.expect_ir(expect_file![format!(
-        "../../../expected/rust_sdk_account_test/{artifact_name}.hir"
-    )]);
-    // test.expect_masm(expect_file![format!(
-    //     "../../../expected/rust_sdk_account_test/{artifact_name}.masm"
-    // )]);
-}
 
 #[test]
 fn rust_sdk_swapp_note_bindings() {
@@ -260,7 +239,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
 
 #[test]
 fn pure_rust_hir2() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    testing::setup::enable_compiler_instrumentation();
     let config = WasmTranslationConfig::default();
     let mut test =
         CompilerTest::rust_source_cargo_miden("../rust-apps-wasm/rust-sdk/add", config, []);

@@ -11,7 +11,7 @@ pub fn main() -> Result<(), Report> {
     }
 
     // Initialize logger, but do not install it, leave that up to the command handler
-    let mut builder = env_logger::Builder::from_env("MIDENC_TRACE");
+    let mut builder = midenc_log::Builder::from_env("MIDENC_TRACE");
     builder.format_indent(Some(2));
     if let Ok(precision) = env::var("MIDENC_TRACE_TIMING") {
         match precision.as_str() {

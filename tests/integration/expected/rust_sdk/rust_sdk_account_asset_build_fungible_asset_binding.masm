@@ -105,6 +105,7 @@ proc rust_sdk_account_asset_build_fungible_asset_binding::bindings::__link_custo
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1#binding(
 
@@ -119,9 +120,16 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -134,10 +142,18 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     exec.::"miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1"::rust_sdk_account_asset_build_fungible_asset_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.10
     push.0
     push.1
-    dup.3
+    movup.3
     trace.240
     nop
     exec.::"miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1"::rust_sdk_account_asset_build_fungible_asset_binding::miden_base_sys::bindings::asset::build_fungible_asset
@@ -153,8 +169,25 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     nop
     push.1048584
     u32wrapping_add
+    dup.0
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.2
+    swap.1
     add
     u32assert
     push.8
@@ -172,7 +205,7 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     nop
     swap.1
     push.8
-    dup.3
+    movup.3
     add
     u32assert
     push.4
@@ -190,7 +223,22 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    dup.1
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
     dup.1
     swap.1
@@ -205,7 +253,7 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     trace.252
     nop
     swap.1
-    dup.2
+    movup.2
     push.4
     dup.1
     swap.1
@@ -219,10 +267,17 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
-    movup.2
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -232,8 +287,17 @@ proc miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -275,9 +339,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
         trace.240
         nop
         exec.::"miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1"::rust_sdk_account_asset_build_fungible_asset_binding::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1
@@ -308,6 +388,7 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
+@locals("5")
 @callconv("C")
 proc miden_base_sys::bindings::asset::build_fungible_asset(
     i32,
@@ -315,6 +396,14 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     felt,
     felt
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114144
     u32divmod.4
     swap.1
@@ -325,9 +414,16 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     nop
     push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.4
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -335,20 +431,36 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.0
-    movup.2
-    swap.5
-    movdn.2
+    locaddr.4
+    push.0
     swap.1
-    swap.4
-    swap.1
-    swap.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    movdn.3
     trace.240
     nop
     exec.::"miden:rust-sdk-account-asset-build-fungible-asset-binding/rust-sdk-account-asset-build-fungible-asset-binding@0.0.1"::rust_sdk_account_asset_build_fungible_asset_binding::"miden::protocol::asset::build_fungible_asset"
     trace.252
     nop
-    dup.0
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
     dup.1
     swap.1
@@ -364,45 +476,9 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     nop
     swap.1
     push.8
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    swap.2
-    movup.2
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
     movup.3
+    add
+    u32assert
     push.8
     dup.1
     swap.1
@@ -418,6 +494,66 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    swap.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    movup.2
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
+    movup.2
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
@@ -432,6 +568,7 @@ proc miden_base_sys::bindings::asset::build_fungible_asset(
     nop
 end
 
+@locals("4")
 @callconv("C")
 proc miden::protocol::asset::build_fungible_asset(felt, felt, felt, i32)
     drop

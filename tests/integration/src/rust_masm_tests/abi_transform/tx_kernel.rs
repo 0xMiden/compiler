@@ -17,16 +17,6 @@ use crate::{
     testing::{Initializer, eval_package},
 };
 
-#[allow(unused)]
-fn setup_log() {
-    use log::LevelFilter;
-    let _ = env_logger::builder()
-        .filter_level(LevelFilter::Trace)
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
-}
-
 #[test]
 fn test_get_inputs_4() -> Result<(), Report> {
     test_get_inputs("4", vec![u32::MAX, 1, 2, 3])

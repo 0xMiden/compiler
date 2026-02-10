@@ -2,8 +2,8 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @neg_felt {
         public builtin.function @entrypoint(v0: felt, v1: felt) -> felt {
         ^block4(v0: felt, v1: felt):
-            v3 = arith.sub v0, v1 : felt #[overflow = unchecked];
-            builtin.ret v3;
+            v5 = arith.sub v0, v1 : felt #[overflow = unchecked];
+            builtin.ret v5;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

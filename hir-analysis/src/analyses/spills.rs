@@ -4,7 +4,7 @@ use midenc_hir::{
     AttributeValue, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
     OperationRef, ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorOperands,
-    Value, ValueOrAlias, ValueRange, ValueRef,
+    TraceTarget, Value, ValueOrAlias, ValueRange, ValueRef,
     adt::{SmallOrdMap, SmallSet},
     cfg::Graph,
     dialects::builtin::Function,
@@ -240,6 +240,10 @@ pub struct SpillAnalysis {
     w_exits: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
     // The set of operands that have been spilled so far, on exit from a given program point
     s_exits: FxHashMap<ProgramPoint, SmallSet<ValueOrAlias, 4>>,
+    /// The trace target for the analysis, includes the symbol name of the current function/op
+    ///
+    /// This is used in tracing targets so that we can filter traces by symbol
+    trace_target: TraceTarget,
 }
 
 /// Represents a single predecessor for some [ProgramPoint]
@@ -433,6 +437,15 @@ pub enum Placement {
     Split(Split),
 }
 
+impl core::fmt::Display for Placement {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::At(point) => core::fmt::Display::fmt(point, f),
+            Self::Split(split) => write!(f, "split({})", split.as_usize()),
+        }
+    }
+}
+
 /// The maximum number of operand stack slots which can be assigned without spills.
 const K: usize = 16;
 
@@ -448,7 +461,16 @@ impl Analysis for SpillAnalysis {
         op: &Self::Target,
         analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
-        log::debug!(target: "spills", "running spills analysis for {}", op.as_operation());
+        self.trace_target = TraceTarget::category("analysis")
+            .with_topic(self.name())
+            .with_relevant_symbol(op.name().as_symbol());
+
+        log::debug!(
+            target: &self.trace_target,
+            symbol = self.trace_target.relevant_symbol();
+            "running spills analysis for {}",
+            op.as_operation()
+        );
 
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
         self.compute(op, &liveness, analysis_manager)
@@ -595,9 +617,6 @@ impl SpillAnalysis {
             assert!(_deferred.is_empty());
             Ok(())
         } else {
-            // We generally expect that control flow lifting will have removed all but the entry
-            // block, but in some cases there can be some remaining unstructured control flow, so
-            // we handle that in the usual way here
             let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
             let loops = analysis_manager.get_analysis::<LoopInfo>()?;
             let entry_region = function.body().as_region_ref();
@@ -631,10 +650,16 @@ impl SpillAnalysis {
         liveness: &LivenessAnalysis,
         analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
-        log::trace!(target: "spills", "visiting cfg");
-
         // Visit the blocks of the CFG in reverse postorder (top-down)
-        let mut block_q = VecDeque::from(domtree.reverse_postorder());
+        let mut block_q = VecDeque::with_capacity(32);
+        for block in midenc_hir::PostOrderBlockIter::new(domtree.root()) {
+            block_q.push_front(block);
+        }
+        log::debug!(
+            target: &self.trace_target,
+            symbol = self.trace_target.relevant_symbol();
+            "visiting cfg (reverse post-order): {}", DisplayValues::new(block_q.iter())
+        );
 
         // If a block has a predecessor which it dominates (i.e. control flow always flows through
         // the block in question before the given predecessor), then we must defer computing spills
@@ -642,11 +667,7 @@ impl SpillAnalysis {
         // track deferred edges for each block.
         let mut deferred = Vec::<(BlockRef, SmallVec<[BlockRef; 2]>)>::default();
 
-        while let Some(node) = block_q.pop_front() {
-            let Some(block_ref) = node.block() else {
-                continue;
-            };
-
+        while let Some(block_ref) = block_q.pop_front() {
             self.visit_single_block(
                 op,
                 &block_ref.borrow(),
@@ -704,7 +725,7 @@ impl SpillAnalysis {
         liveness: &LivenessAnalysis,
         analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
-        log::trace!(target: "spills", "visiting region cfg");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "visiting region cfg");
 
         // Visit the blocks of the CFG in reverse postorder (top-down)
         let region = entry.parent().unwrap();
@@ -782,17 +803,23 @@ impl SpillAnalysis {
     ) -> Result<(), Report> {
         let block_ref = block.as_block_ref();
 
-        log::trace!(target: "spills", "visiting {block}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "visiting {block}");
 
         // Compute W^entry(B)
         self.compute_w_entry(op, block, loops, liveness);
 
         // Derive S^entry(B) from W^entry(B) and compute live predecessors at block start
         let w_entry = self.w_entries[&ProgramPoint::at_start_of(block)].clone();
-        log::trace!(target: "spills", "computing block information");
         let block_info = self.block_entry_info(op, block, liveness, w_entry);
-        log::trace!(target: "spills", "  W^entry({block}) = {{{}}}", DisplayValues::new(block_info.w_entry.iter()));
-        log::trace!(target: "spills", "  S^entry({block}) = {{{}}}", DisplayValues::new(block_info.s_entry.iter()));
+        log::trace!(
+            target: &self.trace_target,
+            symbol = self.trace_target.relevant_symbol();
+            "computing block information
+    W^entry({block}) = {{{}}}
+    S^entry({block}) = {{{}}}\n",
+            DisplayValues::new(block_info.w_entry.iter()),
+            DisplayValues::new(block_info.s_entry.iter()),
+        );
 
         // For each predecessor P of B, insert spills/reloads along the inbound control flow
         // edge as follows:
@@ -924,9 +951,14 @@ impl SpillAnalysis {
         liveness: &LivenessAnalysis,
         analysis_manager: AnalysisManager,
     ) -> Result<(), Report> {
-        log::trace!(target: "spills", "visiting region branch op '{}'", branch.as_operation());
-        log::trace!(target: "spills", "  W^in = {w:?}");
-        log::trace!(target: "spills", "  S^in = {s:?}");
+        log::trace!(
+            target: &self.trace_target,
+            symbol = self.trace_target.relevant_symbol();
+            "visiting region branch op '{}'
+    W^in = {w:?}
+    S^in = {s:?}\n",
+            branch.as_operation(),
+        );
 
         // PHASE 1:
         //
@@ -958,16 +990,16 @@ impl SpillAnalysis {
                 to_reload.swap_remove(pos);
             }
         }
-        log::trace!(target: "spills", "  require reloading = {to_reload:#?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  require reloading = {to_reload:#?}");
 
         // Precompute the starting stack usage of W
         let w_used = w.iter().map(|o| o.stack_size()).sum::<usize>();
-        log::trace!(target: "spills", "  current stack usage = {w_used}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  current stack usage = {w_used}");
 
         // Compute the needed operand stack space for all operands not currently in W, i.e. those
         // which must be reloaded from a spill slot
         let in_needed = to_reload.iter().map(|o| o.stack_size()).sum::<usize>();
-        log::trace!(target: "spills", "  required by reloads = {in_needed}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  required by reloads = {in_needed}");
 
         // If we have room for operands and results in W, then no spills are needed,
         // otherwise we require two passes to compute the spills we will need to issue
@@ -980,7 +1012,11 @@ impl SpillAnalysis {
         // the size of any operands which must be reloaded.
         let max_usage_in = w_used + in_needed;
         if max_usage_in > K {
-            log::trace!(target: "spills", "  max usage on entry ({max_usage_in}) exceeds K ({K}), spills required");
+            log::trace!(
+                target: &self.trace_target,
+                symbol = self.trace_target.relevant_symbol();
+                "  max usage on entry ({max_usage_in}) exceeds K ({K}), spills required"
+            );
             // We must spill enough capacity to keep K >= 16
             let mut must_spill = max_usage_in - K;
             // Our initial set of candidates consists of values in W which are not operands
@@ -1009,10 +1045,10 @@ impl SpillAnalysis {
                 to_spill.insert(candidate);
             }
         } else {
-            log::trace!(target: "spills", "  spills required on entry: no");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  spills required on entry: no");
         }
 
-        log::trace!(target: "spills", "  spills = {to_spill:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  spills = {to_spill:?}");
 
         // Emit spills first, to make space for reloaded values on the operand stack
         for spill in to_spill.iter() {
@@ -1038,8 +1074,8 @@ impl SpillAnalysis {
         self.w_entries.insert(before_op, w.clone());
         self.s_entries.insert(before_op, s.clone());
 
-        log::trace!(target: "spills", "  W^entry = {w:?}");
-        log::trace!(target: "spills", "  S^entry = {s:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  W^entry = {w:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  S^entry = {s:?}");
 
         // PHASE 2:
         //
@@ -1069,9 +1105,6 @@ impl SpillAnalysis {
         }
 
         for successor in branch.get_entry_successor_regions(&operands) {
-            //let mut w_entry = w.clone();
-            //let mut s_entry = s.clone();
-
             // Fixup W and S based on successor operands
             let branch_point = *successor.branch_point();
             let inputs = branch.get_entry_successor_operands(branch_point);
@@ -1084,7 +1117,7 @@ impl SpillAnalysis {
                 Some(region) => {
                     let region = region.borrow();
                     let block = region.entry();
-                    log::trace!(target: "spills", "  processing successor {block}");
+                    log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  processing successor {block}");
 
                     // Visit the contents of `region`
                     //
@@ -1102,7 +1135,7 @@ impl SpillAnalysis {
                     // TODO(pauls): Need to compute W and S on exit from `branch` as if the exit
                     // point of `branch` is the entry of a new block, i.e. as computed via
                     // `compute_w_entry_normal`
-                    log::trace!(target: "spills", "  processing self as successor");
+                    log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  processing self as successor");
                     todo!()
                 }
             }
@@ -1120,7 +1153,12 @@ impl SpillAnalysis {
         // are live after `branch`, but not live on exit from all predecessors, we must issue a
         // reload for that value. Correspondingly, if there are any values in S which are live after
         // `branch`, but not spilled in every predecessor, we must issue a spill for that value.
-        log::trace!(target: "spills", "  computing W^exit for '{}'..", branch.as_operation().name());
+        log::trace!(
+            target: &self.trace_target,
+            symbol = self.trace_target.relevant_symbol();
+            "  computing W^exit for '{}'..",
+            branch.as_operation().name()
+        );
 
         // First, compute W^exit(branch)
         self.compute_w_exit_region_branch_op(branch, liveness);
@@ -1139,8 +1177,8 @@ impl SpillAnalysis {
         *w = w_exit;
         *s = s_exit;
 
-        log::trace!(target: "spills", "  W^exit = {w:?}");
-        log::trace!(target: "spills", "  S^exit = {s:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  W^exit = {w:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  S^exit = {s:?}");
 
         Ok(())
     }
@@ -1219,17 +1257,17 @@ impl SpillAnalysis {
         if let Some(loop_info) =
             loops.and_then(|loops| loops.loop_for(block_ref).filter(|l| l.header() == block_ref))
         {
-            log::trace!(target: "spills", "computing W^entry for loop header {block}");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "computing W^entry for loop header {block}");
             return self.compute_w_entry_loop(block, &loop_info, liveness);
         } else if let Some(loop_like) = op.as_trait::<dyn LoopLikeOpInterface>() {
             let region = block.parent().unwrap();
             if loop_like.get_loop_header_region() == region && block.is_entry_block() {
-                log::trace!(target: "spills", "computing W^entry for loop-like header {block}");
+                log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "computing W^entry for loop-like header {block}");
                 return self.compute_w_entry_loop_like(loop_like, block, liveness);
             }
         }
 
-        log::trace!(target: "spills", "computing W^entry normally for {block}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "computing W^entry normally for {block}");
         self.compute_w_entry_normal(op, block, liveness);
     }
 
@@ -1292,15 +1330,14 @@ impl SpillAnalysis {
         // If this block is the entry block of a RegionBranchOpInterface op, then we compute the
         // set of predecessors differently than unstructured CFG ops.
         let mut predecessor_count = 0;
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "loading predecessor state for {}", ProgramPoint::at_start_of(block));
+        let predecessors = liveness
+            .solver()
+            .get::<PredecessorState, _>(&ProgramPoint::at_start_of(block))
+            .expect("expected all predecessors of block to be known");
+        assert!(predecessors.all_predecessors_known(), "unexpected unresolved region successors");
+
         if op.implements::<dyn RegionBranchOpInterface>() && block.is_entry_block() {
-            let predecessors = liveness
-                .solver()
-                .get::<PredecessorState, _>(&ProgramPoint::at_start_of(block))
-                .expect("expected all predecessors of region block to be known");
-            assert!(
-                predecessors.all_predecessors_known(),
-                "unexpected unresolved region successors"
-            );
             let operation = op.as_operation_ref();
             for predecessor in predecessors.known_predecessors().iter().copied() {
                 if predecessor == operation {
@@ -1332,20 +1369,20 @@ impl SpillAnalysis {
                 }
             }
         } else {
-            for pred in block.predecessors() {
-                let predecessor = pred.predecessor();
+            for predecessor in predecessors.known_predecessors() {
+                let predecessor_block = predecessor.parent().unwrap();
 
                 // Skip control edges that aren't executable.
-                let edge = CfgEdge::new(predecessor, pred.successor(), block.span());
+                let edge = CfgEdge::new(predecessor_block, block.as_block_ref(), block.span());
                 if !liveness.solver().get::<Executable, _>(&edge).is_none_or(|exe| exe.is_live()) {
                     continue;
                 }
 
                 predecessor_count += 1;
-                let end_of_pred = ProgramPoint::at_end_of(predecessor);
+                let end_of_pred = ProgramPoint::at_end_of(predecessor_block);
                 for o in self.w_exits[&end_of_pred].iter().copied() {
                     // Do not add candidates which are not live-after the predecessor
-                    if liveness.is_live_at_end(o, predecessor) {
+                    if liveness.is_live_at_end(o, predecessor_block) {
                         *freq.entry(o).or_insert(0) += 1;
                         cand.insert(o);
                     }
@@ -1447,7 +1484,7 @@ impl SpillAnalysis {
             if predecessor == operation {
                 predecessor_count += 1;
                 let end_of_pred = ProgramPoint::before(operation);
-                log::trace!(target: "spills", "examining exit predecessor {end_of_pred}");
+                log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "examining exit predecessor {end_of_pred}");
                 for o in self.w_entries[&end_of_pred].iter().copied() {
                     // Do not add candidates which are not live-after the predecessor
                     if liveness.is_live_after_entry(o, branch.as_operation()) {
@@ -1465,7 +1502,7 @@ impl SpillAnalysis {
 
             predecessor_count += 1;
             let end_of_pred = ProgramPoint::at_end_of(predecessor_block);
-            log::trace!(target: "spills", "examining exit predecessor {end_of_pred}");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "examining exit predecessor {end_of_pred}");
             for o in self.w_exits[&end_of_pred].iter().copied() {
                 // Do not add candidates which are not live-after the predecessor
                 if liveness.is_live_at_end(o, predecessor_block) {
@@ -1545,7 +1582,7 @@ impl SpillAnalysis {
             }
         }));
 
-        log::trace!(target: "spills", "  alive at loop entry: {{{}}}", DisplayValues::new(alive.iter()));
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  alive at loop entry: {{{}}}", DisplayValues::new(alive.iter()));
 
         // Initial candidates are values live at block entry which are used in the loop body
         let mut cand = alive
@@ -1554,18 +1591,18 @@ impl SpillAnalysis {
             .copied()
             .collect::<SmallSet<_, 4>>();
 
-        log::trace!(target: "spills", "  initial candidates: {{{}}}", DisplayValues::new(cand.iter()));
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  initial candidates: {{{}}}", DisplayValues::new(cand.iter()));
 
         // Values which are "live through" the loop, are those which are live at entry, but not
         // used within the body of the loop. If we have excess available operand stack capacity,
         // then we can avoid issuing spills/reloads for at least some of these values.
         let live_through = alive.difference(&cand);
 
-        log::trace!(target: "spills", "  live through loop: {{{}}}", DisplayValues::new(live_through.iter()));
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  live through loop: {{{}}}", DisplayValues::new(live_through.iter()));
 
         let w_used = cand.iter().map(|o| o.stack_size()).sum::<usize>();
-        let max_loop_pressure = max_loop_pressure(loop_info, liveness);
-        log::trace!(target: "spills", "  w_used={w_used}, K={K}, loop_pressure={max_loop_pressure}");
+        let max_loop_pressure = max_loop_pressure(loop_info, liveness, &self.trace_target);
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  w_used={w_used}, K={K}, loop_pressure={max_loop_pressure}");
 
         if w_used < K {
             if let Some(mut free_in_loop) = K.checked_sub(max_loop_pressure) {
@@ -1842,13 +1879,13 @@ impl SpillAnalysis {
 ///
 /// If the stack depth never reaches K, the excess capacity represents an opportunity to
 /// avoid issuing spills/reloads for values which are live through the loop.
-fn max_loop_pressure(loop_info: &Loop, liveness: &LivenessAnalysis) -> usize {
+fn max_loop_pressure(loop_info: &Loop, liveness: &LivenessAnalysis, trace_target: &str) -> usize {
     let header = loop_info.header();
     let mut max = max_block_pressure(&header.borrow(), liveness);
     let mut block_q = VecDeque::from_iter([header]);
     let mut visited = SmallSet::<BlockRef, 4>::default();
 
-    log::trace!(target: "spills", "computing max pressure for loop headed by {header}");
+    log::trace!(target: trace_target, "computing max pressure for loop headed by {header}");
 
     while let Some(block) = block_q.pop_front() {
         if !visited.insert(block) {
@@ -1856,21 +1893,21 @@ fn max_loop_pressure(loop_info: &Loop, liveness: &LivenessAnalysis) -> usize {
         }
 
         let children = BlockRef::children(block).collect::<Vec<_>>();
-        log::trace!(target: "spills", "    children of {block}: {children:?}");
+        log::trace!(target: trace_target, "    children of {block}: {children:?}");
         let loop_children = children
             .iter()
             .filter(|b| loop_info.contains_block(**b))
             .copied()
             .collect::<Vec<_>>();
-        log::trace!(target: "spills", "    children in loop: {loop_children:?}");
+        log::trace!(target: trace_target, "    children in loop: {loop_children:?}");
         block_q.extend(loop_children);
 
         let max_block_pressure = max_block_pressure(&block.borrow(), liveness);
-        log::trace!(target: "spills", "  block {block} pressure = {max_block_pressure}");
+        log::trace!(target: trace_target, "  block {block} pressure = {max_block_pressure}");
         max = core::cmp::max(max, max_block_pressure);
     }
 
-    log::trace!(target: "spills", "  max loop pressure = {max}");
+    log::trace!(target: trace_target, "  max loop pressure = {max}");
     max
 }
 
@@ -2180,12 +2217,12 @@ impl SpillAnalysis {
         let place = Placement::At(before_op);
         let span = op.span();
 
-        log::trace!(target: "spills", "scheduling spills/reloads at {before_op}");
-        log::trace!(target: "spills", "  W^entry = {w:?}");
-        log::trace!(target: "spills", "  S^entry = {s:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "scheduling spills/reloads at {before_op}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  W^entry = {w:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  S^entry = {s:?}");
 
         if op.implements::<dyn RegionBranchTerminatorOpInterface>() {
-            log::trace!(target: "spills", "  region terminator = true");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  region terminator = true");
             // Region branch terminators forward successor operands across region boundaries.
             //
             // These operands can exceed K, but since control flow transfers immediately, we do not
@@ -2196,15 +2233,15 @@ impl SpillAnalysis {
             let to_reload = ValueRange::<4>::from(op.operands().all());
             for reload in to_reload.into_iter().map(ValueOrAlias::new) {
                 if w.insert(reload) {
-                    log::trace!(target: "spills", "  emitting reload for {reload}");
+                    log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  emitting reload for {reload}");
                     // By definition, if we are emitting a reload, the value must have been spilled
                     s.insert(reload);
                     self.reload(place, reload.value(), span);
                 }
             }
 
-            log::trace!(target: "spills", "  W^exit = {w:?}");
-            log::trace!(target: "spills", "  S^exit = {s:?}");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  W^exit = {w:?}");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  S^exit = {s:?}");
             return;
         }
 
@@ -2212,7 +2249,7 @@ impl SpillAnalysis {
             op.implements::<dyn Terminator>() && !op.implements::<dyn BranchOpInterface>();
 
         if is_terminator {
-            log::trace!(target: "spills", "  terminator = true");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  terminator = true");
             // A non-branching terminator is either a return, or an unreachable.
             // In the latter case, there are no operands or results, so there is no
             // effect on W or S In the former case, the operands to the instruction are
@@ -2223,13 +2260,13 @@ impl SpillAnalysis {
             let to_reload = ValueRange::<4>::from(op.operands().all());
             for reload in to_reload.into_iter().map(ValueOrAlias::new) {
                 if w.insert(reload) {
-                    log::trace!(target: "spills", "  emitting reload for {reload}");
+                    log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  emitting reload for {reload}");
                     self.reload(place, reload.value(), span);
                 }
             }
 
-            log::trace!(target: "spills", "  W^exit = {w:?}");
-            log::trace!(target: "spills", "  S^exit = {s:?}");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  W^exit = {w:?}");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  S^exit = {s:?}");
             return;
         }
 
@@ -2278,12 +2315,12 @@ impl SpillAnalysis {
             })
             .sum::<usize>();
 
-        log::trace!(target: "spills", "  results = {results}");
-        log::trace!(target: "spills", "  require copy/reload = {to_reload:?}");
-        log::trace!(target: "spills", "  current stack usage = {w_used}");
-        log::trace!(target: "spills", "  required by reloads = {in_needed}");
-        log::trace!(target: "spills", "  required by results = {out_needed}");
-        log::trace!(target: "spills", "  freed by op         = {in_consumed}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  results = {results}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  require copy/reload = {to_reload:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  current stack usage = {w_used}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  required by reloads = {in_needed}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  required by results = {out_needed}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  freed by op         = {in_consumed}");
 
         // If we have room for operands and results in W, then no spills are needed,
         // otherwise we require two passes to compute the spills we will need to issue
@@ -2296,7 +2333,7 @@ impl SpillAnalysis {
         // the size of any operands which must be reloaded.
         let max_usage_in = w_used + in_needed;
         if max_usage_in > K {
-            log::trace!(target: "spills", "max usage on entry ({max_usage_in}) exceeds K ({K}), spills required");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "max usage on entry ({max_usage_in}) exceeds K ({K}), spills required");
             // We must spill enough capacity to keep K >= 16
             let mut must_spill = max_usage_in - K;
             // Our initial set of candidates consists of values in W which are not operands
@@ -2325,18 +2362,18 @@ impl SpillAnalysis {
                 to_spill.insert(candidate);
             }
         } else {
-            log::trace!(target: "spills", "  spills required on entry: no");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  spills required on entry: no");
         }
 
         // Second pass: compute spills for exit from I (making room for results)
         let spilled = to_spill.iter().map(|o| o.stack_size()).sum::<usize>();
-        log::trace!(target: "spills", "  freed by spills = {spilled}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  freed by spills = {spilled}");
         // The max usage out is computed by adding the space required for all results of I, to
         // the max usage in, then subtracting the size of all operands which are consumed by I,
         // as well as the size of those values in W which we have spilled.
         let max_usage_out = (max_usage_in + out_needed).saturating_sub(in_consumed + spilled);
         if max_usage_out > K {
-            log::trace!(target: "spills", "max usage on exit ({max_usage_out}) exceeds K ({K}), additional spills required");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "max usage on exit ({max_usage_out}) exceeds K ({K}), additional spills required");
             // We must spill enough capacity to keep K >= 16
             let mut must_spill = max_usage_out - K;
             // For this pass, the set of candidates consists of values in W which are not
@@ -2380,13 +2417,13 @@ impl SpillAnalysis {
                 to_spill.insert(candidate);
             }
         } else {
-            log::trace!(target: "spills", "  spills required on exit: no");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  spills required on exit: no");
         }
 
         // Emit spills first, to make space for reloaded values on the operand stack
         for spill in to_spill.iter() {
             if s.insert(*spill) {
-                log::trace!(target: "spills", "emitting spill for {spill}");
+                log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "emitting spill for {spill}");
                 self.spill(place, spill.value(), span);
             }
 
@@ -2398,7 +2435,7 @@ impl SpillAnalysis {
         for reload in to_reload {
             // We only need to emit a reload for a given value once
             if w.insert(reload) {
-                log::trace!(target: "spills", "emitting reload for {reload}");
+                log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "emitting reload for {reload}");
                 // By definition, if we are emitting a reload, the value must have been spilled
                 s.insert(reload);
                 self.reload(place, reload.value(), span);
@@ -2415,9 +2452,9 @@ impl SpillAnalysis {
         // or reload along each control flow edge.
         //
         // Second, if applicable, we add in the instruction results
-        log::trace!(target: "spills", "  applying effects of operation to W..");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  applying effects of operation to W..");
         if let Some(branch) = op.as_trait::<dyn BranchOpInterface>() {
-            log::trace!(target: "spills", "  op is a control flow branch, attempting to resolve a single successor");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  op is a control flow branch, attempting to resolve a single successor");
             // Try to determine if we can select a single successor here
             let mut operands = SmallVec::<[Option<Box<dyn AttributeValue>>; 4]>::with_capacity(
                 op.operands().group(0).len(),
@@ -2436,7 +2473,7 @@ impl SpillAnalysis {
             }
 
             if let Some(succ) = branch.get_successor_for_operands(&operands) {
-                log::trace!(target: "spills", "  resolved single succeessor {}", succ.successor());
+                log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  resolved single succeessor {}", succ.successor());
                 w.retain(|o| {
                     op.operands()
                         .group(succ.successor_operand_group())
@@ -2457,7 +2494,7 @@ impl SpillAnalysis {
                         }
                     })
                     .collect::<SmallVec<[_; 2]>>();
-                log::trace!(target: "spills", "  resolved {} successors", successor_operand_groups.len());
+                log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  resolved {} successors", successor_operand_groups.len());
                 w.retain(|o| {
                     let is_succ_arg = successor_operand_groups.iter().copied().any(|succ| {
                         op.operands()
@@ -2469,16 +2506,16 @@ impl SpillAnalysis {
                 });
             }
         } else {
-            log::trace!(target: "spills", "  '{}' is a primitive operation", op.name());
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  '{}' is a primitive operation", op.name());
 
             // This is a simple operation
-            log::trace!(target: "spills", "  removing dead operands from W");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  removing dead operands from W");
             w.retain(|o| liveness.is_live_after(o, op));
-            log::trace!(target: "spills", "  adding results to W");
+            log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  adding results to W");
             w.extend(results.iter().map(ValueOrAlias::new));
         }
 
-        log::trace!(target: "spills", "  W^exit = {w:?}");
-        log::trace!(target: "spills", "  S^exit = {s:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  W^exit = {w:?}");
+        log::trace!(target: &self.trace_target, symbol = self.trace_target.relevant_symbol(); "  S^exit = {s:?}");
     }
 }

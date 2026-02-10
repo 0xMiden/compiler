@@ -14,6 +14,7 @@ members = [
     "midenc",
     "midenc-compile",
     "midenc-driver",
+    "midenc-log",
     "midenc-session",
     "sdk/field-repr/*",
     "sdk/field",
@@ -67,12 +68,13 @@ clap = { version = "4.5", default-features = false, features = [
 ] }
 cranelift-entity = "0.120"
 compact_str = { version = "0.9", default-features = false }
-env_logger = "0.11"
 hashbrown = { version = "0.15", features = ["nightly"] }
 Inflector = "0.11"
 intrusive-collections = "0.9"
 inventory = "0.3"
-log = "0.4"
+litcheck = { package = "litcheck-core", version = "0.4" }
+litcheck-filecheck = "0.4"
+log = { version = "0.4", features = ["kv"] }
 
 # Miden Dependencies
 miden-assembly = { version = "0.20", default-features = false }
@@ -147,6 +149,7 @@ midenc-hir-transform = { version = "0.6.0", path = "hir-transform" }
 midenc-frontend-wasm = { version = "0.6.0", path = "frontend/wasm" }
 midenc-compile = { version = "0.6.0", path = "midenc-compile" }
 midenc-driver = { version = "0.6.0", path = "midenc-driver" }
+midenc-log = { version = "0.6.0", path = "midenc-log", features = ["kv"] }
 midenc-session = { version = "0.6.0", path = "midenc-session" }
 cargo-miden = { version = "0.6.0", path = "tools/cargo-miden" }
 miden-integration-tests = { path = "tests/integration" }

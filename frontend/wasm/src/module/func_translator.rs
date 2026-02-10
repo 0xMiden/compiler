@@ -34,7 +34,6 @@ use crate::{
         types::{convert_valtype, ir_type},
     },
     ssa::Variable,
-    translation_utils::emit_zero,
 };
 
 /// WebAssembly to Miden IR function translator.
@@ -126,16 +125,18 @@ fn declare_parameters<B: ?Sized + Builder>(
     builder: &mut FunctionBuilderExt<'_, B>,
     entry_block: BlockRef,
 ) -> usize {
+    use midenc_dialect_hir::HirOpBuilder;
     let sig_len = builder.signature().params().len();
     let mut next_local = 0;
     for i in 0..sig_len {
         let abi_param = builder.signature().params()[i].clone();
-        let local = Variable::new(next_local);
-        builder.declare_var(local, abi_param.ty);
+        let var = Variable::new(next_local);
+        let local = builder.declare_local(var, abi_param.ty);
         next_local += 1;
 
         let param_value = entry_block.borrow().arguments()[i];
-        builder.def_var(local, param_value);
+        builder.def_var(var, param_value);
+        builder.store_local(local, param_value, SourceSpan::UNKNOWN).unwrap();
     }
     next_local
 }
@@ -174,12 +175,9 @@ fn declare_locals<B: ?Sized + Builder>(
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     let ty = ir_type(convert_valtype(wasm_type), diagnostics)?;
-    // All locals are initialized to 0.
-    let init = emit_zero(&ty, builder, diagnostics)?;
     for _ in 0..count {
-        let local = Variable::new(*next_local);
-        builder.declare_var(local, ty.clone());
-        builder.def_var(local, init);
+        let var = Variable::new(*next_local);
+        let _local = builder.declare_local(var, ty.clone());
         *next_local += 1;
     }
     Ok(())

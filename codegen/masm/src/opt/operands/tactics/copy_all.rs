@@ -5,16 +5,20 @@ use super::*;
 /// As a precondition, this tactic requires that all expected operands are copies.
 #[derive(Default)]
 pub struct CopyAll;
+
 impl Tactic for CopyAll {
     fn cost(&self, context: &SolverContext) -> usize {
         core::cmp::max(context.copies().len(), 1)
     }
 
     fn apply(&mut self, builder: &mut SolutionBuilder) -> TacticResult {
+        let trace_target = builder.trace_target().clone().with_topic("solver:copy-all");
+
         // We can't apply this tactic if any values should be moved
         let arity = builder.arity();
         if builder.num_copies() != arity {
             log::trace!(
+                target: &trace_target,
                 "expected all operands to require copying; but only {} out of {} operands are \
                  copied",
                 builder.num_copies(),
@@ -35,6 +39,7 @@ impl Tactic for CopyAll {
                 });
             // A copy already exists, so use it
             log::trace!(
+                target: &trace_target,
                 "copying {expected_value:?} at index {index} to top of stack, shifting {:?} down \
                  one",
                 builder.unwrap_current(0)

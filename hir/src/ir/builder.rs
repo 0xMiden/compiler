@@ -317,8 +317,11 @@ pub trait Listener {
     fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {}
     /// Notify the listener that the specified block was inserted.
     ///
-    /// * If the block was moved, then `prev` and `ip` represent the previous location of the block.
-    /// * If the block was unlinked before it was inserted, then `prev` and `ip` are `None`
+    /// * If the block was created, but not inserted, then `prev` and `ip` are `None`
+    /// * If the block was unlinked before it was inserted, then `prev` is `None` and `ip` is the
+    ///   location where it was inserted.
+    /// * If the block was moved, then `prev` is the previous region it was inserted into, and `ip`
+    ///   is the location where it was inserted
     fn notify_block_inserted(
         &self,
         block: BlockRef,

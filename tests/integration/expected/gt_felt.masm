@@ -12,6 +12,7 @@ end
 
 # mod ::"root_ns:root@1.0.0"::gt_felt
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(felt, felt) -> i32
     push.0

@@ -154,13 +154,13 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
         results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
-        log::debug!("visiting operation {op}");
+        log::debug!(target: self.debug_name(), "visiting operation {op}");
 
         // Don't try to simulate the results of a region operation as we can't guarantee that
         // folding will be out-of-place. We don't allow in-place folds as the desire here is for
         // simulated execution, and not general folding.
         if op.has_regions() {
-            log::trace!("op has regions so conservatively setting results to entry state");
+            log::trace!(target: self.debug_name(), "op has regions so conservatively setting results to entry state");
             sparse::set_all_to_entry_states(self, results);
             return Ok(());
         }
@@ -169,6 +169,7 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
             SmallVec::<[Option<Box<dyn AttributeValue>>; 8]>::with_capacity(op.num_operands());
         for (index, operand_lattice) in operands.iter().enumerate() {
             log::trace!(
+                target: self.debug_name(),
                 "operand lattice for {} is {}",
                 op.operands()[index].borrow().as_value_ref(),
                 operand_lattice.value()
@@ -200,12 +201,14 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
                 OpFoldResult::Attribute(value) => {
                     let new_lattice = ConstantValue::new(value, op.dialect());
                     log::trace!(
+                        target: self.debug_name(),
                         "setting lattice for {} to {new_lattice} from {}",
                         lattice.anchor(),
                         lattice.value()
                     );
                     let change_result = lattice.join(&new_lattice);
                     log::debug!(
+                        target: self.debug_name(),
                         "setting constant value for {} to {new_lattice}: {change_result} as {}",
                         lattice.anchor(),
                         lattice.value()
@@ -214,6 +217,7 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
                 OpFoldResult::Value(value) => {
                     let new_lattice = solver.get_or_create_mut::<Lattice<ConstantValue>, _>(value);
                     log::trace!(
+                        target: self.debug_name(),
                         "setting lattice for {} to {} from {}",
                         lattice.anchor(),
                         new_lattice.value(),
@@ -221,6 +225,7 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
                     );
                     let change_result = lattice.join(new_lattice.value());
                     log::debug!(
+                        target: self.debug_name(),
                         "setting constant value for {} to {}: {change_result} as {}",
                         lattice.anchor(),
                         new_lattice.value(),
@@ -234,10 +239,11 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
     }
 
     fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>) {
-        log::trace!("setting lattice to entry state from {}", lattice.value());
+        log::trace!(target: self.debug_name(), "setting lattice to entry state from {}", lattice.value());
         let entry_state = ConstantValue::unknown();
         let change_result = lattice.join(&entry_state);
         log::debug!(
+            target: self.debug_name(),
             "setting constant value for {} to {entry_state}: {change_result} as {}",
             lattice.anchor(),
             lattice.value()

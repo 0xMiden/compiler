@@ -69,7 +69,7 @@ fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
 
 #[test]
 fn build_workspace_member_account_project() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
         .try_init();
@@ -123,7 +123,7 @@ fn build_workspace_member_account_project() {
 
 #[test]
 fn build_from_workspace_root_is_rejected() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
         .try_init();
@@ -175,7 +175,7 @@ fn build_from_workspace_root_is_rejected() {
 
 #[test]
 fn new_project_auto_adds_to_workspace() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
         .try_init();
@@ -233,7 +233,7 @@ fn new_project_auto_adds_to_workspace() {
 
 #[test]
 fn new_project_auto_adds_to_workspace_with_existing_members() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
         .try_init();
@@ -292,7 +292,7 @@ fn new_project_auto_adds_to_workspace_with_existing_members() {
 
 #[test]
 fn new_project_does_not_duplicate_existing_member() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
         .try_init();

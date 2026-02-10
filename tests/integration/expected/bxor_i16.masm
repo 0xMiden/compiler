@@ -18,6 +18,7 @@ end
 
 # mod ::"root_ns:root@1.0.0"::test_rust_cb1e0c1a18c279735e94c50dd925290caa430ac65188eb20eb437a4391d25640
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(i32, i32) -> i32
     u32xor

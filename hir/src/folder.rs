@@ -20,20 +20,9 @@ struct UniquedConstant {
 impl Eq for UniquedConstant {}
 impl PartialEq for UniquedConstant {
     fn eq(&self, other: &Self) -> bool {
-        use core::hash::{Hash, Hasher};
-
-        let v1_hash = {
-            let mut hasher = rustc_hash::FxHasher::default();
-            self.value.hash(&mut hasher);
-            hasher.finish()
-        };
-        let v2_hash = {
-            let mut hasher = rustc_hash::FxHasher::default();
-            other.value.hash(&mut hasher);
-            hasher.finish()
-        };
-
-        self.dialect.name() == other.dialect.name() && v1_hash == v2_hash && self.ty == other.ty
+        self.dialect.name() == other.dialect.name()
+            && self.value.eq(&other.value)
+            && self.ty == other.ty
     }
 }
 impl UniquedConstant {
@@ -391,6 +380,7 @@ impl OperationFolder {
         let new_dialect = const_op.borrow().dialect();
         if new_dialect.name() == dialect.name() {
             self.referenced_dialects.entry(const_op).or_default().push(new_dialect);
+            uniqued_constants.insert(uniqued_constant, const_op);
             return Some(const_op);
         }
 

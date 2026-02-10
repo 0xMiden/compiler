@@ -3,7 +3,7 @@ use cargo_miden::{OutputType, run};
 
 fn main() -> anyhow::Result<()> {
     // Initialize logger
-    let mut builder = env_logger::Builder::from_env("CARGO_MIDEN_LOG");
+    let mut builder = midenc_log::Builder::from_env("CARGO_MIDEN_LOG");
     builder.format_indent(Some(2));
     builder.format_timestamp(None);
     builder.init();

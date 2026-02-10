@@ -20,6 +20,8 @@ impl Tactic for Linear {
     }
 
     fn apply(&mut self, builder: &mut SolutionBuilder) -> TacticResult {
+        let trace_target = builder.trace_target().clone().with_topic("solver:linear");
+
         let mut changed = true;
         while changed {
             changed = false;
@@ -32,6 +34,7 @@ impl Tactic for Linear {
                 // Where is B
                 if let Some(_b_at) = builder.get_current_position(b_value) {
                     log::trace!(
+                        target: &trace_target,
                         "no copy needed for {b_value:?} from index {b_pos} to top of stack",
                     );
                     materialized.insert(*b_value);
@@ -40,6 +43,7 @@ impl Tactic for Linear {
                     assert!(b_value.is_alias());
                     let b_at = builder.unwrap_current_position(&b_value.unaliased());
                     log::trace!(
+                        target: &trace_target,
                         "materializing copy of {b_value:?} from index {b_pos} to top of stack",
                     );
                     builder.dup(b_at, b_value.unwrap_alias());
@@ -62,6 +66,7 @@ impl Tactic for Linear {
                 if let Some(expected_at) = builder.get_expected_position(&value) {
                     if currently_at == expected_at {
                         log::trace!(
+                            target: &trace_target,
                             "{value:?} at index {currently_at} is expected there, no movement \
                              needed"
                         );
@@ -70,6 +75,7 @@ impl Tactic for Linear {
                     }
                     let occupied_by = builder.unwrap_current(expected_at);
                     log::trace!(
+                        target: &trace_target,
                         "{value:?} at index {currently_at}, is expected at index {expected_at}, \
                          which is currently occupied by {occupied_by:?}"
                     );
@@ -104,6 +110,7 @@ impl Tactic for Linear {
                     // are materialized initially.
                     let mut root = parent.unwrap();
                     log::trace!(
+                        target: &trace_target,
                         "{value:?} at index {currently_at}, is not an expected operand; but must \
                          be moved to make space for {:?}",
                         root.value
@@ -116,6 +123,7 @@ impl Tactic for Linear {
                             graph.neighbors_directed(parent_operand, Direction::Incoming).next();
                     }
                     log::trace!(
+                        target: &trace_target,
                         "forming component with {value:?} by adding edge to {:?}, the start of \
                          the path which led to it",
                         root.value
@@ -132,6 +140,7 @@ impl Tactic for Linear {
                 break;
             }
             log::trace!(
+                target: &trace_target,
                 "found the following connected components when analyzing required operand moves: \
                  {components:?}"
             );
@@ -181,6 +190,7 @@ impl Tactic for Linear {
                     // Find the operand at the shallowest depth on the stack to move.
                     let start = component.iter().min_by(|a, b| a.pos.cmp(&b.pos)).copied().unwrap();
                     log::trace!(
+                        target: &trace_target,
                         "resolving component {component:?} by starting from {:?} at index {}",
                         start.value,
                         start.pos
@@ -199,6 +209,7 @@ impl Tactic for Linear {
                     // Swap each child with its parent until we reach the edge that forms a cycle
                     while child != start {
                         log::trace!(
+                            target: &trace_target,
                             "swapping {:?} with {:?} at index {}",
                             builder.unwrap_current(0),
                             child.value,

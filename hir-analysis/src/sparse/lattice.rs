@@ -5,7 +5,7 @@ use crate::{AnalysisState, ChangeResult};
 /// It is propagated through the IR by sparse data-flow analysis.
 #[allow(unused_variables)]
 pub trait SparseLattice: AnalysisState + core::fmt::Debug {
-    type Lattice;
+    type Lattice: Clone;
 
     /// Get the underlying lattice value
     fn lattice(&self) -> &Self::Lattice;

@@ -42,7 +42,6 @@ impl AuthComponent {
         // Insert tx summary into advice map under key `msg`
         adv_insert(msg, &tx_summary);
 
-        // Load public key from storage slot 0
         let pub_key: Word = self.owner_public_key.read();
 
         // Emit signature request event to advice stack,
