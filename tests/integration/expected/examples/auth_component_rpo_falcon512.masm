@@ -1565,7 +1565,7 @@ proc miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0#auth-
     swap.7
     trace.240
     nop
-    exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"miden::core::crypto::dsa::rpo_falcon512::verify"
+    exec.::"miden:auth-component-rpo-falcon512/auth-component-rpo-falcon512@0.1.0"::auth_component_rpo_falcon512::"miden::core::crypto::dsa::falcon512rpo::verify"
     trace.252
     nop
     locaddr.4
@@ -2220,9 +2220,8 @@ proc intrinsics::advice::emit_falcon_sig_to_stack(
     nop
 end
 
-@locals("8")
 @callconv("C")
-proc miden::core::crypto::dsa::rpo_falcon512::verify(
+proc miden::core::crypto::dsa::falcon512rpo::verify(
     felt,
     felt,
     felt,
@@ -2232,16 +2231,11 @@ proc miden::core::crypto::dsa::rpo_falcon512::verify(
     felt,
     felt
 )
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    drop
-    push.0
-    assert
+    trace.240
+    nop
+    exec.::miden::core::crypto::dsa::falcon512rpo::verify
+    trace.252
+    nop
 end
 
 @callconv("C")
