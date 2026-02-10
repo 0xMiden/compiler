@@ -42,7 +42,14 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     note.insert(
         Symbol::from(GET_METADATA),
-        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [],
+            [
+                Felt, Felt, Felt, Felt, // NOTE_ATTACHMENT
+                Felt, Felt, Felt, Felt, // METADATA_HEADER
+            ],
+        ),
     );
     note.insert(Symbol::from(ADD_ASSETS_TO_ACCOUNT), FunctionType::new(CallConv::Wasm, [], []));
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), note);

@@ -41,7 +41,14 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     funcs.insert(
         Symbol::from(GET_METADATA),
-        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt],
+            [
+                Felt, Felt, Felt, Felt, // NOTE_ATTACHMENT
+                Felt, Felt, Felt, Felt, // METADATA_HEADER
+            ],
+        ),
     );
     funcs.insert(
         Symbol::from(GET_SENDER),

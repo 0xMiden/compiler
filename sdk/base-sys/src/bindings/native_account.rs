@@ -72,7 +72,7 @@ pub fn add_asset(asset: Asset) -> Asset {
             asset.inner[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.assume_init().reverse()
     }
 }
 

@@ -189,7 +189,7 @@ fn create_swapp_note(
 
 /// Extracts the note tag from the active note metadata.
 fn get_note_tag() -> Tag {
-    let metadata = active_note::get_metadata();
+    let metadata = active_note::get_metadata().header;
     let left_shifted_32 = metadata[2] * Felt::from_u32(2u32.pow(32));
     let tag_felt = left_shifted_32 / (Felt::from_u32(2u32.pow(32)));
     Tag::from(tag_felt)
@@ -197,7 +197,7 @@ fn get_note_tag() -> Tag {
 
 /// Extracts the note type from the active note metadata.
 fn get_note_type() -> NoteType {
-    let metadata = active_note::get_metadata();
+    let metadata = active_note::get_metadata().header;
     let second_felt = metadata[1];
     let left_shifted_56 = second_felt * Felt::from_u32(2u32.pow(56));
     let note_type_felt = left_shifted_56 / Felt::from_u32(2u32.pow(62));

@@ -118,6 +118,34 @@ impl Recipient {
     }
 }
 
+/// The note metadata returned by `*_note::get_metadata` procedures.
+///
+/// In the Miden protocol, metadata retrieval returns both the note attachment and the metadata
+/// header as separate words.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(C)]
+pub struct NoteMetadata {
+    /// The attachment of the note.
+    pub attachment: Word,
+    /// The metadata header of the note.
+    pub header: Word,
+}
+
+impl NoteMetadata {
+    /// Creates a new [`NoteMetadata`] from attachment and header.
+    pub fn new(attachment: Word, header: Word) -> Self {
+        Self { attachment, header }
+    }
+
+    #[inline]
+    pub(crate) fn reverse(self) -> Self {
+        Self {
+            attachment: self.attachment.reverse(),
+            header: self.header.reverse(),
+        }
+    }
+}
+
 impl From<[Felt; 4]> for Recipient {
     fn from(value: [Felt; 4]) -> Self {
         Recipient {

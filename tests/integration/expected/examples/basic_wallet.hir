@@ -20,8 +20,8 @@ builtin.component miden:basic-wallet/basic-wallet@0.1.0 {
             v5 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v6 = hir.bitcast v5 : ptr<byte, i32>;
             v7 = hir.load v6 : i32;
-            v329 = arith.constant 32 : i32;
-            v9 = arith.sub v7, v329 : i32 #[overflow = wrapping];
+            v373 = arith.constant 32 : i32;
+            v9 = arith.sub v7, v373 : i32 #[overflow = wrapping];
             hir.store_local v9 #[local = lv5];
             v10 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v11 = hir.bitcast v10 : ptr<byte, i32>;
@@ -29,54 +29,54 @@ builtin.component miden:basic-wallet/basic-wallet@0.1.0 {
             hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
             v12 = hir.load_local  : i32 #[local = lv5];
             v13 = hir.load_local  : felt #[local = lv3];
-            v328 = arith.constant 12 : u32;
+            v372 = arith.constant 12 : u32;
             v14 = hir.bitcast v12 : u32;
-            v16 = arith.add v14, v328 : u32 #[overflow = checked];
-            v327 = arith.constant 4 : u32;
-            v18 = arith.mod v16, v327 : u32;
+            v16 = arith.add v14, v372 : u32 #[overflow = checked];
+            v371 = arith.constant 4 : u32;
+            v18 = arith.mod v16, v371 : u32;
             hir.assertz v18 #[code = 250];
             v19 = hir.int_to_ptr v16 : ptr<byte, felt>;
             hir.store v19, v13;
             v20 = hir.load_local  : i32 #[local = lv5];
             v21 = hir.load_local  : felt #[local = lv2];
-            v326 = arith.constant 8 : u32;
+            v370 = arith.constant 8 : u32;
             v22 = hir.bitcast v20 : u32;
-            v24 = arith.add v22, v326 : u32 #[overflow = checked];
-            v341 = arith.constant 4 : u32;
-            v26 = arith.mod v24, v341 : u32;
+            v24 = arith.add v22, v370 : u32 #[overflow = checked];
+            v385 = arith.constant 4 : u32;
+            v26 = arith.mod v24, v385 : u32;
             hir.assertz v26 #[code = 250];
             v27 = hir.int_to_ptr v24 : ptr<byte, felt>;
             hir.store v27, v21;
             v28 = hir.load_local  : i32 #[local = lv5];
             v29 = hir.load_local  : felt #[local = lv1];
-            v340 = arith.constant 4 : u32;
+            v384 = arith.constant 4 : u32;
             v30 = hir.bitcast v28 : u32;
-            v32 = arith.add v30, v340 : u32 #[overflow = checked];
-            v339 = arith.constant 4 : u32;
-            v34 = arith.mod v32, v339 : u32;
+            v32 = arith.add v30, v384 : u32 #[overflow = checked];
+            v383 = arith.constant 4 : u32;
+            v34 = arith.mod v32, v383 : u32;
             hir.assertz v34 #[code = 250];
             v35 = hir.int_to_ptr v32 : ptr<byte, felt>;
             hir.store v35, v29;
             v36 = hir.load_local  : i32 #[local = lv5];
             v37 = hir.load_local  : felt #[local = lv0];
             v38 = hir.bitcast v36 : u32;
-            v338 = arith.constant 4 : u32;
-            v40 = arith.mod v38, v338 : u32;
+            v382 = arith.constant 4 : u32;
+            v40 = arith.mod v38, v382 : u32;
             hir.assertz v40 #[code = 250];
             v41 = hir.int_to_ptr v38 : ptr<byte, felt>;
             hir.store v41, v37;
             v42 = hir.load_local  : i32 #[local = lv5];
-            v325 = arith.constant 16 : i32;
-            v44 = arith.add v42, v325 : i32 #[overflow = wrapping];
+            v369 = arith.constant 16 : i32;
+            v44 = arith.add v42, v369 : i32 #[overflow = wrapping];
             hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden_base_sys::bindings::native_account::remove_asset(v44, v42)
             v46 = hir.load_local  : i32 #[local = lv5];
             v49 = hir.load_local  : felt #[local = lv4];
-            v337 = arith.constant 16 : i32;
-            v48 = arith.add v46, v337 : i32 #[overflow = wrapping];
+            v381 = arith.constant 16 : i32;
+            v48 = arith.add v46, v381 : i32 #[overflow = wrapping];
             hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden_base_sys::bindings::output_note::add_asset(v48, v49)
             v50 = hir.load_local  : i32 #[local = lv5];
-            v336 = arith.constant 32 : i32;
-            v52 = arith.add v50, v336 : i32 #[overflow = wrapping];
+            v380 = arith.constant 32 : i32;
+            v52 = arith.add v50, v380 : i32 #[overflow = wrapping];
             v53 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v54 = hir.bitcast v53 : ptr<byte, i32>;
             hir.store v54, v52;
@@ -92,8 +92,8 @@ builtin.component miden:basic-wallet/basic-wallet@0.1.0 {
             v59 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v60 = hir.bitcast v59 : ptr<byte, i32>;
             v61 = hir.load v60 : i32;
-            v346 = arith.constant 32 : i32;
-            v63 = arith.sub v61, v346 : i32 #[overflow = wrapping];
+            v390 = arith.constant 32 : i32;
+            v63 = arith.sub v61, v390 : i32 #[overflow = wrapping];
             hir.store_local v63 #[local = lv4];
             v64 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v65 = hir.bitcast v64 : ptr<byte, i32>;
@@ -101,49 +101,49 @@ builtin.component miden:basic-wallet/basic-wallet@0.1.0 {
             hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/wit_bindgen::rt::run_ctors_once()
             v66 = hir.load_local  : i32 #[local = lv4];
             v67 = hir.load_local  : felt #[local = lv3];
-            v345 = arith.constant 12 : u32;
+            v389 = arith.constant 12 : u32;
             v68 = hir.bitcast v66 : u32;
-            v70 = arith.add v68, v345 : u32 #[overflow = checked];
-            v344 = arith.constant 4 : u32;
-            v72 = arith.mod v70, v344 : u32;
+            v70 = arith.add v68, v389 : u32 #[overflow = checked];
+            v388 = arith.constant 4 : u32;
+            v72 = arith.mod v70, v388 : u32;
             hir.assertz v72 #[code = 250];
             v73 = hir.int_to_ptr v70 : ptr<byte, felt>;
             hir.store v73, v67;
             v74 = hir.load_local  : i32 #[local = lv4];
             v75 = hir.load_local  : felt #[local = lv2];
-            v343 = arith.constant 8 : u32;
+            v387 = arith.constant 8 : u32;
             v76 = hir.bitcast v74 : u32;
-            v78 = arith.add v76, v343 : u32 #[overflow = checked];
-            v356 = arith.constant 4 : u32;
-            v80 = arith.mod v78, v356 : u32;
+            v78 = arith.add v76, v387 : u32 #[overflow = checked];
+            v400 = arith.constant 4 : u32;
+            v80 = arith.mod v78, v400 : u32;
             hir.assertz v80 #[code = 250];
             v81 = hir.int_to_ptr v78 : ptr<byte, felt>;
             hir.store v81, v75;
             v82 = hir.load_local  : i32 #[local = lv4];
             v83 = hir.load_local  : felt #[local = lv1];
-            v355 = arith.constant 4 : u32;
+            v399 = arith.constant 4 : u32;
             v84 = hir.bitcast v82 : u32;
-            v86 = arith.add v84, v355 : u32 #[overflow = checked];
-            v354 = arith.constant 4 : u32;
-            v88 = arith.mod v86, v354 : u32;
+            v86 = arith.add v84, v399 : u32 #[overflow = checked];
+            v398 = arith.constant 4 : u32;
+            v88 = arith.mod v86, v398 : u32;
             hir.assertz v88 #[code = 250];
             v89 = hir.int_to_ptr v86 : ptr<byte, felt>;
             hir.store v89, v83;
             v90 = hir.load_local  : i32 #[local = lv4];
             v91 = hir.load_local  : felt #[local = lv0];
             v92 = hir.bitcast v90 : u32;
-            v353 = arith.constant 4 : u32;
-            v94 = arith.mod v92, v353 : u32;
+            v397 = arith.constant 4 : u32;
+            v94 = arith.mod v92, v397 : u32;
             hir.assertz v94 #[code = 250];
             v95 = hir.int_to_ptr v92 : ptr<byte, felt>;
             hir.store v95, v91;
             v96 = hir.load_local  : i32 #[local = lv4];
-            v342 = arith.constant 16 : i32;
-            v98 = arith.add v96, v342 : i32 #[overflow = wrapping];
+            v386 = arith.constant 16 : i32;
+            v98 = arith.add v96, v386 : i32 #[overflow = wrapping];
             hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden_base_sys::bindings::native_account::add_asset(v98, v96)
             v100 = hir.load_local  : i32 #[local = lv4];
-            v352 = arith.constant 32 : i32;
-            v102 = arith.add v100, v352 : i32 #[overflow = wrapping];
+            v396 = arith.constant 32 : i32;
+            v102 = arith.add v100, v396 : i32 #[overflow = wrapping];
             v103 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
             v104 = hir.bitcast v103 : ptr<byte, i32>;
             hir.store v104, v102;
@@ -155,15 +155,15 @@ builtin.component miden:basic-wallet/basic-wallet@0.1.0 {
             v105 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/GOT.data.internal.__memory_base : ptr<byte, u8>
             v106 = hir.bitcast v105 : ptr<byte, i32>;
             v107 = hir.load v106 : i32;
-            v361 = arith.constant 1048584 : i32;
-            v109 = arith.add v107, v361 : i32 #[overflow = wrapping];
+            v405 = arith.constant 1048584 : i32;
+            v109 = arith.add v107, v405 : i32 #[overflow = wrapping];
             v110 = hir.bitcast v109 : u32;
             v111 = hir.int_to_ptr v110 : ptr<byte, u8>;
             v112 = hir.load v111 : u8;
-            v360 = arith.constant 0 : i32;
+            v404 = arith.constant 0 : i32;
             v113 = arith.zext v112 : u32;
             v114 = hir.bitcast v113 : i32;
-            v116 = arith.neq v114, v360 : i1;
+            v116 = arith.neq v114, v404 : i1;
             scf.if v116{
             ^block15:
                 scf.yield ;
@@ -175,12 +175,12 @@ builtin.component miden:basic-wallet/basic-wallet@0.1.0 {
                 hir.store_local v119 #[local = lv0];
                 hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__wasm_call_ctors()
                 v120 = hir.load_local  : i32 #[local = lv0];
-                v359 = arith.constant 1 : u8;
-                v364 = arith.constant 1048584 : i32;
-                v122 = arith.add v120, v364 : i32 #[overflow = wrapping];
+                v403 = arith.constant 1 : u8;
+                v408 = arith.constant 1048584 : i32;
+                v122 = arith.add v120, v408 : i32 #[overflow = wrapping];
                 v126 = hir.bitcast v122 : u32;
                 v127 = hir.int_to_ptr v126 : ptr<byte, u8>;
-                hir.store v127, v359;
+                hir.store v127, v403;
                 scf.yield ;
             };
             builtin.ret ;
@@ -188,225 +188,278 @@ builtin.component miden:basic-wallet/basic-wallet@0.1.0 {
 
         private builtin.function @miden_base_sys::bindings::native_account::add_asset(v128: i32, v129: i32) {
         ^block17(v128: i32, v129: i32):
+            hir.store_local v128 #[local = lv0];
             hir.store_local v129 #[local = lv1];
-            v130 = hir.load_local  : i32 #[local = lv1];
-            v367 = arith.constant 12 : u32;
-            v131 = hir.bitcast v130 : u32;
-            v133 = arith.add v131, v367 : u32 #[overflow = checked];
-            v366 = arith.constant 4 : u32;
-            v135 = arith.mod v133, v366 : u32;
-            hir.assertz v135 #[code = 250];
-            v136 = hir.int_to_ptr v133 : ptr<byte, felt>;
-            v137 = hir.load v136 : felt;
-            v138 = hir.load_local  : i32 #[local = lv1];
-            v365 = arith.constant 8 : u32;
-            v139 = hir.bitcast v138 : u32;
-            v141 = arith.add v139, v365 : u32 #[overflow = checked];
-            v375 = arith.constant 4 : u32;
-            v143 = arith.mod v141, v375 : u32;
-            hir.assertz v143 #[code = 250];
-            v144 = hir.int_to_ptr v141 : ptr<byte, felt>;
-            v145 = hir.load v144 : felt;
-            v146 = hir.load_local  : i32 #[local = lv1];
-            v374 = arith.constant 4 : u32;
-            v147 = hir.bitcast v146 : u32;
-            v149 = arith.add v147, v374 : u32 #[overflow = checked];
-            v373 = arith.constant 4 : u32;
-            v151 = arith.mod v149, v373 : u32;
-            hir.assertz v151 #[code = 250];
-            v152 = hir.int_to_ptr v149 : ptr<byte, felt>;
-            v153 = hir.load v152 : felt;
-            v154 = hir.load_local  : i32 #[local = lv1];
-            v155 = hir.bitcast v154 : u32;
-            v372 = arith.constant 4 : u32;
-            v157 = arith.mod v155, v372 : u32;
-            hir.assertz v157 #[code = 250];
-            v158 = hir.int_to_ptr v155 : ptr<byte, felt>;
-            v159 = hir.load v158 : felt;
-            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden::protocol::native_account::add_asset(v137, v145, v153, v159, v128)
-            builtin.ret ;
-        };
-
-        private builtin.function @miden_base_sys::bindings::output_note::add_asset(v161: i32, v162: felt) {
-        ^block19(v161: i32, v162: felt):
-            hir.store_local v161 #[local = lv0];
-            v163 = hir.load_local  : i32 #[local = lv0];
-            v378 = arith.constant 12 : u32;
-            v164 = hir.bitcast v163 : u32;
-            v166 = arith.add v164, v378 : u32 #[overflow = checked];
-            v377 = arith.constant 4 : u32;
-            v168 = arith.mod v166, v377 : u32;
-            hir.assertz v168 #[code = 250];
-            v169 = hir.int_to_ptr v166 : ptr<byte, felt>;
-            v170 = hir.load v169 : felt;
-            v171 = hir.load_local  : i32 #[local = lv0];
-            v376 = arith.constant 8 : u32;
-            v172 = hir.bitcast v171 : u32;
-            v174 = arith.add v172, v376 : u32 #[overflow = checked];
-            v386 = arith.constant 4 : u32;
-            v176 = arith.mod v174, v386 : u32;
-            hir.assertz v176 #[code = 250];
-            v177 = hir.int_to_ptr v174 : ptr<byte, felt>;
-            v178 = hir.load v177 : felt;
-            v179 = hir.load_local  : i32 #[local = lv0];
-            v385 = arith.constant 4 : u32;
-            v180 = hir.bitcast v179 : u32;
-            v182 = arith.add v180, v385 : u32 #[overflow = checked];
-            v384 = arith.constant 4 : u32;
-            v184 = arith.mod v182, v384 : u32;
-            hir.assertz v184 #[code = 250];
-            v185 = hir.int_to_ptr v182 : ptr<byte, felt>;
-            v186 = hir.load v185 : felt;
-            v187 = hir.load_local  : i32 #[local = lv0];
-            v188 = hir.bitcast v187 : u32;
-            v383 = arith.constant 4 : u32;
-            v190 = arith.mod v188, v383 : u32;
-            hir.assertz v190 #[code = 250];
-            v191 = hir.int_to_ptr v188 : ptr<byte, felt>;
-            v192 = hir.load v191 : felt;
-            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden::protocol::output_note::add_asset(v170, v178, v186, v192, v162)
-            builtin.ret ;
-        };
-
-        private builtin.function @miden_base_sys::bindings::native_account::remove_asset(v194: i32, v195: i32) {
-        ^block21(v194: i32, v195: i32):
-            hir.store_local v194 #[local = lv0];
-            hir.store_local v195 #[local = lv1];
-            v196 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
-            v197 = hir.bitcast v196 : ptr<byte, i32>;
-            v198 = hir.load v197 : i32;
-            v396 = arith.constant 16 : i32;
-            v200 = arith.sub v198, v396 : i32 #[overflow = wrapping];
-            hir.store_local v200 #[local = lv2];
-            v201 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
-            v202 = hir.bitcast v201 : ptr<byte, i32>;
-            hir.store v202, v200;
-            v203 = hir.load_local  : i32 #[local = lv1];
-            v395 = arith.constant 12 : u32;
-            v204 = hir.bitcast v203 : u32;
-            v206 = arith.add v204, v395 : u32 #[overflow = checked];
-            v394 = arith.constant 4 : u32;
-            v208 = arith.mod v206, v394 : u32;
-            hir.assertz v208 #[code = 250];
-            v209 = hir.int_to_ptr v206 : ptr<byte, felt>;
-            v210 = hir.load v209 : felt;
-            v211 = hir.load_local  : i32 #[local = lv1];
-            v393 = arith.constant 8 : u32;
-            v212 = hir.bitcast v211 : u32;
-            v214 = arith.add v212, v393 : u32 #[overflow = checked];
-            v418 = arith.constant 4 : u32;
-            v216 = arith.mod v214, v418 : u32;
-            hir.assertz v216 #[code = 250];
-            v217 = hir.int_to_ptr v214 : ptr<byte, felt>;
-            v218 = hir.load v217 : felt;
-            v219 = hir.load_local  : i32 #[local = lv1];
-            v417 = arith.constant 4 : u32;
-            v220 = hir.bitcast v219 : u32;
-            v222 = arith.add v220, v417 : u32 #[overflow = checked];
+            v130 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v131 = hir.bitcast v130 : ptr<byte, i32>;
+            v132 = hir.load v131 : i32;
+            v418 = arith.constant 16 : i32;
+            v134 = arith.sub v132, v418 : i32 #[overflow = wrapping];
+            hir.store_local v134 #[local = lv2];
+            v135 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v136 = hir.bitcast v135 : ptr<byte, i32>;
+            hir.store v136, v134;
+            v137 = hir.load_local  : i32 #[local = lv1];
+            v417 = arith.constant 12 : u32;
+            v138 = hir.bitcast v137 : u32;
+            v140 = arith.add v138, v417 : u32 #[overflow = checked];
             v416 = arith.constant 4 : u32;
-            v224 = arith.mod v222, v416 : u32;
-            hir.assertz v224 #[code = 250];
-            v225 = hir.int_to_ptr v222 : ptr<byte, felt>;
-            v226 = hir.load v225 : felt;
-            v227 = hir.load_local  : i32 #[local = lv1];
-            v228 = hir.bitcast v227 : u32;
-            v415 = arith.constant 4 : u32;
-            v230 = arith.mod v228, v415 : u32;
-            hir.assertz v230 #[code = 250];
-            v231 = hir.int_to_ptr v228 : ptr<byte, felt>;
-            v232 = hir.load v231 : felt;
-            v233 = hir.load_local  : i32 #[local = lv2];
-            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden::protocol::native_account::remove_asset(v210, v218, v226, v232, v233)
-            v234 = hir.load_local  : i32 #[local = lv0];
-            v235 = hir.load_local  : i32 #[local = lv2];
-            v236 = hir.bitcast v235 : u32;
-            v414 = arith.constant 8 : u32;
-            v238 = arith.mod v236, v414 : u32;
-            hir.assertz v238 #[code = 250];
-            v239 = hir.int_to_ptr v236 : ptr<byte, i64>;
-            v240 = hir.load v239 : i64;
-            v390, v391 = arith.split v240 : felt, felt;
-            v413 = arith.constant 8 : u32;
-            v244 = hir.bitcast v234 : u32;
-            v246 = arith.add v244, v413 : u32 #[overflow = checked];
-            v412 = arith.constant 8 : u32;
-            v248 = arith.mod v246, v412 : u32;
-            hir.assertz v248 #[code = 250];
-            v392 = arith.join v391, v390 : i64;
-            v249 = hir.int_to_ptr v246 : ptr<byte, i64>;
-            hir.store v249, v392;
-            v250 = hir.load_local  : i32 #[local = lv0];
-            v251 = hir.load_local  : i32 #[local = lv2];
-            v411 = arith.constant 8 : u32;
-            v252 = hir.bitcast v251 : u32;
-            v254 = arith.add v252, v411 : u32 #[overflow = checked];
-            v410 = arith.constant 8 : u32;
-            v256 = arith.mod v254, v410 : u32;
-            hir.assertz v256 #[code = 250];
-            v257 = hir.int_to_ptr v254 : ptr<byte, i64>;
-            v258 = hir.load v257 : i64;
-            v387, v388 = arith.split v258 : felt, felt;
-            v262 = hir.bitcast v250 : u32;
-            v409 = arith.constant 8 : u32;
-            v264 = arith.mod v262, v409 : u32;
-            hir.assertz v264 #[code = 250];
-            v389 = arith.join v388, v387 : i64;
-            v265 = hir.int_to_ptr v262 : ptr<byte, i64>;
-            hir.store v265, v389;
-            v266 = hir.load_local  : i32 #[local = lv2];
-            v408 = arith.constant 16 : i32;
-            v268 = arith.add v266, v408 : i32 #[overflow = wrapping];
-            v269 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
-            v270 = hir.bitcast v269 : ptr<byte, i32>;
-            hir.store v270, v268;
+            v142 = arith.mod v140, v416 : u32;
+            hir.assertz v142 #[code = 250];
+            v143 = hir.int_to_ptr v140 : ptr<byte, felt>;
+            v144 = hir.load v143 : felt;
+            v145 = hir.load_local  : i32 #[local = lv1];
+            v415 = arith.constant 8 : u32;
+            v146 = hir.bitcast v145 : u32;
+            v148 = arith.add v146, v415 : u32 #[overflow = checked];
+            v440 = arith.constant 4 : u32;
+            v150 = arith.mod v148, v440 : u32;
+            hir.assertz v150 #[code = 250];
+            v151 = hir.int_to_ptr v148 : ptr<byte, felt>;
+            v152 = hir.load v151 : felt;
+            v153 = hir.load_local  : i32 #[local = lv1];
+            v439 = arith.constant 4 : u32;
+            v154 = hir.bitcast v153 : u32;
+            v156 = arith.add v154, v439 : u32 #[overflow = checked];
+            v438 = arith.constant 4 : u32;
+            v158 = arith.mod v156, v438 : u32;
+            hir.assertz v158 #[code = 250];
+            v159 = hir.int_to_ptr v156 : ptr<byte, felt>;
+            v160 = hir.load v159 : felt;
+            v161 = hir.load_local  : i32 #[local = lv1];
+            v162 = hir.bitcast v161 : u32;
+            v437 = arith.constant 4 : u32;
+            v164 = arith.mod v162, v437 : u32;
+            hir.assertz v164 #[code = 250];
+            v165 = hir.int_to_ptr v162 : ptr<byte, felt>;
+            v166 = hir.load v165 : felt;
+            v167 = hir.load_local  : i32 #[local = lv2];
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden::protocol::native_account::add_asset(v144, v152, v160, v166, v167)
+            v168 = hir.load_local  : i32 #[local = lv0];
+            v169 = hir.load_local  : i32 #[local = lv2];
+            v170 = hir.bitcast v169 : u32;
+            v436 = arith.constant 8 : u32;
+            v172 = arith.mod v170, v436 : u32;
+            hir.assertz v172 #[code = 250];
+            v173 = hir.int_to_ptr v170 : ptr<byte, i64>;
+            v174 = hir.load v173 : i64;
+            v412, v413 = arith.split v174 : felt, felt;
+            v435 = arith.constant 8 : u32;
+            v178 = hir.bitcast v168 : u32;
+            v180 = arith.add v178, v435 : u32 #[overflow = checked];
+            v434 = arith.constant 8 : u32;
+            v182 = arith.mod v180, v434 : u32;
+            hir.assertz v182 #[code = 250];
+            v414 = arith.join v413, v412 : i64;
+            v183 = hir.int_to_ptr v180 : ptr<byte, i64>;
+            hir.store v183, v414;
+            v184 = hir.load_local  : i32 #[local = lv0];
+            v185 = hir.load_local  : i32 #[local = lv2];
+            v433 = arith.constant 8 : u32;
+            v186 = hir.bitcast v185 : u32;
+            v188 = arith.add v186, v433 : u32 #[overflow = checked];
+            v432 = arith.constant 8 : u32;
+            v190 = arith.mod v188, v432 : u32;
+            hir.assertz v190 #[code = 250];
+            v191 = hir.int_to_ptr v188 : ptr<byte, i64>;
+            v192 = hir.load v191 : i64;
+            v409, v410 = arith.split v192 : felt, felt;
+            v196 = hir.bitcast v184 : u32;
+            v431 = arith.constant 8 : u32;
+            v198 = arith.mod v196, v431 : u32;
+            hir.assertz v198 #[code = 250];
+            v411 = arith.join v410, v409 : i64;
+            v199 = hir.int_to_ptr v196 : ptr<byte, i64>;
+            hir.store v199, v411;
+            v200 = hir.load_local  : i32 #[local = lv2];
+            v430 = arith.constant 16 : i32;
+            v202 = arith.add v200, v430 : i32 #[overflow = wrapping];
+            v203 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v204 = hir.bitcast v203 : ptr<byte, i32>;
+            hir.store v204, v202;
             builtin.ret ;
         };
 
-        private builtin.function @miden::protocol::native_account::add_asset(v271: felt, v272: felt, v273: felt, v274: felt, v275: i32) {
-        ^block23(v271: felt, v272: felt, v273: felt, v274: felt, v275: i32):
-            v276, v277, v278, v279 = hir.exec @miden/protocol/native_account/add_asset(v271, v272, v273, v274) : felt, felt, felt, felt
-            v280 = hir.bitcast v275 : u32;
-            v281 = hir.int_to_ptr v280 : ptr<byte, felt>;
-            hir.store v281, v276;
-            v421 = arith.constant 4 : u32;
-            v283 = arith.add v280, v421 : u32 #[overflow = checked];
-            v284 = hir.int_to_ptr v283 : ptr<byte, felt>;
-            hir.store v284, v277;
-            v420 = arith.constant 8 : u32;
-            v286 = arith.add v280, v420 : u32 #[overflow = checked];
-            v287 = hir.int_to_ptr v286 : ptr<byte, felt>;
-            hir.store v287, v278;
-            v419 = arith.constant 12 : u32;
-            v289 = arith.add v280, v419 : u32 #[overflow = checked];
-            v290 = hir.int_to_ptr v289 : ptr<byte, felt>;
-            hir.store v290, v279;
+        private builtin.function @miden_base_sys::bindings::output_note::add_asset(v205: i32, v206: felt) {
+        ^block19(v205: i32, v206: felt):
+            hir.store_local v205 #[local = lv0];
+            v207 = hir.load_local  : i32 #[local = lv0];
+            v443 = arith.constant 12 : u32;
+            v208 = hir.bitcast v207 : u32;
+            v210 = arith.add v208, v443 : u32 #[overflow = checked];
+            v442 = arith.constant 4 : u32;
+            v212 = arith.mod v210, v442 : u32;
+            hir.assertz v212 #[code = 250];
+            v213 = hir.int_to_ptr v210 : ptr<byte, felt>;
+            v214 = hir.load v213 : felt;
+            v215 = hir.load_local  : i32 #[local = lv0];
+            v441 = arith.constant 8 : u32;
+            v216 = hir.bitcast v215 : u32;
+            v218 = arith.add v216, v441 : u32 #[overflow = checked];
+            v451 = arith.constant 4 : u32;
+            v220 = arith.mod v218, v451 : u32;
+            hir.assertz v220 #[code = 250];
+            v221 = hir.int_to_ptr v218 : ptr<byte, felt>;
+            v222 = hir.load v221 : felt;
+            v223 = hir.load_local  : i32 #[local = lv0];
+            v450 = arith.constant 4 : u32;
+            v224 = hir.bitcast v223 : u32;
+            v226 = arith.add v224, v450 : u32 #[overflow = checked];
+            v449 = arith.constant 4 : u32;
+            v228 = arith.mod v226, v449 : u32;
+            hir.assertz v228 #[code = 250];
+            v229 = hir.int_to_ptr v226 : ptr<byte, felt>;
+            v230 = hir.load v229 : felt;
+            v231 = hir.load_local  : i32 #[local = lv0];
+            v232 = hir.bitcast v231 : u32;
+            v448 = arith.constant 4 : u32;
+            v234 = arith.mod v232, v448 : u32;
+            hir.assertz v234 #[code = 250];
+            v235 = hir.int_to_ptr v232 : ptr<byte, felt>;
+            v236 = hir.load v235 : felt;
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden::protocol::output_note::add_asset(v214, v222, v230, v236, v206)
             builtin.ret ;
         };
 
-        private builtin.function @miden::protocol::native_account::remove_asset(v291: felt, v292: felt, v293: felt, v294: felt, v295: i32) {
-        ^block28(v291: felt, v292: felt, v293: felt, v294: felt, v295: i32):
-            v296, v297, v298, v299 = hir.exec @miden/protocol/native_account/remove_asset(v291, v292, v293, v294) : felt, felt, felt, felt
-            v300 = hir.bitcast v295 : u32;
-            v301 = hir.int_to_ptr v300 : ptr<byte, felt>;
-            hir.store v301, v296;
-            v424 = arith.constant 4 : u32;
-            v303 = arith.add v300, v424 : u32 #[overflow = checked];
-            v304 = hir.int_to_ptr v303 : ptr<byte, felt>;
-            hir.store v304, v297;
-            v423 = arith.constant 8 : u32;
-            v306 = arith.add v300, v423 : u32 #[overflow = checked];
-            v307 = hir.int_to_ptr v306 : ptr<byte, felt>;
-            hir.store v307, v298;
-            v422 = arith.constant 12 : u32;
-            v309 = arith.add v300, v422 : u32 #[overflow = checked];
-            v310 = hir.int_to_ptr v309 : ptr<byte, felt>;
-            hir.store v310, v299;
+        private builtin.function @miden_base_sys::bindings::native_account::remove_asset(v238: i32, v239: i32) {
+        ^block21(v238: i32, v239: i32):
+            hir.store_local v238 #[local = lv0];
+            hir.store_local v239 #[local = lv1];
+            v240 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v241 = hir.bitcast v240 : ptr<byte, i32>;
+            v242 = hir.load v241 : i32;
+            v461 = arith.constant 16 : i32;
+            v244 = arith.sub v242, v461 : i32 #[overflow = wrapping];
+            hir.store_local v244 #[local = lv2];
+            v245 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v246 = hir.bitcast v245 : ptr<byte, i32>;
+            hir.store v246, v244;
+            v247 = hir.load_local  : i32 #[local = lv1];
+            v460 = arith.constant 12 : u32;
+            v248 = hir.bitcast v247 : u32;
+            v250 = arith.add v248, v460 : u32 #[overflow = checked];
+            v459 = arith.constant 4 : u32;
+            v252 = arith.mod v250, v459 : u32;
+            hir.assertz v252 #[code = 250];
+            v253 = hir.int_to_ptr v250 : ptr<byte, felt>;
+            v254 = hir.load v253 : felt;
+            v255 = hir.load_local  : i32 #[local = lv1];
+            v458 = arith.constant 8 : u32;
+            v256 = hir.bitcast v255 : u32;
+            v258 = arith.add v256, v458 : u32 #[overflow = checked];
+            v483 = arith.constant 4 : u32;
+            v260 = arith.mod v258, v483 : u32;
+            hir.assertz v260 #[code = 250];
+            v261 = hir.int_to_ptr v258 : ptr<byte, felt>;
+            v262 = hir.load v261 : felt;
+            v263 = hir.load_local  : i32 #[local = lv1];
+            v482 = arith.constant 4 : u32;
+            v264 = hir.bitcast v263 : u32;
+            v266 = arith.add v264, v482 : u32 #[overflow = checked];
+            v481 = arith.constant 4 : u32;
+            v268 = arith.mod v266, v481 : u32;
+            hir.assertz v268 #[code = 250];
+            v269 = hir.int_to_ptr v266 : ptr<byte, felt>;
+            v270 = hir.load v269 : felt;
+            v271 = hir.load_local  : i32 #[local = lv1];
+            v272 = hir.bitcast v271 : u32;
+            v480 = arith.constant 4 : u32;
+            v274 = arith.mod v272, v480 : u32;
+            hir.assertz v274 #[code = 250];
+            v275 = hir.int_to_ptr v272 : ptr<byte, felt>;
+            v276 = hir.load v275 : felt;
+            v277 = hir.load_local  : i32 #[local = lv2];
+            hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden::protocol::native_account::remove_asset(v254, v262, v270, v276, v277)
+            v278 = hir.load_local  : i32 #[local = lv0];
+            v279 = hir.load_local  : i32 #[local = lv2];
+            v280 = hir.bitcast v279 : u32;
+            v479 = arith.constant 8 : u32;
+            v282 = arith.mod v280, v479 : u32;
+            hir.assertz v282 #[code = 250];
+            v283 = hir.int_to_ptr v280 : ptr<byte, i64>;
+            v284 = hir.load v283 : i64;
+            v455, v456 = arith.split v284 : felt, felt;
+            v478 = arith.constant 8 : u32;
+            v288 = hir.bitcast v278 : u32;
+            v290 = arith.add v288, v478 : u32 #[overflow = checked];
+            v477 = arith.constant 8 : u32;
+            v292 = arith.mod v290, v477 : u32;
+            hir.assertz v292 #[code = 250];
+            v457 = arith.join v456, v455 : i64;
+            v293 = hir.int_to_ptr v290 : ptr<byte, i64>;
+            hir.store v293, v457;
+            v294 = hir.load_local  : i32 #[local = lv0];
+            v295 = hir.load_local  : i32 #[local = lv2];
+            v476 = arith.constant 8 : u32;
+            v296 = hir.bitcast v295 : u32;
+            v298 = arith.add v296, v476 : u32 #[overflow = checked];
+            v475 = arith.constant 8 : u32;
+            v300 = arith.mod v298, v475 : u32;
+            hir.assertz v300 #[code = 250];
+            v301 = hir.int_to_ptr v298 : ptr<byte, i64>;
+            v302 = hir.load v301 : i64;
+            v452, v453 = arith.split v302 : felt, felt;
+            v306 = hir.bitcast v294 : u32;
+            v474 = arith.constant 8 : u32;
+            v308 = arith.mod v306, v474 : u32;
+            hir.assertz v308 #[code = 250];
+            v454 = arith.join v453, v452 : i64;
+            v309 = hir.int_to_ptr v306 : ptr<byte, i64>;
+            hir.store v309, v454;
+            v310 = hir.load_local  : i32 #[local = lv2];
+            v473 = arith.constant 16 : i32;
+            v312 = arith.add v310, v473 : i32 #[overflow = wrapping];
+            v313 = builtin.global_symbol @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/__stack_pointer : ptr<byte, u8>
+            v314 = hir.bitcast v313 : ptr<byte, i32>;
+            hir.store v314, v312;
             builtin.ret ;
         };
 
-        private builtin.function @miden::protocol::output_note::add_asset(v311: felt, v312: felt, v313: felt, v314: felt, v315: felt) {
-        ^block30(v311: felt, v312: felt, v313: felt, v314: felt, v315: felt):
-            hir.exec @miden/protocol/output_note/add_asset(v311, v312, v313, v314, v315)
+        private builtin.function @miden::protocol::native_account::add_asset(v315: felt, v316: felt, v317: felt, v318: felt, v319: i32) {
+        ^block23(v315: felt, v316: felt, v317: felt, v318: felt, v319: i32):
+            v320, v321, v322, v323 = hir.exec @miden/protocol/native_account/add_asset(v315, v316, v317, v318) : felt, felt, felt, felt
+            v324 = hir.bitcast v319 : u32;
+            v325 = hir.int_to_ptr v324 : ptr<byte, felt>;
+            hir.store v325, v320;
+            v486 = arith.constant 4 : u32;
+            v327 = arith.add v324, v486 : u32 #[overflow = checked];
+            v328 = hir.int_to_ptr v327 : ptr<byte, felt>;
+            hir.store v328, v321;
+            v485 = arith.constant 8 : u32;
+            v330 = arith.add v324, v485 : u32 #[overflow = checked];
+            v331 = hir.int_to_ptr v330 : ptr<byte, felt>;
+            hir.store v331, v322;
+            v484 = arith.constant 12 : u32;
+            v333 = arith.add v324, v484 : u32 #[overflow = checked];
+            v334 = hir.int_to_ptr v333 : ptr<byte, felt>;
+            hir.store v334, v323;
+            builtin.ret ;
+        };
+
+        private builtin.function @miden::protocol::native_account::remove_asset(v335: felt, v336: felt, v337: felt, v338: felt, v339: i32) {
+        ^block28(v335: felt, v336: felt, v337: felt, v338: felt, v339: i32):
+            v340, v341, v342, v343 = hir.exec @miden/protocol/native_account/remove_asset(v335, v336, v337, v338) : felt, felt, felt, felt
+            v344 = hir.bitcast v339 : u32;
+            v345 = hir.int_to_ptr v344 : ptr<byte, felt>;
+            hir.store v345, v340;
+            v489 = arith.constant 4 : u32;
+            v347 = arith.add v344, v489 : u32 #[overflow = checked];
+            v348 = hir.int_to_ptr v347 : ptr<byte, felt>;
+            hir.store v348, v341;
+            v488 = arith.constant 8 : u32;
+            v350 = arith.add v344, v488 : u32 #[overflow = checked];
+            v351 = hir.int_to_ptr v350 : ptr<byte, felt>;
+            hir.store v351, v342;
+            v487 = arith.constant 12 : u32;
+            v353 = arith.add v344, v487 : u32 #[overflow = checked];
+            v354 = hir.int_to_ptr v353 : ptr<byte, felt>;
+            hir.store v354, v343;
+            builtin.ret ;
+        };
+
+        private builtin.function @miden::protocol::output_note::add_asset(v355: felt, v356: felt, v357: felt, v358: felt, v359: felt) {
+        ^block30(v355: felt, v356: felt, v357: felt, v358: felt, v359: felt):
+            hir.exec @miden/protocol/output_note/add_asset(v355, v356, v357, v358, v359)
             builtin.ret ;
         };
 
@@ -421,15 +474,15 @@ builtin.component miden:basic-wallet/basic-wallet@0.1.0 {
         builtin.segment @1048576 = 0x0000000100000001;
     };
 
-    public builtin.function @receive-asset(v316: felt, v317: felt, v318: felt, v319: felt) {
-    ^block33(v316: felt, v317: felt, v318: felt, v319: felt):
-        hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden:basic-wallet/basic-wallet@0.1.0#receive-asset(v316, v317, v318, v319)
+    public builtin.function @receive-asset(v360: felt, v361: felt, v362: felt, v363: felt) {
+    ^block33(v360: felt, v361: felt, v362: felt, v363: felt):
+        hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden:basic-wallet/basic-wallet@0.1.0#receive-asset(v360, v361, v362, v363)
         builtin.ret ;
     };
 
-    public builtin.function @move-asset-to-note(v320: felt, v321: felt, v322: felt, v323: felt, v324: felt) {
-    ^block35(v320: felt, v321: felt, v322: felt, v323: felt, v324: felt):
-        hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note(v320, v321, v322, v323, v324)
+    public builtin.function @move-asset-to-note(v364: felt, v365: felt, v366: felt, v367: felt, v368: felt) {
+    ^block35(v364: felt, v365: felt, v366: felt, v367: felt, v368: felt):
+        hir.exec @miden:basic-wallet/basic-wallet@0.1.0/basic_wallet/miden:basic-wallet/basic-wallet@0.1.0#move-asset-to-note(v364, v365, v366, v367, v368)
         builtin.ret ;
     };
 };
