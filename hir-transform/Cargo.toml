@@ -20,7 +20,7 @@ midenc-session.workspace = true
 [dev-dependencies]
 litcheck.workspace = true
 litcheck-filecheck.workspace = true
-midenc-dialect-arith.workspace = true
-midenc-dialect-hir.workspace = true
-midenc-dialect-scf.workspace = true
-midenc-log.workspace = true
+midenc-dialect-arith = { path = "../dialects/arith" }
+midenc-dialect-hir = { path = "../dialects/hir" }
+midenc-dialect-scf = { path = "../dialects/scf" }
+midenc-log = { path = "../midenc-log" }

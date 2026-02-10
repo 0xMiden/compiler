@@ -42,5 +42,5 @@ thiserror.workspace = true
 # Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 midenc-expect-test = { path = "../../tools/expect-test" }
 proptest.workspace = true
-midenc-log.workspace = true
+midenc-log = { path = "../../midenc-log" }
 itertools = "0.14.0"

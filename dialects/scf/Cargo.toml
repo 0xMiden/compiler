@@ -27,4 +27,4 @@ bitvec.workspace = true
 [dev-dependencies]
 # Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 midenc-expect-test = { path = "../../tools/expect-test" }
-midenc-log.workspace = true
+midenc-log = { path = "../../midenc-log" }
