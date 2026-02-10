@@ -22,6 +22,65 @@ fn test_get_inputs_4() -> Result<(), Report> {
     test_get_inputs("4", vec![u32::MAX, 1, 2, 3])
 }
 
+#[test]
+fn test_get_metadata() -> Result<(), Report> {
+    // Mock the Miden protocol `active_note::get_metadata` procedure.
+    //
+    // The raw protocol signature returns 8 felts on the operand stack:
+    // `[NOTE_ATTACHMENT (4), METADATA_HEADER (4)]`.
+    let masm = r#"
+pub proc get_metadata
+    # Stack input: []
+    # Stack output: [NOTE_ATTACHMENT, METADATA_HEADER]
+    #
+    # Return two word-sized values with distinct elements so we can validate that:
+    # - the ABI adapter consumes all 8 felts (not just 4)
+    # - the words are grouped/ordered correctly
+    # - both words are written to the return area
+    push.24 push.23 push.22 push.21   # METADATA_HEADER
+    push.14 push.13 push.12 push.11   # NOTE_ATTACHMENT
+end
+"#
+    .to_string();
+
+    let main_fn = r#"() -> () {
+        let meta = miden::active_note::get_metadata();
+
+        // The SDK bindings reverse word element order on return; reverse again to compare against
+        // the raw protocol ordering produced by the mocked MASM procedure.
+        let attachment = meta.attachment.reverse();
+        assert_eq(attachment[0], felt!(11));
+        assert_eq(attachment[1], felt!(12));
+        assert_eq(attachment[2], felt!(13));
+        assert_eq(attachment[3], felt!(14));
+
+        let header = meta.header.reverse();
+        assert_eq(header[0], felt!(21));
+        assert_eq(header[1], felt!(22));
+        assert_eq(header[2], felt!(23));
+        assert_eq(header[3], felt!(24));
+    }"#
+    .to_string();
+
+    let artifact_name = "abi_transform_tx_kernel_get_metadata";
+    let config = WasmTranslationConfig::default();
+    let mut test_builder =
+        CompilerTestBuilder::rust_fn_body_with_sdk(artifact_name, &main_fn, config, []);
+    test_builder.link_with_masm_module("miden::protocol::active_note", masm);
+    let mut test = test_builder.build();
+
+    let package = test.compiled_package();
+
+    let mut exec = Executor::new(vec![]);
+    let std_library = (*STDLIB).clone();
+    exec.dependency_resolver_mut()
+        .add(*std_library.digest(), std_library.clone().into());
+    exec.with_dependencies(package.manifest.dependencies())?;
+
+    let _ = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
+    Ok(())
+}
+
 fn test_get_inputs(test_name: &str, expected_inputs: Vec<u32>) -> Result<(), Report> {
     assert!(expected_inputs.len() == 4, "for now only word-sized inputs are supported");
     let masm = format!(
