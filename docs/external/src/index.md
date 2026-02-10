@@ -35,7 +35,7 @@ The compiler toolchain consists of the following primary components:
   read-only data. In the future we intend to support more variety in the structure of Wasm modules
   we accept, but for the time being we're primarily focused on using this as the path for lowering
   Rust to Miden.
-- The compiler driver, in the form of the `midenc` executable, and a Rust crate, `midenc-compiler`
+- The compiler driver, in the form of the `midenc` executable, and a Rust crate, `midenc-compile`
   to allow integrating the compiler into other tools. This plays the same role as `rustc` does in
   the Rust ecosystem.
 - A Cargo extension, `cargo-miden`, that provides a convenient developer experience for creating
