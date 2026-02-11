@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::{AccountId, Asset, Recipient, native_account};
+use super::{AccountId, Asset, NoteMetadata, Recipient};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -20,7 +20,7 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::active_note::get_serial_number"]
     pub fn extern_note_get_serial_number(ptr: *mut Word);
     #[link_name = "miden::protocol::active_note::get_metadata"]
-    pub fn extern_note_get_metadata(ptr: *mut Word);
+    pub fn extern_note_get_metadata(ptr: *mut NoteMetadata);
 }
 
 /// Get the inputs of the currently executing note.
@@ -118,21 +118,11 @@ pub fn get_serial_number() -> Word {
     }
 }
 
-/// Returns the metadata of the note that is currently executing.
-pub fn get_metadata() -> Word {
+/// Returns the attachment and metadata header of the note that is currently executing.
+pub fn get_metadata() -> NoteMetadata {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_note_get_metadata(ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
-    }
-}
-
-/// Adds the assets of the currently executing note to the native account vault.
-///
-/// This is equivalent to retrieving the active note's assets via [`get_assets`] and adding each one
-/// to the native account vault via [`native_account::add_asset`].
-pub fn add_assets_to_account() {
-    for asset in get_assets() {
-        native_account::add_asset(asset);
     }
 }

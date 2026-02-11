@@ -100,7 +100,14 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     output_note.insert(
         Symbol::from(GET_METADATA),
-        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt],
+            [
+                Felt, Felt, Felt, Felt, // NOTE_ATTACHMENT
+                Felt, Felt, Felt, Felt, // METADATA_HEADER
+            ],
+        ),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), output_note);
     m

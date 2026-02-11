@@ -113,7 +113,7 @@ fn rust_sdk_output_note_get_metadata_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_get_metadata_binding",
         "pub fn binding(&self) -> Word {
-        output_note::get_metadata(NoteIdx { inner: Felt::from_u32(0) })
+        output_note::get_metadata(NoteIdx { inner: Felt::from_u32(0) }).header
     }",
     );
 }

@@ -27,7 +27,7 @@
     (func $miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1#binding (;2;) (type 1) (result i32)
       (local i32 i32)
       global.get $__stack_pointer
-      i32.const 16
+      i32.const 32
       i32.sub
       local.tee 0
       global.set $__stack_pointer
@@ -41,14 +41,14 @@
       i32.add
       local.tee 1
       local.get 0
-      i64.load offset=8
+      i64.load offset=24
       i64.store offset=8 align=4
       local.get 1
       local.get 0
-      i64.load
+      i64.load offset=16
       i64.store align=4
       local.get 0
-      i32.const 16
+      i32.const 32
       i32.add
       global.set $__stack_pointer
       local.get 1
@@ -74,13 +74,25 @@
     (func $miden_base_sys::bindings::output_note::get_metadata (;4;) (type 2) (param i32 f32)
       (local i32)
       global.get $__stack_pointer
-      i32.const 16
+      i32.const 32
       i32.sub
       local.tee 2
       global.set $__stack_pointer
       local.get 1
       local.get 2
       call $miden::protocol::output_note::get_metadata
+      local.get 0
+      local.get 2
+      i64.load offset=16
+      i64.const 32
+      i64.rotl
+      i64.store offset=24
+      local.get 0
+      local.get 2
+      i64.load offset=24
+      i64.const 32
+      i64.rotl
+      i64.store offset=16
       local.get 0
       local.get 2
       i64.load
@@ -94,7 +106,7 @@
       i64.rotl
       i64.store
       local.get 2
-      i32.const 16
+      i32.const 32
       i32.add
       global.set $__stack_pointer
     )

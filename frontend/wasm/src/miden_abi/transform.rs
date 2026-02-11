@@ -175,9 +175,6 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::active_note::GET_METADATA => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
-                        tx_kernel::active_note::ADD_ASSETS_TO_ACCOUNT => {
-                            Some(TransformStrategy::NoTransform)
-                        }
                         _ => None,
                     }
                 }

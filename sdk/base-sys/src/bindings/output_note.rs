@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::types::{Asset, NoteIdx, NoteType, Recipient, Tag};
+use super::types::{Asset, NoteIdx, NoteMetadata, NoteType, Recipient, Tag};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -36,7 +36,7 @@ unsafe extern "C" {
     pub fn extern_output_note_get_recipient(note_index: Felt, ptr: *mut Recipient);
 
     #[link_name = "miden::protocol::output_note::get_metadata"]
-    pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut Word);
+    pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut NoteMetadata);
 
     #[link_name = "miden::protocol::output_note::set_attachment"]
     pub fn extern_output_note_set_attachment(
@@ -229,10 +229,10 @@ pub fn get_recipient(note_index: NoteIdx) -> Recipient {
     }
 }
 
-/// Returns the metadata of the output note at `note_index`.
-pub fn get_metadata(note_index: NoteIdx) -> Word {
+/// Returns the attachment and metadata header of the output note at `note_index`.
+pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_output_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }

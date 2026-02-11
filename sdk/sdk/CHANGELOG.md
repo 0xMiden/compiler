@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0]
+
+### BREAKING
+- Remove `miden::active_note::add_assets_to_account` #932
+- `*_note::get_metadata` now returns `NoteMetadata` (2 `Word`s) #932
+
 ## [0.9.0]
 
 ### BREAKING
