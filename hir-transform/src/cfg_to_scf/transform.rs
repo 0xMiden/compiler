@@ -913,11 +913,6 @@ impl<'a> TransformationContext<'a> {
         let loop_header_arguments_prior =
             loop_header.borrow().arguments().iter().copied().collect::<SmallVec<[_; 2]>>();
 
-        // Ensure the dominance tree DFS numbers have been computed
-        if !self.region.borrow().has_one_block() {
-            self.dominance_info.dominance(self.region).update_dfs_numbers();
-        }
-
         // Go over all values defined within the loop body. If any of them are used outside the loop
         // body, create a block argument on the exit block and loop header and replace the outside
         // uses with the exit block argument. The loop header block argument is added to satisfy

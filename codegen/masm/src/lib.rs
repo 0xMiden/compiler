@@ -19,7 +19,8 @@ mod stack;
 
 pub mod masm {
     pub use miden_assembly_syntax::{
-        KernelLibrary, Library, LibraryNamespace, LibraryPath,
+        KernelLibrary, Library, Path as LibraryPathRef, PathBuf as LibraryPath,
+        PathComponent as LibraryPathComponent,
         ast::*,
         debuginfo::{SourceSpan, Span, Spanned},
         parser::{IntValue, PushValue},

@@ -1,13 +1,10 @@
-use std::{collections::BTreeMap, env, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, env, path::PathBuf};
 
 use miden_core::{
     Felt, FieldElement, Word,
     utils::{Deserializable, Serializable},
 };
-use miden_debug::Executor;
-use miden_lib::MidenLib;
-use miden_mast_package::Package;
-use miden_objects::account::{AccountComponentMetadata, AccountComponentTemplate, InitStorageData};
+use miden_protocol::account::{AccountComponentMetadata, component::InitStorageData};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{FunctionIdent, Ident, SourceSpan, interner::Symbol};
@@ -17,43 +14,12 @@ use crate::{
     CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
+    testing::{self, executor_with_std},
 };
 
 mod base;
 mod macros;
 mod stdlib;
-
-fn executor_with_std(args: Vec<Felt>) -> Executor {
-    let mut exec = Executor::new(args);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
-    exec
-}
-
-#[test]
-#[ignore = "until https://github.com/0xMiden/compiler/issues/439 is fixed"]
-fn account() {
-    let artifact_name = "miden_sdk_account_test";
-    let config = WasmTranslationConfig::default();
-    let mut test = CompilerTest::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/account-test",
-        config,
-        [],
-    );
-    test.expect_wasm(expect_file![format!(
-        "../../../expected/rust_sdk_account_test/{artifact_name}.wat"
-    )]);
-    test.expect_ir(expect_file![format!(
-        "../../../expected/rust_sdk_account_test/{artifact_name}.hir"
-    )]);
-    // test.expect_masm(expect_file![format!(
-    //     "../../../expected/rust_sdk_account_test/{artifact_name}.masm"
-    // )]);
-}
 
 #[test]
 fn rust_sdk_swapp_note_bindings() {
@@ -98,18 +64,24 @@ debug = false
 
 use miden::*;
 
-#[note_script]
-fn run(_arg: Word) {
-    let sender = active_note::get_sender();
-    let script_root = active_note::get_script_root();
-    let serial_number = active_note::get_serial_number();
-    let balance = active_account::get_balance(sender);
+#[note]
+struct Note;
 
-    assert_eq!(sender.prefix, sender.prefix);
-    assert_eq!(sender.suffix, sender.suffix);
-    assert_eq!(script_root, script_root);
-    assert_eq!(serial_number, serial_number);
-    assert_eq!(balance, balance);
+#[note]
+impl Note {
+    #[note_script]
+    pub fn run(self, _arg: Word) {
+        let sender = active_note::get_sender();
+        let script_root = active_note::get_script_root();
+        let serial_number = active_note::get_serial_number();
+        let balance = active_account::get_balance(sender);
+
+        assert_eq!(sender.prefix, sender.prefix);
+        assert_eq!(sender.suffix, sender.suffix);
+        assert_eq!(script_root, script_root);
+        assert_eq!(serial_number, serial_number);
+        assert_eq!(balance, balance);
+    }
 }
 "#;
 
@@ -136,6 +108,24 @@ fn run(_arg: Word) {
     test.compiled_package();
 }
 
+/// Regression test for https://github.com/0xMiden/compiler/issues/831
+///
+/// Previously, compilation could panic during MASM codegen with:
+/// `invalid stack offset for movup: 16 is out of range`.
+#[test]
+fn rust_sdk_invalid_stack_offset_movup_16_issue_831() {
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        "../rust-apps-wasm/rust-sdk/issue-invalid-stack-offset-movup",
+        config,
+        [],
+    );
+
+    // Ensure the crate compiles all the way to a package. This previously triggered the #831
+    // panic in MASM codegen.
+    let package = test.compiled_package();
+}
+
 #[test]
 fn rust_sdk_cross_ctx_account_and_note() {
     let config = WasmTranslationConfig::default();
@@ -149,20 +139,23 @@ fn rust_sdk_cross_ctx_account_and_note() {
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account.masm")]);
     let account_package = test.compiled_package();
     let lib = account_package.unwrap_library();
+    let exports = lib
+        .exports()
+        .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
+        .map(|e| e.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
     assert!(
         !lib.exports()
-            .any(|export| { export.name.to_string().starts_with("intrinsics") }),
+            .any(|export| export.path().as_ref().as_str().starts_with("intrinsics")),
         "expected no intrinsics in the exports"
     );
-    let expected_module = "miden:cross-ctx-account/foo@1.0.0";
-    let expected_function = "process-felt";
+    let expected_module_prefix = "::\"miden:cross-ctx-account/";
+    let expected_function_suffix = "\"process-felt\"";
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}"
+        exports.iter().any(|export| export.starts_with(expected_module_prefix)
+            && export.ends_with(expected_function_suffix)),
+        "expected one of the exports to start with '{expected_module_prefix}' and end with \
+         '{expected_function_suffix}', got exports: {exports:?}"
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
@@ -181,7 +174,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note.masm")]);
     let package = test.compiled_package();
     let program = package.unwrap_program();
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())
@@ -206,21 +199,19 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     )]);
     let account_package = test.compiled_package();
     let lib = account_package.unwrap_library();
-    let expected_module = "miden:cross-ctx-account-word/foo@1.0.0";
-    let expected_function = "process-word";
+    let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
+    let expected_function_suffix = "\"process-word\"";
     let exports = lib
         .exports()
-        .filter(|e| !e.name.module.to_string().starts_with("intrinsics"))
-        .map(|e| format!("{}::{}", e.name.module, e.name.name.as_str()))
+        .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
+        .map(|e| e.path().as_ref().as_str().to_string())
         .collect::<Vec<_>>();
     // dbg!(&exports);
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}"
+        exports.iter().any(|export| export.starts_with(expected_module_prefix)
+            && export.ends_with(expected_function_suffix)),
+        "expected one of the exports to start with '{expected_module_prefix}' and end with \
+         '{expected_function_suffix}', got exports: {exports:?}"
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
@@ -238,7 +229,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.hir")]);
     test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.masm")]);
     let package = test.compiled_package();
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())
@@ -248,7 +239,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
 
 #[test]
 fn pure_rust_hir2() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    testing::setup::enable_compiler_instrumentation();
     let config = WasmTranslationConfig::default();
     let mut test =
         CompilerTest::rust_source_cargo_miden("../rust-apps-wasm/rust-sdk/add", config, []);
@@ -277,21 +268,18 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     let account_package = test.compiled_package();
 
     let lib = account_package.unwrap_library();
-    let expected_module = "miden:cross-ctx-account-word-arg/foo@1.0.0";
-    let expected_function = "process-word";
+    let expected_module_prefix = "::\"miden:cross-ctx-account-word-arg/";
+    let expected_function_suffix = "\"process-word\"";
     let exports = lib
         .exports()
-        .filter(|e| !e.name.module.to_string().starts_with("intrinsics"))
-        .map(|e| format!("{}::{}", e.name.module, e.name.name.as_str()))
+        .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
+        .map(|e| e.path().as_ref().as_str().to_string())
         .collect::<Vec<_>>();
-    dbg!(&exports);
     assert!(
-        lib.exports().any(|export| {
-            export.name.module.to_string() == expected_module
-                && export.name.name.as_str() == expected_function
-        }),
-        "expected one of the exports to contain module '{expected_module}' and function \
-         '{expected_function}"
+        exports.iter().any(|export| export.starts_with(expected_module_prefix)
+            && export.ends_with(expected_function_suffix)),
+        "expected one of the exports to start with '{expected_module_prefix}' and end with \
+         '{expected_function_suffix}', got exports: {exports:?}"
     );
 
     // Build counter note
@@ -310,7 +298,7 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     )]);
     let package = test.compiled_package();
     assert!(package.is_program());
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())

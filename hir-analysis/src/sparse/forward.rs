@@ -280,18 +280,19 @@ pub(super) fn visit_block<A>(
         return;
     }
 
-    // Get the argument lattices.
-    let mut arg_lattices = SmallVec::<[_; 4]>::with_capacity(block.num_arguments());
-    for argument in block.arguments().iter().copied() {
-        log::trace!(target: analysis.debug_name(), "getting/initializing lattice for {argument}");
-        let lattice = get_lattice_element_mut::<A>(argument as ValueRef, solver);
-        arg_lattices.push(lattice);
-    }
-
     // The argument lattices of entry blocks are set by region control-flow or the callgraph.
     let current_point = ProgramPoint::at_start_of(block);
     if block.is_entry_block() {
         log::trace!(target: analysis.debug_name(), "{block} is a region entry block");
+
+        // Get the argument lattices.
+        let mut arg_lattices = SmallVec::<[_; 4]>::with_capacity(block.num_arguments());
+        for argument in block.arguments().iter().copied() {
+            log::trace!(target: analysis.debug_name(), "getting/initializing lattice for {argument}");
+            let lattice = get_lattice_element_mut::<A>(argument as ValueRef, solver);
+            arg_lattices.push(lattice);
+        }
+
         // Check if this block is the entry block of a callable region.
         let parent_op = block.parent_op().unwrap();
         let parent_op = parent_op.borrow();
@@ -339,6 +340,7 @@ pub(super) fn visit_block<A>(
                 target: analysis.debug_name(),
                 "{block} is the entry of an region control flow op",
             );
+
             return visit_region_successors(
                 analysis,
                 current_point,
@@ -399,19 +401,35 @@ pub(super) fn visit_block<A>(
                 pred.index
             );
             let operands = branch.get_successor_operands(pred.index());
-            for (idx, lattice) in arg_lattices.iter_mut().enumerate() {
+
+            for (idx, argument) in block.arguments().iter().copied().enumerate() {
+                let arg = argument as ValueRef;
                 if let Some(operand) =
                     operands.get(idx).and_then(|operand| operand.into_value_ref())
                 {
-                    log::trace!(target: analysis.debug_name(), "joining lattice for {} with {operand}", lattice.anchor());
+                    log::trace!(target: analysis.debug_name(), "joining lattice for {arg} with {operand}");
+                    // If the block argument is being passed as a successor opernad in the same
+                    // position, then we could end up attempting to obtain the same lattice twice,
+                    // thus special handling is needed
                     let operand_lattice =
                         get_lattice_element_for::<A>(current_point, operand, solver);
-                    let change_result = lattice.join(operand_lattice.lattice());
-                    log::debug!(target: analysis.debug_name(), "updated lattice for {} to {:#?}: {change_result}", lattice.anchor(), lattice);
+                    let (change_result, arg_lattice) = if arg == operand {
+                        let lattice_value = operand_lattice.lattice().clone();
+                        drop(operand_lattice);
+                        let mut arg_lattice = get_lattice_element_mut::<A>(arg, solver);
+                        let change_result = arg_lattice.join(&lattice_value);
+                        (change_result, arg_lattice)
+                    } else {
+                        let mut arg_lattice = get_lattice_element_mut::<A>(arg, solver);
+                        let change_result = arg_lattice.join(operand_lattice.lattice());
+                        (change_result, arg_lattice)
+                    };
+                    log::debug!(target: analysis.debug_name(), "updated lattice for {arg} to {:#?}: {change_result}", &arg_lattice);
                 } else {
                     // Conservatively consider internally produced arguments as entry points.
-                    log::trace!(target: analysis.debug_name(), "setting lattice for internally-produced argument {} to entry state", lattice.anchor());
-                    analysis.set_to_entry_state(lattice);
+                    log::trace!(target: analysis.debug_name(), "setting lattice for internally-produced argument {arg} to entry state");
+                    let mut arg_lattice = get_lattice_element_mut::<A>(arg, solver);
+                    analysis.set_to_entry_state(&mut arg_lattice);
                 }
             }
         } else {
@@ -420,6 +438,13 @@ pub(super) fn visit_block<A>(
                 "unable to reason about predecessor control flow - setting argument lattices to \
                  entry state"
             );
+            // Get the argument lattices.
+            let mut arg_lattices = SmallVec::<[_; 4]>::with_capacity(block.num_arguments());
+            for argument in block.arguments().iter().copied() {
+                log::trace!(target: analysis.debug_name(), "getting/initializing lattice for {argument}");
+                let lattice = get_lattice_element_mut::<A>(argument as ValueRef, solver);
+                arg_lattices.push(lattice);
+            }
             return set_all_to_entry_states(analysis, &mut arg_lattices);
         }
     }

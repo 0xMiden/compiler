@@ -3,23 +3,21 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::types::{Asset, NoteIdx, NoteType, Recipient, Tag};
+use super::types::{Asset, NoteIdx, NoteMetadata, NoteType, Recipient, Tag};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::output_note::create"]
+    #[link_name = "miden::protocol::output_note::create"]
     pub fn extern_output_note_create(
         tag: Tag,
-        aux: Felt,
         note_type: NoteType,
-        execution_hint: Felt,
         recipient_f0: Felt,
         recipient_f1: Felt,
         recipient_f2: Felt,
         recipient_f3: Felt,
     ) -> NoteIdx;
 
-    #[link_name = "miden::output_note::add_asset"]
+    #[link_name = "miden::protocol::output_note::add_asset"]
     pub fn extern_output_note_add_asset(
         asset_f0: Felt,
         asset_f1: Felt,
@@ -28,33 +26,81 @@ unsafe extern "C" {
         note_idx: NoteIdx,
     );
 
-    #[link_name = "miden::output_note::get_assets_info"]
+    #[link_name = "miden::protocol::output_note::get_assets_info"]
     pub fn extern_output_note_get_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
 
-    #[link_name = "miden::output_note::get_assets"]
+    #[link_name = "miden::protocol::output_note::get_assets"]
     pub fn extern_output_note_get_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
 
-    #[link_name = "miden::output_note::get_recipient"]
+    #[link_name = "miden::protocol::output_note::get_recipient"]
     pub fn extern_output_note_get_recipient(note_index: Felt, ptr: *mut Recipient);
 
-    #[link_name = "miden::output_note::get_metadata"]
-    pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut Word);
+    #[link_name = "miden::protocol::output_note::get_metadata"]
+    pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut NoteMetadata);
+
+    #[link_name = "miden::protocol::output_note::set_attachment"]
+    pub fn extern_output_note_set_attachment(
+        note_idx: NoteIdx,
+        attachment_scheme: Felt,
+        attachment_kind: Felt,
+        attachment_f0: Felt,
+        attachment_f1: Felt,
+        attachment_f2: Felt,
+        attachment_f3: Felt,
+    );
+
+    #[link_name = "miden::protocol::output_note::set_word_attachment"]
+    pub fn extern_output_note_set_word_attachment(
+        note_idx: NoteIdx,
+        attachment_scheme: Felt,
+        attachment_f0: Felt,
+        attachment_f1: Felt,
+        attachment_f2: Felt,
+        attachment_f3: Felt,
+    );
+
+    #[link_name = "miden::protocol::output_note::set_array_attachment"]
+    pub fn extern_output_note_set_array_attachment(
+        note_idx: NoteIdx,
+        attachment_scheme: Felt,
+        attachment_f0: Felt,
+        attachment_f1: Felt,
+        attachment_f2: Felt,
+        attachment_f3: Felt,
+    );
 }
 
 /// Creates a new output note and returns its index.
-pub fn create(
-    tag: Tag,
-    aux: Felt,
-    note_type: NoteType,
-    execution_hint: Felt,
-    recipient: Recipient,
-) -> NoteIdx {
+///
+/// # Examples
+///
+/// Create a note and add a single asset to it:
+///
+/// ```rust,ignore
+/// // before using `Vec`/`vec!`.
+/// extern crate alloc;
+///
+/// use miden::{felt, output_note, Asset, Digest, NoteType, Recipient, Tag, Word};
+///
+/// // Values used to derive the note recipient.
+/// let serial_num = Word::from_u64_unchecked(1, 2, 3, 4);
+/// let note_script_root = Digest::from_word(Word::from_u64_unchecked(0, 0, 0, 0));
+///
+/// // Note inputs are hashed via `hash_elements`.
+/// let inputs = alloc::vec![felt!(0); 2];
+/// let recipient = Recipient::compute(serial_num, note_script_root, inputs);
+///
+/// let tag = Tag::from(felt!(0));
+/// let note_type = NoteType::from(felt!(1)); // public note type (0b01)
+///
+/// let note_idx = output_note::create(tag, note_type, recipient);
+/// output_note::add_asset(Asset::new([felt!(0), felt!(0), felt!(0), felt!(1)]), note_idx);
+/// ```
+pub fn create(tag: Tag, note_type: NoteType, recipient: Recipient) -> NoteIdx {
     unsafe {
         extern_output_note_create(
             tag,
-            aux,
             note_type,
-            execution_hint,
             recipient.inner[3],
             recipient.inner[2],
             recipient.inner[1],
@@ -63,7 +109,69 @@ pub fn create(
     }
 }
 
+/// Sets the attachment of the output note specified by `note_idx`.
+pub fn set_attachment(
+    note_idx: NoteIdx,
+    attachment_scheme: Felt,
+    attachment_kind: Felt,
+    attachment: Word,
+) {
+    unsafe {
+        extern_output_note_set_attachment(
+            note_idx,
+            attachment_scheme,
+            attachment_kind,
+            attachment[3],
+            attachment[2],
+            attachment[1],
+            attachment[0],
+        );
+    }
+}
+
+/// Sets the attachment of the output note specified by `note_idx` to the provided word.
+pub fn set_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
+    unsafe {
+        extern_output_note_set_word_attachment(
+            note_idx,
+            attachment_scheme,
+            attachment[3],
+            attachment[2],
+            attachment[1],
+            attachment[0],
+        );
+    }
+}
+
+/// Sets the attachment of the output note specified by `note_idx` to the provided commitment.
+///
+/// The advice map must contain an entry for the attachment elements committed to by `attachment`.
+pub fn set_array_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
+    unsafe {
+        extern_output_note_set_array_attachment(
+            note_idx,
+            attachment_scheme,
+            attachment[3],
+            attachment[2],
+            attachment[1],
+            attachment[0],
+        );
+    }
+}
+
 /// Adds the asset to the output note specified by `note_idx`.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use miden::{felt, output_note, Asset, NoteIdx};
+///
+/// // `note_idx` is returned by `output_note::create(...)`.
+/// let note_idx: NoteIdx = /* ... */
+///
+/// let asset = Asset::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+/// output_note::add_asset(asset, note_idx);
+/// ```
 pub fn add_asset(asset: Asset, note_idx: NoteIdx) {
     unsafe {
         extern_output_note_add_asset(
@@ -121,10 +229,10 @@ pub fn get_recipient(note_index: NoteIdx) -> Recipient {
     }
 }
 
-/// Returns the metadata of the output note at `note_index`.
-pub fn get_metadata(note_index: NoteIdx) -> Word {
+/// Returns the attachment and metadata header of the output note at `note_index`.
+pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_output_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }

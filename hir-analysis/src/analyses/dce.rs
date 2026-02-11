@@ -752,6 +752,15 @@ impl DeadCodeAnalysis {
                 let succ = successor.block.borrow();
                 (succ.predecessor(), succ.successor())
             };
+            let point = ProgramPoint::at_start_of(to);
+            let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
+            let change_result = predecessors.change(|ps| {
+                ps.join_with_inputs(branch.as_operation_ref(), successor.successor_operands())
+            });
+            log::debug!(
+                target: self.debug_name(), "adding {} as predecessor for {point}: {change_result}",
+                branch.as_operation().name()
+            );
             self.mark_edge_live(&from.borrow(), &to.borrow(), solver);
         } else {
             // Otherwise, mark all successors as executable and outgoing edges.
@@ -759,6 +768,15 @@ impl DeadCodeAnalysis {
                 let block_operand = successor.block.borrow();
                 let from = block_operand.predecessor();
                 let to = block_operand.successor();
+                let point = ProgramPoint::at_start_of(to);
+                let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
+                let change_result = predecessors.change(|ps| {
+                    ps.join_with_inputs(branch.as_operation_ref(), successor.successor_operands())
+                });
+                log::debug!(
+                    target: self.debug_name(), "adding {} as predecessor for {point}: {change_result}",
+                    branch.as_operation().name()
+                );
                 self.mark_edge_live(&from.borrow(), &to.borrow(), solver);
             }
         }

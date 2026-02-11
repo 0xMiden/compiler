@@ -14,9 +14,9 @@
     (type (;4;) (func (param i32 i32 i32) (result i32)))
     (type (;5;) (func (result i32)))
     (type (;6;) (func (param i32)))
-    (type (;7;) (func (param i32 f32)))
-    (type (;8;) (func (param i32) (result f32)))
-    (type (;9;) (func (param i32 i32 i32 i32)))
+    (type (;7;) (func (param i32 i32 i32 i32)))
+    (type (;8;) (func (param i32 f32)))
+    (type (;9;) (func (param i32) (result f32)))
     (type (;10;) (func (param i32 i32 i32 i32 i32)))
     (type (;11;) (func (param i32 i32)))
     (type (;12;) (func (param i32 f32) (result i32)))
@@ -195,6 +195,7 @@
       local.get 1
       i32.const 8
       i32.add
+      i32.const 256
       i32.const 16
       i32.const 16
       call $<alloc::raw_vec::RawVecInner>::with_capacity_in
@@ -212,49 +213,49 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVecInner>::with_capacity_in (;11;) (type 2) (param i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::with_capacity_in (;11;) (type 7) (param i32 i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
       i32.sub
-      local.tee 3
+      local.tee 4
       global.set $__stack_pointer
-      local.get 3
+      local.get 4
       i32.const 4
       i32.add
-      i32.const 256
-      i32.const 0
       local.get 1
+      i32.const 0
       local.get 2
-      call $<alloc::raw_vec::RawVecInner>::try_allocate_in
       local.get 3
+      call $<alloc::raw_vec::RawVecInner>::try_allocate_in
+      local.get 4
       i32.load offset=8
-      local.set 2
+      local.set 3
       block ;; label = @1
-        local.get 3
+        local.get 4
         i32.load offset=4
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
-        local.get 2
         local.get 3
+        local.get 4
         i32.load offset=12
         call $alloc::raw_vec::handle_error
         unreachable
       end
       local.get 0
-      local.get 3
+      local.get 4
       i32.load offset=12
       i32.store offset=4
       local.get 0
-      local.get 2
-      i32.store
       local.get 3
+      i32.store
+      local.get 4
       i32.const 16
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::input_note::get_assets (;12;) (type 7) (param i32 f32)
+    (func $miden_base_sys::bindings::input_note::get_assets (;12;) (type 8) (param i32 f32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -273,7 +274,7 @@
       i32.const 2
       i32.shr_u
       local.get 1
-      call $miden::input_note::get_assets
+      call $miden::protocol::input_note::get_assets
       i32.store
       local.get 0
       local.get 2
@@ -284,10 +285,10 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $intrinsics::felt::from_u32 (;13;) (type 8) (param i32) (result f32)
+    (func $intrinsics::felt::from_u32 (;13;) (type 9) (param i32) (result f32)
       unreachable
     )
-    (func $<alloc::alloc::Global>::alloc_impl (;14;) (type 9) (param i32 i32 i32 i32)
+    (func $<alloc::alloc::Global>::alloc_impl (;14;) (type 7) (param i32 i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -346,7 +347,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVecInner>::current_memory (;16;) (type 9) (param i32 i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::current_memory (;16;) (type 7) (param i32 i32 i32 i32)
       (local i32 i32 i32)
       i32.const 0
       local.set 4
@@ -543,11 +544,11 @@
       i32.gt_u
       select
     )
-    (func $miden::input_note::get_assets (;22;) (type 12) (param i32 f32) (result i32)
+    (func $miden::protocol::input_note::get_assets (;22;) (type 12) (param i32 f32) (result i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "Mrust_sdk_input_note_get_assets_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "Mrust_sdk_input_note_get_assets_binding\01\0b0.0.1\03\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;1;)))
   (core instance $main (;0;) (instantiate $main))

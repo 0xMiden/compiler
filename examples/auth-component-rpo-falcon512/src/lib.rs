@@ -4,8 +4,8 @@
 extern crate alloc;
 
 use miden::{
-    component, felt, hash_words, intrinsics::advice::adv_insert, native_account, tx, Felt, Value,
-    ValueAccess, Word,
+    Felt, Value, ValueAccess, Word, component, felt, hash_words, intrinsics::advice::adv_insert,
+    native_account, tx,
 };
 
 /// Authentication component storage/layout.
@@ -16,9 +16,8 @@ use miden::{
 struct AuthComponent {
     /// The account owner's public key (RPO-Falcon512 public key hash).
     #[storage(
-        slot(0),
         description = "owner public key",
-        type = "auth::rpo_falcon512::pub_key"
+        type = "miden::standards::auth::falcon512_rpo::pub_key"
     )]
     owner_public_key: Value,
 }
@@ -43,7 +42,6 @@ impl AuthComponent {
         // Insert tx summary into advice map under key `msg`
         adv_insert(msg, &tx_summary);
 
-        // Load public key from storage slot 0
         let pub_key: Word = self.owner_public_key.read();
 
         // Emit signature request event to advice stack,

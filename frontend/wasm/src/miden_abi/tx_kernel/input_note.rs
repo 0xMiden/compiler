@@ -6,13 +6,11 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const MODULE_ID: &str = "miden::input_note";
-
 fn module_path() -> SymbolPath {
     let parts = [
         SymbolNameComponent::Root,
         SymbolNameComponent::Component(symbols::Miden),
-        SymbolNameComponent::Component(Symbol::intern("input_note")),
+        SymbolNameComponent::Component(symbols::InputNote),
     ];
     SymbolPath::from_iter(parts)
 }
@@ -43,7 +41,14 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     funcs.insert(
         Symbol::from(GET_METADATA),
-        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt],
+            [
+                Felt, Felt, Felt, Felt, // NOTE_ATTACHMENT
+                Felt, Felt, Felt, Felt, // METADATA_HEADER
+            ],
+        ),
     );
     funcs.insert(
         Symbol::from(GET_SENDER),

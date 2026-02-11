@@ -65,7 +65,7 @@
       local.get 0
       i32.const 16
       i32.add
-      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
       local.get 0
       i32.const 16
       i32.add
@@ -109,7 +109,7 @@
     (func $miden_base_sys::bindings::faucet::burn (;4;) (type 2) (param i32 i32)
       (local i32)
       global.get $__stack_pointer
-      i32.const 32
+      i32.const 16
       i32.sub
       local.tee 2
       global.set $__stack_pointer
@@ -122,26 +122,25 @@
       local.get 1
       f32.load
       local.get 2
-      call $miden::faucet::burn
-      local.get 2
-      local.get 2
-      i64.load offset=8
-      i64.store offset=24
-      local.get 2
-      local.get 2
-      i64.load
-      i64.store offset=16
+      call $miden::protocol::faucet::burn
       local.get 0
       local.get 2
-      i32.const 16
-      i32.add
-      call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
+      i64.load
+      i64.const 32
+      i64.rotl
+      i64.store offset=8
+      local.get 0
       local.get 2
-      i32.const 32
+      i64.load offset=8
+      i64.const 32
+      i64.rotl
+      i64.store
+      local.get 2
+      i32.const 16
       i32.add
       global.set $__stack_pointer
     )
-    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from (;5;) (type 2) (param i32 i32)
+    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from (;5;) (type 2) (param i32 i32)
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -151,72 +150,14 @@
       i64.load align=4
       i64.store
     )
-    (func $<miden_stdlib_sys::intrinsics::word::Word>::reverse (;6;) (type 2) (param i32 i32)
-      (local i32 i32 i32 f32)
-      global.get $__stack_pointer
-      i32.const 16
-      i32.sub
-      local.tee 2
-      local.get 1
-      i64.load offset=8
-      i64.store offset=8 align=4
-      local.get 2
-      local.get 1
-      i64.load
-      i64.store align=4
-      local.get 2
-      i32.const 12
-      i32.add
-      local.set 3
-      i32.const 0
-      local.set 1
-      block ;; label = @1
-        loop ;; label = @2
-          local.get 1
-          i32.const 8
-          i32.eq
-          br_if 1 (;@1;)
-          local.get 2
-          local.get 1
-          i32.add
-          local.tee 4
-          f32.load
-          local.set 5
-          local.get 4
-          local.get 3
-          i32.load
-          i32.store
-          local.get 3
-          local.get 5
-          f32.store
-          local.get 1
-          i32.const 4
-          i32.add
-          local.set 1
-          local.get 3
-          i32.const -4
-          i32.add
-          local.set 3
-          br 0 (;@2;)
-        end
-      end
-      local.get 0
-      local.get 2
-      i64.load offset=8 align=4
-      i64.store offset=8
-      local.get 0
-      local.get 2
-      i64.load align=4
-      i64.store
-    )
-    (func $intrinsics::felt::from_u32 (;7;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u32 (;6;) (type 3) (param i32) (result f32)
       unreachable
     )
-    (func $miden::faucet::burn (;8;) (type 4) (param f32 f32 f32 f32 i32)
+    (func $miden::protocol::faucet::burn (;7;) (type 4) (param f32 f32 f32 f32 i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "Irust_sdk_account_faucet_burn_binding\01\0b0.0.1\05\02\03\01")
+    (@custom "rodata,miden_account" (after data) "Irust_sdk_account_faucet_burn_binding\01\0b0.0.1\05\02\03\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "asset" (type $asset (;1;)))
   (core instance $main (;0;) (instantiate $main))

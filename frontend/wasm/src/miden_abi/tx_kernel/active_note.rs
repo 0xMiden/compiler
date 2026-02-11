@@ -6,10 +6,10 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const MODULE_ID: &str = "miden::active_note";
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Miden),
+    SymbolNameComponent::Component(symbols::Protocol),
     SymbolNameComponent::Component(symbols::ActiveNote),
 ];
 
@@ -20,7 +20,6 @@ pub const GET_RECIPIENT: &str = "get_recipient";
 pub const GET_SCRIPT_ROOT: &str = "get_script_root";
 pub const GET_SERIAL_NUMBER: &str = "get_serial_number";
 pub const GET_METADATA: &str = "get_metadata";
-pub const ADD_ASSETS_TO_ACCOUNT: &str = "add_assets_to_account";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -42,9 +41,15 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     note.insert(
         Symbol::from(GET_METADATA),
-        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [],
+            [
+                Felt, Felt, Felt, Felt, // NOTE_ATTACHMENT
+                Felt, Felt, Felt, Felt, // METADATA_HEADER
+            ],
+        ),
     );
-    note.insert(Symbol::from(ADD_ASSETS_TO_ACCOUNT), FunctionType::new(CallConv::Wasm, [], []));
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), note);
     m
 }

@@ -1,11 +1,10 @@
 use std::{
-    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
 use anyhow::{Context, Result, bail};
-use cargo_metadata::{Artifact, Message, Metadata, MetadataCommand, Package, camino};
+use cargo_metadata::{Metadata, MetadataCommand, Package, camino};
 use clap::Args;
 use midenc_compile::Compiler;
 use midenc_session::TargetEnv;
@@ -72,6 +71,9 @@ impl BuildCommand {
 
         // Enable memcopy and 128-bit arithmetic ops
         let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
+        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
+        // cfg-based dependency selection.
+        extra_rust_flags.push_str(" --cfg miden");
         // Enable errors on missing stub functions
         extra_rust_flags.push_str(" -C link-args=--fatal-warnings");
         // Remove the source file paths in the data segment for panics
@@ -106,9 +108,17 @@ impl BuildCommand {
             midenc_flags.push(dep_path.to_string_lossy().to_string());
         }
 
-        // Merge user-provided midenc options from parsed Compiler struct
-        // User options override target-derived defaults
-        midenc_flags = merge_midenc_flags(midenc_flags, &compiler_opts);
+        // Merge user-provided build options
+        midenc_flags.extend_from_slice(&self.args);
+        // When debug info is enabled, automatically add -Ztrim-path-prefix to normalize
+        // source paths in debug information.
+        let package_source_dir = cargo_package.manifest_path.parent().map(|p| p.as_std_path());
+        if compiler_opts.debug != midenc_session::DebugInfo::None
+            && let Some(source_dir) = package_source_dir
+        {
+            let trim_prefix = format!("-Ztrim-path-prefix={}", source_dir.display());
+            midenc_flags.push(trim_prefix);
+        }
 
         match build_output_type {
             OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
@@ -188,7 +198,7 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
 
     // Add build-std flags required for Miden compilation
     args.extend(
-        ["-Z", "build-std=core,alloc,proc_macro,panic_abort", "-Z", "build-std-features="]
+        ["-Z", "build-std=core,alloc,panic_abort", "-Z", "build-std-features="]
             .into_iter()
             .map(|s| s.to_string()),
     );
@@ -231,36 +241,6 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
     args
 }
 
-/// Merges user-provided `--emit` option with target-derived defaults.
-///
-/// Only the `--emit` option is merged from user input. All other options are
-/// determined by the detected target environment and project type.
-fn merge_midenc_flags(mut base: Vec<String>, compiler: &Compiler) -> Vec<String> {
-    // Only merge --emit options from user input
-    for spec in &compiler.output_types {
-        base.push("--emit".to_string());
-        let spec_str = match spec {
-            midenc_session::OutputTypeSpec::All { path } => {
-                if let Some(p) = path {
-                    format!("all={p}")
-                } else {
-                    "all".to_string()
-                }
-            }
-            midenc_session::OutputTypeSpec::Typed { output_type, path } => {
-                if let Some(p) = path {
-                    format!("{output_type}={p}")
-                } else {
-                    output_type.to_string()
-                }
-            }
-        };
-        base.push(spec_str);
-    }
-
-    base
-}
-
 fn run_cargo<E>(wasi: &str, spawn_args: &[String], env: E) -> Result<Vec<PathBuf>>
 where
     E: IntoIterator<Item = (&'static str, String)>,
@@ -272,6 +252,10 @@ where
 
     let mut cargo = Command::new(&cargo_path);
     cargo.envs(env);
+    // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm for a
+    // "real" Wasm runtime vs compiling to Wasm as an intermediate artifact that will be compiled
+    // to Miden VM code by `midenc`.
+    cargo.env("MIDENC_TARGET_IS_MIDEN_VM", "1");
     cargo.args(spawn_args);
 
     // Handle the target for buildable commands
@@ -284,7 +268,7 @@ where
     cargo.arg("--message-format").arg("json-render-diagnostics");
     cargo.stdout(Stdio::piped());
 
-    let artifacts = spawn_cargo(cargo, &cargo_path)?;
+    let artifacts = crate::utils::spawn_cargo(cargo, &cargo_path)?;
 
     let outputs: Vec<PathBuf> = artifacts
         .into_iter()
@@ -299,51 +283,6 @@ where
         .collect();
 
     Ok(outputs)
-}
-
-fn spawn_cargo(mut cmd: Command, cargo: &Path) -> Result<Vec<Artifact>> {
-    log::debug!("spawning command {cmd:?}");
-
-    let mut child = cmd
-        .spawn()
-        .context(format!("failed to spawn `{cargo}`", cargo = cargo.display()))?;
-
-    let mut artifacts = Vec::new();
-    let stdout = child.stdout.take().expect("no stdout");
-    let reader = BufReader::new(stdout);
-    for line in reader.lines() {
-        let line = line.context("failed to read output from `cargo`")?;
-
-        if line.is_empty() {
-            continue;
-        }
-
-        for message in Message::parse_stream(line.as_bytes()) {
-            if let Message::CompilerArtifact(artifact) =
-                message.context("unexpected JSON message from cargo")?
-            {
-                for path in &artifact.filenames {
-                    match path.extension() {
-                        Some("wasm") => {
-                            artifacts.push(artifact);
-                            break;
-                        }
-                        _ => continue,
-                    }
-                }
-            }
-        }
-    }
-
-    let status = child
-        .wait()
-        .context(format!("failed to wait for `{cargo}` to finish", cargo = cargo.display()))?;
-
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-
-    Ok(artifacts)
 }
 
 fn determine_cargo_package<'a>(

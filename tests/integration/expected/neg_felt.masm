@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -10,19 +10,11 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::neg_felt
+# mod ::"root_ns:root@1.0.0"::neg_felt
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(felt, felt) -> felt
-    trace.240
-    nop
-    exec.::root_ns:root@1.0.0::neg_felt::intrinsics::felt::sub
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::sub(felt, felt) -> felt
     swap.1
     sub
 end

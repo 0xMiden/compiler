@@ -1,20 +1,18 @@
-use std::{borrow::Borrow, collections::VecDeque, sync::Arc};
+use std::{borrow::Borrow, collections::VecDeque};
 
 use miden_core::utils::{Deserializable, Serializable};
-use miden_debug::{Executor, ToMidenRepr};
-use miden_lib::MidenLib;
-use miden_mast_package::{Package, SectionId};
-use miden_objects::account::AccountComponentMetadata;
+use miden_debug::ToMidenRepr;
+use miden_mast_package::SectionId;
+use miden_protocol::account::AccountComponentMetadata;
 use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
     Felt, FunctionIdent, Ident, Immediate, Op, SourceSpan, SymbolTable, interner::Symbol,
 };
-use midenc_session::STDLIB;
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
-use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project};
+use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project, testing::executor_with_std};
 
 #[test]
 fn storage_example() {
@@ -48,32 +46,20 @@ fn storage_example() {
         version = "0.1.0"
         supported-types = ["RegularAccountUpdatableCode"]
 
-        [[storage]]
-        name = "owner_public_key"
-        description = "test value"
-        slot = 0
-        type = "auth::rpo_falcon512::pub_key"
+        [[storage.slots]]
+        name = "miden::component::miden_storage_example::asset_qty_map"
+        description = "asset quantity map"
 
-        [[storage]]
-        name = "asset_qty_map"
-        description = "test map"
-        slot = 1
-        values = []
+        [storage.slots.type]
+        key = "word"
+        value = "word"
+
+        [[storage.slots]]
+        name = "miden::component::miden_storage_example::owner_public_key"
+        description = "owner public key"
+        type = "word"
     "#]]
     .assert_eq(&toml);
-}
-
-fn executor_with_std(package: &Package, args: Vec<Felt>) -> Result<Executor, TestCaseError> {
-    let mut exec = Executor::new(args);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
-    exec.with_dependencies(package.manifest.dependencies())
-        .map_err(|err| TestCaseError::fail(err.to_string()))?;
-    Ok(exec)
 }
 
 #[test]
@@ -100,7 +86,7 @@ fn fibonacci() {
     TestRunner::default()
         .run(&(1u32..30), move |a| {
             let rust_out = expected_fib(a);
-            let exec = executor_with_std(&package, vec![Felt::new(a as u64)])?;
+            let exec = executor_with_std(vec![Felt::new(a as u64)], Some(&package));
             let output: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
@@ -112,7 +98,7 @@ fn fibonacci() {
 
 #[test]
 fn collatz() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -143,7 +129,7 @@ fn collatz() {
         .run(&(1u32..30), move |a| {
             let rust_out = expected(a);
             let args = a.to_felts().to_vec();
-            let exec = executor_with_std(&package, args)?;
+            let exec = executor_with_std(args, Some(&package));
             let output: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
@@ -157,7 +143,7 @@ fn collatz() {
 
 #[test]
 fn is_prime() {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -223,7 +209,7 @@ fn is_prime() {
             prop_assert_eq!(rust_out as i32, result);
 
             let args = a.to_felts().to_vec();
-            let exec = executor_with_std(&package, args)?;
+            let exec = executor_with_std(args, Some(&package));
             let output: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             dbg!(output);
@@ -271,11 +257,13 @@ fn counter_contract() {
         version = "0.1.0"
         supported-types = ["RegularAccountUpdatableCode"]
 
-        [[storage]]
-        name = "count_map"
+        [[storage.slots]]
+        name = "miden::component::miden_counter_contract::count_map"
         description = "counter contract storage map"
-        slot = 0
-        values = []
+
+        [storage.slots.type]
+        key = "word"
+        value = "word"
     "#]]
     .assert_eq(&toml);
 }
@@ -363,12 +351,12 @@ fn auth_component_no_auth() {
     let expected_function = "auth__procedure";
     let exports = lib
         .exports()
-        .map(|e| format!("{}::{}", e.name.module, e.name.name.as_str()))
+        .map(|e| e.path().as_ref().as_str().to_string())
         .collect::<Vec<_>>();
-    // dbg!(&exports);
     assert!(
-        lib.exports().any(|export| { export.name.name.as_str() == expected_function }),
-        "expected one of the exports to contain function '{expected_function}'"
+        lib.exports()
+            .any(|export| export.path().as_ref().last() == Some(expected_function)),
+        "expected one of the exports to contain function '{expected_function}', got: {exports:?}"
     );
 
     // Test that the package loads
@@ -398,7 +386,8 @@ fn auth_component_rpo_falcon512() {
     let expected_function = "auth__procedure";
 
     assert!(
-        lib.exports().any(|export| { export.name.name.as_str() == expected_function }),
+        lib.exports()
+            .any(|export| export.path().as_ref().last() == Some(expected_function)),
         "expected one of the exports to contain function '{expected_function}'"
     );
 

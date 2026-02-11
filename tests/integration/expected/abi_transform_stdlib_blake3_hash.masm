@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -10,10 +10,19 @@ proc init
     mem_store.278528
 end
 
-# mod root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash
+# mod ::"root_ns:root@1.0.0"::abi_transform_stdlib_blake3_hash
 
+@locals("4")
 @callconv("C")
 pub proc entrypoint(i32, i32)
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114112
     u32divmod.4
     swap.1
@@ -22,15 +31,31 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    dup.0
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.4294967264
     push.32
-    dup.2
+    movup.2
     swap.1
     u32wrapping_sub
     u32and
-    push.1114112
-    dup.1
+    dup.0
+    locaddr.3
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114112
     u32divmod.4
     swap.1
     trace.240
@@ -38,7 +63,7 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.3
+    dup.0
     u32divmod.4
     swap.1
     trace.240
@@ -46,8 +71,9 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    swap.1
     push.4
-    dup.5
+    dup.1
     add
     u32assert
     u32divmod.4
@@ -58,7 +84,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.8
-    dup.6
+    dup.2
     add
     u32assert
     u32divmod.4
@@ -69,7 +95,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.12
-    dup.7
+    dup.3
     add
     u32assert
     u32divmod.4
@@ -80,7 +106,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.16
-    dup.8
+    dup.4
     add
     u32assert
     u32divmod.4
@@ -91,7 +117,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.20
-    dup.9
+    dup.5
     add
     u32assert
     u32divmod.4
@@ -102,7 +128,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.24
-    dup.10
+    dup.6
     add
     u32assert
     u32divmod.4
@@ -113,7 +139,7 @@ pub proc entrypoint(i32, i32)
     trace.252
     nop
     push.28
-    movup.11
+    movup.7
     add
     u32assert
     u32divmod.4
@@ -123,7 +149,14 @@ pub proc entrypoint(i32, i32)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    dup.8
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     movup.3
     swap.5
     movdn.3
@@ -136,11 +169,27 @@ pub proc entrypoint(i32, i32)
     swap.8
     trace.240
     nop
-    exec.::root_ns:root@1.0.0::abi_transform_stdlib_blake3_hash::std::crypto::hashes::blake3::hash_1to1
+    exec.::"root_ns:root@1.0.0"::abi_transform_stdlib_blake3_hash::"miden::core::crypto::hashes::blake3::hash"
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.24
-    dup.1
+    swap.1
     add
     u32assert
     push.8
@@ -158,92 +207,8 @@ pub proc entrypoint(i32, i32)
     nop
     swap.1
     push.24
-    dup.5
-    u32wrapping_add
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.16
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.16
-    dup.5
-    u32wrapping_add
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.8
-    dup.5
-    u32wrapping_add
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
     movup.3
+    u32wrapping_add
     u32divmod.4
     swap.1
     movup.2
@@ -251,6 +216,146 @@ pub proc entrypoint(i32, i32)
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    swap.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    push.16
+    movup.3
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    swap.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    push.8
+    movup.3
+    u32wrapping_add
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    movup.2
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.1114112
@@ -264,7 +369,7 @@ pub proc entrypoint(i32, i32)
 end
 
 @callconv("C")
-proc std::crypto::hashes::blake3::hash_1to1(
+proc miden::core::crypto::hashes::blake3::hash(
     i32,
     i32,
     i32,
@@ -277,7 +382,7 @@ proc std::crypto::hashes::blake3::hash_1to1(
 )
     trace.240
     nop
-    exec.::std::crypto::hashes::blake3::hash_1to1
+    exec.::miden::core::crypto::hashes::blake3::hash
     trace.252
     nop
     movup.8

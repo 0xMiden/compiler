@@ -53,11 +53,6 @@ impl Stage for CodegenStage {
             component.borrow().to_masm_component(analysis_manager).map(Box::new)?;
 
         let session = context.session();
-        if session.should_emit(OutputType::Masm) {
-            for module in masm_component.modules.iter() {
-                session.emit(OutputMode::Text, module).into_diagnostic()?;
-            }
-        }
 
         // Ensure intrinsics modules are linked
         for intrinsics_module in required_intrinsics_modules(session) {
@@ -74,6 +69,10 @@ impl Stage for CodegenStage {
             masm_component.modules.push(module);
         }
 
+        if session.should_emit(OutputType::Masm) {
+            session.emit(OutputMode::Text, masm_component.as_ref()).into_diagnostic()?;
+        }
+
         Ok(CodegenOutput {
             component: Arc::from(masm_component),
             link_libraries,
@@ -85,22 +84,22 @@ impl Stage for CodegenStage {
 
 fn required_intrinsics_modules(session: &Session) -> impl IntoIterator<Item = Arc<Module>> {
     [
-        masm::intrinsics::load(MEM_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(MEM_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(I32_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(I32_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(I64_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(I64_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(I128_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(I128_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(CRYPTO_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(CRYPTO_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
-        masm::intrinsics::load(ADVICE_INTRINSICS_MODULE_NAME, &session.source_manager)
+        masm::intrinsics::load(ADVICE_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
     ]

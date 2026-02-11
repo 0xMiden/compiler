@@ -51,7 +51,7 @@ pub use self::{
     flags::{ArgMatches, CompileFlag, CompileFlags, FlagAction},
     inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
     libs::{
-        LibraryKind, LibraryNamespace, LibraryPath, LibraryPathComponent, LinkLibrary, STDLIB,
+        LibraryKind, LibraryPath, LibraryPathComponent, LinkLibrary, STDLIB,
         add_target_link_libraries,
     },
     options::*,
@@ -304,7 +304,7 @@ impl Session {
 
     /// Get the [OutputFile] to write the assembled MAST output to
     pub fn out_file(&self) -> OutputFile {
-        let out_file = self.output_files.output_file(OutputType::Masl, None);
+        let out_file = self.output_files.output_file(OutputType::Masp, None);
 
         if let OutputFile::Real(ref path) = out_file {
             self.check_file_is_writeable(path);
@@ -373,6 +373,11 @@ impl Session {
             || self.options.print_ir_after_pass.iter().any(|p| p == pass)
     }
 
+    /// Returns true if IR should be printed to stdout, at the start of `stage`
+    pub fn should_print_ir_before_stage(&self, stage: &str) -> bool {
+        self.options.print_ir_before_stage.iter().any(|s| s == stage)
+    }
+
     /// Returns true if CFG should be printed to stdout, after executing a pass named `pass`
     pub fn should_print_cfg(&self, pass: &str) -> bool {
         self.options.print_cfg_after_all
@@ -393,6 +398,9 @@ impl Session {
         if self.should_emit(ty) {
             match self.output_files.output_file(ty, name.map(|n| n.as_str())) {
                 OutputFile::Real(path) => Some(path),
+                OutputFile::Directory(_) => {
+                    unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
+                }
                 OutputFile::Stdout => None,
             }
         } else {
@@ -409,6 +417,9 @@ impl Session {
             match self.output_files.output_file(output_type, name) {
                 OutputFile::Real(path) => {
                     item.write_to_file(&path, mode, self)?;
+                }
+                OutputFile::Directory(_) => {
+                    unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
                 }
                 OutputFile::Stdout => {
                     let stdout = std::io::stdout().lock();

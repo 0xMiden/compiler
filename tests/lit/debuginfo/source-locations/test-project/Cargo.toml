@@ -1,0 +1,19 @@
+cargo-features = ["trim-paths"]
+
+[workspace]
+
+[package]
+name = "source_location_test"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+debug = true
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+debug = true
+trim-paths = ["diagnostics", "object"]

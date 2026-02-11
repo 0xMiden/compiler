@@ -1,10 +1,13 @@
 #[cfg(feature = "std")]
-use alloc::string::ToString;
+use alloc::borrow::Cow;
+#[cfg(feature = "std")]
 use alloc::{format, rc::Rc, sync::Arc};
 
 use miden_assembly::utils::Deserializable;
 #[cfg(feature = "std")]
 use miden_assembly::utils::ReadAdapter;
+#[cfg(feature = "std")]
+use midenc_frontend_wasm::{WatEmit, wasm_to_wat};
 #[cfg(feature = "std")]
 use midenc_session::{FileName, Path};
 use midenc_session::{
@@ -122,13 +125,45 @@ impl Stage for ParseStage {
             ParseOutput::Module(ref module) => {
                 context.session().emit(OutputMode::Text, module).into_diagnostic()?;
             }
-            ParseOutput::Wasm(_) | ParseOutput::Library(_) | ParseOutput::Package(_) => (),
+            #[cfg(feature = "std")]
+            ParseOutput::Wasm(ref wasm_input) => {
+                self.emit_wat_for_wasm_input(wasm_input, context.session())?;
+            }
+            #[cfg(not(feature = "std"))]
+            ParseOutput::Wasm(_) => (),
+            ParseOutput::Library(_) | ParseOutput::Package(_) => (),
         }
 
         Ok(parsed)
     }
 }
 impl ParseStage {
+    #[cfg(feature = "std")]
+    fn emit_wat_for_wasm_input(&self, input: &InputType, session: &Session) -> CompilerResult<()> {
+        if !session.should_emit(midenc_session::OutputType::Wat) {
+            return Ok(());
+        }
+
+        let wasm_bytes: Cow<'_, [u8]> = match input {
+            InputType::Real(path) => {
+                Cow::Owned(std::fs::read(path).into_diagnostic().wrap_err_with(|| {
+                    format!("failed to read wasm input from '{}'", path.display())
+                })?)
+            }
+            InputType::Stdin { input, .. } => Cow::Borrowed(input),
+        };
+
+        let wat = wasm_to_wat(wasm_bytes.as_ref())
+            .into_diagnostic()
+            .wrap_err("failed to convert wasm to wat")?;
+        let artifact = WatEmit(&wat);
+        session
+            .emit(OutputMode::Text, &artifact)
+            .into_diagnostic()
+            .wrap_err("failed to emit wat output")?;
+        Ok(())
+    }
+
     #[cfg(feature = "std")]
     fn parse_wasm_from_wat_file(&self, path: &Path) -> CompilerResult<ParseOutput> {
         let wasm = wat::parse_file(path).into_diagnostic().wrap_err("failed to parse wat")?;
@@ -145,7 +180,7 @@ impl ParseStage {
         context: Rc<Context>,
     ) -> CompilerResult<ParseOutput> {
         use miden_assembly::{
-            LibraryNamespace, LibraryPath,
+            PathBuf as LibraryPath,
             ast::{self, Ident, ModuleKind},
         };
 
@@ -158,17 +193,16 @@ impl ParseStage {
                     path.display()
                 )
             })?;
-        let namespace = path
-            .parent()
-            .map(|dir| {
-                LibraryNamespace::User(dir.to_str().unwrap().to_string().into_boxed_str().into())
-            })
-            .unwrap_or(LibraryNamespace::Anon);
-        let name = LibraryPath::new_from_components(namespace, [module_name]);
+        let mut name = match path.parent().and_then(|dir| dir.to_str()) {
+            Some(dir) => LibraryPath::new(&dir).into_diagnostic()?,
+            None => LibraryPath::new("$anon").into_diagnostic()?,
+        };
+        name.push(&module_name);
 
         // Parse AST
         let mut parser = ast::Module::parser(ModuleKind::Library);
-        let ast = parser.parse_file(name, path, &context.session().source_manager)?;
+        let ast =
+            parser.parse_file(name.as_path(), path, context.session().source_manager.clone())?;
 
         Ok(ParseOutput::Module(Arc::from(ast)))
     }
@@ -180,7 +214,7 @@ impl ParseStage {
         context: Rc<Context>,
     ) -> CompilerResult<ParseOutput> {
         use miden_assembly::{
-            LibraryPath,
+            PathBuf as LibraryPath,
             ast::{self, ModuleKind},
         };
 
@@ -193,7 +227,8 @@ impl ParseStage {
 
         // Parse AST
         let mut parser = ast::Module::parser(ModuleKind::Library);
-        let ast = parser.parse_str(name, source, &context.session().source_manager)?;
+        let ast =
+            parser.parse_str(name.as_path(), source, context.session().source_manager.clone())?;
 
         Ok(ParseOutput::Module(Arc::from(ast)))
     }

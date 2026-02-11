@@ -60,7 +60,7 @@
       f32.load offset=4
       local.get 0
       f32.load
-      call $miden::active_account::has_procedure
+      call $miden::protocol::active_account::has_procedure
       i32.const 0
       call $intrinsics::felt::from_u32
       call $intrinsics::felt::eq
@@ -98,11 +98,11 @@
     (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
       unreachable
     )
-    (func $miden::active_account::has_procedure (;6;) (type 4) (param f32 f32 f32 f32) (result f32)
+    (func $miden::protocol::active_account::has_procedure (;6;) (type 4) (param f32 f32 f32 f32) (result f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "Mrust_sdk_account_has_procedure_binding\01\0b0.0.1\03\01\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "Mrust_sdk_account_has_procedure_binding\01\0b0.0.1\03\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;1;)))
   (core instance $main (;0;) (instantiate $main))

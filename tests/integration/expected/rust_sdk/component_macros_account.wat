@@ -75,7 +75,7 @@
       end
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "1component_macros_account\01\0b0.1.0\03\01\01\00\00\00\00\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "1component_macros_account\01\0b0.1.0\03\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "asset" (type $asset (;1;)))
   (alias export $miden:base/core-types@1.0.0 "felt" (type $felt (;2;)))

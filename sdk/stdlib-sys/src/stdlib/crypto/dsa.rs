@@ -1,7 +1,11 @@
+#[cfg(not(all(target_family = "wasm", miden)))]
+use crate::intrinsics::Word;
+#[cfg(all(target_family = "wasm", miden))]
 use crate::intrinsics::{Felt, Word};
 
+#[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
-    #[link_name = "std::crypto::dsa::rpo_falcon512::verify"]
+    #[link_name = "miden::core::crypto::dsa::falcon512rpo::verify"]
     fn extern_rpo_falcon512_verify(
         pk1: Felt,
         pk2: Felt,
@@ -28,8 +32,17 @@ unsafe extern "C" {
 /// pushing the signature to the advice stack. For production deployments, ensure secret key
 /// handling occurs outside the VM.
 #[inline(always)]
+#[cfg(all(target_family = "wasm", miden))]
 pub fn rpo_falcon512_verify(pk: Word, msg: Word) {
     unsafe {
         extern_rpo_falcon512_verify(pk[3], pk[2], pk[1], pk[0], msg[3], msg[2], msg[1], msg[0]);
     }
+}
+
+#[inline(always)]
+#[cfg(not(all(target_family = "wasm", miden)))]
+pub fn rpo_falcon512_verify(_pk: Word, _msg: Word) {
+    unimplemented!(
+        "miden::core::crypto::dsa bindings are only available when targeting the Miden VM"
+    )
 }

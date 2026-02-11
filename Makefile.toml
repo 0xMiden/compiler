@@ -31,7 +31,29 @@ MIDENC_BUILD_PROFILE = "debug"
 MIDENC_BUILD_PROFILE = "release"
 
 [tasks.init]
-run_task = "print-env"
+script = ['''
+#!@duckscript
+
+# Set an environment variable containing the current rustup toolchain
+#
+if is_path_exists "rust-toolchain.toml"
+    toolchain_file = readfile "rust-toolchain.toml"
+    channel_start = indexof ${toolchain_file} "channel = "
+    if not is_empty ${channel_start}
+        channel_quoted_start = calc ${channel_start} + 11
+        rest_of_file = substring ${toolchain_file} ${channel_quoted_start}
+
+        channel_end = indexof ${rest_of_file} "\""
+        if not is_empty ${channel_end}
+            channel = substring ${rest_of_file} 0 ${channel_end}
+            channel = trim ${channel}
+            set_env CARGO_MAKE_RUSTUP_TOOLCHAIN_NAME ${channel}
+        end
+    end
+end
+
+cm_run_task "print-env"
+''']
 
 [tasks.default]
 category = "Build"
@@ -100,6 +122,7 @@ release ${rustc_version_parts}
 echo "*************************************"
 echo "Rust:"
 echo "    Version: ${CARGO_MAKE_RUST_VERSION}"
+echo "    Toolchain: ${CARGO_MAKE_RUSTUP_TOOLCHAIN_NAME}"
 echo "    Channel: ${CARGO_MAKE_RUST_CHANNEL}"
 echo "    Build Hash: ${hash}"
 echo "    Build Date: ${date}"
@@ -182,7 +205,6 @@ args = [
     "midenc",
     "--artifact-dir",
     "${MIDENC_BIN_DIR}",
-    "@@split(CARGO_MAKE_TASK_ARGS, ;)",
 ]
 
 [tasks.cargo-miden]
@@ -197,7 +219,6 @@ args = [
     "cargo-miden",
     "--artifact-dir",
     "${MIDENC_BIN_DIR}",
-    "@@split(CARGO_MAKE_TASK_ARGS, ;)",
 ]
 
 [tasks.build]
@@ -275,9 +296,14 @@ description = "Check dependencies for known vulnerabilities, deprecations"
 command = "cargo"
 args = ["audit"]
 
+[tasks.test-all]
+category = "Test"
+description = "Runs the complete set of compiler tests"
+dependencies = ["test-rust", "test-lit"]
+
 [tasks.test]
 category = "Test"
-description = "Runs all tests including integration node tests"
+description = "Runs all Rust-based tests including network integration tests"
 dependencies = ["test-rust"]
 
 [tasks.install-cargo-miden]
@@ -310,11 +336,11 @@ args = [
     "midenc",
 ]
 
-
 [tasks.test-rust]
 category = "Test"
-description = "Runs tests written in Rust"
+description = "Run tests written in Rust, with optional extra arguments"
 command = "cargo"
+install_crate_args = ["--locked"]
 args = [
     "nextest",
     "run",
@@ -333,11 +359,21 @@ args = [
     "--verbose",
     "--path",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin",
-    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit/parse",
-    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit/wasm-translation",
-    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit/source-location",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit",
 ]
-dependencies = ["litcheck"]
+dependencies = ["litcheck", "midenc", "cargo-miden"]
+
+[tasks.lit]
+category = "Test"
+description = "Execute the lit utility"
+command = "litcheck"
+env = { MIDENC_BIN_DIR = "${MIDENC_BIN_DIR}" }
+args = [
+    "lit",
+    "${@}",
+]
+dependencies = ["litcheck", "midenc", "cargo-miden"]
+
 
 [tasks.litcheck]
 category = "Test"

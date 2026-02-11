@@ -2,7 +2,7 @@ use core::ffi::c_void;
 
 /// Unreachable stubs for std::collections::smt procedures used via the SDK
 
-#[unsafe(export_name = "std::collections::smt::get")]
+#[unsafe(export_name = "miden::core::collections::smt::get")]
 pub extern "C" fn std_collections_smt_get_stub(
     k0: f32,
     k1: f32,
@@ -18,7 +18,7 @@ pub extern "C" fn std_collections_smt_get_stub(
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "std::collections::smt::set")]
+#[unsafe(export_name = "miden::core::collections::smt::set")]
 pub extern "C" fn std_collections_smt_set_stub(
     v0: f32,
     v1: f32,

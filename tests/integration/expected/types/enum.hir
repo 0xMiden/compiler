@@ -2,18 +2,18 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c {
         public builtin.function @__main() -> i32 {
         ^block6:
-            v3 = arith.constant 0 : i32;
-            v2 = arith.constant 5 : i32;
-            v1 = arith.constant 3 : i32;
-            v4 = hir.exec @root_ns:root@1.0.0/test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c/match_enum(v1, v2, v3) : i32
-            v7 = arith.constant 1 : i32;
-            v27 = arith.constant 5 : i32;
-            v28 = arith.constant 3 : i32;
-            v8 = hir.exec @root_ns:root@1.0.0/test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c/match_enum(v28, v27, v7) : i32
-            v12 = arith.constant 2 : i32;
-            v25 = arith.constant 5 : i32;
-            v26 = arith.constant 3 : i32;
-            v13 = hir.exec @root_ns:root@1.0.0/test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c/match_enum(v26, v25, v12) : i32
+            v36 = arith.constant 0 : i32;
+            v35 = arith.constant 5 : i32;
+            v34 = arith.constant 3 : i32;
+            v4 = hir.exec @root_ns:root@1.0.0/test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c/match_enum(v34, v35, v36) : i32
+            v33 = arith.constant 1 : i32;
+            v43 = arith.constant 5 : i32;
+            v44 = arith.constant 3 : i32;
+            v8 = hir.exec @root_ns:root@1.0.0/test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c/match_enum(v44, v43, v33) : i32
+            v32 = arith.constant 2 : i32;
+            v41 = arith.constant 5 : i32;
+            v42 = arith.constant 3 : i32;
+            v13 = hir.exec @root_ns:root@1.0.0/test_rust_dd1732f1cb2cdf8742b13cf624a182a3893ee7d1f0d94b11ef6b10382dffd79c/match_enum(v42, v41, v32) : i32
             v9 = arith.add v4, v8 : i32 #[overflow = wrapping];
             v14 = arith.add v9, v13 : i32 #[overflow = wrapping];
             builtin.ret v14;
@@ -21,26 +21,34 @@ builtin.component root_ns:root@1.0.0 {
 
         public builtin.function @match_enum(v15: i32, v16: i32, v17: i32) -> i32 {
         ^block8(v15: i32, v16: i32, v17: i32):
-            v19 = arith.constant 255 : i32;
-            v20 = arith.band v17, v19 : i32;
-            v21 = hir.cast v20 : u32;
-            v31 = scf.index_switch v21 : i32 
+            hir.store_local v15 #[local = lv0];
+            hir.store_local v16 #[local = lv1];
+            v45 = arith.constant 255 : i32;
+            v21 = arith.band v17, v45 : i32;
+            v22 = hir.cast v21 : u32;
+            v48 = scf.index_switch v22 : i32 
             case 1 {
             ^block11:
-                v23 = arith.sub v15, v16 : i32 #[overflow = wrapping];
-                scf.yield v23;
+                v26 = hir.load_local  : i32 #[local = lv0];
+                v27 = hir.load_local  : i32 #[local = lv1];
+                v28 = arith.sub v26, v27 : i32 #[overflow = wrapping];
+                scf.yield v28;
             }
             case 2 {
             ^block10:
-                v24 = arith.mul v16, v15 : i32 #[overflow = wrapping];
-                scf.yield v24;
+                v29 = hir.load_local  : i32 #[local = lv1];
+                v30 = hir.load_local  : i32 #[local = lv0];
+                v31 = arith.mul v29, v30 : i32 #[overflow = wrapping];
+                scf.yield v31;
             }
             default {
             ^block12:
-                v22 = arith.add v16, v15 : i32 #[overflow = wrapping];
-                scf.yield v22;
+                v23 = hir.load_local  : i32 #[local = lv1];
+                v24 = hir.load_local  : i32 #[local = lv0];
+                v25 = arith.add v23, v24 : i32 #[overflow = wrapping];
+                scf.yield v25;
             };
-            builtin.ret v31;
+            builtin.ret v48;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

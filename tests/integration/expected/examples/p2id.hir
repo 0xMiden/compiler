@@ -16,57 +16,66 @@ builtin.component miden:base/note-script@1.0.0 {
             v7 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
             v8 = hir.bitcast v7 : ptr<byte, i32>;
             v9 = hir.load v8 : i32;
-            v10 = arith.constant 1048588 : i32;
-            v11 = arith.add v9, v10 : i32 #[overflow = wrapping];
-            v12 = hir.exec @miden:base/note-script@1.0.0/p2id/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v11, v5, v4) : i32
-            builtin.ret v12;
+            v1009 = arith.constant 1048588 : i32;
+            v11 = arith.add v9, v1009 : i32 #[overflow = wrapping];
+            v14 = hir.exec @miden:base/note-script@1.0.0/p2id/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v11, v5, v4) : i32
+            builtin.ret v14;
         };
 
-        private builtin.function @__rustc::__rust_dealloc(v13: i32, v14: i32, v15: i32) {
-        ^block12(v13: i32, v14: i32, v15: i32):
+        private builtin.function @__rustc::__rust_dealloc(v15: i32, v16: i32, v17: i32) {
+        ^block12(v15: i32, v16: i32, v17: i32):
             builtin.ret ;
         };
 
-        private builtin.function @__rustc::__rust_alloc_zeroed(v16: i32, v17: i32) -> i32 {
-        ^block14(v16: i32, v17: i32):
-            v19 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
-            v20 = hir.bitcast v19 : ptr<byte, i32>;
-            v21 = hir.load v20 : i32;
-            v22 = arith.constant 1048588 : i32;
-            v23 = arith.add v21, v22 : i32 #[overflow = wrapping];
-            v24 = hir.exec @miden:base/note-script@1.0.0/p2id/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v23, v17, v16) : i32
-            v892 = arith.constant 0 : i32;
-            v25 = arith.constant 0 : i32;
-            v26 = arith.eq v24, v25 : i1;
-            v27 = arith.zext v26 : u32;
-            v28 = hir.bitcast v27 : i32;
-            v30 = arith.neq v28, v892 : i1;
-            scf.if v30{
-            ^block16:
+        private builtin.function @__rustc::__rust_alloc_zeroed(v18: i32, v19: i32) -> i32 {
+        ^block14(v18: i32, v19: i32):
+            hir.store_local v18 #[local = lv0];
+            hir.store_local v19 #[local = lv1];
+            v21 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v22 = hir.bitcast v21 : ptr<byte, i32>;
+            v23 = hir.load v22 : i32;
+            v26 = hir.load_local  : i32 #[local = lv1];
+            v27 = hir.load_local  : i32 #[local = lv0];
+            v1013 = arith.constant 1048588 : i32;
+            v25 = arith.add v23, v1013 : i32 #[overflow = wrapping];
+            v28 = hir.exec @miden:base/note-script@1.0.0/p2id/<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v25, v26, v27) : i32
+            hir.store_local v28 #[local = lv1];
+            v1021 = arith.constant 0 : i32;
+            v1016 = arith.constant 0 : i32;
+            v30 = arith.eq v28, v1016 : i1;
+            v31 = arith.zext v30 : u32;
+            v32 = hir.bitcast v31 : i32;
+            v34 = arith.neq v32, v1021 : i1;
+            scf.if v34{
+            ^block118:
                 scf.yield ;
             } else {
             ^block17:
-                v890 = arith.constant 0 : i32;
-                v891 = arith.constant 0 : i32;
-                v32 = arith.eq v16, v891 : i1;
-                v33 = arith.zext v32 : u32;
-                v34 = hir.bitcast v33 : i32;
-                v36 = arith.neq v34, v890 : i1;
-                scf.if v36{
-                ^block118:
+                v35 = hir.load_local  : i32 #[local = lv0];
+                v1019 = arith.constant 0 : i32;
+                v1020 = arith.constant 0 : i32;
+                v37 = arith.eq v35, v1020 : i1;
+                v38 = arith.zext v37 : u32;
+                v39 = hir.bitcast v38 : i32;
+                v41 = arith.neq v39, v1019 : i1;
+                scf.if v41{
+                ^block117:
                     scf.yield ;
                 } else {
                 ^block18:
-                    v884 = arith.constant 0 : u8;
-                    v39 = hir.bitcast v16 : u32;
-                    v40 = hir.bitcast v24 : u32;
-                    v41 = hir.int_to_ptr v40 : ptr<byte, u8>;
-                    hir.mem_set v41, v39, v884;
+                    v42 = hir.load_local  : i32 #[local = lv1];
+                    v44 = hir.load_local  : i32 #[local = lv0];
+                    v1011 = arith.constant 0 : u8;
+                    v46 = hir.bitcast v44 : u32;
+                    v47 = hir.bitcast v42 : u32;
+                    v48 = hir.int_to_ptr v47 : ptr<byte, u8>;
+                    hir.mem_set v48, v46, v1011;
                     scf.yield ;
                 };
                 scf.yield ;
             };
-            builtin.ret v24;
+            v49 = hir.load_local  : i32 #[local = lv1];
+            builtin.ret v49;
         };
 
         private builtin.function @p2id::bindings::__link_custom_section_describing_imports() {
@@ -74,246 +83,277 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @miden:base/note-script@1.0.0#run(v43: felt, v44: felt, v45: felt, v46: felt) {
-        ^block21(v43: felt, v44: felt, v45: felt, v46: felt):
-            v50 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v51 = hir.bitcast v50 : ptr<byte, i32>;
-            v52 = hir.load v51 : i32;
-            v53 = arith.constant 48 : i32;
-            v54 = arith.sub v52, v53 : i32 #[overflow = wrapping];
-            v55 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v56 = hir.bitcast v55 : ptr<byte, i32>;
-            hir.store v56, v54;
+        private builtin.function @miden:base/note-script@1.0.0#run(v50: felt, v51: felt, v52: felt, v53: felt) {
+        ^block21(v50: felt, v51: felt, v52: felt, v53: felt):
+            v54 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v55 = hir.bitcast v54 : ptr<byte, i32>;
+            v56 = hir.load v55 : i32;
+            v1036 = arith.constant 32 : i32;
+            v58 = arith.sub v56, v1036 : i32 #[overflow = wrapping];
+            hir.store_local v58 #[local = lv4];
+            v59 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v60 = hir.bitcast v59 : ptr<byte, i32>;
+            hir.store v60, v58;
             hir.exec @miden:base/note-script@1.0.0/p2id/wit_bindgen::rt::run_ctors_once()
-            v57 = arith.constant 16 : i32;
-            v58 = arith.add v54, v57 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::active_note::get_inputs(v58)
-            v60 = arith.constant 24 : u32;
-            v59 = hir.bitcast v54 : u32;
-            v61 = arith.add v59, v60 : u32 #[overflow = checked];
-            v62 = arith.constant 4 : u32;
-            v63 = arith.mod v61, v62 : u32;
-            hir.assertz v63 #[code = 250];
-            v64 = hir.int_to_ptr v61 : ptr<byte, i32>;
-            v65 = hir.load v64 : i32;
-            v66 = hir.cast v65 : u32;
-            v950 = scf.index_switch v66 : u32 
+            v61 = hir.load_local  : i32 #[local = lv4];
+            v1035 = arith.constant 12 : i32;
+            v63 = arith.add v61, v1035 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::active_note::get_inputs(v63)
+            v64 = hir.load_local  : i32 #[local = lv4];
+            v1034 = arith.constant 20 : u32;
+            v65 = hir.bitcast v64 : u32;
+            v67 = arith.add v65, v1034 : u32 #[overflow = checked];
+            v1033 = arith.constant 4 : u32;
+            v69 = arith.mod v67, v1033 : u32;
+            hir.assertz v69 #[code = 250];
+            v70 = hir.int_to_ptr v67 : ptr<byte, i32>;
+            v71 = hir.load v70 : i32;
+            v72 = hir.cast v71 : u32;
+            v1074 = scf.index_switch v72 : u32 
             case 0 {
             ^block123:
-                v994 = arith.constant 1 : u32;
-                scf.yield v994;
+                v1087 = arith.constant 1 : u32;
+                scf.yield v1087;
             }
             case 1 {
             ^block124:
-                v993 = arith.constant 1 : u32;
-                scf.yield v993;
+                v1086 = arith.constant 1 : u32;
+                scf.yield v1086;
             }
             default {
             ^block24:
-                v68 = arith.constant 20 : u32;
-                v67 = hir.bitcast v54 : u32;
-                v69 = arith.add v67, v68 : u32 #[overflow = checked];
-                v1028 = arith.constant 4 : u32;
-                v71 = arith.mod v69, v1028 : u32;
-                hir.assertz v71 #[code = 250];
-                v72 = hir.int_to_ptr v69 : ptr<byte, i32>;
-                v73 = hir.load v72 : i32;
-                v1027 = arith.constant 4 : u32;
+                v73 = hir.load_local  : i32 #[local = lv4];
+                v1032 = arith.constant 16 : u32;
                 v74 = hir.bitcast v73 : u32;
-                v76 = arith.add v74, v1027 : u32 #[overflow = checked];
-                v1026 = arith.constant 4 : u32;
-                v78 = arith.mod v76, v1026 : u32;
+                v76 = arith.add v74, v1032 : u32 #[overflow = checked];
+                v1120 = arith.constant 4 : u32;
+                v78 = arith.mod v76, v1120 : u32;
                 hir.assertz v78 #[code = 250];
-                v79 = hir.int_to_ptr v76 : ptr<byte, felt>;
-                v80 = hir.load v79 : felt;
-                v81 = hir.bitcast v73 : u32;
-                v1025 = arith.constant 4 : u32;
-                v83 = arith.mod v81, v1025 : u32;
-                hir.assertz v83 #[code = 250];
-                v84 = hir.int_to_ptr v81 : ptr<byte, felt>;
-                v85 = hir.load v84 : felt;
-                v86 = arith.constant 8 : i32;
-                v87 = arith.add v54, v86 : i32 #[overflow = wrapping];
-                hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::active_account::get_id(v87)
-                v89 = arith.constant 12 : u32;
-                v88 = hir.bitcast v54 : u32;
-                v90 = arith.add v88, v89 : u32 #[overflow = checked];
-                v1024 = arith.constant 4 : u32;
-                v92 = arith.mod v90, v1024 : u32;
-                hir.assertz v92 #[code = 250];
-                v93 = hir.int_to_ptr v90 : ptr<byte, felt>;
-                v94 = hir.load v93 : felt;
-                v96 = arith.constant 8 : u32;
-                v95 = hir.bitcast v54 : u32;
-                v97 = arith.add v95, v96 : u32 #[overflow = checked];
-                v1023 = arith.constant 4 : u32;
-                v99 = arith.mod v97, v1023 : u32;
-                hir.assertz v99 #[code = 250];
-                v100 = hir.int_to_ptr v97 : ptr<byte, felt>;
-                v101 = hir.load v100 : felt;
-                v102 = hir.exec @miden:base/note-script@1.0.0/p2id/intrinsics::felt::eq(v101, v85) : i32
-                v47 = arith.constant 0 : i32;
-                v103 = arith.constant 1 : i32;
-                v104 = arith.neq v102, v103 : i1;
-                v105 = arith.zext v104 : u32;
-                v106 = hir.bitcast v105 : i32;
-                v108 = arith.neq v106, v47 : i1;
-                v952 = scf.if v108 : u32 {
+                v79 = hir.int_to_ptr v76 : ptr<byte, i32>;
+                v80 = hir.load v79 : i32;
+                hir.store_local v80 #[local = lv5];
+                v1119 = arith.constant 4 : u32;
+                v81 = hir.bitcast v80 : u32;
+                v83 = arith.add v81, v1119 : u32 #[overflow = checked];
+                v1118 = arith.constant 4 : u32;
+                v85 = arith.mod v83, v1118 : u32;
+                hir.assertz v85 #[code = 250];
+                v86 = hir.int_to_ptr v83 : ptr<byte, felt>;
+                v87 = hir.load v86 : felt;
+                hir.store_local v87 #[local = lv6];
+                v88 = hir.load_local  : i32 #[local = lv5];
+                v89 = hir.bitcast v88 : u32;
+                v1117 = arith.constant 4 : u32;
+                v91 = arith.mod v89, v1117 : u32;
+                hir.assertz v91 #[code = 250];
+                v92 = hir.int_to_ptr v89 : ptr<byte, felt>;
+                v93 = hir.load v92 : felt;
+                hir.store_local v93 #[local = lv7];
+                v94 = hir.load_local  : i32 #[local = lv4];
+                v1116 = arith.constant 12 : i32;
+                v96 = arith.add v94, v1116 : i32 #[overflow = wrapping];
+                hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v96)
+                v97 = hir.load_local  : i32 #[local = lv4];
+                v1115 = arith.constant 12 : i32;
+                v99 = arith.add v97, v1115 : i32 #[overflow = wrapping];
+                hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v99)
+                v100 = hir.load_local  : i32 #[local = lv4];
+                hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::active_account::get_id(v100)
+                v101 = hir.load_local  : i32 #[local = lv4];
+                v1114 = arith.constant 4 : u32;
+                v102 = hir.bitcast v101 : u32;
+                v104 = arith.add v102, v1114 : u32 #[overflow = checked];
+                v1113 = arith.constant 4 : u32;
+                v106 = arith.mod v104, v1113 : u32;
+                hir.assertz v106 #[code = 250];
+                v107 = hir.int_to_ptr v104 : ptr<byte, felt>;
+                v108 = hir.load v107 : felt;
+                hir.store_local v108 #[local = lv8];
+                v109 = hir.load_local  : i32 #[local = lv4];
+                v110 = hir.bitcast v109 : u32;
+                v1112 = arith.constant 4 : u32;
+                v112 = arith.mod v110, v1112 : u32;
+                hir.assertz v112 #[code = 250];
+                v113 = hir.int_to_ptr v110 : ptr<byte, felt>;
+                v114 = hir.load v113 : felt;
+                v115 = hir.load_local  : felt #[local = lv7];
+                v1030 = arith.constant 0 : i32;
+                v1031 = arith.constant 1 : i32;
+                v116 = arith.eq v114, v115 : i1;
+                v117 = hir.cast v116 : i32;
+                v119 = arith.neq v117, v1031 : i1;
+                v120 = arith.zext v119 : u32;
+                v121 = hir.bitcast v120 : i32;
+                v123 = arith.neq v121, v1030 : i1;
+                v1076 = scf.if v123 : u32 {
                 ^block122:
-                    v902 = arith.constant 1 : u32;
-                    scf.yield v902;
+                    v1070 = arith.constant 1 : u32;
+                    scf.yield v1070;
                 } else {
                 ^block25:
-                    v109 = hir.exec @miden:base/note-script@1.0.0/p2id/intrinsics::felt::eq(v94, v80) : i32
-                    v1021 = arith.constant 0 : i32;
-                    v1022 = arith.constant 1 : i32;
-                    v111 = arith.neq v109, v1022 : i1;
-                    v112 = arith.zext v111 : u32;
-                    v113 = hir.bitcast v112 : i32;
-                    v115 = arith.neq v113, v1021 : i1;
-                    scf.if v115{
+                    v124 = hir.load_local  : felt #[local = lv8];
+                    v125 = hir.load_local  : felt #[local = lv6];
+                    v1110 = arith.constant 0 : i32;
+                    v1111 = arith.constant 1 : i32;
+                    v126 = arith.eq v124, v125 : i1;
+                    v127 = hir.cast v126 : i32;
+                    v129 = arith.neq v127, v1111 : i1;
+                    v130 = arith.zext v129 : u32;
+                    v131 = hir.bitcast v130 : i32;
+                    v133 = arith.neq v131, v1110 : i1;
+                    scf.if v133{
                     ^block121:
                         scf.yield ;
                     } else {
                     ^block26:
-                        v116 = arith.constant 28 : i32;
-                        v117 = arith.add v54, v116 : i32 #[overflow = wrapping];
-                        hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::active_note::get_assets(v117)
-                        v119 = arith.constant 36 : u32;
-                        v118 = hir.bitcast v54 : u32;
-                        v120 = arith.add v118, v119 : u32 #[overflow = checked];
-                        v1020 = arith.constant 4 : u32;
-                        v122 = arith.mod v120, v1020 : u32;
-                        hir.assertz v122 #[code = 250];
-                        v123 = hir.int_to_ptr v120 : ptr<byte, i32>;
-                        v124 = hir.load v123 : i32;
-                        v129 = arith.constant 28 : u32;
-                        v128 = hir.bitcast v54 : u32;
-                        v130 = arith.add v128, v129 : u32 #[overflow = checked];
-                        v1019 = arith.constant 4 : u32;
-                        v132 = arith.mod v130, v1019 : u32;
-                        hir.assertz v132 #[code = 250];
-                        v133 = hir.int_to_ptr v130 : ptr<byte, i32>;
-                        v134 = hir.load v133 : i32;
-                        v136 = arith.constant 32 : u32;
-                        v135 = hir.bitcast v54 : u32;
-                        v137 = arith.add v135, v136 : u32 #[overflow = checked];
-                        v1018 = arith.constant 4 : u32;
-                        v139 = arith.mod v137, v1018 : u32;
-                        hir.assertz v139 #[code = 250];
-                        v140 = hir.int_to_ptr v137 : ptr<byte, i32>;
-                        v141 = hir.load v140 : i32;
-                        v1017 = arith.constant 4 : u32;
-                        v127 = arith.shl v124, v1017 : i32;
-                        v970, v971, v972, v973, v974, v975, v976, v977 = scf.while v127, v141, v54, v141, v134 : i32, i32, i32, i32, i32, i32, i32, i32 {
-                        ^block136(v978: i32, v979: i32, v980: i32, v981: i32, v982: i32):
-                            v1015 = arith.constant 0 : i32;
-                            v1016 = arith.constant 0 : i32;
-                            v144 = arith.eq v978, v1016 : i1;
-                            v145 = arith.zext v144 : u32;
-                            v146 = hir.bitcast v145 : i32;
-                            v148 = arith.neq v146, v1015 : i1;
-                            v963, v964 = scf.if v148 : i32, i32 {
+                        v134 = hir.load_local  : i32 #[local = lv4];
+                        v1109 = arith.constant 12 : i32;
+                        v136 = arith.add v134, v1109 : i32 #[overflow = wrapping];
+                        hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::active_note::get_assets(v136)
+                        v137 = hir.load_local  : i32 #[local = lv4];
+                        v1108 = arith.constant 20 : u32;
+                        v138 = hir.bitcast v137 : u32;
+                        v140 = arith.add v138, v1108 : u32 #[overflow = checked];
+                        v1107 = arith.constant 4 : u32;
+                        v142 = arith.mod v140, v1107 : u32;
+                        hir.assertz v142 #[code = 250];
+                        v143 = hir.int_to_ptr v140 : ptr<byte, i32>;
+                        v144 = hir.load v143 : i32;
+                        v1106 = arith.constant 4 : u32;
+                        v147 = arith.shl v144, v1106 : i32;
+                        hir.store_local v147 #[local = lv9];
+                        v148 = hir.load_local  : i32 #[local = lv4];
+                        v1029 = arith.constant 12 : u32;
+                        v149 = hir.bitcast v148 : u32;
+                        v151 = arith.add v149, v1029 : u32 #[overflow = checked];
+                        v1105 = arith.constant 4 : u32;
+                        v153 = arith.mod v151, v1105 : u32;
+                        hir.assertz v153 #[code = 250];
+                        v154 = hir.int_to_ptr v151 : ptr<byte, i32>;
+                        v155 = hir.load v154 : i32;
+                        hir.store_local v155 #[local = lv10];
+                        v156 = hir.load_local  : i32 #[local = lv4];
+                        v1104 = arith.constant 16 : u32;
+                        v157 = hir.bitcast v156 : u32;
+                        v159 = arith.add v157, v1104 : u32 #[overflow = checked];
+                        v1103 = arith.constant 4 : u32;
+                        v161 = arith.mod v159, v1103 : u32;
+                        hir.assertz v161 #[code = 250];
+                        v162 = hir.int_to_ptr v159 : ptr<byte, i32>;
+                        v163 = hir.load v162 : i32;
+                        hir.store_local v163 #[local = lv11];
+                        hir.store_local v163 #[local = lv5];
+                        scf.while  {
+                        ^block28:
+                            v164 = hir.load_local  : i32 #[local = lv9];
+                            v1101 = arith.constant 0 : i32;
+                            v1102 = arith.constant 0 : i32;
+                            v166 = arith.eq v164, v1102 : i1;
+                            v167 = arith.zext v166 : u32;
+                            v168 = hir.bitcast v167 : i32;
+                            v170 = arith.neq v168, v1101 : i1;
+                            scf.if v170{
                             ^block135:
-                                v903 = ub.poison i32 : i32;
-                                scf.yield v903, v903;
+                                scf.yield ;
                             } else {
                             ^block30:
-                                v150 = hir.bitcast v979 : u32;
-                                v1014 = arith.constant 4 : u32;
-                                v152 = arith.mod v150, v1014 : u32;
-                                hir.assertz v152 #[code = 250];
-                                v153 = hir.int_to_ptr v150 : ptr<byte, felt>;
-                                v154 = hir.load v153 : felt;
-                                v1013 = arith.constant 4 : u32;
-                                v155 = hir.bitcast v979 : u32;
-                                v157 = arith.add v155, v1013 : u32 #[overflow = checked];
-                                v1012 = arith.constant 4 : u32;
-                                v159 = arith.mod v157, v1012 : u32;
-                                hir.assertz v159 #[code = 250];
-                                v160 = hir.int_to_ptr v157 : ptr<byte, felt>;
-                                v161 = hir.load v160 : felt;
-                                v1011 = arith.constant 8 : u32;
-                                v162 = hir.bitcast v979 : u32;
-                                v164 = arith.add v162, v1011 : u32 #[overflow = checked];
-                                v1010 = arith.constant 4 : u32;
-                                v166 = arith.mod v164, v1010 : u32;
-                                hir.assertz v166 #[code = 250];
-                                v167 = hir.int_to_ptr v164 : ptr<byte, felt>;
-                                v168 = hir.load v167 : felt;
-                                v1009 = arith.constant 12 : u32;
-                                v169 = hir.bitcast v979 : u32;
-                                v171 = arith.add v169, v1009 : u32 #[overflow = checked];
-                                v1008 = arith.constant 4 : u32;
-                                v173 = arith.mod v171, v1008 : u32;
-                                hir.assertz v173 #[code = 250];
-                                v174 = hir.int_to_ptr v171 : ptr<byte, felt>;
-                                v175 = hir.load v174 : felt;
-                                hir.exec @miden:base/note-script@1.0.0/p2id/p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7(v154, v161, v168, v175)
-                                v1007 = arith.constant 16 : i32;
-                                v179 = arith.add v979, v1007 : i32 #[overflow = wrapping];
-                                v176 = arith.constant -16 : i32;
-                                v177 = arith.add v978, v176 : i32 #[overflow = wrapping];
-                                scf.yield v177, v179;
+                                v171 = hir.load_local  : i32 #[local = lv5];
+                                v172 = hir.bitcast v171 : u32;
+                                v1100 = arith.constant 4 : u32;
+                                v174 = arith.mod v172, v1100 : u32;
+                                hir.assertz v174 #[code = 250];
+                                v175 = hir.int_to_ptr v172 : ptr<byte, felt>;
+                                v176 = hir.load v175 : felt;
+                                v177 = hir.load_local  : i32 #[local = lv5];
+                                v1099 = arith.constant 4 : u32;
+                                v178 = hir.bitcast v177 : u32;
+                                v180 = arith.add v178, v1099 : u32 #[overflow = checked];
+                                v1098 = arith.constant 4 : u32;
+                                v182 = arith.mod v180, v1098 : u32;
+                                hir.assertz v182 #[code = 250];
+                                v183 = hir.int_to_ptr v180 : ptr<byte, felt>;
+                                v184 = hir.load v183 : felt;
+                                v185 = hir.load_local  : i32 #[local = lv5];
+                                v1024 = arith.constant 8 : u32;
+                                v186 = hir.bitcast v185 : u32;
+                                v188 = arith.add v186, v1024 : u32 #[overflow = checked];
+                                v1097 = arith.constant 4 : u32;
+                                v190 = arith.mod v188, v1097 : u32;
+                                hir.assertz v190 #[code = 250];
+                                v191 = hir.int_to_ptr v188 : ptr<byte, felt>;
+                                v192 = hir.load v191 : felt;
+                                v193 = hir.load_local  : i32 #[local = lv5];
+                                v1096 = arith.constant 12 : u32;
+                                v194 = hir.bitcast v193 : u32;
+                                v196 = arith.add v194, v1096 : u32 #[overflow = checked];
+                                v1095 = arith.constant 4 : u32;
+                                v198 = arith.mod v196, v1095 : u32;
+                                hir.assertz v198 #[code = 250];
+                                v199 = hir.int_to_ptr v196 : ptr<byte, felt>;
+                                v200 = hir.load v199 : felt;
+                                hir.exec @miden:base/note-script@1.0.0/p2id/p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7(v176, v184, v192, v200)
+                                v201 = hir.load_local  : i32 #[local = lv9];
+                                v1023 = arith.constant -16 : i32;
+                                v203 = arith.add v201, v1023 : i32 #[overflow = wrapping];
+                                hir.store_local v203 #[local = lv9];
+                                v204 = hir.load_local  : i32 #[local = lv5];
+                                v1037 = arith.constant 16 : i32;
+                                v206 = arith.add v204, v1037 : i32 #[overflow = wrapping];
+                                hir.store_local v206 #[local = lv5];
+                                scf.yield ;
                             };
-                            v1003 = ub.poison i32 : i32;
-                            v967 = cf.select v148, v1003, v982 : i32;
-                            v1004 = ub.poison i32 : i32;
-                            v966 = cf.select v148, v1004, v981 : i32;
-                            v1005 = ub.poison i32 : i32;
-                            v965 = cf.select v148, v1005, v980 : i32;
-                            v1006 = arith.constant 1 : u32;
-                            v894 = arith.constant 0 : u32;
-                            v969 = cf.select v148, v894, v1006 : u32;
-                            v947 = arith.trunc v969 : i1;
-                            scf.condition v947, v963, v964, v965, v966, v967, v980, v981, v982;
+                            v1094 = arith.constant 1 : u32;
+                            v1067 = arith.constant 0 : u32;
+                            v1083 = cf.select v170, v1067, v1094 : u32;
+                            v1071 = arith.trunc v1083 : i1;
+                            scf.condition v1071;
                         } do {
-                        ^block137(v983: i32, v984: i32, v985: i32, v986: i32, v987: i32, v988: i32, v989: i32, v990: i32):
-                            scf.yield v983, v984, v985, v986, v987;
+                        ^block131:
+                            scf.yield ;
                         };
-                        v183 = arith.constant 44 : u32;
-                        v182 = hir.bitcast v975 : u32;
-                        v184 = arith.add v182, v183 : u32 #[overflow = checked];
-                        v1002 = arith.constant 4 : u32;
-                        v186 = arith.mod v184, v1002 : u32;
-                        hir.assertz v186 #[code = 250];
-                        v187 = hir.int_to_ptr v184 : ptr<byte, i32>;
-                        hir.store v187, v976;
-                        v190 = arith.constant 40 : u32;
-                        v189 = hir.bitcast v975 : u32;
-                        v191 = arith.add v189, v190 : u32 #[overflow = checked];
-                        v1001 = arith.constant 4 : u32;
-                        v193 = arith.mod v191, v1001 : u32;
-                        hir.assertz v193 #[code = 250];
-                        v194 = hir.int_to_ptr v191 : ptr<byte, i32>;
-                        hir.store v194, v977;
-                        v1000 = arith.constant 16 : i32;
-                        v195 = arith.constant 40 : i32;
-                        v196 = arith.add v975, v195 : i32 #[overflow = wrapping];
-                        hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::deallocate(v196, v1000, v1000)
-                        v999 = arith.constant 16 : i32;
-                        v200 = arith.add v975, v999 : i32 #[overflow = wrapping];
-                        hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(v200)
-                        v998 = arith.constant 16 : i32;
-                        v202 = arith.add v975, v998 : i32 #[overflow = wrapping];
-                        hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(v202)
-                        v997 = arith.constant 48 : i32;
-                        v204 = arith.add v975, v997 : i32 #[overflow = wrapping];
-                        v205 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-                        v206 = hir.bitcast v205 : ptr<byte, i32>;
-                        hir.store v206, v204;
+                        v207 = hir.load_local  : i32 #[local = lv4];
+                        v208 = hir.load_local  : i32 #[local = lv11];
+                        v1028 = arith.constant 28 : u32;
+                        v209 = hir.bitcast v207 : u32;
+                        v211 = arith.add v209, v1028 : u32 #[overflow = checked];
+                        v1093 = arith.constant 4 : u32;
+                        v213 = arith.mod v211, v1093 : u32;
+                        hir.assertz v213 #[code = 250];
+                        v214 = hir.int_to_ptr v211 : ptr<byte, i32>;
+                        hir.store v214, v208;
+                        v215 = hir.load_local  : i32 #[local = lv4];
+                        v216 = hir.load_local  : i32 #[local = lv10];
+                        v1027 = arith.constant 24 : u32;
+                        v217 = hir.bitcast v215 : u32;
+                        v219 = arith.add v217, v1027 : u32 #[overflow = checked];
+                        v1092 = arith.constant 4 : u32;
+                        v221 = arith.mod v219, v1092 : u32;
+                        hir.assertz v221 #[code = 250];
+                        v222 = hir.int_to_ptr v219 : ptr<byte, i32>;
+                        hir.store v222, v216;
+                        v223 = hir.load_local  : i32 #[local = lv4];
+                        v1091 = arith.constant 16 : i32;
+                        v1026 = arith.constant 24 : i32;
+                        v225 = arith.add v223, v1026 : i32 #[overflow = wrapping];
+                        hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::deallocate(v225, v1091, v1091)
+                        v228 = hir.load_local  : i32 #[local = lv4];
+                        v1090 = arith.constant 32 : i32;
+                        v230 = arith.add v228, v1090 : i32 #[overflow = wrapping];
+                        v231 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+                        v232 = hir.bitcast v231 : ptr<byte, i32>;
+                        hir.store v232, v230;
                         scf.yield ;
                     };
-                    v995 = arith.constant 0 : u32;
-                    v996 = arith.constant 1 : u32;
-                    v991 = cf.select v115, v996, v995 : u32;
-                    scf.yield v991;
+                    v1088 = arith.constant 0 : u32;
+                    v1089 = arith.constant 1 : u32;
+                    v1084 = cf.select v133, v1089, v1088 : u32;
+                    scf.yield v1084;
                 };
-                scf.yield v952;
+                scf.yield v1076;
             };
-            v992 = arith.constant 0 : u32;
-            v962 = arith.eq v950, v992 : i1;
-            cf.cond_br v962 ^block126, ^block23;
+            v1085 = arith.constant 0 : u32;
+            v1081 = arith.eq v1074, v1085 : i1;
+            cf.cond_br v1081 ^block126, ^block23;
         ^block23:
             ub.unreachable ;
         ^block126:
@@ -327,952 +367,1119 @@ builtin.component miden:base/note-script@1.0.0 {
 
         private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block33:
-            v208 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
-            v209 = hir.bitcast v208 : ptr<byte, i32>;
-            v210 = hir.load v209 : i32;
-            v211 = arith.constant 1048592 : i32;
-            v212 = arith.add v210, v211 : i32 #[overflow = wrapping];
-            v213 = hir.bitcast v212 : u32;
-            v214 = hir.int_to_ptr v213 : ptr<byte, u8>;
-            v215 = hir.load v214 : u8;
-            v207 = arith.constant 0 : i32;
-            v216 = arith.zext v215 : u32;
-            v217 = hir.bitcast v216 : i32;
-            v219 = arith.neq v217, v207 : i1;
-            scf.if v219{
+            v233 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v234 = hir.bitcast v233 : ptr<byte, i32>;
+            v235 = hir.load v234 : i32;
+            v1125 = arith.constant 1048592 : i32;
+            v237 = arith.add v235, v1125 : i32 #[overflow = wrapping];
+            v238 = hir.bitcast v237 : u32;
+            v239 = hir.int_to_ptr v238 : ptr<byte, u8>;
+            v240 = hir.load v239 : u8;
+            v1124 = arith.constant 0 : i32;
+            v241 = arith.zext v240 : u32;
+            v242 = hir.bitcast v241 : i32;
+            v244 = arith.neq v242, v1124 : i1;
+            scf.if v244{
             ^block35:
                 scf.yield ;
             } else {
             ^block36:
-                v220 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
-                v221 = hir.bitcast v220 : ptr<byte, i32>;
-                v222 = hir.load v221 : i32;
+                v245 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v246 = hir.bitcast v245 : ptr<byte, i32>;
+                v247 = hir.load v246 : i32;
+                hir.store_local v247 #[local = lv0];
                 hir.exec @miden:base/note-script@1.0.0/p2id/__wasm_call_ctors()
-                v1030 = arith.constant 1 : u8;
-                v1032 = arith.constant 1048592 : i32;
-                v224 = arith.add v222, v1032 : i32 #[overflow = wrapping];
-                v228 = hir.bitcast v224 : u32;
-                v229 = hir.int_to_ptr v228 : ptr<byte, u8>;
-                hir.store v229, v1030;
+                v248 = hir.load_local  : i32 #[local = lv0];
+                v1123 = arith.constant 1 : u8;
+                v1128 = arith.constant 1048592 : i32;
+                v250 = arith.add v248, v1128 : i32 #[overflow = wrapping];
+                v254 = hir.bitcast v250 : u32;
+                v255 = hir.int_to_ptr v254 : ptr<byte, u8>;
+                hir.store v255, v1123;
                 scf.yield ;
             };
             builtin.ret ;
         };
 
-        private builtin.function @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v230: i32, v231: i32, v232: i32) -> i32 {
-        ^block37(v230: i32, v231: i32, v232: i32):
-            v235 = arith.constant 16 : i32;
-            v234 = arith.constant 0 : i32;
-            v1034 = arith.constant 16 : u32;
-            v237 = hir.bitcast v231 : u32;
-            v239 = arith.gt v237, v1034 : i1;
-            v240 = arith.zext v239 : u32;
-            v241 = hir.bitcast v240 : i32;
-            v243 = arith.neq v241, v234 : i1;
-            v244 = cf.select v243, v231, v235 : i32;
-            v1074 = arith.constant 0 : i32;
-            v245 = arith.constant -1 : i32;
-            v246 = arith.add v244, v245 : i32 #[overflow = wrapping];
-            v247 = arith.band v244, v246 : i32;
-            v249 = arith.neq v247, v1074 : i1;
-            v1043, v1044 = scf.if v249 : i32, u32 {
-            ^block141:
-                v1035 = arith.constant 0 : u32;
-                v1039 = ub.poison i32 : i32;
-                scf.yield v1039, v1035;
+        private builtin.function @<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc(v256: i32, v257: i32, v258: i32) -> i32 {
+        ^block37(v256: i32, v257: i32, v258: i32):
+            hir.store_local v256 #[local = lv0];
+            hir.store_local v257 #[local = lv1];
+            hir.store_local v258 #[local = lv2];
+            v260 = hir.load_local  : i32 #[local = lv1];
+            v1136 = arith.constant 16 : i32;
+            v1135 = arith.constant 0 : i32;
+            v1131 = arith.constant 16 : u32;
+            v264 = hir.bitcast v260 : u32;
+            v266 = arith.gt v264, v1131 : i1;
+            v267 = arith.zext v266 : u32;
+            v268 = hir.bitcast v267 : i32;
+            v270 = arith.neq v268, v1135 : i1;
+            v271 = cf.select v270, v260, v1136 : i32;
+            hir.store_local v271 #[local = lv3];
+            v272 = hir.load_local  : i32 #[local = lv3];
+            v1179 = arith.constant 0 : i32;
+            v1134 = arith.constant -1 : i32;
+            v274 = arith.add v272, v1134 : i32 #[overflow = wrapping];
+            v275 = arith.band v271, v274 : i32;
+            v277 = arith.neq v275, v1179 : i1;
+            v1157, v1158 = scf.if v277 : i32, u32 {
+            ^block140:
+                v1149 = arith.constant 0 : u32;
+                v1153 = ub.poison i32 : i32;
+                scf.yield v1153, v1149;
             } else {
             ^block40:
-                v251 = hir.exec @miden:base/note-script@1.0.0/p2id/<core::ptr::alignment::Alignment>::max(v231, v244) : i32
-                v1073 = arith.constant 0 : i32;
-                v250 = arith.constant -2147483648 : i32;
-                v252 = arith.sub v250, v251 : i32 #[overflow = wrapping];
-                v254 = hir.bitcast v252 : u32;
-                v253 = hir.bitcast v232 : u32;
-                v255 = arith.gt v253, v254 : i1;
-                v256 = arith.zext v255 : u32;
-                v257 = hir.bitcast v256 : i32;
-                v259 = arith.neq v257, v1073 : i1;
-                v1058 = scf.if v259 : i32 {
-                ^block140:
-                    v1072 = ub.poison i32 : i32;
-                    scf.yield v1072;
+                v278 = hir.load_local  : i32 #[local = lv2];
+                v280 = hir.load_local  : i32 #[local = lv1];
+                v281 = hir.load_local  : i32 #[local = lv3];
+                v282 = hir.exec @miden:base/note-script@1.0.0/p2id/<core::ptr::alignment::Alignment>::max(v280, v281) : i32
+                hir.store_local v282 #[local = lv1];
+                v1178 = arith.constant 0 : i32;
+                v1133 = arith.constant -2147483648 : i32;
+                v283 = arith.sub v1133, v282 : i32 #[overflow = wrapping];
+                v285 = hir.bitcast v283 : u32;
+                v284 = hir.bitcast v278 : u32;
+                v286 = arith.gt v284, v285 : i1;
+                v287 = arith.zext v286 : u32;
+                v288 = hir.bitcast v287 : i32;
+                v290 = arith.neq v288, v1178 : i1;
+                v1163 = scf.if v290 : i32 {
+                ^block139:
+                    v1177 = ub.poison i32 : i32;
+                    scf.yield v1177;
                 } else {
                 ^block41:
-                    v1070 = arith.constant 0 : i32;
-                    v265 = arith.sub v1070, v251 : i32 #[overflow = wrapping];
-                    v1071 = arith.constant -1 : i32;
-                    v261 = arith.add v232, v251 : i32 #[overflow = wrapping];
-                    v263 = arith.add v261, v1071 : i32 #[overflow = wrapping];
-                    v266 = arith.band v263, v265 : i32;
-                    v267 = hir.bitcast v230 : u32;
-                    v268 = arith.constant 4 : u32;
-                    v269 = arith.mod v267, v268 : u32;
-                    hir.assertz v269 #[code = 250];
-                    v270 = hir.int_to_ptr v267 : ptr<byte, i32>;
-                    v271 = hir.load v270 : i32;
-                    v1069 = arith.constant 0 : i32;
-                    v273 = arith.neq v271, v1069 : i1;
-                    scf.if v273{
-                    ^block139:
+                    v1176 = arith.constant 0 : i32;
+                    hir.store_local v1176 #[local = lv3];
+                    v292 = hir.load_local  : i32 #[local = lv2];
+                    v293 = hir.load_local  : i32 #[local = lv1];
+                    v1174 = arith.constant 0 : i32;
+                    v299 = arith.sub v1174, v293 : i32 #[overflow = wrapping];
+                    v1175 = arith.constant -1 : i32;
+                    v294 = arith.add v292, v293 : i32 #[overflow = wrapping];
+                    v296 = arith.add v294, v1175 : i32 #[overflow = wrapping];
+                    v300 = arith.band v296, v299 : i32;
+                    hir.store_local v300 #[local = lv2];
+                    v301 = hir.load_local  : i32 #[local = lv0];
+                    v302 = hir.bitcast v301 : u32;
+                    v1132 = arith.constant 4 : u32;
+                    v304 = arith.mod v302, v1132 : u32;
+                    hir.assertz v304 #[code = 250];
+                    v305 = hir.int_to_ptr v302 : ptr<byte, i32>;
+                    v306 = hir.load v305 : i32;
+                    v1173 = arith.constant 0 : i32;
+                    v308 = arith.neq v306, v1173 : i1;
+                    scf.if v308{
+                    ^block138:
                         scf.yield ;
                     } else {
                     ^block43:
-                        v274 = hir.exec @miden:base/note-script@1.0.0/p2id/intrinsics::mem::heap_base() : i32
-                        v275 = hir.mem_size  : u32;
-                        v281 = hir.bitcast v230 : u32;
-                        v1068 = arith.constant 4 : u32;
-                        v283 = arith.mod v281, v1068 : u32;
-                        hir.assertz v283 #[code = 250];
-                        v1067 = arith.constant 16 : u32;
-                        v276 = hir.bitcast v275 : i32;
-                        v279 = arith.shl v276, v1067 : i32;
-                        v280 = arith.add v274, v279 : i32 #[overflow = wrapping];
-                        v284 = hir.int_to_ptr v281 : ptr<byte, i32>;
-                        hir.store v284, v280;
+                        v309 = hir.load_local  : i32 #[local = lv0];
+                        v310 = hir.exec @miden:base/note-script@1.0.0/p2id/intrinsics::mem::heap_base() : i32
+                        v311 = hir.mem_size  : u32;
+                        v317 = hir.bitcast v309 : u32;
+                        v1172 = arith.constant 4 : u32;
+                        v319 = arith.mod v317, v1172 : u32;
+                        hir.assertz v319 #[code = 250];
+                        v1171 = arith.constant 16 : u32;
+                        v312 = hir.bitcast v311 : i32;
+                        v315 = arith.shl v312, v1171 : i32;
+                        v316 = arith.add v310, v315 : i32 #[overflow = wrapping];
+                        v320 = hir.int_to_ptr v317 : ptr<byte, i32>;
+                        hir.store v320, v316;
                         scf.yield ;
                     };
-                    v287 = hir.bitcast v230 : u32;
-                    v1066 = arith.constant 4 : u32;
-                    v289 = arith.mod v287, v1066 : u32;
-                    hir.assertz v289 #[code = 250];
-                    v290 = hir.int_to_ptr v287 : ptr<byte, i32>;
-                    v291 = hir.load v290 : i32;
-                    v1064 = arith.constant 0 : i32;
-                    v1065 = arith.constant -1 : i32;
-                    v293 = arith.bxor v291, v1065 : i32;
-                    v295 = hir.bitcast v293 : u32;
-                    v294 = hir.bitcast v266 : u32;
-                    v296 = arith.gt v294, v295 : i1;
-                    v297 = arith.zext v296 : u32;
-                    v298 = hir.bitcast v297 : i32;
-                    v300 = arith.neq v298, v1064 : i1;
-                    v1057 = scf.if v300 : i32 {
-                    ^block44:
-                        v1063 = arith.constant 0 : i32;
-                        scf.yield v1063;
+                    v321 = hir.load_local  : i32 #[local = lv2];
+                    v322 = hir.load_local  : i32 #[local = lv0];
+                    v323 = hir.bitcast v322 : u32;
+                    v1170 = arith.constant 4 : u32;
+                    v325 = arith.mod v323, v1170 : u32;
+                    hir.assertz v325 #[code = 250];
+                    v326 = hir.int_to_ptr v323 : ptr<byte, i32>;
+                    v327 = hir.load v326 : i32;
+                    hir.store_local v327 #[local = lv4];
+                    v1168 = arith.constant 0 : i32;
+                    v1169 = arith.constant -1 : i32;
+                    v329 = arith.bxor v327, v1169 : i32;
+                    v331 = hir.bitcast v329 : u32;
+                    v330 = hir.bitcast v321 : u32;
+                    v332 = arith.gt v330, v331 : i1;
+                    v333 = arith.zext v332 : u32;
+                    v334 = hir.bitcast v333 : i32;
+                    v336 = arith.neq v334, v1168 : i1;
+                    scf.if v336{
+                    ^block137:
+                        scf.yield ;
                     } else {
                     ^block45:
-                        v302 = hir.bitcast v230 : u32;
-                        v1062 = arith.constant 4 : u32;
-                        v304 = arith.mod v302, v1062 : u32;
-                        hir.assertz v304 #[code = 250];
-                        v301 = arith.add v291, v266 : i32 #[overflow = wrapping];
-                        v305 = hir.int_to_ptr v302 : ptr<byte, i32>;
-                        hir.store v305, v301;
-                        v307 = arith.add v291, v251 : i32 #[overflow = wrapping];
-                        scf.yield v307;
+                        v337 = hir.load_local  : i32 #[local = lv0];
+                        v338 = hir.load_local  : i32 #[local = lv4];
+                        v339 = hir.load_local  : i32 #[local = lv2];
+                        v341 = hir.bitcast v337 : u32;
+                        v1167 = arith.constant 4 : u32;
+                        v343 = arith.mod v341, v1167 : u32;
+                        hir.assertz v343 #[code = 250];
+                        v340 = arith.add v338, v339 : i32 #[overflow = wrapping];
+                        v344 = hir.int_to_ptr v341 : ptr<byte, i32>;
+                        hir.store v344, v340;
+                        v345 = hir.load_local  : i32 #[local = lv4];
+                        v346 = hir.load_local  : i32 #[local = lv1];
+                        v347 = arith.add v345, v346 : i32 #[overflow = wrapping];
+                        hir.store_local v347 #[local = lv3];
+                        scf.yield ;
                     };
-                    scf.yield v1057;
+                    v348 = hir.load_local  : i32 #[local = lv3];
+                    scf.yield v348;
                 };
-                v1040 = arith.constant 1 : u32;
-                v1061 = arith.constant 0 : u32;
-                v1059 = cf.select v259, v1061, v1040 : u32;
-                scf.yield v1058, v1059;
+                v1154 = arith.constant 1 : u32;
+                v1166 = arith.constant 0 : u32;
+                v1164 = cf.select v290, v1166, v1154 : u32;
+                scf.yield v1163, v1164;
             };
-            v1060 = arith.constant 0 : u32;
-            v1056 = arith.eq v1044, v1060 : i1;
-            cf.cond_br v1056 ^block39, ^block143(v1043);
+            v1165 = arith.constant 0 : u32;
+            v1162 = arith.eq v1158, v1165 : i1;
+            cf.cond_br v1162 ^block39, ^block142(v1157);
         ^block39:
             ub.unreachable ;
-        ^block143(v1036: i32):
-            builtin.ret v1036;
+        ^block142(v1150: i32):
+            builtin.ret v1150;
         };
 
         private builtin.function @intrinsics::mem::heap_base() -> i32 {
         ^block46:
-            v310 = hir.exec @intrinsics/mem/heap_base() : i32
-            builtin.ret v310;
+            v349 = hir.exec @intrinsics/mem/heap_base() : i32
+            builtin.ret v349;
         };
 
-        private builtin.function @<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(v312: i32) {
-        ^block50(v312: i32):
-            v315 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v316 = hir.bitcast v315 : ptr<byte, i32>;
-            v317 = hir.load v316 : i32;
-            v318 = arith.constant 16 : i32;
-            v319 = arith.sub v317, v318 : i32 #[overflow = wrapping];
-            v320 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v321 = hir.bitcast v320 : ptr<byte, i32>;
-            hir.store v321, v319;
-            v1079 = arith.constant 16 : i32;
-            v322 = arith.constant 8 : i32;
-            v323 = arith.add v319, v322 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::with_capacity_in(v323, v1079, v1079)
-            v327 = arith.constant 8 : u32;
-            v326 = hir.bitcast v319 : u32;
-            v328 = arith.add v326, v327 : u32 #[overflow = checked];
-            v1078 = arith.constant 8 : u32;
-            v330 = arith.mod v328, v1078 : u32;
-            hir.assertz v330 #[code = 250];
-            v331 = hir.int_to_ptr v328 : ptr<byte, i64>;
-            v332 = hir.load v331 : i64;
-            v1077 = arith.constant 8 : u32;
-            v334 = hir.bitcast v312 : u32;
-            v336 = arith.add v334, v1077 : u32 #[overflow = checked];
-            v337 = arith.constant 4 : u32;
-            v338 = arith.mod v336, v337 : u32;
-            hir.assertz v338 #[code = 250];
-            v313 = arith.constant 0 : i32;
-            v339 = hir.int_to_ptr v336 : ptr<byte, i32>;
-            hir.store v339, v313;
-            v340 = hir.bitcast v312 : u32;
-            v1076 = arith.constant 4 : u32;
-            v342 = arith.mod v340, v1076 : u32;
-            hir.assertz v342 #[code = 250];
-            v343 = hir.int_to_ptr v340 : ptr<byte, i64>;
-            hir.store v343, v332;
-            v1075 = arith.constant 16 : i32;
-            v345 = arith.add v319, v1075 : i32 #[overflow = wrapping];
-            v346 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v347 = hir.bitcast v346 : ptr<byte, i32>;
-            hir.store v347, v345;
-            builtin.ret ;
-        };
-
-        private builtin.function @<alloc::raw_vec::RawVecInner>::with_capacity_in(v348: i32, v349: i32, v350: i32) {
-        ^block52(v348: i32, v349: i32, v350: i32):
+        private builtin.function @<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(v351: i32) {
+        ^block50(v351: i32):
+            hir.store_local v351 #[local = lv0];
             v352 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
             v353 = hir.bitcast v352 : ptr<byte, i32>;
             v354 = hir.load v353 : i32;
-            v355 = arith.constant 16 : i32;
-            v356 = arith.sub v354, v355 : i32 #[overflow = wrapping];
+            v1185 = arith.constant 16 : i32;
+            v356 = arith.sub v354, v1185 : i32 #[overflow = wrapping];
+            hir.store_local v356 #[local = lv1];
             v357 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
             v358 = hir.bitcast v357 : ptr<byte, i32>;
             hir.store v358, v356;
-            v351 = arith.constant 0 : i32;
-            v361 = arith.constant 256 : i32;
-            v359 = arith.constant 4 : i32;
-            v360 = arith.add v356, v359 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::try_allocate_in(v360, v361, v351, v349, v350)
-            v364 = arith.constant 8 : u32;
-            v363 = hir.bitcast v356 : u32;
-            v365 = arith.add v363, v364 : u32 #[overflow = checked];
-            v366 = arith.constant 4 : u32;
-            v367 = arith.mod v365, v366 : u32;
-            hir.assertz v367 #[code = 250];
-            v368 = hir.int_to_ptr v365 : ptr<byte, i32>;
-            v369 = hir.load v368 : i32;
-            v1090 = arith.constant 4 : u32;
-            v370 = hir.bitcast v356 : u32;
-            v372 = arith.add v370, v1090 : u32 #[overflow = checked];
-            v1089 = arith.constant 4 : u32;
-            v374 = arith.mod v372, v1089 : u32;
-            hir.assertz v374 #[code = 250];
-            v375 = hir.int_to_ptr v372 : ptr<byte, i32>;
-            v376 = hir.load v375 : i32;
-            v1088 = arith.constant 0 : i32;
-            v377 = arith.constant 1 : i32;
-            v378 = arith.neq v376, v377 : i1;
-            v379 = arith.zext v378 : u32;
-            v380 = hir.bitcast v379 : i32;
-            v382 = arith.neq v380, v1088 : i1;
-            cf.cond_br v382 ^block54, ^block55;
+            v359 = hir.load_local  : i32 #[local = lv1];
+            v1195 = arith.constant 16 : i32;
+            v1183 = arith.constant 256 : i32;
+            v1184 = arith.constant 8 : i32;
+            v361 = arith.add v359, v1184 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::with_capacity_in(v361, v1183, v1195, v1195)
+            v365 = hir.load_local  : i32 #[local = lv1];
+            v1182 = arith.constant 8 : u32;
+            v366 = hir.bitcast v365 : u32;
+            v368 = arith.add v366, v1182 : u32 #[overflow = checked];
+            v1194 = arith.constant 8 : u32;
+            v370 = arith.mod v368, v1194 : u32;
+            hir.assertz v370 #[code = 250];
+            v371 = hir.int_to_ptr v368 : ptr<byte, i64>;
+            v372 = hir.load v371 : i64;
+            v373 = hir.load_local  : i32 #[local = lv0];
+            v1193 = arith.constant 8 : u32;
+            v375 = hir.bitcast v373 : u32;
+            v377 = arith.add v375, v1193 : u32 #[overflow = checked];
+            v1180 = arith.constant 4 : u32;
+            v379 = arith.mod v377, v1180 : u32;
+            hir.assertz v379 #[code = 250];
+            v1181 = arith.constant 0 : i32;
+            v380 = hir.int_to_ptr v377 : ptr<byte, i32>;
+            hir.store v380, v1181;
+            v381 = hir.load_local  : i32 #[local = lv0];
+            v383 = hir.bitcast v381 : u32;
+            v1192 = arith.constant 4 : u32;
+            v385 = arith.mod v383, v1192 : u32;
+            hir.assertz v385 #[code = 250];
+            v386 = hir.int_to_ptr v383 : ptr<byte, i64>;
+            hir.store v386, v372;
+            v387 = hir.load_local  : i32 #[local = lv1];
+            v1191 = arith.constant 16 : i32;
+            v389 = arith.add v387, v1191 : i32 #[overflow = wrapping];
+            v390 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v391 = hir.bitcast v390 : ptr<byte, i32>;
+            hir.store v391, v389;
+            builtin.ret ;
+        };
+
+        private builtin.function @<alloc::raw_vec::RawVecInner>::with_capacity_in(v392: i32, v393: i32, v394: i32, v395: i32) {
+        ^block52(v392: i32, v393: i32, v394: i32, v395: i32):
+            hir.store_local v392 #[local = lv0];
+            hir.store_local v395 #[local = lv3];
+            v396 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v397 = hir.bitcast v396 : ptr<byte, i32>;
+            v398 = hir.load v397 : i32;
+            v1202 = arith.constant 16 : i32;
+            v400 = arith.sub v398, v1202 : i32 #[overflow = wrapping];
+            hir.store_local v400 #[local = lv4];
+            v401 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v402 = hir.bitcast v401 : ptr<byte, i32>;
+            hir.store v402, v400;
+            v403 = hir.load_local  : i32 #[local = lv4];
+            v409 = hir.load_local  : i32 #[local = lv3];
+            v1200 = arith.constant 0 : i32;
+            v1201 = arith.constant 4 : i32;
+            v405 = arith.add v403, v1201 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::try_allocate_in(v405, v393, v1200, v394, v409)
+            v410 = hir.load_local  : i32 #[local = lv4];
+            v1199 = arith.constant 8 : u32;
+            v411 = hir.bitcast v410 : u32;
+            v413 = arith.add v411, v1199 : u32 #[overflow = checked];
+            v1198 = arith.constant 4 : u32;
+            v415 = arith.mod v413, v1198 : u32;
+            hir.assertz v415 #[code = 250];
+            v416 = hir.int_to_ptr v413 : ptr<byte, i32>;
+            v417 = hir.load v416 : i32;
+            hir.store_local v417 #[local = lv3];
+            v418 = hir.load_local  : i32 #[local = lv4];
+            v1223 = arith.constant 4 : u32;
+            v419 = hir.bitcast v418 : u32;
+            v421 = arith.add v419, v1223 : u32 #[overflow = checked];
+            v1222 = arith.constant 4 : u32;
+            v423 = arith.mod v421, v1222 : u32;
+            hir.assertz v423 #[code = 250];
+            v424 = hir.int_to_ptr v421 : ptr<byte, i32>;
+            v425 = hir.load v424 : i32;
+            v1221 = arith.constant 0 : i32;
+            v1197 = arith.constant 1 : i32;
+            v427 = arith.neq v425, v1197 : i1;
+            v428 = arith.zext v427 : u32;
+            v429 = hir.bitcast v428 : i32;
+            v431 = arith.neq v429, v1221 : i1;
+            cf.cond_br v431 ^block54, ^block55;
         ^block54:
-            v391 = arith.constant 12 : u32;
-            v390 = hir.bitcast v356 : u32;
-            v392 = arith.add v390, v391 : u32 #[overflow = checked];
-            v1087 = arith.constant 4 : u32;
-            v394 = arith.mod v392, v1087 : u32;
-            hir.assertz v394 #[code = 250];
-            v395 = hir.int_to_ptr v392 : ptr<byte, i32>;
-            v396 = hir.load v395 : i32;
-            v1086 = arith.constant 4 : u32;
-            v397 = hir.bitcast v348 : u32;
-            v399 = arith.add v397, v1086 : u32 #[overflow = checked];
-            v1085 = arith.constant 4 : u32;
-            v401 = arith.mod v399, v1085 : u32;
-            hir.assertz v401 #[code = 250];
-            v402 = hir.int_to_ptr v399 : ptr<byte, i32>;
-            hir.store v402, v396;
-            v403 = hir.bitcast v348 : u32;
-            v1084 = arith.constant 4 : u32;
-            v405 = arith.mod v403, v1084 : u32;
-            hir.assertz v405 #[code = 250];
-            v406 = hir.int_to_ptr v403 : ptr<byte, i32>;
-            hir.store v406, v369;
-            v1083 = arith.constant 16 : i32;
-            v408 = arith.add v356, v1083 : i32 #[overflow = wrapping];
-            v409 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v410 = hir.bitcast v409 : ptr<byte, i32>;
-            hir.store v410, v408;
+            v441 = hir.load_local  : i32 #[local = lv0];
+            v442 = hir.load_local  : i32 #[local = lv4];
+            v1196 = arith.constant 12 : u32;
+            v443 = hir.bitcast v442 : u32;
+            v445 = arith.add v443, v1196 : u32 #[overflow = checked];
+            v1220 = arith.constant 4 : u32;
+            v447 = arith.mod v445, v1220 : u32;
+            hir.assertz v447 #[code = 250];
+            v448 = hir.int_to_ptr v445 : ptr<byte, i32>;
+            v449 = hir.load v448 : i32;
+            v1219 = arith.constant 4 : u32;
+            v450 = hir.bitcast v441 : u32;
+            v452 = arith.add v450, v1219 : u32 #[overflow = checked];
+            v1218 = arith.constant 4 : u32;
+            v454 = arith.mod v452, v1218 : u32;
+            hir.assertz v454 #[code = 250];
+            v455 = hir.int_to_ptr v452 : ptr<byte, i32>;
+            hir.store v455, v449;
+            v456 = hir.load_local  : i32 #[local = lv0];
+            v457 = hir.load_local  : i32 #[local = lv3];
+            v458 = hir.bitcast v456 : u32;
+            v1217 = arith.constant 4 : u32;
+            v460 = arith.mod v458, v1217 : u32;
+            hir.assertz v460 #[code = 250];
+            v461 = hir.int_to_ptr v458 : ptr<byte, i32>;
+            hir.store v461, v457;
+            v462 = hir.load_local  : i32 #[local = lv4];
+            v1216 = arith.constant 16 : i32;
+            v464 = arith.add v462, v1216 : i32 #[overflow = wrapping];
+            v465 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v466 = hir.bitcast v465 : ptr<byte, i32>;
+            hir.store v466, v464;
             builtin.ret ;
         ^block55:
-            v1082 = arith.constant 12 : u32;
-            v383 = hir.bitcast v356 : u32;
-            v385 = arith.add v383, v1082 : u32 #[overflow = checked];
-            v1081 = arith.constant 4 : u32;
-            v387 = arith.mod v385, v1081 : u32;
-            hir.assertz v387 #[code = 250];
-            v388 = hir.int_to_ptr v385 : ptr<byte, i32>;
-            v389 = hir.load v388 : i32;
-            hir.exec @miden:base/note-script@1.0.0/p2id/alloc::raw_vec::handle_error(v369, v389)
+            v432 = hir.load_local  : i32 #[local = lv3];
+            v433 = hir.load_local  : i32 #[local = lv4];
+            v1215 = arith.constant 12 : u32;
+            v434 = hir.bitcast v433 : u32;
+            v436 = arith.add v434, v1215 : u32 #[overflow = checked];
+            v1214 = arith.constant 4 : u32;
+            v438 = arith.mod v436, v1214 : u32;
+            hir.assertz v438 #[code = 250];
+            v439 = hir.int_to_ptr v436 : ptr<byte, i32>;
+            v440 = hir.load v439 : i32;
+            hir.exec @miden:base/note-script@1.0.0/p2id/alloc::raw_vec::handle_error(v432, v440)
             ub.unreachable ;
         };
 
-        private builtin.function @<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(v411: i32) {
-        ^block56(v411: i32):
-            v412 = arith.constant 4 : i32;
-            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::deallocate(v411, v412, v412)
+        private builtin.function @<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v467: i32) {
+        ^block56(v467: i32):
+            v1224 = arith.constant 4 : i32;
+            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::deallocate(v467, v1224, v1224)
             builtin.ret ;
         };
 
-        private builtin.function @miden_base_sys::bindings::active_note::get_assets(v414: i32) {
-        ^block58(v414: i32):
-            v416 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v417 = hir.bitcast v416 : ptr<byte, i32>;
-            v418 = hir.load v417 : i32;
-            v419 = arith.constant 16 : i32;
-            v420 = arith.sub v418, v419 : i32 #[overflow = wrapping];
-            v421 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v422 = hir.bitcast v421 : ptr<byte, i32>;
-            hir.store v422, v420;
-            v423 = arith.constant 4 : i32;
-            v424 = arith.add v420, v423 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(v424)
-            v428 = arith.constant 8 : u32;
-            v427 = hir.bitcast v420 : u32;
-            v429 = arith.add v427, v428 : u32 #[overflow = checked];
-            v430 = arith.constant 4 : u32;
-            v431 = arith.mod v429, v430 : u32;
-            hir.assertz v431 #[code = 250];
-            v432 = hir.int_to_ptr v429 : ptr<byte, i32>;
-            v433 = hir.load v432 : i32;
-            v1091 = arith.constant 2 : u32;
-            v435 = hir.bitcast v433 : u32;
-            v437 = arith.shr v435, v1091 : u32;
-            v438 = hir.bitcast v437 : i32;
-            v439 = hir.exec @miden:base/note-script@1.0.0/p2id/miden::active_note::get_assets(v438) : i32
-            v425 = arith.constant 8 : i32;
-            v426 = arith.add v414, v425 : i32 #[overflow = wrapping];
-            v440 = hir.bitcast v426 : u32;
-            v1096 = arith.constant 4 : u32;
-            v442 = arith.mod v440, v1096 : u32;
-            hir.assertz v442 #[code = 250];
-            v443 = hir.int_to_ptr v440 : ptr<byte, i32>;
-            hir.store v443, v439;
-            v1095 = arith.constant 4 : u32;
-            v444 = hir.bitcast v420 : u32;
-            v446 = arith.add v444, v1095 : u32 #[overflow = checked];
-            v1094 = arith.constant 4 : u32;
-            v448 = arith.mod v446, v1094 : u32;
-            hir.assertz v448 #[code = 250];
-            v449 = hir.int_to_ptr v446 : ptr<byte, i64>;
-            v450 = hir.load v449 : i64;
-            v451 = hir.bitcast v414 : u32;
-            v1093 = arith.constant 4 : u32;
-            v453 = arith.mod v451, v1093 : u32;
-            hir.assertz v453 #[code = 250];
-            v454 = hir.int_to_ptr v451 : ptr<byte, i64>;
-            hir.store v454, v450;
-            v1092 = arith.constant 16 : i32;
-            v456 = arith.add v420, v1092 : i32 #[overflow = wrapping];
-            v457 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v458 = hir.bitcast v457 : ptr<byte, i32>;
-            hir.store v458, v456;
-            builtin.ret ;
-        };
-
-        private builtin.function @miden_base_sys::bindings::active_note::get_inputs(v459: i32) {
-        ^block60(v459: i32):
-            v461 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v462 = hir.bitcast v461 : ptr<byte, i32>;
-            v463 = hir.load v462 : i32;
-            v464 = arith.constant 16 : i32;
-            v465 = arith.sub v463, v464 : i32 #[overflow = wrapping];
-            v466 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v467 = hir.bitcast v466 : ptr<byte, i32>;
-            hir.store v467, v465;
-            v470 = arith.constant 4 : i32;
-            v468 = arith.constant 8 : i32;
-            v469 = arith.add v465, v468 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::with_capacity_in(v469, v470, v470)
-            v473 = arith.constant 8 : u32;
-            v472 = hir.bitcast v465 : u32;
-            v474 = arith.add v472, v473 : u32 #[overflow = checked];
-            v475 = arith.constant 4 : u32;
-            v476 = arith.mod v474, v475 : u32;
-            hir.assertz v476 #[code = 250];
-            v477 = hir.int_to_ptr v474 : ptr<byte, i32>;
-            v478 = hir.load v477 : i32;
-            v480 = arith.constant 12 : u32;
-            v479 = hir.bitcast v465 : u32;
-            v481 = arith.add v479, v480 : u32 #[overflow = checked];
-            v1104 = arith.constant 4 : u32;
-            v483 = arith.mod v481, v1104 : u32;
-            hir.assertz v483 #[code = 250];
-            v484 = hir.int_to_ptr v481 : ptr<byte, i32>;
-            v485 = hir.load v484 : i32;
-            v1097 = arith.constant 2 : u32;
-            v487 = hir.bitcast v485 : u32;
-            v489 = arith.shr v487, v1097 : u32;
-            v490 = hir.bitcast v489 : i32;
-            v491 = hir.exec @miden:base/note-script@1.0.0/p2id/miden::active_note::get_inputs(v490) : i32
-            v1103 = arith.constant 8 : u32;
-            v492 = hir.bitcast v459 : u32;
-            v494 = arith.add v492, v1103 : u32 #[overflow = checked];
-            v1102 = arith.constant 4 : u32;
-            v496 = arith.mod v494, v1102 : u32;
-            hir.assertz v496 #[code = 250];
-            v497 = hir.int_to_ptr v494 : ptr<byte, i32>;
-            hir.store v497, v491;
-            v1101 = arith.constant 4 : u32;
-            v498 = hir.bitcast v459 : u32;
-            v500 = arith.add v498, v1101 : u32 #[overflow = checked];
-            v1100 = arith.constant 4 : u32;
-            v502 = arith.mod v500, v1100 : u32;
-            hir.assertz v502 #[code = 250];
-            v503 = hir.int_to_ptr v500 : ptr<byte, i32>;
-            hir.store v503, v485;
-            v504 = hir.bitcast v459 : u32;
-            v1099 = arith.constant 4 : u32;
-            v506 = arith.mod v504, v1099 : u32;
-            hir.assertz v506 #[code = 250];
-            v507 = hir.int_to_ptr v504 : ptr<byte, i32>;
-            hir.store v507, v478;
-            v1098 = arith.constant 16 : i32;
-            v509 = arith.add v465, v1098 : i32 #[overflow = wrapping];
-            v510 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v511 = hir.bitcast v510 : ptr<byte, i32>;
-            hir.store v511, v509;
-            builtin.ret ;
-        };
-
-        private builtin.function @miden_base_sys::bindings::active_account::get_id(v512: i32) {
-        ^block62(v512: i32):
-            v514 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v515 = hir.bitcast v514 : ptr<byte, i32>;
-            v516 = hir.load v515 : i32;
-            v517 = arith.constant 16 : i32;
-            v518 = arith.sub v516, v517 : i32 #[overflow = wrapping];
+        private builtin.function @miden_base_sys::bindings::active_note::get_assets(v471: i32) {
+        ^block58(v471: i32):
+            hir.store_local v471 #[local = lv0];
+            v472 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v473 = hir.bitcast v472 : ptr<byte, i32>;
+            v474 = hir.load v473 : i32;
+            v1231 = arith.constant 16 : i32;
+            v476 = arith.sub v474, v1231 : i32 #[overflow = wrapping];
+            hir.store_local v476 #[local = lv1];
+            v477 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v478 = hir.bitcast v477 : ptr<byte, i32>;
+            hir.store v478, v476;
+            v479 = hir.load_local  : i32 #[local = lv1];
+            v1230 = arith.constant 4 : i32;
+            v481 = arith.add v479, v1230 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::vec::Vec<miden_base_sys::bindings::types::Asset>>::with_capacity(v481)
+            v482 = hir.load_local  : i32 #[local = lv0];
+            v485 = hir.load_local  : i32 #[local = lv1];
+            v1228 = arith.constant 8 : u32;
+            v486 = hir.bitcast v485 : u32;
+            v488 = arith.add v486, v1228 : u32 #[overflow = checked];
+            v1227 = arith.constant 4 : u32;
+            v490 = arith.mod v488, v1227 : u32;
+            hir.assertz v490 #[code = 250];
+            v491 = hir.int_to_ptr v488 : ptr<byte, i32>;
+            v492 = hir.load v491 : i32;
+            v1226 = arith.constant 2 : u32;
+            v494 = hir.bitcast v492 : u32;
+            v496 = arith.shr v494, v1226 : u32;
+            v497 = hir.bitcast v496 : i32;
+            v498 = hir.exec @miden:base/note-script@1.0.0/p2id/miden::protocol::active_note::get_assets(v497) : i32
+            v1229 = arith.constant 8 : i32;
+            v484 = arith.add v482, v1229 : i32 #[overflow = wrapping];
+            v499 = hir.bitcast v484 : u32;
+            v1241 = arith.constant 4 : u32;
+            v501 = arith.mod v499, v1241 : u32;
+            hir.assertz v501 #[code = 250];
+            v502 = hir.int_to_ptr v499 : ptr<byte, i32>;
+            hir.store v502, v498;
+            v503 = hir.load_local  : i32 #[local = lv0];
+            v504 = hir.load_local  : i32 #[local = lv1];
+            v1240 = arith.constant 4 : u32;
+            v505 = hir.bitcast v504 : u32;
+            v507 = arith.add v505, v1240 : u32 #[overflow = checked];
+            v1239 = arith.constant 4 : u32;
+            v509 = arith.mod v507, v1239 : u32;
+            hir.assertz v509 #[code = 250];
+            v510 = hir.int_to_ptr v507 : ptr<byte, i64>;
+            v511 = hir.load v510 : i64;
+            v512 = hir.bitcast v503 : u32;
+            v1238 = arith.constant 4 : u32;
+            v514 = arith.mod v512, v1238 : u32;
+            hir.assertz v514 #[code = 250];
+            v515 = hir.int_to_ptr v512 : ptr<byte, i64>;
+            hir.store v515, v511;
+            v516 = hir.load_local  : i32 #[local = lv1];
+            v1237 = arith.constant 16 : i32;
+            v518 = arith.add v516, v1237 : i32 #[overflow = wrapping];
             v519 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
             v520 = hir.bitcast v519 : ptr<byte, i32>;
             hir.store v520, v518;
-            v521 = arith.constant 8 : i32;
-            v522 = arith.add v518, v521 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/p2id/miden::active_account::get_id(v522)
-            v524 = arith.constant 8 : u32;
-            v523 = hir.bitcast v518 : u32;
-            v525 = arith.add v523, v524 : u32 #[overflow = checked];
-            v526 = arith.constant 4 : u32;
-            v527 = arith.mod v525, v526 : u32;
-            hir.assertz v527 #[code = 250];
-            v528 = hir.int_to_ptr v525 : ptr<byte, i64>;
-            v529 = hir.load v528 : i64;
-            v530 = hir.bitcast v512 : u32;
-            v1106 = arith.constant 8 : u32;
-            v532 = arith.mod v530, v1106 : u32;
-            hir.assertz v532 #[code = 250];
-            v533 = hir.int_to_ptr v530 : ptr<byte, i64>;
-            hir.store v533, v529;
-            v1105 = arith.constant 16 : i32;
-            v535 = arith.add v518, v1105 : i32 #[overflow = wrapping];
-            v536 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v537 = hir.bitcast v536 : ptr<byte, i32>;
-            hir.store v537, v535;
             builtin.ret ;
         };
 
-        private builtin.function @<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop(v538: i32) {
-        ^block64(v538: i32):
+        private builtin.function @miden_base_sys::bindings::active_note::get_inputs(v521: i32) {
+        ^block60(v521: i32):
+            hir.store_local v521 #[local = lv0];
+            v522 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v523 = hir.bitcast v522 : ptr<byte, i32>;
+            v524 = hir.load v523 : i32;
+            v1250 = arith.constant 16 : i32;
+            v526 = arith.sub v524, v1250 : i32 #[overflow = wrapping];
+            hir.store_local v526 #[local = lv1];
+            v527 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v528 = hir.bitcast v527 : ptr<byte, i32>;
+            hir.store v528, v526;
+            v529 = hir.load_local  : i32 #[local = lv1];
+            v1247 = arith.constant 4 : i32;
+            v1248 = arith.constant 1024 : i32;
+            v1249 = arith.constant 8 : i32;
+            v531 = arith.add v529, v1249 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::with_capacity_in(v531, v1248, v1247, v1247)
+            v535 = hir.load_local  : i32 #[local = lv1];
+            v1246 = arith.constant 8 : u32;
+            v536 = hir.bitcast v535 : u32;
+            v538 = arith.add v536, v1246 : u32 #[overflow = checked];
+            v1245 = arith.constant 4 : u32;
+            v540 = arith.mod v538, v1245 : u32;
+            hir.assertz v540 #[code = 250];
+            v541 = hir.int_to_ptr v538 : ptr<byte, i32>;
+            v542 = hir.load v541 : i32;
+            hir.store_local v542 #[local = lv2];
+            v543 = hir.load_local  : i32 #[local = lv0];
+            v544 = hir.load_local  : i32 #[local = lv1];
+            v1244 = arith.constant 12 : u32;
+            v545 = hir.bitcast v544 : u32;
+            v547 = arith.add v545, v1244 : u32 #[overflow = checked];
+            v1264 = arith.constant 4 : u32;
+            v549 = arith.mod v547, v1264 : u32;
+            hir.assertz v549 #[code = 250];
+            v550 = hir.int_to_ptr v547 : ptr<byte, i32>;
+            v551 = hir.load v550 : i32;
+            hir.store_local v551 #[local = lv3];
+            v1243 = arith.constant 2 : u32;
+            v553 = hir.bitcast v551 : u32;
+            v555 = arith.shr v553, v1243 : u32;
+            v556 = hir.bitcast v555 : i32;
+            v557 = hir.exec @miden:base/note-script@1.0.0/p2id/miden::protocol::active_note::get_inputs(v556) : i32
+            v1263 = arith.constant 8 : u32;
+            v558 = hir.bitcast v543 : u32;
+            v560 = arith.add v558, v1263 : u32 #[overflow = checked];
+            v1262 = arith.constant 4 : u32;
+            v562 = arith.mod v560, v1262 : u32;
+            hir.assertz v562 #[code = 250];
+            v563 = hir.int_to_ptr v560 : ptr<byte, i32>;
+            hir.store v563, v557;
+            v564 = hir.load_local  : i32 #[local = lv0];
+            v565 = hir.load_local  : i32 #[local = lv3];
+            v1261 = arith.constant 4 : u32;
+            v566 = hir.bitcast v564 : u32;
+            v568 = arith.add v566, v1261 : u32 #[overflow = checked];
+            v1260 = arith.constant 4 : u32;
+            v570 = arith.mod v568, v1260 : u32;
+            hir.assertz v570 #[code = 250];
+            v571 = hir.int_to_ptr v568 : ptr<byte, i32>;
+            hir.store v571, v565;
+            v572 = hir.load_local  : i32 #[local = lv0];
+            v573 = hir.load_local  : i32 #[local = lv2];
+            v574 = hir.bitcast v572 : u32;
+            v1259 = arith.constant 4 : u32;
+            v576 = arith.mod v574, v1259 : u32;
+            hir.assertz v576 #[code = 250];
+            v577 = hir.int_to_ptr v574 : ptr<byte, i32>;
+            hir.store v577, v573;
+            v578 = hir.load_local  : i32 #[local = lv1];
+            v1258 = arith.constant 16 : i32;
+            v580 = arith.add v578, v1258 : i32 #[overflow = wrapping];
+            v581 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v582 = hir.bitcast v581 : ptr<byte, i32>;
+            hir.store v582, v580;
             builtin.ret ;
         };
 
-        private builtin.function @intrinsics::felt::eq(v539: felt, v540: felt) -> i32 {
-        ^block66(v539: felt, v540: felt):
-            v541 = arith.eq v539, v540 : i1;
-            v542 = hir.cast v541 : i32;
-            builtin.ret v542;
+        private builtin.function @miden_base_sys::bindings::active_account::get_id(v583: i32) {
+        ^block62(v583: i32):
+            hir.store_local v583 #[local = lv0];
+            v584 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v585 = hir.bitcast v584 : ptr<byte, i32>;
+            v586 = hir.load v585 : i32;
+            v1268 = arith.constant 16 : i32;
+            v588 = arith.sub v586, v1268 : i32 #[overflow = wrapping];
+            hir.store_local v588 #[local = lv1];
+            v589 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v590 = hir.bitcast v589 : ptr<byte, i32>;
+            hir.store v590, v588;
+            v591 = hir.load_local  : i32 #[local = lv1];
+            v1267 = arith.constant 8 : i32;
+            v593 = arith.add v591, v1267 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/p2id/miden::protocol::active_account::get_id(v593)
+            v594 = hir.load_local  : i32 #[local = lv0];
+            v595 = hir.load_local  : i32 #[local = lv1];
+            v1266 = arith.constant 8 : u32;
+            v596 = hir.bitcast v595 : u32;
+            v598 = arith.add v596, v1266 : u32 #[overflow = checked];
+            v1265 = arith.constant 4 : u32;
+            v600 = arith.mod v598, v1265 : u32;
+            hir.assertz v600 #[code = 250];
+            v601 = hir.int_to_ptr v598 : ptr<byte, i64>;
+            v602 = hir.load v601 : i64;
+            v603 = hir.bitcast v594 : u32;
+            v1272 = arith.constant 8 : u32;
+            v605 = arith.mod v603, v1272 : u32;
+            hir.assertz v605 #[code = 250];
+            v606 = hir.int_to_ptr v603 : ptr<byte, i64>;
+            hir.store v606, v602;
+            v607 = hir.load_local  : i32 #[local = lv1];
+            v1271 = arith.constant 16 : i32;
+            v609 = arith.add v607, v1271 : i32 #[overflow = wrapping];
+            v610 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v611 = hir.bitcast v610 : ptr<byte, i32>;
+            hir.store v611, v609;
+            builtin.ret ;
         };
 
-        private builtin.function @<alloc::alloc::Global>::alloc_impl(v544: i32, v545: i32, v546: i32, v547: i32) {
-        ^block68(v544: i32, v545: i32, v546: i32, v547: i32):
-            v1122 = arith.constant 0 : i32;
-            v548 = arith.constant 0 : i32;
-            v549 = arith.eq v546, v548 : i1;
-            v550 = arith.zext v549 : u32;
-            v551 = hir.bitcast v550 : i32;
-            v553 = arith.neq v551, v1122 : i1;
-            v1118 = scf.if v553 : i32 {
-            ^block149:
-                scf.yield v545;
+        private builtin.function @<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v612: i32) {
+        ^block64(v612: i32):
+            builtin.ret ;
+        };
+
+        private builtin.function @<alloc::alloc::Global>::alloc_impl(v613: i32, v614: i32, v615: i32, v616: i32) {
+        ^block66(v613: i32, v614: i32, v615: i32, v616: i32):
+            hir.store_local v613 #[local = lv0];
+            hir.store_local v614 #[local = lv1];
+            hir.store_local v615 #[local = lv2];
+            hir.store_local v616 #[local = lv3];
+            v617 = hir.load_local  : i32 #[local = lv2];
+            v1283 = arith.constant 0 : i32;
+            v1278 = arith.constant 0 : i32;
+            v619 = arith.eq v617, v1278 : i1;
+            v620 = arith.zext v619 : u32;
+            v621 = hir.bitcast v620 : i32;
+            v623 = arith.neq v621, v1283 : i1;
+            scf.if v623{
+            ^block147:
+                scf.yield ;
             } else {
-            ^block71:
+            ^block69:
                 hir.exec @miden:base/note-script@1.0.0/p2id/__rustc::__rust_no_alloc_shim_is_unstable_v2()
-                v1121 = arith.constant 0 : i32;
-                v555 = arith.neq v547, v1121 : i1;
-                v1117 = scf.if v555 : i32 {
-                ^block72:
-                    v557 = hir.exec @miden:base/note-script@1.0.0/p2id/__rustc::__rust_alloc_zeroed(v546, v545) : i32
-                    scf.yield v557;
+                v624 = hir.load_local  : i32 #[local = lv3];
+                v1282 = arith.constant 0 : i32;
+                v626 = arith.neq v624, v1282 : i1;
+                scf.if v626{
+                ^block70:
+                    v630 = hir.load_local  : i32 #[local = lv2];
+                    v631 = hir.load_local  : i32 #[local = lv1];
+                    v632 = hir.exec @miden:base/note-script@1.0.0/p2id/__rustc::__rust_alloc_zeroed(v630, v631) : i32
+                    hir.store_local v632 #[local = lv1];
+                    scf.yield ;
                 } else {
-                ^block73:
-                    v556 = hir.exec @miden:base/note-script@1.0.0/p2id/__rustc::__rust_alloc(v546, v545) : i32
-                    scf.yield v556;
+                ^block71:
+                    v627 = hir.load_local  : i32 #[local = lv2];
+                    v628 = hir.load_local  : i32 #[local = lv1];
+                    v629 = hir.exec @miden:base/note-script@1.0.0/p2id/__rustc::__rust_alloc(v627, v628) : i32
+                    hir.store_local v629 #[local = lv1];
+                    scf.yield ;
                 };
-                scf.yield v1117;
+                scf.yield ;
             };
-            v561 = arith.constant 4 : u32;
-            v560 = hir.bitcast v544 : u32;
-            v562 = arith.add v560, v561 : u32 #[overflow = checked];
-            v1120 = arith.constant 4 : u32;
-            v564 = arith.mod v562, v1120 : u32;
-            hir.assertz v564 #[code = 250];
-            v565 = hir.int_to_ptr v562 : ptr<byte, i32>;
-            hir.store v565, v546;
-            v567 = hir.bitcast v544 : u32;
-            v1119 = arith.constant 4 : u32;
-            v569 = arith.mod v567, v1119 : u32;
-            hir.assertz v569 #[code = 250];
-            v570 = hir.int_to_ptr v567 : ptr<byte, i32>;
-            hir.store v570, v1118;
+            v633 = hir.load_local  : i32 #[local = lv0];
+            v634 = hir.load_local  : i32 #[local = lv2];
+            v1273 = arith.constant 4 : u32;
+            v635 = hir.bitcast v633 : u32;
+            v637 = arith.add v635, v1273 : u32 #[overflow = checked];
+            v1281 = arith.constant 4 : u32;
+            v639 = arith.mod v637, v1281 : u32;
+            hir.assertz v639 #[code = 250];
+            v640 = hir.int_to_ptr v637 : ptr<byte, i32>;
+            hir.store v640, v634;
+            v641 = hir.load_local  : i32 #[local = lv0];
+            v642 = hir.load_local  : i32 #[local = lv1];
+            v643 = hir.bitcast v641 : u32;
+            v1280 = arith.constant 4 : u32;
+            v645 = arith.mod v643, v1280 : u32;
+            hir.assertz v645 #[code = 250];
+            v646 = hir.int_to_ptr v643 : ptr<byte, i32>;
+            hir.store v646, v642;
             builtin.ret ;
         };
 
-        private builtin.function @<alloc::raw_vec::RawVecInner>::deallocate(v571: i32, v572: i32, v573: i32) {
-        ^block74(v571: i32, v572: i32, v573: i32):
-            v575 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v576 = hir.bitcast v575 : ptr<byte, i32>;
-            v577 = hir.load v576 : i32;
-            v578 = arith.constant 16 : i32;
-            v579 = arith.sub v577, v578 : i32 #[overflow = wrapping];
-            v580 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v581 = hir.bitcast v580 : ptr<byte, i32>;
-            hir.store v581, v579;
-            v582 = arith.constant 4 : i32;
-            v583 = arith.add v579, v582 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::current_memory(v583, v571, v572, v573)
-            v585 = arith.constant 8 : u32;
-            v584 = hir.bitcast v579 : u32;
-            v586 = arith.add v584, v585 : u32 #[overflow = checked];
-            v587 = arith.constant 4 : u32;
-            v588 = arith.mod v586, v587 : u32;
-            hir.assertz v588 #[code = 250];
-            v589 = hir.int_to_ptr v586 : ptr<byte, i32>;
-            v590 = hir.load v589 : i32;
-            v1129 = arith.constant 0 : i32;
-            v574 = arith.constant 0 : i32;
-            v592 = arith.eq v590, v574 : i1;
-            v593 = arith.zext v592 : u32;
-            v594 = hir.bitcast v593 : i32;
-            v596 = arith.neq v594, v1129 : i1;
-            scf.if v596{
-            ^block152:
+        private builtin.function @<alloc::raw_vec::RawVecInner>::deallocate(v647: i32, v648: i32, v649: i32) {
+        ^block72(v647: i32, v648: i32, v649: i32):
+            hir.store_local v649 #[local = lv2];
+            v650 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v651 = hir.bitcast v650 : ptr<byte, i32>;
+            v652 = hir.load v651 : i32;
+            v1289 = arith.constant 16 : i32;
+            v654 = arith.sub v652, v1289 : i32 #[overflow = wrapping];
+            hir.store_local v654 #[local = lv3];
+            v655 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v656 = hir.bitcast v655 : ptr<byte, i32>;
+            hir.store v656, v654;
+            v657 = hir.load_local  : i32 #[local = lv3];
+            v662 = hir.load_local  : i32 #[local = lv2];
+            v1288 = arith.constant 4 : i32;
+            v659 = arith.add v657, v1288 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::current_memory(v659, v647, v648, v662)
+            v663 = hir.load_local  : i32 #[local = lv3];
+            v1287 = arith.constant 8 : u32;
+            v664 = hir.bitcast v663 : u32;
+            v666 = arith.add v664, v1287 : u32 #[overflow = checked];
+            v1286 = arith.constant 4 : u32;
+            v668 = arith.mod v666, v1286 : u32;
+            hir.assertz v668 #[code = 250];
+            v669 = hir.int_to_ptr v666 : ptr<byte, i32>;
+            v670 = hir.load v669 : i32;
+            hir.store_local v670 #[local = lv2];
+            v1300 = arith.constant 0 : i32;
+            v1294 = arith.constant 0 : i32;
+            v672 = arith.eq v670, v1294 : i1;
+            v673 = arith.zext v672 : u32;
+            v674 = hir.bitcast v673 : i32;
+            v676 = arith.neq v674, v1300 : i1;
+            scf.if v676{
+            ^block150:
                 scf.yield ;
             } else {
-            ^block77:
-                v1128 = arith.constant 4 : u32;
-                v597 = hir.bitcast v579 : u32;
-                v599 = arith.add v597, v1128 : u32 #[overflow = checked];
-                v1127 = arith.constant 4 : u32;
-                v601 = arith.mod v599, v1127 : u32;
-                hir.assertz v601 #[code = 250];
-                v602 = hir.int_to_ptr v599 : ptr<byte, i32>;
-                v603 = hir.load v602 : i32;
-                v605 = arith.constant 12 : u32;
-                v604 = hir.bitcast v579 : u32;
-                v606 = arith.add v604, v605 : u32 #[overflow = checked];
-                v1126 = arith.constant 4 : u32;
-                v608 = arith.mod v606, v1126 : u32;
-                hir.assertz v608 #[code = 250];
-                v609 = hir.int_to_ptr v606 : ptr<byte, i32>;
-                v610 = hir.load v609 : i32;
-                hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::alloc::Global as core::alloc::Allocator>::deallocate(v603, v590, v610)
+            ^block75:
+                v677 = hir.load_local  : i32 #[local = lv3];
+                v1299 = arith.constant 4 : u32;
+                v678 = hir.bitcast v677 : u32;
+                v680 = arith.add v678, v1299 : u32 #[overflow = checked];
+                v1298 = arith.constant 4 : u32;
+                v682 = arith.mod v680, v1298 : u32;
+                hir.assertz v682 #[code = 250];
+                v683 = hir.int_to_ptr v680 : ptr<byte, i32>;
+                v684 = hir.load v683 : i32;
+                v685 = hir.load_local  : i32 #[local = lv2];
+                v686 = hir.load_local  : i32 #[local = lv3];
+                v1284 = arith.constant 12 : u32;
+                v687 = hir.bitcast v686 : u32;
+                v689 = arith.add v687, v1284 : u32 #[overflow = checked];
+                v1297 = arith.constant 4 : u32;
+                v691 = arith.mod v689, v1297 : u32;
+                hir.assertz v691 #[code = 250];
+                v692 = hir.int_to_ptr v689 : ptr<byte, i32>;
+                v693 = hir.load v692 : i32;
+                hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::alloc::Global as core::alloc::Allocator>::deallocate(v684, v685, v693)
                 scf.yield ;
             };
-            v1125 = arith.constant 16 : i32;
-            v613 = arith.add v579, v1125 : i32 #[overflow = wrapping];
-            v614 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v615 = hir.bitcast v614 : ptr<byte, i32>;
-            hir.store v615, v613;
+            v694 = hir.load_local  : i32 #[local = lv3];
+            v1296 = arith.constant 16 : i32;
+            v696 = arith.add v694, v1296 : i32 #[overflow = wrapping];
+            v697 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v698 = hir.bitcast v697 : ptr<byte, i32>;
+            hir.store v698, v696;
             builtin.ret ;
         };
 
-        private builtin.function @<alloc::raw_vec::RawVecInner>::current_memory(v616: i32, v617: i32, v618: i32, v619: i32) {
-        ^block78(v616: i32, v617: i32, v618: i32, v619: i32):
-            v1155 = arith.constant 0 : i32;
-            v620 = arith.constant 0 : i32;
-            v624 = arith.eq v619, v620 : i1;
-            v625 = arith.zext v624 : u32;
-            v626 = hir.bitcast v625 : i32;
-            v628 = arith.neq v626, v1155 : i1;
-            v1142, v1143 = scf.if v628 : i32, i32 {
-            ^block155:
-                v1154 = arith.constant 0 : i32;
-                v622 = arith.constant 4 : i32;
-                scf.yield v622, v1154;
+        private builtin.function @<alloc::raw_vec::RawVecInner>::current_memory(v699: i32, v700: i32, v701: i32, v702: i32) {
+        ^block76(v699: i32, v700: i32, v701: i32, v702: i32):
+            hir.store_local v699 #[local = lv0];
+            hir.store_local v700 #[local = lv1];
+            hir.store_local v701 #[local = lv2];
+            hir.store_local v702 #[local = lv3];
+            v1304 = arith.constant 0 : i32;
+            hir.store_local v1304 #[local = lv4];
+            v1303 = arith.constant 4 : i32;
+            hir.store_local v1303 #[local = lv5];
+            v705 = hir.load_local  : i32 #[local = lv3];
+            v1324 = arith.constant 0 : i32;
+            v1325 = arith.constant 0 : i32;
+            v707 = arith.eq v705, v1325 : i1;
+            v708 = arith.zext v707 : u32;
+            v709 = hir.bitcast v708 : i32;
+            v711 = arith.neq v709, v1324 : i1;
+            scf.if v711{
+            ^block153:
+                scf.yield ;
             } else {
-            ^block81:
-                v629 = hir.bitcast v617 : u32;
-                v664 = arith.constant 4 : u32;
-                v631 = arith.mod v629, v664 : u32;
-                hir.assertz v631 #[code = 250];
-                v632 = hir.int_to_ptr v629 : ptr<byte, i32>;
-                v633 = hir.load v632 : i32;
-                v1152 = arith.constant 0 : i32;
-                v1153 = arith.constant 0 : i32;
-                v635 = arith.eq v633, v1153 : i1;
-                v636 = arith.zext v635 : u32;
-                v637 = hir.bitcast v636 : i32;
-                v639 = arith.neq v637, v1152 : i1;
-                v1140 = scf.if v639 : i32 {
-                ^block154:
-                    v1151 = arith.constant 0 : i32;
-                    scf.yield v1151;
+            ^block79:
+                v712 = hir.load_local  : i32 #[local = lv1];
+                v713 = hir.bitcast v712 : u32;
+                v1312 = arith.constant 4 : u32;
+                v715 = arith.mod v713, v1312 : u32;
+                hir.assertz v715 #[code = 250];
+                v716 = hir.int_to_ptr v713 : ptr<byte, i32>;
+                v717 = hir.load v716 : i32;
+                hir.store_local v717 #[local = lv6];
+                v1322 = arith.constant 0 : i32;
+                v1323 = arith.constant 0 : i32;
+                v719 = arith.eq v717, v1323 : i1;
+                v720 = arith.zext v719 : u32;
+                v721 = hir.bitcast v720 : i32;
+                v723 = arith.neq v721, v1322 : i1;
+                scf.if v723{
+                ^block152:
+                    scf.yield ;
                 } else {
-                ^block82:
-                    v1150 = arith.constant 4 : u32;
-                    v640 = hir.bitcast v616 : u32;
-                    v642 = arith.add v640, v1150 : u32 #[overflow = checked];
-                    v1149 = arith.constant 4 : u32;
-                    v644 = arith.mod v642, v1149 : u32;
-                    hir.assertz v644 #[code = 250];
-                    v645 = hir.int_to_ptr v642 : ptr<byte, i32>;
-                    hir.store v645, v618;
-                    v1148 = arith.constant 4 : u32;
-                    v646 = hir.bitcast v617 : u32;
-                    v648 = arith.add v646, v1148 : u32 #[overflow = checked];
-                    v1147 = arith.constant 4 : u32;
-                    v650 = arith.mod v648, v1147 : u32;
-                    hir.assertz v650 #[code = 250];
-                    v651 = hir.int_to_ptr v648 : ptr<byte, i32>;
-                    v652 = hir.load v651 : i32;
-                    v653 = hir.bitcast v616 : u32;
-                    v1146 = arith.constant 4 : u32;
-                    v655 = arith.mod v653, v1146 : u32;
-                    hir.assertz v655 #[code = 250];
-                    v656 = hir.int_to_ptr v653 : ptr<byte, i32>;
-                    hir.store v656, v652;
-                    v657 = arith.mul v633, v619 : i32 #[overflow = wrapping];
-                    scf.yield v657;
+                ^block80:
+                    v724 = hir.load_local  : i32 #[local = lv0];
+                    v725 = hir.load_local  : i32 #[local = lv2];
+                    v1321 = arith.constant 4 : u32;
+                    v726 = hir.bitcast v724 : u32;
+                    v728 = arith.add v726, v1321 : u32 #[overflow = checked];
+                    v1320 = arith.constant 4 : u32;
+                    v730 = arith.mod v728, v1320 : u32;
+                    hir.assertz v730 #[code = 250];
+                    v731 = hir.int_to_ptr v728 : ptr<byte, i32>;
+                    hir.store v731, v725;
+                    v732 = hir.load_local  : i32 #[local = lv0];
+                    v733 = hir.load_local  : i32 #[local = lv1];
+                    v1319 = arith.constant 4 : u32;
+                    v734 = hir.bitcast v733 : u32;
+                    v736 = arith.add v734, v1319 : u32 #[overflow = checked];
+                    v1318 = arith.constant 4 : u32;
+                    v738 = arith.mod v736, v1318 : u32;
+                    hir.assertz v738 #[code = 250];
+                    v739 = hir.int_to_ptr v736 : ptr<byte, i32>;
+                    v740 = hir.load v739 : i32;
+                    v741 = hir.bitcast v732 : u32;
+                    v1317 = arith.constant 4 : u32;
+                    v743 = arith.mod v741, v1317 : u32;
+                    hir.assertz v743 #[code = 250];
+                    v744 = hir.int_to_ptr v741 : ptr<byte, i32>;
+                    hir.store v744, v740;
+                    v745 = hir.load_local  : i32 #[local = lv6];
+                    v746 = hir.load_local  : i32 #[local = lv3];
+                    v747 = arith.mul v745, v746 : i32 #[overflow = wrapping];
+                    hir.store_local v747 #[local = lv4];
+                    v1301 = arith.constant 8 : i32;
+                    hir.store_local v1301 #[local = lv5];
+                    scf.yield ;
                 };
-                v658 = arith.constant 8 : i32;
-                v1145 = arith.constant 4 : i32;
-                v1141 = cf.select v639, v1145, v658 : i32;
-                scf.yield v1141, v1140;
-            };
-            v661 = arith.add v616, v1142 : i32 #[overflow = wrapping];
-            v663 = hir.bitcast v661 : u32;
-            v1144 = arith.constant 4 : u32;
-            v665 = arith.mod v663, v1144 : u32;
-            hir.assertz v665 #[code = 250];
-            v666 = hir.int_to_ptr v663 : ptr<byte, i32>;
-            hir.store v666, v1143;
-            builtin.ret ;
-        };
-
-        private builtin.function @<alloc::alloc::Global as core::alloc::Allocator>::deallocate(v667: i32, v668: i32, v669: i32) {
-        ^block83(v667: i32, v668: i32, v669: i32):
-            v1157 = arith.constant 0 : i32;
-            v670 = arith.constant 0 : i32;
-            v671 = arith.eq v669, v670 : i1;
-            v672 = arith.zext v671 : u32;
-            v673 = hir.bitcast v672 : i32;
-            v675 = arith.neq v673, v1157 : i1;
-            scf.if v675{
-            ^block85:
-                scf.yield ;
-            } else {
-            ^block86:
-                hir.exec @miden:base/note-script@1.0.0/p2id/__rustc::__rust_dealloc(v667, v669, v668)
                 scf.yield ;
             };
+            v749 = hir.load_local  : i32 #[local = lv0];
+            v750 = hir.load_local  : i32 #[local = lv5];
+            v752 = hir.load_local  : i32 #[local = lv4];
+            v751 = arith.add v749, v750 : i32 #[overflow = wrapping];
+            v753 = hir.bitcast v751 : u32;
+            v1316 = arith.constant 4 : u32;
+            v755 = arith.mod v753, v1316 : u32;
+            hir.assertz v755 #[code = 250];
+            v756 = hir.int_to_ptr v753 : ptr<byte, i32>;
+            hir.store v756, v752;
             builtin.ret ;
         };
 
-        private builtin.function @<alloc::alloc::Global as core::alloc::Allocator>::allocate(v676: i32, v677: i32, v678: i32) {
-        ^block87(v676: i32, v677: i32, v678: i32):
-            v680 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v681 = hir.bitcast v680 : ptr<byte, i32>;
-            v682 = hir.load v681 : i32;
-            v683 = arith.constant 16 : i32;
-            v684 = arith.sub v682, v683 : i32 #[overflow = wrapping];
-            v685 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v686 = hir.bitcast v685 : ptr<byte, i32>;
-            hir.store v686, v684;
-            v679 = arith.constant 0 : i32;
-            v687 = arith.constant 8 : i32;
-            v688 = arith.add v684, v687 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::alloc::Global>::alloc_impl(v688, v677, v678, v679)
-            v691 = arith.constant 12 : u32;
-            v690 = hir.bitcast v684 : u32;
-            v692 = arith.add v690, v691 : u32 #[overflow = checked];
-            v693 = arith.constant 4 : u32;
-            v694 = arith.mod v692, v693 : u32;
-            hir.assertz v694 #[code = 250];
-            v695 = hir.int_to_ptr v692 : ptr<byte, i32>;
-            v696 = hir.load v695 : i32;
-            v698 = arith.constant 8 : u32;
-            v697 = hir.bitcast v684 : u32;
-            v699 = arith.add v697, v698 : u32 #[overflow = checked];
-            v1162 = arith.constant 4 : u32;
-            v701 = arith.mod v699, v1162 : u32;
-            hir.assertz v701 #[code = 250];
-            v702 = hir.int_to_ptr v699 : ptr<byte, i32>;
-            v703 = hir.load v702 : i32;
-            v704 = hir.bitcast v676 : u32;
-            v1161 = arith.constant 4 : u32;
-            v706 = arith.mod v704, v1161 : u32;
-            hir.assertz v706 #[code = 250];
-            v707 = hir.int_to_ptr v704 : ptr<byte, i32>;
-            hir.store v707, v703;
-            v1160 = arith.constant 4 : u32;
-            v708 = hir.bitcast v676 : u32;
-            v710 = arith.add v708, v1160 : u32 #[overflow = checked];
-            v1159 = arith.constant 4 : u32;
-            v712 = arith.mod v710, v1159 : u32;
-            hir.assertz v712 #[code = 250];
-            v713 = hir.int_to_ptr v710 : ptr<byte, i32>;
-            hir.store v713, v696;
-            v1158 = arith.constant 16 : i32;
-            v715 = arith.add v684, v1158 : i32 #[overflow = wrapping];
-            v716 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v717 = hir.bitcast v716 : ptr<byte, i32>;
-            hir.store v717, v715;
-            builtin.ret ;
-        };
-
-        private builtin.function @<alloc::raw_vec::RawVecInner>::try_allocate_in(v718: i32, v719: i32, v720: i32, v721: i32, v722: i32) {
-        ^block89(v718: i32, v719: i32, v720: i32, v721: i32, v722: i32):
-            v725 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v726 = hir.bitcast v725 : ptr<byte, i32>;
-            v727 = hir.load v726 : i32;
-            v728 = arith.constant 16 : i32;
-            v729 = arith.sub v727, v728 : i32 #[overflow = wrapping];
-            v730 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v731 = hir.bitcast v730 : ptr<byte, i32>;
-            hir.store v731, v729;
-            v741 = hir.bitcast v719 : u32;
-            v742 = arith.zext v741 : u64;
-            v743 = hir.bitcast v742 : i64;
-            v723 = arith.constant 0 : i32;
-            v736 = arith.sub v723, v721 : i32 #[overflow = wrapping];
-            v733 = arith.constant -1 : i32;
-            v732 = arith.add v721, v722 : i32 #[overflow = wrapping];
-            v734 = arith.add v732, v733 : i32 #[overflow = wrapping];
-            v737 = arith.band v734, v736 : i32;
-            v738 = hir.bitcast v737 : u32;
-            v739 = arith.zext v738 : u64;
-            v740 = hir.bitcast v739 : i64;
-            v744 = arith.mul v740, v743 : i64 #[overflow = wrapping];
-            v1265 = arith.constant 0 : i32;
-            v745 = arith.constant 32 : i64;
-            v747 = hir.cast v745 : u32;
-            v746 = hir.bitcast v744 : u64;
-            v748 = arith.shr v746, v747 : u64;
-            v749 = hir.bitcast v748 : i64;
-            v750 = arith.trunc v749 : i32;
-            v752 = arith.neq v750, v1265 : i1;
-            v1178, v1179, v1180, v1181, v1182, v1183 = scf.if v752 : i32, i32, i32, i32, i32, u32 {
-            ^block159:
-                v1163 = arith.constant 0 : u32;
-                v1170 = ub.poison i32 : i32;
-                scf.yield v718, v729, v1170, v1170, v1170, v1163;
+        private builtin.function @<alloc::alloc::Global as core::alloc::Allocator>::deallocate(v757: i32, v758: i32, v759: i32) {
+        ^block81(v757: i32, v758: i32, v759: i32):
+            hir.store_local v757 #[local = lv0];
+            hir.store_local v758 #[local = lv1];
+            hir.store_local v759 #[local = lv2];
+            v760 = hir.load_local  : i32 #[local = lv2];
+            v1329 = arith.constant 0 : i32;
+            v1327 = arith.constant 0 : i32;
+            v762 = arith.eq v760, v1327 : i1;
+            v763 = arith.zext v762 : u32;
+            v764 = hir.bitcast v763 : i32;
+            v766 = arith.neq v764, v1329 : i1;
+            scf.if v766{
+            ^block83:
+                scf.yield ;
             } else {
-            ^block94:
-                v753 = arith.trunc v744 : i32;
-                v1264 = arith.constant 0 : i32;
-                v754 = arith.constant -2147483648 : i32;
-                v755 = arith.sub v754, v721 : i32 #[overflow = wrapping];
-                v757 = hir.bitcast v755 : u32;
-                v756 = hir.bitcast v753 : u32;
-                v758 = arith.lte v756, v757 : i1;
-                v759 = arith.zext v758 : u32;
-                v760 = hir.bitcast v759 : i32;
-                v762 = arith.neq v760, v1264 : i1;
-                v1226 = scf.if v762 : i32 {
-                ^block92:
-                    v1263 = arith.constant 0 : i32;
-                    v773 = arith.neq v753, v1263 : i1;
-                    v1225 = scf.if v773 : i32 {
-                    ^block96:
-                        v1262 = arith.constant 0 : i32;
-                        v789 = arith.neq v720, v1262 : i1;
-                        v1224 = scf.if v789 : i32 {
+            ^block84:
+                v767 = hir.load_local  : i32 #[local = lv0];
+                v768 = hir.load_local  : i32 #[local = lv2];
+                v769 = hir.load_local  : i32 #[local = lv1];
+                hir.exec @miden:base/note-script@1.0.0/p2id/__rustc::__rust_dealloc(v767, v768, v769)
+                scf.yield ;
+            };
+            builtin.ret ;
+        };
+
+        private builtin.function @<alloc::alloc::Global as core::alloc::Allocator>::allocate(v770: i32, v771: i32, v772: i32) {
+        ^block85(v770: i32, v771: i32, v772: i32):
+            hir.store_local v770 #[local = lv0];
+            hir.store_local v772 #[local = lv2];
+            v773 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v774 = hir.bitcast v773 : ptr<byte, i32>;
+            v775 = hir.load v774 : i32;
+            v1335 = arith.constant 16 : i32;
+            v777 = arith.sub v775, v1335 : i32 #[overflow = wrapping];
+            hir.store_local v777 #[local = lv3];
+            v778 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v779 = hir.bitcast v778 : ptr<byte, i32>;
+            hir.store v779, v777;
+            v780 = hir.load_local  : i32 #[local = lv3];
+            v784 = hir.load_local  : i32 #[local = lv2];
+            v1333 = arith.constant 0 : i32;
+            v1334 = arith.constant 8 : i32;
+            v782 = arith.add v780, v1334 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::alloc::Global>::alloc_impl(v782, v771, v784, v1333)
+            v786 = hir.load_local  : i32 #[local = lv3];
+            v1332 = arith.constant 12 : u32;
+            v787 = hir.bitcast v786 : u32;
+            v789 = arith.add v787, v1332 : u32 #[overflow = checked];
+            v1331 = arith.constant 4 : u32;
+            v791 = arith.mod v789, v1331 : u32;
+            hir.assertz v791 #[code = 250];
+            v792 = hir.int_to_ptr v789 : ptr<byte, i32>;
+            v793 = hir.load v792 : i32;
+            hir.store_local v793 #[local = lv2];
+            v794 = hir.load_local  : i32 #[local = lv0];
+            v795 = hir.load_local  : i32 #[local = lv3];
+            v1330 = arith.constant 8 : u32;
+            v796 = hir.bitcast v795 : u32;
+            v798 = arith.add v796, v1330 : u32 #[overflow = checked];
+            v1345 = arith.constant 4 : u32;
+            v800 = arith.mod v798, v1345 : u32;
+            hir.assertz v800 #[code = 250];
+            v801 = hir.int_to_ptr v798 : ptr<byte, i32>;
+            v802 = hir.load v801 : i32;
+            v803 = hir.bitcast v794 : u32;
+            v1344 = arith.constant 4 : u32;
+            v805 = arith.mod v803, v1344 : u32;
+            hir.assertz v805 #[code = 250];
+            v806 = hir.int_to_ptr v803 : ptr<byte, i32>;
+            hir.store v806, v802;
+            v807 = hir.load_local  : i32 #[local = lv0];
+            v808 = hir.load_local  : i32 #[local = lv2];
+            v1343 = arith.constant 4 : u32;
+            v809 = hir.bitcast v807 : u32;
+            v811 = arith.add v809, v1343 : u32 #[overflow = checked];
+            v1342 = arith.constant 4 : u32;
+            v813 = arith.mod v811, v1342 : u32;
+            hir.assertz v813 #[code = 250];
+            v814 = hir.int_to_ptr v811 : ptr<byte, i32>;
+            hir.store v814, v808;
+            v815 = hir.load_local  : i32 #[local = lv3];
+            v1341 = arith.constant 16 : i32;
+            v817 = arith.add v815, v1341 : i32 #[overflow = wrapping];
+            v818 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v819 = hir.bitcast v818 : ptr<byte, i32>;
+            hir.store v819, v817;
+            builtin.ret ;
+        };
+
+        private builtin.function @<alloc::raw_vec::RawVecInner>::try_allocate_in(v820: i32, v821: i32, v822: i32, v823: i32, v824: i32) {
+        ^block87(v820: i32, v821: i32, v822: i32, v823: i32, v824: i32):
+            hir.store_local v820 #[local = lv0];
+            hir.store_local v821 #[local = lv1];
+            hir.store_local v822 #[local = lv2];
+            hir.store_local v823 #[local = lv3];
+            hir.store_local v824 #[local = lv4];
+            v825 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v826 = hir.bitcast v825 : ptr<byte, i32>;
+            v827 = hir.load v826 : i32;
+            v1354 = arith.constant 16 : i32;
+            v829 = arith.sub v827, v1354 : i32 #[overflow = wrapping];
+            hir.store_local v829 #[local = lv5];
+            v830 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v831 = hir.bitcast v830 : ptr<byte, i32>;
+            hir.store v831, v829;
+            v832 = hir.load_local  : i32 #[local = lv3];
+            v833 = hir.load_local  : i32 #[local = lv4];
+            v844 = hir.load_local  : i32 #[local = lv1];
+            v845 = hir.bitcast v844 : u32;
+            v846 = arith.zext v845 : u64;
+            v847 = hir.bitcast v846 : i64;
+            v1352 = arith.constant 0 : i32;
+            v839 = arith.sub v1352, v832 : i32 #[overflow = wrapping];
+            v1353 = arith.constant -1 : i32;
+            v834 = arith.add v832, v833 : i32 #[overflow = wrapping];
+            v836 = arith.add v834, v1353 : i32 #[overflow = wrapping];
+            v840 = arith.band v836, v839 : i32;
+            v841 = hir.bitcast v840 : u32;
+            v842 = arith.zext v841 : u64;
+            v843 = hir.bitcast v842 : i64;
+            v848 = arith.mul v843, v847 : i64 #[overflow = wrapping];
+            hir.store_local v848 #[local = lv6];
+            v1422 = arith.constant 0 : i32;
+            v1351 = arith.constant 32 : i64;
+            v851 = hir.cast v1351 : u32;
+            v850 = hir.bitcast v848 : u64;
+            v852 = arith.shr v850, v851 : u64;
+            v853 = hir.bitcast v852 : i64;
+            v854 = arith.trunc v853 : i32;
+            v856 = arith.neq v854, v1422 : i1;
+            v1387 = scf.if v856 : u32 {
+            ^block157:
+                v1383 = arith.constant 0 : u32;
+                scf.yield v1383;
+            } else {
+            ^block92:
+                v857 = hir.load_local  : i64 #[local = lv6];
+                v858 = arith.trunc v857 : i32;
+                hir.store_local v858 #[local = lv4];
+                v860 = hir.load_local  : i32 #[local = lv3];
+                v1421 = arith.constant 0 : i32;
+                v1348 = arith.constant -2147483648 : i32;
+                v861 = arith.sub v1348, v860 : i32 #[overflow = wrapping];
+                v863 = hir.bitcast v861 : u32;
+                v862 = hir.bitcast v858 : u32;
+                v864 = arith.lte v862, v863 : i1;
+                v865 = arith.zext v864 : u32;
+                v866 = hir.bitcast v865 : i32;
+                v868 = arith.neq v866, v1421 : i1;
+                scf.if v868{
+                ^block90:
+                    v878 = hir.load_local  : i32 #[local = lv4];
+                    v1420 = arith.constant 0 : i32;
+                    v880 = arith.neq v878, v1420 : i1;
+                    scf.if v880{
+                    ^block94:
+                        v898 = hir.load_local  : i32 #[local = lv2];
+                        v1419 = arith.constant 0 : i32;
+                        v900 = arith.neq v898, v1419 : i1;
+                        scf.if v900{
+                        ^block97:
+                            v914 = hir.load_local  : i32 #[local = lv5];
+                            v915 = hir.load_local  : i32 #[local = lv3];
+                            v916 = hir.load_local  : i32 #[local = lv4];
+                            v1368 = arith.constant 1 : i32;
+                            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::alloc::Global>::alloc_impl(v914, v915, v916, v1368)
+                            v918 = hir.load_local  : i32 #[local = lv5];
+                            v919 = hir.bitcast v918 : u32;
+                            v1367 = arith.constant 4 : u32;
+                            v921 = arith.mod v919, v1367 : u32;
+                            hir.assertz v921 #[code = 250];
+                            v922 = hir.int_to_ptr v919 : ptr<byte, i32>;
+                            v923 = hir.load v922 : i32;
+                            hir.store_local v923 #[local = lv2];
+                            scf.yield ;
+                        } else {
+                        ^block98:
+                            v901 = hir.load_local  : i32 #[local = lv5];
+                            v904 = hir.load_local  : i32 #[local = lv3];
+                            v905 = hir.load_local  : i32 #[local = lv4];
+                            v1346 = arith.constant 8 : i32;
+                            v903 = arith.add v901, v1346 : i32 #[overflow = wrapping];
+                            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::alloc::Global as core::alloc::Allocator>::allocate(v903, v904, v905)
+                            v906 = hir.load_local  : i32 #[local = lv5];
+                            v1366 = arith.constant 8 : u32;
+                            v907 = hir.bitcast v906 : u32;
+                            v909 = arith.add v907, v1366 : u32 #[overflow = checked];
+                            v1418 = arith.constant 4 : u32;
+                            v911 = arith.mod v909, v1418 : u32;
+                            hir.assertz v911 #[code = 250];
+                            v912 = hir.int_to_ptr v909 : ptr<byte, i32>;
+                            v913 = hir.load v912 : i32;
+                            hir.store_local v913 #[local = lv2];
+                            scf.yield ;
+                        };
+                        v924 = hir.load_local  : i32 #[local = lv2];
+                        v1417 = arith.constant 0 : i32;
+                        v926 = arith.neq v924, v1417 : i1;
+                        scf.if v926{
                         ^block99:
-                            v771 = arith.constant 1 : i32;
-                            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::alloc::Global>::alloc_impl(v729, v721, v753, v771)
-                            v800 = hir.bitcast v729 : u32;
-                            v841 = arith.constant 4 : u32;
-                            v802 = arith.mod v800, v841 : u32;
-                            hir.assertz v802 #[code = 250];
-                            v803 = hir.int_to_ptr v800 : ptr<byte, i32>;
-                            v804 = hir.load v803 : i32;
-                            scf.yield v804;
+                            v944 = hir.load_local  : i32 #[local = lv0];
+                            v945 = hir.load_local  : i32 #[local = lv2];
+                            v1416 = arith.constant 8 : u32;
+                            v946 = hir.bitcast v944 : u32;
+                            v948 = arith.add v946, v1416 : u32 #[overflow = checked];
+                            v1415 = arith.constant 4 : u32;
+                            v950 = arith.mod v948, v1415 : u32;
+                            hir.assertz v950 #[code = 250];
+                            v951 = hir.int_to_ptr v948 : ptr<byte, i32>;
+                            hir.store v951, v945;
+                            v952 = hir.load_local  : i32 #[local = lv0];
+                            v953 = hir.load_local  : i32 #[local = lv1];
+                            v1414 = arith.constant 4 : u32;
+                            v954 = hir.bitcast v952 : u32;
+                            v956 = arith.add v954, v1414 : u32 #[overflow = checked];
+                            v1413 = arith.constant 4 : u32;
+                            v958 = arith.mod v956, v1413 : u32;
+                            hir.assertz v958 #[code = 250];
+                            v959 = hir.int_to_ptr v956 : ptr<byte, i32>;
+                            hir.store v959, v953;
+                            v1412 = arith.constant 0 : i32;
+                            hir.store_local v1412 #[local = lv3];
+                            scf.yield ;
                         } else {
                         ^block100:
-                            v790 = arith.constant 8 : i32;
-                            v791 = arith.add v729, v790 : i32 #[overflow = wrapping];
-                            hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::alloc::Global as core::alloc::Allocator>::allocate(v791, v721, v753)
-                            v775 = arith.constant 8 : u32;
-                            v792 = hir.bitcast v729 : u32;
-                            v794 = arith.add v792, v775 : u32 #[overflow = checked];
-                            v1261 = arith.constant 4 : u32;
-                            v796 = arith.mod v794, v1261 : u32;
-                            hir.assertz v796 #[code = 250];
-                            v797 = hir.int_to_ptr v794 : ptr<byte, i32>;
-                            v798 = hir.load v797 : i32;
-                            scf.yield v798;
-                        };
-                        v1260 = arith.constant 0 : i32;
-                        v807 = arith.neq v1224, v1260 : i1;
-                        scf.if v807{
-                        ^block101:
-                            v1259 = arith.constant 8 : u32;
-                            v824 = hir.bitcast v718 : u32;
-                            v826 = arith.add v824, v1259 : u32 #[overflow = checked];
-                            v1258 = arith.constant 4 : u32;
-                            v828 = arith.mod v826, v1258 : u32;
-                            hir.assertz v828 #[code = 250];
-                            v829 = hir.int_to_ptr v826 : ptr<byte, i32>;
-                            hir.store v829, v1224;
-                            v1257 = arith.constant 4 : u32;
-                            v831 = hir.bitcast v718 : u32;
-                            v833 = arith.add v831, v1257 : u32 #[overflow = checked];
-                            v1256 = arith.constant 4 : u32;
-                            v835 = arith.mod v833, v1256 : u32;
-                            hir.assertz v835 #[code = 250];
-                            v836 = hir.int_to_ptr v833 : ptr<byte, i32>;
-                            hir.store v836, v719;
-                            scf.yield ;
-                        } else {
-                        ^block102:
-                            v1255 = arith.constant 8 : u32;
-                            v810 = hir.bitcast v718 : u32;
-                            v812 = arith.add v810, v1255 : u32 #[overflow = checked];
-                            v1254 = arith.constant 4 : u32;
-                            v814 = arith.mod v812, v1254 : u32;
-                            hir.assertz v814 #[code = 250];
-                            v815 = hir.int_to_ptr v812 : ptr<byte, i32>;
-                            hir.store v815, v753;
-                            v1253 = arith.constant 4 : u32;
-                            v817 = hir.bitcast v718 : u32;
-                            v819 = arith.add v817, v1253 : u32 #[overflow = checked];
-                            v1252 = arith.constant 4 : u32;
-                            v821 = arith.mod v819, v1252 : u32;
-                            hir.assertz v821 #[code = 250];
-                            v822 = hir.int_to_ptr v819 : ptr<byte, i32>;
-                            hir.store v822, v721;
+                            v927 = hir.load_local  : i32 #[local = lv0];
+                            v928 = hir.load_local  : i32 #[local = lv4];
+                            v1411 = arith.constant 8 : u32;
+                            v929 = hir.bitcast v927 : u32;
+                            v931 = arith.add v929, v1411 : u32 #[overflow = checked];
+                            v1410 = arith.constant 4 : u32;
+                            v933 = arith.mod v931, v1410 : u32;
+                            hir.assertz v933 #[code = 250];
+                            v934 = hir.int_to_ptr v931 : ptr<byte, i32>;
+                            hir.store v934, v928;
+                            v935 = hir.load_local  : i32 #[local = lv0];
+                            v936 = hir.load_local  : i32 #[local = lv3];
+                            v1409 = arith.constant 4 : u32;
+                            v937 = hir.bitcast v935 : u32;
+                            v939 = arith.add v937, v1409 : u32 #[overflow = checked];
+                            v1408 = arith.constant 4 : u32;
+                            v941 = arith.mod v939, v1408 : u32;
+                            hir.assertz v941 #[code = 250];
+                            v942 = hir.int_to_ptr v939 : ptr<byte, i32>;
+                            hir.store v942, v936;
+                            v1407 = arith.constant 1 : i32;
+                            hir.store_local v1407 #[local = lv3];
                             scf.yield ;
                         };
-                        v1250 = arith.constant 1 : i32;
-                        v1251 = arith.constant 0 : i32;
-                        v1223 = cf.select v807, v1251, v1250 : i32;
-                        scf.yield v1223;
+                        scf.yield ;
                     } else {
-                    ^block97:
-                        v1249 = arith.constant 8 : u32;
-                        v774 = hir.bitcast v718 : u32;
-                        v776 = arith.add v774, v1249 : u32 #[overflow = checked];
-                        v1248 = arith.constant 4 : u32;
-                        v778 = arith.mod v776, v1248 : u32;
-                        hir.assertz v778 #[code = 250];
-                        v779 = hir.int_to_ptr v776 : ptr<byte, i32>;
-                        hir.store v779, v721;
-                        v1247 = arith.constant 4 : u32;
-                        v782 = hir.bitcast v718 : u32;
-                        v784 = arith.add v782, v1247 : u32 #[overflow = checked];
-                        v1246 = arith.constant 4 : u32;
-                        v786 = arith.mod v784, v1246 : u32;
-                        hir.assertz v786 #[code = 250];
-                        v1245 = arith.constant 0 : i32;
-                        v787 = hir.int_to_ptr v784 : ptr<byte, i32>;
-                        hir.store v787, v1245;
-                        v1244 = arith.constant 0 : i32;
-                        scf.yield v1244;
+                    ^block95:
+                        v881 = hir.load_local  : i32 #[local = lv0];
+                        v882 = hir.load_local  : i32 #[local = lv3];
+                        v1406 = arith.constant 8 : u32;
+                        v883 = hir.bitcast v881 : u32;
+                        v885 = arith.add v883, v1406 : u32 #[overflow = checked];
+                        v1405 = arith.constant 4 : u32;
+                        v887 = arith.mod v885, v1405 : u32;
+                        hir.assertz v887 #[code = 250];
+                        v888 = hir.int_to_ptr v885 : ptr<byte, i32>;
+                        hir.store v888, v882;
+                        v1404 = arith.constant 0 : i32;
+                        hir.store_local v1404 #[local = lv3];
+                        v890 = hir.load_local  : i32 #[local = lv0];
+                        v1403 = arith.constant 4 : u32;
+                        v892 = hir.bitcast v890 : u32;
+                        v894 = arith.add v892, v1403 : u32 #[overflow = checked];
+                        v1402 = arith.constant 4 : u32;
+                        v896 = arith.mod v894, v1402 : u32;
+                        hir.assertz v896 #[code = 250];
+                        v1401 = arith.constant 0 : i32;
+                        v897 = hir.int_to_ptr v894 : ptr<byte, i32>;
+                        hir.store v897, v1401;
+                        scf.yield ;
                     };
-                    scf.yield v1225;
+                    scf.yield ;
                 } else {
-                ^block95:
-                    v1243 = ub.poison i32 : i32;
-                    scf.yield v1243;
+                ^block93:
+                    scf.yield ;
                 };
-                v1238 = arith.constant 0 : u32;
-                v1171 = arith.constant 1 : u32;
-                v1231 = cf.select v762, v1171, v1238 : u32;
-                v1239 = ub.poison i32 : i32;
-                v1230 = cf.select v762, v729, v1239 : i32;
-                v1240 = ub.poison i32 : i32;
-                v1229 = cf.select v762, v718, v1240 : i32;
-                v1241 = ub.poison i32 : i32;
-                v1228 = cf.select v762, v1241, v729 : i32;
-                v1242 = ub.poison i32 : i32;
-                v1227 = cf.select v762, v1242, v718 : i32;
-                scf.yield v1227, v1228, v1229, v1226, v1230, v1231;
+                v1400 = arith.constant 0 : u32;
+                v1385 = arith.constant 1 : u32;
+                v1393 = cf.select v868, v1385, v1400 : u32;
+                scf.yield v1393;
             };
-            v1184, v1185, v1186 = scf.index_switch v1183 : i32, i32, i32 
+            scf.index_switch v1387
             case 0 {
-            ^block93:
-                v1237 = arith.constant 4 : u32;
-                v765 = hir.bitcast v1178 : u32;
-                v767 = arith.add v765, v1237 : u32 #[overflow = checked];
-                v1236 = arith.constant 4 : u32;
-                v769 = arith.mod v767, v1236 : u32;
-                hir.assertz v769 #[code = 250];
-                v1235 = arith.constant 0 : i32;
-                v770 = hir.int_to_ptr v767 : ptr<byte, i32>;
-                hir.store v770, v1235;
-                v1234 = arith.constant 1 : i32;
-                scf.yield v1178, v1234, v1179;
+            ^block91:
+                v869 = hir.load_local  : i32 #[local = lv0];
+                v1399 = arith.constant 4 : u32;
+                v871 = hir.bitcast v869 : u32;
+                v873 = arith.add v871, v1399 : u32 #[overflow = checked];
+                v1398 = arith.constant 4 : u32;
+                v875 = arith.mod v873, v1398 : u32;
+                hir.assertz v875 #[code = 250];
+                v1397 = arith.constant 0 : i32;
+                v876 = hir.int_to_ptr v873 : ptr<byte, i32>;
+                hir.store v876, v1397;
+                v1396 = arith.constant 1 : i32;
+                hir.store_local v1396 #[local = lv3];
+                scf.yield ;
             }
             default {
-            ^block163:
-                scf.yield v1180, v1181, v1182;
+            ^block161:
+                scf.yield ;
             };
-            v840 = hir.bitcast v1184 : u32;
-            v1233 = arith.constant 4 : u32;
-            v842 = arith.mod v840, v1233 : u32;
-            hir.assertz v842 #[code = 250];
-            v843 = hir.int_to_ptr v840 : ptr<byte, i32>;
-            hir.store v843, v1185;
-            v1232 = arith.constant 16 : i32;
-            v848 = arith.add v1186, v1232 : i32 #[overflow = wrapping];
-            v849 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
-            v850 = hir.bitcast v849 : ptr<byte, i32>;
-            hir.store v850, v848;
+            v961 = hir.load_local  : i32 #[local = lv0];
+            v962 = hir.load_local  : i32 #[local = lv3];
+            v963 = hir.bitcast v961 : u32;
+            v1395 = arith.constant 4 : u32;
+            v965 = arith.mod v963, v1395 : u32;
+            hir.assertz v965 #[code = 250];
+            v966 = hir.int_to_ptr v963 : ptr<byte, i32>;
+            hir.store v966, v962;
+            v967 = hir.load_local  : i32 #[local = lv5];
+            v1394 = arith.constant 16 : i32;
+            v969 = arith.add v967, v1394 : i32 #[overflow = wrapping];
+            v970 = builtin.global_symbol @miden:base/note-script@1.0.0/p2id/__stack_pointer : ptr<byte, u8>
+            v971 = hir.bitcast v970 : ptr<byte, i32>;
+            hir.store v971, v969;
             builtin.ret ;
         };
 
-        private builtin.function @alloc::raw_vec::handle_error(v851: i32, v852: i32) {
-        ^block103(v851: i32, v852: i32):
+        private builtin.function @alloc::raw_vec::handle_error(v972: i32, v973: i32) {
+        ^block101(v972: i32, v973: i32):
             ub.unreachable ;
         };
 
-        private builtin.function @<core::ptr::alignment::Alignment>::max(v853: i32, v854: i32) -> i32 {
-        ^block105(v853: i32, v854: i32):
-            v861 = arith.constant 0 : i32;
-            v857 = hir.bitcast v854 : u32;
-            v856 = hir.bitcast v853 : u32;
-            v858 = arith.gt v856, v857 : i1;
-            v859 = arith.zext v858 : u32;
-            v860 = hir.bitcast v859 : i32;
-            v862 = arith.neq v860, v861 : i1;
-            v863 = cf.select v862, v853, v854 : i32;
-            builtin.ret v863;
+        private builtin.function @<core::ptr::alignment::Alignment>::max(v974: i32, v975: i32) -> i32 {
+        ^block103(v974: i32, v975: i32):
+            v1423 = arith.constant 0 : i32;
+            v982 = hir.bitcast v975 : u32;
+            v981 = hir.bitcast v974 : u32;
+            v983 = arith.gt v981, v982 : i1;
+            v984 = arith.zext v983 : u32;
+            v985 = hir.bitcast v984 : i32;
+            v987 = arith.neq v985, v1423 : i1;
+            v988 = cf.select v987, v974, v975 : i32;
+            builtin.ret v988;
         };
 
-        private builtin.function @miden::active_account::get_id(v864: i32) {
-        ^block107(v864: i32):
-            v865, v866 = hir.exec @miden/active_account/get_id() : felt, felt
-            v867 = hir.bitcast v864 : u32;
-            v868 = hir.int_to_ptr v867 : ptr<byte, felt>;
-            hir.store v868, v865;
-            v869 = arith.constant 4 : u32;
-            v870 = arith.add v867, v869 : u32 #[overflow = checked];
-            v871 = hir.int_to_ptr v870 : ptr<byte, felt>;
-            hir.store v871, v866;
+        private builtin.function @miden::protocol::active_account::get_id(v989: i32) {
+        ^block105(v989: i32):
+            v990, v991 = hir.exec @miden/protocol/active_account/get_id() : felt, felt
+            v992 = hir.bitcast v989 : u32;
+            v993 = hir.int_to_ptr v992 : ptr<byte, felt>;
+            hir.store v993, v990;
+            v1424 = arith.constant 4 : u32;
+            v995 = arith.add v992, v1424 : u32 #[overflow = checked];
+            v996 = hir.int_to_ptr v995 : ptr<byte, felt>;
+            hir.store v996, v991;
             builtin.ret ;
         };
 
-        private builtin.function @miden::active_note::get_assets(v872: i32) -> i32 {
-        ^block111(v872: i32):
-            v873, v874 = hir.exec @miden/active_note/get_assets(v872) : i32, i32
-            builtin.ret v873;
+        private builtin.function @miden::protocol::active_note::get_assets(v997: i32) -> i32 {
+        ^block110(v997: i32):
+            v998, v999 = hir.exec @miden/protocol/active_note/get_assets(v997) : i32, i32
+            builtin.ret v998;
         };
 
-        private builtin.function @miden::active_note::get_inputs(v876: i32) -> i32 {
-        ^block114(v876: i32):
-            v877, v878 = hir.exec @miden/active_note/get_inputs(v876) : i32, i32
-            builtin.ret v877;
+        private builtin.function @miden::protocol::active_note::get_inputs(v1001: i32) -> i32 {
+        ^block113(v1001: i32):
+            v1002, v1003 = hir.exec @miden/protocol/active_note/get_inputs(v1001) : i32, i32
+            builtin.ret v1002;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -1286,9 +1493,9 @@ builtin.component miden:base/note-script@1.0.0 {
         builtin.segment @1048576 = 0x000000010000000100000001;
     };
 
-    public builtin.function @run(v880: felt, v881: felt, v882: felt, v883: felt) {
-    ^block116(v880: felt, v881: felt, v882: felt, v883: felt):
-        hir.exec @miden:base/note-script@1.0.0/p2id/miden:base/note-script@1.0.0#run(v880, v881, v882, v883)
+    public builtin.function @run(v1005: felt, v1006: felt, v1007: felt, v1008: felt) {
+    ^block115(v1005: felt, v1006: felt, v1007: felt, v1008: felt):
+        hir.exec @miden:base/note-script@1.0.0/p2id/miden:base/note-script@1.0.0#run(v1005, v1006, v1007, v1008)
         builtin.ret ;
     };
 };

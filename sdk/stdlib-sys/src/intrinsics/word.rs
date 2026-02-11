@@ -15,12 +15,33 @@ impl Word {
         }
     }
 
+    /// Converts each of the `values` to `Felt`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a value is larger than `Felt::M`.
+    #[inline(always)]
+    pub fn from_u64_unchecked(a: u64, b: u64, c: u64, d: u64) -> Self {
+        Self {
+            inner: (
+                Felt::from_u64_unchecked(a),
+                Felt::from_u64_unchecked(b),
+                Felt::from_u64_unchecked(c),
+                Felt::from_u64_unchecked(d),
+            ),
+        }
+    }
+
+    #[inline(always)]
     pub fn reverse(&self) -> Word {
-        // This is workaround for the https://github.com/0xMiden/compiler/issues/596 to avoid
-        // i64.rotl op in the compiled Wasm
-        let mut arr: [Felt; 4] = self.into();
-        arr.reverse();
-        arr.into()
+        Word {
+            inner: (self.inner.3, self.inner.2, self.inner.1, self.inner.0),
+        }
+    }
+}
+impl From<(Felt, Felt, Felt, Felt)> for Word {
+    fn from(word: (Felt, Felt, Felt, Felt)) -> Self {
+        Self { inner: word }
     }
 }
 impl From<[Felt; 4]> for Word {
@@ -28,6 +49,12 @@ impl From<[Felt; 4]> for Word {
         Self {
             inner: (word[0], word[1], word[2], word[3]),
         }
+    }
+}
+impl From<Word> for (Felt, Felt, Felt, Felt) {
+    #[inline(always)]
+    fn from(word: Word) -> Self {
+        word.inner
     }
 }
 impl From<Word> for [Felt; 4] {

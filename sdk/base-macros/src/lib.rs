@@ -7,7 +7,7 @@
 //!    signature.
 //!
 //! Example:
-//! ```rust
+//! ```rust,ignore
 //!
 //! #[export_type]
 //! pub struct StructA {
@@ -26,7 +26,7 @@
 //!
 //! #[component]
 //! impl MyAccount {
-//!     pub fn (&self, a: StructA) -> StructB {
+//!     pub fn foo(&self, a: StructA) -> StructB {
 //!         ...
 //!     }
 //! }
@@ -56,6 +56,7 @@ mod component_macro;
 mod export_type;
 mod generate;
 mod manifest_paths;
+mod note;
 mod script;
 mod types;
 mod util;
@@ -91,20 +92,59 @@ pub fn export_type(
     export_type::expand(attr, item)
 }
 
-/// Marks the function as a note script
+/// Marks a type/impl as a note script definition.
+///
+/// This attribute is intended to be used on:
+/// - a note input type definition (`struct MyNote { ... }`)
+/// - the associated inherent `impl` block that contains an entrypoint method annotated with
+///   `#[note_script]`
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use miden::*;
+/// use crate::bindings::Account;
+///
+/// #[note]
+/// struct MyNote {
+///     recipient: AccountId,
+/// }
+///
+/// #[note]
+/// impl MyNote {
+///     #[note_script]
+///     pub fn run(self, _arg: Word, account: &mut Account) {
+///         assert_eq!(account.get_id(), self.recipient);
+///     }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn note(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    note::expand_note(attr, item)
+}
+
+/// Marks a method as the note script entrypoint (`#[note_script]`).
+///
+/// The method must be contained within an inherent `impl` block annotated with `#[note]`.
+///
+/// # Supported entrypoint signature
+///
+/// - Receiver must be plain `self` (by value); `&self`, `&mut self`, `mut self`, and typed
+///   receivers (e.g. `self: Box<Self>`) are not supported.
+/// - The method must return `()`.
+/// - Excluding `self`, the method must accept:
+///   - exactly one `Word` argument, and
+///   - optionally a single `&Account` or `&mut Account` argument (in either order).
+/// - Generic methods and `async fn` are not supported.
 #[proc_macro_attribute]
 pub fn note_script(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    script::expand(
-        attr,
-        item,
-        ScriptConfig {
-            export_interface: "miden:base/note-script@1.0.0",
-            guest_trait_path: "self::bindings::exports::miden::base::note_script::Guest",
-        },
-    )
+    note::expand_note_script(attr, item)
 }
 
 /// Marks the function as a transaction script
@@ -171,7 +211,7 @@ pub fn tx_script(
 /// The macro's first argument is the name of a type that implements the traits
 /// generated:
 ///
-/// ```
+/// ```rust,ignore
 /// use miden::generate;
 ///
 /// generate!({
@@ -208,7 +248,7 @@ pub fn tx_script(
 /// values.
 ///
 ///
-/// ```
+/// ```rust,ignore
 /// use miden::generate;
 /// # macro_rules! generate { ($($t:tt)*) => () }
 ///

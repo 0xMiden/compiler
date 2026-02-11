@@ -1,0 +1,2 @@
+# Ignore to avoid noise. Anyway, this project mainly uses path deps with committed Cargo.lock files.
+Cargo.lock

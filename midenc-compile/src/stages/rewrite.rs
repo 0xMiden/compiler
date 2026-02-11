@@ -1,13 +1,16 @@
 use alloc::boxed::Box;
 
-use midenc_dialect_hir::transforms::TransformSpills;
+use midenc_dialect_hir::transforms::{Local2Reg, TransformSpills};
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_hir::{
     Op,
     pass::{IRPrintingConfig, Nesting, PassManager},
     patterns::{GreedyRewriteConfig, RegionSimplificationLevel},
 };
-use midenc_hir_transform::{Canonicalizer, ControlFlowSink, SinkOperandDefs};
+use midenc_hir_transform::{
+    Canonicalizer, CommonSubexpressionElimination, SinkOperandDefs,
+    SparseConditionalConstantPropagation,
+};
 
 use super::*;
 
@@ -22,7 +25,6 @@ impl Stage for ApplyRewritesStage {
     }
 
     fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
-        let ir_print_config: IRPrintingConfig = (&context.as_ref().session().options).try_into()?;
         log::debug!(target: "driver", "applying rewrite passes");
         // TODO(pauls): Set up pass registration for new pass infra
         /*
@@ -49,6 +51,7 @@ impl Stage for ApplyRewritesStage {
         */
 
         // Construct a pass manager with the default pass pipeline
+        let ir_print_config = IRPrintingConfig::try_from(&context.session().options)?;
         let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit)
             .enable_ir_printing(ir_print_config);
 
@@ -63,23 +66,37 @@ impl Stage for ApplyRewritesStage {
                 let mut module_pm = component_pm.nest::<builtin::Module>();
                 let mut func_pm = module_pm.nest::<builtin::Function>();
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+                func_pm.add_pass(Box::new(CommonSubexpressionElimination));
+                func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
+                func_pm.add_pass(Box::new(SinkOperandDefs));
+                //func_pm.add_pass(Box::new(ControlFlowSink));
+                func_pm.add_pass(Box::new(Local2Reg));
+                func_pm.add_pass(Box::new(TransformSpills));
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
                 func_pm.add_pass(Box::new(SinkOperandDefs));
-                func_pm.add_pass(Box::new(ControlFlowSink));
                 func_pm.add_pass(Box::new(TransformSpills));
+                //func_pm.add_pass(Box::new(ControlFlowSink));
+                //func_pm.add_pass(Box::new(DeadCodeElimination));
             }
             // Function passes for component-level functions
             {
                 let mut func_pm = component_pm.nest::<builtin::Function>();
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+                func_pm.add_pass(Box::new(CommonSubexpressionElimination));
+                func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
+                func_pm.add_pass(Box::new(SinkOperandDefs));
+                //func_pm.add_pass(Box::new(ControlFlowSink));
+                func_pm.add_pass(Box::new(Local2Reg));
+                func_pm.add_pass(Box::new(TransformSpills));
                 func_pm.add_pass(Box::new(LiftControlFlowToSCF));
                 // Re-run canonicalization to clean up generated structured control flow
                 func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
                 func_pm.add_pass(Box::new(SinkOperandDefs));
-                func_pm.add_pass(Box::new(ControlFlowSink));
                 func_pm.add_pass(Box::new(TransformSpills));
+                //func_pm.add_pass(Box::new(ControlFlowSink));
+                //func_pm.add_pass(Box::new(DeadCodeElimination));
             }
         }
 

@@ -446,7 +446,7 @@ mod tests {
     /// the other branch performs additional computation before exiting.
     #[test]
     fn cfg_to_scf_lift_conditional_early_exit() -> Result<(), Report> {
-        let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
             .is_test(true)
             .format_timestamp(None)
             .try_init();

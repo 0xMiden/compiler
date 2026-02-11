@@ -3,31 +3,42 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::{AccountId, Asset, Recipient};
+use super::{AccountId, Asset, NoteMetadata, Recipient};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::active_note::get_inputs"]
+    #[link_name = "miden::protocol::active_note::get_inputs"]
     pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
-    #[link_name = "miden::active_note::get_assets"]
+    #[link_name = "miden::protocol::active_note::get_assets"]
     pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
-    #[link_name = "miden::active_note::get_sender"]
+    #[link_name = "miden::protocol::active_note::get_sender"]
     pub fn extern_note_get_sender(ptr: *mut AccountId);
-    #[link_name = "miden::active_note::get_recipient"]
+    #[link_name = "miden::protocol::active_note::get_recipient"]
     pub fn extern_note_get_recipient(ptr: *mut Recipient);
-    #[link_name = "miden::active_note::get_script_root"]
+    #[link_name = "miden::protocol::active_note::get_script_root"]
     pub fn extern_note_get_script_root(ptr: *mut Word);
-    #[link_name = "miden::active_note::get_serial_number"]
+    #[link_name = "miden::protocol::active_note::get_serial_number"]
     pub fn extern_note_get_serial_number(ptr: *mut Word);
-    #[link_name = "miden::active_note::get_metadata"]
-    pub fn extern_note_get_metadata(ptr: *mut Word);
-    #[link_name = "miden::active_note::add_assets_to_account"]
-    pub fn extern_note_add_assets_to_account();
+    #[link_name = "miden::protocol::active_note::get_metadata"]
+    pub fn extern_note_get_metadata(ptr: *mut NoteMetadata);
 }
 
 /// Get the inputs of the currently executing note.
+///
+/// # Examples
+///
+/// Parse a note input layout into domain types:
+///
+/// ```rust,ignore
+/// use miden::{active_note, AccountId, Asset};
+///
+/// let inputs = active_note::get_inputs();
+///
+/// // Example layout: first two inputs store a target `AccountId`.
+/// let target = AccountId::from(inputs[0], inputs[1]);
+/// ```
 pub fn get_inputs() -> Vec<Felt> {
-    const MAX_INPUTS: usize = 256;
+    const MAX_INPUTS: usize = 1024;
     let mut inputs: Vec<Felt> = Vec::with_capacity(MAX_INPUTS);
     let num_inputs = unsafe {
         // Ensure the pointer is a valid Miden pointer
@@ -107,17 +118,11 @@ pub fn get_serial_number() -> Word {
     }
 }
 
-/// Returns the metadata of the note that is currently executing.
-pub fn get_metadata() -> Word {
+/// Returns the attachment and metadata header of the note that is currently executing.
+pub fn get_metadata() -> NoteMetadata {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_note_get_metadata(ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }
-}
-
-/// Moves all assets from the active note into the active account vault.
-#[inline]
-pub fn add_assets_to_account() {
-    unsafe { extern_note_add_assets_to_account() }
 }

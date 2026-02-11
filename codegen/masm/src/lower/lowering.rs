@@ -4,7 +4,7 @@ use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_hir::{
-    Op, OpExt, Span, SymbolTable, Value, ValueRange, ValueRef,
+    Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
     dialects::builtin,
     traits::{BinaryOp, Commutative},
 };
@@ -13,6 +13,20 @@ use smallvec::{SmallVec, smallvec};
 
 use super::*;
 use crate::{Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
+
+/// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
+fn invocation_target_from_symbol_path(
+    callee_path: &midenc_hir::SymbolPath,
+    span: midenc_hir::SourceSpan,
+) -> masm::InvocationTarget {
+    let proc_name = callee_path.name();
+    let proc_name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
+        masm::Span::new(span, proc_name.as_ref().into()),
+    ));
+    let module = callee_path.without_leaf().to_library_path();
+    let qualified = masm::QualifiedProcedureName::new(module.as_path(), proc_name);
+    masm::InvocationTarget::Path(masm::Span::new(span, qualified.into_inner()))
+}
 
 /// This trait is registered with all ops, of all dialects, which are legal for lowering to MASM.
 ///
@@ -46,6 +60,7 @@ pub trait HirLowering: Op {
     /// and provide a custom schedule.
     fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let op = self.as_operation();
+        let trace_target = emitter.trace_target.clone().with_topic("operand-scheduling");
 
         // Move instruction operands into place, minimizing unnecessary stack manipulation ops
         //
@@ -70,11 +85,11 @@ pub trait HirLowering: Op {
             constraints.swap(0, 1);
         }
 
-        log::trace!(target: "codegen", "scheduling operands for {op}");
+        log::trace!(target: &trace_target, "scheduling operands for {op}");
         for arg in args.iter() {
-            log::trace!(target: "codegen", "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
+            log::trace!(target: &trace_target, "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
         }
-        log::trace!(target: "codegen", "starting with stack: {:#?}", &emitter.stack);
+        log::trace!(target: &trace_target, "starting with stack: {:#?}", &emitter.stack);
         emitter
             .schedule_operands(
                 &args,
@@ -93,7 +108,7 @@ pub trait HirLowering: Op {
                     &emitter.stack,
                 )
             });
-        log::trace!(target: "codegen", "stack after scheduling: {:#?}", &emitter.stack);
+        log::trace!(target: &trace_target, "stack after scheduling: {:#?}", &emitter.stack);
 
         Ok(())
     }
@@ -402,7 +417,6 @@ impl HirLowering for scf::Yield {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.yield' is a no-op, as it is simply forwarding operands to another region,
         // and the semantics of that are handled by the lowering of the containing op
-        log::trace!(target: "codegen", "yielding {:#?}", &_emitter.stack);
         Ok(())
     }
 }
@@ -411,7 +425,6 @@ impl HirLowering for scf::Condition {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering 'hir.condition' is a no-op, as it is simply forwarding operands to another
         // region, and the semantics of that are handled by the lowering of the containing op
-        log::trace!(target: "codegen", "conditionally yielding {:#?}", &_emitter.stack);
         Ok(())
     }
 }
@@ -855,12 +868,8 @@ impl HirLowering for hir::Exec {
             }
         };
 
-        // Convert the path components to an absolute procedure path
-        let mut path = callee_path.to_library_path();
-        let name = masm::ProcedureName::from_raw_parts(
-            path.pop().expect("expected at least two path components"),
-        );
-        let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
+        // Convert the symbol path to a fully-qualified procedure path
+        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
         emitter.inst_emitter(self.as_operation()).exec(callee, signature, self.span());
 
@@ -909,12 +918,8 @@ impl HirLowering for hir::Call {
             }
         };
 
-        // Convert the path components to an absolute procedure path
-        let mut path = callee_path.to_library_path();
-        let name = masm::ProcedureName::from_raw_parts(
-            path.pop().expect("expected at least two path components"),
-        );
-        let callee = masm::InvocationTarget::AbsoluteProcedurePath { name, path };
+        // Convert the symbol path to a fully-qualified procedure path
+        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
         emitter.inst_emitter(self.as_operation()).call(callee, signature, self.span());
 
@@ -1210,10 +1215,53 @@ impl HirLowering for arith::Cto {
 }
 
 impl HirLowering for arith::Join {
+    fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let op = self.as_operation();
+
+        let args = self.required_operands();
+        if args.is_empty() {
+            return Ok(());
+        }
+
+        let mut constraints = emitter.constraints_for(op, &args);
+        let mut args = args.into_smallvec();
+
+        // For `i128`/`u128` we use a different stack order for 64-bit limbs.
+        //
+        // The IR specifies limbs most-significant to least-significant, but the runtime stack
+        // representation for two 64-bit limbs is (lo, hi).
+        if args.len() == 2 && matches!(self.ty(), Type::I128 | Type::U128) {
+            args.swap(0, 1);
+            constraints.swap(0, 1);
+        }
+
+        emitter
+            .schedule_operands(
+                &args,
+                &constraints,
+                op.span(),
+                SolverOptions {
+                    strict: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
+                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
+                    op.name(),
+                    &emitter.stack,
+                )
+            });
+
+        Ok(())
+    }
+
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        inst_emitter.pop().expect("operand stack is empty");
-        inst_emitter.pop().expect("operand stack is empty");
+        for _ in 0..self.num_operands() {
+            inst_emitter.pop().expect("operand stack is empty");
+        }
         inst_emitter.push(self.result().as_value_ref());
         Ok(())
     }
@@ -1223,8 +1271,9 @@ impl HirLowering for arith::Split {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
         inst_emitter.pop().expect("operand stack is empty");
-        inst_emitter.push(self.result_low().as_value_ref());
-        inst_emitter.push(self.result_high().as_value_ref());
+        for limb in self.limbs().iter().rev() {
+            inst_emitter.push(limb.borrow().as_value_ref());
+        }
         Ok(())
     }
 }

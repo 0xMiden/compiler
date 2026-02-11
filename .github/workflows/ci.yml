@@ -113,11 +113,14 @@ jobs:
           cargo make check --tests
       - name: Test
         run: |
-          cargo make test -E 'not (package(miden-integration-tests) or package(miden-integration-node-tests) or package(cargo-miden))'
+          cargo make test -E 'not (package(miden-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden))'
 
-  check_release:
-    name: release checks
+  lit_tests:
+    name: midenc lit/filecheck tests
     runs-on: ubuntu-latest
+    # We only want to run our lit tests if the unit tests pass, and that has the added
+    # benefit that we can re-use the cache from the unit test job
+    needs: [unit_tests]
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/cleanup-runner
@@ -128,25 +131,18 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          # NOTE: We use a different cache for the these release checks
-          shared-key: ${{ github.workflow }}-shared-release-checks
+          # NOTE: We use a different cache for the tests, so they can be run in parallel, but we
+          # also share the cache for the tests for efficiency
+          shared-key: ${{ github.workflow }}-shared-tests
           prefix-key: ${{ env.RUST_CACHE_KEY }}
-          save-if: ${{ github.ref == 'refs/heads/next' }}
       - name: Install cargo-make
         run: |
           if ! cargo make --version 2>/dev/null; then
             cargo install cargo-make --force
           fi
-      - name: Check(release)
-        # We run `check` with `--release` to check the release build (without
-        # `debug_assertions`, etc.)
+      - name: Test
         run: |
-          cargo make check --release --tests
-      - name: Check each member (release)
-        # To uncover any compilation errors hidden by the workspace feature
-        # unification and avoid surprises on publishing the crates.
-        run: |
-          cargo make check-each --release --all-features
+          cargo make test-lit
 
   midenc_integration_tests:
     name: midenc integration tests
@@ -294,7 +290,7 @@ jobs:
           fi
       - name: Test
         run: |
-          cargo make test -E 'test(test_all_templates_and_examples)'
+          cargo make test -E 'test(test_all_templates)'
 
   miden_integration_node_tests:
     name: miden integration node tests
@@ -323,7 +319,40 @@ jobs:
           fi
       - name: Test
         run: |
-          cargo make test -E 'package(miden-integration-node-tests)'
+          cargo make test -E 'package(midenc-integration-network-tests)'
+
+  check_release:
+    name: release checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          # NOTE: We use a different cache for the these release checks
+          shared-key: ${{ github.workflow }}-shared-release-checks
+          prefix-key: ${{ env.RUST_CACHE_KEY }}
+          save-if: ${{ github.ref == 'refs/heads/next' }}
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+      - name: Check(release)
+        # We run `check` with `--release` to check the release build (without
+        # `debug_assertions`, etc.)
+        run: |
+          cargo make check --release --tests
+      - name: Check each member (release)
+        # To uncover any compilation errors hidden by the workspace feature
+        # unification and avoid surprises on publishing the crates.
+        run: |
+          cargo make check-each --release --all-features
 
   cargo_publish_dry_run:
     name: cargo publish dry run

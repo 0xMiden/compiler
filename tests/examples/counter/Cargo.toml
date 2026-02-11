@@ -1,0 +1,31 @@
+[package]
+name = "counter-contract-with-tests"
+description = "A simple example of how to use miden's custom test harness."
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../../sdk/sdk" }
+miden-test-harness-macros = { path = "../../../test-harness/test-harness-macros"}
+miden-test-harness = { path = "../../../test-harness/test-harness-lib"}
+
+[dev-dependencies]
+miden-protocol = { version = "0.13", default-features = false, features = ["std"] }
+miden-standards = { version = "0.13", default-features = false, features = ["std"] }
+
+[package.metadata.component]
+package = "miden:counter-contract"
+
+[package.metadata.miden]
+project-kind = "account"
+supported-types = ["RegularAccountUpdatableCode"]
+
+[[test]]
+name = "lib"
+path = "src/lib.rs"
+harness = false

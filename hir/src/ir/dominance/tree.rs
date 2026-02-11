@@ -423,6 +423,10 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
 
         this.compute();
 
+        if !region.borrow().has_one_block() {
+            this.update_dfs_numbers();
+        }
+
         Ok(this)
     }
 

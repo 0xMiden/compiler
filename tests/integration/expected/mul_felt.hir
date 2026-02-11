@@ -2,14 +2,8 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @mul_felt {
         public builtin.function @entrypoint(v0: felt, v1: felt) -> felt {
         ^block4(v0: felt, v1: felt):
-            v3 = hir.exec @root_ns:root@1.0.0/mul_felt/intrinsics::felt::mul(v0, v1) : felt
-            builtin.ret v3;
-        };
-
-        private builtin.function @intrinsics::felt::mul(v4: felt, v5: felt) -> felt {
-        ^block6(v4: felt, v5: felt):
-            v6 = arith.mul v4, v5 : felt #[overflow = unchecked];
-            builtin.ret v6;
+            v5 = arith.mul v0, v1 : felt #[overflow = unchecked];
+            builtin.ret v5;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

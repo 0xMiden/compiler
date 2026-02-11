@@ -190,7 +190,7 @@
     local.get 2
     i32.const 32
     i32.add
-    call $std::crypto::hashes::sha256::hash_1to1
+    call $miden::core::crypto::hashes::sha256::hash
     local.get 2
     local.get 2
     i64.load offset=56
@@ -269,7 +269,7 @@
     local.get 3
     global.set $__stack_pointer
   )
-  (func $std::crypto::hashes::sha256::hash_1to1 (;3;) (type 1) (param i32 i32 i32 i32 i32 i32 i32 i32 i32)
+  (func $miden::core::crypto::hashes::sha256::hash (;3;) (type 1) (param i32 i32 i32 i32 i32 i32 i32 i32 i32)
     unreachable
   )
 )

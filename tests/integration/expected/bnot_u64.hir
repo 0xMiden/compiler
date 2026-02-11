@@ -2,9 +2,9 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_345f3c1e58fe5c9ef31421da6a362d9cadbf519ad68045840229e8b76f58a4f4 {
         public builtin.function @entrypoint(v0: i64) -> i64 {
         ^block6(v0: i64):
-            v2 = arith.constant -1 : i64;
-            v3 = arith.bxor v0, v2 : i64;
-            builtin.ret v3;
+            v5 = arith.constant -1 : i64;
+            v4 = arith.bxor v0, v5 : i64;
+            builtin.ret v4;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

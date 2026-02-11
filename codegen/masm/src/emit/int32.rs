@@ -447,8 +447,8 @@ impl OpEmitter<'_> {
             Overflow::Unchecked | Overflow::Wrapping => {
                 self.emit(masm::Instruction::U32WrappingAdd, span)
             }
-            Overflow::Checked => self.raw_exec("intrinsics::i32::checked_add", span),
-            Overflow::Overflowing => self.raw_exec("intrinsics::i32::overflowing_add", span),
+            Overflow::Checked => self.raw_exec("::intrinsics::i32::checked_add", span),
+            Overflow::Overflowing => self.raw_exec("::intrinsics::i32::overflowing_add", span),
         }
     }
 
@@ -498,11 +498,11 @@ impl OpEmitter<'_> {
             }
             Overflow::Checked => {
                 self.emit_push(imm as u32, span);
-                self.raw_exec("intrinsics::i32::checked_add", span);
+                self.raw_exec("::intrinsics::i32::checked_add", span);
             }
             Overflow::Overflowing => {
                 self.emit_push(imm as u32, span);
-                self.raw_exec("intrinsics::i32::overflowing_add", span);
+                self.raw_exec("::intrinsics::i32::overflowing_add", span);
             }
         }
     }
@@ -531,8 +531,8 @@ impl OpEmitter<'_> {
     pub fn sub_i32(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Unchecked | Overflow::Wrapping => self.sub_u32(overflow, span),
-            Overflow::Checked => self.raw_exec("intrinsics::i32::checked_sub", span),
-            Overflow::Overflowing => self.raw_exec("intrinsics::i32::overflowing_sub", span),
+            Overflow::Checked => self.raw_exec("::intrinsics::i32::checked_sub", span),
+            Overflow::Overflowing => self.raw_exec("::intrinsics::i32::overflowing_sub", span),
         }
     }
 
@@ -581,11 +581,11 @@ impl OpEmitter<'_> {
             }
             Overflow::Checked => {
                 self.emit_push(imm as u32, span);
-                self.raw_exec("intrinsics::i32::checked_sub", span);
+                self.raw_exec("::intrinsics::i32::checked_sub", span);
             }
             Overflow::Overflowing => {
                 self.emit_push(imm as u32, span);
-                self.raw_exec("intrinsics::i32::overflowing_sub", span);
+                self.raw_exec("::intrinsics::i32::overflowing_sub", span);
             }
         }
     }
@@ -614,10 +614,10 @@ impl OpEmitter<'_> {
     pub fn mul_i32(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Unchecked | Overflow::Wrapping => {
-                self.raw_exec("intrinsics::i32::wrapping_mul", span)
+                self.raw_exec("::intrinsics::i32::wrapping_mul", span)
             }
-            Overflow::Checked => self.raw_exec("intrinsics::i32::checked_mul", span),
-            Overflow::Overflowing => self.raw_exec("intrinsics::i32::overflowing_mul", span),
+            Overflow::Checked => self.raw_exec("::intrinsics::i32::checked_mul", span),
+            Overflow::Overflowing => self.raw_exec("::intrinsics::i32::overflowing_mul", span),
         }
     }
 
@@ -682,15 +682,15 @@ impl OpEmitter<'_> {
             imm => match overflow {
                 Overflow::Unchecked | Overflow::Wrapping => {
                     self.emit_push(imm as u32, span);
-                    self.raw_exec("intrinsics::i32::wrapping_mul", span);
+                    self.raw_exec("::intrinsics::i32::wrapping_mul", span);
                 }
                 Overflow::Checked => {
                     self.emit_push(imm as u32, span);
-                    self.raw_exec("intrinsics::i32::checked_mul", span)
+                    self.raw_exec("::intrinsics::i32::checked_mul", span)
                 }
                 Overflow::Overflowing => {
                     self.emit_push(imm as u32, span);
-                    self.raw_exec("intrinsics::i32::overflowing_mul", span);
+                    self.raw_exec("::intrinsics::i32::overflowing_mul", span);
                 }
             },
         }
@@ -707,7 +707,7 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, so if the operands or result are not valid i32, execution traps.
     pub fn checked_div_i32(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i32::checked_div", span);
+        self.raw_exec("::intrinsics::i32::checked_div", span);
     }
 
     /// Pops a u32 value off the stack, `a`, and performs `a / <imm>`.
@@ -731,7 +731,7 @@ impl OpEmitter<'_> {
     pub fn checked_div_imm_i32(&mut self, imm: i32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit_push(imm as u32, span);
-        self.raw_exec("intrinsics::i32::checked_div", span);
+        self.raw_exec("::intrinsics::i32::checked_div", span);
     }
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a / b`.
@@ -903,7 +903,7 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, if the operands or result are not valid i32, execution traps.
     pub fn shr_i32(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i32::checked_shr", span);
+        self.raw_exec("::intrinsics::i32::checked_shr", span);
     }
 
     /// Pops a u32 value off the stack, `a`, and performs `a >> <imm>`
@@ -920,7 +920,7 @@ impl OpEmitter<'_> {
     pub fn shr_imm_i32(&mut self, imm: u32, span: SourceSpan) {
         assert!(imm < 32, "invalid shift value: must be < 32, got {imm}");
         self.emit_push(imm, span);
-        self.raw_exec("intrinsics::i32::checked_shr", span);
+        self.raw_exec("::intrinsics::i32::checked_shr", span);
     }
 
     /// Pops two u32 values off the stack, `b` and `a`, and rotates the bits of `a` left by `b` bits
@@ -971,7 +971,7 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, if the operands or result are not valid i32, execution traps.
     pub fn min_i32(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i32::min", span);
+        self.raw_exec("::intrinsics::i32::min", span);
     }
 
     /// Pops a u32 value off the stack, `a`, and puts the result of `min(a, imm)` on the stack
@@ -987,7 +987,7 @@ impl OpEmitter<'_> {
     /// This operation is checked, if the operand or result are not valid i32, execution traps.
     pub fn min_imm_i32(&mut self, imm: i32, span: SourceSpan) {
         self.emit_push(imm as u32, span);
-        self.raw_exec("intrinsics::i32::min", span);
+        self.raw_exec("::intrinsics::i32::min", span);
     }
 
     /// Pops two u32 values off the stack, `b` and `a`, and puts the result of `max(a, b)` on the
@@ -1003,7 +1003,7 @@ impl OpEmitter<'_> {
     ///
     /// This operation is checked, if the operands or result are not valid i32, execution traps.
     pub fn max_i32(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::i32::max", span);
+        self.raw_exec("::intrinsics::i32::max", span);
     }
 
     /// Pops a u32 value off the stack, `a`, and puts the result of `max(a, imm)` on the stack
@@ -1019,6 +1019,6 @@ impl OpEmitter<'_> {
     /// This operation is checked, if the operand or result are not valid i32, execution traps.
     pub fn max_imm_i32(&mut self, imm: i32, span: SourceSpan) {
         self.emit_push(imm as u32, span);
-        self.raw_exec("intrinsics::i32::max", span);
+        self.raw_exec("::intrinsics::i32::max", span);
     }
 }

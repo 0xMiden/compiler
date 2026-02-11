@@ -1,10 +1,15 @@
 use std::collections::BTreeSet;
 
-use miden_objects::account::{
-    AccountComponentMetadata, AccountType, MapRepresentation, StorageEntry, StorageValueName,
-    TemplateType, WordRepresentation, component::FieldIdentifier,
+use miden_protocol::account::{
+    AccountType, StorageSlotName,
+    component::{
+        AccountComponentMetadata, MapSlotSchema, StorageSchema, StorageSlotSchema, ValueSlotSchema,
+        WordSchema, storage::SchemaTypeId,
+    },
 };
 use semver::Version;
+
+use crate::{component_macro::typecheck_storage_field, types::StorageFieldType};
 
 pub struct AccountComponentMetadataBuilder {
     /// The human-readable name of the component.
@@ -20,9 +25,8 @@ pub struct AccountComponentMetadataBuilder {
     /// A set of supported target account types for this component.
     supported_types: BTreeSet<AccountType>,
 
-    /// A list of storage entries defining the component's storage layout and initialization
-    /// values.
-    storage: Vec<StorageEntry>,
+    /// Storage schema entries defining the component's storage layout.
+    storage: Vec<(StorageSlotName, StorageSlotSchema)>,
 }
 
 impl AccountComponentMetadataBuilder {
@@ -43,63 +47,61 @@ impl AccountComponentMetadataBuilder {
 
     pub fn add_storage_entry(
         &mut self,
-        name: &str,
+        slot_name: StorageSlotName,
         description: Option<String>,
-        slot: u8,
-        field_type: &syn::Type,
+        field: &syn::Field,
         field_type_attr: Option<String>,
     ) {
-        let type_path = if let syn::Type::Path(type_path) = field_type {
-            type_path
-        } else {
-            panic!("failed to get type path {field_type:?}")
-        };
-
-        if let Some(segment) = type_path.path.segments.last() {
-            let type_name = segment.ident.to_string();
-            let storage_value_name =
-                StorageValueName::new(name).expect("well formed storage value name");
-            match type_name.as_str() {
-                "StorageMap" => {
-                    let mut map_repr = MapRepresentation::new_value(vec![], storage_value_name);
-                    if let Some(description) = description {
-                        map_repr = map_repr.with_description(description);
-                    }
-                    self.storage.push(StorageEntry::new_map(slot, map_repr));
-                }
-                "Value" => {
-                    let r#type = if let Some(field_type) = field_type_attr {
-                        TemplateType::new(&field_type)
-                            .unwrap_or_else(|_| panic!("well formed attribute type {field_type}"))
-                    } else {
-                        TemplateType::native_word()
-                    };
-                    self.storage.push(StorageEntry::new_value(
-                        slot,
-                        WordRepresentation::Template {
-                            r#type,
-                            identifier: FieldIdentifier {
-                                name: storage_value_name,
-                                description,
-                            },
-                        },
+        match typecheck_storage_field(field) {
+            Ok(StorageFieldType::StorageMap) => {
+                if let Some(description) = description {
+                    let key_schema = WordSchema::new_simple(SchemaTypeId::native_word());
+                    let value_schema = WordSchema::new_simple(SchemaTypeId::native_word());
+                    let slot_schema = StorageSlotSchema::Map(MapSlotSchema::new(
+                        Some(description),
+                        None,
+                        key_schema,
+                        value_schema,
                     ));
+                    self.storage.push((slot_name, slot_schema));
+                } else {
+                    let key_schema = WordSchema::new_simple(SchemaTypeId::native_word());
+                    let value_schema = WordSchema::new_simple(SchemaTypeId::native_word());
+                    let slot_schema = StorageSlotSchema::Map(MapSlotSchema::new(
+                        None,
+                        None,
+                        key_schema,
+                        value_schema,
+                    ));
+                    self.storage.push((slot_name, slot_schema));
                 }
-                _ => panic!("unexpected field type: {type_name}"),
             }
-        } else {
-            panic!("failed to get last segment of the type path {type_path:?}")
+            Ok(StorageFieldType::Value) => {
+                let r#type = if let Some(field_type) = field_type_attr.as_deref() {
+                    SchemaTypeId::new(field_type)
+                        .unwrap_or_else(|_| panic!("well formed attribute type {field_type}"))
+                } else {
+                    SchemaTypeId::native_word()
+                };
+
+                let word_schema = WordSchema::new_simple(r#type);
+                let slot_schema =
+                    StorageSlotSchema::Value(ValueSlotSchema::new(description, word_schema));
+                self.storage.push((slot_name, slot_schema));
+            }
+            Err(err) => panic!("invalid field type for storage: {err}"),
         }
     }
 
     pub fn build(self) -> AccountComponentMetadata {
+        let storage_schema =
+            StorageSchema::new(self.storage).expect("failed to build component storage schema");
         AccountComponentMetadata::new(
             self.name,
             self.description,
             self.version,
             self.supported_types,
-            self.storage,
+            storage_schema,
         )
-        .expect("failed to build AccountComponentMetadata")
     }
 }

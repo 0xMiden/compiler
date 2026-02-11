@@ -473,6 +473,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
             // 4.
             (None, None) => {
                 log::debug!(
+                    target: self.debug_name(),
                     "control flow does not visit any child regions, visiting like a regular op"
                 );
                 self.visit_operation(branch.as_operation(), after, before, solver)
@@ -481,6 +482,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
             // 1.
             (None, Some(region_to)) => {
                 log::debug!(
+                    target: self.debug_name(),
                     "propagating live-in set of region entry block to live-in of region branch op"
                 );
                 // We're only interested in propagating liveness out of `region_to` for values that
@@ -536,6 +538,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
             // 2.
             (Some(region_from), None) => {
                 log::debug!(
+                    target: self.debug_name(),
                     "propagating live-out set of region branch op to live-out set of region exit \
                      block"
                 );
@@ -551,6 +554,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                 let is_loop_exit =
                     branch.is_repetitive_region(region_from.borrow().region_number());
                 log::debug!(
+                    target: self.debug_name(),
                     "exit region is part of a loop, so this control flow edge represents a loop \
                      exit"
                 );
@@ -590,7 +594,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
 
                 // Ensure the analysis state for `terminator` is initialized with `before_live_out`
                 let point = ProgramPoint::after(terminator);
-                log::debug!("propagating live-out lattice of {pp} to live-out of {point}");
+                log::debug!(target: self.debug_name(), "propagating live-out lattice of {pp} to live-out of {point}");
                 let mut term_liveness = solver.get_or_create_mut::<Lattice<NextUseSet>, _>(point);
                 if term_liveness.value() != &before_live_out {
                     *term_liveness.value_mut() = before_live_out;
@@ -620,6 +624,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                 }
                 if is_loop_exit {
                     log::debug!(
+                        target: self.debug_name(),
                         "predecessor region is part of a loop, but successor is not, so this \
                          control flow edge represents a loop exit"
                     );
@@ -653,7 +658,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
 
                 // Ensure the analysis state for `terminator` is initialized with `before_live_out`
                 let point = ProgramPoint::after(terminator);
-                log::debug!("propagating live-out lattice of {pp} to live-out of {point}");
+                log::debug!(target: self.debug_name(), "propagating live-out lattice of {pp} to live-out of {point}");
                 let mut term_liveness = solver.get_or_create_mut::<Lattice<NextUseSet>, _>(point);
                 if term_liveness.value() != &before_live_out {
                     *term_liveness.value_mut() = before_live_out;
@@ -678,6 +683,7 @@ impl Liveness {
         // Is this the first op in the block?
         if let Some(prev) = op.as_operation_ref().prev() {
             log::debug!(
+                target: self.debug_name(),
                 "propagating live-in of {} to live-out of {}",
                 ProgramPoint::before(op),
                 ProgramPoint::after(prev)
@@ -711,6 +717,7 @@ impl Liveness {
             }
         } else {
             log::debug!(
+                target: self.debug_name(),
                 "propagating live-in of {} to live-in of {}",
                 ProgramPoint::before(op),
                 ProgramPoint::at_start_of(parent_block)

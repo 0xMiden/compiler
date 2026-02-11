@@ -1,4 +1,4 @@
-# mod root_ns:root@1.0.0
+# mod ::"root_ns:root@1.0.0"
 
 proc init
     push.1179648
@@ -16,8 +16,9 @@ proc init
     mem_store.278530
 end
 
-# mod root_ns:root@1.0.0::test_rust_be0120d0a160e710cbd53bd6dc4ac525bbb3596615ae6ec2d5f88c74c069aabe
+# mod ::"root_ns:root@1.0.0"::test_rust_be0120d0a160e710cbd53bd6dc4ac525bbb3596615ae6ec2d5f88c74c069aabe
 
+@locals("2")
 @callconv("C")
 pub proc entrypoint(i32, i32) -> i32
     push.255

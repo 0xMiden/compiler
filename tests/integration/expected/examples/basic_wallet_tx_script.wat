@@ -36,7 +36,7 @@
     (type (;6;) (func (param i32 i32 i32) (result i32)))
     (type (;7;) (func (result i32)))
     (type (;8;) (func (param i32)))
-    (type (;9;) (func (param f32 f32 f32 f32 i32) (result f32)))
+    (type (;9;) (func (param f32 f32 i32) (result f32)))
     (type (;10;) (func (param i32 i32)))
     (type (;11;) (func (param f32 f32 f32 f32) (result f32)))
     (type (;12;) (func (param f32) (result i64)))
@@ -45,7 +45,7 @@
     (type (;15;) (func (param i64) (result f32)))
     (type (;16;) (func (param f32 i32 f32 f32 f32 f32) (result i32)))
     (type (;17;) (func (param i32 i32 i32 i32 i32)))
-    (type (;18;) (func (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)))
+    (type (;18;) (func (param f32 f32 f32 f32 f32 f32) (result f32)))
     (import "miden:basic-wallet/basic-wallet@0.1.0" "move-asset-to-note" (func $basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9 (;0;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -121,7 +121,7 @@
       call $core::slice::index::slice_index_fail::do_panic::runtime
       unreachable
     )
-    (func $<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index (;7;) (type 4) (param i32 i32 i32 i32)
+    (func $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index (;7;) (type 4) (param i32 i32 i32 i32)
       (local i32)
       block ;; label = @1
         local.get 3
@@ -209,7 +209,7 @@
           local.get 2
           local.get 1
           local.get 0
-          call $std::mem::pipe_preimage_to_memory
+          call $miden::core::mem::pipe_preimage_to_memory
           drop
           local.get 4
           local.get 7
@@ -224,26 +224,20 @@
           i32.eqz
           br_if 1 (;@1;)
           local.get 9
-          f32.load offset=12
+          f32.load offset=4
           local.set 0
           local.get 9
-          f32.load offset=8
-          local.set 1
-          local.get 9
-          f32.load offset=4
-          local.set 2
-          local.get 9
           f32.load
-          local.set 3
+          local.set 1
           local.get 4
           i32.const 8
           i32.add
           local.get 4
           i32.const 20
           i32.add
-          i32.const 4
-          i32.const 8
-          call $<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+          i32.const 2
+          i32.const 6
+          call $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
           local.get 4
           i32.load offset=12
           i32.const 4
@@ -271,9 +265,7 @@
           local.get 4
           i32.const 32
           i32.add
-          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
-          local.get 3
-          local.get 2
+          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
           local.get 1
           local.get 0
           local.get 4
@@ -285,9 +277,9 @@
           local.get 4
           i32.const 20
           i32.add
-          i32.const 8
-          i32.const 12
-          call $<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+          i32.const 6
+          i32.const 10
+          call $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
           local.get 4
           i32.load offset=4
           i32.const 4
@@ -315,7 +307,7 @@
           local.get 4
           i32.const 48
           i32.add
-          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
+          call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
           local.get 4
           f32.load offset=64
           local.get 4
@@ -329,11 +321,11 @@
           local.get 4
           i32.const 20
           i32.add
-          call $<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
+          call $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
           local.get 4
           i32.const 20
           i32.add
-          call $<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
+          call $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
           local.get 4
           i32.const 80
           i32.add
@@ -443,28 +435,26 @@
     (func $intrinsics::mem::heap_base (;12;) (type 7) (result i32)
       unreachable
     )
-    (func $<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop (;13;) (type 8) (param i32)
+    (func $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;13;) (type 8) (param i32)
       local.get 0
       i32.const 4
       i32.const 4
       call $<alloc::raw_vec::RawVecInner>::deallocate
     )
-    (func $miden_base_sys::bindings::output_note::create (;14;) (type 9) (param f32 f32 f32 f32 i32) (result f32)
+    (func $miden_base_sys::bindings::output_note::create (;14;) (type 9) (param f32 f32 i32) (result f32)
       local.get 0
       local.get 1
       local.get 2
-      local.get 3
-      local.get 4
       f32.load offset=12
-      local.get 4
+      local.get 2
       f32.load offset=8
-      local.get 4
+      local.get 2
       f32.load offset=4
-      local.get 4
+      local.get 2
       f32.load
-      call $miden::output_note::create
+      call $miden::protocol::output_note::create
     )
-    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from (;15;) (type 10) (param i32 i32)
+    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from (;15;) (type 10) (param i32 i32)
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -474,7 +464,7 @@
       i64.load align=4
       i64.store
     )
-    (func $<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop (;16;) (type 8) (param i32))
+    (func $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;16;) (type 8) (param i32))
     (func $intrinsics::advice::adv_push_mapvaln (;17;) (type 11) (param f32 f32 f32 f32) (result f32)
       unreachable
     )
@@ -490,7 +480,7 @@
     (func $intrinsics::felt::from_u64_unchecked (;21;) (type 15) (param i64) (result f32)
       unreachable
     )
-    (func $std::mem::pipe_preimage_to_memory (;22;) (type 16) (param f32 i32 f32 f32 f32 f32) (result i32)
+    (func $miden::core::mem::pipe_preimage_to_memory (;22;) (type 16) (param f32 i32 f32 f32 f32 f32) (result i32)
       unreachable
     )
     (func $<alloc::alloc::Global>::alloc_impl (;23;) (type 4) (param i32 i32 i32 i32)
@@ -752,7 +742,7 @@
       i32.gt_u
       select
     )
-    (func $miden::output_note::create (;32;) (type 18) (param f32 f32 f32 f32 f32 f32 f32 f32) (result f32)
+    (func $miden::protocol::output_note::create (;32;) (type 18) (param f32 f32 f32 f32 f32 f32) (result f32)
       unreachable
     )
     (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00")

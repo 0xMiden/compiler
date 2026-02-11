@@ -123,12 +123,12 @@
       local.get 0
       f32.load
       local.get 1
-      call $miden::output_note::add_asset
+      call $miden::protocol::output_note::add_asset
     )
     (func $miden_base_sys::bindings::native_account::remove_asset (;6;) (type 4) (param i32 i32)
       (local i32)
       global.get $__stack_pointer
-      i32.const 32
+      i32.const 16
       i32.sub
       local.tee 2
       global.set $__stack_pointer
@@ -141,26 +141,31 @@
       local.get 1
       f32.load
       local.get 2
-      call $miden::native_account::remove_asset
-      local.get 2
-      local.get 2
-      i64.load offset=8
-      i64.store offset=24
-      local.get 2
-      local.get 2
-      i64.load
-      i64.store offset=16
+      call $miden::protocol::native_account::remove_asset
       local.get 0
       local.get 2
-      i32.const 16
-      i32.add
-      call $<miden_stdlib_sys::intrinsics::word::Word>::reverse
+      i64.load
+      i64.const 32
+      i64.rotl
+      i64.store offset=8
+      local.get 0
       local.get 2
-      i32.const 32
+      i64.load offset=8
+      i64.const 32
+      i64.rotl
+      i64.store
+      local.get 2
+      i32.const 16
       i32.add
       global.set $__stack_pointer
     )
     (func $miden_base_sys::bindings::native_account::add_asset (;7;) (type 4) (param i32 i32)
+      (local i32)
+      global.get $__stack_pointer
+      i32.const 16
+      i32.sub
+      local.tee 2
+      global.set $__stack_pointer
       local.get 1
       f32.load offset=12
       local.get 1
@@ -169,78 +174,36 @@
       f32.load offset=4
       local.get 1
       f32.load
-      local.get 0
-      call $miden::native_account::add_asset
-    )
-    (func $<miden_stdlib_sys::intrinsics::word::Word>::reverse (;8;) (type 4) (param i32 i32)
-      (local i32 i32 i32 f32)
-      global.get $__stack_pointer
-      i32.const 16
-      i32.sub
-      local.tee 2
-      local.get 1
-      i64.load offset=8
-      i64.store offset=8 align=4
       local.get 2
-      local.get 1
+      call $miden::protocol::native_account::add_asset
+      local.get 0
+      local.get 2
       i64.load
-      i64.store align=4
-      local.get 2
-      i32.const 12
-      i32.add
-      local.set 3
-      i32.const 0
-      local.set 1
-      block ;; label = @1
-        loop ;; label = @2
-          local.get 1
-          i32.const 8
-          i32.eq
-          br_if 1 (;@1;)
-          local.get 2
-          local.get 1
-          i32.add
-          local.tee 4
-          f32.load
-          local.set 5
-          local.get 4
-          local.get 3
-          i32.load
-          i32.store
-          local.get 3
-          local.get 5
-          f32.store
-          local.get 1
-          i32.const 4
-          i32.add
-          local.set 1
-          local.get 3
-          i32.const -4
-          i32.add
-          local.set 3
-          br 0 (;@2;)
-        end
-      end
-      local.get 0
-      local.get 2
-      i64.load offset=8 align=4
+      i64.const 32
+      i64.rotl
       i64.store offset=8
       local.get 0
       local.get 2
-      i64.load align=4
+      i64.load offset=8
+      i64.const 32
+      i64.rotl
       i64.store
+      local.get 2
+      i32.const 16
+      i32.add
+      global.set $__stack_pointer
     )
-    (func $miden::native_account::add_asset (;9;) (type 5) (param f32 f32 f32 f32 i32)
+    (func $miden::protocol::native_account::add_asset (;8;) (type 5) (param f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::native_account::remove_asset (;10;) (type 5) (param f32 f32 f32 f32 i32)
+    (func $miden::protocol::native_account::remove_asset (;9;) (type 5) (param f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::output_note::add_asset (;11;) (type 1) (param f32 f32 f32 f32 f32)
+    (func $miden::protocol::output_note::add_asset (;10;) (type 1) (param f32 f32 f32 f32 f32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
-    (@custom "rodata,miden_account" (after data) "\19basic_wallet\01\0b0.1.0\03\01\01\00\00\00\00\00\00\00\00\00")
+    (@custom "rodata,miden_account" (after data) "\19basic_wallet\01\0b0.1.0\03\01\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "asset" (type $asset (;1;)))
   (alias export $miden:base/core-types@1.0.0 "note-idx" (type $note-idx (;2;)))

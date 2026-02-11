@@ -1,0 +1,31 @@
+[package]
+name = "miden-test-harness"
+description = "Custom testing harness used in rust code targetting the miden compiler."
+publish = false
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/mod.rs"
+
+[dependencies]
+cfg-if = "1.0"
+
+# Miden dependencies
+miden-test-harness-macros.workspace = true
+
+# Host-only dependencies (used for testing)
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+libtest-mimic = "0.8.1"
+inventory.workspace = true
+clap.workspace = true
+miden-testing = "0.13"
+miden-protocol = { version = "0.13", features = ["std"] }
+cargo-miden.workspace = true

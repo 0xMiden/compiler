@@ -179,7 +179,7 @@ pub fn process_operation<A>(
 where
     A: DenseBackwardDataFlowAnalysis,
 {
-    log::trace!("processing op {}", op.name());
+    log::trace!(target: analysis.analysis.debug_name(), "processing op {}", op.name());
     let point = ProgramPoint::before(op);
     // If the containing block is not executable, bail out.
     if op.parent().is_none_or(|block| {
@@ -187,16 +187,16 @@ where
             .require::<Executable, _>(ProgramPoint::at_start_of(block), point)
             .is_live()
     }) {
-        log::trace!("skipping analysis for {}: containing block is dead/not executable", op.name());
+        log::trace!(target: analysis.analysis.debug_name(), "skipping analysis for {}: containing block is dead/not executable", op.name());
         return Ok(());
     }
 
     // Get the dense lattice to update.
-    log::trace!("getting 'before' analysis state for {point}");
+    log::trace!(target: analysis.analysis.debug_name(), "getting 'before' analysis state for {point}");
     let mut before = solver.get_or_create_mut(point);
 
     // Get the dense state after execution of this op.
-    log::trace!("getting 'after' analysis state for {}", ProgramPoint::after(op));
+    log::trace!(target: analysis.analysis.debug_name(), "getting 'after' analysis state for {}", ProgramPoint::after(op));
     // If this is the last operation in it's block, propagate the liveness of the block end to
     // after this op
     let after = if op.as_operation_ref().next().is_none() {
@@ -217,7 +217,7 @@ where
 
     // Special cases where control flow may dictate data flow.
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
-        log::trace!("op implements RegionBranchOpInterface, handling as special case");
+        log::trace!(target: analysis.analysis.debug_name(), "op implements RegionBranchOpInterface, handling as special case");
         visit_region_branch_operation(
             analysis,
             point,
@@ -230,13 +230,13 @@ where
     }
 
     if let Some(call) = op.as_trait::<dyn CallOpInterface>() {
-        log::trace!("op implements CallOpInterface, handling as special case");
+        log::trace!(target: analysis.analysis.debug_name(), "op implements CallOpInterface, handling as special case");
         visit_call_operation(analysis, call, &after, &mut before, solver);
         return Ok(());
     }
 
     // Invoke the operation transfer function.
-    log::trace!("invoking {}::visit_operation", core::any::type_name::<A>());
+    log::trace!(target: analysis.analysis.debug_name(), "invoking {}::visit_operation", core::any::type_name::<A>());
     analysis.visit_operation(op, &after, &mut before, solver)
 }
 
@@ -249,14 +249,14 @@ pub fn visit_block<A>(
 ) where
     A: DenseBackwardDataFlowAnalysis,
 {
-    log::trace!("processing block {}", block.id());
+    log::trace!(target: analysis.analysis.debug_name(), "processing block {}", block.id());
     let point = ProgramPoint::at_end_of(block);
     // If the block is not executable, bail out.
     if !solver
         .require::<Executable, _>(ProgramPoint::at_start_of(block), point)
         .is_live()
     {
-        log::trace!("skipping analysis for {}: it is dead/not executable", block.id());
+        log::trace!(target: analysis.analysis.debug_name(), "skipping analysis for {}: it is dead/not executable", block.id());
         return;
     }
 
@@ -276,17 +276,18 @@ pub fn visit_block<A>(
     };
 
     if is_region_exit_block(block) {
-        log::trace!("{} is a region exit block", block.id());
+        log::trace!(target: analysis.analysis.debug_name(), "{} is a region exit block", block.id());
         // If this block is exiting from a callable, the successors of exiting from a callable are
         // the successors of all call sites. And the call sites themselves are predecessors of the
         // callable.
         let parent_op = block.parent_op().expect("orphaned block");
         let region = block.parent().unwrap();
         if let Some(callable) = parent_op.borrow().as_trait::<dyn CallableOpInterface>() {
-            log::trace!("{}'s parent implements CallableOpInterface", block.id());
+            log::trace!(target: analysis.analysis.debug_name(), "{}'s parent implements CallableOpInterface", block.id());
             let callable_region = callable.get_callable_region();
             if callable_region.is_some_and(|r| r == region) {
                 log::trace!(
+                    target: analysis.analysis.debug_name(),
                     "{}'s parent region is a callable region - getting analysis state for call \
                      sites",
                     block.id()
@@ -297,8 +298,8 @@ pub fn visit_block<A>(
                 );
                 // If not all call sites are known, conservative mark all lattices as
                 // having reached their pessimistic fix points.
-                log::trace!("all predecessors known:     {}", callsites.all_predecessors_known());
-                log::trace!("solver is inter-procedural: {}", solver.config().is_interprocedural());
+                log::trace!(target: analysis.analysis.debug_name(), "all predecessors known:     {}", callsites.all_predecessors_known());
+                log::trace!(target: analysis.analysis.debug_name(), "solver is inter-procedural: {}", solver.config().is_interprocedural());
                 if !callsites.all_predecessors_known() || !solver.config().is_interprocedural() {
                     return analysis.set_to_exit_state(&mut before, solver);
                 }
@@ -307,6 +308,7 @@ pub fn visit_block<A>(
                     let call = callsite.borrow();
                     let call = call.as_trait::<dyn CallOpInterface>().expect("invalid callsite");
                     log::trace!(
+                        target: analysis.analysis.debug_name(),
                         "visiting control flow transfer exit from call to {}",
                         call.callable_for_callee()
                     );
@@ -327,7 +329,7 @@ pub fn visit_block<A>(
         // If this block is exiting from an operation with region-based control flow, propagate the
         // lattice back along the control flow edge.
         if let Some(branch) = parent_op.borrow().as_trait::<dyn RegionBranchOpInterface>() {
-            log::trace!("{}'s parent implements RegionBranchOpInterface", block.id());
+            log::trace!(target: analysis.analysis.debug_name(), "{}'s parent implements RegionBranchOpInterface", block.id());
             return visit_region_branch_operation(
                 analysis,
                 point,
@@ -339,12 +341,13 @@ pub fn visit_block<A>(
         }
 
         // Cannot reason about successors of an exit block, set the pessimistic fixpoint.
-        log::trace!("cannot reason about successors of {} - setting to exit state", block.id());
+        log::trace!(target: analysis.analysis.debug_name(), "cannot reason about successors of {} - setting to exit state", block.id());
         return analysis.set_to_exit_state(&mut before, solver);
     }
 
     // Meet the state with the state before block's successors.
     log::trace!(
+        target: analysis.analysis.debug_name(),
         "meeting the before lattice with the after lattice of {}'s successors",
         block.id()
     );
@@ -357,6 +360,7 @@ pub fn visit_block<A>(
             .is_live()
         {
             log::trace!(
+                target: analysis.analysis.debug_name(),
                 "skipping dead/non-executable control flow edge {} -> {successor}",
                 block.id()
             );
@@ -365,7 +369,7 @@ pub fn visit_block<A>(
 
         // Merge in the state from the successor: either the first operation, or the block itself
         // when empty.
-        log::trace!("meeting before lattice of {} and after lattice of {successor}", block.id());
+        log::trace!(target: analysis.analysis.debug_name(), "meeting before lattice of {} and after lattice of {successor}", block.id());
         let after = solver.require(ProgramPoint::before(successor), point);
         analysis.visit_branch_control_flow_transfer(block, successor, &after, &mut before, solver);
     }
@@ -467,16 +471,17 @@ pub fn visit_region_branch_operation<A>(
 ) where
     A: DenseBackwardDataFlowAnalysis,
 {
-    log::trace!("visiting region branch operation from {point}");
+    log::trace!(target: analysis.analysis.debug_name(), "visiting region branch operation from {point}");
     // The successors of the operation may be either the first operation of the entry block of each
     // possible successor region, or the next operation when the branch is a successor of itself.
     for successor in branch.get_successor_regions(branch_point) {
-        log::trace!("visiting region branch successor {}", successor.branch_point());
+        log::trace!(target: analysis.analysis.debug_name(), "visiting region branch successor {}", successor.branch_point());
         let successor_region = successor.successor();
         let after = match successor_region.as_ref() {
             None => {
                 // The successor is `branch` itself
                 log::trace!(
+                    target: analysis.analysis.debug_name(),
                     "getting 'after' analysis state for {}",
                     ProgramPoint::after(branch.as_operation())
                 );
@@ -487,6 +492,7 @@ pub fn visit_region_branch_operation<A>(
                 let block =
                     region.borrow().entry_block_ref().expect("unexpected empty successor region");
                 log::trace!(
+                    target: analysis.analysis.debug_name(),
                     "getting 'after' analysis state for {}",
                     ProgramPoint::at_start_of(block)
                 );
@@ -495,6 +501,7 @@ pub fn visit_region_branch_operation<A>(
                     .is_live()
                 {
                     log::trace!(
+                        target: analysis.analysis.debug_name(),
                         "skipping successor {region} because its entry block is \
                          dead/non-executable",
                     );

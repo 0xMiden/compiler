@@ -2,9 +2,9 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_9d7fa5c817c0e8ad40aeb12756fb108047ae365f6bc8c673617a6bc264b3917a {
         public builtin.function @entrypoint(v0: i64, v1: i64) -> i64 {
         ^block6(v0: i64, v1: i64):
-            v3 = hir.cast v1 : u32;
-            v4 = arith.shl v0, v3 : i64;
-            builtin.ret v4;
+            v5 = hir.cast v1 : u32;
+            v6 = arith.shl v0, v5 : i64;
+            builtin.ret v6;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {

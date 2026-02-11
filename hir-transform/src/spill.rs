@@ -3,12 +3,12 @@ use alloc::{collections::VecDeque, rc::Rc};
 use midenc_hir::{
     BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation, OperationRef,
     ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Rewriter,
-    SmallVec, SourceSpan, Spanned, StorableEntity, Usable, ValueRange, ValueRef,
+    SmallVec, SourceSpan, Spanned, StorableEntity, TraceTarget, Usable, ValueRange, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
     dominance::{DomTreeNode, DominanceFrontier, DominanceInfo},
     pass::{AnalysisManager, PostPassStatus},
-    traits::SingleRegion,
+    traits::{IsolatedFromAbove, SingleRegion},
 };
 use midenc_hir_analysis::analyses::{
     SpillAnalysis,
@@ -121,17 +121,37 @@ pub fn transform_spills(
 
     let mut builder = OpBuilder::new(op.borrow().context_rc());
 
-    log::debug!(target: "insert-spills", "analysis determined that some spills were required");
-    log::debug!(target: "insert-spills", "    edges to split = {}", analysis.splits().len());
-    log::debug!(target: "insert-spills", "    values spilled = {}", analysis.spills().len());
-    log::debug!(target: "insert-spills", "    reloads issued = {}", analysis.reloads().len());
+    let trace_target = TraceTarget::category("pass").with_topic("spills");
+    let trace_target = if let Some(sym) = op.borrow().as_symbol() {
+        trace_target.with_relevant_symbol(sym.name())
+    } else {
+        trace_target
+    };
+
+    log::debug!(
+        target: &trace_target,
+        symbol = trace_target.relevant_symbol();
+        "analysis determined that some spills were required
+    edges to split = {}
+    values spilled = {}
+    reloads issued = {}\n",
+        analysis.splits().len(),
+        analysis.spills().len(),
+        analysis.reloads().len(),
+    );
 
     // Split all edges along which spills/reloads are required
     for split_info in analysis.splits_mut() {
-        log::trace!(target: "insert-spills", "splitting control flow edge {} -> {}", match split_info.predecessor {
-            Predecessor::Parent => ProgramPoint::before(split_info.predecessor.operation(split_info.point)),
-            Predecessor::Block { op, .. } | Predecessor::Region(op) => ProgramPoint::at_end_of(op.parent().unwrap()),
-        }, split_info.point);
+        log::trace!(
+            target: &trace_target,
+            symbol = trace_target.relevant_symbol();
+            "splitting control flow edge {} -> {}",
+            match split_info.predecessor {
+                Predecessor::Parent => ProgramPoint::before(split_info.predecessor.operation(split_info.point)),
+                Predecessor::Block { op, .. } | Predecessor::Region(op) => ProgramPoint::at_end_of(op.parent().unwrap()),
+            },
+            split_info.point,
+        );
 
         let predecessor_block = split_info
             .predecessor
@@ -141,7 +161,11 @@ pub fn transform_spills(
 
         // Create the split and switch the insertion point to the end of it
         let split = builder.create_block(predecessor_region, Some(predecessor_block), &[]);
-        log::trace!(target: "insert-spills", "created {split} to hold contents of split edge");
+        log::trace!(
+            target: &trace_target,
+            symbol = trace_target.relevant_symbol();
+            "created {split} to hold contents of split edge"
+        );
 
         // Record the block we created for this split
         split_info.split = Some(split);
@@ -151,12 +175,20 @@ pub fn transform_spills(
         // branch that terminates `split`.
         match split_info.predecessor {
             Predecessor::Block { mut op, index } => {
-                log::trace!(target: "insert-spills", "redirecting {predecessor_block} to {split}");
+                log::trace!(
+                    target: &trace_target,
+                    symbol = trace_target.relevant_symbol();
+                    "redirecting {predecessor_block} to {split}"
+                );
                 let mut op = op.borrow_mut();
                 let mut succ = op.successor_mut(index as usize);
                 let prev_dest = succ.dest.parent().unwrap();
                 succ.dest.borrow_mut().set(split);
-                log::trace!(target: "insert-spills", "creating edge from {split} to {prev_dest}");
+                log::trace!(
+                    target: &trace_target,
+                    symbol = trace_target.relevant_symbol();
+                    "creating edge from {split} to {prev_dest}"
+                );
                 let arguments = succ
                     .arguments
                     .take()
@@ -189,7 +221,12 @@ pub fn transform_spills(
                 }
             }
             Predecessor::Region(predecessor) => {
-                log::trace!(target: "insert-spills", "splitting region control flow edge to {} from {predecessor}", split_info.point);
+                log::trace!(
+                    target: &trace_target,
+                    symbol = trace_target.relevant_symbol();
+                    "splitting region control flow edge to {} from {predecessor}",
+                    split_info.point
+                );
                 todo!()
             }
             Predecessor::Parent => unimplemented!(
@@ -210,7 +247,12 @@ pub fn transform_spills(
             }
             Placement::At(ip) => ip,
         };
-        log::trace!(target: "insert-spills", "inserting spill of {} at {ip}", spill.value);
+        log::trace!(
+            target: &trace_target,
+            symbol = trace_target.relevant_symbol();
+            "inserting spill of {} at {ip}",
+            spill.value
+        );
         builder.set_insertion_point(ip);
         let inst = interface.create_spill(&mut builder, spill.value, spill.span)?;
         spill.inst = Some(inst);
@@ -228,21 +270,44 @@ pub fn transform_spills(
             }
             Placement::At(ip) => ip,
         };
-        log::trace!(target: "insert-spills", "inserting reload of {} at {ip}", reload.value);
+        log::trace!(
+            target: &trace_target,
+            symbol = trace_target.relevant_symbol();
+            "inserting reload of {} at {ip}",
+            reload.value
+        );
         builder.set_insertion_point(ip);
         let inst = interface.create_reload(&mut builder, reload.value, reload.span)?;
         reload.inst = Some(inst);
     }
 
-    log::trace!(target: "insert-spills", "all spills and reloads inserted successfully");
+    log::trace!(
+        target: &trace_target,
+        symbol = trace_target.relevant_symbol();
+        "all spills and reloads inserted successfully"
+    );
 
-    log::trace!(target: "insert-spills", "op {} after inserting  spills: {}", op.name(), op.borrow());
+    log::trace!(
+        target: &trace_target,
+        symbol = trace_target.relevant_symbol(),
+        dialect = op.name().dialect().as_str(),
+        op = op.name().name().as_str();
+        "op after inserting spills: {}",
+        op.borrow()
+    );
 
     let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
 
     let region = op.borrow().regions().front().as_pointer().unwrap();
     if region.borrow().has_one_block() {
-        rewrite_single_block_spills(op, region, analysis, interface, analysis_manager)?;
+        rewrite_single_block_spills(
+            op,
+            region,
+            analysis,
+            interface,
+            analysis_manager,
+            &trace_target,
+        )?;
     } else {
         rewrite_cfg_spills(
             builder.context_rc(),
@@ -251,10 +316,17 @@ pub fn transform_spills(
             interface,
             &dominfo,
             analysis_manager,
+            &trace_target,
         )?;
     }
 
-    log::trace!(target: "insert-spills", "op {} after rewriting  spills: {}", op.name(), op.borrow());
+    log::trace!(
+        symbol = trace_target.relevant_symbol(),
+        dialect = op.name().dialect().as_str(),
+        op = op.name().name().as_str();
+        "op after rewriting spills: {}",
+        op.borrow()
+    );
     Ok(PostPassStatus::Changed)
 }
 
@@ -264,6 +336,7 @@ fn rewrite_single_block_spills(
     analysis: &mut SpillAnalysis,
     interface: &mut dyn TransformSpillsInterface,
     _analysis_manager: AnalysisManager,
+    trace_target: &TraceTarget,
 ) -> Result<(), Report> {
     // In a flattened CFG with only structured control flow, no dominance tree is required.
     //
@@ -309,7 +382,7 @@ fn rewrite_single_block_spills(
     }
 
     let mut block_states =
-        FxHashMap::<BlockRef, SmallDenseMap<ValueRef, SmallSet<OpOperand, 4>, 4>>::default();
+        FxHashMap::<BlockRef, SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>>::default();
     let entry_block = region.borrow().entry_block_ref().unwrap();
     let mut block_q = VecDeque::from([Node::new(entry_block)]);
 
@@ -373,54 +446,15 @@ fn rewrite_single_block_spills(
         }
 
         let used = block_states.entry(node.block).or_default();
-
-        let reload_like = op.as_trait::<dyn ReloadLike>();
-        let is_reload_like = reload_like.is_some();
-        if let Some(reload_like) = reload_like {
-            // We've found a reload of a spilled value, rewrite all uses of the spilled value
-            // found so far to use the reload instead.
-            let spilled = reload_like.spilled_value();
-            let reloaded = reload_like.reloaded();
-
-            if let Some(to_rewrite) = used.remove(&spilled) {
-                debug_assert!(!to_rewrite.is_empty(), "expected empty use sets to be removed");
-
-                for mut user in to_rewrite {
-                    user.borrow_mut().set(reloaded);
-                }
-            } else {
-                // This reload is unused, so remove it entirely, and move to the next op
-                node.move_next();
-                block_q.push_back(node);
-                continue;
-            }
-        }
+        find_inst_uses(&op, used, analysis, trace_target);
 
         // Advance the cursor in this block
         node.move_next();
         block_q.push_back(node);
-
-        // Remove any use tracking for spilled values defined by this op
-        for result in ValueRange::<2>::from(op.results().all()) {
-            if analysis.is_spilled(&result) {
-                used.remove(&result);
-                continue;
-            }
-        }
-
-        // Record any uses of spilled values by this op, so long as the op is not reload-like
-        if !is_reload_like {
-            for operand in op.operands().iter().copied() {
-                let value = operand.borrow().as_value_ref();
-                if analysis.is_spilled(&value) {
-                    used.entry(value).or_default().insert(operand);
-                }
-            }
-        }
     }
 
     let context = { op.borrow().context_rc() };
-    rewrite_spill_pseudo_instructions(context, analysis, interface, None)
+    rewrite_spill_pseudo_instructions(context, analysis, interface, None, trace_target)
 }
 
 fn rewrite_cfg_spills(
@@ -430,6 +464,7 @@ fn rewrite_cfg_spills(
     interface: &mut dyn TransformSpillsInterface,
     dominfo: &DominanceInfo,
     _analysis_manager: AnalysisManager,
+    trace_target: &TraceTarget,
 ) -> Result<(), Report> {
     // At this point, we've potentially emitted spills/reloads, but these are not yet being
     // used to split the live ranges of the SSA values to which they apply. Our job now, is
@@ -462,7 +497,7 @@ fn rewrite_cfg_spills(
     // Make sure that any block in the iterated dominance frontier of a spilled value, has
     // a new phi (block argument) inserted, if one is not already present. These must be in
     // the CFG before we search for dominating definitions.
-    let inserted_phis = insert_required_phis(&context, analysis, &domf);
+    let inserted_phis = insert_required_phis(&context, analysis, &domf, trace_target);
 
     // Traverse the CFG bottom-up, doing the following along the way:
     //
@@ -518,7 +553,7 @@ fn rewrite_cfg_spills(
         // definitions
         let block = block_ref.borrow();
         for op in block.body().iter().rev() {
-            find_inst_uses(&op, &mut used, analysis);
+            find_inst_uses(&op, &mut used, analysis, trace_target);
         }
 
         // At the top of the block, if any of the block parameters are in the "used" set, remove
@@ -528,14 +563,128 @@ fn rewrite_cfg_spills(
             used.remove(&arg);
         }
 
-        rewrite_inserted_phi_uses(&inserted_phis, block_ref, &mut used);
+        rewrite_inserted_phi_uses(&inserted_phis, block_ref, &mut used, trace_target);
 
         // What remains are the unsatisfied uses of spilled values for this block and its
         // successors
         used_sets.insert(block_ref, used);
     }
 
-    rewrite_spill_pseudo_instructions(context, analysis, interface, Some(dominfo))
+    rewrite_spill_pseudo_instructions(context, analysis, interface, Some(dominfo), trace_target)
+}
+
+/// Rewrite uses of spilled values in `op` and any nested regions of `op`.
+///
+/// This is required for correctness when spills/reloads are inserted into regions nested under a
+/// CFG block (e.g. structured control flow like `scf.if`), as those uses are otherwise ignored by
+/// the CFG rewrite pass.
+fn find_inst_uses(
+    op: &Operation,
+    used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
+    analysis: &SpillAnalysis,
+    trace_target: &TraceTarget,
+) {
+    merge_op_nested_region_uses(op, used, analysis, trace_target);
+
+    find_inst_uses_in_op(op, used, analysis);
+}
+
+/// Merge into `used` the set of unsatisfied uses of spilled values from regions nested under `op`
+/// that are reachable from the parent.
+///
+/// NOTE: We process each nested region independently so that reloads in one region do not
+/// incorrectly rewrite uses from another (e.g. `then` vs `else` branches).
+fn merge_op_nested_region_uses(
+    op: &Operation,
+    used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
+    analysis: &SpillAnalysis,
+    trace_target: &TraceTarget,
+) {
+    if op.implements::<dyn IsolatedFromAbove>() {
+        return;
+    }
+
+    // If this op participates in the region-branch interface, use the successor relation to only
+    // consider regions reachable from the parent.
+    if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
+        merge_nested_region_uses(branch, used, analysis, trace_target);
+        return;
+    }
+
+    // Fallback for ops that contain regions but do not implement RegionBranchOpInterface.
+    //
+    // We conservatively treat each region as reachable from the parent, and only attempt to
+    // collect uses from single-block regions (multi-block nested regions require SSA reconstruction
+    // within the nested CFG).
+    for region in op.regions().iter() {
+        let region = region.as_region_ref();
+        let region_borrowed = region.borrow();
+
+        if region_borrowed.is_empty() {
+            continue;
+        }
+        if !region_borrowed.has_one_block() {
+            log::trace!(
+                target: "insert-spills",
+                "skipping multi-block nested region {region} when collecting spill uses"
+            );
+            continue;
+        }
+
+        let entry = region_borrowed
+            .entry_block_ref()
+            .expect("expected non-empty region to have an entry block");
+        drop(region_borrowed);
+
+        let region_used = collect_block_uses(entry, analysis, trace_target);
+        for (value, users) in region_used {
+            used.entry(value).or_default().extend(users.iter().copied());
+        }
+    }
+}
+
+/// Merge into `used` the set of unsatisfied uses of spilled values from regions nested under
+/// `branch` that are reachable from the parent.
+///
+/// For region-branch ops, this includes *transitively* reachable regions. For example, `scf.while`
+/// has an `after` region which is not an immediate successor of the parent, but is still reachable
+/// from the parent through the region graph (via the `before` region).
+fn merge_nested_region_uses(
+    branch: &dyn RegionBranchOpInterface,
+    used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
+    analysis: &SpillAnalysis,
+    trace_target: &TraceTarget,
+) {
+    for region in Region::postorder_region_graph_for(branch) {
+        let region = region.borrow();
+        assert!(region.has_one_block(), "multi-block regions are not currently supported");
+        let entry = region.entry_block_ref().expect("expected region to have an entry block");
+        drop(region);
+
+        let region_used = collect_block_uses(entry, analysis, trace_target);
+        for (value, users) in region_used {
+            used.entry(value).or_default().extend(users.iter().copied());
+        }
+    }
+}
+
+/// Collect the set of unsatisfied uses of spilled values at the entry of `block_ref`.
+fn collect_block_uses(
+    block_ref: BlockRef,
+    analysis: &SpillAnalysis,
+    trace_target: &TraceTarget,
+) -> SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8> {
+    let mut used = SmallDenseMap::<ValueRef, SmallSet<OpOperand, 8>, 8>::default();
+    let block = block_ref.borrow();
+    for op in block.body().iter().rev() {
+        find_inst_uses(&op, &mut used, analysis, trace_target);
+    }
+
+    for arg in ValueRange::<2>::from(block.arguments()) {
+        used.remove(&arg);
+    }
+
+    used
 }
 
 /// Insert additional phi nodes as follows:
@@ -551,13 +700,19 @@ fn insert_required_phis(
     context: &Context,
     analysis: &SpillAnalysis,
     domf: &DominanceFrontier,
+    trace_target: &TraceTarget,
 ) -> SmallDenseMap<BlockRef, SmallDenseMap<ValueRef, ValueRef, 8>, 8> {
     use midenc_hir::adt::smallmap::Entry;
 
     let mut required_phis = SmallDenseMap::<ValueRef, SmallSet<BlockRef, 2>, 4>::default();
     for reload in analysis.reloads() {
         let block = reload.inst.unwrap().parent().unwrap();
-        log::trace!(target: "insert-spills", "add required_phis for {}", reload.value);
+        log::trace!(
+            target: trace_target,
+            symbol = trace_target.relevant_symbol();
+            "add required_phis for {}",
+            reload.value
+        );
         let r = required_phis.entry(reload.value).or_default();
         r.insert(block);
     }
@@ -599,7 +754,8 @@ fn insert_required_phis(
     inserted_phis
 }
 
-fn find_inst_uses(
+/// Find uses of spilled values in `op` itself (not including nested regions).
+fn find_inst_uses_in_op(
     op: &Operation,
     used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
     analysis: &SpillAnalysis,
@@ -647,6 +803,7 @@ fn rewrite_inserted_phi_uses(
     inserted_phis: &SmallDenseMap<BlockRef, SmallDenseMap<ValueRef, ValueRef, 8>, 8>,
     block_ref: BlockRef,
     used: &mut SmallDenseMap<ValueRef, SmallSet<OpOperand, 8>, 8>,
+    trace_target: &TraceTarget,
 ) {
     // If we have inserted any phis in this block, rewrite uses of the spilled values they
     // represent.
@@ -660,7 +817,11 @@ fn rewrite_inserted_phi_uses(
                 }
             } else {
                 // TODO(pauls): This phi is unused, we should be able to remove it
-                log::warn!(target: "insert-spills", "unused phi {phi} encountered during rewrite phase");
+                log::warn!(
+                    target: trace_target,
+                    symbol = trace_target.relevant_symbol();
+                    "unused phi {phi} encountered during rewrite phase"
+                );
                 continue;
             }
         }
@@ -684,13 +845,15 @@ fn rewrite_spill_pseudo_instructions(
     analysis: &mut SpillAnalysis,
     interface: &mut dyn TransformSpillsInterface,
     dominfo: Option<&DominanceInfo>,
+    trace_target: &TraceTarget,
 ) -> Result<(), Report> {
     use midenc_hir::{
         dominance::Dominates,
-        patterns::{NoopRewriterListener, RewriterImpl},
+        patterns::{RewriterImpl, TracingRewriterListener},
     };
 
-    let mut builder = RewriterImpl::<NoopRewriterListener>::new(context);
+    let mut builder = RewriterImpl::<TracingRewriterListener>::new(context)
+        .with_listener(TracingRewriterListener);
     for spill in analysis.spills() {
         let operation = spill.inst.expect("expected spill to have been materialized");
         let spilled = {
@@ -751,11 +914,21 @@ fn rewrite_spill_pseudo_instructions(
 
         // Avoid emitting loads for unused reloads
         if is_used {
-            log::trace!(target: "insert-spills", "convert reload to load {:?}", reload.place);
+            log::trace!(
+                target: trace_target,
+                symbol = trace_target.relevant_symbol();
+                "convert reload to load {}",
+                reload.place
+            );
             builder.set_insertion_point_after(operation);
             interface.convert_reload_to_load(&mut builder, operation)?;
         } else {
-            log::trace!(target: "insert-spills", "erase unused reload {:?}", reload.value);
+            log::trace!(
+                target: trace_target,
+                symbol = trace_target.relevant_symbol();
+                "erase unused reload {}",
+                reload.value
+            );
             builder.erase_op(operation);
         }
     }

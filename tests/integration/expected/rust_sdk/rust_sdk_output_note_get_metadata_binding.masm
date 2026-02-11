@@ -1,13 +1,13 @@
-# mod miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1
+# mod ::"miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1"
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> (felt, felt, felt, felt)
-    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::init
+    exec."miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1"::init
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1#binding
+    exec.::"miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1"::rust_sdk_output_note_get_metadata_binding::"miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1#binding"
     trace.252
     nop
     push.0
@@ -62,7 +62,7 @@ pub proc binding(
     nop
     movdn.3
     swap.2
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -75,7 +75,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -86,7 +86,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding
+# mod ::"miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1"::rust_sdk_output_note_get_metadata_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -102,6 +102,7 @@ proc rust_sdk_output_note_get_metadata_binding::bindings::__link_custom_section_
     nop
 end
 
+@locals("2")
 @callconv("C")
 proc miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1#binding(
 
@@ -114,11 +115,18 @@ proc miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-me
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.16
+    push.32
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -128,19 +136,22 @@ proc miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-me
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1"::rust_sdk_output_note_get_metadata_binding::wit_bindgen::rt::run_ctors_once
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.0
+    swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::intrinsics::felt::from_u32
-    trace.252
-    nop
-    dup.1
-    trace.240
-    nop
-    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::miden_base_sys::bindings::output_note::get_metadata
+    exec.::"miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1"::rust_sdk_output_note_get_metadata_binding::miden_base_sys::bindings::output_note::get_metadata
     trace.252
     nop
     push.1114148
@@ -153,8 +164,25 @@ proc miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-me
     nop
     push.1048584
     u32wrapping_add
-    push.8
-    dup.2
+    dup.0
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.24
+    swap.1
     add
     u32assert
     push.8
@@ -172,7 +200,7 @@ proc miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-me
     nop
     swap.1
     push.8
-    dup.3
+    movup.3
     add
     u32assert
     push.4
@@ -190,39 +218,65 @@ proc miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-me
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    dup.1
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
+    locaddr.1
+    push.0
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_dw
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    locaddr.0
+    push.0
     swap.1
-    dup.2
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
     trace.240
     nop
-    exec.::intrinsics::mem::store_dw
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
+    swap.1
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
     movup.2
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.32
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -232,8 +286,17 @@ proc miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-me
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -275,9 +338,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
         trace.240
         nop
-        exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::__wasm_call_ctors
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+        trace.240
+        nop
+        exec.::"miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1"::rust_sdk_output_note_get_metadata_binding::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1
@@ -308,11 +387,20 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
+@locals("3")
 @callconv("C")
 proc miden_base_sys::bindings::output_note::get_metadata(
     i32,
     felt
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114144
     u32divmod.4
     swap.1
@@ -323,9 +411,16 @@ proc miden_base_sys::bindings::output_note::get_metadata(
     nop
     push.32
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.2
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -333,15 +428,38 @@ proc miden_base_sys::bindings::output_note::get_metadata(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    dup.0
-    movup.3
+    locaddr.2
+    push.0
+    swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::miden::output_note::get_metadata
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.8
-    dup.1
+    swap.1
+    trace.240
+    nop
+    exec.::"miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1"::rust_sdk_output_note_get_metadata_binding::"miden::protocol::output_note::get_metadata"
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    swap.1
     add
     u32assert
     push.8
@@ -359,7 +477,7 @@ proc miden_base_sys::bindings::output_note::get_metadata(
     nop
     swap.1
     push.24
-    dup.3
+    movup.3
     add
     u32assert
     push.8
@@ -368,6 +486,8 @@ proc miden_base_sys::bindings::output_note::get_metadata(
     u32mod
     u32assert
     assertz
+    swap.2
+    movup.2
     u32divmod.4
     swap.1
     movup.2
@@ -377,7 +497,26 @@ proc miden_base_sys::bindings::output_note::get_metadata(
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    dup.0
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.24
+    swap.1
+    add
+    u32assert
     push.8
     dup.1
     swap.1
@@ -393,7 +532,95 @@ proc miden_base_sys::bindings::output_note::get_metadata(
     nop
     swap.1
     push.16
-    dup.3
+    movup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
+    movup.2
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    push.8
+    movup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
+    movup.2
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    swap.1
     add
     u32assert
     push.8
@@ -404,6 +631,23 @@ proc miden_base_sys::bindings::output_note::get_metadata(
     assertz
     u32divmod.4
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    movup.2
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
+    movup.2
+    u32divmod.4
+    swap.1
     movup.2
     movdn.3
     trace.240
@@ -411,13 +655,12 @@ proc miden_base_sys::bindings::output_note::get_metadata(
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    push.16
-    dup.1
-    u32wrapping_add
-    movup.2
+    locaddr.2
+    push.0
+    swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-output-note-get-metadata-binding/rust-sdk-output-note-get-metadata-binding@0.0.1::rust_sdk_output_note_get_metadata_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.32
@@ -433,295 +676,13 @@ proc miden_base_sys::bindings::output_note::get_metadata(
 end
 
 @callconv("C")
-proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
-    i32,
-    i32
-)
-    push.1114144
-    u32divmod.4
-    swap.1
+proc miden::protocol::output_note::get_metadata(felt, i32)
     trace.240
     nop
-    exec.::intrinsics::mem::load_sw
+    exec.::miden::protocol::output_note::get_metadata
     trace.252
     nop
-    push.16
-    u32wrapping_sub
-    push.8
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.8
-    dup.3
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    movup.2
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    dup.2
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.12
-    dup.1
-    u32wrapping_add
-    push.0
-    movup.2
-    swap.1
-    push.1
-    while.true
-        push.0
-        push.8
-        dup.2
-        eq
-        neq
-        dup.0
-        if.true
-            movup.3
-            movup.2
-            drop
-            drop
-            push.3735929054
-            dup.0
-        else
-            dup.2
-            dup.2
-            u32wrapping_add
-            dup.0
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            dup.5
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_sw
-            trace.252
-            nop
-            movup.2
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_sw
-            trace.252
-            nop
-            dup.4
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_felt
-            trace.252
-            nop
-            push.4294967292
-            movup.4
-            u32wrapping_add
-            push.4
-            movup.3
-            u32wrapping_add
-        end
-        push.3735929054
-        dup.3
-        dup.6
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.6
-        swap.2
-        swap.1
-        cdrop
-        push.1
-        push.0
-        movup.6
-        cdrop
-        push.1
-        u32and
-        swap.1
-        swap.2
-        swap.4
-        swap.3
-        swap.1
-        if.true
-            movup.4
-            drop
-            movup.4
-            drop
-            push.1
-        else
-            push.0
-        end
-    end
-    drop
-    drop
-    drop
-    drop
-    push.8
-    dup.1
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.8
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    movup.2
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc miden::output_note::get_metadata(felt, i32)
-    trace.240
-    nop
-    exec.::miden::output_note::get_metadata
-    trace.252
-    nop
-    movup.4
+    movup.8
     dup.0
     movup.2
     swap.1
@@ -759,6 +720,58 @@ proc miden::output_note::get_metadata(felt, i32)
     trace.252
     nop
     push.12
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.16
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.20
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.24
+    dup.1
+    add
+    u32assert
+    movup.2
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.28
     add
     u32assert
     u32divmod.4

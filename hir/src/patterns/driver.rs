@@ -12,7 +12,7 @@ use crate::{
     OperationFolder, OperationRef, ProgramPoint, RawWalk, Region, RegionRef, Report, SourceSpan,
     Spanned, Value, ValueRef, WalkResult,
     adt::SmallSet,
-    patterns::{PatternApplicationError, RewritePattern},
+    patterns::{PatternApplicationError, RewritePattern, TracingRewriterListener},
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
 };
 
@@ -266,7 +266,11 @@ pub struct GreedyRewriteConfig {
 impl Default for GreedyRewriteConfig {
     fn default() -> Self {
         Self {
-            listener: None,
+            listener: if log::log_enabled!(target: "rewriter", log::Level::Trace) {
+                Some(Rc::new(TracingRewriterListener))
+            } else {
+                None
+            },
             scope: None,
             max_iterations: core::num::NonZeroU32::new(10),
             max_rewrites: None,
@@ -475,11 +479,11 @@ impl GreedyPatternRewriteDriver {
     fn process_worklist_item(
         &self,
         rewriter: &mut PatternRewriter<Rc<Self>>,
-        mut op_ref: OperationRef,
+        op_ref: OperationRef,
     ) -> bool {
-        let op = op_ref.borrow();
+        log::trace!(target: "pattern-rewrite-driver", "processing operation '{op_ref}'");
 
-        log::trace!(target: "pattern-rewrite-driver", "processing operation '{op}'");
+        let op = op_ref.borrow();
 
         // If the operation is trivially dead - remove it.
         if op.is_trivially_dead() {
@@ -493,10 +497,6 @@ impl GreedyPatternRewriteDriver {
         // folding loop, since the folded result would be immediately materialized as a constant
         // op, and then revisited.
         if !op.implements::<dyn ConstantLike>() {
-            // Re-borrow mutably since we're going to try and rewrite `op` now
-            drop(op);
-            let op = op_ref.borrow_mut();
-
             let mut results = SmallVec::<[OpFoldResult; 1]>::default();
             log::trace!(target: "pattern-rewrite-driver", "attempting to fold operation..");
             if op.fold(&mut results).is_ok() {
@@ -634,6 +634,9 @@ impl GreedyPatternRewriteDriver {
             log::trace!(target: "pattern-rewrite-driver", "operation could not be folded");
         }
 
+        // Drop this reference before we begin rewriting
+        drop(op);
+
         // Try to match one of the patterns.
         //
         // The rewriter is automatically notified of any necessary changes, so there is nothing
@@ -647,7 +650,7 @@ impl GreedyPatternRewriteDriver {
         // This is another aspect of the listener infra that needs to be handled
         log::trace!(target: "pattern-rewrite-driver", "attempting to match and rewrite one of the input patterns..");
         let result = if let Some(listener) = self.config.listener.as_deref() {
-            let op_name = op_ref.borrow().name();
+            let op_name = op_ref.name();
             let can_apply = |pattern: &dyn RewritePattern| {
                 log::trace!(target: "pattern-rewrite-driver", "applying pattern {} to op {}", pattern.name(), &op_name);
                 listener.notify_pattern_begin(pattern, op_ref);

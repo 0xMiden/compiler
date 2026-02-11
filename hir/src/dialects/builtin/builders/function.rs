@@ -1,4 +1,7 @@
-use crate::{dialects::builtin::FunctionRef, *};
+use crate::{
+    dialects::builtin::{FunctionRef, LocalVariable},
+    *,
+};
 
 pub struct FunctionBuilder<'f, B: ?Sized> {
     pub func: FunctionRef,
@@ -84,6 +87,10 @@ impl<'f, B: ?Sized + Builder> FunctionBuilder<'f, B> {
 
     pub fn append_block_param(&mut self, block: BlockRef, ty: Type, span: SourceSpan) -> ValueRef {
         self.builder.context().append_block_argument(block, ty, span)
+    }
+
+    pub fn alloc_local(&mut self, ty: Type) -> LocalVariable {
+        self.func.borrow_mut().alloc_local(ty)
     }
 
     pub fn builder(&self) -> &B {

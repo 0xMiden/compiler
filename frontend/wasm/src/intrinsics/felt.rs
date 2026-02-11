@@ -9,7 +9,6 @@ use midenc_hir::{
 
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
-pub(crate) const MODULE_ID: &str = "intrinsics::felt";
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
     SymbolNameComponent::Component(symbols::Intrinsics),
@@ -28,7 +27,7 @@ pub(crate) fn convert_felt_intrinsics<B: ?Sized + Builder>(
         // Conversion operations
         "from_u64_unchecked" => {
             assert_eq!(args.len(), 1, "{function} takes exactly one argument");
-            let inst = builder.cast(args[0], Type::Felt, span)?;
+            let inst = builder.trunc(args[0], Type::Felt, span)?;
             Ok(smallvec![inst])
         }
         "from_u32" => {

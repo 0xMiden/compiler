@@ -17,10 +17,14 @@ use super::*;
 /// solved with this tactic (alone anyway).
 #[derive(Default)]
 pub struct SwapAndMoveUp;
+
 impl Tactic for SwapAndMoveUp {
     fn apply(&mut self, builder: &mut SolutionBuilder) -> TacticResult {
+        let trace_target = builder.trace_target().clone().with_topic("solver:swap-and-move-up");
+
         if builder.requires_copies() || builder.arity() < 2 {
             log::trace!(
+                target: &trace_target,
                 "cannot apply tactic when there are required copies ({}) or fewer than 2 operands \
                  ({})",
                 builder.requires_copies(),
@@ -32,18 +36,20 @@ impl Tactic for SwapAndMoveUp {
         // Find the operand that should be at index 1 and swap the top element
         // with it; then move up the value that should be at index 0
         let Some(expected1) = builder.get_expected(1) else {
-            log::trace!("abandoning tactic because operand at index 1 is already in position");
+            log::trace!(target: &trace_target, "abandoning tactic because operand at index 1 is already in position");
             return Err(TacticError::NotApplicable);
         };
         let expected1_pos = builder.unwrap_current_position(&expected1);
         if expected1_pos == 0 {
             log::trace!(
+                target: &trace_target,
                 "swapping {expected1:?} from top of the stack, with {:?} at index 1",
                 builder.stack()[1]
             );
             builder.swap(1);
         } else {
             log::trace!(
+                target: &trace_target,
                 "swapping {expected1:?} at index {expected1_pos} to the top of the stack, with \
                  {:?}",
                 builder.stack()[0]
@@ -56,6 +62,7 @@ impl Tactic for SwapAndMoveUp {
         let expected0_pos = builder.unwrap_current_position(&expected0);
         if expected0_pos > 0 {
             log::trace!(
+                target: &trace_target,
                 "moving {expected0:?} from index {expected0_pos} to the top of stack, shifting \
                  {:?} down by one",
                 builder.stack()[0]

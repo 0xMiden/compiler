@@ -2,7 +2,7 @@ use core::ops::{Deref, DerefMut};
 
 pub use self::{
     crypto::Digest,
-    felt::{Felt, assert_eq},
+    felt::{Felt, assert, assert_eq, assertz},
     word::Word,
 };
 

@@ -211,7 +211,7 @@ impl DataFlowSolver {
             // Log a warning when this happens, since the calling code might benefit from not
             // even instantiating the solver in the first place.
             let location = core::panic::Location::caller();
-            log::warn!(target: "dataflow-solver", "dataflow solver was run without any loaded analyses at {location}");
+            log::warn!(target: "dataflow:solver", "dataflow solver was run without any loaded analyses at {location}");
             return Ok(());
         }
 
@@ -228,7 +228,7 @@ impl DataFlowSolver {
     /// Once initialization is complete, every analysis has been run exactly once, but some may have
     /// been re-enqueued due to dependencies on analysis states which changed during initialization.
     fn analyze(&mut self, op: &Operation, analysis_manager: AnalysisManager) -> Result<(), Report> {
-        log::debug!(target: "dataflow-solver", "initializing loaded analyses");
+        log::debug!(target: "dataflow:solver", "initializing loaded analyses");
 
         for mut analysis in core::mem::take(&mut self.child_analyses) {
             // priming analysis {analysis.debug_name()}
@@ -243,7 +243,7 @@ impl DataFlowSolver {
             self.current_analysis = None;
         }
 
-        log::debug!(target: "dataflow-solver", "initialization complete!");
+        log::debug!(target: "dataflow:solver", "initialization complete!");
 
         Ok(())
     }
@@ -304,7 +304,7 @@ impl DataFlowSolver {
     /// value. The "most-maximal" state in this analysis however, is a conflict, i.e. the value is
     /// over specified, because we are able to observe a counter-example.
     fn run_to_fixpoint(&mut self) -> Result<(), Report> {
-        log::debug!(target: "dataflow-solver", "running queued dataflow analyses to fixpoint..");
+        log::debug!(target: "dataflow:solver", "running queued dataflow analyses to fixpoint..");
 
         // Run the analysis until fixpoint
         while let Some(QueuedAnalysis {
@@ -379,23 +379,23 @@ impl DataFlowSolver {
     {
         use hashbrown::hash_map::Entry;
 
-        log::trace!(target: "dataflow-solver", "computing analysis state entry key");
-        log::trace!(target: "dataflow-solver", "    loc       = {}", core::panic::Location::caller());
-        log::trace!(target: "dataflow-solver", "    anchor    = {anchor}");
-        log::trace!(target: "dataflow-solver", "    anchor ty = {}", core::any::type_name::<A>());
+        log::trace!(target: "dataflow:solver", "computing analysis state entry key");
+        log::trace!(target: "dataflow:solver", "    loc       = {}", core::panic::Location::caller());
+        log::trace!(target: "dataflow:solver", "    anchor    = {anchor}");
+        log::trace!(target: "dataflow:solver", "    anchor ty = {}", core::any::type_name::<A>());
         let anchor = self.create_lattice_anchor::<A>(anchor);
-        log::trace!(target: "dataflow-solver", "    anchor id = {}", anchor.anchor_id());
+        log::trace!(target: "dataflow:solver", "    anchor id = {}", anchor.anchor_id());
         let key = AnalysisStateKey::new::<T>(anchor);
-        log::trace!(target: "dataflow-solver", "    key       = {key:?}");
-        log::trace!(target: "dataflow-solver", "    lattice   = {}", core::any::type_name::<T>());
+        log::trace!(target: "dataflow:solver", "    key       = {key:?}");
+        log::trace!(target: "dataflow:solver", "    lattice   = {}", core::any::type_name::<T>());
         match self.analysis_state.borrow_mut().entry(key) {
             Entry::Occupied(entry) => {
-                log::trace!(target: "dataflow-solver", "found existing analysis state entry");
+                log::trace!(target: "dataflow:solver", "found existing analysis state entry");
                 let info = *entry.get();
                 unsafe { AnalysisStateGuard::<T>::new(info) }
             }
             Entry::Vacant(entry) => {
-                log::trace!(target: "dataflow-solver", "creating new analysis state entry");
+                log::trace!(target: "dataflow:solver", "creating new analysis state entry");
                 use crate::analysis::state::RawAnalysisStateInfo;
                 let raw_info = RawAnalysisStateInfo::<T>::alloc(
                     &self.alloc,
@@ -440,23 +440,23 @@ impl DataFlowSolver {
     {
         use hashbrown::hash_map::Entry;
 
-        log::trace!(target: "dataflow-solver", "computing analysis state entry key");
-        log::trace!(target: "dataflow-solver", "    loc       = {}", core::panic::Location::caller());
-        log::trace!(target: "dataflow-solver", "    anchor    = {anchor}");
-        log::trace!(target: "dataflow-solver", "    anchor ty = {}", core::any::type_name::<A>());
+        log::trace!(target: "dataflow:solver", "computing analysis state entry key");
+        log::trace!(target: "dataflow:solver", "    loc       = {}", core::panic::Location::caller());
+        log::trace!(target: "dataflow:solver", "    anchor    = {anchor}");
+        log::trace!(target: "dataflow:solver", "    anchor ty = {}", core::any::type_name::<A>());
         let anchor = self.create_lattice_anchor::<A>(anchor);
-        log::trace!(target: "dataflow-solver", "    anchor id = {}", anchor.anchor_id());
+        log::trace!(target: "dataflow:solver", "    anchor id = {}", anchor.anchor_id());
         let key = AnalysisStateKey::new::<T>(anchor);
-        log::trace!(target: "dataflow-solver", "    key       = {key:?}");
-        log::trace!(target: "dataflow-solver", "    lattice   = {}", core::any::type_name::<T>());
+        log::trace!(target: "dataflow:solver", "    key       = {key:?}");
+        log::trace!(target: "dataflow:solver", "    lattice   = {}", core::any::type_name::<T>());
         match self.analysis_state.borrow_mut().entry(key) {
             Entry::Occupied(entry) => {
-                log::trace!(target: "dataflow-solver", "found existing analysis state entry");
+                log::trace!(target: "dataflow:solver", "found existing analysis state entry");
                 let info = *entry.get();
                 unsafe { AnalysisStateGuardMut::<T>::new(info, self.worklist.clone()) }
             }
             Entry::Vacant(entry) => {
-                log::trace!(target: "dataflow-solver", "creating new analysis state entry");
+                log::trace!(target: "dataflow:solver", "creating new analysis state entry");
                 use crate::analysis::state::RawAnalysisStateInfo;
                 let raw_info = RawAnalysisStateInfo::<T>::alloc(
                     &self.alloc,
@@ -500,24 +500,24 @@ impl DataFlowSolver {
             analysis::state::{RawAnalysisStateInfo, RawAnalysisStateInfoHandle},
         };
 
-        log::trace!(target: "dataflow-solver", "computing analysis state entry key");
-        log::trace!(target: "dataflow-solver", "    loc       = {}", core::panic::Location::caller());
-        log::trace!(target: "dataflow-solver", "    anchor    = {anchor}");
-        log::trace!(target: "dataflow-solver", "    anchor ty = {}", core::any::type_name::<A>());
+        log::trace!(target: "dataflow:solver", "computing analysis state entry key");
+        log::trace!(target: "dataflow:solver", "    loc       = {}", core::panic::Location::caller());
+        log::trace!(target: "dataflow:solver", "    anchor    = {anchor}");
+        log::trace!(target: "dataflow:solver", "    anchor ty = {}", core::any::type_name::<A>());
         let anchor = self.create_lattice_anchor::<A>(anchor);
-        log::trace!(target: "dataflow-solver", "    anchor id = {}", anchor.anchor_id());
+        log::trace!(target: "dataflow:solver", "    anchor id = {}", anchor.anchor_id());
         let key = AnalysisStateKey::new::<T>(anchor);
-        log::trace!(target: "dataflow-solver", "    key       = {key:?}");
-        log::trace!(target: "dataflow-solver", "    lattice   = {}", core::any::type_name::<T>());
-        log::trace!(target: "dataflow-solver", "    dependent = {dependent}");
+        log::trace!(target: "dataflow:solver", "    key       = {key:?}");
+        log::trace!(target: "dataflow:solver", "    lattice   = {}", core::any::type_name::<T>());
+        log::trace!(target: "dataflow:solver", "    dependent = {dependent}");
         let (info, mut handle) = match self.analysis_state.borrow_mut().entry(key) {
             Entry::Occupied(entry) => {
-                log::trace!(target: "dataflow-solver", "found existing analysis state entry");
+                log::trace!(target: "dataflow:solver", "found existing analysis state entry");
                 let info = *entry.get();
                 (info, unsafe { RawAnalysisStateInfoHandle::new(info) })
             }
             Entry::Vacant(entry) => {
-                log::trace!(target: "dataflow-solver", "creating new analysis state entry");
+                log::trace!(target: "dataflow:solver", "creating new analysis state entry");
                 let raw_info = RawAnalysisStateInfo::<T>::alloc(
                     &self.alloc,
                     &mut self.analysis_state_impls,

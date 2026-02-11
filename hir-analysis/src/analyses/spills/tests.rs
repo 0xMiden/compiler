@@ -4,10 +4,11 @@ use std::string::ToString;
 use midenc_dialect_arith::ArithOpBuilder as Arith;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_scf::StructuredControlFlowOpBuilder as Scf;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AbiParam, AddressSpace, BlockRef, Builder, Context, Ident, Op, OpBuilder, PointerType,
-    ProgramPoint, Report, Signature, SourceSpan, SymbolTable, Type, ValueRef,
+    AbiParam, AddressSpace, BlockRef, Builder, Context, Ident, Op, OpBuilder, OperationRef,
+    PointerType, ProgramPoint, Report, Signature, SourceSpan, SymbolTable, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
     pass::AnalysisManager,
 };
@@ -62,7 +63,7 @@ type AnalysisResult<T> = Result<T, Report>;
 /// ```
 #[test]
 fn spills_intra_block() -> AnalysisResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -225,7 +226,7 @@ fn spills_intra_block() -> AnalysisResult<()> {
 /// ```
 #[test]
 fn spills_branching_control_flow() -> AnalysisResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -438,7 +439,7 @@ fn spills_branching_control_flow() -> AnalysisResult<()> {
 /// ```
 #[test]
 fn spills_loop_nest() -> AnalysisResult<()> {
-    let _ = env_logger::Builder::from_env("MIDENC_TRACE")
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .format_timestamp(None)
         .is_test(true)
         .try_init();
@@ -605,6 +606,155 @@ fn spills_loop_nest() -> AnalysisResult<()> {
         .iter()
         .any(|r| matches!(r.place, crate::analyses::spills::Placement::Split(_)));
     assert!(reloads_on_splits);
+
+    Ok(())
+}
+
+#[test]
+fn spills_entry_block_args_over_k() -> AnalysisResult<()> {
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
+        .format_timestamp(None)
+        .is_test(true)
+        .try_init();
+
+    let span = SourceSpan::UNKNOWN;
+    let context = Rc::new(Context::default());
+    let mut ob = OpBuilder::new(context.clone());
+
+    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
+    let module_body = module.borrow().body().as_region_ref();
+    ob.create_block(module_body, None, &[]);
+
+    // Construct a function whose entry block arguments alone exceed K=16 stack slots.
+    //
+    // Each `u64` occupies 2 felts on the Miden stack, so 9×`u64` => 18 felts, which forces at least
+    // one spill at the start of the entry block.
+    let params = (0..9).map(|_| AbiParam::new(Type::U64)).collect::<alloc::vec::Vec<_>>();
+    let func = ob.create_function(
+        Ident::with_empty_span("test::spill_entry_args_over_k".into()),
+        Signature::new(params, [AbiParam::new(Type::U32)]),
+    )?;
+    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
+
+    let entry_block: BlockRef;
+    let block_args: alloc::vec::Vec<ValueRef>;
+    {
+        let mut b = FunctionBuilder::new(func, &mut ob);
+        entry_block = b.current_block();
+        // Capture the entry block arguments so we can assert which one is spilled, and where.
+        block_args = entry_block
+            .borrow()
+            .arguments()
+            .iter()
+            .copied()
+            .map(|v| v as ValueRef)
+            .collect();
+
+        // Keep the function body minimal so the only stack pressure comes from the entry arguments.
+        let zero = b.u32(0, span);
+        b.ret(Some(zero), span)?;
+    }
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
+
+    // If entry args exceed K, SpillAnalysis must proactively spill enough args at block start so
+    // W^entry fits in the working stack.
+    assert!(spills.has_spills(), "expected spills when entry args exceed K");
+
+    let entry = ProgramPoint::at_start_of(entry_block);
+    let w_entry_usage = spills.w_entry(&entry).iter().map(|o| o.stack_size()).sum::<usize>();
+    // Regression check: after inserting entry spills, the live working set on entry must be <= K.
+    assert!(w_entry_usage <= 16, "expected W^entry to fit within K=16, got {w_entry_usage}");
+
+    // We expect the highest-index argument(s) to be the first spill candidates.
+    let spilled_arg =
+        *block_args.last().expect("expected at least one block argument in over-K test");
+    assert!(spills.is_spilled(&spilled_arg));
+    // Regression check: the spill should be recorded at the start-of-block program point (not
+    // remapped to end-of-block).
+    assert!(spills.is_spilled_at(spilled_arg, entry));
+
+    Ok(())
+}
+
+#[test]
+fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
+    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
+        .format_timestamp(None)
+        .is_test(true)
+        .try_init();
+
+    let span = SourceSpan::UNKNOWN;
+    let context = Rc::new(Context::default());
+    let mut ob = OpBuilder::new(context.clone());
+
+    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
+    let module_body = module.borrow().body().as_region_ref();
+    ob.create_block(module_body, None, &[]);
+
+    // Construct a function which returns an `scf.if` result set which alone exceeds K=16 stack slots.
+    //
+    // Each `u64` occupies 2 felts on the Miden stack, so 9×`u64` => 18 felts, which forces at least
+    // one spill at `ProgramPoint::after(if_op)`.
+    let func = ob.create_function(
+        Ident::with_empty_span("test::spill_region_branch_results_over_k".into()),
+        Signature::new([], [AbiParam::new(Type::U64)]),
+    )?;
+    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
+
+    let if_op: OperationRef;
+    let if_results: alloc::vec::Vec<ValueRef>;
+    {
+        let mut b = FunctionBuilder::new(func, &mut ob);
+        let entry = b.current_block();
+
+        let cond = b.i1(true, span);
+        let result_tys = alloc::vec![Type::U64; 9];
+        let scf_if = b.r#if(cond, &result_tys, span)?;
+        if_op = scf_if.as_operation_ref();
+        if_results = if_op
+            .borrow()
+            .results()
+            .all()
+            .iter()
+            .map(|r| r.borrow().as_value_ref())
+            .collect();
+
+        // Populate the `then` and `else` regions with yields for all results.
+        let (then_region, else_region) = {
+            let if_op = scf_if.borrow();
+            (if_op.then_body().as_region_ref(), if_op.else_body().as_region_ref())
+        };
+
+        let then_block = b.create_block_in_region(then_region);
+        b.switch_to_block(then_block);
+        let then_values =
+            (0..result_tys.len()).map(|_| b.u64(0, span)).collect::<alloc::vec::Vec<_>>();
+        b.r#yield(then_values, span)?;
+
+        let else_block = b.create_block_in_region(else_region);
+        b.switch_to_block(else_block);
+        let else_values =
+            (0..result_tys.len()).map(|_| b.u64(1, span)).collect::<alloc::vec::Vec<_>>();
+        b.r#yield(else_values, span)?;
+
+        // Return the first result so the `scf.if` is reachable and well-formed.
+        b.switch_to_block(entry);
+        let first = *if_results.first().expect("expected at least one `scf.if` result");
+        b.ret(Some(first), span)?;
+    }
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
+
+    assert!(spills.has_spills(), "expected spills when region branch results exceed K");
+
+    let after_if = ProgramPoint::after(if_op);
+    let spilled_result =
+        *if_results.last().expect("expected at least one `scf.if` result in over-K test");
+    assert!(spills.is_spilled(&spilled_result));
+    assert!(spills.is_spilled_at(spilled_result, after_if));
 
     Ok(())
 }

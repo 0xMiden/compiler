@@ -19,8 +19,8 @@ pub struct Midenc {
     /// The input file to compile
     ///
     /// You may specify `-` to read from stdin, otherwise you must provide a path
-    #[arg(required(true), value_name = "FILE")]
-    input: InputFile,
+    #[arg(value_name = "FILE")]
+    input: Option<InputFile>,
     #[command(flatten)]
     options: compile::Compiler,
 }
@@ -65,8 +65,11 @@ impl Midenc {
         if options.working_dir.is_none() {
             options.working_dir = Some(cwd.into());
         }
-        let session =
-            Rc::new(options.into_session(vec![input], emitter).with_extra_flags(matches.into()));
+        let session = Rc::new(
+            options
+                .into_session(Vec::from_iter(input), emitter)
+                .with_extra_flags(matches.into()),
+        );
         let context = Rc::new(Context::new(session));
         compile::compile(context)
     }

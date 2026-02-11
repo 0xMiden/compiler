@@ -37,23 +37,24 @@ impl IfRemoveUnusedResults {
         rewriter.merge_blocks(src, dest, &[]);
 
         // Replace the yield op with one that returns only the used values.
-        let yield_op = dest.borrow().terminator().unwrap();
+        let op = { dest.borrow().terminator().unwrap() };
         let mut yield_op = unsafe {
-            UnsafeIntrusiveEntityRef::from_raw(yield_op.borrow().downcast_ref::<Yield>().unwrap())
+            UnsafeIntrusiveEntityRef::from_raw(op.borrow().downcast_ref::<Yield>().unwrap())
         };
 
-        let yield_ = yield_op.borrow();
         let mut used_operands = SmallVec::<[ValueRef; 4]>::with_capacity(used_results.len());
-        for used_result in used_results {
-            let value = yield_.operands()[used_result.borrow().index()].borrow().as_value_ref();
-            used_operands.push(value);
+        {
+            let yield_ = yield_op.borrow();
+            for used_result in used_results {
+                let operand = yield_.operands()[used_result.borrow().index()];
+                used_operands.push(operand.borrow().as_value_ref());
+            }
         }
 
-        let yield_operation = yield_op.as_operation_ref();
-        let _guard = rewriter.modify_op_in_place(yield_operation);
-        let mut yield_op = yield_op.borrow_mut();
-        let context = yield_op.as_operation().context_rc();
-        yield_op.yielded_mut().set_operands(used_operands, yield_operation, &context);
+        let _guard = rewriter.modify_op_in_place(op);
+        let mut yield_ = yield_op.borrow_mut();
+        let context = yield_.as_operation().context_rc();
+        yield_.yielded_mut().set_operands(used_operands, op, &context);
     }
 }
 
@@ -99,25 +100,17 @@ impl RewritePattern for IfRemoveUnusedResults {
         let new_if = rewriter.r#if(if_op.condition().as_value_ref(), &new_types, if_op.span())?;
         let new_if_op = new_if.borrow();
 
-        let new_then_block =
-            rewriter.create_block(new_if_op.then_body().as_region_ref(), None, &[]);
-        let new_else_block =
-            rewriter.create_block(new_if_op.else_body().as_region_ref(), None, &[]);
+        let new_then_region = new_if_op.then_body().as_region_ref();
+        let new_then_block = rewriter.create_block(new_then_region, None, &[]);
+        let new_else_region = new_if_op.else_body().as_region_ref();
+        let new_else_block = rewriter.create_block(new_else_region, None, &[]);
 
         // Move the bodies and replace the terminators (note there is a then and an else region
         // since the operation returns results).
-        self.transfer_body(
-            if_op.then_body().entry_block_ref().unwrap(),
-            new_then_block,
-            &used_results,
-            rewriter,
-        );
-        self.transfer_body(
-            if_op.else_body().entry_block_ref().unwrap(),
-            new_else_block,
-            &used_results,
-            rewriter,
-        );
+        let then_entry = { if_op.then_body().entry_block_ref().unwrap() };
+        self.transfer_body(then_entry, new_then_block, &used_results, rewriter);
+        let else_entry = { if_op.else_body().entry_block_ref().unwrap() };
+        self.transfer_body(else_entry, new_else_block, &used_results, rewriter);
         drop(op);
 
         // Replace the operation by the new one.

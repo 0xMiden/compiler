@@ -267,34 +267,20 @@ impl SymbolPath {
 
     /// Derive a Miden Assembly `LibraryPath` from this symbol path
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {
-        use midenc_session::{
-            LibraryNamespace, LibraryPath,
-            miden_assembly::{SourceSpan, Span, ast::Ident},
-        };
+        use midenc_session::LibraryPath;
 
-        let mut components = self.path.iter();
-        let mut parts = SmallVec::<[_; 3]>::default();
-        if self.is_absolute() {
-            let _ = components.next();
-        }
-        let ns = match components.next() {
-            None => {
-                return LibraryPath::new_from_components(LibraryNamespace::Anon, parts);
-            }
-            Some(component) => LibraryNamespace::from_ident_unchecked(Ident::from_raw_parts(
-                Span::new(SourceSpan::default(), component.as_symbol_name().as_str().into()),
-            )),
-        };
-
+        let components = self.path.iter();
+        let mut path = LibraryPath::default();
         for component in components {
-            let id = Ident::from_raw_parts(Span::new(
-                SourceSpan::default(),
-                component.as_symbol_name().as_str().into(),
-            ));
-            parts.push(id);
+            if component.is_root() {
+                path.push_component("::");
+                continue;
+            } else {
+                path.push_component(component.as_symbol_name().as_str());
+            }
         }
 
-        LibraryPath::new_from_components(ns, parts)
+        path
     }
 
     /// Returns true if this symbol name is fully-qualified
@@ -777,12 +763,61 @@ impl Iterator for SymbolNameComponents {
 }
 impl ExactSizeIterator for SymbolNameComponents {
     fn len(&self) -> usize {
-        let is_empty = self.name == interner::symbols::Empty;
-        if is_empty {
-            assert_eq!(self.parts.len(), 0, "malformed symbol name components");
+        if self.done || self.name == interner::symbols::Empty {
             0
         } else {
-            self.parts.len() + 1
+            self.parts.len() + 1 + usize::from(self.absolute)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn symbol_name_components_len_matches_iteration_count() {
+        // Test case: absolute path with parts
+        let iter = SymbolNameComponents {
+            parts: alloc::collections::VecDeque::from(["foo", "bar"]),
+            name: SymbolName::intern("baz"),
+            absolute: true,
+            done: false,
+        };
+        assert_eq!(iter.len(), 4); // Root + foo + bar + baz
+
+        // Test case: relative path (no Root)
+        let iter = SymbolNameComponents {
+            parts: alloc::collections::VecDeque::from(["foo"]),
+            name: SymbolName::intern("bar"),
+            absolute: false,
+            done: false,
+        };
+        assert_eq!(iter.len(), 2); // foo + bar
+
+        // Test case: done iterator returns 0
+        let iter = SymbolNameComponents {
+            parts: alloc::collections::VecDeque::new(),
+            name: SymbolName::intern("x"),
+            absolute: false,
+            done: true,
+        };
+        assert_eq!(iter.len(), 0);
+
+        // Test case: len decreases correctly during iteration
+        let mut iter = SymbolNameComponents {
+            parts: alloc::collections::VecDeque::from(["a"]),
+            name: SymbolName::intern("b"),
+            absolute: true,
+            done: false,
+        };
+        assert_eq!(iter.len(), 3); // Root + a + b
+        iter.next();
+        assert_eq!(iter.len(), 2); // a + b
+        iter.next();
+        assert_eq!(iter.len(), 1); // b
+        iter.next();
+        assert_eq!(iter.len(), 0); // done
+        assert!(iter.next().is_none());
     }
 }

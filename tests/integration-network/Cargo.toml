@@ -1,0 +1,26 @@
+[package]
+name = "midenc-integration-network-tests"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+miden-client = { version = "0.13", features = ["std", "tonic", "testing"] }
+miden-core.workspace = true
+miden-protocol = { workspace = true, features = ["std"] }
+miden-standards = { workspace = true, features = ["std"] }
+miden-field-repr = { version = "0.10.0", path = "../../sdk/field-repr/repr" }
+miden-mast-package.workspace = true
+midenc-frontend-wasm.workspace = true
+rand = "0.9"
+tokio.workspace = true
+
+# For accessing the test builder from the main integration tests
+miden-integration-tests = { path = "../integration" }

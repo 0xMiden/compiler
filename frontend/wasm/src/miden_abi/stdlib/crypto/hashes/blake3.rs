@@ -6,23 +6,23 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const MODULE_ID: &str = "std::crypto::hashes::blake3";
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
-    SymbolNameComponent::Component(symbols::Std),
+    SymbolNameComponent::Component(symbols::Miden),
+    SymbolNameComponent::Component(symbols::Core),
     SymbolNameComponent::Component(symbols::Crypto),
     SymbolNameComponent::Component(symbols::Hashes),
     SymbolNameComponent::Component(symbols::Blake3),
 ];
 
-pub(crate) const HASH_1TO1: &str = "hash_1to1";
-pub(crate) const HASH_2TO1: &str = "hash_2to1";
+pub(crate) const HASH: &str = "hash";
+pub(crate) const MERGE: &str = "merge";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
     let mut blake3: FunctionTypeMap = Default::default();
     blake3.insert(
-        Symbol::from(HASH_1TO1),
+        Symbol::from(HASH),
         FunctionType::new(
             CallConv::Wasm,
             [I32, I32, I32, I32, I32, I32, I32, I32],
@@ -30,7 +30,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         ),
     );
     blake3.insert(
-        Symbol::from(HASH_2TO1),
+        Symbol::from(MERGE),
         FunctionType::new(
             CallConv::Wasm,
             [I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32, I32],

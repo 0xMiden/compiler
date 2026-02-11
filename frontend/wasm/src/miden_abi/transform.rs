@@ -24,196 +24,210 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
     components.next_if_eq(&SymbolNameComponent::Root);
 
     match components.next()?.as_symbol_name() {
-        symbols::Std => match components.next()?.as_symbol_name() {
-            symbols::Mem => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                stdlib::mem::PIPE_WORDS_TO_MEMORY | stdlib::mem::PIPE_DOUBLE_WORDS_TO_MEMORY => {
-                    Some(TransformStrategy::ReturnViaPointer)
+        symbols::Miden => match components.next()?.as_symbol_name() {
+            symbols::Core => match components.next()?.as_symbol_name() {
+                symbols::Mem => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        stdlib::mem::PIPE_WORDS_TO_MEMORY
+                        | stdlib::mem::PIPE_DOUBLE_WORDS_TO_MEMORY => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        stdlib::mem::PIPE_PREIMAGE_TO_MEMORY => {
+                            Some(TransformStrategy::NoTransform)
+                        }
+                        _ => None,
+                    }
                 }
-                stdlib::mem::PIPE_PREIMAGE_TO_MEMORY => Some(TransformStrategy::NoTransform),
-                _ => None,
-            },
-            symbols::Crypto => match components.next()?.as_symbol_name() {
-                symbols::Hashes => match components.next()?.as_symbol_name() {
-                    symbols::Blake3 => {
-                        match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                            stdlib::crypto::hashes::blake3::HASH_1TO1
-                            | stdlib::crypto::hashes::blake3::HASH_2TO1 => {
-                                Some(TransformStrategy::ReturnViaPointer)
+                symbols::Crypto => match components.next()?.as_symbol_name() {
+                    symbols::Hashes => match components.next()?.as_symbol_name() {
+                        symbols::Blake3 => {
+                            match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                                stdlib::crypto::hashes::blake3::HASH
+                                | stdlib::crypto::hashes::blake3::MERGE => {
+                                    Some(TransformStrategy::ReturnViaPointer)
+                                }
+                                _ => None,
                             }
-                            _ => None,
                         }
-                    }
-                    symbols::Sha256 => {
-                        match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                            stdlib::crypto::hashes::sha256::HASH_1TO1
-                            | stdlib::crypto::hashes::sha256::HASH_2TO1 => {
-                                Some(TransformStrategy::ReturnViaPointer)
+                        symbols::Sha256 => {
+                            match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                                stdlib::crypto::hashes::sha256::HASH
+                                | stdlib::crypto::hashes::sha256::MERGE => {
+                                    Some(TransformStrategy::ReturnViaPointer)
+                                }
+                                _ => None,
                             }
-                            _ => None,
                         }
-                    }
-                    symbols::Rpo => {
-                        match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                            stdlib::crypto::hashes::rpo::HASH_MEMORY
-                            | stdlib::crypto::hashes::rpo::HASH_MEMORY_WORDS => {
-                                Some(TransformStrategy::ReturnViaPointer)
+                        symbols::Rpo256 => {
+                            match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                                stdlib::crypto::hashes::rpo256::HASH_ELEMENTS
+                                | stdlib::crypto::hashes::rpo256::HASH_WORDS => {
+                                    Some(TransformStrategy::ReturnViaPointer)
+                                }
+                                _ => None,
                             }
-                            _ => None,
                         }
-                    }
+                        _ => None,
+                    },
+                    symbols::Dsa => match components.next()?.as_symbol_name() {
+                        symbols::Falcon512Rpo => {
+                            match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                                stdlib::crypto::dsa::rpo_falcon512::RPO_FALCON512_VERIFY => {
+                                    Some(TransformStrategy::NoTransform)
+                                }
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    },
                     _ => None,
                 },
-                symbols::Dsa => match components.next()?.as_symbol_name() {
-                    symbols::RpoFalcon512 => {
-                        match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                            stdlib::crypto::dsa::rpo_falcon512::RPO_FALCON512_VERIFY => {
-                                Some(TransformStrategy::NoTransform)
+                symbols::Collections => {
+                    let submodule = components.next()?.as_symbol_name();
+                    if submodule == symbols::Smt {
+                        return match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str()
+                        {
+                            stdlib::collections::smt::GET | stdlib::collections::smt::SET => {
+                                Some(TransformStrategy::ReturnViaPointer)
                             }
                             _ => None,
-                        }
+                        };
                     }
-                    _ => None,
-                },
+                    None
+                }
                 _ => None,
             },
-            symbols::Collections => {
-                let submodule = components.next()?.as_symbol_name();
-                if submodule == symbols::Smt {
-                    return match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        stdlib::collections::smt::GET | stdlib::collections::smt::SET => {
+            symbols::Protocol => match components.next()?.as_symbol_name() {
+                symbols::NativeAccount => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::native_account::ADD_ASSET
+                        | tx_kernel::native_account::REMOVE_ASSET
+                        | tx_kernel::native_account::COMPUTE_DELTA_COMMITMENT
+                        | tx_kernel::native_account::SET_STORAGE_ITEM
+                        | tx_kernel::native_account::SET_STORAGE_MAP_ITEM => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        tx_kernel::native_account::INCR_NONCE
+                        | tx_kernel::native_account::WAS_PROCEDURE_CALLED => {
+                            Some(TransformStrategy::NoTransform)
+                        }
+                        _ => None,
+                    }
+                }
+                symbols::ActiveAccount => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::active_account::GET_NONCE
+                        | tx_kernel::active_account::GET_BALANCE
+                        | tx_kernel::active_account::GET_INITIAL_BALANCE
+                        | tx_kernel::active_account::GET_NUM_PROCEDURES
+                        | tx_kernel::active_account::HAS_NON_FUNGIBLE_ASSET
+                        | tx_kernel::active_account::HAS_PROCEDURE => {
+                            Some(TransformStrategy::NoTransform)
+                        }
+                        tx_kernel::active_account::GET_ID
+                        | tx_kernel::active_account::GET_INITIAL_COMMITMENT
+                        | tx_kernel::active_account::GET_CODE_COMMITMENT
+                        | tx_kernel::active_account::COMPUTE_COMMITMENT
+                        | tx_kernel::active_account::GET_INITIAL_STORAGE_COMMITMENT
+                        | tx_kernel::active_account::COMPUTE_STORAGE_COMMITMENT
+                        | tx_kernel::active_account::GET_STORAGE_ITEM
+                        | tx_kernel::active_account::GET_INITIAL_STORAGE_ITEM
+                        | tx_kernel::active_account::GET_STORAGE_MAP_ITEM
+                        | tx_kernel::active_account::GET_INITIAL_STORAGE_MAP_ITEM
+                        | tx_kernel::active_account::GET_INITIAL_VAULT_ROOT
+                        | tx_kernel::active_account::GET_VAULT_ROOT
+                        | tx_kernel::active_account::GET_PROCEDURE_ROOT => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
-                    };
-                }
-                None
-            }
-            _ => None,
-        },
-        symbols::Miden => match components.next()?.as_symbol_name() {
-            symbols::NativeAccount => {
-                match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                    tx_kernel::native_account::ADD_ASSET
-                    | tx_kernel::native_account::REMOVE_ASSET
-                    | tx_kernel::native_account::COMPUTE_DELTA_COMMITMENT
-                    | tx_kernel::native_account::SET_STORAGE_ITEM
-                    | tx_kernel::native_account::SET_STORAGE_MAP_ITEM => {
-                        Some(TransformStrategy::ReturnViaPointer)
                     }
-                    tx_kernel::native_account::INCR_NONCE
-                    | tx_kernel::native_account::WAS_PROCEDURE_CALLED => {
+                }
+                symbols::Asset => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::asset::BUILD_FUNGIBLE_ASSET
+                        | tx_kernel::asset::BUILD_NON_FUNGIBLE_ASSET => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        _ => None,
+                    }
+                }
+                symbols::Faucet => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::faucet::CREATE_FUNGIBLE_ASSET
+                        | tx_kernel::faucet::CREATE_NON_FUNGIBLE_ASSET
+                        | tx_kernel::faucet::MINT
+                        | tx_kernel::faucet::BURN => Some(TransformStrategy::ReturnViaPointer),
+                        tx_kernel::faucet::GET_TOTAL_ISSUANCE
+                        | tx_kernel::faucet::IS_NON_FUNGIBLE_ASSET_ISSUED => {
+                            Some(TransformStrategy::NoTransform)
+                        }
+                        _ => None,
+                    }
+                }
+                symbols::ActiveNote => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::active_note::GET_INPUTS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::active_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::active_note::GET_SENDER
+                        | tx_kernel::active_note::GET_RECIPIENT
+                        | tx_kernel::active_note::GET_SCRIPT_ROOT
+                        | tx_kernel::active_note::GET_SERIAL_NUMBER
+                        | tx_kernel::active_note::GET_METADATA => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        _ => None,
+                    }
+                }
+                symbols::InputNote => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::input_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::input_note::GET_ASSETS_INFO
+                        | tx_kernel::input_note::GET_RECIPIENT
+                        | tx_kernel::input_note::GET_METADATA
+                        | tx_kernel::input_note::GET_SENDER
+                        | tx_kernel::input_note::GET_INPUTS_INFO
+                        | tx_kernel::input_note::GET_SCRIPT_ROOT
+                        | tx_kernel::input_note::GET_SERIAL_NUMBER => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        _ => None,
+                    }
+                }
+                symbols::OutputNote => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::output_note::CREATE => Some(TransformStrategy::NoTransform),
+                        tx_kernel::output_note::ADD_ASSET => Some(TransformStrategy::NoTransform),
+                        tx_kernel::output_note::SET_ATTACHMENT
+                        | tx_kernel::output_note::SET_WORD_ATTACHMENT
+                        | tx_kernel::output_note::SET_ARRAY_ATTACHMENT => {
+                            Some(TransformStrategy::NoTransform)
+                        }
+                        tx_kernel::output_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::output_note::GET_ASSETS_INFO
+                        | tx_kernel::output_note::GET_RECIPIENT
+                        | tx_kernel::output_note::GET_METADATA => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        _ => None,
+                    }
+                }
+                symbols::Tx => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str()
+                {
+                    tx_kernel::tx::GET_BLOCK_NUMBER
+                    | tx_kernel::tx::GET_BLOCK_TIMESTAMP
+                    | tx_kernel::tx::GET_NUM_INPUT_NOTES
+                    | tx_kernel::tx::GET_NUM_OUTPUT_NOTES
+                    | tx_kernel::tx::GET_EXPIRATION_BLOCK_DELTA
+                    | tx_kernel::tx::UPDATE_EXPIRATION_BLOCK_DELTA => {
                         Some(TransformStrategy::NoTransform)
                     }
-                    _ => None,
-                }
-            }
-            symbols::ActiveAccount => {
-                match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                    tx_kernel::active_account::GET_NONCE
-                    | tx_kernel::active_account::GET_BALANCE
-                    | tx_kernel::active_account::GET_INITIAL_BALANCE
-                    | tx_kernel::active_account::GET_NUM_PROCEDURES
-                    | tx_kernel::active_account::HAS_NON_FUNGIBLE_ASSET
-                    | tx_kernel::active_account::HAS_PROCEDURE => {
-                        Some(TransformStrategy::NoTransform)
-                    }
-                    tx_kernel::active_account::GET_ID
-                    | tx_kernel::active_account::GET_INITIAL_COMMITMENT
-                    | tx_kernel::active_account::GET_CODE_COMMITMENT
-                    | tx_kernel::active_account::COMPUTE_COMMITMENT
-                    | tx_kernel::active_account::GET_INITIAL_STORAGE_COMMITMENT
-                    | tx_kernel::active_account::COMPUTE_STORAGE_COMMITMENT
-                    | tx_kernel::active_account::GET_STORAGE_ITEM
-                    | tx_kernel::active_account::GET_INITIAL_STORAGE_ITEM
-                    | tx_kernel::active_account::GET_STORAGE_MAP_ITEM
-                    | tx_kernel::active_account::GET_INITIAL_STORAGE_MAP_ITEM
-                    | tx_kernel::active_account::GET_INITIAL_VAULT_ROOT
-                    | tx_kernel::active_account::GET_VAULT_ROOT
-                    | tx_kernel::active_account::GET_PROCEDURE_ROOT => {
+                    tx_kernel::tx::GET_INPUT_NOTES_COMMITMENT
+                    | tx_kernel::tx::GET_OUTPUT_NOTES_COMMITMENT
+                    | tx_kernel::tx::GET_BLOCK_COMMITMENT => {
                         Some(TransformStrategy::ReturnViaPointer)
                     }
                     _ => None,
-                }
-            }
-            symbols::Asset => {
-                match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                    tx_kernel::asset::BUILD_FUNGIBLE_ASSET
-                    | tx_kernel::asset::BUILD_NON_FUNGIBLE_ASSET => {
-                        Some(TransformStrategy::ReturnViaPointer)
-                    }
-                    _ => None,
-                }
-            }
-            symbols::Faucet => {
-                match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                    tx_kernel::faucet::CREATE_FUNGIBLE_ASSET
-                    | tx_kernel::faucet::CREATE_NON_FUNGIBLE_ASSET
-                    | tx_kernel::faucet::MINT
-                    | tx_kernel::faucet::BURN => Some(TransformStrategy::ReturnViaPointer),
-                    tx_kernel::faucet::GET_TOTAL_ISSUANCE
-                    | tx_kernel::faucet::IS_NON_FUNGIBLE_ASSET_ISSUED => {
-                        Some(TransformStrategy::NoTransform)
-                    }
-                    _ => None,
-                }
-            }
-            symbols::ActiveNote => {
-                match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                    tx_kernel::active_note::GET_INPUTS => Some(TransformStrategy::ListReturn),
-                    tx_kernel::active_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
-                    tx_kernel::active_note::GET_SENDER
-                    | tx_kernel::active_note::GET_RECIPIENT
-                    | tx_kernel::active_note::GET_SCRIPT_ROOT
-                    | tx_kernel::active_note::GET_SERIAL_NUMBER
-                    | tx_kernel::active_note::GET_METADATA => {
-                        Some(TransformStrategy::ReturnViaPointer)
-                    }
-                    tx_kernel::active_note::ADD_ASSETS_TO_ACCOUNT => {
-                        Some(TransformStrategy::NoTransform)
-                    }
-                    _ => None,
-                }
-            }
-            symbols::InputNote => {
-                match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                    tx_kernel::input_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
-                    tx_kernel::input_note::GET_ASSETS_INFO
-                    | tx_kernel::input_note::GET_RECIPIENT
-                    | tx_kernel::input_note::GET_METADATA
-                    | tx_kernel::input_note::GET_SENDER
-                    | tx_kernel::input_note::GET_INPUTS_INFO
-                    | tx_kernel::input_note::GET_SCRIPT_ROOT
-                    | tx_kernel::input_note::GET_SERIAL_NUMBER => {
-                        Some(TransformStrategy::ReturnViaPointer)
-                    }
-                    _ => None,
-                }
-            }
-            symbols::OutputNote => {
-                match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                    tx_kernel::output_note::CREATE => Some(TransformStrategy::NoTransform),
-                    tx_kernel::output_note::ADD_ASSET => Some(TransformStrategy::NoTransform),
-                    tx_kernel::output_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
-                    tx_kernel::output_note::GET_ASSETS_INFO
-                    | tx_kernel::output_note::GET_RECIPIENT
-                    | tx_kernel::output_note::GET_METADATA => {
-                        Some(TransformStrategy::ReturnViaPointer)
-                    }
-                    _ => None,
-                }
-            }
-            symbols::Tx => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                tx_kernel::tx::GET_BLOCK_NUMBER
-                | tx_kernel::tx::GET_BLOCK_TIMESTAMP
-                | tx_kernel::tx::GET_NUM_INPUT_NOTES
-                | tx_kernel::tx::GET_NUM_OUTPUT_NOTES
-                | tx_kernel::tx::GET_EXPIRATION_BLOCK_DELTA
-                | tx_kernel::tx::UPDATE_EXPIRATION_BLOCK_DELTA => {
-                    Some(TransformStrategy::NoTransform)
-                }
-                tx_kernel::tx::GET_INPUT_NOTES_COMMITMENT
-                | tx_kernel::tx::GET_OUTPUT_NOTES_COMMITMENT
-                | tx_kernel::tx::GET_BLOCK_COMMITMENT => Some(TransformStrategy::ReturnViaPointer),
+                },
                 _ => None,
             },
             _ => None,

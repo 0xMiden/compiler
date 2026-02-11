@@ -3,32 +3,32 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::types::{AccountId, Asset, NoteIdx, Recipient};
+use super::types::{AccountId, Asset, NoteIdx, NoteMetadata, Recipient};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::input_note::get_assets_info"]
+    #[link_name = "miden::protocol::input_note::get_assets_info"]
     pub fn extern_input_note_get_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
 
-    #[link_name = "miden::input_note::get_assets"]
+    #[link_name = "miden::protocol::input_note::get_assets"]
     pub fn extern_input_note_get_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
 
-    #[link_name = "miden::input_note::get_recipient"]
+    #[link_name = "miden::protocol::input_note::get_recipient"]
     pub fn extern_input_note_get_recipient(note_index: Felt, ptr: *mut Recipient);
 
-    #[link_name = "miden::input_note::get_metadata"]
-    pub fn extern_input_note_get_metadata(note_index: Felt, ptr: *mut Word);
+    #[link_name = "miden::protocol::input_note::get_metadata"]
+    pub fn extern_input_note_get_metadata(note_index: Felt, ptr: *mut NoteMetadata);
 
-    #[link_name = "miden::input_note::get_sender"]
+    #[link_name = "miden::protocol::input_note::get_sender"]
     pub fn extern_input_note_get_sender(note_index: Felt, ptr: *mut AccountId);
 
-    #[link_name = "miden::input_note::get_inputs_info"]
+    #[link_name = "miden::protocol::input_note::get_inputs_info"]
     pub fn extern_input_note_get_inputs_info(note_index: Felt, ptr: *mut (Word, Felt));
 
-    #[link_name = "miden::input_note::get_script_root"]
+    #[link_name = "miden::protocol::input_note::get_script_root"]
     pub fn extern_input_note_get_script_root(note_index: Felt, ptr: *mut Word);
 
-    #[link_name = "miden::input_note::get_serial_number"]
+    #[link_name = "miden::protocol::input_note::get_serial_number"]
     pub fn extern_input_note_get_serial_number(note_index: Felt, ptr: *mut Word);
 }
 
@@ -82,10 +82,10 @@ pub fn get_recipient(note_index: NoteIdx) -> Recipient {
     }
 }
 
-/// Returns the metadata of the input note at `note_index`.
-pub fn get_metadata(note_index: NoteIdx) -> Word {
+/// Returns the attachment and metadata header of the input note at `note_index`.
+pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_input_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
         ret_area.assume_init().reverse()
     }

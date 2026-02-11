@@ -32,6 +32,8 @@ impl Default for Canonicalizer {
 }
 
 impl Canonicalizer {
+    const NAME: &str = "canonicalizer";
+
     pub fn new(config: GreedyRewriteConfig, require_convergence: bool) -> Self {
         Self {
             config,
@@ -59,11 +61,11 @@ impl Pass for Canonicalizer {
     type Target = Operation;
 
     fn name(&self) -> &'static str {
-        "canonicalizer"
+        Self::NAME
     }
 
     fn argument(&self) -> &'static str {
-        "canonicalizer"
+        Self::NAME
     }
 
     fn description(&self) -> &'static str {
@@ -75,7 +77,7 @@ impl Pass for Canonicalizer {
     }
 
     fn initialize(&mut self, context: Rc<Context>) -> Result<(), Report> {
-        log::trace!(target: "canonicalization", "initializing canonicalizer pass");
+        log::trace!(target: Self::NAME, "initializing canonicalizer pass");
         let mut rewrites = RewritePatternSet::new(context.clone());
 
         for dialect in context.registered_dialects().values() {
@@ -95,21 +97,21 @@ impl Pass for Canonicalizer {
         state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         let Some(rewrites) = self.rewrites.as_ref() else {
-            log::debug!(target: "canonicalization", "skipping canonicalization as there are no rewrite patterns to apply");
+            log::debug!(target: Self::NAME, "skipping canonicalization as there are no rewrite patterns to apply");
             state.set_post_pass_status(PostPassStatus::Unchanged);
             return Ok(());
         };
         let op = {
             let ptr = op.as_operation_ref();
             drop(op);
-            log::debug!(target: "canonicalization", "applying canonicalization to {}", ptr.borrow());
-            log::debug!(target: "canonicalization", "  require_convergence = {}", self.require_convergence);
+            log::debug!(target: Self::NAME, "applying canonicalization to {}", ptr.borrow());
+            log::debug!(target: Self::NAME, "  require_convergence = {}", self.require_convergence);
             ptr
         };
         let converged =
             patterns::apply_patterns_and_fold_greedily(op, rewrites.clone(), self.config.clone());
         if self.require_convergence && converged.is_err() {
-            log::debug!(target: "canonicalization", "canonicalization could not converge");
+            log::debug!(target: Self::NAME, "canonicalization could not converge");
             let span = op.borrow().span();
             return Err(state
                 .context()
@@ -132,12 +134,12 @@ impl Pass for Canonicalizer {
         let op = op.borrow();
         let changed = match converged {
             Ok(changed) => {
-                log::debug!(target: "canonicalization", "canonicalization converged for '{}', changed={changed}", op.name());
+                log::debug!(target: Self::NAME, "canonicalization converged for '{}', changed={changed}", op.name());
                 changed
             }
             Err(changed) => {
                 log::warn!(
-                    target: "canonicalization",
+                    target: Self::NAME,
                     "canonicalization failed to converge for '{}', changed={changed}",
                     op.name()
                 );

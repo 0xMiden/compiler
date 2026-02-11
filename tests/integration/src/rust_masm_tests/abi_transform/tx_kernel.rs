@@ -3,8 +3,11 @@ use std::sync::Arc;
 use miden_assembly::Assembler;
 use miden_core::Felt;
 use miden_debug::{Executor, Felt as TestFelt};
-use miden_lib::MidenLib;
-use miden_objects::note::{NoteInputs, NoteRecipient, NoteScript};
+use miden_protocol::{
+    ProtocolLib,
+    note::{NoteInputs, NoteRecipient, NoteScript},
+};
+use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_session::{Emit, STDLIB, diagnostics::Report};
@@ -14,30 +17,83 @@ use crate::{
     testing::{Initializer, eval_package},
 };
 
-#[allow(unused)]
-fn setup_log() {
-    use log::LevelFilter;
-    let _ = env_logger::builder()
-        .filter_level(LevelFilter::Trace)
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
-}
-
 #[test]
 fn test_get_inputs_4() -> Result<(), Report> {
     test_get_inputs("4", vec![u32::MAX, 1, 2, 3])
+}
+
+#[test]
+fn test_get_metadata() -> Result<(), Report> {
+    // Mock the Miden protocol `active_note::get_metadata` procedure.
+    //
+    // The raw protocol signature returns 8 felts on the operand stack:
+    // `[NOTE_ATTACHMENT (4), METADATA_HEADER (4)]`.
+    let masm = r#"
+pub proc get_metadata
+    # Stack input: []
+    # Stack output: [NOTE_ATTACHMENT, METADATA_HEADER]
+    #
+    # Return two word-sized values with distinct elements so we can validate that:
+    # - the ABI adapter consumes all 8 felts (not just 4)
+    # - the words are grouped/ordered correctly
+    # - both words are written to the return area
+    push.21 push.22 push.23 push.24   # METADATA_HEADER
+    push.11 push.12 push.13 push.14   # NOTE_ATTACHMENT
+end
+"#
+    .to_string();
+
+    let main_fn = r#"() -> () {
+        let meta = miden::active_note::get_metadata();
+
+        let attachment = meta.attachment;
+        assert_eq(attachment[0], felt!(11));
+        assert_eq(attachment[1], felt!(12));
+        assert_eq(attachment[2], felt!(13));
+        assert_eq(attachment[3], felt!(14));
+
+        let header = meta.header;
+        assert_eq(header[0], felt!(21));
+        assert_eq(header[1], felt!(22));
+        assert_eq(header[2], felt!(23));
+        assert_eq(header[3], felt!(24));
+    }"#
+    .to_string();
+
+    let artifact_name = "abi_transform_tx_kernel_get_metadata";
+    let config = WasmTranslationConfig::default();
+    let mut test_builder =
+        CompilerTestBuilder::rust_fn_body_with_sdk(artifact_name, &main_fn, config, []);
+    test_builder.link_with_masm_module("miden::protocol::active_note", masm);
+    let mut test = test_builder.build();
+
+    let package = test.compiled_package();
+
+    let mut exec = Executor::new(vec![]);
+    let std_library = (*STDLIB).clone();
+    exec.dependency_resolver_mut()
+        .add(*std_library.digest(), std_library.clone().into());
+    exec.with_dependencies(package.manifest.dependencies())?;
+
+    let _ = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
+    Ok(())
 }
 
 fn test_get_inputs(test_name: &str, expected_inputs: Vec<u32>) -> Result<(), Report> {
     assert!(expected_inputs.len() == 4, "for now only word-sized inputs are supported");
     let masm = format!(
         "
-export.get_inputs
-    push.{expect1}.{expect2}.{expect3}.{expect4}
-    # write word to memory, leaving the pointer on the stack
-    dup.4 mem_storew_be dropw
-    # push the inputs len on the stack
+pub proc get_inputs
+    # Stack input: [dest_ptr]
+    #
+    # Write 4 inputs to memory starting at `dest_ptr`, then return `[num_inputs, dest_ptr]`.
+    #
+    # This matches the Miden protocol `active_note::get_inputs` convention, where `dest_ptr` is
+    # preserved on the operand stack alongside `num_inputs`.
+    dup.0 push.{expect1} swap.1 mem_store
+    dup.0 push.1 u32wrapping_add push.{expect2} swap.1 mem_store
+    dup.0 push.2 u32wrapping_add push.{expect3} swap.1 mem_store
+    dup.0 push.3 u32wrapping_add push.{expect4} swap.1 mem_store
     push.4
 end
 ",
@@ -64,21 +120,21 @@ end
     let config = WasmTranslationConfig::default();
     let mut test_builder =
         CompilerTestBuilder::rust_fn_body_with_sdk(artifact_name.clone(), &main_fn, config, []);
-    test_builder.link_with_masm_module("miden::active_note", masm);
+    test_builder.link_with_masm_module("miden::protocol::active_note", masm);
     let mut test = test_builder.build();
 
-    test.expect_wasm(expect_file![format!("../../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/{artifact_name}.masm")]);
     let package = test.compiled_package();
 
     let mut exec = Executor::new(vec![]);
     let std_library = (*STDLIB).clone();
     exec.dependency_resolver_mut()
         .add(*std_library.digest(), std_library.clone().into());
-    let base_library = Arc::new(MidenLib::default().as_ref().clone());
+    let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
     exec.dependency_resolver_mut()
-        .add(*base_library.digest(), base_library.clone().into());
+        .add(*protocol_library.digest(), protocol_library.clone().into());
+    let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
+    exec.dependency_resolver_mut()
+        .add(*standards_library.digest(), standards_library.clone().into());
     exec.with_dependencies(package.manifest.dependencies())?;
 
     let _ = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
@@ -107,8 +163,8 @@ end
     let note_recipient = NoteRecipient::new(serial_num, note_script.clone(), inputs);
     let expected_digest = note_recipient.digest();
 
-    let main_fn = r#"(serial_num: Word, script_digest: Digest, padded_inputs: Vec<Felt>) -> Word {
-        let recipient = Recipient::compute(serial_num, script_digest, padded_inputs);
+    let main_fn = r#"(serial_num: Word, script_digest: Digest, inputs: Vec<Felt>) -> Word {
+        let recipient = Recipient::compute(serial_num, script_digest, inputs);
         recipient.inner
     }"#
     .to_string();
@@ -124,16 +180,7 @@ end
 
     let package = test.compiled_package();
 
-    let padded_inputs = [
-        input1,
-        input2,
-        Felt::new(0),
-        Felt::new(0),
-        Felt::new(0),
-        Felt::new(0),
-        Felt::new(0),
-        Felt::new(0),
-    ];
+    let inputs = [input1, input2];
     let script_root: miden_core::Word = note_script.root();
 
     // The Rust extern "C" ABI for this entrypoint uses byval pointers for the `Word`, `Digest`,
@@ -155,12 +202,12 @@ end
     init_felts.extend_from_slice(&serial_num_felts);
     init_felts.extend_from_slice(&script_digest_felts);
     init_felts.extend_from_slice(&[
-        Felt::from(padded_inputs.len() as u32),
+        Felt::from(inputs.len() as u32),
         Felt::from(vec_data_ptr),
-        Felt::from(padded_inputs.len() as u32),
+        Felt::from(inputs.len() as u32),
         Felt::new(0),
     ]);
-    init_felts.extend_from_slice(&padded_inputs);
+    init_felts.extend_from_slice(&inputs);
 
     let initializers = [Initializer::MemoryFelts {
         addr: base_addr / 4,

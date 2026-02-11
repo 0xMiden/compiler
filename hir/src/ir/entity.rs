@@ -121,7 +121,7 @@ pub trait EntityId: Copy + Clone + PartialEq + Eq + PartialOrd + Ord + Hash + fm
     fn as_usize(&self) -> usize;
 }
 
-/// An error raised when an aliasing violation is detected in the use of [EntityHandle]
+/// An error raised when an aliasing violation is detected in the use of [UnsafeEntityRef]
 #[non_exhaustive]
 pub struct AliasingViolationError {
     #[cfg(debug_assertions)]
@@ -266,21 +266,21 @@ impl<T: ?Sized, Metadata> Clone for RawEntityRef<T, Metadata> {
     }
 }
 impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
-    /// Create a new [EntityHandle] from a raw pointer to the underlying [EntityObj].
+    /// Create a new [UnsafeEntityRef] from a raw pointer to the underlying [EntityObj].
     ///
     /// # SAFETY
     ///
-    /// [EntityHandle] is designed to operate like an owned smart-pointer type, ala `Rc`. As a
+    /// [UnsafeEntityRef] is designed to operate like an owned smart-pointer type, ala `Rc`. As a
     /// result, it expects that the underlying data _never moves_ after it is allocated, for as
-    /// long as any outstanding [EntityHandle]s exist that might be used to access that data.
+    /// long as any outstanding [UnsafeEntityRef]s exist that might be used to access that data.
     ///
     /// Additionally, it is expected that all accesses to the underlying data flow through an
-    /// [EntityHandle], as it is the foundation on which the soundness of [EntityHandle] is built.
-    /// You must ensure that there no other references to the underlying data exist, or can be
-    /// created, _except_ via [EntityHandle].
+    /// [UnsafeEntityRef], as it is the foundation on which the soundness of [UnsafeEntityRef] is
+    /// built. You must ensure that there no other references to the underlying data exist, or can
+    /// be created, _except_ via [UnsafeEntityRef].
     ///
     /// You should generally not be using this API, as it is meant solely for constructing an
-    /// [EntityHandle] immediately after allocating the underlying [EntityObj].
+    /// [UnsafeEntityRef] immediately after allocating the underlying [EntityObj].
     #[inline]
     unsafe fn from_inner(inner: NonNull<RawEntityMetadata<T, Metadata>>) -> Self {
         Self { inner }

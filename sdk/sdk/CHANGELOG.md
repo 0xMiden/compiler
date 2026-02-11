@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0]
+
+### BREAKING
+- Remove `miden::active_note::add_assets_to_account` #932
+- `*_note::get_metadata` now returns `NoteMetadata` (2 `Word`s) #932
+
+## [0.9.0]
+
+### BREAKING
+- Note scripts now use a struct-based API: replace `#[note_script] fn run(...)` with `#[note]` on a note input `struct` and `#[note]` on an inherent `impl` block containing exactly one `#[note_script]` entrypoint method #890. See an example: [before](https://github.com/0xMiden/project-template/blob/6cd50a3312dffba1826fd4f812bc431da7f51d5f/contracts/increment-note/src/lib.rs) and [after](https://github.com/0xMiden/project-template/blob/1dd023311021800002e3a9fb687e936991877e65/contracts/increment-note/src/lib.rs).
+- Storage slot IDs are now derived from slot names; `#[storage(slot(...))]`/`slot(...)` is no longer supported, and slot name / id collisions are detected at compile time #907
+- SDK bindings updated for VM v0.20 / protocol v0.13 (some bindings changed, e.g. `output_note::create(tag, note_type, recipient)`) #907
+  - Previously auxiliary data could be passed into `output_note::create`. Now it can be attached to a note with `output_note::set_word_attachment`.
+- Renamed `AccountId::from` to `AccountId::new` #808
+
+### Added
+- `ToFeltRepr` and `FromFeltRepr` traits with `derive` macros for felt-representation encoding/decoding #808
+- `Word::from_u64_unchecked` constructor #894
+- Assert `value <= Felt::M` in `Felt::from_u64_unchecked` #891
+
+### Fixed
+- Reverse the return values of `NativeAccount::add_asset` #862
+- Correct operand order in `Felt` `le`/`lt` op bindings #882
+
 ## [0.8.0]
 
 ### BREAKING
@@ -16,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pass an account as a parameter to note and tx script #798
 - `ActiveAccount` and `NativeAccount` traits to call tx kernel functions via `self.*` on an account #801
 - Expose `miden::note::build_recipient_hash` tx kernel function Rust equivalent as `Recipient::compute` #823
+- Assert range in `Felt` constructor, moving some range checks from runtime to compile time #891
 
 ## [0.7.1](https://github.com/0xMiden/compiler/compare/miden-v0.7.0...miden-v0.7.1) - 2025-11-13
 

@@ -3,30 +3,30 @@ builtin.component miden:base/note-script@1.0.0 {
         private builtin.function @cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7(v0: felt, v1: felt, v2: felt, v3: felt, v4: i32) {
         ^block3(v0: felt, v1: felt, v2: felt, v3: felt, v4: i32):
             v5, v6, v7, v8 = hir.call v0, v1, v2, v3 : felt, felt, felt, felt #[callee = miden:cross-ctx-account-word/foo@1.0.0/process-word] #[signature = (cc canon-lower) (param felt) (param felt) (param felt) (param felt) (result felt felt felt felt)];
-            v9 = arith.constant 0 : i32;
-            v10 = arith.add v4, v9 : i32 #[overflow = unchecked];
-            v519 = arith.constant 0 : i32;
-            v520 = arith.constant 0 : i32;
-            v12 = arith.add v10, v520 : i32 #[overflow = unchecked];
-            v14 = arith.add v12, v519 : i32 #[overflow = unchecked];
+            v564 = arith.constant 0 : i32;
+            v10 = arith.add v4, v564 : i32 #[overflow = unchecked];
+            v573 = arith.constant 0 : i32;
+            v574 = arith.constant 0 : i32;
+            v12 = arith.add v10, v574 : i32 #[overflow = unchecked];
+            v14 = arith.add v12, v573 : i32 #[overflow = unchecked];
             v15 = hir.int_to_ptr v14 : ptr<byte, felt>;
             hir.store v15, v5;
-            v518 = arith.constant 0 : i32;
-            v16 = arith.constant 4 : i32;
-            v17 = arith.add v10, v16 : i32 #[overflow = unchecked];
-            v19 = arith.add v17, v518 : i32 #[overflow = unchecked];
+            v572 = arith.constant 0 : i32;
+            v563 = arith.constant 4 : i32;
+            v17 = arith.add v10, v563 : i32 #[overflow = unchecked];
+            v19 = arith.add v17, v572 : i32 #[overflow = unchecked];
             v20 = hir.int_to_ptr v19 : ptr<byte, felt>;
             hir.store v20, v6;
-            v517 = arith.constant 0 : i32;
-            v21 = arith.constant 8 : i32;
-            v22 = arith.add v10, v21 : i32 #[overflow = unchecked];
-            v24 = arith.add v22, v517 : i32 #[overflow = unchecked];
+            v571 = arith.constant 0 : i32;
+            v562 = arith.constant 8 : i32;
+            v22 = arith.add v10, v562 : i32 #[overflow = unchecked];
+            v24 = arith.add v22, v571 : i32 #[overflow = unchecked];
             v25 = hir.int_to_ptr v24 : ptr<byte, felt>;
             hir.store v25, v7;
-            v516 = arith.constant 0 : i32;
-            v26 = arith.constant 12 : i32;
-            v27 = arith.add v10, v26 : i32 #[overflow = unchecked];
-            v29 = arith.add v27, v516 : i32 #[overflow = unchecked];
+            v570 = arith.constant 0 : i32;
+            v561 = arith.constant 12 : i32;
+            v27 = arith.add v10, v561 : i32 #[overflow = unchecked];
+            v29 = arith.add v27, v570 : i32 #[overflow = unchecked];
             v30 = hir.int_to_ptr v29 : ptr<byte, felt>;
             hir.store v30, v8;
             builtin.ret ;
@@ -35,30 +35,30 @@ builtin.component miden:base/note-script@1.0.0 {
         private builtin.function @cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7(v31: felt, v32: felt, v33: felt, v34: felt, v35: i32) {
         ^block6(v31: felt, v32: felt, v33: felt, v34: felt, v35: i32):
             v36, v37, v38, v39 = hir.call v31, v32, v33, v34 : felt, felt, felt, felt #[callee = miden:cross-ctx-account-word/foo@1.0.0/process-another-word] #[signature = (cc canon-lower) (param felt) (param felt) (param felt) (param felt) (result felt felt felt felt)];
-            v40 = arith.constant 0 : i32;
-            v41 = arith.add v35, v40 : i32 #[overflow = unchecked];
-            v524 = arith.constant 0 : i32;
-            v525 = arith.constant 0 : i32;
-            v43 = arith.add v41, v525 : i32 #[overflow = unchecked];
-            v45 = arith.add v43, v524 : i32 #[overflow = unchecked];
+            v578 = arith.constant 0 : i32;
+            v41 = arith.add v35, v578 : i32 #[overflow = unchecked];
+            v587 = arith.constant 0 : i32;
+            v588 = arith.constant 0 : i32;
+            v43 = arith.add v41, v588 : i32 #[overflow = unchecked];
+            v45 = arith.add v43, v587 : i32 #[overflow = unchecked];
             v46 = hir.int_to_ptr v45 : ptr<byte, felt>;
             hir.store v46, v36;
-            v523 = arith.constant 0 : i32;
-            v47 = arith.constant 4 : i32;
-            v48 = arith.add v41, v47 : i32 #[overflow = unchecked];
-            v50 = arith.add v48, v523 : i32 #[overflow = unchecked];
+            v586 = arith.constant 0 : i32;
+            v577 = arith.constant 4 : i32;
+            v48 = arith.add v41, v577 : i32 #[overflow = unchecked];
+            v50 = arith.add v48, v586 : i32 #[overflow = unchecked];
             v51 = hir.int_to_ptr v50 : ptr<byte, felt>;
             hir.store v51, v37;
-            v522 = arith.constant 0 : i32;
-            v52 = arith.constant 8 : i32;
-            v53 = arith.add v41, v52 : i32 #[overflow = unchecked];
-            v55 = arith.add v53, v522 : i32 #[overflow = unchecked];
+            v585 = arith.constant 0 : i32;
+            v576 = arith.constant 8 : i32;
+            v53 = arith.add v41, v576 : i32 #[overflow = unchecked];
+            v55 = arith.add v53, v585 : i32 #[overflow = unchecked];
             v56 = hir.int_to_ptr v55 : ptr<byte, felt>;
             hir.store v56, v38;
-            v521 = arith.constant 0 : i32;
-            v57 = arith.constant 12 : i32;
-            v58 = arith.add v41, v57 : i32 #[overflow = unchecked];
-            v60 = arith.add v58, v521 : i32 #[overflow = unchecked];
+            v584 = arith.constant 0 : i32;
+            v575 = arith.constant 12 : i32;
+            v58 = arith.add v41, v575 : i32 #[overflow = unchecked];
+            v60 = arith.add v58, v584 : i32 #[overflow = unchecked];
             v61 = hir.int_to_ptr v60 : ptr<byte, felt>;
             hir.store v61, v39;
             builtin.ret ;
@@ -73,16 +73,16 @@ builtin.component miden:base/note-script@1.0.0 {
         private builtin.function @cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_pair::wit_import4(v64: felt, v65: felt, v66: i32) {
         ^block10(v64: felt, v65: felt, v66: i32):
             v67, v68 = hir.call v64, v65 : felt, felt #[callee = miden:cross-ctx-account-word/foo@1.0.0/process-pair] #[signature = (cc canon-lower) (param felt) (param felt) (result felt felt)];
-            v527 = arith.constant 0 : i32;
-            v69 = arith.constant 0 : i32;
-            v70 = arith.add v66, v69 : i32 #[overflow = unchecked];
-            v72 = arith.add v70, v527 : i32 #[overflow = unchecked];
+            v594 = arith.constant 0 : i32;
+            v592 = arith.constant 0 : i32;
+            v70 = arith.add v66, v592 : i32 #[overflow = unchecked];
+            v72 = arith.add v70, v594 : i32 #[overflow = unchecked];
             v73 = hir.int_to_ptr v72 : ptr<byte, felt>;
             hir.store v73, v67;
-            v526 = arith.constant 0 : i32;
-            v74 = arith.constant 4 : i32;
-            v75 = arith.add v66, v74 : i32 #[overflow = unchecked];
-            v77 = arith.add v75, v526 : i32 #[overflow = unchecked];
+            v593 = arith.constant 0 : i32;
+            v589 = arith.constant 4 : i32;
+            v75 = arith.add v66, v589 : i32 #[overflow = unchecked];
+            v77 = arith.add v75, v593 : i32 #[overflow = unchecked];
             v78 = hir.int_to_ptr v77 : ptr<byte, felt>;
             hir.store v78, v68;
             builtin.ret ;
@@ -91,22 +91,22 @@ builtin.component miden:base/note-script@1.0.0 {
         private builtin.function @cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_triple::wit_import5(v79: felt, v80: felt, v81: felt, v82: i32) {
         ^block12(v79: felt, v80: felt, v81: felt, v82: i32):
             v83, v84, v85 = hir.call v79, v80, v81 : felt, felt, felt #[callee = miden:cross-ctx-account-word/foo@1.0.0/process-triple] #[signature = (cc canon-lower) (param felt) (param felt) (param felt) (result felt felt felt)];
-            v530 = arith.constant 0 : i32;
-            v86 = arith.constant 0 : i32;
-            v87 = arith.add v82, v86 : i32 #[overflow = unchecked];
-            v89 = arith.add v87, v530 : i32 #[overflow = unchecked];
+            v603 = arith.constant 0 : i32;
+            v600 = arith.constant 0 : i32;
+            v87 = arith.add v82, v600 : i32 #[overflow = unchecked];
+            v89 = arith.add v87, v603 : i32 #[overflow = unchecked];
             v90 = hir.int_to_ptr v89 : ptr<byte, felt>;
             hir.store v90, v83;
-            v529 = arith.constant 0 : i32;
-            v91 = arith.constant 4 : i32;
-            v92 = arith.add v82, v91 : i32 #[overflow = unchecked];
-            v94 = arith.add v92, v529 : i32 #[overflow = unchecked];
+            v602 = arith.constant 0 : i32;
+            v596 = arith.constant 4 : i32;
+            v92 = arith.add v82, v596 : i32 #[overflow = unchecked];
+            v94 = arith.add v92, v602 : i32 #[overflow = unchecked];
             v95 = hir.int_to_ptr v94 : ptr<byte, felt>;
             hir.store v95, v84;
-            v528 = arith.constant 0 : i32;
-            v96 = arith.constant 8 : i32;
-            v97 = arith.add v82, v96 : i32 #[overflow = unchecked];
-            v99 = arith.add v97, v528 : i32 #[overflow = unchecked];
+            v601 = arith.constant 0 : i32;
+            v595 = arith.constant 8 : i32;
+            v97 = arith.add v82, v595 : i32 #[overflow = unchecked];
+            v99 = arith.add v97, v601 : i32 #[overflow = unchecked];
             v100 = hir.int_to_ptr v99 : ptr<byte, felt>;
             hir.store v100, v85;
             builtin.ret ;
@@ -116,40 +116,40 @@ builtin.component miden:base/note-script@1.0.0 {
         ^block14(v101: i64, v102: felt, v103: i32, v104: felt, v105: i32, v106: i32, v107: i32, v108: i32):
             v109, v110, v111, v112, v113, v114, v115 = hir.call v101, v102, v103, v104, v105, v106, v107 : i64, felt, i32, felt, i32, i32, i32 #[callee = miden:cross-ctx-account-word/foo@1.0.0/process-mixed] #[signature = (cc canon-lower) (param i64) (param felt) (param i32) (param felt) (param (zext) i32) (param (zext) i32) (param (zext) i32) (result i64 felt i32 felt i32 i32 i32)];
             v119 = hir.bitcast v109 : u64;
-            v116 = arith.constant 0 : i32;
-            v117 = arith.add v108, v116 : i32 #[overflow = unchecked];
+            v610 = arith.constant 0 : i32;
+            v117 = arith.add v108, v610 : i32 #[overflow = unchecked];
             v118 = hir.int_to_ptr v117 : ptr<byte, u64>;
             hir.store v118, v119;
-            v532 = arith.constant 0 : i32;
-            v120 = arith.constant 8 : i32;
-            v121 = arith.add v108, v120 : i32 #[overflow = unchecked];
-            v123 = arith.add v121, v532 : i32 #[overflow = unchecked];
+            v614 = arith.constant 0 : i32;
+            v609 = arith.constant 8 : i32;
+            v121 = arith.add v108, v609 : i32 #[overflow = unchecked];
+            v123 = arith.add v121, v614 : i32 #[overflow = unchecked];
             v124 = hir.int_to_ptr v123 : ptr<byte, felt>;
             hir.store v124, v110;
             v128 = hir.bitcast v111 : u32;
-            v125 = arith.constant 12 : i32;
-            v126 = arith.add v108, v125 : i32 #[overflow = unchecked];
+            v608 = arith.constant 12 : i32;
+            v126 = arith.add v108, v608 : i32 #[overflow = unchecked];
             v127 = hir.int_to_ptr v126 : ptr<byte, u32>;
             hir.store v127, v128;
-            v531 = arith.constant 0 : i32;
-            v129 = arith.constant 16 : i32;
-            v130 = arith.add v108, v129 : i32 #[overflow = unchecked];
-            v132 = arith.add v130, v531 : i32 #[overflow = unchecked];
+            v613 = arith.constant 0 : i32;
+            v607 = arith.constant 16 : i32;
+            v130 = arith.add v108, v607 : i32 #[overflow = unchecked];
+            v132 = arith.add v130, v613 : i32 #[overflow = unchecked];
             v133 = hir.int_to_ptr v132 : ptr<byte, felt>;
             hir.store v133, v112;
             v137 = hir.bitcast v113 : u8;
-            v134 = arith.constant 20 : i32;
-            v135 = arith.add v108, v134 : i32 #[overflow = unchecked];
+            v606 = arith.constant 20 : i32;
+            v135 = arith.add v108, v606 : i32 #[overflow = unchecked];
             v136 = hir.int_to_ptr v135 : ptr<byte, u8>;
             hir.store v136, v137;
             v141 = hir.bitcast v114 : i1;
-            v138 = arith.constant 21 : i32;
-            v139 = arith.add v108, v138 : i32 #[overflow = unchecked];
+            v605 = arith.constant 21 : i32;
+            v139 = arith.add v108, v605 : i32 #[overflow = unchecked];
             v140 = hir.int_to_ptr v139 : ptr<byte, i1>;
             hir.store v140, v141;
             v145 = hir.bitcast v115 : u16;
-            v142 = arith.constant 22 : i32;
-            v143 = arith.add v108, v142 : i32 #[overflow = unchecked];
+            v604 = arith.constant 22 : i32;
+            v143 = arith.add v108, v604 : i32 #[overflow = unchecked];
             v144 = hir.int_to_ptr v143 : ptr<byte, u16>;
             hir.store v144, v145;
             builtin.ret ;
@@ -158,24 +158,24 @@ builtin.component miden:base/note-script@1.0.0 {
         private builtin.function @cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_nested::wit_import6(v146: felt, v147: felt, v148: felt, v149: i32) {
         ^block16(v146: felt, v147: felt, v148: felt, v149: i32):
             v150, v151, v152 = hir.call v146, v147, v148 : felt, felt, felt #[callee = miden:cross-ctx-account-word/foo@1.0.0/process-nested] #[signature = (cc canon-lower) (param felt) (param felt) (param felt) (result felt felt felt)];
-            v153 = arith.constant 0 : i32;
-            v154 = arith.add v149, v153 : i32 #[overflow = unchecked];
-            v535 = arith.constant 0 : i32;
-            v536 = arith.constant 0 : i32;
-            v156 = arith.add v154, v536 : i32 #[overflow = unchecked];
-            v158 = arith.add v156, v535 : i32 #[overflow = unchecked];
+            v617 = arith.constant 0 : i32;
+            v154 = arith.add v149, v617 : i32 #[overflow = unchecked];
+            v624 = arith.constant 0 : i32;
+            v625 = arith.constant 0 : i32;
+            v156 = arith.add v154, v625 : i32 #[overflow = unchecked];
+            v158 = arith.add v156, v624 : i32 #[overflow = unchecked];
             v159 = hir.int_to_ptr v158 : ptr<byte, felt>;
             hir.store v159, v150;
-            v534 = arith.constant 0 : i32;
-            v160 = arith.constant 4 : i32;
-            v161 = arith.add v154, v160 : i32 #[overflow = unchecked];
-            v163 = arith.add v161, v534 : i32 #[overflow = unchecked];
+            v623 = arith.constant 0 : i32;
+            v616 = arith.constant 4 : i32;
+            v161 = arith.add v154, v616 : i32 #[overflow = unchecked];
+            v163 = arith.add v161, v623 : i32 #[overflow = unchecked];
             v164 = hir.int_to_ptr v163 : ptr<byte, felt>;
             hir.store v164, v151;
-            v533 = arith.constant 0 : i32;
-            v165 = arith.constant 8 : i32;
-            v166 = arith.add v149, v165 : i32 #[overflow = unchecked];
-            v168 = arith.add v166, v533 : i32 #[overflow = unchecked];
+            v622 = arith.constant 0 : i32;
+            v615 = arith.constant 8 : i32;
+            v166 = arith.add v149, v615 : i32 #[overflow = unchecked];
+            v168 = arith.add v166, v622 : i32 #[overflow = unchecked];
             v169 = hir.int_to_ptr v168 : ptr<byte, felt>;
             hir.store v169, v152;
             builtin.ret ;
@@ -193,354 +193,391 @@ builtin.component miden:base/note-script@1.0.0 {
 
         private builtin.function @miden:base/note-script@1.0.0#run(v170: felt, v171: felt, v172: felt, v173: felt) {
         ^block24(v170: felt, v171: felt, v172: felt, v173: felt):
-            v177 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/__stack_pointer : ptr<byte, u8>
-            v178 = hir.bitcast v177 : ptr<byte, i32>;
-            v179 = hir.load v178 : i32;
-            v180 = arith.constant 32 : i32;
-            v181 = arith.sub v179, v180 : i32 #[overflow = wrapping];
-            v182 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/__stack_pointer : ptr<byte, u8>
-            v183 = hir.bitcast v182 : ptr<byte, i32>;
-            hir.store v183, v181;
+            v174 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/__stack_pointer : ptr<byte, u8>
+            v175 = hir.bitcast v174 : ptr<byte, i32>;
+            v176 = hir.load v175 : i32;
+            v711 = arith.constant 32 : i32;
+            v178 = arith.sub v176, v711 : i32 #[overflow = wrapping];
+            hir.store_local v178 #[local = lv4];
+            v179 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/__stack_pointer : ptr<byte, u8>
+            v180 = hir.bitcast v179 : ptr<byte, i32>;
+            hir.store v180, v178;
             hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/wit_bindgen::rt::run_ctors_once()
-            v184 = arith.constant 2 : i32;
-            v185 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v184) : felt
-            v186 = arith.constant 3 : i32;
-            v187 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v186) : felt
-            v188 = arith.constant 4 : i32;
-            v189 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v188) : felt
-            v190 = arith.constant 5 : i32;
-            v191 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v190) : felt
-            v192 = arith.constant 8 : i32;
-            v193 = arith.add v181, v192 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7(v185, v187, v189, v191, v193)
-            v195 = arith.constant 20 : u32;
-            v194 = hir.bitcast v181 : u32;
-            v196 = arith.add v194, v195 : u32 #[overflow = checked];
-            v197 = arith.constant 4 : u32;
-            v198 = arith.mod v196, v197 : u32;
-            hir.assertz v198 #[code = 250];
-            v199 = hir.int_to_ptr v196 : ptr<byte, felt>;
-            v200 = hir.load v199 : felt;
-            v202 = arith.constant 16 : u32;
-            v201 = hir.bitcast v181 : u32;
-            v203 = arith.add v201, v202 : u32 #[overflow = checked];
-            v590 = arith.constant 4 : u32;
-            v205 = arith.mod v203, v590 : u32;
+            v688 = arith.constant 2 : felt;
+            hir.store_local v688 #[local = lv5];
+            v687 = arith.constant 3 : felt;
+            hir.store_local v687 #[local = lv6];
+            v686 = arith.constant 4 : felt;
+            hir.store_local v686 #[local = lv7];
+            v685 = arith.constant 5 : felt;
+            hir.store_local v685 #[local = lv8];
+            v189 = hir.load_local  : i32 #[local = lv4];
+            v709 = arith.constant 8 : i32;
+            v191 = arith.add v189, v709 : i32 #[overflow = wrapping];
+            v819 = arith.constant 5 : felt;
+            v820 = arith.constant 4 : felt;
+            v821 = arith.constant 3 : felt;
+            v822 = arith.constant 2 : felt;
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7(v822, v821, v820, v819, v191)
+            v192 = hir.load_local  : i32 #[local = lv4];
+            v708 = arith.constant 20 : u32;
+            v193 = hir.bitcast v192 : u32;
+            v195 = arith.add v193, v708 : u32 #[overflow = checked];
+            v707 = arith.constant 4 : u32;
+            v197 = arith.mod v195, v707 : u32;
+            hir.assertz v197 #[code = 250];
+            v198 = hir.int_to_ptr v195 : ptr<byte, felt>;
+            v199 = hir.load v198 : felt;
+            v200 = hir.load_local  : i32 #[local = lv4];
+            v706 = arith.constant 16 : u32;
+            v201 = hir.bitcast v200 : u32;
+            v203 = arith.add v201, v706 : u32 #[overflow = checked];
+            v818 = arith.constant 4 : u32;
+            v205 = arith.mod v203, v818 : u32;
             hir.assertz v205 #[code = 250];
             v206 = hir.int_to_ptr v203 : ptr<byte, felt>;
             v207 = hir.load v206 : felt;
-            v209 = arith.constant 12 : u32;
-            v208 = hir.bitcast v181 : u32;
-            v210 = arith.add v208, v209 : u32 #[overflow = checked];
-            v589 = arith.constant 4 : u32;
-            v212 = arith.mod v210, v589 : u32;
-            hir.assertz v212 #[code = 250];
-            v213 = hir.int_to_ptr v210 : ptr<byte, felt>;
-            v214 = hir.load v213 : felt;
-            v216 = arith.constant 8 : u32;
-            v215 = hir.bitcast v181 : u32;
-            v217 = arith.add v215, v216 : u32 #[overflow = checked];
-            v588 = arith.constant 4 : u32;
-            v219 = arith.mod v217, v588 : u32;
-            hir.assertz v219 #[code = 250];
-            v220 = hir.int_to_ptr v217 : ptr<byte, felt>;
-            v221 = hir.load v220 : felt;
-            v587 = arith.constant 3 : i32;
-            v223 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v587) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v221, v223)
-            v586 = arith.constant 5 : i32;
-            v225 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v586) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v214, v225)
-            v226 = arith.constant 7 : i32;
-            v227 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v226) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v207, v227)
-            v228 = arith.constant 9 : i32;
-            v229 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v228) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v200, v229)
-            v585 = arith.constant 8 : i32;
-            v231 = arith.add v181, v585 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7(v185, v187, v189, v191, v231)
-            v584 = arith.constant 20 : u32;
-            v232 = hir.bitcast v181 : u32;
-            v234 = arith.add v232, v584 : u32 #[overflow = checked];
-            v583 = arith.constant 4 : u32;
-            v236 = arith.mod v234, v583 : u32;
-            hir.assertz v236 #[code = 250];
-            v237 = hir.int_to_ptr v234 : ptr<byte, felt>;
-            v238 = hir.load v237 : felt;
-            v582 = arith.constant 16 : u32;
-            v239 = hir.bitcast v181 : u32;
-            v241 = arith.add v239, v582 : u32 #[overflow = checked];
-            v581 = arith.constant 4 : u32;
-            v243 = arith.mod v241, v581 : u32;
-            hir.assertz v243 #[code = 250];
-            v244 = hir.int_to_ptr v241 : ptr<byte, felt>;
-            v245 = hir.load v244 : felt;
-            v580 = arith.constant 12 : u32;
-            v246 = hir.bitcast v181 : u32;
-            v248 = arith.add v246, v580 : u32 #[overflow = checked];
-            v579 = arith.constant 4 : u32;
-            v250 = arith.mod v248, v579 : u32;
-            hir.assertz v250 #[code = 250];
-            v251 = hir.int_to_ptr v248 : ptr<byte, felt>;
-            v252 = hir.load v251 : felt;
-            v578 = arith.constant 8 : u32;
-            v253 = hir.bitcast v181 : u32;
-            v255 = arith.add v253, v578 : u32 #[overflow = checked];
-            v577 = arith.constant 4 : u32;
-            v257 = arith.mod v255, v577 : u32;
-            hir.assertz v257 #[code = 250];
-            v258 = hir.int_to_ptr v255 : ptr<byte, felt>;
-            v259 = hir.load v258 : felt;
-            v576 = arith.constant 4 : i32;
-            v261 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v576) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v259, v261)
-            v262 = arith.constant 6 : i32;
-            v263 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v262) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v252, v263)
-            v575 = arith.constant 8 : i32;
-            v265 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v575) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v245, v265)
-            v266 = arith.constant 10 : i32;
-            v267 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v266) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v238, v267)
-            v574 = arith.constant 9 : i32;
-            v269 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v574) : felt
-            v270 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_felt::wit_import1(v269) : felt
-            v271 = arith.constant 12 : i32;
-            v272 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v271) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v270, v272)
-            v573 = arith.constant 10 : i32;
-            v274 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v573) : felt
-            v275 = arith.constant 20 : i32;
-            v276 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v275) : felt
-            v572 = arith.constant 8 : u32;
-            v278 = hir.bitcast v181 : u32;
-            v280 = arith.add v278, v572 : u32 #[overflow = checked];
-            v571 = arith.constant 8 : u32;
-            v282 = arith.mod v280, v571 : u32;
-            hir.assertz v282 #[code = 250];
-            v277 = arith.constant 0 : i64;
-            v283 = hir.int_to_ptr v280 : ptr<byte, i64>;
-            hir.store v283, v277;
-            v570 = arith.constant 8 : i32;
-            v285 = arith.add v181, v570 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_pair::wit_import4(v274, v276, v285)
-            v569 = arith.constant 12 : u32;
-            v286 = hir.bitcast v181 : u32;
-            v288 = arith.add v286, v569 : u32 #[overflow = checked];
-            v568 = arith.constant 4 : u32;
-            v290 = arith.mod v288, v568 : u32;
-            hir.assertz v290 #[code = 250];
-            v291 = hir.int_to_ptr v288 : ptr<byte, felt>;
-            v292 = hir.load v291 : felt;
-            v567 = arith.constant 8 : u32;
-            v293 = hir.bitcast v181 : u32;
-            v295 = arith.add v293, v567 : u32 #[overflow = checked];
-            v566 = arith.constant 4 : u32;
-            v297 = arith.mod v295, v566 : u32;
-            hir.assertz v297 #[code = 250];
-            v298 = hir.int_to_ptr v295 : ptr<byte, felt>;
-            v299 = hir.load v298 : felt;
-            v300 = arith.constant 14 : i32;
-            v301 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v300) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v299, v301)
-            v302 = arith.constant 24 : i32;
-            v303 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v302) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v292, v303)
-            v304 = arith.constant 100 : i32;
-            v305 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v304) : felt
-            v306 = arith.constant 200 : i32;
-            v307 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v306) : felt
-            v308 = arith.constant 300 : i32;
-            v309 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v308) : felt
-            v565 = arith.constant 8 : i32;
-            v311 = arith.add v181, v565 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_triple::wit_import5(v305, v307, v309, v311)
-            v564 = arith.constant 16 : u32;
-            v312 = hir.bitcast v181 : u32;
-            v314 = arith.add v312, v564 : u32 #[overflow = checked];
-            v563 = arith.constant 4 : u32;
-            v316 = arith.mod v314, v563 : u32;
-            hir.assertz v316 #[code = 250];
-            v317 = hir.int_to_ptr v314 : ptr<byte, felt>;
-            v318 = hir.load v317 : felt;
-            v562 = arith.constant 12 : u32;
-            v319 = hir.bitcast v181 : u32;
-            v321 = arith.add v319, v562 : u32 #[overflow = checked];
-            v561 = arith.constant 4 : u32;
-            v323 = arith.mod v321, v561 : u32;
-            hir.assertz v323 #[code = 250];
-            v324 = hir.int_to_ptr v321 : ptr<byte, felt>;
-            v325 = hir.load v324 : felt;
-            v560 = arith.constant 8 : u32;
-            v326 = hir.bitcast v181 : u32;
-            v328 = arith.add v326, v560 : u32 #[overflow = checked];
-            v559 = arith.constant 4 : u32;
-            v330 = arith.mod v328, v559 : u32;
-            hir.assertz v330 #[code = 250];
-            v331 = hir.int_to_ptr v328 : ptr<byte, felt>;
-            v332 = hir.load v331 : felt;
-            v333 = arith.constant 105 : i32;
-            v334 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v333) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v332, v334)
-            v335 = arith.constant 205 : i32;
-            v336 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v335) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v325, v336)
-            v337 = arith.constant 305 : i32;
-            v338 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v337) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v318, v338)
-            v340 = arith.constant -4294967302 : i64;
-            v341 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u64_unchecked(v340) : felt
-            v343 = arith.constant 50 : i32;
-            v344 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v343) : felt
-            v557 = arith.constant 8 : i32;
-            v349 = arith.add v181, v557 : i32 #[overflow = wrapping];
-            v558 = arith.constant 3 : i32;
-            v174 = arith.constant 0 : i32;
-            v345 = arith.constant 111 : i32;
-            v342 = arith.constant -11 : i32;
-            v339 = arith.constant -1001 : i64;
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_mixed::wit_import4(v339, v341, v342, v344, v345, v174, v558, v349)
-            v556 = arith.constant 8 : u32;
-            v350 = hir.bitcast v181 : u32;
-            v352 = arith.add v350, v556 : u32 #[overflow = checked];
-            v555 = arith.constant 8 : u32;
-            v354 = arith.mod v352, v555 : u32;
-            hir.assertz v354 #[code = 250];
-            v355 = hir.int_to_ptr v352 : ptr<byte, i64>;
-            v356 = hir.load v355 : i64;
-            v554 = arith.constant 0 : i32;
-            v357 = arith.constant -1 : i64;
-            v358 = arith.eq v356, v357 : i1;
-            v359 = arith.zext v358 : u32;
-            v360 = hir.bitcast v359 : i32;
-            v362 = arith.neq v360, v554 : i1;
-            cf.cond_br v362 ^block26, ^block27;
+            v208 = hir.load_local  : i32 #[local = lv4];
+            v705 = arith.constant 12 : u32;
+            v209 = hir.bitcast v208 : u32;
+            v211 = arith.add v209, v705 : u32 #[overflow = checked];
+            v817 = arith.constant 4 : u32;
+            v213 = arith.mod v211, v817 : u32;
+            hir.assertz v213 #[code = 250];
+            v214 = hir.int_to_ptr v211 : ptr<byte, felt>;
+            v215 = hir.load v214 : felt;
+            v216 = hir.load_local  : i32 #[local = lv4];
+            v704 = arith.constant 8 : u32;
+            v217 = hir.bitcast v216 : u32;
+            v219 = arith.add v217, v704 : u32 #[overflow = checked];
+            v816 = arith.constant 4 : u32;
+            v221 = arith.mod v219, v816 : u32;
+            hir.assertz v221 #[code = 250];
+            v222 = hir.int_to_ptr v219 : ptr<byte, felt>;
+            v223 = hir.load v222 : felt;
+            v815 = arith.constant 3 : felt;
+            hir.assert_eq v223, v815;
+            v814 = arith.constant 5 : felt;
+            hir.assert_eq v215, v814;
+            v684 = arith.constant 7 : felt;
+            hir.assert_eq v207, v684;
+            v683 = arith.constant 9 : felt;
+            hir.assert_eq v199, v683;
+            v235 = hir.load_local  : felt #[local = lv5];
+            v236 = hir.load_local  : felt #[local = lv6];
+            v237 = hir.load_local  : felt #[local = lv7];
+            v238 = hir.load_local  : felt #[local = lv8];
+            v239 = hir.load_local  : i32 #[local = lv4];
+            v813 = arith.constant 8 : i32;
+            v241 = arith.add v239, v813 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7(v235, v236, v237, v238, v241)
+            v242 = hir.load_local  : i32 #[local = lv4];
+            v812 = arith.constant 20 : u32;
+            v243 = hir.bitcast v242 : u32;
+            v245 = arith.add v243, v812 : u32 #[overflow = checked];
+            v811 = arith.constant 4 : u32;
+            v247 = arith.mod v245, v811 : u32;
+            hir.assertz v247 #[code = 250];
+            v248 = hir.int_to_ptr v245 : ptr<byte, felt>;
+            v249 = hir.load v248 : felt;
+            hir.store_local v249 #[local = lv5];
+            v250 = hir.load_local  : i32 #[local = lv4];
+            v810 = arith.constant 16 : u32;
+            v251 = hir.bitcast v250 : u32;
+            v253 = arith.add v251, v810 : u32 #[overflow = checked];
+            v809 = arith.constant 4 : u32;
+            v255 = arith.mod v253, v809 : u32;
+            hir.assertz v255 #[code = 250];
+            v256 = hir.int_to_ptr v253 : ptr<byte, felt>;
+            v257 = hir.load v256 : felt;
+            hir.store_local v257 #[local = lv6];
+            v258 = hir.load_local  : i32 #[local = lv4];
+            v808 = arith.constant 12 : u32;
+            v259 = hir.bitcast v258 : u32;
+            v261 = arith.add v259, v808 : u32 #[overflow = checked];
+            v807 = arith.constant 4 : u32;
+            v263 = arith.mod v261, v807 : u32;
+            hir.assertz v263 #[code = 250];
+            v264 = hir.int_to_ptr v261 : ptr<byte, felt>;
+            v265 = hir.load v264 : felt;
+            hir.store_local v265 #[local = lv7];
+            v266 = hir.load_local  : i32 #[local = lv4];
+            v806 = arith.constant 8 : u32;
+            v267 = hir.bitcast v266 : u32;
+            v269 = arith.add v267, v806 : u32 #[overflow = checked];
+            v805 = arith.constant 4 : u32;
+            v271 = arith.mod v269, v805 : u32;
+            hir.assertz v271 #[code = 250];
+            v272 = hir.int_to_ptr v269 : ptr<byte, felt>;
+            v273 = hir.load v272 : felt;
+            v804 = arith.constant 4 : felt;
+            hir.assert_eq v273, v804;
+            v276 = hir.load_local  : felt #[local = lv7];
+            v682 = arith.constant 6 : felt;
+            hir.assert_eq v276, v682;
+            v279 = hir.load_local  : felt #[local = lv6];
+            v681 = arith.constant 8 : felt;
+            hir.assert_eq v279, v681;
+            v282 = hir.load_local  : felt #[local = lv5];
+            v680 = arith.constant 10 : felt;
+            hir.assert_eq v282, v680;
+            v803 = arith.constant 9 : felt;
+            v287 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_felt::wit_import1(v803) : felt
+            v679 = arith.constant 12 : felt;
+            hir.assert_eq v287, v679;
+            v802 = arith.constant 10 : felt;
+            hir.store_local v802 #[local = lv5];
+            v678 = arith.constant 20 : felt;
+            hir.store_local v678 #[local = lv6];
+            v294 = hir.load_local  : i32 #[local = lv4];
+            v801 = arith.constant 8 : u32;
+            v296 = hir.bitcast v294 : u32;
+            v298 = arith.add v296, v801 : u32 #[overflow = checked];
+            v800 = arith.constant 8 : u32;
+            v300 = arith.mod v298, v800 : u32;
+            hir.assertz v300 #[code = 250];
+            v703 = arith.constant 0 : i64;
+            v301 = hir.int_to_ptr v298 : ptr<byte, i64>;
+            hir.store v301, v703;
+            v302 = hir.load_local  : felt #[local = lv5];
+            v303 = hir.load_local  : felt #[local = lv6];
+            v304 = hir.load_local  : i32 #[local = lv4];
+            v799 = arith.constant 8 : i32;
+            v306 = arith.add v304, v799 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_pair::wit_import4(v302, v303, v306)
+            v307 = hir.load_local  : i32 #[local = lv4];
+            v798 = arith.constant 12 : u32;
+            v308 = hir.bitcast v307 : u32;
+            v310 = arith.add v308, v798 : u32 #[overflow = checked];
+            v797 = arith.constant 4 : u32;
+            v312 = arith.mod v310, v797 : u32;
+            hir.assertz v312 #[code = 250];
+            v313 = hir.int_to_ptr v310 : ptr<byte, felt>;
+            v314 = hir.load v313 : felt;
+            hir.store_local v314 #[local = lv5];
+            v315 = hir.load_local  : i32 #[local = lv4];
+            v796 = arith.constant 8 : u32;
+            v316 = hir.bitcast v315 : u32;
+            v318 = arith.add v316, v796 : u32 #[overflow = checked];
+            v795 = arith.constant 4 : u32;
+            v320 = arith.mod v318, v795 : u32;
+            hir.assertz v320 #[code = 250];
+            v321 = hir.int_to_ptr v318 : ptr<byte, felt>;
+            v322 = hir.load v321 : felt;
+            v677 = arith.constant 14 : felt;
+            hir.assert_eq v322, v677;
+            v325 = hir.load_local  : felt #[local = lv5];
+            v676 = arith.constant 24 : felt;
+            hir.assert_eq v325, v676;
+            v334 = hir.load_local  : i32 #[local = lv4];
+            v794 = arith.constant 8 : i32;
+            v336 = arith.add v334, v794 : i32 #[overflow = wrapping];
+            v673 = arith.constant 300 : felt;
+            v674 = arith.constant 200 : felt;
+            v675 = arith.constant 100 : felt;
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_triple::wit_import5(v675, v674, v673, v336)
+            v337 = hir.load_local  : i32 #[local = lv4];
+            v793 = arith.constant 16 : u32;
+            v338 = hir.bitcast v337 : u32;
+            v340 = arith.add v338, v793 : u32 #[overflow = checked];
+            v792 = arith.constant 4 : u32;
+            v342 = arith.mod v340, v792 : u32;
+            hir.assertz v342 #[code = 250];
+            v343 = hir.int_to_ptr v340 : ptr<byte, felt>;
+            v344 = hir.load v343 : felt;
+            hir.store_local v344 #[local = lv5];
+            v345 = hir.load_local  : i32 #[local = lv4];
+            v791 = arith.constant 12 : u32;
+            v346 = hir.bitcast v345 : u32;
+            v348 = arith.add v346, v791 : u32 #[overflow = checked];
+            v790 = arith.constant 4 : u32;
+            v350 = arith.mod v348, v790 : u32;
+            hir.assertz v350 #[code = 250];
+            v351 = hir.int_to_ptr v348 : ptr<byte, felt>;
+            v352 = hir.load v351 : felt;
+            hir.store_local v352 #[local = lv6];
+            v353 = hir.load_local  : i32 #[local = lv4];
+            v789 = arith.constant 8 : u32;
+            v354 = hir.bitcast v353 : u32;
+            v356 = arith.add v354, v789 : u32 #[overflow = checked];
+            v788 = arith.constant 4 : u32;
+            v358 = arith.mod v356, v788 : u32;
+            hir.assertz v358 #[code = 250];
+            v359 = hir.int_to_ptr v356 : ptr<byte, felt>;
+            v360 = hir.load v359 : felt;
+            v672 = arith.constant 105 : felt;
+            hir.assert_eq v360, v672;
+            v363 = hir.load_local  : felt #[local = lv6];
+            v671 = arith.constant 205 : felt;
+            hir.assert_eq v363, v671;
+            v366 = hir.load_local  : felt #[local = lv5];
+            v670 = arith.constant 305 : felt;
+            hir.assert_eq v366, v670;
+            v378 = hir.load_local  : i32 #[local = lv4];
+            v787 = arith.constant 8 : i32;
+            v380 = arith.add v378, v787 : i32 #[overflow = wrapping];
+            v710 = arith.constant 3 : i32;
+            v698 = arith.constant 0 : i32;
+            v699 = arith.constant 111 : i32;
+            v669 = arith.constant 50 : felt;
+            v700 = arith.constant -11 : i32;
+            v701 = arith.constant -4294967302 : i64;
+            v371 = arith.trunc v701 : felt;
+            v702 = arith.constant -1001 : i64;
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_mixed::wit_import4(v702, v371, v700, v669, v699, v698, v710, v380)
+            v381 = hir.load_local  : i32 #[local = lv4];
+            v786 = arith.constant 8 : u32;
+            v382 = hir.bitcast v381 : u32;
+            v384 = arith.add v382, v786 : u32 #[overflow = checked];
+            v785 = arith.constant 8 : u32;
+            v386 = arith.mod v384, v785 : u32;
+            hir.assertz v386 #[code = 250];
+            v387 = hir.int_to_ptr v384 : ptr<byte, i64>;
+            v388 = hir.load v387 : i64;
+            v784 = arith.constant 0 : i32;
+            v697 = arith.constant -1 : i64;
+            v390 = arith.eq v388, v697 : i1;
+            v391 = arith.zext v390 : u32;
+            v392 = hir.bitcast v391 : i32;
+            v394 = arith.neq v392, v784 : i1;
+            cf.cond_br v394 ^block26, ^block27;
         ^block26:
-            v364 = arith.constant 30 : u32;
-            v363 = hir.bitcast v181 : u32;
-            v365 = arith.add v363, v364 : u32 #[overflow = checked];
-            v366 = arith.constant 2 : u32;
-            v367 = arith.mod v365, v366 : u32;
-            hir.assertz v367 #[code = 250];
-            v368 = hir.int_to_ptr v365 : ptr<byte, u16>;
-            v369 = hir.load v368 : u16;
-            v373 = arith.constant 29 : u32;
-            v372 = hir.bitcast v181 : u32;
-            v374 = arith.add v372, v373 : u32 #[overflow = checked];
-            v375 = hir.int_to_ptr v374 : ptr<byte, u8>;
-            v376 = hir.load v375 : u8;
-            v380 = arith.constant 28 : u32;
-            v379 = hir.bitcast v181 : u32;
-            v381 = arith.add v379, v380 : u32 #[overflow = checked];
-            v382 = hir.int_to_ptr v381 : ptr<byte, u8>;
-            v383 = hir.load v382 : u8;
-            v387 = arith.constant 24 : u32;
-            v386 = hir.bitcast v181 : u32;
-            v388 = arith.add v386, v387 : u32 #[overflow = checked];
-            v553 = arith.constant 4 : u32;
-            v390 = arith.mod v388, v553 : u32;
-            hir.assertz v390 #[code = 250];
-            v391 = hir.int_to_ptr v388 : ptr<byte, felt>;
-            v392 = hir.load v391 : felt;
-            v552 = arith.constant 20 : u32;
-            v393 = hir.bitcast v181 : u32;
-            v395 = arith.add v393, v552 : u32 #[overflow = checked];
-            v551 = arith.constant 4 : u32;
-            v397 = arith.mod v395, v551 : u32;
-            hir.assertz v397 #[code = 250];
-            v398 = hir.int_to_ptr v395 : ptr<byte, i32>;
-            v399 = hir.load v398 : i32;
-            v550 = arith.constant 16 : u32;
-            v400 = hir.bitcast v181 : u32;
-            v402 = arith.add v400, v550 : u32 #[overflow = checked];
-            v549 = arith.constant 4 : u32;
-            v404 = arith.mod v402, v549 : u32;
-            hir.assertz v404 #[code = 250];
-            v405 = hir.int_to_ptr v402 : ptr<byte, felt>;
-            v406 = hir.load v405 : felt;
-            v407 = arith.constant -4294967296 : i64;
-            v408 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u64_unchecked(v407) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v406, v408)
-            v409 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from(v399) : felt
-            v410 = arith.constant -1 : i32;
-            v411 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v410) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v409, v411)
-            v412 = arith.constant 57 : i32;
-            v413 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v412) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v392, v413)
-            v384 = arith.zext v383 : u32;
-            v385 = hir.bitcast v384 : i32;
-            v414 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v385) : felt
-            v415 = arith.constant 122 : i32;
-            v416 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v415) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v414, v416)
-            v548 = arith.constant 0 : i32;
-            v417 = arith.constant 255 : i32;
-            v377 = arith.zext v376 : u32;
-            v378 = hir.bitcast v377 : i32;
-            v418 = arith.band v378, v417 : i32;
-            v420 = arith.neq v418, v548 : i1;
-            v421 = arith.zext v420 : u32;
-            v422 = hir.bitcast v421 : i32;
-            v423 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v422) : felt
-            v424 = arith.constant 1 : i32;
-            v425 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v424) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v423, v425)
-            v370 = arith.zext v369 : u32;
-            v371 = hir.bitcast v370 : i32;
-            v426 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from(v371) : felt
-            v547 = arith.constant 12 : i32;
-            v428 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v547) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v426, v428)
-            v429 = arith.constant 30 : i32;
-            v430 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v429) : felt
-            v431 = arith.constant 40 : i32;
-            v432 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v431) : felt
-            v546 = arith.constant 50 : i32;
-            v434 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v546) : felt
-            v545 = arith.constant 8 : i32;
-            v436 = arith.add v181, v545 : i32 #[overflow = wrapping];
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_nested::wit_import6(v430, v432, v434, v436)
-            v544 = arith.constant 16 : u32;
-            v437 = hir.bitcast v181 : u32;
-            v439 = arith.add v437, v544 : u32 #[overflow = checked];
-            v543 = arith.constant 4 : u32;
-            v441 = arith.mod v439, v543 : u32;
-            hir.assertz v441 #[code = 250];
-            v442 = hir.int_to_ptr v439 : ptr<byte, felt>;
-            v443 = hir.load v442 : felt;
-            v542 = arith.constant 12 : u32;
-            v444 = hir.bitcast v181 : u32;
-            v446 = arith.add v444, v542 : u32 #[overflow = checked];
-            v541 = arith.constant 4 : u32;
-            v448 = arith.mod v446, v541 : u32;
-            hir.assertz v448 #[code = 250];
-            v449 = hir.int_to_ptr v446 : ptr<byte, felt>;
-            v450 = hir.load v449 : felt;
-            v540 = arith.constant 8 : u32;
-            v451 = hir.bitcast v181 : u32;
-            v453 = arith.add v451, v540 : u32 #[overflow = checked];
-            v539 = arith.constant 4 : u32;
-            v455 = arith.mod v453, v539 : u32;
-            hir.assertz v455 #[code = 250];
-            v456 = hir.int_to_ptr v453 : ptr<byte, felt>;
-            v457 = hir.load v456 : felt;
-            v458 = arith.constant 38 : i32;
-            v459 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v458) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v457, v459)
-            v460 = arith.constant 48 : i32;
-            v461 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v460) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v450, v461)
-            v462 = arith.constant 58 : i32;
-            v463 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::from_u32(v462) : felt
-            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/intrinsics::felt::assert_eq(v443, v463)
-            v538 = arith.constant 32 : i32;
-            v465 = arith.add v181, v538 : i32 #[overflow = wrapping];
-            v466 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/__stack_pointer : ptr<byte, u8>
-            v467 = hir.bitcast v466 : ptr<byte, i32>;
-            hir.store v467, v465;
+            v395 = hir.load_local  : i32 #[local = lv4];
+            v696 = arith.constant 30 : u32;
+            v396 = hir.bitcast v395 : u32;
+            v398 = arith.add v396, v696 : u32 #[overflow = checked];
+            v695 = arith.constant 2 : u32;
+            v400 = arith.mod v398, v695 : u32;
+            hir.assertz v400 #[code = 250];
+            v401 = hir.int_to_ptr v398 : ptr<byte, u16>;
+            v402 = hir.load v401 : u16;
+            v403 = arith.zext v402 : u32;
+            v404 = hir.bitcast v403 : i32;
+            hir.store_local v404 #[local = lv12];
+            v405 = hir.load_local  : i32 #[local = lv4];
+            v694 = arith.constant 29 : u32;
+            v406 = hir.bitcast v405 : u32;
+            v408 = arith.add v406, v694 : u32 #[overflow = checked];
+            v409 = hir.int_to_ptr v408 : ptr<byte, u8>;
+            v410 = hir.load v409 : u8;
+            v411 = arith.zext v410 : u32;
+            v412 = hir.bitcast v411 : i32;
+            hir.store_local v412 #[local = lv13];
+            v413 = hir.load_local  : i32 #[local = lv4];
+            v693 = arith.constant 28 : u32;
+            v414 = hir.bitcast v413 : u32;
+            v416 = arith.add v414, v693 : u32 #[overflow = checked];
+            v417 = hir.int_to_ptr v416 : ptr<byte, u8>;
+            v418 = hir.load v417 : u8;
+            v419 = arith.zext v418 : u32;
+            v420 = hir.bitcast v419 : i32;
+            hir.store_local v420 #[local = lv14];
+            v421 = hir.load_local  : i32 #[local = lv4];
+            v692 = arith.constant 24 : u32;
+            v422 = hir.bitcast v421 : u32;
+            v424 = arith.add v422, v692 : u32 #[overflow = checked];
+            v783 = arith.constant 4 : u32;
+            v426 = arith.mod v424, v783 : u32;
+            hir.assertz v426 #[code = 250];
+            v427 = hir.int_to_ptr v424 : ptr<byte, felt>;
+            v428 = hir.load v427 : felt;
+            hir.store_local v428 #[local = lv5];
+            v429 = hir.load_local  : i32 #[local = lv4];
+            v782 = arith.constant 20 : u32;
+            v430 = hir.bitcast v429 : u32;
+            v432 = arith.add v430, v782 : u32 #[overflow = checked];
+            v781 = arith.constant 4 : u32;
+            v434 = arith.mod v432, v781 : u32;
+            hir.assertz v434 #[code = 250];
+            v435 = hir.int_to_ptr v432 : ptr<byte, i32>;
+            v436 = hir.load v435 : i32;
+            v437 = hir.load_local  : i32 #[local = lv4];
+            v780 = arith.constant 16 : u32;
+            v438 = hir.bitcast v437 : u32;
+            v440 = arith.add v438, v780 : u32 #[overflow = checked];
+            v779 = arith.constant 4 : u32;
+            v442 = arith.mod v440, v779 : u32;
+            hir.assertz v442 #[code = 250];
+            v443 = hir.int_to_ptr v440 : ptr<byte, felt>;
+            v444 = hir.load v443 : felt;
+            v691 = arith.constant -4294967296 : i64;
+            v446 = arith.trunc v691 : felt;
+            hir.assert_eq v444, v446;
+            v448 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_field::wasm32::Felt as core::convert::From<u32>>::from(v436) : felt
+            v690 = arith.constant -1 : i32;
+            v450 = hir.bitcast v690 : felt;
+            hir.assert_eq v448, v450;
+            v451 = hir.load_local  : felt #[local = lv5];
+            v668 = arith.constant 57 : felt;
+            hir.assert_eq v451, v668;
+            v454 = hir.load_local  : i32 #[local = lv14];
+            v455 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v454) : felt
+            v667 = arith.constant 122 : felt;
+            hir.assert_eq v455, v667;
+            v458 = hir.load_local  : i32 #[local = lv13];
+            v666 = arith.constant 1 : felt;
+            v778 = arith.constant 0 : i32;
+            v689 = arith.constant 255 : i32;
+            v460 = arith.band v458, v689 : i32;
+            v462 = arith.neq v460, v778 : i1;
+            v463 = arith.zext v462 : u32;
+            v464 = hir.bitcast v463 : i32;
+            v465 = hir.bitcast v464 : felt;
+            hir.assert_eq v465, v666;
+            v468 = hir.load_local  : i32 #[local = lv12];
+            v469 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/<miden_field::wasm32::Felt as core::convert::From<u16>>::from(v468) : felt
+            v777 = arith.constant 12 : felt;
+            hir.assert_eq v469, v777;
+            v478 = hir.load_local  : i32 #[local = lv4];
+            v775 = arith.constant 8 : i32;
+            v480 = arith.add v478, v775 : i32 #[overflow = wrapping];
+            v776 = arith.constant 50 : felt;
+            v664 = arith.constant 40 : felt;
+            v665 = arith.constant 30 : felt;
+            hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_nested::wit_import6(v665, v664, v776, v480)
+            v481 = hir.load_local  : i32 #[local = lv4];
+            v774 = arith.constant 16 : u32;
+            v482 = hir.bitcast v481 : u32;
+            v484 = arith.add v482, v774 : u32 #[overflow = checked];
+            v773 = arith.constant 4 : u32;
+            v486 = arith.mod v484, v773 : u32;
+            hir.assertz v486 #[code = 250];
+            v487 = hir.int_to_ptr v484 : ptr<byte, felt>;
+            v488 = hir.load v487 : felt;
+            hir.store_local v488 #[local = lv5];
+            v489 = hir.load_local  : i32 #[local = lv4];
+            v772 = arith.constant 12 : u32;
+            v490 = hir.bitcast v489 : u32;
+            v492 = arith.add v490, v772 : u32 #[overflow = checked];
+            v771 = arith.constant 4 : u32;
+            v494 = arith.mod v492, v771 : u32;
+            hir.assertz v494 #[code = 250];
+            v495 = hir.int_to_ptr v492 : ptr<byte, felt>;
+            v496 = hir.load v495 : felt;
+            hir.store_local v496 #[local = lv6];
+            v497 = hir.load_local  : i32 #[local = lv4];
+            v770 = arith.constant 8 : u32;
+            v498 = hir.bitcast v497 : u32;
+            v500 = arith.add v498, v770 : u32 #[overflow = checked];
+            v769 = arith.constant 4 : u32;
+            v502 = arith.mod v500, v769 : u32;
+            hir.assertz v502 #[code = 250];
+            v503 = hir.int_to_ptr v500 : ptr<byte, felt>;
+            v504 = hir.load v503 : felt;
+            v663 = arith.constant 38 : felt;
+            hir.assert_eq v504, v663;
+            v507 = hir.load_local  : felt #[local = lv6];
+            v662 = arith.constant 48 : felt;
+            hir.assert_eq v507, v662;
+            v510 = hir.load_local  : felt #[local = lv5];
+            v661 = arith.constant 58 : felt;
+            hir.assert_eq v510, v661;
+            v513 = hir.load_local  : i32 #[local = lv4];
+            v768 = arith.constant 32 : i32;
+            v515 = arith.add v513, v768 : i32 #[overflow = wrapping];
+            v516 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/__stack_pointer : ptr<byte, u8>
+            v517 = hir.bitcast v516 : ptr<byte, i32>;
+            hir.store v517, v515;
             builtin.ret ;
         ^block27:
             ub.unreachable ;
@@ -548,76 +585,60 @@ builtin.component miden:base/note-script@1.0.0 {
 
         private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block28:
-            v469 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/GOT.data.internal.__memory_base : ptr<byte, u8>
-            v470 = hir.bitcast v469 : ptr<byte, i32>;
-            v471 = hir.load v470 : i32;
-            v472 = arith.constant 1048588 : i32;
-            v473 = arith.add v471, v472 : i32 #[overflow = wrapping];
-            v474 = hir.bitcast v473 : u32;
-            v475 = hir.int_to_ptr v474 : ptr<byte, u8>;
-            v476 = hir.load v475 : u8;
-            v468 = arith.constant 0 : i32;
-            v477 = arith.zext v476 : u32;
-            v478 = hir.bitcast v477 : i32;
-            v480 = arith.neq v478, v468 : i1;
-            scf.if v480{
+            v518 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v519 = hir.bitcast v518 : ptr<byte, i32>;
+            v520 = hir.load v519 : i32;
+            v827 = arith.constant 1048588 : i32;
+            v522 = arith.add v520, v827 : i32 #[overflow = wrapping];
+            v523 = hir.bitcast v522 : u32;
+            v524 = hir.int_to_ptr v523 : ptr<byte, u8>;
+            v525 = hir.load v524 : u8;
+            v826 = arith.constant 0 : i32;
+            v526 = arith.zext v525 : u32;
+            v527 = hir.bitcast v526 : i32;
+            v529 = arith.neq v527, v826 : i1;
+            scf.if v529{
             ^block30:
                 scf.yield ;
             } else {
             ^block31:
-                v481 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/GOT.data.internal.__memory_base : ptr<byte, u8>
-                v482 = hir.bitcast v481 : ptr<byte, i32>;
-                v483 = hir.load v482 : i32;
+                v530 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v531 = hir.bitcast v530 : ptr<byte, i32>;
+                v532 = hir.load v531 : i32;
+                hir.store_local v532 #[local = lv0];
                 hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/__wasm_call_ctors()
-                v592 = arith.constant 1 : u8;
-                v594 = arith.constant 1048588 : i32;
-                v485 = arith.add v483, v594 : i32 #[overflow = wrapping];
-                v489 = hir.bitcast v485 : u32;
-                v490 = hir.int_to_ptr v489 : ptr<byte, u8>;
-                hir.store v490, v592;
+                v533 = hir.load_local  : i32 #[local = lv0];
+                v825 = arith.constant 1 : u8;
+                v830 = arith.constant 1048588 : i32;
+                v535 = arith.add v533, v830 : i32 #[overflow = wrapping];
+                v539 = hir.bitcast v535 : u32;
+                v540 = hir.int_to_ptr v539 : ptr<byte, u8>;
+                hir.store v540, v825;
                 scf.yield ;
             };
             builtin.ret ;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u32>>::from(v491: i32) -> felt {
-        ^block32(v491: i32):
-            v493 = hir.bitcast v491 : felt;
-            builtin.ret v493;
+        private builtin.function @<miden_field::wasm32::Felt as core::convert::From<u32>>::from(v541: i32) -> felt {
+        ^block32(v541: i32):
+            v544 = hir.bitcast v541 : felt;
+            builtin.ret v544;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u16>>::from(v494: i32) -> felt {
-        ^block34(v494: i32):
-            v496 = arith.constant 65535 : i32;
-            v497 = arith.band v494, v496 : i32;
-            v498 = hir.bitcast v497 : felt;
-            builtin.ret v498;
+        private builtin.function @<miden_field::wasm32::Felt as core::convert::From<u16>>::from(v545: i32) -> felt {
+        ^block34(v545: i32):
+            v831 = arith.constant 65535 : i32;
+            v549 = arith.band v545, v831 : i32;
+            v550 = hir.bitcast v549 : felt;
+            builtin.ret v550;
         };
 
-        private builtin.function @<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(v499: i32) -> felt {
-        ^block36(v499: i32):
-            v501 = arith.constant 255 : i32;
-            v502 = arith.band v499, v501 : i32;
-            v503 = hir.bitcast v502 : felt;
-            builtin.ret v503;
-        };
-
-        private builtin.function @intrinsics::felt::assert_eq(v504: felt, v505: felt) {
-        ^block38(v504: felt, v505: felt):
-            hir.assert_eq v504, v505;
-            builtin.ret ;
-        };
-
-        private builtin.function @intrinsics::felt::from_u32(v506: i32) -> felt {
-        ^block40(v506: i32):
-            v507 = hir.bitcast v506 : felt;
-            builtin.ret v507;
-        };
-
-        private builtin.function @intrinsics::felt::from_u64_unchecked(v509: i64) -> felt {
-        ^block42(v509: i64):
-            v510 = hir.cast v509 : felt;
-            builtin.ret v510;
+        private builtin.function @<miden_field::wasm32::Felt as core::convert::From<u8>>::from(v551: i32) -> felt {
+        ^block36(v551: i32):
+            v832 = arith.constant 255 : i32;
+            v555 = arith.band v551, v832 : i32;
+            v556 = hir.bitcast v555 : felt;
+            builtin.ret v556;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
@@ -631,9 +652,9 @@ builtin.component miden:base/note-script@1.0.0 {
         builtin.segment @1048576 = 0x000000010000000100000001;
     };
 
-    public builtin.function @run(v512: felt, v513: felt, v514: felt, v515: felt) {
-    ^block44(v512: felt, v513: felt, v514: felt, v515: felt):
-        hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/miden:base/note-script@1.0.0#run(v512, v513, v514, v515)
+    public builtin.function @run(v557: felt, v558: felt, v559: felt, v560: felt) {
+    ^block38(v557: felt, v558: felt, v559: felt, v560: felt):
+        hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word/miden:base/note-script@1.0.0#run(v557, v558, v559, v560)
         builtin.ret ;
     };
 };

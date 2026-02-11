@@ -29,8 +29,8 @@
     (type (;4;) (func (param i32 i32 i32) (result i32)))
     (type (;5;) (func (result i32)))
     (type (;6;) (func (param i32)))
-    (type (;7;) (func (param f32 f32) (result i32)))
-    (type (;8;) (func (param i32 i32 i32 i32)))
+    (type (;7;) (func (param i32 i32 i32 i32)))
+    (type (;8;) (func (param f32 f32) (result i32)))
     (type (;9;) (func (param i32 i32 i32 i32 i32)))
     (type (;10;) (func (param i32 i32)))
     (type (;11;) (func (param i32) (result i32)))
@@ -77,23 +77,23 @@
     (func $miden:base/note-script@1.0.0#run (;6;) (type 0) (param f32 f32 f32 f32)
       (local i32 i32 f32 f32 f32 i32 i32 i32)
       global.get $__stack_pointer
-      i32.const 48
+      i32.const 32
       i32.sub
       local.tee 4
       global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       local.get 4
-      i32.const 16
+      i32.const 12
       i32.add
       call $miden_base_sys::bindings::active_note::get_inputs
       block ;; label = @1
         block ;; label = @2
           local.get 4
-          i32.load offset=24
+          i32.load offset=20
           br_table 1 (;@1;) 1 (;@1;) 0 (;@2;)
         end
         local.get 4
-        i32.load offset=20
+        i32.load offset=16
         local.tee 5
         f32.load offset=4
         local.set 6
@@ -101,14 +101,20 @@
         f32.load
         local.set 7
         local.get 4
-        i32.const 8
+        i32.const 12
         i32.add
+        call $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+        local.get 4
+        i32.const 12
+        i32.add
+        call $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+        local.get 4
         call $miden_base_sys::bindings::active_account::get_id
         local.get 4
-        f32.load offset=12
+        f32.load offset=4
         local.set 8
         local.get 4
-        f32.load offset=8
+        f32.load
         local.get 7
         call $intrinsics::felt::eq
         i32.const 1
@@ -121,19 +127,19 @@
         i32.ne
         br_if 0 (;@1;)
         local.get 4
-        i32.const 28
+        i32.const 12
         i32.add
         call $miden_base_sys::bindings::active_note::get_assets
         local.get 4
-        i32.load offset=36
+        i32.load offset=20
         i32.const 4
         i32.shl
         local.set 9
         local.get 4
-        i32.load offset=28
+        i32.load offset=12
         local.set 10
         local.get 4
-        i32.load offset=32
+        i32.load offset=16
         local.tee 11
         local.set 5
         block ;; label = @2
@@ -163,26 +169,18 @@
         end
         local.get 4
         local.get 11
-        i32.store offset=44
+        i32.store offset=28
         local.get 4
         local.get 10
-        i32.store offset=40
+        i32.store offset=24
         local.get 4
-        i32.const 40
+        i32.const 24
         i32.add
         i32.const 16
         i32.const 16
         call $<alloc::raw_vec::RawVecInner>::deallocate
         local.get 4
-        i32.const 16
-        i32.add
-        call $<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
-        local.get 4
-        i32.const 16
-        i32.add
-        call $<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop
-        local.get 4
-        i32.const 48
+        i32.const 32
         i32.add
         global.set $__stack_pointer
         return
@@ -295,6 +293,7 @@
       local.get 1
       i32.const 8
       i32.add
+      i32.const 256
       i32.const 16
       i32.const 16
       call $<alloc::raw_vec::RawVecInner>::with_capacity_in
@@ -312,49 +311,49 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVecInner>::with_capacity_in (;12;) (type 3) (param i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::with_capacity_in (;12;) (type 7) (param i32 i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
       i32.sub
-      local.tee 3
+      local.tee 4
       global.set $__stack_pointer
-      local.get 3
+      local.get 4
       i32.const 4
       i32.add
-      i32.const 256
-      i32.const 0
       local.get 1
+      i32.const 0
       local.get 2
-      call $<alloc::raw_vec::RawVecInner>::try_allocate_in
       local.get 3
+      call $<alloc::raw_vec::RawVecInner>::try_allocate_in
+      local.get 4
       i32.load offset=8
-      local.set 2
+      local.set 3
       block ;; label = @1
-        local.get 3
+        local.get 4
         i32.load offset=4
         i32.const 1
         i32.ne
         br_if 0 (;@1;)
-        local.get 2
         local.get 3
+        local.get 4
         i32.load offset=12
         call $alloc::raw_vec::handle_error
         unreachable
       end
       local.get 0
-      local.get 3
+      local.get 4
       i32.load offset=12
       i32.store offset=4
       local.get 0
-      local.get 2
-      i32.store
       local.get 3
+      i32.store
+      local.get 4
       i32.const 16
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop (;13;) (type 6) (param i32)
+    (func $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;13;) (type 6) (param i32)
       local.get 0
       i32.const 4
       i32.const 4
@@ -378,7 +377,7 @@
       i32.load offset=8
       i32.const 2
       i32.shr_u
-      call $miden::active_note::get_assets
+      call $miden::protocol::active_note::get_assets
       i32.store
       local.get 0
       local.get 1
@@ -399,6 +398,7 @@
       local.get 1
       i32.const 8
       i32.add
+      i32.const 1024
       i32.const 4
       i32.const 4
       call $<alloc::raw_vec::RawVecInner>::with_capacity_in
@@ -411,7 +411,7 @@
       local.tee 3
       i32.const 2
       i32.shr_u
-      call $miden::active_note::get_inputs
+      call $miden::protocol::active_note::get_inputs
       i32.store offset=8
       local.get 0
       local.get 3
@@ -434,7 +434,7 @@
       local.get 1
       i32.const 8
       i32.add
-      call $miden::active_account::get_id
+      call $miden::protocol::active_account::get_id
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -444,11 +444,11 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::vec::Vec<miden_stdlib_sys::intrinsics::felt::Felt> as core::ops::drop::Drop>::drop (;17;) (type 6) (param i32))
-    (func $intrinsics::felt::eq (;18;) (type 7) (param f32 f32) (result i32)
+    (func $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;17;) (type 6) (param i32))
+    (func $intrinsics::felt::eq (;18;) (type 8) (param f32 f32) (result i32)
       unreachable
     )
-    (func $<alloc::alloc::Global>::alloc_impl (;19;) (type 8) (param i32 i32 i32 i32)
+    (func $<alloc::alloc::Global>::alloc_impl (;19;) (type 7) (param i32 i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -507,7 +507,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVecInner>::current_memory (;21;) (type 8) (param i32 i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::current_memory (;21;) (type 7) (param i32 i32 i32 i32)
       (local i32 i32 i32)
       i32.const 0
       local.set 4
@@ -704,13 +704,13 @@
       i32.gt_u
       select
     )
-    (func $miden::active_account::get_id (;27;) (type 6) (param i32)
+    (func $miden::protocol::active_account::get_id (;27;) (type 6) (param i32)
       unreachable
     )
-    (func $miden::active_note::get_assets (;28;) (type 11) (param i32) (result i32)
+    (func $miden::protocol::active_note::get_assets (;28;) (type 11) (param i32) (result i32)
       unreachable
     )
-    (func $miden::active_note::get_inputs (;29;) (type 11) (param i32) (result i32)
+    (func $miden::protocol::active_note::get_inputs (;29;) (type 11) (param i32) (result i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00\01\00\00\00")

@@ -6,13 +6,11 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const MODULE_ID: &str = "miden::asset";
-
 fn module_path() -> SymbolPath {
     let parts = [
         SymbolNameComponent::Root,
         SymbolNameComponent::Component(symbols::Miden),
-        SymbolNameComponent::Component(Symbol::intern("asset")),
+        SymbolNameComponent::Component(symbols::Asset),
     ];
     SymbolPath::from_iter(parts)
 }

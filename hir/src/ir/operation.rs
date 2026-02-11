@@ -13,12 +13,12 @@ use smallvec::SmallVec;
 
 pub use self::{builder::OperationBuilder, name::OperationName};
 use super::{
-    effects::{HasRecursiveMemoryEffects, MemoryEffect, MemoryEffectOpInterface},
+    effects::{
+        Effect, EffectInstance, HasRecursiveMemoryEffects, MemoryEffect, MemoryEffectOpInterface,
+    },
     *,
 };
-use crate::{
-    AttributeSet, AttributeValue, Forward, ProgramPoint, adt::SmallSet, patterns::RewritePatternSet,
-};
+use crate::{AttributeSet, AttributeValue, Forward, ProgramPoint, patterns::RewritePatternSet};
 
 pub type OperationRef = UnsafeIntrusiveEntityRef<Operation>;
 pub type OpList = EntityList<Operation>;
@@ -1038,68 +1038,37 @@ impl Operation {
     /// dead if they have no side effects. This allows for marking region operations as trivially
     /// dead without always being conservative about terminators.
     pub fn would_be_trivially_dead_even_if_terminator(&self) -> bool {
-        // The set of operations to consider when checking for side effects
-        let mut effecting_ops = SmallVec::<[OperationRef; 4]>::from_iter([self.as_operation_ref()]);
-        while let Some(op) = effecting_ops.pop() {
-            let op = op.borrow();
+        use crate::effects::RecursiveEffectIterator;
 
-            // If the operation has recursive effects, push all of the nested operations on to the
-            // stack to consider
-            let has_recursive_effects = op.implements::<dyn HasRecursiveMemoryEffects>();
-            if has_recursive_effects {
-                for region in op.regions() {
-                    for block in region.body() {
-                        for op in block.body() {
-                            effecting_ops.push(op.as_operation_ref());
+        let this_op = self.as_operation_ref();
+        let effects = RecursiveEffectIterator::<MemoryEffect>::new(this_op);
+        for (effecting_op, effect) in effects {
+            // The presence of an unknown effect, then we must treat this op as conservatively
+            // having effects
+            let Some(effect) = effect else {
+                return false;
+            };
+
+            // We can drop effects if:
+            //
+            // * the effect is an allocation and the effect is a result of the effecting op.
+            // * the effect is a read
+            match effect.effect() {
+                MemoryEffect::Read => (),
+                MemoryEffect::Allocate => match effect.value() {
+                    Some(value) => {
+                        let is_defined_by_op =
+                            value.borrow().get_defining_op().is_some_and(|op| op == effecting_op);
+                        let is_droppable =
+                            matches!(effect.effect(), MemoryEffect::Allocate) && is_defined_by_op;
+                        if !is_droppable {
+                            return false;
                         }
                     }
-                }
+                    None => return false,
+                },
+                _ => return false,
             }
-
-            // If the op has memory effects, try to characterize them to see if the op is trivially
-            // dead here.
-            if let Some(effect_interface) = op.as_trait::<dyn MemoryEffectOpInterface>() {
-                let mut effects = effect_interface.effects();
-
-                // Gather all results of this op that are allocated
-                let mut alloc_results = SmallSet::<ValueRef, 4>::default();
-                for effect in effects.as_slice() {
-                    let allocates = matches!(effect.effect(), MemoryEffect::Allocate);
-                    if let Some(value) = effect.value() {
-                        let is_defined_by_op = value
-                            .borrow()
-                            .get_defining_op()
-                            .is_some_and(|op| self.as_operation_ref() == op);
-                        if allocates && is_defined_by_op {
-                            alloc_results.insert(value);
-                        }
-                    }
-                }
-
-                if !effects.all(|effect| {
-                    // We can drop effects if the value is an allocation and is a result of
-                    // the operation
-                    if effect.value().is_some_and(|v| alloc_results.contains(&v)) {
-                        true
-                    } else {
-                        // Otherwise, the effect must be a read
-                        matches!(effect.effect(), MemoryEffect::Read)
-                    }
-                }) {
-                    return false;
-                }
-                continue;
-            }
-
-            // Otherwise, if the op has recursive side effects we can treat the operation itself
-            // as having no effects
-            if has_recursive_effects {
-                continue;
-            }
-
-            // If there were no effect interfaces, we treat this op as conservatively having
-            // effects
-            return false;
         }
 
         // If we get here, none of the operations had effects that prevented marking this operation
@@ -1146,6 +1115,48 @@ impl Operation {
             }
         }
 
+        true
+    }
+
+    pub fn get_effects_recursively<T: Effect>(&self) -> Option<SmallVec<[EffectInstance<T>; 2]>> {
+        use crate::effects::RecursiveEffectIterator;
+
+        let mut effects = SmallVec::<[_; 2]>::default();
+
+        for (_, effect) in RecursiveEffectIterator::new(self.as_operation_ref()) {
+            effects.push(effect?);
+        }
+
+        Some(effects)
+    }
+
+    /// Returns true if this operation is known to have `expected_effect`.
+    ///
+    /// Returns false if the op has unknown effects, no effects, or does not have `expected_effect`
+    /// amongst its effects.
+    pub fn has_memory_effect(&self, expected_effect: MemoryEffect) -> bool {
+        let Some(mem_interface) = self.as_trait::<dyn MemoryEffectOpInterface>() else {
+            return false;
+        };
+
+        mem_interface.effects().any(|effect| effect.effect() == expected_effect)
+    }
+
+    /// Returns true if this operation has `expected_effect` and _only_ `expected_effect`.
+    ///
+    /// Returns false if the op has no effects, or has any effect other than `expected_effect`.
+    pub fn has_single_memory_effect(&self, expected_effect: MemoryEffect) -> bool {
+        let Some(mem_interface) = self.as_trait::<dyn MemoryEffectOpInterface>() else {
+            return false;
+        };
+        if mem_interface.has_no_effect() {
+            return false;
+        }
+        for effect in mem_interface.effects() {
+            if effect.effect() != expected_effect {
+                return false;
+            }
+        }
         true
     }
 }

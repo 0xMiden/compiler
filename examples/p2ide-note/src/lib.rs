@@ -29,34 +29,40 @@ fn reclaim_assets(account: &mut Account, consuming_account: AccountId) {
     }
 }
 
-#[note_script]
-fn run(_arg: Word, account: &mut Account) {
-    let inputs = active_note::get_inputs();
+#[note]
+struct P2ideNote;
 
-    // make sure the number of inputs is 4
-    assert_eq((inputs.len() as u32).into(), felt!(4));
+#[note]
+impl P2ideNote {
+    #[note_script]
+    pub fn run(self, _arg: Word, account: &mut Account) {
+        let inputs = active_note::get_inputs();
 
-    let target_account_id_prefix = inputs[0];
-    let target_account_id_suffix = inputs[1];
+        // make sure the number of inputs is 4
+        assert_eq((inputs.len() as u32).into(), felt!(4));
 
-    let timelock_height = inputs[2];
-    let reclaim_height = inputs[3];
+        let target_account_id_prefix = inputs[0];
+        let target_account_id_suffix = inputs[1];
 
-    // get block number
-    let block_number = tx::get_block_number();
-    assert!(block_number >= timelock_height);
+        let timelock_height = inputs[2];
+        let reclaim_height = inputs[3];
 
-    // get consuming account id
-    let consuming_account_id = account.get_id();
+        // get block number
+        let block_number = tx::get_block_number();
+        assert!(block_number >= timelock_height);
 
-    // target account id
-    let target_account_id = AccountId::from(target_account_id_prefix, target_account_id_suffix);
+        // get consuming account id
+        let consuming_account_id = account.get_id();
 
-    let is_target = target_account_id == consuming_account_id;
-    if is_target {
-        consume_assets(account);
-    } else {
-        assert!(reclaim_height >= block_number);
-        reclaim_assets(account, consuming_account_id);
+        // target account id
+        let target_account_id = AccountId::new(target_account_id_prefix, target_account_id_suffix);
+
+        let is_target = target_account_id == consuming_account_id;
+        if is_target {
+            consume_assets(account);
+        } else {
+            assert!(reclaim_height >= block_number);
+            reclaim_assets(account, consuming_account_id);
+        }
     }
 }

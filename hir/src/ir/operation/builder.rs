@@ -1,10 +1,10 @@
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{vec, vec::Vec};
 
 use midenc_session::diagnostics::Severity;
 
 use crate::{
     AsCallableSymbolRef, AsSymbolRef, AttributeValue, BlockRef, Builder, KeyedSuccessor, Op,
-    OpBuilder, OperationRef, Region, Report, Spanned, SuccessorInfo, Type,
+    OpBuilder, OperationRef, Region, Report, Spanned, SuccessorInfo, Type, UnsafeEntityRef,
     UnsafeIntrusiveEntityRef, ValueRef, traits::Terminator,
 };
 
@@ -168,8 +168,10 @@ where
                 .into_iter()
                 .map(|value_ref| self.builder.context().make_operand(value_ref, owner, 0));
             let operand_group = op.operands.push_group(operands);
-            let key = Box::new(key);
-            let key = unsafe { core::ptr::NonNull::new_unchecked(Box::into_raw(key)) };
+            let key_ref = self.builder.context().alloc(key);
+            let key = unsafe {
+                core::ptr::NonNull::new_unchecked(UnsafeEntityRef::as_ptr(&key_ref).cast_mut())
+            };
             group.push(SuccessorInfo {
                 block,
                 key: Some(key.cast()),

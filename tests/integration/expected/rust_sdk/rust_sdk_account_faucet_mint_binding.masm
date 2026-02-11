@@ -1,13 +1,13 @@
-# mod miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1
+# mod ::"miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1"
 
 @callconv("canon-lift")
 pub proc binding(
 
 ) -> (felt, felt, felt, felt)
-    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::init
+    exec."miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1"::init
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1#binding
+    exec.::"miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1"::rust_sdk_account_faucet_mint_binding::"miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1#binding"
     trace.252
     nop
     push.0
@@ -65,7 +65,7 @@ pub proc binding(
     nop
     movdn.3
     swap.2
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -78,7 +78,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -89,7 +89,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding
+# mod ::"miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1"::rust_sdk_account_faucet_mint_binding
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -105,6 +105,7 @@ proc rust_sdk_account_faucet_mint_binding::bindings::__link_custom_section_descr
     nop
 end
 
+@locals("3")
 @callconv("C")
 proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1#binding(
 
@@ -119,9 +120,16 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
     nop
     push.32
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -131,35 +139,74 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
     nop
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1"::rust_sdk_account_faucet_mint_binding::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
     push.0
+    locaddr.1
+    push.0
+    swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::intrinsics::felt::from_u32
+    exec.::intrinsics::mem::store_sw
     trace.252
     nop
     push.0
-    movup.2
+    locaddr.2
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
     push.1
     while.true
+        locaddr.1
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
         push.0
         push.16
-        dup.2
+        movup.2
         eq
         neq
         dup.0
         if.true
-            swap.1
-            drop
-            push.3735929054
+            nop
         else
+            locaddr.0
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
+            locaddr.1
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
+            locaddr.2
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_felt
+            trace.252
+            nop
             push.16
-            dup.3
+            movup.3
             u32wrapping_add
-            dup.2
+            movup.2
             u32wrapping_add
             push.4
             dup.1
@@ -167,8 +214,6 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
             u32mod
             u32assert
             assertz
-            dup.4
-            swap.1
             u32divmod.4
             swap.1
             trace.240
@@ -176,41 +221,37 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
             exec.::intrinsics::mem::store_felt
             trace.252
             nop
+            locaddr.1
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::load_sw
+            trace.252
+            nop
             push.4
-            movup.2
             u32wrapping_add
+            locaddr.1
+            push.0
+            swap.1
+            trace.240
+            nop
+            exec.::intrinsics::mem::store_sw
+            trace.252
+            nop
         end
-        push.3735929054
-        dup.2
-        movup.2
-        swap.5
-        movdn.2
-        cdrop
-        push.3735929054
-        dup.2
-        dup.4
-        swap.2
-        swap.1
-        cdrop
         push.1
         push.0
-        movup.4
+        movup.2
         cdrop
         push.1
         u32and
-        movup.4
-        swap.1
         if.true
-            movup.3
-            drop
             push.1
         else
             push.0
         end
     end
-    drop
-    drop
-    drop
     push.1114148
     u32divmod.4
     swap.1
@@ -219,29 +260,76 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.16
-    dup.2
-    u32wrapping_add
-    dup.2
-    trace.240
-    nop
-    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from
-    trace.252
-    nop
-    push.16
-    dup.2
-    u32wrapping_add
-    dup.2
+    locaddr.1
+    push.0
     swap.1
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::miden_base_sys::bindings::faucet::mint
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    dup.1
+    u32wrapping_add
+    swap.1
+    trace.240
+    nop
+    exec.::"miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1"::rust_sdk_account_faucet_mint_binding::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    dup.1
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1"::rust_sdk_account_faucet_mint_binding::miden_base_sys::bindings::faucet::mint
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.1048584
     u32wrapping_add
+    dup.0
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.24
-    dup.2
+    swap.1
     add
     u32assert
     push.8
@@ -259,7 +347,7 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
     nop
     swap.1
     push.8
-    dup.3
+    movup.3
     add
     u32assert
     push.4
@@ -275,10 +363,26 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
-    dup.2
+    swap.1
     add
     u32assert
     push.8
@@ -295,7 +399,7 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
     trace.252
     nop
     swap.1
-    dup.2
+    movup.2
     push.4
     dup.1
     swap.1
@@ -311,8 +415,15 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.32
-    movup.2
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -322,8 +433,17 @@ proc miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-bin
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -365,9 +485,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
         trace.240
         nop
-        exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::__wasm_call_ctors
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+        trace.240
+        nop
+        exec.::"miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1"::rust_sdk_account_faucet_mint_binding::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1
@@ -398,8 +534,25 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
+@locals("3")
 @callconv("C")
 proc miden_base_sys::bindings::faucet::mint(i32, i32)
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114144
     u32divmod.4
     swap.1
@@ -408,11 +561,18 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.32
+    push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.2
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -420,8 +580,16 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.12
-    dup.3
+    swap.1
     add
     u32assert
     push.4
@@ -435,10 +603,18 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.8
-    dup.4
+    swap.1
     add
     u32assert
     push.4
@@ -454,8 +630,16 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
-    dup.5
+    swap.1
     add
     u32assert
     push.4
@@ -471,7 +655,14 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.5
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
@@ -485,18 +676,92 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.4
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     swap.1
     swap.3
     swap.1
     swap.4
     trace.240
     nop
-    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::miden::faucet::mint
+    exec.::"miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1"::rust_sdk_account_faucet_mint_binding::"miden::protocol::faucet::mint"
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.8
     dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    push.8
+    movup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
+    movup.2
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    swap.1
     add
     u32assert
     push.8
@@ -513,16 +778,15 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     trace.252
     nop
     swap.1
-    push.24
-    dup.3
-    add
-    u32assert
+    movup.2
     push.8
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    swap.2
+    movup.2
     u32divmod.4
     swap.1
     movup.2
@@ -532,50 +796,15 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    dup.0
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
+    locaddr.2
+    push.0
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.16
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
-    dup.1
-    u32wrapping_add
-    movup.2
-    trace.240
-    nop
-    exec.::miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1::rust_sdk_account_faucet_mint_binding::<miden_stdlib_sys::intrinsics::word::Word>::reverse
-    trace.252
-    nop
-    push.32
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -587,291 +816,46 @@ proc miden_base_sys::bindings::faucet::mint(i32, i32)
     nop
 end
 
+@locals("2")
 @callconv("C")
-proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_stdlib_sys::intrinsics::felt::Felt; 4]>>::from(
+proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from(
     i32,
     i32
 )
-    push.8
-    dup.2
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
+    locaddr.0
+    push.0
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_dw
+    exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    swap.1
-    push.8
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    swap.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
+    locaddr.1
+    push.0
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_dw
+    exec.::intrinsics::mem::store_sw
     trace.252
     nop
-    swap.1
-    movup.2
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
-    i32,
-    i32
-)
-    push.1114144
-    u32divmod.4
+    locaddr.0
+    push.0
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.16
-    u32wrapping_sub
-    push.8
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.8
-    dup.3
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    movup.2
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    dup.2
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.12
-    dup.1
-    u32wrapping_add
+    locaddr.1
     push.0
-    movup.2
     swap.1
-    push.1
-    while.true
-        push.0
-        push.8
-        dup.2
-        eq
-        neq
-        dup.0
-        if.true
-            movup.3
-            movup.2
-            drop
-            drop
-            push.3735929054
-            dup.0
-        else
-            dup.2
-            dup.2
-            u32wrapping_add
-            dup.0
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            dup.5
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_sw
-            trace.252
-            nop
-            movup.2
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_sw
-            trace.252
-            nop
-            dup.4
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_felt
-            trace.252
-            nop
-            push.4294967292
-            movup.4
-            u32wrapping_add
-            push.4
-            movup.3
-            u32wrapping_add
-        end
-        push.3735929054
-        dup.3
-        dup.6
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.6
-        swap.2
-        swap.1
-        cdrop
-        push.1
-        push.0
-        movup.6
-        cdrop
-        push.1
-        u32and
-        swap.1
-        swap.2
-        swap.4
-        swap.3
-        swap.1
-        if.true
-            movup.4
-            drop
-            movup.4
-            drop
-            push.1
-        else
-            push.0
-        end
-    end
-    drop
-    drop
-    drop
-    drop
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.1
+    swap.1
     add
     u32assert
     push.4
@@ -889,7 +873,7 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     nop
     swap.1
     push.8
-    dup.4
+    movup.3
     add
     u32assert
     push.8
@@ -905,6 +889,22 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.4
@@ -939,64 +939,15 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     nop
 end
 
+@locals("5")
 @callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc miden::faucet::mint(felt, felt, felt, felt, i32)
-    trace.240
-    nop
-    exec.::miden::faucet::mint
-    trace.252
-    nop
-    movup.4
-    dup.0
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.12
-    add
-    u32assert
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
+proc miden::protocol::faucet::mint(felt, felt, felt, felt, i32)
+    drop
+    drop
+    drop
+    drop
+    drop
+    push.0
+    assert
 end
 

@@ -2,28 +2,25 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
-// However, we could still use some standard library types while
-// remaining no-std compatible, if we uncommented the following lines:
-//
-// extern crate alloc;
-// use alloc::vec::Vec;
-
-use miden::*;
+use miden::{AccountId, Word, active_note, note};
 
 use crate::bindings::Account;
 
-#[note_script]
-fn run(_arg: Word, account: &mut Account) {
-    let inputs = active_note::get_inputs();
-    let target_account_id_prefix = inputs[0];
-    let target_account_id_suffix = inputs[1];
+#[note]
+struct P2idNote {
+    target_account_id: AccountId,
+}
 
-    let target_account = AccountId::from(target_account_id_prefix, target_account_id_suffix);
-    let current_account = account.get_id();
-    assert_eq!(current_account, target_account);
+#[note]
+impl P2idNote {
+    #[note_script]
+    pub fn run(self, _arg: Word, account: &mut Account) {
+        let current_account = account.get_id();
+        assert_eq!(current_account, self.target_account_id);
 
-    let assets = active_note::get_assets();
-    for asset in assets {
-        account.receive_asset(asset);
+        let assets = active_note::get_assets();
+        for asset in assets {
+            account.receive_asset(asset);
+        }
     }
 }

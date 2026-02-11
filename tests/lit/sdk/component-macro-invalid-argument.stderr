@@ -1,0 +1,7 @@
+// RUN: env CARGO_TARGET_DIR=%target_dir/lit/sdk-project cargo run --bin component-macro-invalid-argument --manifest-path %S/sdk-project/Cargo.toml 2>&1 | filecheck %s
+
+// CHECK: error: #[component] does not accept arguments
+// CHECK-NEXT:  --> {{.*\.rs}}:[[#%d,ERRLINE:]]:{{[0-9]+}}
+// CHECK-NEXT:   |
+// CHECK-NEXT: [[#ERRLINE]] | #[component(foo)]
+// CHECK-NEXT:   | ^^^^^^^^^^^^^^^^^

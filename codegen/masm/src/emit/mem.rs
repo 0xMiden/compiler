@@ -5,7 +5,7 @@ use midenc_hir::{
 };
 
 use super::{OpEmitter, masm};
-use crate::lower::NativePtr;
+use crate::{OperandStack, lower::NativePtr};
 
 /// Allocation
 impl OpEmitter<'_> {
@@ -13,13 +13,13 @@ impl OpEmitter<'_> {
     /// size of the heap (in pages) if successful, or -1 if the heap could not be grown.
     pub fn mem_grow(&mut self, span: SourceSpan) {
         let _num_pages = self.stack.pop().expect("operand stack is empty");
-        self.raw_exec("intrinsics::mem::memory_grow", span);
+        self.raw_exec("::intrinsics::mem::memory_grow", span);
         self.push(Type::I32);
     }
 
     /// Returns the size (in pages) of the heap (from the perspective of Wasm programs)
     pub fn mem_size(&mut self, span: SourceSpan) {
-        self.raw_exec("intrinsics::mem::memory_size", span);
+        self.raw_exec("::intrinsics::mem::memory_size", span);
         self.push(Type::U32);
     }
 }
@@ -64,7 +64,7 @@ impl OpEmitter<'_> {
                     Type::I128 => self.load_quad_word(None, span),
                     Type::I64 | Type::U64 => self.load_double_word_int(None, span),
                     Type::Felt => self.load_felt(None, span),
-                    Type::I32 | Type::U32 => self.load_word(None, span),
+                    Type::I32 | Type::U32 | Type::Ptr(_) => self.load_word(None, span),
                     ty @ (Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1) => {
                         self.load_small(ty, None, span);
                     }
@@ -89,7 +89,7 @@ impl OpEmitter<'_> {
             Type::I128 => self.load_quad_word(Some(ptr), span),
             Type::I64 | Type::U64 => self.load_double_word_int(Some(ptr), span),
             Type::Felt => self.load_felt(Some(ptr), span),
-            Type::I32 | Type::U32 => self.load_word(Some(ptr), span),
+            Type::I32 | Type::U32 | Type::Ptr(_) => self.load_word(Some(ptr), span),
             Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1 => {
                 self.load_small(&ty, Some(ptr), span);
             }
@@ -130,13 +130,14 @@ impl OpEmitter<'_> {
 
     /// Load a field element from a naturally aligned address, either immediate or dynamic
     ///
-    /// A native pointer triplet is expected on the stack if an immediate is not given.
+    /// A native pointer pair `(element_addr, byte_offset)` is expected on the stack if an
+    /// immediate is not given.
     fn load_felt(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.load_felt_imm(imm, span);
         }
 
-        self.raw_exec("intrinsics::mem::load_felt", span);
+        self.raw_exec("::intrinsics::mem::load_felt", span);
     }
 
     fn load_felt_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -147,13 +148,14 @@ impl OpEmitter<'_> {
     /// Loads a single 32-bit machine word, i.e. a single field element, not the Miden notion of a
     /// word
     ///
-    /// Expects a native pointer triplet on the stack if an immediate address is not given.
+    /// Expects a native pointer pair `(element_addr, byte_offset)` on the stack if an immediate
+    /// address is not given.
     fn load_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.load_word_imm(imm, span);
         }
 
-        self.raw_exec("intrinsics::mem::load_sw", span);
+        self.raw_exec("::intrinsics::mem::load_sw", span);
     }
 
     /// Loads a single 32-bit machine word from the given immediate address.
@@ -166,7 +168,7 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to load_sw intrinsic to handle the details of unaligned loads
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::load_sw", span);
+            self.raw_exec("::intrinsics::mem::load_sw", span);
         }
     }
 
@@ -175,7 +177,7 @@ impl OpEmitter<'_> {
         if let Some(imm) = ptr {
             self.load_double_word_imm(imm, span);
         } else {
-            self.raw_exec("intrinsics::mem::load_dw", span);
+            self.raw_exec("::intrinsics::mem::load_dw", span);
         }
 
         // The mem::intrinsic loads two 32-bit words with the first at the top of the stack.  Swap
@@ -270,7 +272,7 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to load_dw to handle the details of unaligned loads
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::load_dw", span);
+            self.raw_exec("::intrinsics::mem::load_dw", span);
         }
     }
 
@@ -279,7 +281,7 @@ impl OpEmitter<'_> {
         if let Some(imm) = ptr {
             return self.load_quad_word_imm(imm, span);
         }
-        self.raw_exec("intrinsics::mem::load_qw", span);
+        self.raw_exec("::intrinsics::mem::load_qw", span);
     }
 
     fn load_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -308,7 +310,7 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to load_qw to handle the details of unaligned loads
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::load_qw", span);
+            self.raw_exec("::intrinsics::mem::load_qw", span);
         }
     }
 
@@ -352,7 +354,7 @@ impl OpEmitter<'_> {
     /// the operand stack representing any unaligned double-word value
     #[allow(unused)]
     fn realign_double_word(&mut self, _ptr: NativePtr, span: SourceSpan) {
-        self.raw_exec("intrinsics::mem::realign_dw", span);
+        self.raw_exec("::intrinsics::mem::realign_dw", span);
     }
 
     /// This handles emitting code that handles aligning an unaligned quad machine-word value
@@ -544,7 +546,7 @@ impl OpEmitter<'_> {
                     Type::I128 => self.store_quad_word(None, span),
                     Type::I64 | Type::U64 => self.store_double_word_int(None, span),
                     Type::Felt => self.store_felt(None, span),
-                    Type::I32 | Type::U32 => self.store_word(None, span),
+                    Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(None, span),
                     ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, None, span),
                     Type::Array(ref array_ty) => self.store_array(array_ty, None, span),
                     Type::Struct(ref struct_ty) => self.store_struct(struct_ty, None, span),
@@ -572,7 +574,7 @@ impl OpEmitter<'_> {
             Type::I128 => self.store_quad_word(Some(ptr), span),
             Type::I64 | Type::U64 => self.store_double_word_int(Some(ptr), span),
             Type::Felt => self.store_felt(Some(ptr), span),
-            Type::I32 | Type::U32 => self.store_word(Some(ptr), span),
+            Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(Some(ptr), span),
             ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, Some(ptr), span),
             Type::Array(ref array_ty) => self.store_array(array_ty, Some(ptr), span),
             Type::Struct(ref struct_ty) => self.store_struct(struct_ty, Some(ptr), span),
@@ -679,11 +681,86 @@ impl OpEmitter<'_> {
         let ty = src.ty();
         assert!(ty.is_pointer());
         assert_eq!(ty, dst.ty(), "expected src and dst operands to have the same type");
-        let value_ty = ty.pointee().unwrap();
+        let value_ty = ty.pointee().unwrap().clone();
         let value_size = u32::try_from(value_ty.size_in_bytes()).expect("invalid value size");
 
         // Use optimized intrinsics when available
         match value_size {
+            // Byte copies (Wasm `memory.copy`) can often be performed more efficiently by copying
+            // whole felt elements when the source, destination, and length are all
+            // element-aligned.
+            1 => {
+                // Compute: use_elements = (src % 4 == 0) && (dst % 4 == 0) && (count % 4 == 0)
+                //
+                // Stack: [src, dst, count]
+                self.emit_all(
+                    [
+                        // src % 4 == 0
+                        masm::Instruction::Dup0,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Swap1,
+                        masm::Instruction::Drop,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        // dst % 4 == 0
+                        masm::Instruction::Dup2,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Swap1,
+                        masm::Instruction::Drop,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::And,
+                        // count % 4 == 0
+                        masm::Instruction::Dup3,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Swap1,
+                        masm::Instruction::Drop,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::And,
+                    ],
+                    span,
+                );
+
+                // then: convert byte addresses/count to element units and delegate to core
+                let mut then_ops = Vec::default();
+                let mut then_stack = OperandStack::default();
+                let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
+                then_emitter.emit_all(
+                    [
+                        // Convert `src` to element address
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                        // Convert `dst` to an element address
+                        masm::Instruction::Swap1,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                        // Bring `count` to top to convert to element count
+                        masm::Instruction::Swap2,
+                        masm::Instruction::U32DivModImm(4.into()),
+                        masm::Instruction::Assertz,
+                    ],
+                    span,
+                );
+                then_emitter.raw_exec("::miden::core::mem::memcopy_elements", span);
+
+                // else: fall back to the generic implementation
+                let mut else_ops = Vec::default();
+                let mut else_stack = OperandStack::default();
+                let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
+                else_emitter.emit_memcpy_fallback_loop(
+                    src.clone(),
+                    dst.clone(),
+                    count.clone(),
+                    value_ty.clone(),
+                    value_size,
+                    span,
+                );
+
+                self.current_block.push(masm::Op::If {
+                    span,
+                    then_blk: masm::Block::new(span, then_ops),
+                    else_blk: masm::Block::new(span, else_ops),
+                });
+                return;
+            }
             // Word-sized values have an optimized intrinsic we can lean on
             16 => {
                 // We have to convert byte addresses to element addresses
@@ -705,7 +782,7 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::mem::memcopy_words", span);
+                self.raw_exec("::miden::core::mem::memcopy_words", span);
                 return;
             }
             // Values which can be broken up into word-sized chunks can piggy-back on the
@@ -734,13 +811,26 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec("std::mem::memcopy_words", span);
+                self.raw_exec("::miden::core::mem::memcopy_words", span);
                 return;
             }
             // For now, all other values fallback to the default implementation
             _ => (),
         }
 
+        self.emit_memcpy_fallback_loop(src, dst, count, value_ty, value_size, span);
+    }
+
+    /// Emit the default memcpy loop for types which do not have a specialized intrinsic.
+    fn emit_memcpy_fallback_loop(
+        &mut self,
+        src: crate::Operand,
+        dst: crate::Operand,
+        count: crate::Operand,
+        value_ty: Type,
+        value_size: u32,
+        span: SourceSpan,
+    ) {
         // Create new block for loop body and switch to it temporarily
         let mut body = Vec::default();
         let mut body_emitter = OpEmitter::new(self.invoked, &mut body, self.stack);
@@ -824,7 +914,7 @@ impl OpEmitter<'_> {
         if let Some(imm) = ptr {
             return self.store_quad_word_imm(imm, span);
         }
-        self.raw_exec("intrinsics::mem::store_qw", span);
+        self.raw_exec("::intrinsics::mem::store_qw", span);
     }
 
     fn store_quad_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -853,51 +943,62 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to `store_qw` to handle unaligned stores
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::store_qw", span);
+            self.raw_exec("::intrinsics::mem::store_qw", span);
         }
     }
 
-    /// Store a 64-bit word to the operand stack
+    /// Store a 64-bit integer in linear memory.
+    ///
+    /// Values are represented as two 32-bit limbs on the operand stack in big-endian order
+    /// (`[hi, lo]`).
     fn store_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
-        // The mem::intrinsic stores two 32-bit words in stack order.  Swap them (the 3rd and 4th
-        // params) first to make a little-endian-limbed memory value.
-        self.emit(masm::Instruction::MovUp2, span);
-        self.emit(masm::Instruction::MovDn3, span);
-
-        if let Some(imm) = ptr {
-            self.store_double_word_imm(imm, span);
-        } else {
-            self.raw_exec("intrinsics::mem::store_dw", span);
-        }
-    }
-
-    fn store_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
-        if ptr.is_element_aligned() {
-            self.emit_all(
-                [
-                    masm::Instruction::U32Assert2,
-                    masm::Instruction::MemStoreImm(ptr.addr.into()),
-                    masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
-                ],
-                span,
-            );
-        } else {
-            // Delegate to `store_dw` to handle unaligned stores
-            self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::store_dw", span);
+        match ptr {
+            // When storing to an immediate address, the operand stack only contains the value
+            // limbs. We must swap them so that the low limb is stored at the lower address.
+            Some(ptr) if ptr.is_element_aligned() => {
+                // Stack: [value_hi, value_lo]
+                self.emit_all(
+                    [
+                        masm::Instruction::Swap1,
+                        masm::Instruction::U32Assert2,
+                        masm::Instruction::MemStoreImm(ptr.addr.into()),
+                        masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
+                    ],
+                    span,
+                );
+            }
+            // When storing to a dynamic address, or an unaligned immediate address, the operand
+            // stack contains (or must contain) the native pointer pair `(element_addr, byte_offset)`
+            // above the value limbs. This is derived from the 32-bit byte pointer via `divmod 4`.
+            // Swap the limbs underneath the pointer pair before delegating to the mem intrinsic.
+            Some(ptr) => {
+                // Stack: [value_hi, value_lo]
+                self.push_native_ptr(ptr, span);
+                // Stack: [addr, offset, value_hi, value_lo]
+                self.emit(masm::Instruction::MovUp2, span);
+                self.emit(masm::Instruction::MovDn3, span);
+                self.raw_exec("::intrinsics::mem::store_dw", span);
+            }
+            None => {
+                // Stack: [addr, offset, value_hi, value_lo]
+                self.emit(masm::Instruction::MovUp2, span);
+                self.emit(masm::Instruction::MovDn3, span);
+                self.raw_exec("::intrinsics::mem::store_dw", span);
+            }
         }
     }
 
     /// Stores a single 32-bit machine word, i.e. a single field element, not the Miden notion of a
     /// word
     ///
-    /// Expects a native pointer triplet on the stack if an immediate address is not given.
+    /// Expects a native pointer pair `(element_addr, byte_offset)` on the stack if an immediate
+    /// address is not given.
     fn store_word(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.store_word_imm(imm, span);
         }
 
-        self.raw_exec("intrinsics::mem::store_sw", span);
+        self.raw_exec("::intrinsics::mem::store_sw", span);
     }
 
     /// Stores a single 32-bit machine word to the given immediate address.
@@ -910,19 +1011,20 @@ impl OpEmitter<'_> {
         } else {
             // Delegate to `store_sw` to handle unaligned stores
             self.push_native_ptr(ptr, span);
-            self.raw_exec("intrinsics::mem::store_sw", span);
+            self.raw_exec("::intrinsics::mem::store_sw", span);
         }
     }
 
     /// Store a field element to a naturally aligned address, either immediate or dynamic
     ///
-    /// A native pointer triplet is expected on the stack if an immediate is not given.
+    /// A native pointer pair `(element_addr, byte_offset)` is expected on the stack if an
+    /// immediate is not given.
     fn store_felt(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             return self.store_felt_imm(imm, span);
         }
 
-        self.raw_exec("intrinsics::mem::store_felt", span);
+        self.raw_exec("::intrinsics::mem::store_felt", span);
     }
 
     fn store_felt_imm(&mut self, ptr: NativePtr, span: SourceSpan) {

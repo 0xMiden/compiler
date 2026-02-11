@@ -1,29 +1,29 @@
-# mod miden:counter-contract/counter-contract@0.1.0
+# mod ::"miden:counter-contract/counter-contract@0.1.0"
 
 @callconv("canon-lift")
 pub proc get-count(
 
 ) -> felt
-    exec.::miden:counter-contract/counter-contract@0.1.0::init
+    exec."miden:counter-contract/counter-contract@0.1.0"::init
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden:counter-contract/counter-contract@0.1.0#get-count
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::"miden:counter-contract/counter-contract@0.1.0#get-count"
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 @callconv("canon-lift")
 pub proc increment-count(
 
 ) -> felt
-    exec.::miden:counter-contract/counter-contract@0.1.0::init
+    exec."miden:counter-contract/counter-contract@0.1.0"::init
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden:counter-contract/counter-contract@0.1.0#increment-count
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::"miden:counter-contract/counter-contract@0.1.0#increment-count"
     trace.252
     nop
-    exec.::std::sys::truncate_stack
+    exec.::miden::core::sys::truncate_stack
 end
 
 proc init
@@ -36,7 +36,7 @@ proc init
     push.262144
     push.1
     trace.240
-    exec.::std::mem::pipe_preimage_to_memory
+    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     drop
     push.1048576
@@ -47,7 +47,7 @@ proc init
     mem_store.278537
 end
 
-# mod miden:counter-contract/counter-contract@0.1.0::counter_contract
+# mod ::"miden:counter-contract/counter-contract@0.1.0"::counter_contract
 
 @callconv("C")
 proc __wasm_call_ctors(
@@ -63,11 +63,31 @@ proc counter_contract::bindings::__link_custom_section_describing_imports(
     nop
 end
 
+@locals("5")
 @callconv("C")
 proc miden_base_sys::bindings::storage::get_map_item(
     i32,
+    felt,
+    felt,
     i32
 )
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    movup.2
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
     push.1114144
     u32divmod.4
     swap.1
@@ -76,11 +96,18 @@ proc miden_base_sys::bindings::storage::get_map_item(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.32
+    push.16
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.4
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -88,14 +115,16 @@ proc miden_base_sys::bindings::storage::get_map_item(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.3
     push.0
+    swap.1
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.12
-    dup.4
+    swap.1
     add
     u32assert
     push.4
@@ -109,10 +138,18 @@ proc miden_base_sys::bindings::storage::get_map_item(
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.8
-    dup.5
+    swap.1
     add
     u32assert
     push.4
@@ -128,8 +165,16 @@ proc miden_base_sys::bindings::storage::get_map_item(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
-    dup.6
+    swap.1
     add
     u32assert
     push.4
@@ -145,7 +190,14 @@ proc miden_base_sys::bindings::storage::get_map_item(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    movup.6
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
@@ -159,21 +211,95 @@ proc miden_base_sys::bindings::storage::get_map_item(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    dup.5
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     movup.2
-    swap.3
+    swap.4
     movdn.2
     swap.1
-    swap.4
-    swap.1
     swap.5
+    swap.1
+    swap.6
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden::active_account::get_map_item
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::"miden::protocol::active_account::get_map_item"
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.8
     dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_dw
+    trace.252
+    nop
+    swap.1
+    push.8
+    movup.3
+    add
+    u32assert
+    push.8
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    swap.2
+    movup.2
+    u32divmod.4
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    swap.1
     add
     u32assert
     push.8
@@ -190,16 +316,15 @@ proc miden_base_sys::bindings::storage::get_map_item(
     trace.252
     nop
     swap.1
-    push.24
-    dup.3
-    add
-    u32assert
+    movup.2
     push.8
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    swap.2
+    movup.2
     u32divmod.4
     swap.1
     movup.2
@@ -209,50 +334,15 @@ proc miden_base_sys::bindings::storage::get_map_item(
     exec.::intrinsics::mem::store_dw
     trace.252
     nop
-    dup.0
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
+    locaddr.4
+    push.0
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.16
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.16
-    dup.1
-    u32wrapping_add
-    movup.2
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_stdlib_sys::intrinsics::word::Word>::reverse
-    trace.252
-    nop
-    push.32
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -264,6 +354,78 @@ proc miden_base_sys::bindings::storage::get_map_item(
     nop
 end
 
+@locals("2")
+@callconv("C")
+proc <counter_contract::CounterContract as core::default::Default>::default(
+    i32
+)
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.4
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    push.3500972897
+    push.341377309
+    mul.4294967296
+    add
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    push.602293141
+    push.2746820956
+    mul.4294967296
+    add
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+end
+
+@locals("6")
 @callconv("C")
 proc miden:counter-contract/counter-contract@0.1.0#get-count(
 
@@ -276,11 +438,18 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.32
+    push.48
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -290,110 +459,34 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     nop
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.0
     push.0
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.1
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.12
-    dup.5
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::store_felt
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.8
-    dup.4
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.3
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    dup.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.16
-    dup.1
     u32wrapping_add
-    dup.1
+    trace.240
+    nop
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::<counter_contract::CounterContract as core::default::Default>::default
+    trace.252
+    nop
+    locaddr.0
+    push.0
     swap.1
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden_base_sys::bindings::storage::get_map_item
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.28
-    dup.1
+    push.12
+    swap.1
     add
     u32assert
     push.4
@@ -409,8 +502,227 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.8
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.0
+    push.0
+    mul.4294967296
+    add
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.28
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    push.1
+    push.0
+    mul.4294967296
+    add
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.24
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    dup.1
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.20
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.16
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    push.0
+    push.0
+    mul.4294967296
+    add
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.16
+    dup.2
+    u32wrapping_add
     push.32
-    movup.2
+    movup.3
+    u32wrapping_add
+    swap.1
+    swap.3
+    swap.1
+    trace.240
+    nop
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::miden_base_sys::bindings::storage::get_map_item
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.44
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.48
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -420,8 +732,17 @@ proc miden:counter-contract/counter-contract@0.1.0#get-count(
     exec.::intrinsics::mem::store_sw
     trace.252
     nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
 end
 
+@locals("8")
 @callconv("C")
 proc miden:counter-contract/counter-contract@0.1.0#increment-count(
 
@@ -434,11 +755,18 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.144
+    push.64
     u32wrapping_sub
-    push.1114144
-    dup.1
+    dup.0
+    locaddr.0
+    push.0
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.1114144
     u32divmod.4
     swap.1
     trace.240
@@ -448,35 +776,34 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     nop
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::wit_bindgen::rt::run_ctors_once
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.0
     push.0
+    swap.1
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    push.8
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::<counter_contract::CounterContract as core::default::Default>::default
+    trace.252
+    nop
+    locaddr.0
     push.0
+    swap.1
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.1
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.12
-    dup.5
+    swap.1
     add
     u32assert
     push.4
@@ -485,17 +812,31 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     u32mod
     u32assert
     assertz
-    dup.1
-    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.8
-    dup.5
+    swap.1
     add
     u32assert
     push.4
@@ -504,8 +845,85 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     u32mod
     u32assert
     assertz
-    dup.2
+    u32divmod.4
     swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.0
+    push.0
+    mul.4294967296
+    add
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.0
+    push.0
+    mul.4294967296
+    add
+    dup.0
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.1
+    push.0
+    mul.4294967296
+    add
+    dup.0
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.28
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
     u32divmod.4
     swap.1
     trace.240
@@ -513,8 +931,24 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.4
-    dup.5
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.24
+    movup.2
     add
     u32assert
     push.4
@@ -523,43 +957,127 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     u32mod
     u32assert
     assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.20
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.16
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.16
     dup.3
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    dup.4
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    dup.4
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.64
-    dup.5
     u32wrapping_add
-    dup.5
+    push.48
+    movup.4
+    u32wrapping_add
+    swap.1
+    swap.3
     swap.1
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden_base_sys::bindings::storage::get_map_item
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::miden_base_sys::bindings::storage::get_map_item
     trace.252
     nop
-    push.76
-    dup.5
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.60
+    dup.1
     add
     u32assert
     push.4
@@ -576,35 +1094,82 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     trace.252
     nop
     push.1
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    swap.1
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::add
-    trace.252
-    nop
-    push.48
-    dup.6
-    u32wrapping_add
-    dup.1
-    swap.1
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from
-    trace.252
-    nop
+    add
+    dup.0
+    locaddr.7
     push.0
+    swap.1
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from
+    exec.::intrinsics::mem::store_felt
     trace.252
     nop
-    push.60
-    dup.7
+    push.32
+    movup.2
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::<miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.6
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.44
+    swap.1
     add
     u32assert
     push.4
@@ -620,8 +1185,16 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.56
-    dup.8
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.40
+    swap.1
     add
     u32assert
     push.4
@@ -637,8 +1210,16 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
-    push.52
-    dup.9
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.36
+    swap.1
     add
     u32assert
     push.4
@@ -652,215 +1233,70 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.32
+    swap.1
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.48
-    dup.10
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_felt
-    trace.252
-    nop
-    push.64
-    dup.11
     u32wrapping_add
-    swap.1
-    swap.8
-    swap.2
+    movup.4
+    swap.6
+    movdn.4
+    movup.3
     swap.7
+    movdn.3
+    movup.2
+    swap.8
+    movdn.2
     swap.1
     swap.9
-    swap.3
-    swap.6
+    swap.1
     swap.10
-    swap.4
-    swap.5
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::miden::native_account::set_map_item
+    exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::"miden::protocol::native_account::set_map_item"
     trace.252
     nop
-    push.72
-    dup.2
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
+    locaddr.0
+    push.0
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.104
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.64
-    dup.2
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.96
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.88
-    dup.2
-    u32wrapping_add
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.120
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.80
-    dup.2
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.112
-    dup.4
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    push.96
-    dup.2
-    u32wrapping_add
-    push.16
-    dup.3
-    u32wrapping_add
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_stdlib_sys::intrinsics::word::Word>::reverse
-    trace.252
-    nop
-    push.112
-    dup.2
-    u32wrapping_add
-    push.128
-    dup.3
-    u32wrapping_add
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::<miden_stdlib_sys::intrinsics::word::Word>::reverse
-    trace.252
-    nop
-    push.144
-    movup.2
     u32wrapping_add
     push.1114144
     u32divmod.4
@@ -868,10 +1304,19 @@ proc miden:counter-contract/counter-contract@0.1.0#increment-count(
     trace.240
     nop
     exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.7
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
 end
 
+@locals("1")
 @callconv("C")
 proc wit_bindgen::rt::run_ctors_once(
 
@@ -913,9 +1358,25 @@ proc wit_bindgen::rt::run_ctors_once(
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
+        locaddr.0
+        push.0
+        swap.1
         trace.240
         nop
-        exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::__wasm_call_ctors
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+        trace.240
+        nop
+        exec.::"miden:counter-contract/counter-contract@0.1.0"::counter_contract::__wasm_call_ctors
+        trace.252
+        nop
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
         trace.252
         nop
         push.1
@@ -946,216 +1407,55 @@ proc wit_bindgen::rt::run_ctors_once(
     end
 end
 
+@locals("5")
 @callconv("C")
-proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
+proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_field::wasm32::Felt>>::from(
     i32,
-    i32
+    felt
 )
-    push.1114144
-    u32divmod.4
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.16
-    u32wrapping_sub
-    push.8
-    dup.3
-    add
-    u32assert
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    push.8
-    dup.3
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-    movup.2
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    dup.2
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
     push.12
+    swap.1
+    add
+    u32assert
+    push.4
     dup.1
-    u32wrapping_add
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
     push.0
-    movup.2
     swap.1
-    push.1
-    while.true
-        push.0
-        push.8
-        dup.2
-        eq
-        neq
-        dup.0
-        if.true
-            movup.3
-            movup.2
-            drop
-            drop
-            push.3735929054
-            dup.0
-        else
-            dup.2
-            dup.2
-            u32wrapping_add
-            dup.0
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_felt
-            trace.252
-            nop
-            dup.5
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::load_sw
-            trace.252
-            nop
-            movup.2
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_sw
-            trace.252
-            nop
-            dup.4
-            push.4
-            dup.1
-            swap.1
-            u32mod
-            u32assert
-            assertz
-            u32divmod.4
-            swap.1
-            trace.240
-            nop
-            exec.::intrinsics::mem::store_felt
-            trace.252
-            nop
-            push.4294967292
-            movup.4
-            u32wrapping_add
-            push.4
-            movup.3
-            u32wrapping_add
-        end
-        push.3735929054
-        dup.3
-        dup.6
-        swap.2
-        swap.1
-        cdrop
-        push.3735929054
-        dup.4
-        dup.6
-        swap.2
-        swap.1
-        cdrop
-        push.1
-        push.0
-        movup.6
-        cdrop
-        push.1
-        u32and
-        swap.1
-        swap.2
-        swap.4
-        swap.3
-        swap.1
-        if.true
-            movup.4
-            drop
-            movup.4
-            drop
-            push.1
-        else
-            push.0
-        end
-    end
-    drop
-    drop
-    drop
-    drop
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     push.8
-    dup.1
+    swap.1
     add
     u32assert
     push.4
@@ -1164,31 +1464,48 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     u32mod
     u32assert
     assertz
+    push.0
+    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_dw
+    exec.::intrinsics::mem::store_felt
     trace.252
     nop
+    locaddr.0
+    push.0
     swap.1
-    push.8
-    dup.4
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.4
+    swap.1
     add
     u32assert
-    push.8
+    push.4
     dup.1
     swap.1
     u32mod
     u32assert
     assertz
+    push.0
+    swap.1
     u32divmod.4
     swap.1
-    movup.2
-    movdn.3
     trace.240
     nop
-    exec.::intrinsics::mem::store_dw
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     push.4
@@ -1197,147 +1514,30 @@ proc <miden_stdlib_sys::intrinsics::word::Word>::reverse(
     u32mod
     u32assert
     assertz
+    push.0
+    swap.1
     u32divmod.4
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_dw
-    trace.252
-    nop
-    swap.1
-    movup.2
-    push.8
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    movup.2
-    movdn.3
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_dw
+    exec.::intrinsics::mem::store_felt
     trace.252
     nop
 end
 
 @callconv("C")
-proc <miden_stdlib_sys::intrinsics::felt::Felt as core::convert::From<u8>>::from(
+proc miden::protocol::active_account::get_map_item(
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
+    felt,
     i32
-) -> felt
-    push.255
-    u32and
-end
-
-@callconv("C")
-proc <miden_stdlib_sys::intrinsics::word::Word as core::convert::From<miden_stdlib_sys::intrinsics::felt::Felt>>::from(
-    i32,
-    felt
 )
-    push.0
     trace.240
     nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.0
-    trace.240
-    nop
-    exec.::miden:counter-contract/counter-contract@0.1.0::counter_contract::intrinsics::felt::from_u32
-    trace.252
-    nop
-    push.12
-    dup.4
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    movup.5
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.8
-    dup.4
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.4
-    dup.3
-    add
-    u32assert
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    swap.1
-    push.4
-    dup.1
-    swap.1
-    u32mod
-    u32assert
-    assertz
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc intrinsics::felt::add(felt, felt) -> felt
-    add
-end
-
-@callconv("C")
-proc intrinsics::felt::from_u32(i32) -> felt
-    nop
-end
-
-@callconv("C")
-proc miden::active_account::get_map_item(felt, felt, felt, felt, felt, i32)
-    trace.240
-    nop
-    exec.::miden::active_account::get_map_item
+    exec.::miden::protocol::active_account::get_map_item
     trace.252
     nop
     movup.4
@@ -1390,7 +1590,8 @@ proc miden::active_account::get_map_item(felt, felt, felt, felt, felt, i32)
 end
 
 @callconv("C")
-proc miden::native_account::set_map_item(
+proc miden::protocol::native_account::set_map_item(
+    felt,
     felt,
     felt,
     felt,
@@ -1404,10 +1605,10 @@ proc miden::native_account::set_map_item(
 )
     trace.240
     nop
-    exec.::miden::native_account::set_map_item
+    exec.::miden::protocol::native_account::set_map_item
     trace.252
     nop
-    movup.8
+    movup.4
     dup.0
     movup.2
     swap.1
@@ -1445,58 +1646,6 @@ proc miden::native_account::set_map_item(
     trace.252
     nop
     push.12
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.16
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.20
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.24
-    dup.1
-    add
-    u32assert
-    movup.2
-    swap.1
-    u32divmod.4
-    swap.1
-    trace.240
-    nop
-    exec.::intrinsics::mem::store_felt
-    trace.252
-    nop
-    push.28
     add
     u32assert
     u32divmod.4

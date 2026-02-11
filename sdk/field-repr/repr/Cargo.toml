@@ -1,0 +1,25 @@
+[package]
+name = "miden-field-repr"
+description = "Serialization/deserialization for felt representation"
+version = "0.10.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+miden-field = { version = "0.10.0", path = "../../field" }
+miden-field-repr-derive = { path = "../derive", version = "0.10.0" }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+miden-core.workspace = true
+
+[features]
+default = []

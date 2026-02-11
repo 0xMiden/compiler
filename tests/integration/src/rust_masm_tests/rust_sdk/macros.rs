@@ -35,7 +35,7 @@ fn component_macros_account_and_note() {
     let note_package = note.compiled_package();
     let program = note_package.unwrap_program();
 
-    let mut exec = executor_with_std(vec![]);
+    let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(note_package.manifest.dependencies())

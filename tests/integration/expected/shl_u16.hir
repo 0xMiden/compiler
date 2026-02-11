@@ -2,13 +2,13 @@ builtin.component root_ns:root@1.0.0 {
     builtin.module public @test_rust_3ab387e5fafe4f8316074728a13b9c62413b6215a11492c80aa3e1d10383e008 {
         public builtin.function @entrypoint(v0: i32, v1: i32) -> i32 {
         ^block6(v0: i32, v1: i32):
-            v7 = arith.constant 65535 : i32;
-            v3 = arith.constant 15 : i32;
-            v4 = arith.band v1, v3 : i32;
-            v5 = hir.bitcast v4 : u32;
-            v6 = arith.shl v0, v5 : i32;
-            v8 = arith.band v6, v7 : i32;
-            builtin.ret v8;
+            v11 = arith.constant 65535 : i32;
+            v12 = arith.constant 15 : i32;
+            v6 = arith.band v1, v12 : i32;
+            v7 = hir.bitcast v6 : u32;
+            v8 = arith.shl v0, v7 : i32;
+            v10 = arith.band v8, v11 : i32;
+            builtin.ret v10;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
