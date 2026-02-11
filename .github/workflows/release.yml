@@ -30,6 +30,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
       - &install-rust
         name: Install Rust
         run: |
@@ -64,6 +65,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - *checkout
+      - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - name: Determine midenc release tag
         id: midenc-release
@@ -138,6 +140,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - *checkout
+      - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - name: Create release PR
         id: release-pr
