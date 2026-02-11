@@ -17,22 +17,30 @@ pub struct ValueOrAlias {
     /// on the operand stack as a unique value. The alias identifier is usually generated from a
     /// counter of the unique instances of the value, but can be any unique integer value.
     alias_id: u8,
+    /// Cached result of `value.borrow().ty().size_in_felts()`, stored to avoid repeated
+    /// virtual dispatch through `dyn Value` in hot loops (solver, spill analysis).
+    stack_size: u8,
 }
 
 impl ValueOrAlias {
     /// Create a new [ValueOrAlias] from the given [ValueRef]
     pub fn new(value: ValueRef) -> Self {
-        let value_id = value.borrow().id();
+        let borrowed = value.borrow();
+        let value_id = borrowed.id();
+        let stack_size = borrowed.ty().size_in_felts() as u8;
+        drop(borrowed);
         Self {
             value,
             value_id,
+            stack_size,
             alias_id: 0,
         }
     }
 
     /// Gets the effective size of this type on the Miden operand stack
+    #[inline(always)]
     pub fn stack_size(&self) -> usize {
-        self.value.borrow().ty().size_in_felts()
+        self.stack_size as usize
     }
 
     /// Create an aliased copy of this value, using `id` to uniquely identify the alias.
