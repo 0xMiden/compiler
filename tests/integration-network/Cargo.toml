@@ -16,7 +16,7 @@ miden-client = { version = "0.13", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std"] }
 miden-standards = { workspace = true, features = ["std"] }
-miden-field-repr = { version = "0.9.0", path = "../../sdk/field-repr/repr" }
+miden-field-repr = { version = "0.10.0", path = "../../sdk/field-repr/repr" }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
 rand = "0.9"
