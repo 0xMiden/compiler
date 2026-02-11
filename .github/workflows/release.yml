@@ -25,6 +25,7 @@ jobs:
       releases: ${{ steps.publish.outputs.releases }}
       releases_created: ${{ steps.publish.outputs.releases_created }}
     steps:
+      - uses: ./.github/actions/cleanup-runner
       - &checkout
         uses: actions/checkout@v5
         with:
@@ -63,6 +64,7 @@ jobs:
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
+      - uses: ./.github/actions/cleanup-runner
       - *checkout
       - *install-rust
       - name: Determine midenc release tag
@@ -137,6 +139,7 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
+      - uses: ./.github/actions/cleanup-runner
       - *checkout
       - *install-rust
       - name: Create release PR
