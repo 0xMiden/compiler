@@ -340,6 +340,7 @@ args = [
 category = "Test"
 description = "Run tests written in Rust, with optional extra arguments"
 command = "cargo"
+install_crate_args = ["--locked"]
 args = [
     "nextest",
     "run",
