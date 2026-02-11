@@ -331,11 +331,16 @@ proc miden:rust-sdk-input-note-get-assets-binding/rust-sdk-input-note-get-assets
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    push.16
     push.4
+    movup.2
     u32wrapping_add
+    dup.1
+    swap.2
+    swap.1
     trace.240
     nop
-    exec.::"miden:rust-sdk-input-note-get-assets-binding/rust-sdk-input-note-get-assets-binding@0.0.1"::rust_sdk_input_note_get_assets_binding::<alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop
+    exec.::"miden:rust-sdk-input-note-get-assets-binding/rust-sdk-input-note-get-assets-binding@0.0.1"::rust_sdk_input_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::deallocate
     trace.252
     nop
     locaddr.0
@@ -1497,21 +1502,6 @@ proc miden_base_sys::bindings::input_note::get_assets(
     trace.240
     nop
     exec.::intrinsics::mem::store_sw
-    trace.252
-    nop
-end
-
-@locals("1")
-@callconv("C")
-proc <alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop(
-    i32
-)
-    push.16
-    dup.0
-    swap.2
-    trace.240
-    nop
-    exec.::"miden:rust-sdk-input-note-get-assets-binding/rust-sdk-input-note-get-assets-binding@0.0.1"::rust_sdk_input_note_get_assets_binding::<alloc::raw_vec::RawVecInner>::deallocate
     trace.252
     nop
 end

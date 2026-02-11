@@ -80,7 +80,9 @@
       local.get 0
       i32.const 4
       i32.add
-      call $<alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop
+      i32.const 16
+      i32.const 16
+      call $<alloc::raw_vec::RawVecInner>::deallocate
       local.get 0
       i32.const 16
       i32.add
@@ -283,16 +285,10 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVec<miden_base_sys::bindings::types::Asset> as core::ops::drop::Drop>::drop (;13;) (type 6) (param i32)
-      local.get 0
-      i32.const 16
-      i32.const 16
-      call $<alloc::raw_vec::RawVecInner>::deallocate
-    )
-    (func $intrinsics::felt::from_u32 (;14;) (type 9) (param i32) (result f32)
+    (func $intrinsics::felt::from_u32 (;13;) (type 9) (param i32) (result f32)
       unreachable
     )
-    (func $<alloc::alloc::Global>::alloc_impl (;15;) (type 7) (param i32 i32 i32 i32)
+    (func $<alloc::alloc::Global>::alloc_impl (;14;) (type 7) (param i32 i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -319,7 +315,7 @@
       local.get 1
       i32.store
     )
-    (func $<alloc::raw_vec::RawVecInner>::deallocate (;16;) (type 2) (param i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::deallocate (;15;) (type 2) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -351,7 +347,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVecInner>::current_memory (;17;) (type 7) (param i32 i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::current_memory (;16;) (type 7) (param i32 i32 i32 i32)
       (local i32 i32 i32)
       i32.const 0
       local.set 4
@@ -386,7 +382,7 @@
       local.get 4
       i32.store
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;18;) (type 2) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::deallocate (;17;) (type 2) (param i32 i32 i32)
       block ;; label = @1
         local.get 2
         i32.eqz
@@ -397,7 +393,7 @@
         call $__rustc::__rust_dealloc
       end
     )
-    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;19;) (type 2) (param i32 i32 i32)
+    (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;18;) (type 2) (param i32 i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -426,7 +422,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVecInner>::try_allocate_in (;20;) (type 10) (param i32 i32 i32 i32 i32)
+    (func $<alloc::raw_vec::RawVecInner>::try_allocate_in (;19;) (type 10) (param i32 i32 i32 i32 i32)
       (local i32 i64)
       global.get $__stack_pointer
       i32.const 16
@@ -537,10 +533,10 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $alloc::raw_vec::handle_error (;21;) (type 11) (param i32 i32)
+    (func $alloc::raw_vec::handle_error (;20;) (type 11) (param i32 i32)
       unreachable
     )
-    (func $<core::ptr::alignment::Alignment>::max (;22;) (type 1) (param i32 i32) (result i32)
+    (func $<core::ptr::alignment::Alignment>::max (;21;) (type 1) (param i32 i32) (result i32)
       local.get 0
       local.get 1
       local.get 0
@@ -548,7 +544,7 @@
       i32.gt_u
       select
     )
-    (func $miden::protocol::output_note::get_assets (;23;) (type 12) (param i32 f32) (result i32)
+    (func $miden::protocol::output_note::get_assets (;22;) (type 12) (param i32 f32) (result i32)
       unreachable
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")

@@ -17,8 +17,8 @@
     (type (;0;) (func))
     (type (;1;) (func (param f32 f32 f32 f32 f32)))
     (type (;2;) (func (param f32 f32 f32 f32)))
-    (type (;3;) (func (param i32 i32)))
-    (type (;4;) (func (param i32 f32)))
+    (type (;3;) (func (param i32 f32)))
+    (type (;4;) (func (param i32 i32)))
     (type (;5;) (func (param f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
@@ -113,7 +113,19 @@
         i32.store8
       end
     )
-    (func $miden_base_sys::bindings::native_account::add_asset (;5;) (type 3) (param i32 i32)
+    (func $miden_base_sys::bindings::output_note::add_asset (;5;) (type 3) (param i32 f32)
+      local.get 0
+      f32.load offset=12
+      local.get 0
+      f32.load offset=8
+      local.get 0
+      f32.load offset=4
+      local.get 0
+      f32.load
+      local.get 1
+      call $miden::protocol::output_note::add_asset
+    )
+    (func $miden_base_sys::bindings::native_account::remove_asset (;6;) (type 4) (param i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -129,7 +141,7 @@
       local.get 1
       f32.load
       local.get 2
-      call $miden::protocol::native_account::add_asset
+      call $miden::protocol::native_account::remove_asset
       local.get 0
       local.get 2
       i64.load
@@ -147,19 +159,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden_base_sys::bindings::output_note::add_asset (;6;) (type 4) (param i32 f32)
-      local.get 0
-      f32.load offset=12
-      local.get 0
-      f32.load offset=8
-      local.get 0
-      f32.load offset=4
-      local.get 0
-      f32.load
-      local.get 1
-      call $miden::protocol::output_note::add_asset
-    )
-    (func $miden_base_sys::bindings::native_account::remove_asset (;7;) (type 3) (param i32 i32)
+    (func $miden_base_sys::bindings::native_account::add_asset (;7;) (type 4) (param i32 i32)
       (local i32)
       global.get $__stack_pointer
       i32.const 16
@@ -175,7 +175,7 @@
       local.get 1
       f32.load
       local.get 2
-      call $miden::protocol::native_account::remove_asset
+      call $miden::protocol::native_account::add_asset
       local.get 0
       local.get 2
       i64.load

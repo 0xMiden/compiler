@@ -33,7 +33,7 @@ impl InvalidStackOffsetMovupNote {
         let swapp_note_creator_id = AccountId::new(inputs[8], inputs[9]);
 
         if swapp_note_creator_id == executing_account_id {
-            active_note::add_assets_to_account();
+            // active_note::add_assets_to_account();
             return;
         }
 
@@ -72,7 +72,7 @@ impl InvalidStackOffsetMovupNote {
         let offered_out =
             calculate_output_amount(offered_asset_total, requested_asset_total, input_amount);
 
-        active_note::add_assets_to_account();
+        // active_note::add_assets_to_account();
 
         let routing_serial = add_word(current_note_serial, Word::from_u64_unchecked(0, 0, 0, 1));
 
