@@ -21,8 +21,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: ./.github/actions/cleanup-runner
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update

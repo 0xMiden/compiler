@@ -25,12 +25,12 @@ jobs:
       releases: ${{ steps.publish.outputs.releases }}
       releases_created: ${{ steps.publish.outputs.releases_created }}
     steps:
-      - uses: ./.github/actions/cleanup-runner
       - &checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
       - &install-rust
         name: Install Rust
         run: |
@@ -64,8 +64,8 @@ jobs:
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: ./.github/actions/cleanup-runner
       - *checkout
+      - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - name: Determine midenc release tag
         id: midenc-release
@@ -139,8 +139,8 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - uses: ./.github/actions/cleanup-runner
       - *checkout
+      - uses: ./.github/actions/cleanup-runner
       - *install-rust
       - name: Create release PR
         id: release-pr
