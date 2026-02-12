@@ -18,6 +18,7 @@ miden-field-repr = { path = "../repr", version = "0.10.0" }
 miden-core.workspace = true
 
 [dev-dependencies]
+# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 miden-integration-tests = { path = "../../../tests/integration" }
 midenc-frontend-wasm.workspace = true
 midenc-session.workspace = true

@@ -38,6 +38,6 @@ smallvec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 pretty_assertions = "1.0"
-midenc-log.workspace = true
+midenc-log = { path = "../midenc-log" }

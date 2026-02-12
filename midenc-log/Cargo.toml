@@ -28,4 +28,5 @@ jiff = { version = "0.2.3", default-features = false, features = ["std"], option
 regex = { version = "1.0", default-features = false, features = ["std", "perf"], optional = true }
 
 [dev-dependencies]
+# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 snapbox = "0.6"
