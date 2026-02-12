@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## `miden` - [0.10.1](https://github.com/0xMiden/compiler/compare/miden-v0.10.0...miden-v0.10.1) - 2026-02-12
+
+### Other
+- updated the following local packages: miden-base-macros
+
 ## `cargo-miden` - [0.7.0](https://github.com/0xMiden/compiler/compare/0.6.0...0.7.0) - 2026-02-11
 
 ### Added

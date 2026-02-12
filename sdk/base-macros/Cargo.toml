@@ -1,7 +1,7 @@
 [package]
 name = "miden-base-macros"
 description = "Provides proc macro support for Miden rollup SDK"
-version = "0.10.0"
+version = "0.10.1"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

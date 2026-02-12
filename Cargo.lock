@@ -2198,7 +2198,7 @@ dependencies = [
 
 [[package]]
 name = "miden"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "miden-base",
  "miden-base-macros",
@@ -2289,7 +2289,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "heck",
  "miden-protocol",
