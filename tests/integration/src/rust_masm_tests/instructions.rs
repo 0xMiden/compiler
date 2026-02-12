@@ -1,8 +1,11 @@
+use std::{any::type_name, marker::PhantomData};
+
 use miden_core::{Felt, FieldElement, Word};
-use miden_debug::ToMidenRepr;
+use miden_debug::{FromMidenRepr, ToMidenRepr};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::SmallVec;
+use num_traits::{Bounded, One, PrimInt, ToBytes, Unsigned, Zero};
 use proptest::{
     prelude::*,
     test_runner::{TestError, TestRunner},
@@ -304,6 +307,378 @@ test_func_two_arg!(min, core::cmp::min, i32, i32, i32);
 test_func_two_arg!(min, core::cmp::min, u32, u32, u32);
 test_func_two_arg!(min, core::cmp::min, u8, u8, u8);
 test_func_two_arg!(max, core::cmp::max, u8, u8, u8);
+
+#[test]
+fn test_overflowing_add_u8() {
+    test_overflowing_arith(u8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_add_u16() {
+    test_overflowing_arith(u16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_add_u32() {
+    test_overflowing_arith(u32::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_add_u64() {
+    test_overflowing_arith(u64::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+fn test_overflowing_add_i8() {
+    test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+fn test_overflowing_add_i16() {
+    test_overflowing_arith(i16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_add_i32() {
+    test_overflowing_arith(i32::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_add_i64() {
+    test_overflowing_arith(i64::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_sub_u8() {
+    test_overflowing_arith(u8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_sub_u16() {
+    test_overflowing_arith(u16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_sub_u32() {
+    test_overflowing_arith(u32::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_sub_u64() {
+    test_overflowing_arith(u64::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+fn test_overflowing_sub_i8() {
+    test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+fn test_overflowing_sub_i16() {
+    test_overflowing_arith(i16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_sub_i32() {
+    test_overflowing_arith(i32::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_sub_i64() {
+    test_overflowing_arith(i64::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_mul_u8() {
+    test_overflowing_arith(u8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_mul_u16() {
+    test_overflowing_arith(u16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_mul_u32() {
+    test_overflowing_arith(u32::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_mul_u64() {
+    test_overflowing_arith(u64::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+fn test_overflowing_mul_i8() {
+    test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+fn test_overflowing_mul_i16() {
+    test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_mul_i32() {
+    test_overflowing_arith(i32::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/962"]
+fn test_overflowing_mul_i64() {
+    test_overflowing_arith(i64::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_overflowing_div_u8() {
+    test_overflowing_arith(
+        u8::overflowing_div,
+        "overflowing_div",
+        NumericStrategy::non_zero_rhs_unsigned(),
+    );
+}
+
+#[test]
+fn test_overflowing_div_u16() {
+    test_overflowing_arith(
+        u16::overflowing_div,
+        "overflowing_div",
+        NumericStrategy::non_zero_rhs_unsigned(),
+    );
+}
+
+#[test]
+fn test_overflowing_div_u32() {
+    test_overflowing_arith(
+        u32::overflowing_div,
+        "overflowing_div",
+        NumericStrategy::non_zero_rhs_unsigned(),
+    );
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/967"]
+fn test_overflowing_div_u64() {
+    test_overflowing_arith(
+        u64::overflowing_div,
+        "overflowing_div",
+        NumericStrategy::non_zero_rhs_unsigned(),
+    );
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
+fn test_overflowing_div_i8() {
+    test_overflowing_arith(
+        i8::overflowing_div,
+        "overflowing_div",
+        NumericStrategy::non_zero_rhs_signed(),
+    );
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
+fn test_overflowing_div_i16() {
+    test_overflowing_arith(
+        i16::overflowing_div,
+        "overflowing_div",
+        NumericStrategy::non_zero_rhs_signed(),
+    );
+}
+
+#[test]
+fn test_overflowing_div_i32() {
+    test_overflowing_arith(
+        i32::overflowing_div,
+        "overflowing_div",
+        NumericStrategy::non_zero_rhs_signed(),
+    );
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/967"]
+fn test_overflowing_div_i64() {
+    test_overflowing_arith(
+        i64::overflowing_div,
+        "overflowing_div",
+        NumericStrategy::non_zero_rhs_signed(),
+    );
+}
+
+#[test]
+fn test_overflowing_rem_u8() {
+    test_overflowing_arith(
+        u8::overflowing_rem,
+        "overflowing_rem",
+        NumericStrategy::non_zero_rhs_unsigned(),
+    );
+}
+
+#[test]
+fn test_overflowing_rem_u16() {
+    test_overflowing_arith(
+        u16::overflowing_rem,
+        "overflowing_rem",
+        NumericStrategy::non_zero_rhs_unsigned(),
+    );
+}
+
+#[test]
+fn test_overflowing_rem_u32() {
+    test_overflowing_arith(
+        u32::overflowing_rem,
+        "overflowing_rem",
+        NumericStrategy::non_zero_rhs_unsigned(),
+    );
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
+fn test_overflowing_rem_u64() {
+    test_overflowing_arith(
+        u64::overflowing_rem,
+        "overflowing_rem",
+        NumericStrategy::non_zero_rhs_unsigned(),
+    );
+}
+
+#[test]
+#[ignore = "Mod is not supported for signed int"]
+fn test_overflowing_rem_i8() {
+    test_overflowing_arith(
+        i8::overflowing_rem,
+        "overflowing_rem",
+        NumericStrategy::non_zero_rhs_signed(),
+    );
+}
+
+#[test]
+#[ignore = "Mod is not supported for signed int"]
+fn test_overflowing_rem_i16() {
+    test_overflowing_arith(
+        i16::overflowing_rem,
+        "overflowing_rem",
+        NumericStrategy::non_zero_rhs_signed(),
+    );
+}
+
+#[test]
+#[ignore = "Mod is not supported for signed int"]
+fn test_overflowing_rem_i32() {
+    test_overflowing_arith(
+        i32::overflowing_rem,
+        "overflowing_rem",
+        NumericStrategy::non_zero_rhs_signed(),
+    );
+}
+
+#[test]
+#[ignore = "Mod is not supported for signed int"]
+fn test_overflowing_rem_i64() {
+    test_overflowing_arith(
+        i64::overflowing_rem,
+        "overflowing_rem",
+        NumericStrategy::non_zero_rhs_signed(),
+    );
+}
+
+// TODO handle overflowing ops for wide types
+
+struct NumericStrategy<T> {
+    _marker: PhantomData<T>,
+}
+
+impl<T> NumericStrategy<T>
+where
+    T: PrimInt + Arbitrary,
+    std::ops::RangeInclusive<T>: Strategy<Value = T>,
+{
+    fn full_range() -> impl Strategy<Value = (T, T)> {
+        (any::<T>(), any::<T>())
+    }
+
+    /// Returns a strategy with unrestricted lhs and non-zero rhs.
+    fn non_zero_rhs_unsigned() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        (any::<T>(), T::one()..=T::max_value())
+    }
+
+    /// Returns a strategy with unrestricted lhs and non-zero rhs.
+    fn non_zero_rhs_signed() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        (any::<T>(), prop_oneof![T::min_value()..=-T::one(), T::one()..=T::max_value(),])
+    }
+}
+
+fn test_overflowing_arith<T>(
+    op: fn(T, T) -> (T, bool),
+    fn_name: &str,
+    strategy: impl Strategy<Value = (T, T)>,
+) where
+    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary,
+{
+    // The return value of `type_name` isn't stable, but it's good enough for this test.
+    let ty_name = type_name::<T>();
+    let main_fn = format!(
+        r#"(a: {ty_name}, b: {ty_name}) -> ({ty_name}, bool) {{
+        a.{fn_name}(b)
+    }}"#
+    );
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
+    let artifact_name = format!("test_{fn_name}_{ty_name}");
+    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
+    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
+    let package = test.compiled_package();
+
+    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+        dbg!(a, b);
+        let rust_out = op(a, b);
+        dbg!(rust_out);
+
+        // Write the operation result to 20 * PAGE_SIZE.
+        let out_addr = 20u32 * 65536;
+
+        let mut args = Vec::<midenc_hir::Felt>::default();
+        b.push_to_operand_stack(&mut args);
+        a.push_to_operand_stack(&mut args);
+        out_addr.push_to_operand_stack(&mut args);
+
+        eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+            let ty_byte_size = std::mem::size_of::<T>();
+            assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
+            // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
+            let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
+            let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
+            dbg!(&vm_out_bytes);
+
+            let rs_out_bytes =
+                [rust_out.0.to_le_bytes().as_ref(), &[u8::from(rust_out.1)]].concat();
+            dbg!(&rs_out_bytes);
+
+            prop_assert_eq!(&rs_out_bytes, &vm_out_bytes, "VM output mismatch");
+            Ok(())
+        })?;
+        Ok(())
+    });
+    match res {
+        Err(TestError::Fail(_, value)) => {
+            panic!("Found minimal(shrinked) failing case: {:?}", value);
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
 
 test_bool_op_total!(ge, >=, u64);
 test_bool_op_total!(ge, >=, i64);

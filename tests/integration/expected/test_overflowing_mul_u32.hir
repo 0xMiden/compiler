@@ -1,0 +1,55 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_a332e98753eaa727b86ea68c0da32bb6bbe8b6a7cc84cb279e4d21d824527a27 {
+        public builtin.function @entrypoint(v0: i32, v1: i32, v2: i32) {
+        ^block6(v0: i32, v1: i32, v2: i32):
+            hir.store_local v0 #[local = lv0];
+            v3 = hir.load_local  : i32 #[local = lv0];
+            v9 = hir.bitcast v2 : u32;
+            v10 = arith.zext v9 : u64;
+            v11 = hir.bitcast v10 : i64;
+            v5 = hir.bitcast v1 : u32;
+            v6 = arith.zext v5 : u64;
+            v7 = hir.bitcast v6 : i64;
+            v12 = arith.mul v7, v11 : i64 #[overflow = wrapping];
+            v15 = hir.bitcast v3 : u32;
+            v39 = arith.constant 4 : u32;
+            v17 = arith.mod v15, v39 : u32;
+            hir.assertz v17 #[code = 250];
+            v13 = hir.bitcast v12 : u64;
+            v14 = arith.trunc v13 : u32;
+            v18 = hir.int_to_ptr v15 : ptr<byte, u32>;
+            hir.store v18, v14;
+            v19 = hir.load_local  : i32 #[local = lv0];
+            v37 = arith.constant 0 : i32;
+            v38 = arith.constant 32 : i64;
+            v23 = hir.cast v38 : u32;
+            v22 = hir.bitcast v12 : u64;
+            v24 = arith.shr v22, v23 : u64;
+            v25 = hir.bitcast v24 : i64;
+            v26 = arith.trunc v25 : i32;
+            v28 = arith.neq v26, v37 : i1;
+            v29 = arith.zext v28 : u32;
+            v30 = hir.bitcast v29 : i32;
+            v31 = hir.bitcast v30 : u32;
+            v32 = arith.trunc v31 : u8;
+            v41 = arith.constant 4 : u32;
+            v33 = hir.bitcast v19 : u32;
+            v35 = arith.add v33, v41 : u32 #[overflow = checked];
+            v36 = hir.int_to_ptr v35 : ptr<byte, u8>;
+            hir.store v36, v32;
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable public @#gv1 : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable public @#gv2 : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

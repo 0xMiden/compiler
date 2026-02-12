@@ -1,0 +1,132 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_1c480f7c1a5513bb3c17f2a980c4a2008d9a6ddb5bbe01cdabf336ae18d5f297 {
+        private builtin.function @__rustc::rust_begin_unwind(v0: i32) {
+        ^block6(v0: i32):
+            ub.unreachable ;
+        };
+
+        public builtin.function @entrypoint(v1: i32, v2: i32, v3: i32) {
+        ^block8(v1: i32, v2: i32, v3: i32):
+            hir.store_local v1 #[local = lv0];
+            hir.store_local v2 #[local = lv1];
+            hir.store_local v3 #[local = lv2];
+            v4 = hir.load_local  : i32 #[local = lv2];
+            v93 = arith.constant 0 : i32;
+            v6 = arith.neq v4, v93 : i1;
+            cf.cond_br v6 ^block10, ^block11;
+        ^block10:
+            v8 = hir.load_local  : i32 #[local = lv0];
+            v90 = arith.constant 0 : u8;
+            v92 = arith.constant 1 : u32;
+            v12 = hir.bitcast v8 : u32;
+            v14 = arith.add v12, v92 : u32 #[overflow = checked];
+            v15 = hir.int_to_ptr v14 : ptr<byte, u8>;
+            hir.store v15, v90;
+            v16 = hir.load_local  : i32 #[local = lv0];
+            v17 = hir.load_local  : i32 #[local = lv1];
+            v18 = hir.load_local  : i32 #[local = lv2];
+            v20 = hir.bitcast v18 : u32;
+            v19 = hir.bitcast v17 : u32;
+            v21 = arith.div v19, v20 : u32;
+            v22 = hir.bitcast v21 : i32;
+            v23 = hir.bitcast v22 : u32;
+            v24 = arith.trunc v23 : u8;
+            v25 = hir.bitcast v16 : u32;
+            v26 = hir.int_to_ptr v25 : ptr<byte, u8>;
+            hir.store v26, v24;
+            builtin.ret ;
+        ^block11:
+            v91 = arith.constant 1048736 : i32;
+            hir.exec @root_ns:root@1.0.0/test_rust_1c480f7c1a5513bb3c17f2a980c4a2008d9a6ddb5bbe01cdabf336ae18d5f297/core::panicking::panic_const::panic_const_div_by_zero(v91)
+            ub.unreachable ;
+        };
+
+        private builtin.function @core::panicking::panic_fmt(v27: i32, v28: i32, v29: i32) {
+        ^block12(v27: i32, v28: i32, v29: i32):
+            v30 = builtin.global_symbol @root_ns:root@1.0.0/test_rust_1c480f7c1a5513bb3c17f2a980c4a2008d9a6ddb5bbe01cdabf336ae18d5f297/__stack_pointer : ptr<byte, u8>
+            v31 = hir.bitcast v30 : ptr<byte, i32>;
+            v32 = hir.load v31 : i32;
+            v107 = arith.constant 32 : i32;
+            v34 = arith.sub v32, v107 : i32 #[overflow = wrapping];
+            hir.store_local v34 #[local = lv3];
+            v35 = builtin.global_symbol @root_ns:root@1.0.0/test_rust_1c480f7c1a5513bb3c17f2a980c4a2008d9a6ddb5bbe01cdabf336ae18d5f297/__stack_pointer : ptr<byte, u8>
+            v36 = hir.bitcast v35 : ptr<byte, i32>;
+            hir.store v36, v34;
+            v37 = hir.load_local  : i32 #[local = lv3];
+            v106 = arith.constant 16 : u32;
+            v39 = hir.bitcast v37 : u32;
+            v41 = arith.add v39, v106 : u32 #[overflow = checked];
+            v105 = arith.constant 4 : u32;
+            v43 = arith.mod v41, v105 : u32;
+            hir.assertz v43 #[code = 250];
+            v44 = hir.int_to_ptr v41 : ptr<byte, i32>;
+            hir.store v44, v28;
+            v45 = hir.load_local  : i32 #[local = lv3];
+            v104 = arith.constant 12 : u32;
+            v47 = hir.bitcast v45 : u32;
+            v49 = arith.add v47, v104 : u32 #[overflow = checked];
+            v113 = arith.constant 4 : u32;
+            v51 = arith.mod v49, v113 : u32;
+            hir.assertz v51 #[code = 250];
+            v52 = hir.int_to_ptr v49 : ptr<byte, i32>;
+            hir.store v52, v27;
+            v53 = hir.load_local  : i32 #[local = lv3];
+            v103 = arith.constant 28 : u32;
+            v57 = hir.bitcast v53 : u32;
+            v59 = arith.add v57, v103 : u32 #[overflow = checked];
+            v102 = arith.constant 2 : u32;
+            v61 = arith.mod v59, v102 : u32;
+            hir.assertz v61 #[code = 250];
+            v97 = arith.constant 1 : u16;
+            v62 = hir.int_to_ptr v59 : ptr<byte, u16>;
+            hir.store v62, v97;
+            v63 = hir.load_local  : i32 #[local = lv3];
+            v101 = arith.constant 24 : u32;
+            v65 = hir.bitcast v63 : u32;
+            v67 = arith.add v65, v101 : u32 #[overflow = checked];
+            v112 = arith.constant 4 : u32;
+            v69 = arith.mod v67, v112 : u32;
+            hir.assertz v69 #[code = 250];
+            v70 = hir.int_to_ptr v67 : ptr<byte, i32>;
+            hir.store v70, v29;
+            v71 = hir.load_local  : i32 #[local = lv3];
+            v99 = arith.constant 20 : u32;
+            v75 = hir.bitcast v71 : u32;
+            v77 = arith.add v75, v99 : u32 #[overflow = checked];
+            v111 = arith.constant 4 : u32;
+            v79 = arith.mod v77, v111 : u32;
+            hir.assertz v79 #[code = 250];
+            v100 = arith.constant 12 : i32;
+            v74 = arith.add v71, v100 : i32 #[overflow = wrapping];
+            v80 = hir.int_to_ptr v77 : ptr<byte, i32>;
+            hir.store v80, v74;
+            v81 = hir.load_local  : i32 #[local = lv3];
+            v98 = arith.constant 20 : i32;
+            v83 = arith.add v81, v98 : i32 #[overflow = wrapping];
+            hir.exec @root_ns:root@1.0.0/test_rust_1c480f7c1a5513bb3c17f2a980c4a2008d9a6ddb5bbe01cdabf336ae18d5f297/__rustc::rust_begin_unwind(v83)
+            ub.unreachable ;
+        };
+
+        private builtin.function @core::panicking::panic_const::panic_const_div_by_zero(v84: i32) {
+        ^block14(v84: i32):
+            v114 = arith.constant 51 : i32;
+            v115 = arith.constant 1048752 : i32;
+            hir.exec @root_ns:root@1.0.0/test_rust_1c480f7c1a5513bb3c17f2a980c4a2008d9a6ddb5bbe01cdabf336ae18d5f297/core::panicking::panic_fmt(v115, v114, v84)
+            ub.unreachable ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable public @#gv1 : i32 {
+            builtin.ret_imm 1048777;
+        };
+
+        builtin.global_variable public @#gv2 : i32 {
+            builtin.ret_imm 1048784;
+        };
+
+        builtin.segment readonly @1048576 = 0x6f72657a20796220656469766964206f742074706d657474610000000b000000130000009d0010000000000073722e373932663564383165613633336662616463313065626235626464366139643830303261346330383961326637316333626233313535613163376630383463315f747375725f747365742f373932663564383165613633336662616463313065626235626464366139643830303261346330383961326637316333626233313535613163376630383463315f747375725f747365742f706d742f;
+    };
+};

@@ -1,0 +1,51 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_6ed5af737a3e9729eb235fcf34544b6d12759845617821b417872067ea766b40 {
+        public builtin.function @entrypoint(v0: i32, v1: i64, v2: i64) {
+        ^block6(v0: i32, v1: i64, v2: i64):
+            hir.store_local v0 #[local = lv0];
+            hir.store_local v1 #[local = lv1];
+            hir.store_local v2 #[local = lv2];
+            v3 = hir.load_local  : i32 #[local = lv0];
+            v4 = hir.load_local  : i64 #[local = lv1];
+            v5 = hir.load_local  : i64 #[local = lv2];
+            v6 = arith.add v4, v5 : i64 #[overflow = wrapping];
+            v7 = hir.bitcast v3 : u32;
+            v30 = arith.constant 8 : u32;
+            v9 = arith.mod v7, v30 : u32;
+            hir.assertz v9 #[code = 250];
+            v10 = hir.int_to_ptr v7 : ptr<byte, i64>;
+            hir.store v10, v6;
+            v11 = hir.load_local  : i32 #[local = lv0];
+            v12 = hir.load_local  : i64 #[local = lv2];
+            v18 = hir.load_local  : i64 #[local = lv1];
+            v19 = arith.lt v6, v18 : i1;
+            v20 = arith.zext v19 : u32;
+            v21 = hir.bitcast v20 : i32;
+            v29 = arith.constant 0 : i64;
+            v14 = arith.lt v12, v29 : i1;
+            v15 = arith.zext v14 : u32;
+            v16 = hir.bitcast v15 : i32;
+            v22 = arith.bxor v16, v21 : i32;
+            v23 = hir.bitcast v22 : u32;
+            v24 = arith.trunc v23 : u8;
+            v32 = arith.constant 8 : u32;
+            v25 = hir.bitcast v11 : u32;
+            v27 = arith.add v25, v32 : u32 #[overflow = checked];
+            v28 = hir.int_to_ptr v27 : ptr<byte, u8>;
+            hir.store v28, v24;
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable public @#gv1 : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable public @#gv2 : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};

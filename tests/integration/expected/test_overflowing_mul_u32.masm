@@ -1,0 +1,126 @@
+# mod ::"root_ns:root@1.0.0"
+
+proc init
+    push.1179648
+    trace.240
+    exec.::intrinsics::mem::heap_init
+    trace.252
+    push.1048576
+    u32assert
+    mem_store.278528
+    push.1048576
+    u32assert
+    mem_store.278529
+    push.1048576
+    u32assert
+    mem_store.278530
+end
+
+# mod ::"root_ns:root@1.0.0"::test_rust_a332e98753eaa727b86ea68c0da32bb6bbe8b6a7cc84cb279e4d21d824527a27
+
+@locals("5")
+@callconv("C")
+pub proc entrypoint(i32, i32, i32)
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    movup.2
+    push.0
+    movup.3
+    push.0
+    trace.240
+    nop
+    exec.::intrinsics::i64::wrapping_mul
+    trace.252
+    nop
+    movup.2
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    dup.2
+    dup.2
+    drop
+    swap.1
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.0
+    push.32
+    push.0
+    dup.0
+    push.2147483648
+    u32and
+    eq.2147483648
+    assertz
+    assertz
+    dup.0
+    push.4294967295
+    u32lte
+    assert
+    movup.4
+    movup.4
+    movup.2
+    trace.240
+    nop
+    exec.::miden::core::math::u64::shr
+    trace.252
+    nop
+    drop
+    neq
+    push.255
+    u32and
+    push.4
+    movup.2
+    add
+    u32assert
+    u32divmod.4
+    swap.1
+    dup.0
+    mem_load
+    dup.2
+    push.8
+    u32wrapping_mul
+    push.255
+    swap.1
+    u32shl
+    u32not
+    swap.1
+    u32and
+    movup.3
+    movup.3
+    push.8
+    u32wrapping_mul
+    u32shl
+    u32or
+    swap.1
+    mem_store
+end
+

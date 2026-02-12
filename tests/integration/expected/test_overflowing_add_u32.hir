@@ -1,0 +1,49 @@
+builtin.component root_ns:root@1.0.0 {
+    builtin.module public @test_rust_661f326c571b472b3f5afbc1f710009a76f4a75f71fca9a4e50c0ac7ae44f6e6 {
+        public builtin.function @entrypoint(v0: i32, v1: i32, v2: i32) {
+        ^block6(v0: i32, v1: i32, v2: i32):
+            hir.store_local v0 #[local = lv0];
+            hir.store_local v1 #[local = lv1];
+            hir.store_local v2 #[local = lv2];
+            v3 = hir.load_local  : i32 #[local = lv0];
+            v4 = hir.load_local  : i32 #[local = lv2];
+            v5 = hir.load_local  : i32 #[local = lv1];
+            v6 = arith.add v4, v5 : i32 #[overflow = wrapping];
+            hir.store_local v6 #[local = lv1];
+            v7 = hir.bitcast v3 : u32;
+            v25 = arith.constant 4 : u32;
+            v9 = arith.mod v7, v25 : u32;
+            hir.assertz v9 #[code = 250];
+            v10 = hir.int_to_ptr v7 : ptr<byte, i32>;
+            hir.store v10, v6;
+            v11 = hir.load_local  : i32 #[local = lv0];
+            v12 = hir.load_local  : i32 #[local = lv1];
+            v13 = hir.load_local  : i32 #[local = lv2];
+            v15 = hir.bitcast v13 : u32;
+            v14 = hir.bitcast v12 : u32;
+            v16 = arith.lt v14, v15 : i1;
+            v17 = arith.zext v16 : u32;
+            v18 = hir.bitcast v17 : i32;
+            v19 = hir.bitcast v18 : u32;
+            v20 = arith.trunc v19 : u8;
+            v27 = arith.constant 4 : u32;
+            v21 = hir.bitcast v11 : u32;
+            v23 = arith.add v21, v27 : u32 #[overflow = checked];
+            v24 = hir.int_to_ptr v23 : ptr<byte, u8>;
+            hir.store v24, v20;
+            builtin.ret ;
+        };
+
+        builtin.global_variable private @#__stack_pointer : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable public @#gv1 : i32 {
+            builtin.ret_imm 1048576;
+        };
+
+        builtin.global_variable public @#gv2 : i32 {
+            builtin.ret_imm 1048576;
+        };
+    };
+};
