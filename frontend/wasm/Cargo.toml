@@ -35,6 +35,6 @@ wasmparser.workspace = true
 wasmprinter = { workspace = true, optional = true }
 
 [dev-dependencies]
-# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 wat.workspace = true
 midenc-expect-test = { path = "../../tools/expect-test" }

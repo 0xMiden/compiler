@@ -18,6 +18,7 @@ midenc-hir-analysis.workspace = true
 midenc-session.workspace = true
 
 [dev-dependencies]
+# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 litcheck.workspace = true
 litcheck-filecheck.workspace = true
 midenc-dialect-arith = { path = "../dialects/arith" }
