@@ -36,7 +36,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 rust-version = "1.92"
 authors = ["Miden contributors"]
 description = "An intermediate representation and compiler for Miden Assembly"
@@ -134,24 +134,24 @@ wasmparser = { version = "0.227", default-features = false, features = [
 ] }
 
 # Workspace crates
-midenc-codegen-masm = { version = "0.6.0", path = "codegen/masm" }
-midenc-dialect-arith = { version = "0.6.0", path = "dialects/arith" }
-midenc-dialect-hir = { version = "0.6.0", path = "dialects/hir" }
-midenc-dialect-scf = { version = "0.6.0", path = "dialects/scf" }
-midenc-dialect-cf = { version = "0.6.0", path = "dialects/cf" }
-midenc-dialect-ub = { version = "0.6.0", path = "dialects/ub" }
-midenc-hir = { version = "0.6.0", path = "hir" }
-midenc-hir-analysis = { version = "0.6.0", path = "hir-analysis" }
-midenc-hir-eval = { version = "0.6.0", path = "eval" }
-midenc-hir-macros = { version = "0.6.0", path = "hir-macros" }
-midenc-hir-symbol = { version = "0.6.0", path = "hir-symbol" }
-midenc-hir-transform = { version = "0.6.0", path = "hir-transform" }
-midenc-frontend-wasm = { version = "0.6.0", path = "frontend/wasm" }
-midenc-compile = { version = "0.6.0", path = "midenc-compile" }
-midenc-driver = { version = "0.6.0", path = "midenc-driver" }
-midenc-log = { version = "0.6.0", path = "midenc-log", features = ["kv"] }
-midenc-session = { version = "0.6.0", path = "midenc-session" }
-cargo-miden = { version = "0.6.0", path = "tools/cargo-miden" }
+midenc-codegen-masm = { version = "0.7.0", path = "codegen/masm" }
+midenc-dialect-arith = { version = "0.7.0", path = "dialects/arith" }
+midenc-dialect-hir = { version = "0.7.0", path = "dialects/hir" }
+midenc-dialect-scf = { version = "0.7.0", path = "dialects/scf" }
+midenc-dialect-cf = { version = "0.7.0", path = "dialects/cf" }
+midenc-dialect-ub = { version = "0.7.0", path = "dialects/ub" }
+midenc-hir = { version = "0.7.0", path = "hir" }
+midenc-hir-analysis = { version = "0.7.0", path = "hir-analysis" }
+midenc-hir-eval = { version = "0.7.0", path = "eval" }
+midenc-hir-macros = { version = "0.7.0", path = "hir-macros" }
+midenc-hir-symbol = { version = "0.7.0", path = "hir-symbol" }
+midenc-hir-transform = { version = "0.7.0", path = "hir-transform" }
+midenc-frontend-wasm = { version = "0.7.0", path = "frontend/wasm" }
+midenc-compile = { version = "0.7.0", path = "midenc-compile" }
+midenc-driver = { version = "0.7.0", path = "midenc-driver" }
+midenc-log = { version = "0.7.0", path = "midenc-log", features = ["kv"] }
+midenc-session = { version = "0.7.0", path = "midenc-session" }
+cargo-miden = { version = "0.7.0", path = "tools/cargo-miden" }
 miden-integration-tests = { path = "tests/integration" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-test-harness = { path = "test-harness/test-harness-lib" }
