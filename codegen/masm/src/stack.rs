@@ -4,7 +4,7 @@ use core::{
 };
 
 use miden_core::{Felt, FieldElement};
-use midenc_hir::{AttributeValue, Immediate, Type, ValueRef};
+use midenc_hir::{Immediate, Type, ValueRef};
 use smallvec::{SmallVec, smallvec};
 
 /// This represents a constraint an operand's usage at
@@ -24,7 +24,7 @@ pub enum Constraint {
 /// Represents the type of operand represented on the operand stack
 pub enum OperandType {
     /// The operand is a literal, unassociated with any value in the IR
-    Const(Box<dyn AttributeValue>),
+    Const(Immediate),
     /// The operand is an SSA value of known type
     Value(ValueRef),
     /// The operand is an intermediate runtime value of a known type, but
@@ -34,7 +34,7 @@ pub enum OperandType {
 impl Clone for OperandType {
     fn clone(&self) -> Self {
         match self {
-            Self::Const(value) => Self::Const(value.clone_value()),
+            Self::Const(value) => Self::Const(*value),
             Self::Value(value) => Self::Value(*value),
             Self::Type(ty) => Self::Type(ty.clone()),
         }
@@ -44,9 +44,7 @@ impl OperandType {
     /// Get the type representation of this operand
     pub fn ty(&self) -> Type {
         match self {
-            Self::Const(imm) => {
-                imm.downcast_ref::<Immediate>().expect("unexpected constant value type").ty()
-            }
+            Self::Const(imm) => imm.ty(),
             Self::Value(value) => value.borrow().ty().clone(),
             Self::Type(ty) => ty.clone(),
         }
@@ -84,15 +82,7 @@ impl PartialEq<Type> for OperandType {
 impl PartialEq<Immediate> for OperandType {
     fn eq(&self, other: &Immediate) -> bool {
         match self {
-            Self::Const(a) => a.downcast_ref::<Immediate>().is_some_and(|a| a == other),
-            _ => false,
-        }
-    }
-}
-impl PartialEq<dyn AttributeValue> for OperandType {
-    fn eq(&self, other: &dyn AttributeValue) -> bool {
-        match self {
-            Self::Const(a) => a.as_ref() == other,
+            Self::Const(a) => a == other,
             _ => false,
         }
     }
@@ -117,11 +107,6 @@ impl From<Type> for OperandType {
 }
 impl From<Immediate> for OperandType {
     fn from(value: Immediate) -> Self {
-        Self::Const(Box::new(value))
-    }
-}
-impl From<Box<dyn AttributeValue>> for OperandType {
-    fn from(value: Box<dyn AttributeValue>) -> Self {
         Self::Const(value)
     }
 }
@@ -157,19 +142,13 @@ impl Default for Operand {
     fn default() -> Self {
         Self {
             word: smallvec![Type::Felt],
-            operand: OperandType::Const(Box::new(Immediate::Felt(Felt::ZERO))),
+            operand: OperandType::Const(Immediate::Felt(Felt::ZERO)),
         }
     }
 }
 impl PartialEq<ValueRef> for Operand {
     #[inline(always)]
     fn eq(&self, other: &ValueRef) -> bool {
-        self.operand.eq(other)
-    }
-}
-impl PartialEq<dyn AttributeValue> for Operand {
-    #[inline(always)]
-    fn eq(&self, other: &dyn AttributeValue) -> bool {
         self.operand.eq(other)
     }
 }
@@ -224,8 +203,8 @@ impl TryFrom<&Operand> for Immediate {
     type Error = ();
 
     fn try_from(operand: &Operand) -> Result<Self, Self::Error> {
-        match &operand.operand {
-            OperandType::Const(value) => value.downcast_ref::<Immediate>().copied().ok_or(()),
+        match operand.operand {
+            OperandType::Const(imm) => Ok(imm),
             _ => Err(()),
         }
     }
