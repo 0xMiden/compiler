@@ -2551,6 +2551,7 @@ dependencies = [
  "glob",
  "log",
  "miden-assembly",
+ "miden-client",
  "miden-core",
  "miden-debug",
  "miden-mast-package",

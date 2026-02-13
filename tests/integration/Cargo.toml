@@ -22,6 +22,7 @@ log.workspace = true
 miden-assembly.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true
+miden-client = { version = "0.13", features = ["std", "testing"] }
 miden-protocol = { workspace = true, features = ["std"] }
 miden-standards = { workspace = true, features = ["std"] }
 miden-processor.workspace = true

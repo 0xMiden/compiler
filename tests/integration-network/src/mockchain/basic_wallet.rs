@@ -10,45 +10,44 @@ use miden_client::{
 use miden_core::Felt;
 
 use super::helpers::{
-    NoteCreationConfig, assert_account_has_fungible_asset, build_asset_transfer_tx,
+    assert_account_has_fungible_asset, build_asset_transfer_tx,
     build_existing_basic_wallet_account_builder, build_send_notes_script, compile_rust_package,
-    create_note_from_package, execute_tx, to_core_felts,
+    create_note_from_package, execute_tx, to_core_felts, NoteCreationConfig,
 };
+use super::scenario::{FaucetAccountConfig, ScenarioBuilder, WalletAccountConfig};
 
 /// Tests the basic-wallet contract deployment and p2id note consumption workflow on a mock chain.
 #[test]
 pub fn test_basic_wallet_p2id() {
-    // Compile the contracts first (before creating any runtime)
-    let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
-    let note_package = compile_rust_package("../../examples/p2id-note", true);
-    let tx_script_package = compile_rust_package("../../examples/basic-wallet-tx-script", true);
-
-    let mut builder = MockChain::builder();
-    let max_supply = 1_000_000_000u64;
-    let faucet_account = builder
-        .add_existing_basic_faucet(Auth::BasicAuth, "TEST", max_supply, None)
-        .unwrap();
-    let faucet_id = faucet_account.id();
-
-    let alice_account = builder
-        .add_account_from_builder(
-            Auth::BasicAuth,
-            build_existing_basic_wallet_account_builder(wallet_package.clone(), false, [1_u8; 32]),
-            AccountState::Exists,
+    let scenario = ScenarioBuilder::new()
+        .next()
+        .add_package("../../examples/basic-wallet", "wallet")
+        .add_package("../../examples/p2id-note", "p2id-note")
+        .add_package("../../examples/basic-wallet-tx-script", "tx-script")
+        .next()
+        .add_faucet(FaucetAccountConfig::default().with_alias("faucet"))
+        .add_account(
+            WalletAccountConfig::default()
+                .with_alias("alice")
+                .with_wallet_package("wallet")
+                .with_seed([1_u8; 32]),
         )
-        .unwrap();
-    let alice_id = alice_account.id();
-
-    let bob_account = builder
-        .add_account_from_builder(
-            Auth::BasicAuth,
-            build_existing_basic_wallet_account_builder(wallet_package, false, [2_u8; 32]),
-            AccountState::Exists,
+        .add_account(
+            WalletAccountConfig::default()
+                .with_alias("bob")
+                .with_wallet_package("wallet")
+                .with_seed([2_u8; 32]),
         )
-        .unwrap();
-    let bob_id = bob_account.id();
+        .next();
 
-    let mut chain = builder.build().unwrap();
+    let faucet_id = scenario.get_account("faucet").id();
+    let alice_id = scenario.get_account("alice").id();
+    let bob_id = scenario.get_account("bob").id();
+    let note_package = scenario.get_package("p2id-note");
+    let tx_script_package = scenario.get_package("tx-script");
+
+    let mut chain = scenario.build();
+
     chain.prove_next_block().unwrap();
     chain.prove_next_block().unwrap();
 
