@@ -14,6 +14,7 @@
   (core module $main (;0;)
     (type (;0;) (func))
     (type (;1;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32) (result i32)))
+    (type (;2;) (func (param i32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -25,20 +26,44 @@
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $component_macros_account::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:component-macros-account/component-macros-account@0.1.0#test-custom-types (;2;) (type 1) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32) (result i32)
-      (local i32)
-      global.get $GOT.data.internal.__memory_base
-      local.set 12
+      (local i32 i32)
+      global.get $__stack_pointer
+      i32.const 32
+      i32.sub
+      local.tee 12
+      global.set $__stack_pointer
       call $wit_bindgen::rt::run_ctors_once
       local.get 12
-      i32.const 1048584
-      i32.add
-      local.tee 12
+      local.get 2
+      f32.store offset=28
+      local.get 12
+      local.get 1
+      f32.store offset=24
+      local.get 12
       local.get 8
-      f32.store offset=4
+      f32.store offset=20
       local.get 12
       local.get 0
-      f32.store
+      f32.store offset=16
+      global.get $GOT.data.internal.__memory_base
+      local.set 13
       local.get 12
+      local.get 12
+      i32.const 16
+      i32.add
+      call $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
+      local.get 13
+      i32.const 1048584
+      i32.add
+      local.tee 13
+      local.get 12
+      i64.load
+      i64.store align=4
+      local.get 12
+      i32.const 32
+      i32.add
+      global.set $__stack_pointer
+      local.get 13
     )
     (func $miden:component-macros-account/component-macros-account@0.1.0#test-custom-types2 (;3;) (type 1) (param f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32 f32) (result i32)
       (local i32)
@@ -73,6 +98,16 @@
         i32.const 1
         i32.store8
       end
+    )
+    (func $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from (;5;) (type 2) (param i32 i32)
+      local.get 0
+      local.get 1
+      i64.load offset=8 align=4
+      i64.store offset=8
+      local.get 0
+      local.get 1
+      i64.load align=4
+      i64.store
     )
     (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
     (@custom "rodata,miden_account" (after data) "1component_macros_account\01\0b0.1.0\03\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00")

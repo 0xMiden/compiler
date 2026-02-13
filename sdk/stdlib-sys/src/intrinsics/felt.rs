@@ -1,6 +1,6 @@
 //! Felt-related intrinsics and helpers.
 
-pub use miden_field::Felt;
+use miden_field::Felt;
 
 #[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {

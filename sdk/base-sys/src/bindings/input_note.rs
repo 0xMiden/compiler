@@ -51,7 +51,7 @@ pub fn get_assets_info(note_index: NoteIdx) -> InputNoteAssetsInfo {
         extern_input_note_get_assets_info(note_index.inner, ret_area.as_mut_ptr());
         let (commitment, num_assets) = ret_area.assume_init();
         InputNoteAssetsInfo {
-            commitment: commitment.reverse(),
+            commitment: commitment.reversed(),
             num_assets,
         }
     }
@@ -77,7 +77,7 @@ pub fn get_recipient(note_index: NoteIdx) -> Recipient {
         let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
         extern_input_note_get_recipient(note_index.inner, ret_area.as_mut_ptr());
         let mut recipient = ret_area.assume_init();
-        recipient.inner = recipient.inner.reverse();
+        recipient.inner = recipient.inner.reversed();
         recipient
     }
 }
@@ -87,7 +87,7 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_input_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -107,7 +107,7 @@ pub fn get_inputs_info(note_index: NoteIdx) -> InputNoteInputsInfo {
         extern_input_note_get_inputs_info(note_index.inner, ret_area.as_mut_ptr());
         let (commitment, num_inputs) = ret_area.assume_init();
         InputNoteInputsInfo {
-            commitment: commitment.reverse(),
+            commitment: commitment.reversed(),
             num_inputs,
         }
     }
@@ -118,7 +118,7 @@ pub fn get_script_root(note_index: NoteIdx) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_input_note_get_script_root(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -127,6 +127,6 @@ pub fn get_serial_number(note_index: NoteIdx) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_input_note_get_serial_number(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }

@@ -84,8 +84,8 @@ pub fn smt_get(key: Word, root: Word) -> SmtGetResponse {
         extern_smt_get(key[3], key[2], key[1], key[0], root[3], root[2], root[1], root[0], ptr);
         let (value, returned_root) = ret_area.assume_init().into_inner();
         SmtGetResponse {
-            value: value.reverse(),
-            root: returned_root.reverse(),
+            value: value.reversed(),
+            root: returned_root.reversed(),
         }
     }
 }
@@ -105,8 +105,8 @@ pub fn smt_set(value: Word, key: Word, root: Word) -> SmtSetResponse {
         );
         let (old_value, new_root) = ret_area.assume_init().into_inner();
         SmtSetResponse {
-            old_value: old_value.reverse(),
-            new_root: new_root.reverse(),
+            old_value: old_value.reversed(),
+            new_root: new_root.reversed(),
         }
     }
 }

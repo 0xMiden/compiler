@@ -70,7 +70,7 @@ pub fn get_initial_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_initial_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -80,7 +80,7 @@ pub fn compute_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_compute_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -90,7 +90,7 @@ pub fn get_code_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_code_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -100,7 +100,7 @@ pub fn get_initial_storage_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_initial_storage_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -110,7 +110,7 @@ pub fn compute_storage_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_compute_storage_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -149,7 +149,7 @@ pub fn get_initial_vault_root() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_initial_vault_root(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -159,7 +159,7 @@ pub fn get_vault_root() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_vault_root(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -175,7 +175,7 @@ pub fn get_procedure_root(index: u8) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_procedure_root(Felt::new(index as u64), ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 

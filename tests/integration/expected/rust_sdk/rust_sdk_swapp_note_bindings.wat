@@ -25,7 +25,7 @@
     (elem (;0;) (i32.const 1) func $rust_sdk_swapp_note_bindings::bindings::__link_custom_section_describing_imports)
     (func $__wasm_call_ctors (;0;) (type 0))
     (func $rust_sdk_swapp_note_bindings::bindings::__link_custom_section_describing_imports (;1;) (type 0))
-    (func $<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq (;2;) (type 1) (param i32 i32) (result i32)
+    (func $<miden_field::word::Word as core::cmp::PartialEq>::eq (;2;) (type 1) (param i32 i32) (result i32)
       (local i32)
       i32.const 0
       local.set 2
@@ -114,7 +114,7 @@
         local.get 4
         i32.const 16
         i32.add
-        call $<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+        call $<miden_field::word::Word as core::cmp::PartialEq>::eq
         i32.eqz
         br_if 0 (;@1;)
         local.get 4
@@ -123,7 +123,7 @@
         local.get 4
         i32.const 32
         i32.add
-        call $<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+        call $<miden_field::word::Word as core::cmp::PartialEq>::eq
         i32.eqz
         br_if 0 (;@1;)
         local.get 7

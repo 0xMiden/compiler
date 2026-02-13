@@ -1,26 +1,29 @@
 use core::ops::{Deref, DerefMut};
 
+pub use miden_field::{Felt, Word};
+
 pub use self::{
     crypto::Digest,
-    felt::{Felt, assert, assert_eq, assertz},
-    word::Word,
+    felt::{assert, assert_eq, assertz},
 };
 
 pub mod advice;
 pub mod crypto;
 pub mod debug;
 pub mod felt;
-pub mod word;
 
+/// A wrapper type which ensures that the wrapped value is aligned to 32 bytes.
 #[repr(C, align(32))]
 pub struct WordAligned<T>(T);
 impl<T> WordAligned<T> {
     #[inline(always)]
+    /// Wraps the provided value.
     pub const fn new(t: T) -> Self {
         Self(t)
     }
 
     #[inline(always)]
+    /// Returns the wrapped value.
     pub fn into_inner(self) -> T {
         self.0
     }

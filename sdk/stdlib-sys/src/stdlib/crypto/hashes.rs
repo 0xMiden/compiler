@@ -289,7 +289,7 @@ mod imp {
                 extern_hash_elements(miden_ptr, num_elements, result_ptr);
             }
 
-            Digest::from_word(ret_area.assume_init().reverse())
+            Digest::from_word(ret_area.assume_init().reversed())
         }
     }
 
@@ -315,7 +315,7 @@ mod imp {
             let end_addr = start_addr + (words.len() as u32 * 4);
             extern_hash_words(start_addr, end_addr, result_ptr);
 
-            Digest::from_word(ret_area.assume_init().reverse())
+            Digest::from_word(ret_area.assume_init().reversed())
         }
     }
 }

@@ -33,7 +33,7 @@ pub fn build_fungible_asset(faucet_id: AccountId, amount: Felt) -> Asset {
             amount,
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -50,6 +50,6 @@ pub fn build_non_fungible_asset(faucet_id: AccountId, data_hash: Word) -> Asset 
             data_hash[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }

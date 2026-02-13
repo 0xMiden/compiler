@@ -4,12 +4,13 @@
   (type (;2;) (func (param f32 f32) (result i32)))
   (type (;3;) (func (param i64) (result f32)))
   (type (;4;) (func (param f32 f32 f32 f32 f32 f32 f32 f32 i32)))
+  (type (;5;) (func (param i32 i32 i32) (result i32)))
   (table (;0;) 1 1 funcref)
-  (memory (;0;) 16)
+  (memory (;0;) 17)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
   (export "memory" (memory 0))
   (export "entrypoint" (func $entrypoint))
-  (func $<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq (;0;) (type 0) (param i32 i32) (result i32)
+  (func $<miden_field::word::Word as core::cmp::PartialEq>::eq (;0;) (type 0) (param i32 i32) (result i32)
     (local i32)
     i32.const 0
     local.set 2
@@ -62,25 +63,85 @@
     local.tee 8
     global.set $__stack_pointer
     local.get 8
-    local.get 7
-    f32.store offset=28
+    local.get 3
+    f32.store offset=12
     local.get 8
-    local.get 6
-    f32.store offset=24
+    local.get 2
+    f32.store offset=8
+    local.get 8
+    local.get 1
+    f32.store offset=4
+    local.get 8
+    local.get 0
+    f32.store
     local.get 8
     local.get 5
     f32.store offset=20
     local.get 8
     local.get 4
     f32.store offset=16
-    local.get 3
-    local.get 2
-    local.get 1
-    local.get 0
+    local.get 8
     local.get 7
+    f32.store offset=28
+    local.get 8
     local.get 6
-    local.get 5
-    local.get 4
+    f32.store offset=24
+    local.get 8
+    local.get 8
+    i64.load offset=24
+    i64.store offset=56
+    local.get 8
+    local.get 8
+    i64.load offset=16
+    i64.store offset=48
+    local.get 8
+    i32.const 3
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 8
+    i32.const 2
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 8
+    i32.const 1
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 8
+    i32.const 0
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 8
+    i32.const 48
+    i32.add
+    i32.const 3
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 8
+    i32.const 48
+    i32.add
+    i32.const 2
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 8
+    i32.const 48
+    i32.add
+    i32.const 1
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 8
+    i32.const 48
+    i32.add
+    i32.const 0
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
     local.get 8
     i32.const 64
     i32.add
@@ -117,25 +178,25 @@
     i64.store offset=48
     i64.const 10
     call $intrinsics::felt::from_u64_unchecked
-    local.set 7
+    local.set 3
     i64.const 11
     call $intrinsics::felt::from_u64_unchecked
-    local.set 6
+    local.set 2
     i64.const 12
     call $intrinsics::felt::from_u64_unchecked
-    local.set 5
+    local.set 1
     local.get 8
     i64.const 13
     call $intrinsics::felt::from_u64_unchecked
     f32.store offset=76
     local.get 8
-    local.get 5
+    local.get 1
     f32.store offset=72
     local.get 8
-    local.get 6
+    local.get 2
     f32.store offset=68
     local.get 8
-    local.get 7
+    local.get 3
     f32.store offset=64
     block ;; label = @1
       local.get 8
@@ -144,7 +205,7 @@
       local.get 8
       i32.const 64
       i32.add
-      call $<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+      call $<miden_field::word::Word as core::cmp::PartialEq>::eq
       i32.eqz
       br_if 0 (;@1;)
       local.get 8
@@ -153,7 +214,7 @@
       local.get 8
       i32.const 16
       i32.add
-      call $<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+      call $<miden_field::word::Word as core::cmp::PartialEq>::eq
       i32.eqz
       br_if 0 (;@1;)
       local.get 9
@@ -171,4 +232,20 @@
   (func $miden::core::collections::smt::get (;4;) (type 4) (param f32 f32 f32 f32 f32 f32 f32 f32 i32)
     unreachable
   )
+  (func $<miden_field::word::Word as core::ops::index::Index<usize>>::index (;5;) (type 5) (param i32 i32 i32) (result i32)
+    block ;; label = @1
+      local.get 1
+      i32.const 3
+      i32.gt_u
+      br_if 0 (;@1;)
+      local.get 0
+      local.get 1
+      i32.const 2
+      i32.shl
+      i32.add
+      return
+    end
+    unreachable
+  )
+  (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00\00\00\00\10\00\0a\00\00\00\00\00\00\00\00\00\00\00")
 )

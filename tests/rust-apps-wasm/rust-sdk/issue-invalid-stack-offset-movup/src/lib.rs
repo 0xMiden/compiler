@@ -9,7 +9,7 @@
 #[macro_use]
 extern crate alloc;
 
-use miden::*;
+use miden::{miden_field::word, *};
 
 #[note]
 struct InvalidStackOffsetMovupNote;
@@ -74,7 +74,10 @@ impl InvalidStackOffsetMovupNote {
 
         // active_note::add_assets_to_account();
 
-        let routing_serial = add_word(current_note_serial, Word::from_u64_unchecked(0, 0, 0, 1));
+        let routing_serial = add_word(
+            current_note_serial,
+            Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, felt!(1)]),
+        );
 
         let aux_value = offered_out;
         let input_asset = Asset::new(Word::from([inputs[0], inputs[1], inputs[2], input_amount]));

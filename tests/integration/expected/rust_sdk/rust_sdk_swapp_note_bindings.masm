@@ -50,7 +50,7 @@ end
 
 @locals("3")
 @callconv("C")
-proc <miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq(
+proc <miden_field::word::Word as core::cmp::PartialEq>::eq(
     i32,
     i32
 ) -> i32
@@ -558,7 +558,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
             u32wrapping_add
             trace.240
             nop
-            exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+            exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::<miden_field::word::Word as core::cmp::PartialEq>::eq
             trace.252
             nop
             push.0
@@ -585,7 +585,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::<miden_stdlib_sys::intrinsics::word::Word as core::cmp::PartialEq>::eq
+                exec.::"miden:base/note-script@1.0.0"::rust_sdk_swapp_note_bindings::<miden_field::word::Word as core::cmp::PartialEq>::eq
                 trace.252
                 nop
                 push.0

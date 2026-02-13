@@ -16,7 +16,9 @@
     (type (;1;) (func (result i32)))
     (type (;2;) (func (param i32 f32 f32 i32)))
     (type (;3;) (func (param i64) (result f32)))
-    (type (;4;) (func (param f32 f32 f32 f32 f32 i32)))
+    (type (;4;) (func (param i32 i32 i32) (result i32)))
+    (type (;5;) (func (param i32 i32)))
+    (type (;6;) (func (param f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -67,12 +69,9 @@
       end
       local.get 0
       local.get 0
-      i64.load offset=24 align=4
-      i64.store offset=8
-      local.get 0
-      local.get 0
-      i64.load offset=16 align=4
-      i64.store
+      i32.const 16
+      i32.add
+      call $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
       local.get 0
       i32.const 16
       i32.add
@@ -81,7 +80,7 @@
       local.get 0
       call $miden_base_sys::bindings::asset::build_non_fungible_asset
       global.get $GOT.data.internal.__memory_base
-      i32.const 1048584
+      i32.const 1048612
       i32.add
       local.tee 3
       local.get 0
@@ -101,7 +100,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048600
+        i32.const 1048628
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -109,14 +108,14 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048600
+        i32.const 1048628
         i32.add
         i32.const 1
         i32.store8
       end
     )
     (func $miden_base_sys::bindings::asset::build_non_fungible_asset (;4;) (type 2) (param i32 f32 f32 i32)
-      (local i32)
+      (local i32 i32)
       global.get $__stack_pointer
       i32.const 16
       i32.sub
@@ -124,12 +123,27 @@
       global.set $__stack_pointer
       local.get 1
       local.get 3
-      f32.load offset=12
+      i32.const 3
+      global.get $GOT.data.internal.__memory_base
+      i32.const 1048596
+      i32.add
+      local.tee 5
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 3
-      f32.load offset=8
+      i32.const 2
+      local.get 5
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 3
-      f32.load offset=4
+      i32.const 1
+      local.get 5
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 3
+      i32.const 0
+      local.get 5
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
       f32.load
       local.get 4
       call $miden::protocol::asset::build_non_fungible_asset
@@ -153,10 +167,36 @@
     (func $intrinsics::felt::from_u64_unchecked (;5;) (type 3) (param i64) (result f32)
       unreachable
     )
-    (func $miden::protocol::asset::build_non_fungible_asset (;6;) (type 4) (param f32 f32 f32 f32 f32 i32)
+    (func $<miden_field::word::Word as core::ops::index::Index<usize>>::index (;6;) (type 4) (param i32 i32 i32) (result i32)
+      block ;; label = @1
+        local.get 1
+        i32.const 3
+        i32.gt_u
+        br_if 0 (;@1;)
+        local.get 0
+        local.get 1
+        i32.const 2
+        i32.shl
+        i32.add
+        return
+      end
       unreachable
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
+    (func $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from (;7;) (type 5) (param i32 i32)
+      local.get 0
+      local.get 1
+      i64.load offset=8 align=4
+      i64.store offset=8
+      local.get 0
+      local.get 1
+      i64.load align=4
+      i64.store
+    )
+    (func $miden::protocol::asset::build_non_fungible_asset (;8;) (type 6) (param f32 f32 f32 f32 f32 i32)
+      unreachable
+    )
+    (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00")
+    (data $.data (;1;) (i32.const 1048588) "\01\00\00\00\01\00\00\00\00\00\10\00\0a\00\00\00\00\00\00\00\00\00\00\00")
     (@custom "rodata,miden_account" (after data) "orust_sdk_account_asset_build_non_fungible_asset_binding\01\0b0.0.1\03\01\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "asset" (type $asset (;1;)))
