@@ -92,7 +92,7 @@ pub fn remove_asset(asset: Asset) -> Asset {
             asset.inner[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -108,7 +108,7 @@ pub fn compute_delta_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_native_account_compute_delta_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 

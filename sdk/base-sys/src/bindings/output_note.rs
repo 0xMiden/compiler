@@ -197,7 +197,7 @@ pub fn get_assets_info(note_index: NoteIdx) -> OutputNoteAssetsInfo {
         extern_output_note_get_assets_info(note_index.inner, ret_area.as_mut_ptr());
         let (commitment, num_assets) = ret_area.assume_init();
         OutputNoteAssetsInfo {
-            commitment: commitment.reverse(),
+            commitment: commitment.reversed(),
             num_assets,
         }
     }
@@ -224,7 +224,7 @@ pub fn get_recipient(note_index: NoteIdx) -> Recipient {
         extern_output_note_get_recipient(note_index.inner, ret_area.as_mut_ptr());
         let recipient = ret_area.assume_init();
         Recipient {
-            inner: recipient.inner.reverse(),
+            inner: recipient.inner.reversed(),
         }
     }
 }
@@ -234,6 +234,6 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_output_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
