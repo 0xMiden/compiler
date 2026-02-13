@@ -95,7 +95,7 @@ pub fn get_recipient() -> Recipient {
         let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
         extern_note_get_recipient(ret_area.as_mut_ptr());
         let mut recipient = ret_area.assume_init();
-        recipient.inner = recipient.inner.reverse();
+        recipient.inner = recipient.inner.reversed();
         recipient
     }
 }
@@ -105,7 +105,7 @@ pub fn get_script_root() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_note_get_script_root(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -114,7 +114,7 @@ pub fn get_serial_number() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_note_get_serial_number(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -123,6 +123,6 @@ pub fn get_metadata() -> NoteMetadata {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_note_get_metadata(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }

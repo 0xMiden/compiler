@@ -63,9 +63,9 @@ impl Asset {
     }
 
     #[inline]
-    pub(crate) fn reverse(&self) -> Self {
+    pub(crate) fn reversed(&self) -> Self {
         Self {
-            inner: self.inner.reverse(),
+            inner: self.inner.reversed(),
         }
     }
 }
@@ -108,7 +108,7 @@ impl Recipient {
     ///
     /// Where `inputs_commitment` is the RPO256 hash of the provided `inputs`.
     pub fn compute(serial_num: Word, script_digest: Digest, inputs: Vec<Felt>) -> Self {
-        let empty_word = Word::from_u64_unchecked(0, 0, 0, 0);
+        let empty_word = Word::empty();
 
         let serial_num_hash = merge([Digest::from_word(serial_num), Digest::from_word(empty_word)]);
         let merge_script = merge([serial_num_hash, script_digest]);
