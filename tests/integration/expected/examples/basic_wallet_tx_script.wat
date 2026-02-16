@@ -3,13 +3,12 @@
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
-      (type (;2;) (tuple 1 1 1 1))
-      (type (;3;) (record (field "inner" 2)))
-      (export (;4;) "word" (type (eq 3)))
-      (type (;5;) (record (field "inner" 4)))
-      (export (;6;) "asset" (type (eq 5)))
-      (type (;7;) (record (field "inner" 1)))
-      (export (;8;) "note-idx" (type (eq 7)))
+      (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+      (export (;3;) "word" (type (eq 2)))
+      (type (;4;) (record (field "inner" 3)))
+      (export (;5;) "asset" (type (eq 4)))
+      (type (;6;) (record (field "inner" 1)))
+      (export (;7;) "note-idx" (type (eq 6)))
     )
   )
   (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
@@ -46,7 +45,7 @@
     (type (;16;) (func (param f32 i32 f32 f32 f32 f32) (result i32)))
     (type (;17;) (func (param i32 i32 i32 i32 i32)))
     (type (;18;) (func (param f32 f32 f32 f32 f32 f32) (result f32)))
-    (import "miden:basic-wallet/basic-wallet@0.1.0" "move-asset-to-note" (func $basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9 (;0;) (type 0)))
+    (import "miden:basic-wallet/basic-wallet@0.1.0" "move-asset-to-note" (func $basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import8 (;0;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -396,7 +395,7 @@
           local.get 4
           f32.load offset=76
           local.get 3
-          call $basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
+          call $basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import8
           local.get 4
           i32.const 20
           i32.add
@@ -886,15 +885,14 @@
   (component $miden:base/transaction-script@1.0.0-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
-    (type (;2;) (tuple 1 1 1 1))
-    (type (;3;) (record (field "inner" 2)))
-    (import "import-type-word" (type (;4;) (eq 3)))
-    (import "import-type-word0" (type (;5;) (eq 4)))
-    (type (;6;) (func (param "arg" 5)))
-    (import "import-func-run" (func (;0;) (type 6)))
-    (export (;7;) "word" (type 4))
-    (type (;8;) (func (param "arg" 7)))
-    (export (;1;) "run" (func 0) (func (type 8)))
+    (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+    (import "import-type-word" (type (;3;) (eq 2)))
+    (import "import-type-word0" (type (;4;) (eq 3)))
+    (type (;5;) (func (param "arg" 4)))
+    (import "import-func-run" (func (;0;) (type 5)))
+    (export (;6;) "word" (type 3))
+    (type (;7;) (func (param "arg" 6)))
+    (export (;1;) "run" (func 0) (func (type 7)))
   )
   (instance $miden:base/transaction-script@1.0.0-shim-instance (;2;) (instantiate $miden:base/transaction-script@1.0.0-shim-component
       (with "import-func-run" (func $run))

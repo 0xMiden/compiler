@@ -39,13 +39,22 @@ struct MyNote;
 impl Guest for MyNote {
     fn run(_arg: Word) {
         let input1 = Word {
-            inner: (felt!(1), felt!(2), felt!(3), felt!(4)),
+            a: felt!(1),
+            b: felt!(2),
+            c: felt!(3),
+            d: felt!(4),
         };
         let input2 = Word {
-            inner: (felt!(5), felt!(6), felt!(7), felt!(8)),
+            a: felt!(5),
+            b: felt!(6),
+            c: felt!(7),
+            d: felt!(8),
         };
         let input3 = Word {
-            inner: (felt!(9), felt!(10), felt!(11), felt!(12)),
+            a: felt!(9),
+            b: felt!(10),
+            c: felt!(11),
+            d: felt!(12),
         };
         let felt1 = felt!(13);
         let felt2 = felt!(14);

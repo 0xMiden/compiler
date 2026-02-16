@@ -22,8 +22,8 @@ impl MyNote {
         };
         let result = test_custom_types(value, asset);
         let expected = StructB {
-            bar: foo_val.inner.0,
-            baz: asset.inner.inner.0,
+            bar: foo_val.a,
+            baz: asset.inner.a,
         };
 
         assert_eq!(result.bar, expected.bar);

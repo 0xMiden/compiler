@@ -37,22 +37,25 @@ struct MyNote;
 impl Guest for MyNote {
     fn run(_arg: Word) {
         let input = Word {
-            inner: (felt!(2), felt!(3), felt!(4), felt!(5)),
+            a: felt!(2),
+            b: felt!(3),
+            c: felt!(4),
+            d: felt!(5),
         };
 
         let output = process_word(input.clone());
 
-        assert_eq(output.inner.0, felt!(3));
-        assert_eq(output.inner.1, felt!(5));
-        assert_eq(output.inner.2, felt!(7));
-        assert_eq(output.inner.3, felt!(9));
+        assert_eq(output.a, felt!(3));
+        assert_eq(output.b, felt!(5));
+        assert_eq(output.c, felt!(7));
+        assert_eq(output.d, felt!(9));
 
         let output = process_another_word(input);
 
-        assert_eq(output.inner.0, felt!(4));
-        assert_eq(output.inner.1, felt!(6));
-        assert_eq(output.inner.2, felt!(8));
-        assert_eq(output.inner.3, felt!(10));
+        assert_eq(output.a, felt!(4));
+        assert_eq(output.b, felt!(6));
+        assert_eq(output.c, felt!(8));
+        assert_eq(output.d, felt!(10));
 
         let felt_input = felt!(9);
         let felt_output = process_felt(felt_input);

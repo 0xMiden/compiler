@@ -3,11 +3,10 @@
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
-      (type (;2;) (tuple 1 1 1 1))
-      (type (;3;) (record (field "inner" 2)))
-      (export (;4;) "word" (type (eq 3)))
-      (type (;5;) (record (field "inner" 4)))
-      (export (;6;) "asset" (type (eq 5)))
+      (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+      (export (;3;) "word" (type (eq 2)))
+      (type (;4;) (record (field "inner" 3)))
+      (export (;5;) "asset" (type (eq 4)))
     )
   )
   (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
@@ -38,7 +37,7 @@
     (type (;3;) (func (param f32 f32) (result i32)))
     (type (;4;) (func (param i64) (result f32)))
     (type (;5;) (func (param i32 i32)))
-    (import "miden:component-macros-account/component-macros-account@0.1.0" "test-custom-types" (func $component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22 (;0;) (type 0)))
+    (import "miden:component-macros-account/component-macros-account@0.1.0" "test-custom-types" (func $component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import19 (;0;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -125,7 +124,7 @@
       local.get 4
       i32.const 16
       i32.add
-      call $component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22
+      call $component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import19
       local.get 4
       f32.load offset=20
       local.set 10
@@ -246,15 +245,14 @@
   (component $miden:base/note-script@1.0.0-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
-    (type (;2;) (tuple 1 1 1 1))
-    (type (;3;) (record (field "inner" 2)))
-    (import "import-type-word" (type (;4;) (eq 3)))
-    (import "import-type-word0" (type (;5;) (eq 4)))
-    (type (;6;) (func (param "arg" 5)))
-    (import "import-func-run" (func (;0;) (type 6)))
-    (export (;7;) "word" (type 4))
-    (type (;8;) (func (param "arg" 7)))
-    (export (;1;) "run" (func 0) (func (type 8)))
+    (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+    (import "import-type-word" (type (;3;) (eq 2)))
+    (import "import-type-word0" (type (;4;) (eq 3)))
+    (type (;5;) (func (param "arg" 4)))
+    (import "import-func-run" (func (;0;) (type 5)))
+    (export (;6;) "word" (type 3))
+    (type (;7;) (func (param "arg" 6)))
+    (export (;1;) "run" (func 0) (func (type 7)))
   )
   (instance $miden:base/note-script@1.0.0-shim-instance (;2;) (instantiate $miden:base/note-script@1.0.0-shim-component
       (with "import-func-run" (func $run))

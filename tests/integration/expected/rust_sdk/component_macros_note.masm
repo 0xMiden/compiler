@@ -35,7 +35,7 @@ end
 # mod ::"miden:base/note-script@1.0.0"::component_macros_note
 
 @callconv("C")
-proc component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22(
+proc component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import19(
     felt,
     felt,
     felt,
@@ -261,7 +261,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     swap.12
     trace.240
     nop
-    exec.::"miden:base/note-script@1.0.0"::component_macros_note::component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22
+    exec.::"miden:base/note-script@1.0.0"::component_macros_note::component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import19
     trace.252
     nop
     locaddr.4

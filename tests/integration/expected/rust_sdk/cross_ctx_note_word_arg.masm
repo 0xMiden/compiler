@@ -35,7 +35,7 @@ end
 # mod ::"miden:base/note-script@1.0.0"::cross_ctx_note_word_arg
 
 @callconv("C")
-proc cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(
+proc cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import19(
     felt,
     felt,
     felt,
@@ -111,7 +111,7 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     swap.1
     trace.240
     nop
-    exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
+    exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import19
     trace.252
     nop
     push.458760

@@ -54,8 +54,7 @@ struct MyAccount;
 impl MyAccount {
     /// Exercises exported user-defined type and SDK type in signatures and return value.
     pub fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB {
-        let foo_val =
-            Word::from([a.foo.inner.0, asset.inner.inner.0, a.foo.inner.1, a.foo.inner.2]);
+        let foo_val = Word::from([a.foo.a, asset.a, a.foo.b, a.foo.c]);
 
         let val_a = StructA {
             foo: foo_val,
@@ -84,8 +83,8 @@ impl MyAccount {
 
     fn test_custom_types_private(&self, a: StructA, _asset: Asset) -> StructD {
         StructD {
-            bar: a.foo.inner.0,
-            baz: a.foo.inner.1,
+            bar: a.foo.a,
+            baz: a.foo.b,
         }
     }
 }

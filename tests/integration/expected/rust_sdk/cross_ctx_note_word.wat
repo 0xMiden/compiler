@@ -3,9 +3,8 @@
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
-      (type (;2;) (tuple 1 1 1 1))
-      (type (;3;) (record (field "inner" 2)))
-      (export (;4;) "word" (type (eq 3)))
+      (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+      (export (;3;) "word" (type (eq 2)))
     )
   )
   (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
@@ -52,8 +51,8 @@
     (type (;7;) (func (param f32 f32)))
     (type (;8;) (func (param i32) (result f32)))
     (type (;9;) (func (param i64) (result f32)))
-    (import "miden:cross-ctx-account-word/foo@1.0.0" "process-word" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7 (;0;) (type 0)))
-    (import "miden:cross-ctx-account-word/foo@1.0.0" "process-another-word" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7 (;1;) (type 0)))
+    (import "miden:cross-ctx-account-word/foo@1.0.0" "process-word" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import6 (;0;) (type 0)))
+    (import "miden:cross-ctx-account-word/foo@1.0.0" "process-another-word" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import6 (;1;) (type 0)))
     (import "miden:cross-ctx-account-word/foo@1.0.0" "process-felt" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_felt::wit_import1 (;2;) (type 1)))
     (import "miden:cross-ctx-account-word/foo@1.0.0" "process-pair" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_pair::wit_import4 (;3;) (type 2)))
     (import "miden:cross-ctx-account-word/foo@1.0.0" "process-triple" (func $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_triple::wit_import5 (;4;) (type 3)))
@@ -91,7 +90,7 @@
       local.get 4
       i32.const 8
       i32.add
-      call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import7
+      call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import6
       local.get 4
       f32.load offset=20
       local.set 9
@@ -125,7 +124,7 @@
       local.get 4
       i32.const 8
       i32.add
-      call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import7
+      call $cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_another_word::wit_import6
       local.get 4
       f32.load offset=20
       local.set 5
@@ -502,15 +501,14 @@
   (component $miden:base/note-script@1.0.0-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
-    (type (;2;) (tuple 1 1 1 1))
-    (type (;3;) (record (field "inner" 2)))
-    (import "import-type-word" (type (;4;) (eq 3)))
-    (import "import-type-word0" (type (;5;) (eq 4)))
-    (type (;6;) (func (param "arg" 5)))
-    (import "import-func-run" (func (;0;) (type 6)))
-    (export (;7;) "word" (type 4))
-    (type (;8;) (func (param "arg" 7)))
-    (export (;1;) "run" (func 0) (func (type 8)))
+    (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+    (import "import-type-word" (type (;3;) (eq 2)))
+    (import "import-type-word0" (type (;4;) (eq 3)))
+    (type (;5;) (func (param "arg" 4)))
+    (import "import-func-run" (func (;0;) (type 5)))
+    (export (;6;) "word" (type 3))
+    (type (;7;) (func (param "arg" 6)))
+    (export (;1;) "run" (func 0) (func (type 7)))
   )
   (instance $miden:base/note-script@1.0.0-shim-instance (;2;) (instantiate $miden:base/note-script@1.0.0-shim-component
       (with "import-func-run" (func $run))

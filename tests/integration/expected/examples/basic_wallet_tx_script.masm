@@ -35,7 +35,7 @@ end
 # mod ::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script
 
 @callconv("C")
-proc basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9(
+proc basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import8(
     felt,
     felt,
     felt,
@@ -1751,7 +1751,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     swap.4
                     trace.240
                     nop
-                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
+                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import8
                     trace.252
                     nop
                     locaddr.4
