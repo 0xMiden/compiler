@@ -194,12 +194,6 @@
         i32.ne
         br_if 0 (;@1;)
         local.get 9
-        f32.load offset=12
-        local.set 0
-        local.get 9
-        f32.load offset=8
-        local.set 1
-        local.get 9
         local.get 7
         f32.store offset=28
         local.get 9
@@ -212,6 +206,12 @@
         local.get 4
         f32.store offset=16
         local.get 9
+        f32.load offset=8
+        local.set 0
+        local.get 9
+        f32.load offset=12
+        local.set 1
+        local.get 9
         i32.const 0
         i32.store offset=44
         local.get 9
@@ -220,8 +220,8 @@
         local.get 9
         local.get 8
         f32.store offset=32
-        local.get 0
         local.get 1
+        local.get 0
         local.get 9
         i32.const 16
         i32.add

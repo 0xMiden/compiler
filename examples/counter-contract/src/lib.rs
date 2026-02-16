@@ -7,7 +7,7 @@
 //
 // extern crate alloc;
 
-use miden::{Felt, StorageMap, StorageMapAccess, Word, component, felt, miden_field::word};
+use miden::{Felt, StorageMap, StorageMapAccess, Word, component, felt};
 
 /// Main contract structure for the counter example.
 #[component]

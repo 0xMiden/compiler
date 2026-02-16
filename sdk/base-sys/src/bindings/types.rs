@@ -1,6 +1,7 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+use core::ops::Deref;
 
 use miden_field_repr::FromFeltRepr;
 use miden_stdlib_sys::{Digest, Felt, Word, hash_elements, intrinsics::crypto::merge};
@@ -88,8 +89,10 @@ impl From<Asset> for Word {
     }
 }
 
-impl AsRef<Word> for Asset {
-    fn as_ref(&self) -> &Word {
+impl Deref for Asset {
+    type Target = Word;
+
+    fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
