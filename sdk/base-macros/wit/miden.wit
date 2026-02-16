@@ -13,9 +13,11 @@ interface core-types {
 
 
     /// A group of four field elements in the Miden base field.
-    // type word = tuple<felt, felt, felt, felt>;
     record word {
-        inner: tuple<felt, felt, felt, felt>
+        a: felt,
+	b: felt,
+	c: felt,
+	d: felt,
     }
 
     /// A cryptographic digest representing a 256-bit hash value.
