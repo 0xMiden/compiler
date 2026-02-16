@@ -32,7 +32,8 @@ impl foo::Guest for MyAccount {
         let mut my_account = MyAccount::default();
         let owner_key: Word = my_account.owner_public_key.read();
         if pub_key == owner_key {
-            my_account.asset_qty_map.set(asset, qty);
+            let new_value_word = Word::new([qty, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+            my_account.asset_qty_map.set(asset.into(), new_value_word);
         }
     }
 

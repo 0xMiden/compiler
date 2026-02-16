@@ -1,78 +1,28 @@
 use miden_base_sys::bindings::{StorageSlotId, storage};
-use miden_stdlib_sys::{Digest, Felt, Word};
+use miden_stdlib_sys::Word;
 
-/// A type that can be stored in (or loaded from) account storage.
-///
-/// Storage slots and map items store a single [`Word`]. Implementations must define a reversible
-/// conversion between the Rust type and a [`Word`].
-pub trait WordValue: TryInto<Word> + TryFrom<Word> {}
-
-impl WordValue for Word {}
-impl WordValue for Felt {}
-impl WordValue for Digest {}
-impl WordValue for miden_base_sys::bindings::AccountId {}
-impl WordValue for miden_base_sys::bindings::Asset {}
-impl WordValue for miden_base_sys::bindings::Recipient {}
-impl WordValue for miden_base_sys::bindings::Tag {}
-impl WordValue for miden_base_sys::bindings::NoteIdx {}
-impl WordValue for miden_base_sys::bindings::NoteType {}
-
-/// A type that can be used as a key in a storage map.
-///
-/// Map keys are passed by value for lookups to avoid requiring `Clone` just to materialize a
-/// [`Word`] for the host call.
-pub trait WordKey: Copy + TryInto<Word> {}
-
-impl WordKey for Word {}
-impl WordKey for Felt {}
-impl WordKey for miden_base_sys::bindings::AccountId {}
-impl WordKey for miden_base_sys::bindings::Asset {}
-impl WordKey for miden_base_sys::bindings::Tag {}
-impl WordKey for miden_base_sys::bindings::NoteIdx {}
-impl WordKey for miden_base_sys::bindings::NoteType {}
-
-/// Typed access to a single account storage slot.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Storage<T: WordValue> {
-    /// The underlying storage slot id.
-    pub slot: StorageSlotId,
-    _marker: core::marker::PhantomData<T>,
-}
-
-impl<T: WordValue> Storage<T> {
-    /// Creates a new typed storage handle for `slot`.
-    pub const fn new(slot: StorageSlotId) -> Self {
-        Self {
-            slot,
-            _marker: core::marker::PhantomData,
-        }
-    }
-}
-
-impl<T: WordValue> From<StorageSlotId> for Storage<T> {
-    fn from(slot: StorageSlotId) -> Self {
-        Self::new(slot)
-    }
-}
-
-impl<T: WordValue> Storage<T> {
+pub trait ValueAccess<V> {
     /// Reads the current value from account storage.
+    fn read(&self) -> V;
+    /// Writes a new value into account storage and returns the previous value.
+    fn write(&mut self, value: V) -> V;
+}
+
+pub struct Value {
+    pub slot: StorageSlotId,
+}
+
+impl<V: Into<Word> + From<Word>> ValueAccess<V> for Value {
+    /// Returns an item value from the account storage.
     #[inline(always)]
-    pub fn get(&self) -> T {
-        storage::get_item(self.slot)
-            .try_into()
-            .unwrap_or_else(|_| panic!("storage slot {:?} contained an invalid word", self.slot))
+    fn read(&self) -> V {
+        storage::get_item(self.slot).into()
     }
 
     /// Sets an item `value` in the account storage and returns the previous value.
     #[inline(always)]
-    pub fn set(&mut self, value: T) -> T {
-        let value = value
-            .try_into()
-            .unwrap_or_else(|_| panic!("failed to convert value for storage slot {:?}", self.slot));
-        storage::set_item(self.slot, value)
-            .try_into()
-            .unwrap_or_else(|_| panic!("storage slot {:?} contained an invalid word", self.slot))
+    fn write(&mut self, value: V) -> V {
+        storage::set_item(self.slot, value.into()).into()
     }
 }
 
