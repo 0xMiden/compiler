@@ -133,7 +133,12 @@ jobs:
   release:
     name: prepare the next release
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == '0xMiden' }}
+    needs: publish
+    # Only prepare the next release if we didn't just create a release.
+    # When a release PR is merged, the `publish` job will create tags/releases and publish to crates.io.
+    # Running `release-pr` in the same workflow run before publishing completes can create a duplicate
+    # release PR for the same version bump.
+    if: ${{ github.repository_owner == '0xMiden' && needs.publish.result == 'success' && needs.publish.outputs.releases_created != 'true' }}
     permissions:
       contents: write
       pull-requests: write
