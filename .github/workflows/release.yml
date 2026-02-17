@@ -78,7 +78,7 @@ jobs:
           echo "${RELEASES}" | jq -rM
           echo "=================="
           # `cargo-miden` owns the GitHub release/tag (see `release-plz.toml`), and it uses an
-          # unprefixed tag name like `0.7.0`. Other crates may report prefixed tags (e.g.
+          # unprefixed tag name like `v0.7.0`. Other crates may report prefixed tags (e.g.
           # `midenc-v0.7.0`) which do not correspond to an actual GitHub release.
           release_tag=$(echo "${RELEASES}" | jq -r '.[] | select(.package_name == "cargo-miden") | .tag' | head -n1)
           if [ -z "${release_tag}" ] || [ "${release_tag}" = "null" ]; then

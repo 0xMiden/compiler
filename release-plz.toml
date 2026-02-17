@@ -17,8 +17,8 @@ changelog_path = "./CHANGELOG.md"
 name = "cargo-miden"
 git_release_enable = true
 git_tag_enable = true
-git_tag_name = "{{ version }}"
-git_release_name = "{{ version }}"
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
 
 
 [changelog]
