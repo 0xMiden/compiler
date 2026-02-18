@@ -1,7 +1,7 @@
 builtin.component root_ns:root@1.0.0 {
-    builtin.module public @test_rust_a332e98753eaa727b86ea68c0da32bb6bbe8b6a7cc84cb279e4d21d824527a27 {
+    builtin.module public @test_overflowing_mul_u32 {
         public builtin.function @entrypoint(v0: i32, v1: i32, v2: i32) {
-        ^block6(v0: i32, v1: i32, v2: i32):
+        ^block4(v0: i32, v1: i32, v2: i32):
             hir.store_local v0 #[local = lv0];
             v3 = hir.load_local  : i32 #[local = lv0];
             v9 = hir.bitcast v2 : u32;
@@ -41,14 +41,6 @@ builtin.component root_ns:root@1.0.0 {
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
-            builtin.ret_imm 1048576;
-        };
-
-        builtin.global_variable public @#gv1 : i32 {
-            builtin.ret_imm 1048576;
-        };
-
-        builtin.global_variable public @#gv2 : i32 {
             builtin.ret_imm 1048576;
         };
     };

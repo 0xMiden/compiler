@@ -8,15 +8,9 @@ proc init
     push.1048576
     u32assert
     mem_store.278528
-    push.1048576
-    u32assert
-    mem_store.278529
-    push.1048576
-    u32assert
-    mem_store.278530
 end
 
-# mod ::"root_ns:root@1.0.0"::test_rust_661f326c571b472b3f5afbc1f710009a76f4a75f71fca9a4e50c0ac7ae44f6e6
+# mod ::"root_ns:root@1.0.0"::test_overflowing_add_u32
 
 @locals("3")
 @callconv("C")

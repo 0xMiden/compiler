@@ -634,8 +634,10 @@ fn test_overflowing_arith<T>(
         a.{fn_name}(b)
     }}"#
     );
-    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
+    let config = WasmTranslationConfig::default();
     let artifact_name = format!("test_{fn_name}_{ty_name}");
+    let mut test =
+        CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
     test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
     test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
     test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);

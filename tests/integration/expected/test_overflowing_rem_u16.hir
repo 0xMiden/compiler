@@ -1,135 +1,44 @@
 builtin.component root_ns:root@1.0.0 {
-    builtin.module public @test_rust_cf316d99d2af7a362c0e26851e02887132855a24a7c742ce6a03b4ea7ac07b08 {
-        private builtin.function @__rustc::rust_begin_unwind(v0: i32) {
-        ^block6(v0: i32):
-            ub.unreachable ;
-        };
-
-        public builtin.function @entrypoint(v1: i32, v2: i32, v3: i32) {
-        ^block8(v1: i32, v2: i32, v3: i32):
-            hir.store_local v1 #[local = lv0];
-            hir.store_local v2 #[local = lv1];
-            hir.store_local v3 #[local = lv2];
-            v4 = hir.load_local  : i32 #[local = lv2];
-            v95 = arith.constant 0 : i32;
-            v6 = arith.neq v4, v95 : i1;
-            cf.cond_br v6 ^block10, ^block11;
-        ^block10:
-            v8 = hir.load_local  : i32 #[local = lv0];
-            v92 = arith.constant 0 : u8;
-            v94 = arith.constant 2 : u32;
-            v12 = hir.bitcast v8 : u32;
-            v14 = arith.add v12, v94 : u32 #[overflow = checked];
-            v15 = hir.int_to_ptr v14 : ptr<byte, u8>;
-            hir.store v15, v92;
-            v16 = hir.load_local  : i32 #[local = lv0];
-            v17 = hir.load_local  : i32 #[local = lv1];
-            v18 = hir.load_local  : i32 #[local = lv2];
-            v25 = hir.bitcast v16 : u32;
-            v98 = arith.constant 2 : u32;
-            v27 = arith.mod v25, v98 : u32;
-            hir.assertz v27 #[code = 250];
-            v20 = hir.bitcast v18 : u32;
-            v19 = hir.bitcast v17 : u32;
-            v21 = arith.mod v19, v20 : u32;
-            v22 = hir.bitcast v21 : i32;
-            v23 = hir.bitcast v22 : u32;
-            v24 = arith.trunc v23 : u16;
-            v28 = hir.int_to_ptr v25 : ptr<byte, u16>;
-            hir.store v28, v24;
+    builtin.module public @test_overflowing_rem_u16 {
+        public builtin.function @entrypoint(v0: i32, v1: i32, v2: i32) {
+        ^block4(v0: i32, v1: i32, v2: i32):
+            hir.store_local v0 #[local = lv0];
+            hir.store_local v1 #[local = lv1];
+            hir.store_local v2 #[local = lv2];
+            v3 = hir.load_local  : i32 #[local = lv2];
+            v31 = arith.constant 0 : i32;
+            v5 = arith.neq v3, v31 : i1;
+            cf.cond_br v5 ^block6, ^block7;
+        ^block6:
+            v6 = hir.load_local  : i32 #[local = lv0];
+            v29 = arith.constant 0 : u8;
+            v30 = arith.constant 2 : u32;
+            v10 = hir.bitcast v6 : u32;
+            v12 = arith.add v10, v30 : u32 #[overflow = checked];
+            v13 = hir.int_to_ptr v12 : ptr<byte, u8>;
+            hir.store v13, v29;
+            v14 = hir.load_local  : i32 #[local = lv0];
+            v15 = hir.load_local  : i32 #[local = lv1];
+            v16 = hir.load_local  : i32 #[local = lv2];
+            v23 = hir.bitcast v14 : u32;
+            v34 = arith.constant 2 : u32;
+            v25 = arith.mod v23, v34 : u32;
+            hir.assertz v25 #[code = 250];
+            v18 = hir.bitcast v16 : u32;
+            v17 = hir.bitcast v15 : u32;
+            v19 = arith.mod v17, v18 : u32;
+            v20 = hir.bitcast v19 : i32;
+            v21 = hir.bitcast v20 : u32;
+            v22 = arith.trunc v21 : u16;
+            v26 = hir.int_to_ptr v23 : ptr<byte, u16>;
+            hir.store v26, v22;
             builtin.ret ;
-        ^block11:
-            v93 = arith.constant 1048736 : i32;
-            hir.exec @root_ns:root@1.0.0/test_rust_cf316d99d2af7a362c0e26851e02887132855a24a7c742ce6a03b4ea7ac07b08/core::panicking::panic_const::panic_const_rem_by_zero(v93)
-            ub.unreachable ;
-        };
-
-        private builtin.function @core::panicking::panic_fmt(v29: i32, v30: i32, v31: i32) {
-        ^block12(v29: i32, v30: i32, v31: i32):
-            v32 = builtin.global_symbol @root_ns:root@1.0.0/test_rust_cf316d99d2af7a362c0e26851e02887132855a24a7c742ce6a03b4ea7ac07b08/__stack_pointer : ptr<byte, u8>
-            v33 = hir.bitcast v32 : ptr<byte, i32>;
-            v34 = hir.load v33 : i32;
-            v111 = arith.constant 32 : i32;
-            v36 = arith.sub v34, v111 : i32 #[overflow = wrapping];
-            hir.store_local v36 #[local = lv3];
-            v37 = builtin.global_symbol @root_ns:root@1.0.0/test_rust_cf316d99d2af7a362c0e26851e02887132855a24a7c742ce6a03b4ea7ac07b08/__stack_pointer : ptr<byte, u8>
-            v38 = hir.bitcast v37 : ptr<byte, i32>;
-            hir.store v38, v36;
-            v39 = hir.load_local  : i32 #[local = lv3];
-            v110 = arith.constant 16 : u32;
-            v41 = hir.bitcast v39 : u32;
-            v43 = arith.add v41, v110 : u32 #[overflow = checked];
-            v109 = arith.constant 4 : u32;
-            v45 = arith.mod v43, v109 : u32;
-            hir.assertz v45 #[code = 250];
-            v46 = hir.int_to_ptr v43 : ptr<byte, i32>;
-            hir.store v46, v30;
-            v47 = hir.load_local  : i32 #[local = lv3];
-            v108 = arith.constant 12 : u32;
-            v49 = hir.bitcast v47 : u32;
-            v51 = arith.add v49, v108 : u32 #[overflow = checked];
-            v117 = arith.constant 4 : u32;
-            v53 = arith.mod v51, v117 : u32;
-            hir.assertz v53 #[code = 250];
-            v54 = hir.int_to_ptr v51 : ptr<byte, i32>;
-            hir.store v54, v29;
-            v55 = hir.load_local  : i32 #[local = lv3];
-            v107 = arith.constant 28 : u32;
-            v59 = hir.bitcast v55 : u32;
-            v61 = arith.add v59, v107 : u32 #[overflow = checked];
-            v106 = arith.constant 2 : u32;
-            v63 = arith.mod v61, v106 : u32;
-            hir.assertz v63 #[code = 250];
-            v101 = arith.constant 1 : u16;
-            v64 = hir.int_to_ptr v61 : ptr<byte, u16>;
-            hir.store v64, v101;
-            v65 = hir.load_local  : i32 #[local = lv3];
-            v105 = arith.constant 24 : u32;
-            v67 = hir.bitcast v65 : u32;
-            v69 = arith.add v67, v105 : u32 #[overflow = checked];
-            v116 = arith.constant 4 : u32;
-            v71 = arith.mod v69, v116 : u32;
-            hir.assertz v71 #[code = 250];
-            v72 = hir.int_to_ptr v69 : ptr<byte, i32>;
-            hir.store v72, v31;
-            v73 = hir.load_local  : i32 #[local = lv3];
-            v103 = arith.constant 20 : u32;
-            v77 = hir.bitcast v73 : u32;
-            v79 = arith.add v77, v103 : u32 #[overflow = checked];
-            v115 = arith.constant 4 : u32;
-            v81 = arith.mod v79, v115 : u32;
-            hir.assertz v81 #[code = 250];
-            v104 = arith.constant 12 : i32;
-            v76 = arith.add v73, v104 : i32 #[overflow = wrapping];
-            v82 = hir.int_to_ptr v79 : ptr<byte, i32>;
-            hir.store v82, v76;
-            v83 = hir.load_local  : i32 #[local = lv3];
-            v102 = arith.constant 20 : i32;
-            v85 = arith.add v83, v102 : i32 #[overflow = wrapping];
-            hir.exec @root_ns:root@1.0.0/test_rust_cf316d99d2af7a362c0e26851e02887132855a24a7c742ce6a03b4ea7ac07b08/__rustc::rust_begin_unwind(v85)
-            ub.unreachable ;
-        };
-
-        private builtin.function @core::panicking::panic_const::panic_const_rem_by_zero(v86: i32) {
-        ^block14(v86: i32):
-            v118 = arith.constant 115 : i32;
-            v119 = arith.constant 1048752 : i32;
-            hir.exec @root_ns:root@1.0.0/test_rust_cf316d99d2af7a362c0e26851e02887132855a24a7c742ce6a03b4ea7ac07b08/core::panicking::panic_fmt(v119, v118, v86)
+        ^block7:
             ub.unreachable ;
         };
 
         builtin.global_variable private @#__stack_pointer : i32 {
             builtin.ret_imm 1048576;
         };
-
-        builtin.global_variable public @#gv1 : i32 {
-            builtin.ret_imm 1048809;
-        };
-
-        builtin.global_variable public @#gv2 : i32 {
-            builtin.ret_imm 1048816;
-        };
-
-        builtin.segment readonly @1048576 = 0x6f72657a20666f20726f736976696420612068746977207265646e69616d657220656874206574616c75636c6163206f742074706d657474610000000b000000130000009d0010000000000073722e383062373063613761653462333061366563323437633761343261353538323331373838323065313538363265306332363361376661326439396436313366635f747375725f747365742f383062373063613761653462333061366563323437633761343261353538323331373838323065313538363265306332363361376661326439396436313366635f747375725f747365742f706d742f;
     };
 };
