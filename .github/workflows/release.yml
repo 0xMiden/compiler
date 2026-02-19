@@ -77,9 +77,12 @@ jobs:
           echo "=================="
           echo "${RELEASES}" | jq -rM
           echo "=================="
-          release_tag=$(echo "${RELEASES}" | jq -r '.[] | select(.package_name == "midenc" or .package_name == "cargo-miden") | .tag' | head -n1)
+          # `cargo-miden` owns the GitHub release/tag (see `release-plz.toml`), and it uses an
+          # unprefixed tag name like `v0.7.0`. Other crates may report prefixed tags (e.g.
+          # `midenc-v0.7.0`) which do not correspond to an actual GitHub release.
+          release_tag=$(echo "${RELEASES}" | jq -r '.[] | select(.package_name == "cargo-miden") | .tag' | head -n1)
           if [ -z "${release_tag}" ] || [ "${release_tag}" = "null" ]; then
-            echo "midenc or cargo-miden crate was not released in this run. Skipping artifact upload."
+            echo "cargo-miden crate was not released in this run. Skipping artifact upload."
             echo "release_tag=" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -130,7 +133,12 @@ jobs:
   release:
     name: prepare the next release
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == '0xMiden' }}
+    needs: publish
+    # Only prepare the next release if we didn't just create a release.
+    # When a release PR is merged, the `publish` job will create tags/releases and publish to crates.io.
+    # Running `release-pr` in the same workflow run before publishing completes can create a duplicate
+    # release PR for the same version bump.
+    if: ${{ github.repository_owner == '0xMiden' && needs.publish.result == 'success' && needs.publish.outputs.releases_created != 'true' }}
     permissions:
       contents: write
       pull-requests: write
