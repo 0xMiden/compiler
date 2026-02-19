@@ -11,7 +11,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub use miden_field::Felt;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(all(target_family = "wasm", miden)))]
 use miden_field::PrimeField64;
 /// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
 pub use miden_field_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
