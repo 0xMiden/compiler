@@ -2491,7 +2491,7 @@ dependencies = [
 [[package]]
 name = "miden-field"
 version = "0.22.2"
-source = "git+https://github.com/0xMiden/crypto?rev=21199a35d0a9e60bd210e95f72f08491c7af54dc#21199a35d0a9e60bd210e95f72f08491c7af54dc"
+source = "git+https://github.com/0xMiden/crypto?rev=7e5a2cbc1de2c0b289590d6c25ac476b319dd148#7e5a2cbc1de2c0b289590d6c25ac476b319dd148"
 dependencies = [
  "miden-serde-utils",
  "num-bigint",
@@ -2765,7 +2765,7 @@ version = "0.10.0"
 [[package]]
 name = "miden-serde-utils"
 version = "0.22.2"
-source = "git+https://github.com/0xMiden/crypto?rev=21199a35d0a9e60bd210e95f72f08491c7af54dc#21199a35d0a9e60bd210e95f72f08491c7af54dc"
+source = "git+https://github.com/0xMiden/crypto?rev=7e5a2cbc1de2c0b289590d6c25ac476b319dd148#7e5a2cbc1de2c0b289590d6c25ac476b319dd148"
 dependencies = [
  "p3-field",
  "p3-goldilocks",
