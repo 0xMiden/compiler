@@ -503,6 +503,10 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.2
+    push.0
+    mul.4294967296
+    add
+    dup.0
     locaddr.5
     push.0
     swap.1
@@ -512,6 +516,10 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.3
+    push.0
+    mul.4294967296
+    add
+    dup.0
     locaddr.6
     push.0
     swap.1
@@ -521,6 +529,10 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.4
+    push.0
+    mul.4294967296
+    add
+    dup.0
     locaddr.7
     push.0
     swap.1
@@ -530,6 +542,10 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.5
+    push.0
+    mul.4294967296
+    add
+    dup.0
     locaddr.8
     push.0
     swap.1
@@ -548,10 +564,10 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     nop
     push.8
     u32wrapping_add
-    push.5
-    push.4
-    push.3
-    push.2
+    swap.1
+    swap.3
+    swap.1
+    swap.4
     trace.240
     nop
     exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_word::wit_import6
@@ -658,12 +674,24 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.3
+    push.0
+    mul.4294967296
+    add
     assert_eq
     push.5
+    push.0
+    mul.4294967296
+    add
     assert_eq
     push.7
+    push.0
+    mul.4294967296
+    add
     assert_eq
     push.9
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.5
     push.0
@@ -841,6 +869,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.4
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.7
     push.0
@@ -851,6 +882,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.6
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.6
     push.0
@@ -861,6 +895,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.8
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.5
     push.0
@@ -871,16 +908,28 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.10
+    push.0
+    mul.4294967296
+    add
     assert_eq
     push.9
+    push.0
+    mul.4294967296
+    add
     trace.240
     nop
     exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_felt::wit_import1
     trace.252
     nop
     push.12
+    push.0
+    mul.4294967296
+    add
     assert_eq
     push.10
+    push.0
+    mul.4294967296
+    add
     locaddr.5
     push.0
     swap.1
@@ -890,6 +939,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.20
+    push.0
+    mul.4294967296
+    add
     locaddr.6
     push.0
     swap.1
@@ -1019,6 +1071,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.14
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.5
     push.0
@@ -1029,6 +1084,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.24
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.4
     push.0
@@ -1041,8 +1099,17 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     push.8
     u32wrapping_add
     push.300
+    push.0
+    mul.4294967296
+    add
     push.200
+    push.0
+    mul.4294967296
+    add
     push.100
+    push.0
+    mul.4294967296
+    add
     trace.240
     nop
     exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_triple::wit_import5
@@ -1140,6 +1207,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.105
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.6
     push.0
@@ -1150,6 +1220,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.205
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.5
     push.0
@@ -1160,6 +1233,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.305
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.4
     push.0
@@ -1175,6 +1251,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     push.0
     push.111
     push.50
+    push.0
+    mul.4294967296
+    add
     push.4294967285
     push.4294967290
     push.4294967294
@@ -1420,10 +1499,13 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         assert_eq
         trace.240
         nop
-        exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::<miden_field::wasm32::Felt as core::convert::From<u32>>::from
+        exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::<miden_field::wasm_miden::Felt>::from_u32
         trace.252
         nop
         push.4294967295
+        push.0
+        mul.4294967296
+        add
         assert_eq
         locaddr.5
         push.0
@@ -1434,6 +1516,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         trace.252
         nop
         push.57
+        push.0
+        mul.4294967296
+        add
         assert_eq
         locaddr.14
         push.0
@@ -1445,10 +1530,13 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         nop
         trace.240
         nop
-        exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::<miden_field::wasm32::Felt as core::convert::From<u8>>::from
+        exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::<miden_field::wasm_miden::Felt as core::convert::From<u8>>::from
         trace.252
         nop
         push.122
+        push.0
+        mul.4294967296
+        add
         assert_eq
         locaddr.13
         push.0
@@ -1460,10 +1548,16 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         nop
         push.1
         push.0
+        mul.4294967296
+        add
+        push.0
         push.255
         movup.3
         u32and
         neq
+        push.0
+        mul.4294967296
+        add
         assert_eq
         locaddr.12
         push.0
@@ -1475,10 +1569,13 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         nop
         trace.240
         nop
-        exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::<miden_field::wasm32::Felt as core::convert::From<u16>>::from
+        exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::<miden_field::wasm_miden::Felt as core::convert::From<u16>>::from
         trace.252
         nop
         push.12
+        push.0
+        mul.4294967296
+        add
         assert_eq
         locaddr.4
         push.0
@@ -1491,8 +1588,17 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         push.8
         u32wrapping_add
         push.50
+        push.0
+        mul.4294967296
+        add
         push.40
+        push.0
+        mul.4294967296
+        add
         push.30
+        push.0
+        mul.4294967296
+        add
         trace.240
         nop
         exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word::cross_ctx_note_word::bindings::miden::cross_ctx_account_word::foo::process_nested::wit_import6
@@ -1590,6 +1696,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         trace.252
         nop
         push.38
+        push.0
+        mul.4294967296
+        add
         assert_eq
         locaddr.6
         push.0
@@ -1600,6 +1709,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         trace.252
         nop
         push.48
+        push.0
+        mul.4294967296
+        add
         assert_eq
         locaddr.5
         push.0
@@ -1610,6 +1722,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
         trace.252
         nop
         push.58
+        push.0
+        mul.4294967296
+        add
         assert_eq
         locaddr.4
         push.0
@@ -1728,7 +1843,7 @@ end
 
 @locals("1")
 @callconv("C")
-proc <miden_field::wasm32::Felt as core::convert::From<u32>>::from(
+proc <miden_field::wasm_miden::Felt>::from_u32(
     i32
 ) -> felt
     nop
@@ -1736,7 +1851,7 @@ end
 
 @locals("1")
 @callconv("C")
-proc <miden_field::wasm32::Felt as core::convert::From<u16>>::from(
+proc <miden_field::wasm_miden::Felt as core::convert::From<u16>>::from(
     i32
 ) -> felt
     push.65535
@@ -1745,7 +1860,7 @@ end
 
 @locals("1")
 @callconv("C")
-proc <miden_field::wasm32::Felt as core::convert::From<u8>>::from(
+proc <miden_field::wasm_miden::Felt as core::convert::From<u8>>::from(
     i32
 ) -> felt
     push.255

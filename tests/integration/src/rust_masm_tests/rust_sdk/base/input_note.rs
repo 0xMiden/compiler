@@ -111,7 +111,7 @@ fn rust_sdk_input_note_get_metadata_binding() {
     run_input_note_binding_test(
         "rust_sdk_input_note_get_metadata_binding",
         "pub fn binding(&self) -> Word {
-        input_note::get_metadata(NoteIdx { inner: Felt::new(0) })
+        input_note::get_metadata(NoteIdx { inner: Felt::new(0) }).header
     }",
     );
 }

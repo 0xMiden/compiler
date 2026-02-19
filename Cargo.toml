@@ -156,7 +156,8 @@ midenc-expect-test = { path = "tools/expect-test" }
 miden-test-harness = { path = "test-harness/test-harness-lib" }
 miden-test-harness-macros = { path = "test-harness/test-harness-macros" }
 # TODO: switch to version after miden-crypto release
-miden-field = { path = "../../unified-felt/crypto/miden-field", version = "0.22" }
+# miden-field = { path = "../../unified-felt/crypto/miden-field", version = "0.22" }
+miden-field = { git = "https://github.com/0xMiden/crypto", rev = "21199a35d0a9e60bd210e95f72f08491c7af54dc", version = "0.22" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }

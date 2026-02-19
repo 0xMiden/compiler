@@ -1,18 +1,18 @@
 builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @component_macros_note {
-        private builtin.function @component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: i32) {
+        private builtin.function @component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import19(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: i32) {
         ^block3(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: i32):
             v13, v14 = hir.call v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 : felt, felt #[callee = miden:component-macros-account/component-macros-account@0.1.0/test-custom-types] #[signature = (cc canon-lower) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (result felt felt)];
-            v147 = arith.constant 0 : i32;
-            v145 = arith.constant 0 : i32;
-            v16 = arith.add v12, v145 : i32 #[overflow = unchecked];
-            v18 = arith.add v16, v147 : i32 #[overflow = unchecked];
+            v240 = arith.constant 0 : i32;
+            v238 = arith.constant 0 : i32;
+            v16 = arith.add v12, v238 : i32 #[overflow = unchecked];
+            v18 = arith.add v16, v240 : i32 #[overflow = unchecked];
             v19 = hir.int_to_ptr v18 : ptr<byte, felt>;
             hir.store v19, v13;
-            v146 = arith.constant 0 : i32;
-            v142 = arith.constant 4 : i32;
-            v21 = arith.add v12, v142 : i32 #[overflow = unchecked];
-            v23 = arith.add v21, v146 : i32 #[overflow = unchecked];
+            v239 = arith.constant 0 : i32;
+            v235 = arith.constant 4 : i32;
+            v21 = arith.add v12, v235 : i32 #[overflow = unchecked];
+            v23 = arith.add v21, v239 : i32 #[overflow = unchecked];
             v24 = hir.int_to_ptr v23 : ptr<byte, felt>;
             hir.store v24, v14;
             builtin.ret ;
@@ -33,149 +33,280 @@ builtin.component miden:base/note-script@1.0.0 {
             v29 = builtin.global_symbol @miden:base/note-script@1.0.0/component_macros_note/__stack_pointer : ptr<byte, u8>
             v30 = hir.bitcast v29 : ptr<byte, i32>;
             v31 = hir.load v30 : i32;
-            v167 = arith.constant 16 : i32;
-            v33 = arith.sub v31, v167 : i32 #[overflow = wrapping];
+            v260 = arith.constant 32 : i32;
+            v33 = arith.sub v31, v260 : i32 #[overflow = wrapping];
             hir.store_local v33 #[local = lv4];
             v34 = builtin.global_symbol @miden:base/note-script@1.0.0/component_macros_note/__stack_pointer : ptr<byte, u8>
             v35 = hir.bitcast v34 : ptr<byte, i32>;
             hir.store v35, v33;
             hir.exec @miden:base/note-script@1.0.0/component_macros_note/wit_bindgen::rt::run_ctors_once()
-            v166 = arith.constant 11 : i64;
-            v37 = arith.trunc v166 : felt;
+            v259 = arith.constant 11 : i64;
+            v37 = arith.trunc v259 : felt;
             hir.store_local v37 #[local = lv5];
-            v155 = arith.constant 99 : felt;
-            hir.store_local v155 #[local = lv9];
-            v154 = arith.constant 88 : felt;
-            hir.store_local v154 #[local = lv10];
-            v52 = hir.load_local  : i32 #[local = lv4];
-            v161 = arith.constant 8 : u32;
-            v54 = hir.bitcast v52 : u32;
-            v56 = arith.add v54, v161 : u32 #[overflow = checked];
-            v190 = arith.constant 8 : u32;
-            v58 = arith.mod v56, v190 : u32;
-            hir.assertz v58 #[code = 250];
-            v162 = arith.constant 0 : i64;
-            v59 = hir.int_to_ptr v56 : ptr<byte, i64>;
-            hir.store v59, v162;
-            v60 = hir.load_local  : felt #[local = lv5];
-            v64 = hir.load_local  : felt #[local = lv9];
-            v65 = hir.load_local  : felt #[local = lv10];
-            v72 = hir.load_local  : i32 #[local = lv4];
-            v160 = arith.constant 8 : i32;
-            v74 = arith.add v72, v160 : i32 #[overflow = wrapping];
-            v152 = arith.constant 66 : felt;
-            v153 = arith.constant 77 : felt;
-            v163 = arith.constant 44 : i64;
-            v43 = arith.trunc v163 : felt;
-            v164 = arith.constant 33 : i64;
-            v41 = arith.trunc v164 : felt;
-            v165 = arith.constant 22 : i64;
-            v39 = arith.trunc v165 : felt;
-            hir.exec @miden:base/note-script@1.0.0/component_macros_note/component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import22(v60, v39, v41, v43, v64, v65, v153, v152, v64, v65, v153, v152, v74)
+            v258 = arith.constant 22 : i64;
+            v39 = arith.trunc v258 : felt;
+            hir.store_local v39 #[local = lv6];
+            v257 = arith.constant 33 : i64;
+            v41 = arith.trunc v257 : felt;
+            hir.store_local v41 #[local = lv7];
+            v256 = arith.constant 44 : i64;
+            v43 = arith.trunc v256 : felt;
+            hir.store_local v43 #[local = lv8];
+            v255 = arith.constant 99 : i64;
+            v45 = arith.trunc v255 : felt;
+            hir.store_local v45 #[local = lv9];
+            v254 = arith.constant 88 : i64;
+            v47 = arith.trunc v254 : felt;
+            hir.store_local v47 #[local = lv10];
+            v253 = arith.constant 77 : i64;
+            v49 = arith.trunc v253 : felt;
+            hir.store_local v49 #[local = lv11];
+            v50 = hir.load_local  : i32 #[local = lv4];
+            v251 = arith.constant 28 : u32;
+            v53 = hir.bitcast v50 : u32;
+            v55 = arith.add v53, v251 : u32 #[overflow = checked];
+            v250 = arith.constant 4 : u32;
+            v57 = arith.mod v55, v250 : u32;
+            hir.assertz v57 #[code = 250];
+            v252 = arith.constant 66 : i64;
+            v52 = arith.trunc v252 : felt;
+            v58 = hir.int_to_ptr v55 : ptr<byte, felt>;
+            hir.store v58, v52;
+            v59 = hir.load_local  : i32 #[local = lv4];
+            v60 = hir.load_local  : felt #[local = lv11];
+            v249 = arith.constant 24 : u32;
+            v61 = hir.bitcast v59 : u32;
+            v63 = arith.add v61, v249 : u32 #[overflow = checked];
+            v307 = arith.constant 4 : u32;
+            v65 = arith.mod v63, v307 : u32;
+            hir.assertz v65 #[code = 250];
+            v66 = hir.int_to_ptr v63 : ptr<byte, felt>;
+            hir.store v66, v60;
+            v67 = hir.load_local  : i32 #[local = lv4];
+            v68 = hir.load_local  : felt #[local = lv10];
+            v248 = arith.constant 20 : u32;
+            v69 = hir.bitcast v67 : u32;
+            v71 = arith.add v69, v248 : u32 #[overflow = checked];
+            v306 = arith.constant 4 : u32;
+            v73 = arith.mod v71, v306 : u32;
+            hir.assertz v73 #[code = 250];
+            v74 = hir.int_to_ptr v71 : ptr<byte, felt>;
+            hir.store v74, v68;
             v75 = hir.load_local  : i32 #[local = lv4];
-            v159 = arith.constant 12 : u32;
-            v76 = hir.bitcast v75 : u32;
-            v78 = arith.add v76, v159 : u32 #[overflow = checked];
-            v158 = arith.constant 4 : u32;
-            v80 = arith.mod v78, v158 : u32;
-            hir.assertz v80 #[code = 250];
-            v81 = hir.int_to_ptr v78 : ptr<byte, felt>;
-            v82 = hir.load v81 : felt;
-            hir.store_local v82 #[local = lv10];
+            v76 = hir.load_local  : felt #[local = lv9];
+            v247 = arith.constant 16 : u32;
+            v77 = hir.bitcast v75 : u32;
+            v79 = arith.add v77, v247 : u32 #[overflow = checked];
+            v305 = arith.constant 4 : u32;
+            v81 = arith.mod v79, v305 : u32;
+            hir.assertz v81 #[code = 250];
+            v82 = hir.int_to_ptr v79 : ptr<byte, felt>;
+            hir.store v82, v76;
             v83 = hir.load_local  : i32 #[local = lv4];
-            v189 = arith.constant 8 : u32;
-            v84 = hir.bitcast v83 : u32;
-            v86 = arith.add v84, v189 : u32 #[overflow = checked];
-            v188 = arith.constant 4 : u32;
-            v88 = arith.mod v86, v188 : u32;
-            hir.assertz v88 #[code = 250];
-            v89 = hir.int_to_ptr v86 : ptr<byte, felt>;
-            v90 = hir.load v89 : felt;
-            v91 = hir.load_local  : felt #[local = lv5];
-            v156 = arith.constant 0 : i32;
-            v157 = arith.constant 1 : i32;
-            v92 = arith.eq v90, v91 : i1;
-            v93 = hir.cast v92 : i32;
-            v95 = arith.neq v93, v157 : i1;
-            v96 = arith.zext v95 : u32;
-            v97 = hir.bitcast v96 : i32;
-            v99 = arith.neq v97, v156 : i1;
-            v178 = scf.if v99 : u32 {
-            ^block24:
-                v174 = arith.constant 0 : u32;
-                scf.yield v174;
+            v246 = arith.constant 16 : i32;
+            v86 = arith.add v83, v246 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/component_macros_note/<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from(v83, v86)
+            v87 = hir.load_local  : i32 #[local = lv4];
+            v88 = hir.bitcast v87 : u32;
+            v304 = arith.constant 4 : u32;
+            v90 = arith.mod v88, v304 : u32;
+            hir.assertz v90 #[code = 250];
+            v91 = hir.int_to_ptr v88 : ptr<byte, felt>;
+            v92 = hir.load v91 : felt;
+            hir.store_local v92 #[local = lv9];
+            v93 = hir.load_local  : i32 #[local = lv4];
+            v303 = arith.constant 4 : u32;
+            v94 = hir.bitcast v93 : u32;
+            v96 = arith.add v94, v303 : u32 #[overflow = checked];
+            v302 = arith.constant 4 : u32;
+            v98 = arith.mod v96, v302 : u32;
+            hir.assertz v98 #[code = 250];
+            v99 = hir.int_to_ptr v96 : ptr<byte, felt>;
+            v100 = hir.load v99 : felt;
+            hir.store_local v100 #[local = lv10];
+            v101 = hir.load_local  : i32 #[local = lv4];
+            v245 = arith.constant 8 : u32;
+            v102 = hir.bitcast v101 : u32;
+            v104 = arith.add v102, v245 : u32 #[overflow = checked];
+            v301 = arith.constant 4 : u32;
+            v106 = arith.mod v104, v301 : u32;
+            hir.assertz v106 #[code = 250];
+            v107 = hir.int_to_ptr v104 : ptr<byte, felt>;
+            v108 = hir.load v107 : felt;
+            hir.store_local v108 #[local = lv11];
+            v109 = hir.load_local  : i32 #[local = lv4];
+            v244 = arith.constant 12 : u32;
+            v110 = hir.bitcast v109 : u32;
+            v112 = arith.add v110, v244 : u32 #[overflow = checked];
+            v300 = arith.constant 4 : u32;
+            v114 = arith.mod v112, v300 : u32;
+            hir.assertz v114 #[code = 250];
+            v115 = hir.int_to_ptr v112 : ptr<byte, felt>;
+            v116 = hir.load v115 : felt;
+            v117 = hir.load_local  : i32 #[local = lv4];
+            v299 = arith.constant 16 : u32;
+            v119 = hir.bitcast v117 : u32;
+            v121 = arith.add v119, v299 : u32 #[overflow = checked];
+            v298 = arith.constant 8 : u32;
+            v123 = arith.mod v121, v298 : u32;
+            hir.assertz v123 #[code = 250];
+            v243 = arith.constant 0 : i64;
+            v124 = hir.int_to_ptr v121 : ptr<byte, i64>;
+            hir.store v124, v243;
+            v125 = hir.load_local  : felt #[local = lv5];
+            v126 = hir.load_local  : felt #[local = lv6];
+            v127 = hir.load_local  : felt #[local = lv7];
+            v128 = hir.load_local  : felt #[local = lv8];
+            v129 = hir.load_local  : felt #[local = lv9];
+            v130 = hir.load_local  : felt #[local = lv10];
+            v131 = hir.load_local  : felt #[local = lv11];
+            v137 = hir.load_local  : i32 #[local = lv4];
+            v297 = arith.constant 16 : i32;
+            v139 = arith.add v137, v297 : i32 #[overflow = wrapping];
+            hir.exec @miden:base/note-script@1.0.0/component_macros_note/component_macros_note::bindings::miden::component_macros_account::component_macros_account::test_custom_types::wit_import19(v125, v126, v127, v128, v129, v130, v131, v116, v129, v130, v131, v116, v139)
+            v140 = hir.load_local  : i32 #[local = lv4];
+            v296 = arith.constant 20 : u32;
+            v141 = hir.bitcast v140 : u32;
+            v143 = arith.add v141, v296 : u32 #[overflow = checked];
+            v295 = arith.constant 4 : u32;
+            v145 = arith.mod v143, v295 : u32;
+            hir.assertz v145 #[code = 250];
+            v146 = hir.int_to_ptr v143 : ptr<byte, felt>;
+            v147 = hir.load v146 : felt;
+            hir.store_local v147 #[local = lv10];
+            v148 = hir.load_local  : i32 #[local = lv4];
+            v294 = arith.constant 16 : u32;
+            v149 = hir.bitcast v148 : u32;
+            v151 = arith.add v149, v294 : u32 #[overflow = checked];
+            v293 = arith.constant 4 : u32;
+            v153 = arith.mod v151, v293 : u32;
+            hir.assertz v153 #[code = 250];
+            v154 = hir.int_to_ptr v151 : ptr<byte, felt>;
+            v155 = hir.load v154 : felt;
+            v156 = hir.load_local  : felt #[local = lv5];
+            v241 = arith.constant 0 : i32;
+            v242 = arith.constant 1 : i32;
+            v157 = arith.eq v155, v156 : i1;
+            v158 = hir.cast v157 : i32;
+            v160 = arith.neq v158, v242 : i1;
+            v161 = arith.zext v160 : u32;
+            v162 = hir.bitcast v161 : i32;
+            v164 = arith.neq v162, v241 : i1;
+            v283 = scf.if v164 : u32 {
+            ^block26:
+                v279 = arith.constant 0 : u32;
+                scf.yield v279;
             } else {
             ^block15:
-                v100 = hir.load_local  : felt #[local = lv10];
-                v101 = hir.load_local  : felt #[local = lv9];
-                v186 = arith.constant 0 : i32;
-                v187 = arith.constant 1 : i32;
-                v102 = arith.eq v100, v101 : i1;
-                v103 = hir.cast v102 : i32;
-                v105 = arith.neq v103, v187 : i1;
-                v106 = arith.zext v105 : u32;
-                v107 = hir.bitcast v106 : i32;
-                v109 = arith.neq v107, v186 : i1;
-                scf.if v109{
-                ^block23:
+                v165 = hir.load_local  : felt #[local = lv10];
+                v166 = hir.load_local  : felt #[local = lv9];
+                v291 = arith.constant 0 : i32;
+                v292 = arith.constant 1 : i32;
+                v167 = arith.eq v165, v166 : i1;
+                v168 = hir.cast v167 : i32;
+                v170 = arith.neq v168, v292 : i1;
+                v171 = arith.zext v170 : u32;
+                v172 = hir.bitcast v171 : i32;
+                v174 = arith.neq v172, v291 : i1;
+                scf.if v174{
+                ^block25:
                     scf.yield ;
                 } else {
                 ^block16:
-                    v110 = hir.load_local  : i32 #[local = lv4];
-                    v185 = arith.constant 16 : i32;
-                    v112 = arith.add v110, v185 : i32 #[overflow = wrapping];
-                    v113 = builtin.global_symbol @miden:base/note-script@1.0.0/component_macros_note/__stack_pointer : ptr<byte, u8>
-                    v114 = hir.bitcast v113 : ptr<byte, i32>;
-                    hir.store v114, v112;
+                    v175 = hir.load_local  : i32 #[local = lv4];
+                    v290 = arith.constant 32 : i32;
+                    v177 = arith.add v175, v290 : i32 #[overflow = wrapping];
+                    v178 = builtin.global_symbol @miden:base/note-script@1.0.0/component_macros_note/__stack_pointer : ptr<byte, u8>
+                    v179 = hir.bitcast v178 : ptr<byte, i32>;
+                    hir.store v179, v177;
                     scf.yield ;
                 };
-                v176 = arith.constant 1 : u32;
-                v184 = arith.constant 0 : u32;
-                v182 = cf.select v109, v184, v176 : u32;
-                scf.yield v182;
+                v281 = arith.constant 1 : u32;
+                v289 = arith.constant 0 : u32;
+                v287 = cf.select v174, v289, v281 : u32;
+                scf.yield v287;
             };
-            v183 = arith.constant 0 : u32;
-            v181 = arith.eq v178, v183 : i1;
-            cf.cond_br v181 ^block14, ^block26;
+            v288 = arith.constant 0 : u32;
+            v286 = arith.eq v283, v288 : i1;
+            cf.cond_br v286 ^block14, ^block28;
         ^block14:
             ub.unreachable ;
-        ^block26:
+        ^block28:
             builtin.ret ;
         };
 
         private builtin.function @wit_bindgen::rt::run_ctors_once() {
         ^block17:
-            v115 = builtin.global_symbol @miden:base/note-script@1.0.0/component_macros_note/GOT.data.internal.__memory_base : ptr<byte, u8>
-            v116 = hir.bitcast v115 : ptr<byte, i32>;
-            v117 = hir.load v116 : i32;
-            v195 = arith.constant 1048588 : i32;
-            v119 = arith.add v117, v195 : i32 #[overflow = wrapping];
-            v120 = hir.bitcast v119 : u32;
-            v121 = hir.int_to_ptr v120 : ptr<byte, u8>;
-            v122 = hir.load v121 : u8;
-            v194 = arith.constant 0 : i32;
-            v123 = arith.zext v122 : u32;
-            v124 = hir.bitcast v123 : i32;
-            v126 = arith.neq v124, v194 : i1;
-            scf.if v126{
+            v180 = builtin.global_symbol @miden:base/note-script@1.0.0/component_macros_note/GOT.data.internal.__memory_base : ptr<byte, u8>
+            v181 = hir.bitcast v180 : ptr<byte, i32>;
+            v182 = hir.load v181 : i32;
+            v312 = arith.constant 1048588 : i32;
+            v184 = arith.add v182, v312 : i32 #[overflow = wrapping];
+            v185 = hir.bitcast v184 : u32;
+            v186 = hir.int_to_ptr v185 : ptr<byte, u8>;
+            v187 = hir.load v186 : u8;
+            v311 = arith.constant 0 : i32;
+            v188 = arith.zext v187 : u32;
+            v189 = hir.bitcast v188 : i32;
+            v191 = arith.neq v189, v311 : i1;
+            scf.if v191{
             ^block19:
                 scf.yield ;
             } else {
             ^block20:
-                v127 = builtin.global_symbol @miden:base/note-script@1.0.0/component_macros_note/GOT.data.internal.__memory_base : ptr<byte, u8>
-                v128 = hir.bitcast v127 : ptr<byte, i32>;
-                v129 = hir.load v128 : i32;
-                hir.store_local v129 #[local = lv0];
+                v192 = builtin.global_symbol @miden:base/note-script@1.0.0/component_macros_note/GOT.data.internal.__memory_base : ptr<byte, u8>
+                v193 = hir.bitcast v192 : ptr<byte, i32>;
+                v194 = hir.load v193 : i32;
+                hir.store_local v194 #[local = lv0];
                 hir.exec @miden:base/note-script@1.0.0/component_macros_note/__wasm_call_ctors()
-                v130 = hir.load_local  : i32 #[local = lv0];
-                v193 = arith.constant 1 : u8;
-                v198 = arith.constant 1048588 : i32;
-                v132 = arith.add v130, v198 : i32 #[overflow = wrapping];
-                v136 = hir.bitcast v132 : u32;
-                v137 = hir.int_to_ptr v136 : ptr<byte, u8>;
-                hir.store v137, v193;
+                v195 = hir.load_local  : i32 #[local = lv0];
+                v310 = arith.constant 1 : u8;
+                v315 = arith.constant 1048588 : i32;
+                v197 = arith.add v195, v315 : i32 #[overflow = wrapping];
+                v201 = hir.bitcast v197 : u32;
+                v202 = hir.int_to_ptr v201 : ptr<byte, u8>;
+                hir.store v202, v310;
                 scf.yield ;
             };
+            builtin.ret ;
+        };
+
+        private builtin.function @<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from(v203: i32, v204: i32) {
+        ^block21(v203: i32, v204: i32):
+            hir.store_local v203 #[local = lv0];
+            hir.store_local v204 #[local = lv1];
+            v205 = hir.load_local  : i32 #[local = lv0];
+            v206 = hir.load_local  : i32 #[local = lv1];
+            v317 = arith.constant 8 : u32;
+            v207 = hir.bitcast v206 : u32;
+            v209 = arith.add v207, v317 : u32 #[overflow = checked];
+            v316 = arith.constant 4 : u32;
+            v211 = arith.mod v209, v316 : u32;
+            hir.assertz v211 #[code = 250];
+            v212 = hir.int_to_ptr v209 : ptr<byte, i64>;
+            v213 = hir.load v212 : i64;
+            v325 = arith.constant 8 : u32;
+            v214 = hir.bitcast v205 : u32;
+            v216 = arith.add v214, v325 : u32 #[overflow = checked];
+            v324 = arith.constant 8 : u32;
+            v218 = arith.mod v216, v324 : u32;
+            hir.assertz v218 #[code = 250];
+            v219 = hir.int_to_ptr v216 : ptr<byte, i64>;
+            hir.store v219, v213;
+            v220 = hir.load_local  : i32 #[local = lv0];
+            v221 = hir.load_local  : i32 #[local = lv1];
+            v222 = hir.bitcast v221 : u32;
+            v323 = arith.constant 4 : u32;
+            v224 = arith.mod v222, v323 : u32;
+            hir.assertz v224 #[code = 250];
+            v225 = hir.int_to_ptr v222 : ptr<byte, i64>;
+            v226 = hir.load v225 : i64;
+            v227 = hir.bitcast v220 : u32;
+            v322 = arith.constant 8 : u32;
+            v229 = arith.mod v227, v322 : u32;
+            hir.assertz v229 #[code = 250];
+            v230 = hir.int_to_ptr v227 : ptr<byte, i64>;
+            hir.store v230, v226;
             builtin.ret ;
         };
 
@@ -190,9 +321,9 @@ builtin.component miden:base/note-script@1.0.0 {
         builtin.segment @1048576 = 0x000000010000000100000001;
     };
 
-    public builtin.function @run(v138: felt, v139: felt, v140: felt, v141: felt) {
-    ^block21(v138: felt, v139: felt, v140: felt, v141: felt):
-        hir.exec @miden:base/note-script@1.0.0/component_macros_note/miden:base/note-script@1.0.0#run(v138, v139, v140, v141)
+    public builtin.function @run(v231: felt, v232: felt, v233: felt, v234: felt) {
+    ^block23(v231: felt, v232: felt, v233: felt, v234: felt):
+        hir.exec @miden:base/note-script@1.0.0/component_macros_note/miden:base/note-script@1.0.0#run(v231, v232, v233, v234)
         builtin.ret ;
     };
 };

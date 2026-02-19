@@ -13,9 +13,11 @@ builtin.component miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-ac
         private builtin.function @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1#binding() -> felt {
         ^block9:
             hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/wit_bindgen::rt::run_ctors_once()
-            v36 = arith.constant 0 : felt;
-            v37 = arith.constant 1 : felt;
-            v5 = hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/miden::protocol::active_account::get_initial_balance(v37, v36) : felt
+            v34 = arith.constant 0 : i64;
+            v4 = arith.trunc v34 : felt;
+            v35 = arith.constant 1 : i64;
+            v2 = arith.trunc v35 : felt;
+            v5 = hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/miden::protocol::active_account::get_initial_balance(v2, v4) : felt
             builtin.ret v5;
         };
 
@@ -24,15 +26,15 @@ builtin.component miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-ac
             v6 = builtin.global_symbol @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/GOT.data.internal.__memory_base : ptr<byte, u8>
             v7 = hir.bitcast v6 : ptr<byte, i32>;
             v8 = hir.load v7 : i32;
-            v42 = arith.constant 1048584 : i32;
-            v10 = arith.add v8, v42 : i32 #[overflow = wrapping];
+            v40 = arith.constant 1048584 : i32;
+            v10 = arith.add v8, v40 : i32 #[overflow = wrapping];
             v11 = hir.bitcast v10 : u32;
             v12 = hir.int_to_ptr v11 : ptr<byte, u8>;
             v13 = hir.load v12 : u8;
-            v41 = arith.constant 0 : i32;
+            v39 = arith.constant 0 : i32;
             v14 = arith.zext v13 : u32;
             v15 = hir.bitcast v14 : i32;
-            v17 = arith.neq v15, v41 : i1;
+            v17 = arith.neq v15, v39 : i1;
             scf.if v17{
             ^block13:
                 scf.yield ;
@@ -44,12 +46,12 @@ builtin.component miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-ac
                 hir.store_local v20 #[local = lv0];
                 hir.exec @miden:rust-sdk-account-get-initial-balance-binding/rust-sdk-account-get-initial-balance-binding@0.0.1/rust_sdk_account_get_initial_balance_binding/__wasm_call_ctors()
                 v21 = hir.load_local  : i32 #[local = lv0];
-                v40 = arith.constant 1 : u8;
-                v45 = arith.constant 1048584 : i32;
-                v23 = arith.add v21, v45 : i32 #[overflow = wrapping];
+                v38 = arith.constant 1 : u8;
+                v43 = arith.constant 1048584 : i32;
+                v23 = arith.add v21, v43 : i32 #[overflow = wrapping];
                 v27 = hir.bitcast v23 : u32;
                 v28 = hir.int_to_ptr v27 : ptr<byte, u8>;
-                hir.store v28, v40;
+                hir.store v28, v38;
                 scf.yield ;
             };
             builtin.ret ;

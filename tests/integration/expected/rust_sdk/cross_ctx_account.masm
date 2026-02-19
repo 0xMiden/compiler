@@ -112,6 +112,9 @@ proc miden:cross-ctx-account/foo@1.0.0#process-felt(felt) -> felt
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    push.0
+    mul.4294967296
+    add
     add
     dup.0
     locaddr.0

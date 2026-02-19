@@ -18,7 +18,8 @@
     (type (;2;) (func (param f32 f32 f32 f32)))
     (type (;3;) (func (param i32 f32)))
     (type (;4;) (func (param i32 i32)))
-    (type (;5;) (func (param f32 f32 f32 f32 i32)))
+    (type (;5;) (func (param i32 i32 i32) (result i32)))
+    (type (;6;) (func (param f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -98,7 +99,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048584
+        i32.const 1048612
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -106,38 +107,69 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048584
+        i32.const 1048612
         i32.add
         i32.const 1
         i32.store8
       end
     )
     (func $miden_base_sys::bindings::output_note::add_asset (;5;) (type 3) (param i32 f32)
+      (local i32)
       local.get 0
-      f32.load offset=12
+      i32.const 3
+      global.get $GOT.data.internal.__memory_base
+      i32.const 1048596
+      i32.add
+      local.tee 2
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 0
-      f32.load offset=8
+      i32.const 2
+      local.get 2
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 0
-      f32.load offset=4
+      i32.const 1
+      local.get 2
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 0
+      i32.const 0
+      local.get 2
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
       f32.load
       local.get 1
       call $miden::protocol::output_note::add_asset
     )
     (func $miden_base_sys::bindings::native_account::remove_asset (;6;) (type 4) (param i32 i32)
-      (local i32)
+      (local i32 i32)
       global.get $__stack_pointer
       i32.const 16
       i32.sub
       local.tee 2
       global.set $__stack_pointer
       local.get 1
-      f32.load offset=12
+      i32.const 3
+      global.get $GOT.data.internal.__memory_base
+      i32.const 1048596
+      i32.add
+      local.tee 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 1
-      f32.load offset=8
+      i32.const 2
+      local.get 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 1
-      f32.load offset=4
+      i32.const 1
+      local.get 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 1
+      i32.const 0
+      local.get 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
       f32.load
       local.get 2
       call $miden::protocol::native_account::remove_asset
@@ -159,19 +191,34 @@
       global.set $__stack_pointer
     )
     (func $miden_base_sys::bindings::native_account::add_asset (;7;) (type 4) (param i32 i32)
-      (local i32)
+      (local i32 i32)
       global.get $__stack_pointer
       i32.const 16
       i32.sub
       local.tee 2
       global.set $__stack_pointer
       local.get 1
-      f32.load offset=12
+      i32.const 3
+      global.get $GOT.data.internal.__memory_base
+      i32.const 1048596
+      i32.add
+      local.tee 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 1
-      f32.load offset=8
+      i32.const 2
+      local.get 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 1
-      f32.load offset=4
+      i32.const 1
+      local.get 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 1
+      i32.const 0
+      local.get 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
       f32.load
       local.get 2
       call $miden::protocol::native_account::add_asset
@@ -192,16 +239,32 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $miden::protocol::native_account::add_asset (;8;) (type 5) (param f32 f32 f32 f32 i32)
+    (func $<miden_field::word::Word as core::ops::index::Index<usize>>::index (;8;) (type 5) (param i32 i32 i32) (result i32)
+      block ;; label = @1
+        local.get 1
+        i32.const 3
+        i32.gt_u
+        br_if 0 (;@1;)
+        local.get 0
+        local.get 1
+        i32.const 2
+        i32.shl
+        i32.add
+        return
+      end
       unreachable
     )
-    (func $miden::protocol::native_account::remove_asset (;9;) (type 5) (param f32 f32 f32 f32 i32)
+    (func $miden::protocol::native_account::add_asset (;9;) (type 6) (param f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::protocol::output_note::add_asset (;10;) (type 1) (param f32 f32 f32 f32 f32)
+    (func $miden::protocol::native_account::remove_asset (;10;) (type 6) (param f32 f32 f32 f32 i32)
       unreachable
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
+    (func $miden::protocol::output_note::add_asset (;11;) (type 1) (param f32 f32 f32 f32 f32)
+      unreachable
+    )
+    (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00")
+    (data $.data (;1;) (i32.const 1048588) "\01\00\00\00\01\00\00\00\00\00\10\00\0a\00\00\00\00\00\00\00\00\00\00\00")
     (@custom "rodata,miden_account" (after data) "\19basic_wallet\01\0b0.1.0\03\01\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "asset" (type $asset (;1;)))

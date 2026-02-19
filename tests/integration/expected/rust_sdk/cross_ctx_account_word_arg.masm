@@ -251,14 +251,26 @@ proc miden:cross-ctx-account-word-arg/foo@1.0.0#process-word(
     trace.252
     nop
     push.8
+    push.0
+    mul.4294967296
+    add
     mul
     push.4
+    push.0
+    mul.4294967296
+    add
     movup.2
     mul
     push.2
+    push.0
+    mul.4294967296
+    add
     movup.3
     mul
     push.1
+    push.0
+    mul.4294967296
+    add
     movup.4
     mul
     add
@@ -305,14 +317,26 @@ proc miden:cross-ctx-account-word-arg/foo@1.0.0#process-word(
     trace.252
     nop
     push.128
+    push.0
+    mul.4294967296
+    add
     mul
     push.64
+    push.0
+    mul.4294967296
+    add
     movup.2
     mul
     push.32
+    push.0
+    mul.4294967296
+    add
     movup.3
     mul
     push.16
+    push.0
+    mul.4294967296
+    add
     movup.4
     mul
     add
@@ -359,14 +383,26 @@ proc miden:cross-ctx-account-word-arg/foo@1.0.0#process-word(
     trace.252
     nop
     push.2048
+    push.0
+    mul.4294967296
+    add
     mul
     push.1024
+    push.0
+    mul.4294967296
+    add
     movup.2
     mul
     push.512
+    push.0
+    mul.4294967296
+    add
     movup.3
     mul
     push.256
+    push.0
+    mul.4294967296
+    add
     movup.4
     mul
     add
@@ -405,11 +441,20 @@ proc miden:cross-ctx-account-word-arg/foo@1.0.0#process-word(
     trace.252
     nop
     push.16384
+    push.0
+    mul.4294967296
+    add
     mul
     push.8192
+    push.0
+    mul.4294967296
+    add
     movup.2
     mul
     push.4096
+    push.0
+    mul.4294967296
+    add
     movup.3
     mul
     add

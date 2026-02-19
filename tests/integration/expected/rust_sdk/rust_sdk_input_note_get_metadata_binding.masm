@@ -146,6 +146,9 @@ proc miden:rust-sdk-input-note-get-metadata-binding/rust-sdk-input-note-get-meta
     trace.252
     nop
     push.0
+    push.0
+    mul.4294967296
+    add
     swap.1
     trace.240
     nop

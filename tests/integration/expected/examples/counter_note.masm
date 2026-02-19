@@ -110,6 +110,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.1
+    push.0
+    mul.4294967296
+    add
     add
     locaddr.4
     push.0

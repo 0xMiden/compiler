@@ -119,6 +119,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
+    push.0
+    mul.4294967296
+    add
     dup.0
     locaddr.5
     push.0
@@ -129,6 +132,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.11
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.5
     push.0
@@ -153,6 +159,9 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     push.53
+    push.0
+    mul.4294967296
+    add
     assert_eq
     locaddr.4
     push.0
