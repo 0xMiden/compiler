@@ -141,10 +141,10 @@ impl NoteMetadata {
     }
 
     #[inline]
-    pub(crate) fn reverse(self) -> Self {
+    pub(crate) fn reversed(self) -> Self {
         Self {
-            attachment: self.attachment.reverse(),
-            header: self.header.reverse(),
+            attachment: self.attachment.reversed(),
+            header: self.header.reversed(),
         }
     }
 }

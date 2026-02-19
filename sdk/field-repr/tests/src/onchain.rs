@@ -6,11 +6,10 @@
 use std::borrow::Cow;
 
 use miden_debug::{ExecutionTrace, Felt as TestFelt};
-use miden_field::Felt;
+use miden_field::{Felt, PrimeField64};
 use miden_field_repr::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
 use miden_integration_tests::testing::{Initializer, eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use p3_field::PrimeField64;
 
 use crate::build_felt_repr_test;
 

@@ -11,12 +11,12 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub use miden_field::Felt;
+#[cfg(not(target_family = "wasm"))]
+use miden_field::PrimeField64;
 /// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
 pub use miden_field_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
 /// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
 pub use miden_field_repr_derive::DeriveToFeltRepr as ToFeltRepr;
-#[allow(unused_imports)]
-use p3_field::PrimeField64;
 
 /// Error returned when decoding a type from its felt representation.
 #[derive(Debug, Clone, PartialEq, Eq)]
