@@ -2568,6 +2568,7 @@ dependencies = [
  "midenc-hir-eval",
  "midenc-log",
  "midenc-session",
+ "num-traits",
  "proptest",
  "sha2",
  "walkdir",

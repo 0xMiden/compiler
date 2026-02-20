@@ -35,6 +35,7 @@ midenc-hir-eval.workspace = true
 midenc-codegen-masm.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true
+num-traits = "0.2"
 cargo-miden.workspace = true
 wasmprinter = "0.227"
 proptest.workspace = true
