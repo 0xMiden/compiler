@@ -5,3 +5,4 @@ mod counter_contract;
 mod counter_contract_no_auth;
 mod counter_contract_rust_auth;
 mod helpers;
+mod scenario;
