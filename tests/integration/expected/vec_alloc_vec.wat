@@ -5,8 +5,9 @@
   (type (;3;) (func))
   (type (;4;) (func (param i32 i32 i32) (result i32)))
   (type (;5;) (func (result i32)))
-  (type (;6;) (func (param i32 i32)))
-  (type (;7;) (func (param i32 i32 i32 i32)))
+  (type (;6;) (func (param i64) (result f32)))
+  (type (;7;) (func (param i32 i32)))
+  (type (;8;) (func (param i32 i32 i32 i32)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 17)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -35,15 +36,15 @@
         local.tee 2
         i32.eqz
         br_if 0 (;@2;)
-        i32.const 1
-        call $intrinsics::felt::from_u32
+        i64.const 1
+        call $intrinsics::felt::from_u64_unchecked
         local.set 3
-        i32.const 2
-        call $intrinsics::felt::from_u32
+        i64.const 2
+        call $intrinsics::felt::from_u64_unchecked
         local.set 4
         local.get 2
-        i32.const 3
-        call $intrinsics::felt::from_u32
+        i64.const 3
+        call $intrinsics::felt::from_u64_unchecked
         f32.store offset=8
         local.get 2
         local.get 4
@@ -168,10 +169,10 @@
   (func $intrinsics::mem::heap_base (;5;) (type 5) (result i32)
     unreachable
   )
-  (func $intrinsics::felt::from_u32 (;6;) (type 2) (param i32) (result f32)
+  (func $intrinsics::felt::from_u64_unchecked (;6;) (type 6) (param i64) (result f32)
     unreachable
   )
-  (func $alloc::alloc::handle_alloc_error (;7;) (type 6) (param i32 i32)
+  (func $alloc::alloc::handle_alloc_error (;7;) (type 7) (param i32 i32)
     unreachable
   )
   (func $<alloc::raw_vec::RawVecInner>::deallocate (;8;) (type 1) (param i32 i32 i32)
@@ -206,7 +207,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $<alloc::raw_vec::RawVecInner>::current_memory (;9;) (type 7) (param i32 i32 i32 i32)
+  (func $<alloc::raw_vec::RawVecInner>::current_memory (;9;) (type 8) (param i32 i32 i32 i32)
     (local i32 i32 i32)
     i32.const 0
     local.set 4

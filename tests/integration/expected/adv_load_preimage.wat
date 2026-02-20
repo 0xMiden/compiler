@@ -7,27 +7,26 @@
   (type (;5;) (func (param f32 f32 f32 f32) (result f32)))
   (type (;6;) (func (param f32) (result i64)))
   (type (;7;) (func (param f32 f32)))
-  (type (;8;) (func (param i32) (result f32)))
-  (type (;9;) (func (param i64) (result f32)))
-  (type (;10;) (func (param f32 i32 f32 f32 f32 f32) (result i32)))
+  (type (;8;) (func (param i64) (result f32)))
+  (type (;9;) (func (param f32 i32 f32 f32 f32 f32) (result i32)))
+  (type (;10;) (func (param i32 i32)))
   (type (;11;) (func (param i32 i32 i32 i32)))
   (type (;12;) (func (param i32 i32 i32)))
   (type (;13;) (func (param i32 i32 i32 i32 i32)))
-  (type (;14;) (func (param i32 i32)))
   (table (;0;) 1 1 funcref)
   (memory (;0;) 17)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
   (export "memory" (memory 0))
   (export "entrypoint" (func $entrypoint))
   (func $__rustc::__rust_alloc (;0;) (type 0) (param i32 i32) (result i32)
-    i32.const 1048576
+    i32.const 1048604
     local.get 1
     local.get 0
     call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
   )
   (func $__rustc::__rust_alloc_zeroed (;1;) (type 0) (param i32 i32) (result i32)
     block ;; label = @1
-      i32.const 1048576
+      i32.const 1048604
       local.get 1
       local.get 0
       call $<miden_sdk_alloc::BumpAlloc as core::alloc::global::GlobalAlloc>::alloc
@@ -45,114 +44,195 @@
     local.get 1
   )
   (func $entrypoint (;2;) (type 1) (param i32 f32 f32 f32 f32)
-    (local i32 i64 f32 i32 i32 i32)
+    (local i32 i64 i32 i32 i32)
     global.get $__stack_pointer
-    i32.const 16
+    i32.const 48
     i32.sub
     local.tee 5
     global.set $__stack_pointer
+    local.get 5
     local.get 4
+    f32.store offset=28
+    local.get 5
     local.get 3
+    f32.store offset=24
+    local.get 5
     local.get 2
+    f32.store offset=20
+    local.get 5
     local.get 1
+    f32.store offset=16
+    local.get 5
+    local.get 5
+    i32.const 16
+    i32.add
+    call $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
+    local.get 5
+    local.get 5
+    i64.load offset=8
+    i64.store offset=24
+    local.get 5
+    local.get 5
+    i64.load
+    i64.store offset=16
+    local.get 5
+    i32.const 16
+    i32.add
+    i32.const 3
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 5
+    i32.const 16
+    i32.add
+    i32.const 2
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 5
+    i32.const 16
+    i32.add
+    i32.const 1
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
+    local.get 5
+    i32.const 16
+    i32.add
+    i32.const 0
+    i32.const 1048588
+    call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    f32.load
     call $intrinsics::advice::adv_push_mapvaln
     call $intrinsics::felt::as_u64
     local.tee 6
-    i32.wrap_i64
-    i32.const 3
-    i32.and
-    call $intrinsics::felt::from_u32
-    i32.const 0
-    call $intrinsics::felt::from_u32
+    i64.const 3
+    i64.and
+    call $intrinsics::felt::from_u64_unchecked
+    i64.const 0
+    call $intrinsics::felt::from_u64_unchecked
     call $intrinsics::felt::assert_eq
-    local.get 5
-    i32.const 4
-    i32.add
     local.get 6
     i64.const 2
     i64.shr_u
     call $intrinsics::felt::from_u64_unchecked
-    local.tee 7
+    local.set 4
+    local.get 5
+    local.get 5
+    i64.load offset=8
+    i64.store offset=24
+    local.get 5
+    local.get 5
+    i64.load
+    i64.store offset=16
+    local.get 5
+    i32.const 36
+    i32.add
+    local.get 4
     call $intrinsics::felt::as_u64
     i32.wrap_i64
     i32.const 2
     i32.shl
-    local.tee 8
+    local.tee 7
     i32.const 0
     i32.const 4
     i32.const 4
     call $<alloc::raw_vec::RawVecInner>::try_allocate_in
     local.get 5
-    i32.load offset=8
-    local.set 9
+    i32.load offset=40
+    local.set 8
     block ;; label = @1
       block ;; label = @2
         local.get 5
-        i32.load offset=4
+        i32.load offset=36
         i32.const 1
         i32.eq
         br_if 0 (;@2;)
-        local.get 7
+        local.get 4
         local.get 5
-        i32.load offset=12
-        local.tee 10
+        i32.load offset=44
+        local.tee 9
         i32.const 2
         i32.shr_u
-        local.get 4
-        local.get 3
-        local.get 2
-        local.get 1
+        local.get 5
+        i32.const 16
+        i32.add
+        i32.const 3
+        i32.const 1048588
+        call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+        f32.load
+        local.get 5
+        i32.const 16
+        i32.add
+        i32.const 2
+        i32.const 1048588
+        call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+        f32.load
+        local.get 5
+        i32.const 16
+        i32.add
+        i32.const 1
+        i32.const 1048588
+        call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+        f32.load
+        local.get 5
+        i32.const 16
+        i32.add
+        i32.const 0
+        i32.const 1048588
+        call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+        f32.load
         call $miden::core::mem::pipe_preimage_to_memory
         drop
         local.get 0
-        local.get 8
+        local.get 7
         i32.store offset=8
         local.get 0
-        local.get 10
+        local.get 9
         i32.store offset=4
         local.get 0
-        local.get 9
-        i32.store
         local.get 8
+        i32.store
+        local.get 7
         i32.eqz
         br_if 1 (;@1;)
-        local.get 10
+        local.get 9
         f32.load
-        i32.const 1
-        call $intrinsics::felt::from_u32
+        i64.const 1
+        call $intrinsics::felt::from_u64_unchecked
         call $intrinsics::felt::assert_eq
-        local.get 10
+        local.get 9
         f32.load offset=4
-        i32.const 2
-        call $intrinsics::felt::from_u32
+        i64.const 2
+        call $intrinsics::felt::from_u64_unchecked
         call $intrinsics::felt::assert_eq
-        local.get 8
+        local.get 7
         i32.const 5
         i32.le_u
         br_if 1 (;@1;)
-        local.get 10
+        local.get 9
         f32.load offset=20
-        i32.const 6
-        call $intrinsics::felt::from_u32
+        i64.const 6
+        call $intrinsics::felt::from_u64_unchecked
         call $intrinsics::felt::assert_eq
-        local.get 8
+        local.get 7
         i32.const 14
         i32.le_u
         br_if 1 (;@1;)
-        local.get 10
+        local.get 9
         f32.load offset=56
-        i32.const 15
-        call $intrinsics::felt::from_u32
+        i64.const 15
+        call $intrinsics::felt::from_u64_unchecked
         call $intrinsics::felt::assert_eq
         local.get 5
-        i32.const 16
+        i32.const 48
         i32.add
         global.set $__stack_pointer
         return
       end
-      local.get 9
+      local.get 8
       local.get 5
-      i32.load offset=12
+      i32.load offset=44
       call $alloc::raw_vec::handle_error
     end
     unreachable
@@ -244,16 +324,38 @@
   (func $intrinsics::felt::assert_eq (;8;) (type 7) (param f32 f32)
     unreachable
   )
-  (func $intrinsics::felt::from_u32 (;9;) (type 8) (param i32) (result f32)
+  (func $intrinsics::felt::from_u64_unchecked (;9;) (type 8) (param i64) (result f32)
     unreachable
   )
-  (func $intrinsics::felt::from_u64_unchecked (;10;) (type 9) (param i64) (result f32)
+  (func $miden::core::mem::pipe_preimage_to_memory (;10;) (type 9) (param f32 i32 f32 f32 f32 f32) (result i32)
     unreachable
   )
-  (func $miden::core::mem::pipe_preimage_to_memory (;11;) (type 10) (param f32 i32 f32 f32 f32 f32) (result i32)
+  (func $<miden_field::word::Word as core::ops::index::Index<usize>>::index (;11;) (type 3) (param i32 i32 i32) (result i32)
+    block ;; label = @1
+      local.get 1
+      i32.const 3
+      i32.gt_u
+      br_if 0 (;@1;)
+      local.get 0
+      local.get 1
+      i32.const 2
+      i32.shl
+      i32.add
+      return
+    end
     unreachable
   )
-  (func $<alloc::alloc::Global>::alloc_impl (;12;) (type 11) (param i32 i32 i32 i32)
+  (func $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from (;12;) (type 10) (param i32 i32)
+    local.get 0
+    local.get 1
+    i64.load offset=8 align=4
+    i64.store offset=8
+    local.get 0
+    local.get 1
+    i64.load align=4
+    i64.store
+  )
+  (func $<alloc::alloc::Global>::alloc_impl (;13;) (type 11) (param i32 i32 i32 i32)
     block ;; label = @1
       local.get 2
       i32.eqz
@@ -280,7 +382,7 @@
     local.get 1
     i32.store
   )
-  (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;13;) (type 12) (param i32 i32 i32)
+  (func $<alloc::alloc::Global as core::alloc::Allocator>::allocate (;14;) (type 12) (param i32 i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -309,7 +411,7 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $<alloc::raw_vec::RawVecInner>::try_allocate_in (;14;) (type 13) (param i32 i32 i32 i32 i32)
+  (func $<alloc::raw_vec::RawVecInner>::try_allocate_in (;15;) (type 13) (param i32 i32 i32 i32 i32)
     (local i32 i64)
     global.get $__stack_pointer
     i32.const 16
@@ -420,10 +522,10 @@
     i32.add
     global.set $__stack_pointer
   )
-  (func $alloc::raw_vec::handle_error (;15;) (type 14) (param i32 i32)
+  (func $alloc::raw_vec::handle_error (;16;) (type 10) (param i32 i32)
     unreachable
   )
-  (func $<core::ptr::alignment::Alignment>::max (;16;) (type 0) (param i32 i32) (result i32)
+  (func $<core::ptr::alignment::Alignment>::max (;17;) (type 0) (param i32 i32) (result i32)
     local.get 0
     local.get 1
     local.get 0
@@ -431,4 +533,5 @@
     i32.gt_u
     select
   )
+  (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00\00\00\00\10\00\0a\00\00\00\00\00\00\00\00\00\00\00")
 )

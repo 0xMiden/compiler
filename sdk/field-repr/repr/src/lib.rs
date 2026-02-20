@@ -11,6 +11,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub use miden_field::Felt;
+#[cfg(not(all(target_family = "wasm", miden)))]
+use miden_field::PrimeField64;
 /// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
 pub use miden_field_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
 /// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
@@ -79,7 +81,7 @@ impl FromFeltRepr for Felt {
 impl FromFeltRepr for miden_core::Felt {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        Self::from(reader.read())
+        Self::new(reader.read().as_canonical_u64())
     }
 }
 
@@ -87,9 +89,9 @@ impl FromFeltRepr for u64 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
         // Encode u64 as 2 u32 limbs
-        let lo = reader.read().as_u64();
+        let lo = reader.read().as_canonical_u64();
         assert!(lo <= u32::MAX as u64, "u64: low limb out of range");
-        let hi = reader.read().as_u64();
+        let hi = reader.read().as_canonical_u64();
         assert!(hi <= u32::MAX as u64, "u64: high limb out of range");
 
         (hi << 32) | lo
@@ -99,21 +101,21 @@ impl FromFeltRepr for u64 {
 impl FromFeltRepr for u32 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_u64() as u32
+        reader.read().as_canonical_u64() as u32
     }
 }
 
 impl FromFeltRepr for u8 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_u64() as u8
+        reader.read().as_canonical_u64() as u8
     }
 }
 
 impl FromFeltRepr for bool {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_u64() != 0
+        reader.read().as_canonical_u64() != 0
     }
 }
 
@@ -128,7 +130,7 @@ where
 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        match reader.read().as_u64() {
+        match reader.read().as_canonical_u64() {
             0 => None,
             1 => Some(T::from_felt_repr(reader)),
             _ => panic!("Option: invalid tag"),
@@ -145,7 +147,7 @@ where
 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        let len = reader.read().as_u64();
+        let len = reader.read().as_canonical_u64();
         assert!(len <= u32::MAX as u64, "Vec: length out of range");
         let len = len as usize;
 
@@ -185,7 +187,7 @@ impl ToFeltRepr for Felt {
 impl ToFeltRepr for miden_core::Felt {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write((*self).into());
+        writer.write(Felt::new(self.as_int()));
     }
 }
 
@@ -194,29 +196,29 @@ impl ToFeltRepr for u64 {
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         let lo = (*self & 0xffff_ffff) as u32;
         let hi = (*self >> 32) as u32;
-        writer.write(Felt::from_u32(lo));
-        writer.write(Felt::from_u32(hi));
+        writer.write(Felt::new(lo as u64));
+        writer.write(Felt::new(hi as u64));
     }
 }
 
 impl ToFeltRepr for u32 {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::from_u64_unchecked(*self as u64));
+        writer.write(Felt::new(*self as u64));
     }
 }
 
 impl ToFeltRepr for u8 {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::from_u64_unchecked(*self as u64));
+        writer.write(Felt::new(*self as u64));
     }
 }
 
 impl ToFeltRepr for bool {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::from_u64_unchecked(*self as u64));
+        writer.write(Felt::new(*self as u64));
     }
 }
 
@@ -232,9 +234,9 @@ where
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         match self {
-            None => writer.write(Felt::from_u64_unchecked(0)),
+            None => writer.write(Felt::new(0)),
             Some(value) => {
-                writer.write(Felt::from_u64_unchecked(1));
+                writer.write(Felt::new(1));
                 value.write_felt_repr(writer);
             }
         }
@@ -252,7 +254,7 @@ where
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         let len = self.len();
         assert!(len <= u32::MAX as usize, "Vec: length out of range");
-        writer.write(Felt::from_u64_unchecked(len as u64));
+        writer.write(Felt::new(len as u64));
 
         let mut i = 0usize;
         while i < len {

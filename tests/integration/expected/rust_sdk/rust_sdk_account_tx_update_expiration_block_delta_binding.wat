@@ -3,9 +3,8 @@
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
-      (type (;2;) (tuple 1 1 1 1))
-      (type (;3;) (record (field "inner" 2)))
-      (export (;4;) "word" (type (eq 3)))
+      (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+      (export (;3;) "word" (type (eq 2)))
     )
   )
   (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
@@ -13,7 +12,7 @@
     (type (;0;) (func))
     (type (;1;) (func (param f32 f32 f32 f32)))
     (type (;2;) (func (param f32)))
-    (type (;3;) (func (param i32) (result f32)))
+    (type (;3;) (func (param i64) (result f32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -25,8 +24,8 @@
     (func $rust_sdk_account_tx_update_expiration_block_delta_binding::bindings::__link_custom_section_describing_imports (;1;) (type 0))
     (func $miden:base/transaction-script@1.0.0#run (;2;) (type 1) (param f32 f32 f32 f32)
       call $wit_bindgen::rt::run_ctors_once
-      i32.const 42
-      call $intrinsics::felt::from_u32
+      i64.const 42
+      call $intrinsics::felt::from_u64_unchecked
       call $miden_base_sys::bindings::tx::update_expiration_block_delta
     )
     (func $wit_bindgen::rt::run_ctors_once (;3;) (type 0)
@@ -51,7 +50,7 @@
       local.get 0
       call $miden::protocol::tx::update_expiration_block_delta
     )
-    (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;5;) (type 3) (param i64) (result f32)
       unreachable
     )
     (func $miden::protocol::tx::update_expiration_block_delta (;6;) (type 2) (param f32)
@@ -70,15 +69,14 @@
   (component $miden:base/transaction-script@1.0.0-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
-    (type (;2;) (tuple 1 1 1 1))
-    (type (;3;) (record (field "inner" 2)))
-    (import "import-type-word" (type (;4;) (eq 3)))
-    (import "import-type-word0" (type (;5;) (eq 4)))
-    (type (;6;) (func (param "arg" 5)))
-    (import "import-func-run" (func (;0;) (type 6)))
-    (export (;7;) "word" (type 4))
-    (type (;8;) (func (param "arg" 7)))
-    (export (;1;) "run" (func 0) (func (type 8)))
+    (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+    (import "import-type-word" (type (;3;) (eq 2)))
+    (import "import-type-word0" (type (;4;) (eq 3)))
+    (type (;5;) (func (param "arg" 4)))
+    (import "import-func-run" (func (;0;) (type 5)))
+    (export (;6;) "word" (type 3))
+    (type (;7;) (func (param "arg" 6)))
+    (export (;1;) "run" (func 0) (func (type 7)))
   )
   (instance $miden:base/transaction-script@1.0.0-shim-instance (;1;) (instantiate $miden:base/transaction-script@1.0.0-shim-component
       (with "import-func-run" (func $run))

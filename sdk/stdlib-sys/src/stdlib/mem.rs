@@ -89,7 +89,7 @@ pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
     unsafe {
         // Place for returned HASH, write_ptr
         let mut ret_area = ::core::mem::MaybeUninit::<Result>::uninit();
-        let mut buf: Vec<Felt> = Vec::with_capacity((num_words.as_u64() * 4) as usize);
+        let mut buf: Vec<Felt> = Vec::with_capacity((num_words.as_canonical_u64() * 4) as usize);
         extern_pipe_words_to_memory(
             num_words,
             buf.as_mut_ptr(),
@@ -119,7 +119,7 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
         write_ptr: *mut Felt,
     }
 
-    let num_words_in_felts = num_words.as_u64() as usize * 4;
+    let num_words_in_felts = num_words.as_canonical_u64() as usize * 4;
     let mut buf: Vec<Felt> = Vec::with_capacity(num_words_in_felts);
     let write_ptr = buf.as_mut_ptr();
     let end_ptr = unsafe { write_ptr.add(num_words_in_felts) };
@@ -162,7 +162,7 @@ pub fn pipe_double_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
 #[cfg(all(target_family = "wasm", miden))]
 pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
     // Allocate a Vec with the specified capacity
-    let num_words_usize = num_words.as_u64() as usize;
+    let num_words_usize = num_words.as_canonical_u64() as usize;
     let num_felts = num_words_usize * 4;
     let mut result: Vec<Felt> = Vec::with_capacity(num_felts);
 

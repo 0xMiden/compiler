@@ -3,11 +3,10 @@
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
-      (type (;2;) (tuple 1 1 1 1))
-      (type (;3;) (record (field "inner" 2)))
-      (export (;4;) "word" (type (eq 3)))
-      (type (;5;) (record (field "inner" 4)))
-      (export (;6;) "asset" (type (eq 5)))
+      (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+      (export (;3;) "word" (type (eq 2)))
+      (type (;4;) (record (field "inner" 3)))
+      (export (;5;) "asset" (type (eq 4)))
     )
   )
   (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
@@ -15,8 +14,9 @@
     (type (;0;) (func))
     (type (;1;) (func (result i32)))
     (type (;2;) (func (param i32 i32)))
-    (type (;3;) (func (param i32) (result f32)))
-    (type (;4;) (func (param f32 f32 f32 f32 i32)))
+    (type (;3;) (func (param i64) (result f32)))
+    (type (;4;) (func (param i32 i32 i32) (result i32)))
+    (type (;5;) (func (param f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -36,8 +36,8 @@
       call $wit_bindgen::rt::run_ctors_once
       i32.const 0
       local.set 1
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
       block ;; label = @1
         loop ;; label = @2
@@ -65,14 +65,14 @@
       local.get 0
       i32.const 16
       i32.add
-      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+      call $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
       local.get 0
       i32.const 16
       i32.add
       local.get 0
       call $miden_base_sys::bindings::faucet::mint
       local.get 1
-      i32.const 1048584
+      i32.const 1048612
       i32.add
       local.tee 1
       local.get 0
@@ -92,7 +92,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048600
+        i32.const 1048628
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -100,26 +100,41 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048600
+        i32.const 1048628
         i32.add
         i32.const 1
         i32.store8
       end
     )
     (func $miden_base_sys::bindings::faucet::mint (;4;) (type 2) (param i32 i32)
-      (local i32)
+      (local i32 i32)
       global.get $__stack_pointer
       i32.const 16
       i32.sub
       local.tee 2
       global.set $__stack_pointer
       local.get 1
-      f32.load offset=12
+      i32.const 3
+      global.get $GOT.data.internal.__memory_base
+      i32.const 1048596
+      i32.add
+      local.tee 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 1
-      f32.load offset=8
+      i32.const 2
+      local.get 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 1
-      f32.load offset=4
+      i32.const 1
+      local.get 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
       local.get 1
+      i32.const 0
+      local.get 3
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
       f32.load
       local.get 2
       call $miden::protocol::faucet::mint
@@ -140,7 +155,30 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from (;5;) (type 2) (param i32 i32)
+    (func $<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from (;5;) (type 2) (param i32 i32)
+      local.get 0
+      local.get 1
+      call $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
+    )
+    (func $intrinsics::felt::from_u64_unchecked (;6;) (type 3) (param i64) (result f32)
+      unreachable
+    )
+    (func $<miden_field::word::Word as core::ops::index::Index<usize>>::index (;7;) (type 4) (param i32 i32 i32) (result i32)
+      block ;; label = @1
+        local.get 1
+        i32.const 3
+        i32.gt_u
+        br_if 0 (;@1;)
+        local.get 0
+        local.get 1
+        i32.const 2
+        i32.shl
+        i32.add
+        return
+      end
+      unreachable
+    )
+    (func $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from (;8;) (type 2) (param i32 i32)
       local.get 0
       local.get 1
       i64.load offset=8 align=4
@@ -150,13 +188,11 @@
       i64.load align=4
       i64.store
     )
-    (func $intrinsics::felt::from_u32 (;6;) (type 3) (param i32) (result f32)
+    (func $miden::protocol::faucet::mint (;9;) (type 5) (param f32 f32 f32 f32 i32)
       unreachable
     )
-    (func $miden::protocol::faucet::mint (;7;) (type 4) (param f32 f32 f32 f32 i32)
-      unreachable
-    )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00")
+    (data $.data (;1;) (i32.const 1048588) "\01\00\00\00\01\00\00\00\00\00\10\00\0a\00\00\00\00\00\00\00\00\00\00\00")
     (@custom "rodata,miden_account" (after data) "Irust_sdk_account_faucet_mint_binding\01\0b0.0.1\05\02\03\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "asset" (type $asset (;1;)))
@@ -171,17 +207,16 @@
   (component $miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
-    (type (;2;) (tuple 1 1 1 1))
-    (type (;3;) (record (field "inner" 2)))
-    (import "import-type-word" (type (;4;) (eq 3)))
-    (type (;5;) (record (field "inner" 4)))
-    (import "import-type-asset" (type (;6;) (eq 5)))
-    (import "import-type-asset0" (type (;7;) (eq 6)))
-    (type (;8;) (func (result 7)))
-    (import "import-func-binding" (func (;0;) (type 8)))
-    (export (;9;) "asset" (type 6))
-    (type (;10;) (func (result 9)))
-    (export (;1;) "binding" (func 0) (func (type 10)))
+    (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+    (import "import-type-word" (type (;3;) (eq 2)))
+    (type (;4;) (record (field "inner" 3)))
+    (import "import-type-asset" (type (;5;) (eq 4)))
+    (import "import-type-asset0" (type (;6;) (eq 5)))
+    (type (;7;) (func (result 6)))
+    (import "import-func-binding" (func (;0;) (type 7)))
+    (export (;8;) "asset" (type 5))
+    (type (;9;) (func (result 8)))
+    (export (;1;) "binding" (func 0) (func (type 9)))
   )
   (instance $miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1-shim-instance (;1;) (instantiate $miden:rust-sdk-account-faucet-mint-binding/rust-sdk-account-faucet-mint-binding@0.0.1-shim-component
       (with "import-func-binding" (func $binding))

@@ -77,7 +77,7 @@ pub fn get_item(slot_id: StorageSlotId) -> Word {
         let (prefix, suffix) = slot_id.to_prefix_suffix();
         extern_get_storage_item(prefix, suffix, ret_area.as_mut_ptr());
         let word = ret_area.assume_init();
-        word.reverse()
+        word.reversed()
     }
 }
 
@@ -88,7 +88,7 @@ pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         let (prefix, suffix) = slot_id.to_prefix_suffix();
         extern_get_initial_storage_item(prefix, suffix, ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -118,7 +118,7 @@ pub fn set_item(slot_id: StorageSlotId, value: Word) -> Word {
             value[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -149,7 +149,7 @@ pub fn get_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
             key[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -168,7 +168,7 @@ pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
             key[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -204,6 +204,6 @@ pub fn set_map_item(slot_id: StorageSlotId, key: Word, value: Word) -> Word {
             value[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }

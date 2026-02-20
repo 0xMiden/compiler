@@ -3,11 +3,10 @@
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
-      (type (;2;) (tuple 1 1 1 1))
-      (type (;3;) (record (field "inner" 2)))
-      (export (;4;) "word" (type (eq 3)))
-      (type (;5;) (record (field "inner" 4)))
-      (export (;6;) "asset" (type (eq 5)))
+      (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+      (export (;3;) "word" (type (eq 2)))
+      (type (;4;) (record (field "inner" 3)))
+      (export (;5;) "asset" (type (eq 4)))
     )
   )
   (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
@@ -34,7 +33,7 @@
     (type (;9;) (func (param i32 i32 i32 i32 i32)))
     (type (;10;) (func (param i32 i32)))
     (type (;11;) (func (param i32) (result i32)))
-    (import "miden:basic-wallet/basic-wallet@0.1.0" "receive-asset" (func $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7 (;0;) (type 0)))
+    (import "miden:basic-wallet/basic-wallet@0.1.0" "receive-asset" (func $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import6 (;0;) (type 0)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -103,11 +102,11 @@
         local.get 4
         i32.const 12
         i32.add
-        call $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+        call $<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop
         local.get 4
         i32.const 12
         i32.add
-        call $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+        call $<alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop
         local.get 4
         call $miden_base_sys::bindings::active_account::get_id
         local.get 4
@@ -155,7 +154,7 @@
             f32.load offset=8
             local.get 5
             f32.load offset=12
-            call $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7
+            call $p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import6
             local.get 9
             i32.const -16
             i32.add
@@ -353,7 +352,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;13;) (type 6) (param i32)
+    (func $<alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop (;13;) (type 6) (param i32)
       local.get 0
       i32.const 4
       i32.const 4
@@ -444,7 +443,7 @@
       i32.add
       global.set $__stack_pointer
     )
-    (func $<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop (;17;) (type 6) (param i32))
+    (func $<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop (;17;) (type 6) (param i32))
     (func $intrinsics::felt::eq (;18;) (type 8) (param f32 f32) (result i32)
       unreachable
     )
@@ -734,15 +733,14 @@
   (component $miden:base/note-script@1.0.0-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
-    (type (;2;) (tuple 1 1 1 1))
-    (type (;3;) (record (field "inner" 2)))
-    (import "import-type-word" (type (;4;) (eq 3)))
-    (import "import-type-word0" (type (;5;) (eq 4)))
-    (type (;6;) (func (param "arg" 5)))
-    (import "import-func-run" (func (;0;) (type 6)))
-    (export (;7;) "word" (type 4))
-    (type (;8;) (func (param "arg" 7)))
-    (export (;1;) "run" (func 0) (func (type 8)))
+    (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+    (import "import-type-word" (type (;3;) (eq 2)))
+    (import "import-type-word0" (type (;4;) (eq 3)))
+    (type (;5;) (func (param "arg" 4)))
+    (import "import-func-run" (func (;0;) (type 5)))
+    (export (;6;) "word" (type 3))
+    (type (;7;) (func (param "arg" 6)))
+    (export (;1;) "run" (func 0) (func (type 7)))
   )
   (instance $miden:base/note-script@1.0.0-shim-instance (;2;) (instantiate $miden:base/note-script@1.0.0-shim-component
       (with "import-func-run" (func $run))

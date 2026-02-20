@@ -97,15 +97,15 @@ fn test_smt_get_binding() {
         let value = result.value;
         let returned_root = result.root;
 
-        let expected = Word::new([
-            Felt::from_u64_unchecked({ev0}),
-            Felt::from_u64_unchecked({ev1}),
-            Felt::from_u64_unchecked({ev2}),
-            Felt::from_u64_unchecked({ev3}),
-        ]);
-        assert_eq!(value, expected, "smt_get returned unexpected value");
-        assert_eq!(returned_root, root, "smt_get should not mutate the root");
-    }}"#,
+	        let expected = Word::new([
+	            Felt::new({ev0}),
+	            Felt::new({ev1}),
+	            Felt::new({ev2}),
+	            Felt::new({ev3}),
+	        ]);
+	        assert_eq!(value, expected, "smt_get returned unexpected value");
+	        assert_eq!(returned_root, root, "smt_get should not mutate the root");
+	    }}"#,
         ev0 = expected_value_u64[0],
         ev1 = expected_value_u64[1],
         ev2 = expected_value_u64[2],
@@ -178,21 +178,21 @@ fn test_smt_set_binding() {
         let old_value = result.old_value;
         let new_root = result.new_root;
 
-        let expected_old = Word::new([
-            Felt::from_u64_unchecked({eo0}),
-            Felt::from_u64_unchecked({eo1}),
-            Felt::from_u64_unchecked({eo2}),
-            Felt::from_u64_unchecked({eo3}),
-        ]);
-        let expected_new = Word::new([
-            Felt::from_u64_unchecked({en0}),
-            Felt::from_u64_unchecked({en1}),
-            Felt::from_u64_unchecked({en2}),
-            Felt::from_u64_unchecked({en3}),
-        ]);
-        assert_eq!(old_value, expected_old, "smt_set returned unexpected old value");
-        assert_eq!(new_root, expected_new, "smt_set returned unexpected new root");
-    }}"#,
+	        let expected_old = Word::new([
+	            Felt::new({eo0}),
+	            Felt::new({eo1}),
+	            Felt::new({eo2}),
+	            Felt::new({eo3}),
+	        ]);
+	        let expected_new = Word::new([
+	            Felt::new({en0}),
+	            Felt::new({en1}),
+	            Felt::new({en2}),
+	            Felt::new({en3}),
+	        ]);
+	        assert_eq!(old_value, expected_old, "smt_set returned unexpected old value");
+	        assert_eq!(new_root, expected_new, "smt_set returned unexpected new root");
+	    }}"#,
         eo0 = expected_old_u64[0],
         eo1 = expected_old_u64[1],
         eo2 = expected_old_u64[2],

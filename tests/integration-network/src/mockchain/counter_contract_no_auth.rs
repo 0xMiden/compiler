@@ -18,6 +18,7 @@ use super::helpers::{
     build_existing_counter_account_builder_with_auth_package, compile_rust_package,
     create_note_from_package, execute_tx,
 };
+use crate::mockchain::helpers::COUNTER_CONTRACT_STORAGE_KEY;
 
 /// Tests the counter contract with a "no-auth" authentication component.
 ///
@@ -34,13 +35,12 @@ pub fn test_counter_contract_no_auth() {
     let no_auth_auth_component =
         compile_rust_package("../../examples/auth-component-no-auth", true);
 
-    let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let counter_storage_slot =
         StorageSlotName::new("miden::component::miden_counter_contract::count_map").unwrap();
     let counter_storage_slots = vec![StorageSlot::with_map(
         counter_storage_slot.clone(),
-        StorageMap::with_entries([(key, value)]).unwrap(),
+        StorageMap::with_entries([(COUNTER_CONTRACT_STORAGE_KEY, value)]).unwrap(),
     )];
 
     let mut builder = MockChain::builder();

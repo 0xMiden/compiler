@@ -1,6 +1,6 @@
 builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @p2id {
-        private builtin.function @p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7(v0: felt, v1: felt, v2: felt, v3: felt) {
+        private builtin.function @p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import6(v0: felt, v1: felt, v2: felt, v3: felt) {
         ^block3(v0: felt, v1: felt, v2: felt, v3: felt):
             hir.call v0, v1, v2, v3 #[callee = miden:basic-wallet/basic-wallet@0.1.0/receive-asset] #[signature = (param felt) (param felt) (param felt) (param felt)];
             builtin.ret ;
@@ -152,11 +152,11 @@ builtin.component miden:base/note-script@1.0.0 {
                 v94 = hir.load_local  : i32 #[local = lv4];
                 v1116 = arith.constant 12 : i32;
                 v96 = arith.add v94, v1116 : i32 #[overflow = wrapping];
-                hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v96)
+                hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop(v96)
                 v97 = hir.load_local  : i32 #[local = lv4];
                 v1115 = arith.constant 12 : i32;
                 v99 = arith.add v97, v1115 : i32 #[overflow = wrapping];
-                hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v99)
+                hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop(v99)
                 v100 = hir.load_local  : i32 #[local = lv4];
                 hir.exec @miden:base/note-script@1.0.0/p2id/miden_base_sys::bindings::active_account::get_id(v100)
                 v101 = hir.load_local  : i32 #[local = lv4];
@@ -291,7 +291,7 @@ builtin.component miden:base/note-script@1.0.0 {
                                 hir.assertz v198 #[code = 250];
                                 v199 = hir.int_to_ptr v196 : ptr<byte, felt>;
                                 v200 = hir.load v199 : felt;
-                                hir.exec @miden:base/note-script@1.0.0/p2id/p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import7(v176, v184, v192, v200)
+                                hir.exec @miden:base/note-script@1.0.0/p2id/p2id::bindings::miden::basic_wallet::basic_wallet::receive_asset::wit_import6(v176, v184, v192, v200)
                                 v201 = hir.load_local  : i32 #[local = lv9];
                                 v1023 = arith.constant -16 : i32;
                                 v203 = arith.add v201, v1023 : i32 #[overflow = wrapping];
@@ -699,7 +699,7 @@ builtin.component miden:base/note-script@1.0.0 {
             ub.unreachable ;
         };
 
-        private builtin.function @<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v467: i32) {
+        private builtin.function @<alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop(v467: i32) {
         ^block56(v467: i32):
             v1224 = arith.constant 4 : i32;
             hir.exec @miden:base/note-script@1.0.0/p2id/<alloc::raw_vec::RawVecInner>::deallocate(v467, v1224, v1224)
@@ -890,7 +890,7 @@ builtin.component miden:base/note-script@1.0.0 {
             builtin.ret ;
         };
 
-        private builtin.function @<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(v612: i32) {
+        private builtin.function @<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop(v612: i32) {
         ^block64(v612: i32):
             builtin.ret ;
         };

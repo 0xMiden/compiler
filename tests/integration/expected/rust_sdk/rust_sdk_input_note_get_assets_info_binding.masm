@@ -96,6 +96,9 @@ proc miden:rust-sdk-input-note-get-assets-info-binding/rust-sdk-input-note-get-a
     trace.252
     nop
     push.0
+    push.0
+    mul.4294967296
+    add
     swap.1
     trace.240
     nop

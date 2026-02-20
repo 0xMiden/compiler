@@ -3,9 +3,8 @@
     (instance
       (type (;0;) (record (field "inner" f32)))
       (export (;1;) "felt" (type (eq 0)))
-      (type (;2;) (tuple 1 1 1 1))
-      (type (;3;) (record (field "inner" 2)))
-      (export (;4;) "word" (type (eq 3)))
+      (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+      (export (;3;) "word" (type (eq 2)))
     )
   )
   (import "miden:base/core-types@1.0.0" (instance $miden:base/core-types@1.0.0 (;0;) (type $ty-miden:base/core-types@1.0.0)))
@@ -13,9 +12,10 @@
     (type (;0;) (func))
     (type (;1;) (func (param i32)))
     (type (;2;) (func (result i32)))
-    (type (;3;) (func (param i32) (result f32)))
-    (type (;4;) (func (param i64) (result f32)))
-    (type (;5;) (func (param f32 f32 f32 f32 f32 f32 i32)))
+    (type (;3;) (func (param i64) (result f32)))
+    (type (;4;) (func (param i32 i32 i32) (result i32)))
+    (type (;5;) (func (param i32 i32)))
+    (type (;6;) (func (param f32 f32 f32 f32 f32 f32 i32)))
     (table (;0;) 2 2 funcref)
     (memory (;0;) 17)
     (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
@@ -39,9 +39,9 @@
       f32.store
     )
     (func $miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1#binding (;3;) (type 2) (result i32)
-      (local i32 i32 f32 f32 f32 f32)
+      (local i32 i32 f32 i32)
       global.get $__stack_pointer
-      i32.const 32
+      i32.const 48
       i32.sub
       local.tee 0
       global.set $__stack_pointer
@@ -52,8 +52,8 @@
       call $<rust_sdk_account_storage_get_initial_map_item_binding::TestAccount as core::default::Default>::default
       i32.const 0
       local.set 1
-      i32.const 0
-      call $intrinsics::felt::from_u32
+      i64.const 0
+      call $intrinsics::felt::from_u64_unchecked
       local.set 2
       block ;; label = @1
         loop ;; label = @2
@@ -62,7 +62,7 @@
           i32.eq
           br_if 1 (;@1;)
           local.get 0
-          i32.const 16
+          i32.const 32
           i32.add
           local.get 1
           i32.add
@@ -75,53 +75,77 @@
           br 0 (;@2;)
         end
       end
-      local.get 0
-      f32.load offset=28
-      local.set 2
-      local.get 0
-      f32.load offset=24
+      global.get $GOT.data.internal.__memory_base
       local.set 3
       local.get 0
-      f32.load offset=20
-      local.set 4
+      i32.const 16
+      i32.add
       local.get 0
-      f32.load offset=16
-      local.set 5
+      i32.const 32
+      i32.add
+      call $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
       local.get 0
       call $<rust_sdk_account_storage_get_initial_map_item_binding::TestAccount as core::default::Default>::default
       local.get 0
       f32.load offset=4
       local.get 0
       f32.load
-      local.get 2
-      local.get 3
-      local.get 4
-      local.get 5
       local.get 0
       i32.const 16
       i32.add
+      i32.const 3
+      local.get 3
+      i32.const 1048596
+      i32.add
+      local.tee 1
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
+      local.get 0
+      i32.const 16
+      i32.add
+      i32.const 2
+      local.get 1
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
+      local.get 0
+      i32.const 16
+      i32.add
+      i32.const 1
+      local.get 1
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
+      local.get 0
+      i32.const 16
+      i32.add
+      i32.const 0
+      local.get 1
+      call $<miden_field::word::Word as core::ops::index::Index<usize>>::index
+      f32.load
+      local.get 0
+      i32.const 32
+      i32.add
       call $miden::protocol::active_account::get_initial_map_item
-      global.get $GOT.data.internal.__memory_base
-      i32.const 1048584
+      local.get 3
+      i32.const 1048612
       i32.add
       local.tee 1
       local.get 0
-      f32.load offset=16
+      f32.load offset=32
       f32.store offset=12
       local.get 1
       local.get 0
-      f32.load offset=20
+      f32.load offset=36
       f32.store offset=8
       local.get 1
       local.get 0
-      f32.load offset=24
+      f32.load offset=40
       f32.store offset=4
       local.get 1
       local.get 0
-      f32.load offset=28
+      f32.load offset=44
       f32.store
       local.get 0
-      i32.const 32
+      i32.const 48
       i32.add
       global.set $__stack_pointer
       local.get 1
@@ -130,7 +154,7 @@
       (local i32)
       block ;; label = @1
         global.get $GOT.data.internal.__memory_base
-        i32.const 1048600
+        i32.const 1048628
         i32.add
         i32.load8_u
         br_if 0 (;@1;)
@@ -138,22 +162,45 @@
         local.set 0
         call $__wasm_call_ctors
         local.get 0
-        i32.const 1048600
+        i32.const 1048628
         i32.add
         i32.const 1
         i32.store8
       end
     )
-    (func $intrinsics::felt::from_u32 (;5;) (type 3) (param i32) (result f32)
+    (func $intrinsics::felt::from_u64_unchecked (;5;) (type 3) (param i64) (result f32)
       unreachable
     )
-    (func $intrinsics::felt::from_u64_unchecked (;6;) (type 4) (param i64) (result f32)
+    (func $<miden_field::word::Word as core::ops::index::Index<usize>>::index (;6;) (type 4) (param i32 i32 i32) (result i32)
+      block ;; label = @1
+        local.get 1
+        i32.const 3
+        i32.gt_u
+        br_if 0 (;@1;)
+        local.get 0
+        local.get 1
+        i32.const 2
+        i32.shl
+        i32.add
+        return
+      end
       unreachable
     )
-    (func $miden::protocol::active_account::get_initial_map_item (;7;) (type 5) (param f32 f32 f32 f32 f32 f32 i32)
+    (func $<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from (;7;) (type 5) (param i32 i32)
+      local.get 0
+      local.get 1
+      i64.load offset=8 align=4
+      i64.store offset=8
+      local.get 0
+      local.get 1
+      i64.load align=4
+      i64.store
+    )
+    (func $miden::protocol::active_account::get_initial_map_item (;8;) (type 6) (param f32 f32 f32 f32 f32 f32 i32)
       unreachable
     )
-    (data $.data (;0;) (i32.const 1048576) "\01\00\00\00\01\00\00\00")
+    (data $.rodata (;0;) (i32.const 1048576) "<redacted>\00")
+    (data $.data (;1;) (i32.const 1048588) "\01\00\00\00\01\00\00\00\00\00\10\00\0a\00\00\00\00\00\00\00\00\00\00\00")
     (@custom "rodata,miden_account" (after data) "krust_sdk_account_storage_get_initial_map_item_binding\01\0b0.0.1\03\01\01\00Rmiden::component::miden_rust_sdk_account_storage_get_initial_map_item_binding::map\01\01\11test map\00\00\09word\00\00\09word\00\00\00")
   )
   (alias export $miden:base/core-types@1.0.0 "word" (type $word (;1;)))
@@ -167,15 +214,14 @@
   (component $miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1-shim-component (;0;)
     (type (;0;) (record (field "inner" f32)))
     (import "import-type-felt" (type (;1;) (eq 0)))
-    (type (;2;) (tuple 1 1 1 1))
-    (type (;3;) (record (field "inner" 2)))
-    (import "import-type-word" (type (;4;) (eq 3)))
-    (import "import-type-word0" (type (;5;) (eq 4)))
-    (type (;6;) (func (result 5)))
-    (import "import-func-binding" (func (;0;) (type 6)))
-    (export (;7;) "word" (type 4))
-    (type (;8;) (func (result 7)))
-    (export (;1;) "binding" (func 0) (func (type 8)))
+    (type (;2;) (record (field "a" 1) (field "b" 1) (field "c" 1) (field "d" 1)))
+    (import "import-type-word" (type (;3;) (eq 2)))
+    (import "import-type-word0" (type (;4;) (eq 3)))
+    (type (;5;) (func (result 4)))
+    (import "import-func-binding" (func (;0;) (type 5)))
+    (export (;6;) "word" (type 3))
+    (type (;7;) (func (result 6)))
+    (export (;1;) "binding" (func 0) (func (type 7)))
   )
   (instance $miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1-shim-instance (;1;) (instantiate $miden:rust-sdk-account-storage-get-initial-map-item-binding/rust-sdk-account-storage-get-initial-map-item-binding@0.0.1-shim-component
       (with "import-func-binding" (func $binding))

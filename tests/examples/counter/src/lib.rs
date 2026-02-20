@@ -25,13 +25,13 @@ mod component {
     impl CounterContract {
         /// Returns the current counter value stored in the contract's storage map.
         pub fn get_count(&self) -> Felt {
-            let key = Word::from_u64_unchecked(0, 0, 0, 1);
+            let key = word!("0x1000000000000000200000000000000030000000000000004000000000000000");
             self.count_map.get(&key)
         }
 
         /// Increments the counter value stored in the contract's storage map by one.
         pub fn increment_count(&mut self) -> Felt {
-            let key = Word::from_u64_unchecked(0, 0, 0, 1);
+            let key = word!("0x1000000000000000200000000000000030000000000000004000000000000000");
             let current_value: Felt = self.count_map.get(&key);
             let new_value = current_value + felt!(1);
             self.count_map.set(key, new_value);

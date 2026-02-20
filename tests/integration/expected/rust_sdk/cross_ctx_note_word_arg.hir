@@ -1,6 +1,6 @@
 builtin.component miden:base/note-script@1.0.0 {
     builtin.module public @cross_ctx_note_word_arg {
-        private builtin.function @cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: felt, v13: felt, v14: felt, v15: felt) -> felt {
+        private builtin.function @cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import19(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: felt, v13: felt, v14: felt, v15: felt) -> felt {
         ^block3(v0: felt, v1: felt, v2: felt, v3: felt, v4: felt, v5: felt, v6: felt, v7: felt, v8: felt, v9: felt, v10: felt, v11: felt, v12: felt, v13: felt, v14: felt, v15: felt):
             v16 = hir.call v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15 : felt #[callee = miden:cross-ctx-account-word-arg/foo@1.0.0/process-word] #[signature = (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (param felt) (result felt)];
             builtin.ret v16;
@@ -19,24 +19,46 @@ builtin.component miden:base/note-script@1.0.0 {
         private builtin.function @miden:base/note-script@1.0.0#run(v17: felt, v18: felt, v19: felt, v20: felt) {
         ^block12(v17: felt, v18: felt, v19: felt, v20: felt):
             hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/wit_bindgen::rt::run_ctors_once()
-            v109 = arith.constant 7 : felt;
-            v101 = arith.constant 15 : felt;
-            v102 = arith.constant 14 : felt;
-            v103 = arith.constant 13 : felt;
-            v104 = arith.constant 12 : felt;
-            v105 = arith.constant 11 : felt;
-            v106 = arith.constant 10 : felt;
-            v107 = arith.constant 9 : felt;
-            v108 = arith.constant 8 : felt;
-            v110 = arith.constant 6 : felt;
-            v111 = arith.constant 5 : felt;
-            v112 = arith.constant 4 : felt;
-            v113 = arith.constant 3 : felt;
-            v114 = arith.constant 2 : felt;
-            v115 = arith.constant 1 : felt;
-            v53 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(v115, v114, v113, v112, v111, v110, v109, v108, v107, v106, v105, v104, v103, v102, v101, v109) : felt
-            v100 = arith.constant 458760 : felt;
-            hir.assert_eq v53, v100;
+            v97 = arith.constant 2 : i64;
+            v24 = arith.trunc v97 : felt;
+            hir.store_local v24 #[local = lv4];
+            v101 = hir.load_local  : felt #[local = lv4];
+            v102 = arith.constant 7 : i64;
+            v52 = arith.trunc v102 : felt;
+            v84 = arith.constant 15 : i64;
+            v50 = arith.trunc v84 : felt;
+            v85 = arith.constant 14 : i64;
+            v48 = arith.trunc v85 : felt;
+            v86 = arith.constant 13 : i64;
+            v46 = arith.trunc v86 : felt;
+            v87 = arith.constant 12 : i64;
+            v44 = arith.trunc v87 : felt;
+            v88 = arith.constant 11 : i64;
+            v42 = arith.trunc v88 : felt;
+            v89 = arith.constant 10 : i64;
+            v40 = arith.trunc v89 : felt;
+            v90 = arith.constant 9 : i64;
+            v38 = arith.trunc v90 : felt;
+            v91 = arith.constant 8 : i64;
+            v36 = arith.trunc v91 : felt;
+            v99 = arith.constant 7 : i64;
+            v34 = arith.trunc v99 : felt;
+            v93 = arith.constant 6 : i64;
+            v32 = arith.trunc v93 : felt;
+            v94 = arith.constant 5 : i64;
+            v30 = arith.trunc v94 : felt;
+            v95 = arith.constant 4 : i64;
+            v28 = arith.trunc v95 : felt;
+            v96 = arith.constant 3 : i64;
+            v26 = arith.trunc v96 : felt;
+            hir.store_local v26 #[local = lv5];
+            v98 = arith.constant 1 : i64;
+            v22 = arith.trunc v98 : felt;
+            v104 = hir.load_local  : felt #[local = lv5];
+            v53 = hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import19(v22, v101, v104, v28, v30, v32, v34, v36, v38, v40, v42, v44, v46, v48, v50, v52) : felt
+            v83 = arith.constant 458760 : i64;
+            v55 = arith.trunc v83 : felt;
+            hir.assert_eq v53, v55;
             builtin.ret ;
         };
 
@@ -45,15 +67,15 @@ builtin.component miden:base/note-script@1.0.0 {
             v56 = builtin.global_symbol @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/GOT.data.internal.__memory_base : ptr<byte, u8>
             v57 = hir.bitcast v56 : ptr<byte, i32>;
             v58 = hir.load v57 : i32;
-            v120 = arith.constant 1048588 : i32;
-            v60 = arith.add v58, v120 : i32 #[overflow = wrapping];
+            v109 = arith.constant 1048588 : i32;
+            v60 = arith.add v58, v109 : i32 #[overflow = wrapping];
             v61 = hir.bitcast v60 : u32;
             v62 = hir.int_to_ptr v61 : ptr<byte, u8>;
             v63 = hir.load v62 : u8;
-            v119 = arith.constant 0 : i32;
+            v108 = arith.constant 0 : i32;
             v64 = arith.zext v63 : u32;
             v65 = hir.bitcast v64 : i32;
-            v67 = arith.neq v65, v119 : i1;
+            v67 = arith.neq v65, v108 : i1;
             scf.if v67{
             ^block16:
                 scf.yield ;
@@ -65,12 +87,12 @@ builtin.component miden:base/note-script@1.0.0 {
                 hir.store_local v70 #[local = lv0];
                 hir.exec @miden:base/note-script@1.0.0/cross_ctx_note_word_arg/__wasm_call_ctors()
                 v71 = hir.load_local  : i32 #[local = lv0];
-                v118 = arith.constant 1 : u8;
-                v123 = arith.constant 1048588 : i32;
-                v73 = arith.add v71, v123 : i32 #[overflow = wrapping];
+                v107 = arith.constant 1 : u8;
+                v112 = arith.constant 1048588 : i32;
+                v73 = arith.add v71, v112 : i32 #[overflow = wrapping];
                 v77 = hir.bitcast v73 : u32;
                 v78 = hir.int_to_ptr v77 : ptr<byte, u8>;
-                hir.store v78, v118;
+                hir.store v78, v107;
                 scf.yield ;
             };
             builtin.ret ;

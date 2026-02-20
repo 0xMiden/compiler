@@ -72,7 +72,7 @@ pub fn add_asset(asset: Asset) -> Asset {
             asset.inner[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -92,7 +92,7 @@ pub fn remove_asset(asset: Asset) -> Asset {
             asset.inner[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -108,7 +108,7 @@ pub fn compute_delta_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_native_account_compute_delta_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -121,7 +121,7 @@ pub fn was_procedure_called(proc_root: Word) -> bool {
             proc_root[2],
             proc_root[1],
             proc_root[0],
-        ) != Felt::from_u32(0)
+        ) != Felt::new(0)
     }
 }
 

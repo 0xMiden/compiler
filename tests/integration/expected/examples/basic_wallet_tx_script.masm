@@ -16,10 +16,10 @@ proc init
     trace.240
     exec.::intrinsics::mem::heap_init
     trace.252
-    push.[3747760794384071571,1766386520481277932,2198275188940187258,538857382178104910]
+    push.[11060787405599139519,5881115343068084788,9840913696683659608,11382150558635495408]
     adv.push_mapval
     push.262144
-    push.3
+    push.4
     trace.240
     exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
@@ -35,7 +35,7 @@ end
 # mod ::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script
 
 @callconv("C")
-proc basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9(
+proc basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import8(
     felt,
     felt,
     felt,
@@ -67,7 +67,7 @@ proc __rustc::__rust_alloc(i32, i32) -> i32
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048616
+    push.1048632
     u32wrapping_add
     movup.2
     swap.1
@@ -129,7 +129,7 @@ proc __rustc::__rust_alloc_zeroed(i32, i32) -> i32
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048616
+    push.1048632
     movup.3
     u32wrapping_add
     movup.2
@@ -428,7 +428,7 @@ end
 
 @locals("5")
 @callconv("C")
-proc <alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index(
+proc <alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index(
     i32,
     i32,
     i32,
@@ -657,7 +657,7 @@ proc <alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core
     end
 end
 
-@locals("11")
+@locals("12")
 @callconv("C")
 proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     locaddr.0
@@ -724,12 +724,45 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     locaddr.3
     push.0
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.76
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
     trace.252
     nop
     locaddr.2
@@ -740,6 +773,31 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    push.72
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     locaddr.1
     push.0
     swap.1
@@ -748,8 +806,213 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_felt
     trace.252
     nop
+    push.68
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
     locaddr.0
     push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.64
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.1114180
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.1048600
+    u32wrapping_add
+    dup.0
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.3
+    push.64
+    movup.3
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    trace.252
+    nop
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.2
+    push.64
+    movup.3
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    trace.252
+    nop
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.1
+    push.64
+    movup.3
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    trace.252
+    nop
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.0
+    push.64
+    movup.3
+    u32wrapping_add
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    trace.252
+    nop
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
     swap.1
     trace.240
     nop
@@ -764,21 +1027,41 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     trace.252
     nop
     u32split
+    dup.1
+    dup.1
+    locaddr.6
     push.0
+    swap.1
+    movup.2
+    movdn.3
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_dw
+    trace.252
+    nop
     push.3
-    dup.3
-    dup.3
+    movdn.2
     drop
     u32and
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::wasm_miden::Felt>::from_u32
+    trace.252
+    nop
+    push.0
+    push.0
+    mul.4294967296
+    add
     assert_eq
-    locaddr.4
+    locaddr.6
     push.0
     swap.1
     trace.240
     nop
-    exec.::intrinsics::mem::load_sw
+    exec.::intrinsics::mem::load_dw
     trace.252
     nop
+    swap.1
     push.2
     push.0
     dup.0
@@ -791,8 +1074,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     push.4294967295
     u32lte
     assert
-    movup.3
-    movup.3
+    movdn.2
     movup.2
     trace.240
     nop
@@ -801,13 +1083,160 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     nop
     mul.4294967296
     add
-    dup.0
-    locaddr.7
+    locaddr.8
     push.0
     swap.1
     trace.240
     nop
     exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.76
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.2
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.72
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.68
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.64
+    movup.2
+    add
+    u32assert
+    push.4
+    dup.1
+    swap.1
+    u32mod
+    u32assert
+    assertz
+    u32divmod.4
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.8
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
     trace.252
     nop
     push.2
@@ -817,7 +1246,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     swap.1
     u32shl
     dup.0
-    locaddr.8
+    locaddr.9
     push.0
     swap.1
     trace.240
@@ -827,7 +1256,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     nop
     push.4
     push.0
-    push.64
+    push.48
     movup.4
     u32wrapping_add
     dup.2
@@ -846,7 +1275,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.68
+    push.52
     swap.1
     add
     u32assert
@@ -863,7 +1292,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    locaddr.9
+    locaddr.10
     push.0
     swap.1
     trace.240
@@ -879,7 +1308,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.64
+    push.48
     swap.1
     add
     u32assert
@@ -902,7 +1331,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
     eq
     neq
     if.true
-        locaddr.9
+        locaddr.10
         push.0
         swap.1
         trace.240
@@ -918,7 +1347,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        push.72
+        push.56
         swap.1
         add
         u32assert
@@ -943,7 +1372,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         nop
         push.0
     else
-        locaddr.7
+        locaddr.8
         push.0
         swap.1
         trace.240
@@ -959,7 +1388,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        push.72
+        push.56
         swap.1
         add
         u32assert
@@ -977,7 +1406,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         trace.252
         nop
         dup.0
-        locaddr.10
+        locaddr.11
         push.0
         swap.1
         trace.240
@@ -985,32 +1414,163 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::store_sw
         trace.252
         nop
-        locaddr.3
+        locaddr.4
         push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.1114180
+        u32divmod.4
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.1048600
+        u32wrapping_add
+        dup.0
+        locaddr.5
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::store_sw
+        trace.252
+        nop
+        push.3
+        push.64
+        movup.3
+        u32wrapping_add
+        trace.240
+        nop
+        exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+        trace.252
+        nop
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
         swap.1
         trace.240
         nop
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        locaddr.2
+        locaddr.4
         push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        locaddr.5
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.2
+        push.64
+        movup.3
+        u32wrapping_add
+        trace.240
+        nop
+        exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+        trace.252
+        nop
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
         swap.1
         trace.240
         nop
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        locaddr.1
+        locaddr.4
         push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        locaddr.5
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.1
+        push.64
+        movup.3
+        u32wrapping_add
+        trace.240
+        nop
+        exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+        trace.252
+        nop
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
         swap.1
         trace.240
         nop
         exec.::intrinsics::mem::load_felt
         trace.252
         nop
-        locaddr.0
+        locaddr.4
         push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        locaddr.5
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.0
+        push.64
+        movup.3
+        u32wrapping_add
+        trace.240
+        nop
+        exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+        trace.252
+        nop
+        push.4
+        dup.1
+        swap.1
+        u32mod
+        u32assert
+        assertz
+        u32divmod.4
         swap.1
         trace.240
         nop
@@ -1040,7 +1600,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        locaddr.8
+        locaddr.9
         push.0
         swap.1
         trace.240
@@ -1073,7 +1633,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        locaddr.10
+        locaddr.11
         push.0
         swap.1
         trace.240
@@ -1106,7 +1666,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::load_sw
         trace.252
         nop
-        locaddr.9
+        locaddr.10
         push.0
         swap.1
         trace.240
@@ -1131,7 +1691,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         exec.::intrinsics::mem::store_sw
         trace.252
         nop
-        locaddr.8
+        locaddr.9
         push.0
         swap.1
         trace.240
@@ -1147,7 +1707,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
         if.true
             push.0
         else
-            locaddr.10
+            locaddr.11
             push.0
             swap.1
             trace.240
@@ -1172,7 +1732,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
             exec.::intrinsics::mem::load_felt
             trace.252
             nop
-            locaddr.0
+            locaddr.3
             push.0
             swap.1
             trace.240
@@ -1180,7 +1740,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
             exec.::intrinsics::mem::store_felt
             trace.252
             nop
-            locaddr.10
+            locaddr.11
             push.0
             swap.1
             trace.240
@@ -1201,7 +1761,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
             exec.::intrinsics::mem::load_felt
             trace.252
             nop
-            locaddr.1
+            locaddr.2
             push.0
             swap.1
             trace.240
@@ -1227,7 +1787,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
             u32wrapping_add
             trace.240
             nop
-            exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+            exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
             trace.252
             nop
             locaddr.4
@@ -1289,7 +1849,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 trace.252
                 nop
                 dup.0
-                locaddr.10
+                locaddr.5
                 push.0
                 swap.1
                 trace.240
@@ -1341,7 +1901,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 exec.::intrinsics::mem::load_sw
                 trace.252
                 nop
-                locaddr.10
+                locaddr.5
                 push.0
                 swap.1
                 trace.240
@@ -1398,10 +1958,10 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 u32wrapping_add
                 trace.240
                 nop
-                exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+                exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
                 trace.252
                 nop
-                locaddr.1
+                locaddr.2
                 push.0
                 swap.1
                 trace.240
@@ -1409,7 +1969,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 exec.::intrinsics::mem::load_felt
                 trace.252
                 nop
-                locaddr.0
+                locaddr.3
                 push.0
                 swap.1
                 trace.240
@@ -1433,7 +1993,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::miden_base_sys::bindings::output_note::create
                 trace.252
                 nop
-                locaddr.0
+                locaddr.3
                 push.0
                 swap.1
                 trace.240
@@ -1457,7 +2017,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                 movup.3
                 trace.240
                 nop
-                exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
+                exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::index::Index<core::ops::range::Range<usize>>>::index
                 trace.252
                 nop
                 locaddr.4
@@ -1517,7 +2077,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     trace.252
                     nop
                     dup.0
-                    locaddr.10
+                    locaddr.5
                     push.0
                     swap.1
                     trace.240
@@ -1569,7 +2129,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     exec.::intrinsics::mem::load_sw
                     trace.252
                     nop
-                    locaddr.10
+                    locaddr.5
                     push.0
                     swap.1
                     trace.240
@@ -1626,7 +2186,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from
+                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
                     trace.252
                     nop
                     locaddr.4
@@ -1729,7 +2289,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     exec.::intrinsics::mem::load_felt
                     trace.252
                     nop
-                    locaddr.0
+                    locaddr.3
                     push.0
                     swap.1
                     trace.240
@@ -1743,7 +2303,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     swap.4
                     trace.240
                     nop
-                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import9
+                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::basic_wallet_tx_script::bindings::miden::basic_wallet::basic_wallet::move_asset_to_note::wit_import8
                     trace.252
                     nop
                     locaddr.4
@@ -1758,7 +2318,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     locaddr.4
@@ -1773,7 +2333,7 @@ proc miden:base/transaction-script@1.0.0#run(felt, felt, felt, felt)
                     u32wrapping_add
                     trace.240
                     nop
-                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop
+                    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop
                     trace.252
                     nop
                     locaddr.4
@@ -1832,7 +2392,7 @@ proc wit_bindgen::rt::run_ctors_once(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.1048620
+    push.1048636
     u32wrapping_add
     u32divmod.4
     swap.1
@@ -1883,7 +2443,7 @@ proc wit_bindgen::rt::run_ctors_once(
         trace.252
         nop
         push.1
-        push.1048620
+        push.1048636
         movup.2
         u32wrapping_add
         u32divmod.4
@@ -2302,7 +2862,7 @@ end
 
 @locals("1")
 @callconv("C")
-proc <alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(
+proc <alloc::raw_vec::RawVec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop(
     i32
 )
     push.4
@@ -2315,7 +2875,7 @@ proc <alloc::raw_vec::RawVec<miden_field::wasm32::Felt> as core::ops::drop::Drop
     nop
 end
 
-@locals("3")
+@locals("4")
 @callconv("C")
 proc miden_base_sys::bindings::output_note::create(
     felt,
@@ -2339,10 +2899,32 @@ proc miden_base_sys::bindings::output_note::create(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.12
+    push.1114180
+    u32divmod.4
     swap.1
-    add
-    u32assert
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.1048616
+    u32wrapping_add
+    dup.0
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    push.3
+    movup.2
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
@@ -2364,10 +2946,21 @@ proc miden_base_sys::bindings::output_note::create(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.8
+    locaddr.3
+    push.0
     swap.1
-    add
-    u32assert
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.2
+    movup.2
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
@@ -2389,10 +2982,21 @@ proc miden_base_sys::bindings::output_note::create(
     exec.::intrinsics::mem::load_sw
     trace.252
     nop
-    push.4
+    locaddr.3
+    push.0
     swap.1
-    add
-    u32assert
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.1
+    movup.2
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
+    trace.252
+    nop
     push.4
     dup.1
     swap.1
@@ -2412,6 +3016,21 @@ proc miden_base_sys::bindings::output_note::create(
     trace.240
     nop
     exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    locaddr.3
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.0
+    movup.2
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::ops::index::Index<usize>>::index
     trace.252
     nop
     push.4
@@ -2442,7 +3061,126 @@ end
 
 @locals("2")
 @callconv("C")
-proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm32::Felt; 4]>>::from(
+proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from(
+    i32,
+    i32
+)
+    trace.240
+    nop
+    exec.::"miden:base/transaction-script@1.0.0"::basic_wallet_tx_script::<miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from
+    trace.252
+    nop
+end
+
+@locals("1")
+@callconv("C")
+proc <alloc::vec::Vec<miden_field::wasm_miden::Felt> as core::ops::drop::Drop>::drop(
+    i32
+)
+    drop
+end
+
+@callconv("C")
+proc intrinsics::advice::adv_push_mapvaln(felt, felt, felt, felt) -> felt
+    trace.240
+    nop
+    exec.::intrinsics::advice::adv_push_mapvaln
+    trace.252
+    nop
+end
+
+@callconv("C")
+proc miden::core::mem::pipe_preimage_to_memory(
+    felt,
+    i32,
+    felt,
+    felt,
+    felt,
+    felt
+) -> i32
+    trace.240
+    nop
+    exec.::miden::core::mem::pipe_preimage_to_memory
+    trace.252
+    nop
+end
+
+@locals("1")
+@callconv("C")
+proc <miden_field::wasm_miden::Felt>::from_u32(
+    i32
+) -> felt
+    nop
+end
+
+@locals("3")
+@callconv("C")
+proc <miden_field::word::Word as core::ops::index::Index<usize>>::index(
+    i32,
+    i32,
+    i32
+) -> i32
+    movup.2
+    drop
+    locaddr.0
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_sw
+    trace.252
+    nop
+    locaddr.1
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_sw
+    trace.252
+    nop
+    push.0
+    push.3
+    movup.2
+    swap.1
+    u32gt
+    neq
+    if.true
+        push.0
+        assert
+    else
+        locaddr.0
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        locaddr.1
+        push.0
+        swap.1
+        trace.240
+        nop
+        exec.::intrinsics::mem::load_sw
+        trace.252
+        nop
+        push.2
+        u32shl
+        u32wrapping_add
+    end
+end
+
+@locals("2")
+@callconv("C")
+proc <miden_field::word::Word as core::convert::From<[miden_field::wasm_miden::Felt; 4]>>::from(
     i32,
     i32
 )
@@ -2559,39 +3297,6 @@ proc <miden_base_sys::bindings::types::Asset as core::convert::From<[miden_field
     trace.240
     nop
     exec.::intrinsics::mem::store_dw
-    trace.252
-    nop
-end
-
-@locals("1")
-@callconv("C")
-proc <alloc::vec::Vec<miden_field::wasm32::Felt> as core::ops::drop::Drop>::drop(
-    i32
-)
-    drop
-end
-
-@callconv("C")
-proc intrinsics::advice::adv_push_mapvaln(felt, felt, felt, felt) -> felt
-    trace.240
-    nop
-    exec.::intrinsics::advice::adv_push_mapvaln
-    trace.252
-    nop
-end
-
-@callconv("C")
-proc miden::core::mem::pipe_preimage_to_memory(
-    felt,
-    i32,
-    felt,
-    felt,
-    felt,
-    felt
-) -> i32
-    trace.240
-    nop
-    exec.::miden::core::mem::pipe_preimage_to_memory
     trace.252
     nop
 end

@@ -276,20 +276,21 @@ fn auth_public_key_slot_name() -> StorageSlotName {
         .expect("auth component storage slot name should be valid")
 }
 
+pub const COUNTER_CONTRACT_STORAGE_KEY: Word =
+    Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+
 /// Asserts the counter value stored in the counter contract's storage map at `storage_slot`.
 pub(super) fn assert_counter_storage(
     counter_account_storage: &AccountStorage,
     storage_slot: &StorageSlotName,
     expected: u64,
 ) {
-    // according to `examples/counter-contract` for inner (slot, key) values
-    let counter_contract_storage_key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-
     let word = counter_account_storage
-        .get_map_item(storage_slot, counter_contract_storage_key)
+        .get_map_item(storage_slot, COUNTER_CONTRACT_STORAGE_KEY)
         .expect("Failed to get counter value from storage slot");
 
-    let val = word.last().unwrap();
+    // According to the counter-contract the counter value is stored in the last element.
+    let val = word[3];
     assert_eq!(
         val.as_int(),
         expected,

@@ -17,6 +17,7 @@ use super::helpers::{
     NoteCreationConfig, account_component_from_package, assert_counter_storage,
     compile_rust_package, create_note_from_package, execute_tx,
 };
+use crate::mockchain::helpers::COUNTER_CONTRACT_STORAGE_KEY;
 
 /// Tests the counter contract deployment and note consumption workflow on a mock chain.
 #[test]
@@ -25,13 +26,12 @@ pub fn test_counter_contract() {
     let contract_package = compile_rust_package("../../examples/counter-contract", true);
     let note_package = compile_rust_package("../../examples/counter-note", true);
 
-    let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let counter_storage_slot =
         StorageSlotName::new("miden::component::miden_counter_contract::count_map").unwrap();
     let storage_slots = vec![StorageSlot::with_map(
         counter_storage_slot.clone(),
-        StorageMap::with_entries([(key, value)]).unwrap(),
+        StorageMap::with_entries([(COUNTER_CONTRACT_STORAGE_KEY, value)]).unwrap(),
     )];
 
     let counter_component = account_component_from_package(contract_package, storage_slots);

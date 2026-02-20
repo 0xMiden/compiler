@@ -37,22 +37,25 @@ struct MyNote;
 impl Guest for MyNote {
     fn run(_arg: Word) {
         let input = Word {
-            inner: (felt!(2), felt!(3), felt!(4), felt!(5)),
+            a: felt!(2),
+            b: felt!(3),
+            c: felt!(4),
+            d: felt!(5),
         };
 
         let output = process_word(input.clone());
 
-        assert_eq(output.inner.0, felt!(3));
-        assert_eq(output.inner.1, felt!(5));
-        assert_eq(output.inner.2, felt!(7));
-        assert_eq(output.inner.3, felt!(9));
+        assert_eq(output.a, felt!(3));
+        assert_eq(output.b, felt!(5));
+        assert_eq(output.c, felt!(7));
+        assert_eq(output.d, felt!(9));
 
         let output = process_another_word(input);
 
-        assert_eq(output.inner.0, felt!(4));
-        assert_eq(output.inner.1, felt!(6));
-        assert_eq(output.inner.2, felt!(8));
-        assert_eq(output.inner.3, felt!(10));
+        assert_eq(output.a, felt!(4));
+        assert_eq(output.b, felt!(6));
+        assert_eq(output.c, felt!(8));
+        assert_eq(output.d, felt!(10));
 
         let felt_input = felt!(9);
         let felt_output = process_felt(felt_input);
@@ -78,7 +81,7 @@ impl Guest for MyNote {
 
         let mixed_input = MixedStruct {
             f: u64::MAX - 1000,
-            a: Felt::new(Felt::M - 1 - 6).unwrap(),
+            a: Felt::new(Felt::ORDER_U64 - 1 - 6),
             b: u32::MAX - 10,
             c: felt!(50),
             d: 111,
@@ -90,12 +93,12 @@ impl Guest for MyNote {
             // fail
             assert_eq!(0, 1);
         }
-        assert_eq(mixed_output.a, Felt::new(Felt::M - 1).unwrap()); // M - 1 - 6 + 6
-        assert_eq(mixed_output.b.into(), Felt::from_u32(u32::MAX)); // u32::MAX - 10 + 10
+        assert_eq(mixed_output.a, Felt::new(Felt::ORDER_U64 - 1)); // M - 1 - 6 + 6
+        assert_eq(mixed_output.b.into(), Felt::new(u32::MAX as u64)); // u32::MAX - 10 + 10
         assert_eq(mixed_output.c, felt!(57)); // 50 + 7
-        assert_eq(mixed_output.d.into(), Felt::from_u32(122));
-        assert_eq(Felt::from_u32(mixed_output.e as u32), felt!(1));
-        assert_eq(mixed_output.g.into(), Felt::from_u32(12));
+        assert_eq(mixed_output.d.into(), Felt::new(122));
+        assert_eq(Felt::new(mixed_output.e as u64), felt!(1));
+        assert_eq(mixed_output.g.into(), Felt::new(12));
 
         let nested_input = NestedStruct {
             inner: Pair {

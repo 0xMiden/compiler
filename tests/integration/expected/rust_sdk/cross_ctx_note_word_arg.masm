@@ -35,7 +35,7 @@ end
 # mod ::"miden:base/note-script@1.0.0"::cross_ctx_note_word_arg
 
 @callconv("C")
-proc cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22(
+proc cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import19(
     felt,
     felt,
     felt,
@@ -74,7 +74,7 @@ proc cross_ctx_note_word_arg::bindings::__link_custom_section_describing_imports
     nop
 end
 
-@locals("4")
+@locals("6")
 @callconv("C")
 proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     drop
@@ -86,35 +86,126 @@ proc miden:base/note-script@1.0.0#run(felt, felt, felt, felt)
     exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word_arg::wit_bindgen::rt::run_ctors_once
     trace.252
     nop
-    push.7
-    push.15
-    push.14
-    push.13
-    push.12
-    push.11
-    push.10
-    push.9
-    push.8
-    push.6
-    push.5
-    push.4
-    push.3
     push.2
-    push.1
-    dup.14
-    swap.15
-    swap.6
-    swap.5
-    swap.4
-    swap.3
-    swap.2
+    push.0
+    mul.4294967296
+    add
+    locaddr.4
+    push.0
     swap.1
     trace.240
     nop
-    exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import22
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    locaddr.4
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    push.7
+    push.0
+    mul.4294967296
+    add
+    push.15
+    push.0
+    mul.4294967296
+    add
+    push.14
+    push.0
+    mul.4294967296
+    add
+    push.13
+    push.0
+    mul.4294967296
+    add
+    push.12
+    push.0
+    mul.4294967296
+    add
+    push.11
+    push.0
+    mul.4294967296
+    add
+    push.10
+    push.0
+    mul.4294967296
+    add
+    push.9
+    push.0
+    mul.4294967296
+    add
+    push.8
+    push.0
+    mul.4294967296
+    add
+    push.7
+    push.0
+    mul.4294967296
+    add
+    push.6
+    push.0
+    mul.4294967296
+    add
+    push.5
+    push.0
+    mul.4294967296
+    add
+    push.4
+    push.0
+    mul.4294967296
+    add
+    push.3
+    push.0
+    mul.4294967296
+    add
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::store_felt
+    trace.252
+    nop
+    push.1
+    push.0
+    mul.4294967296
+    add
+    locaddr.5
+    push.0
+    swap.1
+    trace.240
+    nop
+    exec.::intrinsics::mem::load_felt
+    trace.252
+    nop
+    swap.2
+    swap.3
+    swap.4
+    swap.5
+    swap.6
+    swap.7
+    swap.8
+    swap.9
+    swap.10
+    swap.11
+    swap.12
+    swap.13
+    swap.14
+    swap.15
+    swap.1
+    trace.240
+    nop
+    exec.::"miden:base/note-script@1.0.0"::cross_ctx_note_word_arg::cross_ctx_note_word_arg::bindings::miden::cross_ctx_account_word_arg::foo::process_word::wit_import19
     trace.252
     nop
     push.458760
+    push.0
+    mul.4294967296
+    add
     assert_eq
 end
 
