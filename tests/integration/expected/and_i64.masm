@@ -1,8 +1,0 @@
-export.entrypoint
-  exec.checked_and
-
-end
-begin
-    exec.entrypoint
-end
-
