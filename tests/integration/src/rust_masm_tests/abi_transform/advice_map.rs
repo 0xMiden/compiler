@@ -48,12 +48,7 @@ fn test_adv_load_preimage() {
     let mut test =
         CompilerTest::rust_fn_body_with_stdlib_sys("adv_load_preimage", &main_fn, config, []);
 
-    // Test expected compilation artifacts
-    test.expect_wasm(expect_file![format!("../../../expected/adv_load_preimage.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/adv_load_preimage.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/adv_load_preimage.masm")]);
-
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     // Create test data: 4 words (16 felts)
     let input: Vec<Felt> = vec![

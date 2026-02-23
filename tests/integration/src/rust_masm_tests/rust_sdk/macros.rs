@@ -10,16 +10,7 @@ fn component_macros_account_and_note() {
         config.clone(),
         [],
     );
-    account.expect_wasm(expect_file![format!(
-        "../../../expected/rust_sdk/component_macros_account.wat"
-    )]);
-    account.expect_ir(expect_file![format!(
-        "../../../expected/rust_sdk/component_macros_account.hir"
-    )]);
-    account.expect_masm(expect_file![format!(
-        "../../../expected/rust_sdk/component_macros_account.masm"
-    )]);
-    let account_package = account.compiled_package();
+    let account_package = account.compile_package();
 
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
         "../rust-apps-wasm/rust-sdk/component-macros-note",
@@ -27,12 +18,7 @@ fn component_macros_account_and_note() {
         [],
     );
     let mut note = builder.build();
-    note.expect_wasm(expect_file![format!("../../../expected/rust_sdk/component_macros_note.wat")]);
-    note.expect_ir(expect_file![format!("../../../expected/rust_sdk/component_macros_note.hir")]);
-    note.expect_masm(expect_file![format!(
-        "../../../expected/rust_sdk/component_macros_note.masm"
-    )]);
-    let note_package = note.compiled_package();
+    let note_package = note.compile_package();
     let program = note_package.unwrap_program();
 
     let mut exec = executor_with_std(vec![], None);

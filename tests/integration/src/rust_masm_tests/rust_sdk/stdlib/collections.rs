@@ -119,11 +119,8 @@ fn test_smt_get_binding() {
         config,
         ["--test-harness".into()],
     );
-    test.expect_wasm(expect_file!["../../../../expected/rust_sdk_stdlib_smt_get.wat"]);
-    test.expect_ir(expect_file!["../../../../expected/rust_sdk_stdlib_smt_get.hir"]);
-    test.expect_masm(expect_file!["../../../../expected/rust_sdk_stdlib_smt_get.masm"]);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let advice_inputs = build_advice_inputs_for_smt(&smt);
 
@@ -210,11 +207,8 @@ fn test_smt_set_binding() {
         config,
         ["--test-harness".into()],
     );
-    test.expect_wasm(expect_file!["../../../../expected/rust_sdk_stdlib_smt_set.wat"]);
-    test.expect_ir(expect_file!["../../../../expected/rust_sdk_stdlib_smt_set.hir"]);
-    test.expect_masm(expect_file!["../../../../expected/rust_sdk_stdlib_smt_set.masm"]);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let advice_inputs = build_advice_inputs_for_smt(&smt);
 

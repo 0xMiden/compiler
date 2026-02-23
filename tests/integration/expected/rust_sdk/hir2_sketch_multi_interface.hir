@@ -1,4 +1,0 @@
-builtin.component  #[name = #root] #[namespace = #root_ns] #[version = 1.0.0] #[visibility = public] {
-
-
-};

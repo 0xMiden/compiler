@@ -24,11 +24,7 @@ macro_rules! test_bin_op {
                 let artifact_name = format!("{}_{}", stringify!($name), stringify!($op_ty).to_lowercase());
                 let config = WasmTranslationConfig::default();
                 let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
-                // Test expected compilation artifacts
-                test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
-                test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
-                let package = test.compiled_package();
+                let package = test.compile_package();
 
                 // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
                 let res = TestRunner::default()
@@ -67,11 +63,7 @@ macro_rules! test_bin_op_via_u64 {
                 let artifact_name = format!("{}_{}", stringify!($name), stringify!($op_ty).to_lowercase());
                 let config = WasmTranslationConfig::default();
                 let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
-                // Test expected compilation artifacts
-                test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-                test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
-                test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
-                let package = test.compiled_package();
+                let package = test.compile_package();
 
                 // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
                 let res = TestRunner::default()

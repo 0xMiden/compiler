@@ -61,7 +61,7 @@ pub(super) fn compile_rust_package(package_path: &str, release: bool) -> Arc<Pac
     }
 
     let mut test = builder.build();
-    test.compiled_package()
+    test.compile_package()
 }
 
 // NOTE HELPERS
