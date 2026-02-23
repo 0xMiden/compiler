@@ -100,10 +100,13 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
     let from_impl = match &item_struct.fields {
         syn::Fields::Unit => {
             quote! {
-                impl ::core::convert::From<&[::miden::Felt]> for #struct_ident {
+                #[allow(clippy::infallible_try_from)]
+                impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
+                    type Error = ::core::convert::Infallible;
+
                     #[inline(always)]
-                    fn from(_felts: &[::miden::Felt]) -> Self {
-                        Self
+                    fn try_from(_felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
+                        Ok(Self)
                     }
                 }
             }
@@ -118,11 +121,14 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
             });
 
             quote! {
-                impl ::core::convert::From<&[::miden::Felt]> for #struct_ident {
+                #[allow(clippy::infallible_try_from)]
+                impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
+                    type Error = ::core::convert::Infallible;
+
                     #[inline(always)]
-                    fn from(felts: &[::miden::Felt]) -> Self {
+                    fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
                         let mut reader = ::miden::felt_repr::FeltReader::new(felts);
-                        Self { #(#field_inits),* }
+                        Ok(Self { #(#field_inits),* })
                     }
                 }
             }
@@ -136,11 +142,14 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
             });
 
             quote! {
-                impl ::core::convert::From<&[::miden::Felt]> for #struct_ident {
+                #[allow(clippy::infallible_try_from)]
+                impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
+                    type Error = ::core::convert::Infallible;
+
                     #[inline(always)]
-                    fn from(felts: &[::miden::Felt]) -> Self {
+                    fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
                         let mut reader = ::miden::felt_repr::FeltReader::new(felts);
-                        Self(#(#field_inits),*)
+                        Ok(Self(#(#field_inits),*))
                     }
                 }
             }
@@ -260,10 +269,16 @@ fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
     // notes can execute without requiring a full active-note runtime context.
     quote! {
         let __miden_note: #note_ty = if ::core::mem::size_of::<#note_ty>() == 0 {
-            (&[] as &[::miden::Felt]).into()
+            match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(&[]) {
+                Ok(note) => note,
+                Err(err) => match err {},
+            }
         } else {
             let inputs = ::miden::active_note::get_inputs();
-            inputs.as_slice().into()
+            match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(inputs.as_slice()) {
+                Ok(note) => note,
+                Err(err) => match err {},
+            }
         };
     }
 }

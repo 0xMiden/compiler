@@ -59,6 +59,20 @@ fn test_roundtrip() {
     assert_roundtrip(&original);
 }
 
+#[test]
+fn test_try_from_slice_roundtrip() {
+    use core::convert::TryFrom;
+
+    let original = TwoFelts {
+        a: Felt::from_u64_unchecked(12345),
+        b: Felt::from_u64_unchecked(67890),
+    };
+    let felts = original.to_felt_repr();
+
+    let roundtrip = TwoFelts::try_from(felts.as_slice()).unwrap();
+    assert_eq!(roundtrip, original);
+}
+
 /// Test struct containing multiple non-`Felt` fields.
 #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 struct MixedStruct {
