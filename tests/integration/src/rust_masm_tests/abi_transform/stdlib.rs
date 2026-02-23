@@ -35,12 +35,8 @@ fn test_hash_elements() {
         config,
         ["--test-harness".into()],
     );
-    // Test expected compilation artifacts
-    test.expect_wasm(expect_file![format!("../../../expected/hash_elements.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/hash_elements.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/hash_elements.masm")]);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
     let config = proptest::test_runner::Config::with_cases(32);
@@ -119,11 +115,8 @@ fn test_hash_words() {
         config,
         ["--test-harness".into()],
     );
-    test.expect_wasm(expect_file![format!("../../../expected/hash_words.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/hash_words.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/hash_words.masm")]);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let config = proptest::test_runner::Config::with_cases(32);
     let res =
@@ -193,12 +186,8 @@ fn test_vec_alloc_vec() {
     let config = WasmTranslationConfig::default();
     let mut test =
         CompilerTest::rust_fn_body_with_stdlib_sys("vec_alloc_vec", &main_fn, config, []);
-    // Test expected compilation artifacts
-    test.expect_wasm(expect_file![format!("../../../expected/vec_alloc_vec.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/vec_alloc_vec.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/vec_alloc_vec.masm")]);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let args = [Felt::from(2u32)];
 

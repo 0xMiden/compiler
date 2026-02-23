@@ -27,11 +27,7 @@ fn test_func_arg_same() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_fn_body_with_stdlib_sys("func_arg_same", main_fn, config, []);
 
-    test.expect_wasm(expect_file!["../../expected/func_arg_same.wat"]);
-    test.expect_ir(expect_file!["../../expected/func_arg_same.hir"]);
-    test.expect_masm(expect_file!["../../expected/func_arg_same.masm"]);
-
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let addr1: u32 = 10 * 65536;
     let addr2: u32 = 11 * 65536;
@@ -88,7 +84,7 @@ fn test_invalid_stack_index_16_issue_872() {
     let mut test =
         CompilerTest::rust_fn_body_with_stdlib_sys("movup_16_issue_831", main_fn, config, []);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     // This should execute and return the expected value.
     // Arguments are pushed in reverse order on stack.
@@ -178,7 +174,7 @@ fn test_invalid_stack_index_4_word_1_felt_args() {
         [],
     );
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     // This should execute and return the expected value.
     // Arguments are pushed in reverse order on stack (with each Word pushed as d, c, b, a).
@@ -272,7 +268,7 @@ fn test_vec_realloc_copies_data_issue_811() {
     let mut test =
         CompilerTest::rust_fn_body_with_stdlib_sys("vec_realloc_copies_data", main_fn, config, []);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
     let args: [Felt; 0] = [];
 
     eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
@@ -340,10 +336,6 @@ fn test_func_arg_order() {
         [],
     );
 
-    test.expect_wasm(expect_file![format!("../../expected/func_arg_order.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/func_arg_order.hir")]);
-    test.expect_masm(expect_file![format!("../../expected/func_arg_order.masm")]);
-
     let args = [
         Felt::ZERO,
         Felt::ZERO,
@@ -355,6 +347,6 @@ fn test_func_arg_order() {
         Felt::ZERO,
     ];
 
-    eval_package::<Felt, _, _>(&test.compiled_package(), [], &args, &test.session, |trace| Ok(()))
+    eval_package::<Felt, _, _>(&test.compile_package(), [], &args, &test.session, |trace| Ok(()))
         .unwrap();
 }

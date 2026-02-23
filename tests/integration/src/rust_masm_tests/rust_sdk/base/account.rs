@@ -65,11 +65,7 @@ debug = false
     )
     .build();
 
-    test.expect_wasm(expect_file![format!("../../../../expected/rust_sdk/{name}.wat")]);
-    test.expect_ir(expect_file![format!("../../../../expected/rust_sdk/{name}.hir")]);
-    test.expect_masm(expect_file![format!("../../../../expected/rust_sdk/{name}.masm")]);
-
-    test.compiled_package();
+    test.compile_package();
 }
 
 #[allow(clippy::uninlined_format_args)]

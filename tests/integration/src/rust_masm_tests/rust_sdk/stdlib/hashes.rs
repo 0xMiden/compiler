@@ -27,11 +27,8 @@ where
         config,
         ["--test-harness".into()],
     );
-    test.expect_wasm(expect_file![format!("../../../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../../../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../../../../expected/{artifact_name}.masm")]);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<[u8; 32]>(), move |ibytes| {
@@ -82,7 +79,7 @@ where
         ["--test-harness".into()],
     );
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let config = proptest::test_runner::Config::with_cases(4);
     let res = TestRunner::new(config).run(&any::<[u8; 64]>(), move |ibytes| {

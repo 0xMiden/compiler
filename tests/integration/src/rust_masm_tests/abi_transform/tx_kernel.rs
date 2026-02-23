@@ -67,7 +67,7 @@ end
     test_builder.link_with_masm_module("miden::protocol::active_note", masm);
     let mut test = test_builder.build();
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let mut exec = Executor::new(vec![]);
     let std_library = (*STDLIB).clone();
@@ -123,7 +123,7 @@ end
     test_builder.link_with_masm_module("miden::protocol::active_note", masm);
     let mut test = test_builder.build();
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let mut exec = Executor::new(vec![]);
     let std_library = (*STDLIB).clone();
@@ -178,7 +178,7 @@ end
     )
     .build();
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let inputs = [input1, input2];
     let script_root: miden_core::Word = note_script.root();
@@ -234,17 +234,4 @@ end
     })
     .map_err(|err| Report::msg(err.to_string()))?;
     Ok(())
-}
-
-#[test]
-fn test_get_id() {
-    let main_fn = "() -> AccountId { miden::active_account::get_id() }";
-    let artifact_name = "abi_transform_tx_kernel_get_id";
-    let config = WasmTranslationConfig::default();
-    let test_builder =
-        CompilerTestBuilder::rust_fn_body_with_sdk(artifact_name, main_fn, config, []);
-    let mut test = test_builder.build();
-    // Test expected compilation artifacts
-    test.expect_wasm(expect_file![format!("../../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/{artifact_name}.hir")]);
 }

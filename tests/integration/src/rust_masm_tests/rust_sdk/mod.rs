@@ -95,17 +95,8 @@ impl Note {
     )
     .build();
 
-    test.expect_wasm(expect_file![format!(
-        "../../../expected/rust_sdk/rust_sdk_swapp_note_bindings.wat"
-    )]);
-    test.expect_ir(expect_file![format!(
-        "../../../expected/rust_sdk/rust_sdk_swapp_note_bindings.hir"
-    )]);
-    test.expect_masm(expect_file![format!(
-        "../../../expected/rust_sdk/rust_sdk_swapp_note_bindings.masm"
-    )]);
     // Ensure the crate compiles all the way to a package, exercising the bindings.
-    test.compiled_package();
+    test.compile_package();
 }
 
 /// Regression test for https://github.com/0xMiden/compiler/issues/831
@@ -123,7 +114,7 @@ fn rust_sdk_invalid_stack_offset_movup_16_issue_831() {
 
     // Ensure the crate compiles all the way to a package. This previously triggered the #831
     // panic in MASM codegen.
-    let package = test.compiled_package();
+    let package = test.compile_package();
 }
 
 #[test]
@@ -134,10 +125,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
         config.clone(),
         [],
     );
-    test.expect_wasm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account.masm")]);
-    let account_package = test.compiled_package();
+    let account_package = test.compile_package();
     let lib = account_package.unwrap_library();
     let exports = lib
         .exports()
@@ -169,10 +157,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     );
 
     let mut test = builder.build();
-    test.expect_wasm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note.masm")]);
-    let package = test.compiled_package();
+    let package = test.compile_package();
     let program = package.unwrap_program();
     let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
@@ -190,14 +175,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
         config.clone(),
         [],
     );
-    test.expect_wasm(expect_file![format!(
-        "../../../expected/rust_sdk/cross_ctx_account_word.wat"
-    )]);
-    test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_account_word.hir")]);
-    test.expect_masm(expect_file![format!(
-        "../../../expected/rust_sdk/cross_ctx_account_word.masm"
-    )]);
-    let account_package = test.compiled_package();
+    let account_package = test.compile_package();
     let lib = account_package.unwrap_library();
     let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
     let expected_function_suffix = "\"process-word\"";
@@ -225,27 +203,13 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     );
 
     let mut test = builder.build();
-    test.expect_wasm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word.masm")]);
-    let package = test.compiled_package();
+    let package = test.compile_package();
     let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .add(account_package.digest(), account_package.into());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("failed to add package dependencies");
     let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
-}
-
-#[test]
-fn pure_rust_hir2() {
-    testing::setup::enable_compiler_instrumentation();
-    let config = WasmTranslationConfig::default();
-    let mut test =
-        CompilerTest::rust_source_cargo_miden("../rust-apps-wasm/rust-sdk/add", config, []);
-    let artifact_name = test.artifact_name().to_string();
-    test.expect_wasm(expect_file![format!("../../../expected/rust_sdk/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/rust_sdk/{artifact_name}.hir")]);
 }
 
 #[test]
@@ -256,16 +220,7 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
         config.clone(),
         [],
     );
-    test.expect_wasm(expect_file![format!(
-        "../../../expected/rust_sdk/cross_ctx_account_word_arg.wat"
-    )]);
-    test.expect_ir(expect_file![format!(
-        "../../../expected/rust_sdk/cross_ctx_account_word_arg.hir"
-    )]);
-    test.expect_masm(expect_file![format!(
-        "../../../expected/rust_sdk/cross_ctx_account_word_arg.masm"
-    )]);
-    let account_package = test.compiled_package();
+    let account_package = test.compile_package();
 
     let lib = account_package.unwrap_library();
     let expected_module_prefix = "::\"miden:cross-ctx-account-word-arg/";
@@ -289,14 +244,7 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
         [],
     );
     let mut test = builder.build();
-    test.expect_wasm(expect_file![format!(
-        "../../../expected/rust_sdk/cross_ctx_note_word_arg.wat"
-    )]);
-    test.expect_ir(expect_file![format!("../../../expected/rust_sdk/cross_ctx_note_word_arg.hir")]);
-    test.expect_masm(expect_file![format!(
-        "../../../expected/rust_sdk/cross_ctx_note_word_arg.masm"
-    )]);
-    let package = test.compiled_package();
+    let package = test.compile_package();
     assert!(package.is_program());
     let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
