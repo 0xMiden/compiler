@@ -13,6 +13,7 @@
 //! ```ignore
 //! use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 //! use miden_core::Felt;
+//! use core::convert::TryFrom;
 //!
 //! #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 //! struct AccountId {
@@ -22,7 +23,7 @@
 //!
 //! let value = AccountId { prefix: Felt::new(1), suffix: Felt::new(2) };
 //! let felts = value.to_felt_repr();
-//! let roundtrip = AccountId::from(felts.as_slice());
+//! let roundtrip = AccountId::try_from(felts.as_slice()).unwrap();
 //! assert_eq!(roundtrip, value);
 //! ```
 //!
@@ -31,6 +32,7 @@
 //! ```ignore
 //! use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 //! use miden_core::Felt;
+//! use core::convert::TryFrom;
 //!
 //! #[derive(Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 //! enum Message {
@@ -43,7 +45,7 @@
 //! // Transfer -> tag = 1
 //! let value = Message::Transfer { to: Felt::new(7), amount: 10 };
 //! let felts = value.to_felt_repr();
-//! let roundtrip = Message::from(felts.as_slice());
+//! let roundtrip = Message::try_from(felts.as_slice()).unwrap();
 //! assert_eq!(roundtrip, value);
 //! ```
 //!
@@ -327,11 +329,14 @@ fn derive_from_felt_repr_impl(
     let expanded = quote! {
         #expanded
 
-        impl #impl_generics From<&[#felt_ty]> for #name #ty_generics #where_clause {
+        #[allow(clippy::infallible_try_from)]
+        impl #impl_generics ::core::convert::TryFrom<&[#felt_ty]> for #name #ty_generics #where_clause {
+            type Error = ::core::convert::Infallible;
+
             #[inline(always)]
-            fn from(felts: &[#felt_ty]) -> Self {
+            fn try_from(felts: &[#felt_ty]) -> Result<Self, Self::Error> {
                 let mut reader = #felt_repr_crate::FeltReader::new(felts);
-                <Self as #felt_repr_crate::FromFeltRepr>::from_felt_repr(&mut reader)
+                Ok(<Self as #felt_repr_crate::FromFeltRepr>::from_felt_repr(&mut reader))
             }
         }
     };
