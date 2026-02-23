@@ -20,3 +20,6 @@ node_modules/
 *.iml
 book/
 
+# Ignore Cargo.lock in test projects
+examples/**/Cargo.lock
+tests/**/Cargo.lock
