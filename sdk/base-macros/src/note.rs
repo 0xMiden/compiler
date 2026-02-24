@@ -100,9 +100,8 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
     let from_impl = match &item_struct.fields {
         syn::Fields::Unit => {
             quote! {
-                #[allow(clippy::infallible_try_from)]
                 impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
-                    type Error = ::core::convert::Infallible;
+                    type Error = ::miden::felt_repr::FeltReprError;
 
                     #[inline(always)]
                     fn try_from(_felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
@@ -116,14 +115,13 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
                 let ident = field.ident.as_ref().expect("named fields must have identifiers");
                 let ty = &field.ty;
                 quote! {
-                    #ident: <#ty as ::miden::felt_repr::FromFeltRepr>::from_felt_repr(&mut reader)
+                    #ident: <#ty as ::miden::felt_repr::FromFeltRepr>::from_felt_repr(&mut reader)?
                 }
             });
 
             quote! {
-                #[allow(clippy::infallible_try_from)]
                 impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
-                    type Error = ::core::convert::Infallible;
+                    type Error = ::miden::felt_repr::FeltReprError;
 
                     #[inline(always)]
                     fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
@@ -137,14 +135,13 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
             let field_inits = fields.unnamed.iter().map(|field| {
                 let ty = &field.ty;
                 quote! {
-                    <#ty as ::miden::felt_repr::FromFeltRepr>::from_felt_repr(&mut reader)
+                    <#ty as ::miden::felt_repr::FromFeltRepr>::from_felt_repr(&mut reader)?
                 }
             });
 
             quote! {
-                #[allow(clippy::infallible_try_from)]
                 impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
-                    type Error = ::core::convert::Infallible;
+                    type Error = ::miden::felt_repr::FeltReprError;
 
                     #[inline(always)]
                     fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
@@ -271,13 +268,13 @@ fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
         let __miden_note: #note_ty = if ::core::mem::size_of::<#note_ty>() == 0 {
             match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(&[]) {
                 Ok(note) => note,
-                Err(err) => match err {},
+                Err(_err) => ::core::panic!("failed to decode note inputs"),
             }
         } else {
             let inputs = ::miden::active_note::get_inputs();
             match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(inputs.as_slice()) {
                 Ok(note) => note,
-                Err(err) => match err {},
+                Err(_err) => ::core::panic!("failed to decode note inputs"),
             }
         };
     }

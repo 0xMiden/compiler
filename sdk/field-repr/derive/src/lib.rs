@@ -251,10 +251,10 @@ fn derive_from_felt_repr_impl(
                 quote! {
                     impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
                         #[inline(always)]
-                        fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> Self {
-                            Self {
-                                #(#field_names: <#field_types as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)),*
-                            }
+                        fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> #felt_repr_crate::FeltReprResult<Self> {
+                            Ok(Self {
+                                #(#field_names: <#field_types as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)?),*
+                            })
                         }
                     }
                 }
@@ -262,13 +262,13 @@ fn derive_from_felt_repr_impl(
             StructFields::Unnamed(fields) => {
                 let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
                 let reads = field_types.iter().map(|ty| {
-                    quote! { <#ty as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader) }
+                    quote! { <#ty as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)? }
                 });
                 quote! {
                     impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
                         #[inline(always)]
-                        fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> Self {
-                            Self(#(#reads),*)
+                        fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> #felt_repr_crate::FeltReprResult<Self> {
+                            Ok(Self(#(#reads),*))
                         }
                     }
                 }
@@ -282,13 +282,13 @@ fn derive_from_felt_repr_impl(
                 let variant_ident = &variant.ident;
                 let tag = variant_ordinal as u32;
                 match &variant.fields {
-                    Fields::Unit => quote! { #tag => Self::#variant_ident },
+                    Fields::Unit => quote! { #tag => Ok(Self::#variant_ident) },
                     Fields::Unnamed(fields) => {
                         let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
                         let reads = field_types.iter().map(|ty| {
-                            quote! { <#ty as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader) }
+                            quote! { <#ty as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)? }
                         });
-                        quote! { #tag => Self::#variant_ident(#(#reads),*) }
+                        quote! { #tag => Ok(Self::#variant_ident(#(#reads),*)) }
                     }
                     Fields::Named(fields) => {
                         let field_idents: Vec<_> = fields
@@ -298,9 +298,9 @@ fn derive_from_felt_repr_impl(
                             .collect();
                         let field_types: Vec<_> = fields.named.iter().map(|f| &f.ty).collect();
                         let reads = field_idents.iter().zip(field_types.iter()).map(|(ident, ty)| {
-                            quote! { #ident: <#ty as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader) }
+                            quote! { #ident: <#ty as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)? }
                         });
-                        quote! { #tag => Self::#variant_ident { #(#reads),* } }
+                        quote! { #tag => Ok(Self::#variant_ident { #(#reads),* }) }
                     }
                 }
             });
@@ -308,11 +308,14 @@ fn derive_from_felt_repr_impl(
             quote! {
                 impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
                     #[inline(always)]
-                    fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> Self {
-                        let tag: u32 = <u32 as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader);
+                    fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> #felt_repr_crate::FeltReprResult<Self> {
+                        let tag: u32 = <u32 as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)?;
                         match tag {
                             #(#arms,)*
-                            other => panic!("Unknown `{}` enum variant tag: {}", stringify!(#name), other),
+                            other => Err(#felt_repr_crate::FeltReprError::UnknownEnumTag {
+                                ty: stringify!(#name),
+                                tag: other,
+                            }),
                         }
                     }
                 }
@@ -329,14 +332,13 @@ fn derive_from_felt_repr_impl(
     let expanded = quote! {
         #expanded
 
-        #[allow(clippy::infallible_try_from)]
         impl #impl_generics ::core::convert::TryFrom<&[#felt_ty]> for #name #ty_generics #where_clause {
-            type Error = ::core::convert::Infallible;
+            type Error = #felt_repr_crate::FeltReprError;
 
             #[inline(always)]
             fn try_from(felts: &[#felt_ty]) -> Result<Self, Self::Error> {
                 let mut reader = #felt_repr_crate::FeltReader::new(felts);
-                Ok(<Self as #felt_repr_crate::FromFeltRepr>::from_felt_repr(&mut reader))
+                <Self as #felt_repr_crate::FromFeltRepr>::from_felt_repr(&mut reader)
             }
         }
     };
