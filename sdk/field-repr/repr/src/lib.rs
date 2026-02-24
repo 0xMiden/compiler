@@ -16,6 +16,41 @@ pub use miden_field_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
 /// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
 pub use miden_field_repr_derive::DeriveToFeltRepr as ToFeltRepr;
 
+/// Error returned when decoding a type from its felt representation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeltReprError {
+    /// Attempted to read beyond the end of the felt slice.
+    UnexpectedEof {
+        /// Current read position.
+        pos: usize,
+        /// Total number of felts available.
+        len: usize,
+    },
+    /// A decoded value did not fit into the target Rust type.
+    ValueOutOfRange {
+        /// Name of the target Rust type.
+        ty: &'static str,
+        /// The decoded value.
+        value: u64,
+        /// The maximum supported value for `ty`.
+        max: u64,
+    },
+    /// An `Option<T>` tag was neither `0` nor `1`.
+    InvalidOptionTag(u64),
+    /// A boolean value was neither `0` nor `1`.
+    InvalidBool(u64),
+    /// An enum tag was not a valid variant ordinal.
+    UnknownEnumTag {
+        /// Name of the decoded enum type.
+        ty: &'static str,
+        /// The decoded tag.
+        tag: u32,
+    },
+}
+
+/// Convenience alias for results returned by felt-repr decoding APIs.
+pub type FeltReprResult<T> = core::result::Result<T, FeltReprError>;
+
 /// A reader that wraps a slice of `Felt` elements and tracks the current position.
 pub struct FeltReader<'a> {
     data: &'a [Felt],
@@ -30,16 +65,18 @@ impl<'a> FeltReader<'a> {
     }
 
     /// Reads the next `Felt` element, advancing the position.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there are no more elements to read.
     #[inline(always)]
-    pub fn read(&mut self) -> Felt {
-        assert!(self.pos < self.data.len(), "FeltReader: no more elements to read");
+    pub fn read(&mut self) -> FeltReprResult<Felt> {
+        if self.pos >= self.data.len() {
+            return Err(FeltReprError::UnexpectedEof {
+                pos: self.pos,
+                len: self.data.len(),
+            });
+        }
+
         let felt = self.data[self.pos];
         self.pos += 1;
-        felt
+        Ok(felt)
     }
 }
 
@@ -65,12 +102,12 @@ impl<'a> FeltWriter<'a> {
 /// Trait for deserialization from felt memory representation.
 pub trait FromFeltRepr: Sized {
     /// Deserializes from a `FeltReader`, consuming the required elements.
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self;
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self>;
 }
 
 impl FromFeltRepr for Felt {
     #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         reader.read()
     }
 }
@@ -78,42 +115,74 @@ impl FromFeltRepr for Felt {
 #[cfg(not(target_family = "wasm"))]
 impl FromFeltRepr for miden_core::Felt {
     #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        Self::from(reader.read())
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
+        Ok(Self::from(reader.read()?))
     }
 }
 
 impl FromFeltRepr for u64 {
     #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         // Encode u64 as 2 u32 limbs
-        let lo = reader.read().as_u64();
-        assert!(lo <= u32::MAX as u64, "u64: low limb out of range");
-        let hi = reader.read().as_u64();
-        assert!(hi <= u32::MAX as u64, "u64: high limb out of range");
+        let lo = reader.read()?.as_u64();
+        if lo > u32::MAX as u64 {
+            return Err(FeltReprError::ValueOutOfRange {
+                ty: "u32",
+                value: lo,
+                max: u32::MAX as u64,
+            });
+        }
+        let hi = reader.read()?.as_u64();
+        if hi > u32::MAX as u64 {
+            return Err(FeltReprError::ValueOutOfRange {
+                ty: "u32",
+                value: hi,
+                max: u32::MAX as u64,
+            });
+        }
 
-        (hi << 32) | lo
+        Ok((hi << 32) | lo)
     }
 }
 
 impl FromFeltRepr for u32 {
     #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_u64() as u32
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
+        let value = reader.read()?.as_u64();
+        if value > u32::MAX as u64 {
+            return Err(FeltReprError::ValueOutOfRange {
+                ty: "u32",
+                value,
+                max: u32::MAX as u64,
+            });
+        }
+        Ok(value as u32)
     }
 }
 
 impl FromFeltRepr for u8 {
     #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_u64() as u8
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
+        let value = reader.read()?.as_u64();
+        if value > u8::MAX as u64 {
+            return Err(FeltReprError::ValueOutOfRange {
+                ty: "u8",
+                value,
+                max: u8::MAX as u64,
+            });
+        }
+        Ok(value as u8)
     }
 }
 
 impl FromFeltRepr for bool {
     #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        reader.read().as_u64() != 0
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
+        match reader.read()?.as_u64() {
+            0 => Ok(false),
+            1 => Ok(true),
+            other => Err(FeltReprError::InvalidBool(other)),
+        }
     }
 }
 
@@ -127,11 +196,11 @@ where
     T: FromFeltRepr,
 {
     #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        match reader.read().as_u64() {
-            0 => None,
-            1 => Some(T::from_felt_repr(reader)),
-            _ => panic!("Option: invalid tag"),
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
+        match reader.read()?.as_u64() {
+            0 => Ok(None),
+            1 => Ok(Some(T::from_felt_repr(reader)?)),
+            other => Err(FeltReprError::InvalidOptionTag(other)),
         }
     }
 }
@@ -144,19 +213,25 @@ where
     T: FromFeltRepr,
 {
     #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> Self {
-        let len = reader.read().as_u64();
-        assert!(len <= u32::MAX as u64, "Vec: length out of range");
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
+        let len = reader.read()?.as_u64();
+        if len > u32::MAX as u64 {
+            return Err(FeltReprError::ValueOutOfRange {
+                ty: "u32",
+                value: len,
+                max: u32::MAX as u64,
+            });
+        }
         let len = len as usize;
 
         let mut result = Vec::with_capacity(len);
 
         let mut i = 0usize;
         while i < len {
-            result.push(T::from_felt_repr(reader));
+            result.push(T::from_felt_repr(reader)?);
             i += 1;
         }
-        result
+        Ok(result)
     }
 }
 

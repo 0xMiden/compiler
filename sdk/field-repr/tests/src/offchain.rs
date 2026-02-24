@@ -13,7 +13,7 @@ where
 {
     let felts = value.to_felt_repr();
     let mut reader = FeltReader::new(&felts);
-    let roundtrip = <T as FromFeltRepr>::from_felt_repr(&mut reader);
+    let roundtrip = <T as FromFeltRepr>::from_felt_repr(&mut reader).unwrap();
     assert_eq!(roundtrip, *value);
 }
 
@@ -43,7 +43,7 @@ fn test_deserialization() {
     let felts = [Felt::from_u64_unchecked(12345), Felt::from_u64_unchecked(67890)];
 
     let mut reader = FeltReader::new(&felts);
-    let value = TwoFelts::from_felt_repr(&mut reader);
+    let value = TwoFelts::from_felt_repr(&mut reader).unwrap();
 
     assert_eq!(value.a, Felt::from_u64_unchecked(12345));
     assert_eq!(value.b, Felt::from_u64_unchecked(67890));
@@ -383,7 +383,7 @@ fn test_u64_roundtrip_uses_u32_limbs() {
         assert_eq!(felts[1].as_u64(), expected_hi);
 
         let mut reader = FeltReader::new(&felts);
-        let roundtripped = u64::from_felt_repr(&mut reader);
+        let roundtripped = u64::from_felt_repr(&mut reader).unwrap();
         assert_eq!(roundtripped, value);
     }
 }
