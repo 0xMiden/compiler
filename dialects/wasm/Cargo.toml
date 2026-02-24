@@ -1,0 +1,19 @@
+[package]
+name = "midenc-dialect-wasm"
+description = "Miden IR Wasm Dialect"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["std"]
+std = ["midenc-hir/std"]
+
+[dependencies]
+midenc-hir.workspace = true

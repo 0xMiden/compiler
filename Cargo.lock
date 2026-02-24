@@ -2964,6 +2964,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",
+ "midenc-dialect-wasm",
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
@@ -3053,6 +3054,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-dialect-wasm"
+version = "0.7.1"
+dependencies = [
+ "midenc-hir",
+]
+
+[[package]]
 name = "midenc-driver"
 version = "0.7.1"
 dependencies = [
@@ -3088,6 +3096,7 @@ dependencies = [
  "midenc-dialect-cf",
  "midenc-dialect-hir",
  "midenc-dialect-ub",
+ "midenc-dialect-wasm",
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-symbol",
