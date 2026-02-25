@@ -289,13 +289,13 @@ fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
         let __miden_note: #note_ty = if ::core::mem::size_of::<#note_ty>() == 0 {
             match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(&[]) {
                 Ok(note) => note,
-                Err(_err) => ::core::panic!("failed to decode note inputs"),
+                Err(err) => ::core::panic!("failed to decode note inputs: {err:?}"),
             }
         } else {
             let inputs = ::miden::active_note::get_inputs();
             match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(inputs.as_slice()) {
                 Ok(note) => note,
-                Err(_err) => ::core::panic!("failed to decode note inputs"),
+                Err(err) => ::core::panic!("failed to decode note inputs: {err:?}"),
             }
         };
     }
