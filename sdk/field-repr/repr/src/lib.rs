@@ -57,6 +57,26 @@ pub enum FeltReprError {
     Custom(&'static str),
 }
 
+impl core::fmt::Display for FeltReprError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::UnexpectedEof { pos, len } => {
+                write!(f, "unexpected end of input at felt {pos} of {len}")
+            }
+            Self::ValueOutOfRange { ty, value, max } => {
+                write!(f, "value {value} out of range for {ty} (max {max})")
+            }
+            Self::InvalidOptionTag(tag) => write!(f, "invalid Option tag: {tag}"),
+            Self::InvalidBool(value) => write!(f, "invalid bool value: {value}"),
+            Self::UnknownEnumTag { ty, tag } => write!(f, "unknown enum tag for {ty}: {tag}"),
+            Self::TrailingData { pos, len } => {
+                write!(f, "trailing data starting at felt {pos} of {len}")
+            }
+            Self::Custom(msg) => f.write_str(msg),
+        }
+    }
+}
+
 /// Convenience alias for results returned by felt-repr decoding APIs.
 pub type FeltReprResult<T> = core::result::Result<T, FeltReprError>;
 
