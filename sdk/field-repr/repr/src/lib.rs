@@ -46,6 +46,8 @@ pub enum FeltReprError {
         /// The decoded tag.
         tag: u32,
     },
+    /// A custom decoding error provided by a downstream implementation.
+    Custom(&'static str),
 }
 
 /// Convenience alias for results returned by felt-repr decoding APIs.
