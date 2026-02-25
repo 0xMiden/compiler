@@ -16,4 +16,5 @@ default = ["std"]
 std = ["midenc-hir/std"]
 
 [dependencies]
+midenc-dialect-arith.workspace = true
 midenc-hir.workspace = true

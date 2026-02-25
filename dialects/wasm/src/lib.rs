@@ -17,6 +17,7 @@ use alloc::boxed::Box;
 mod builders;
 mod ops;
 
+use midenc_dialect_arith as arith;
 use midenc_hir::{
     AttributeValue, Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan,
     Type,
@@ -44,12 +45,20 @@ impl Dialect for WasmDialect {
 
     fn materialize_constant(
         &self,
-        _builder: &mut dyn Builder,
-        _attr: Box<dyn AttributeValue>,
-        _ty: &Type,
-        _span: SourceSpan,
+        builder: &mut dyn Builder,
+        attr: Box<dyn AttributeValue>,
+        ty: &Type,
+        span: SourceSpan,
     ) -> Option<OperationRef> {
-        // TODO implement
+        // Save the current insertion point
+        let mut builder = midenc_hir::InsertionGuard::new(builder);
+
+        // For now only integer constants are supported. Delegate them to the arith dialect
+        if ty.is_integer() {
+            let dialect = builder.context().get_or_register_dialect::<arith::ArithDialect>();
+            return dialect.materialize_constant(&mut builder, attr, ty, span);
+        }
+
         None
     }
 }

@@ -22,7 +22,6 @@ macro_rules! has_no_effects {
     };
 }
 
-// TODO implement eval?
 #[operation(
     dialect = WasmDialect,
     traits(UnaryOp),
