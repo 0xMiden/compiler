@@ -3160,6 +3160,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",
+ "midenc-dialect-wasm",
  "midenc-hir",
  "midenc-session",
 ]
