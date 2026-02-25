@@ -5,7 +5,11 @@
 //! contract account that uses the Rust-compiled auth component.
 
 use miden_client::{
-    auth::BasicAuthenticator, crypto::RandomCoin, note::NoteTag, transaction::RawOutputNote,
+    auth::BasicAuthenticator,
+    crypto::RpoRandomCoin,
+    note::NoteTag,
+    testing::{MockChain, NoteBuilder},
+    transaction::{OutputNote, RawOutputNote},
 };
 use miden_testing::MockChain;
 use midenc_expect_test::expect;
@@ -13,11 +17,12 @@ use midenc_expect_test::expect;
 use super::{
     cycle_helpers::auth_procedure_cycles,
     helpers::{
-        NoteCreationConfig, assert_counter_storage, block_on,
-        build_counter_account_with_rust_rpo_auth, build_send_notes_script, compile_rust_package,
-        counter_storage_slot_name, create_note_from_package,
+        assert_counter_storage, block_on, build_counter_account_with_rust_rpo_auth,
+        build_send_notes_script, compile_rust_package, counter_storage_slot_name,
+        create_note_from_package, NoteCreationConfig,
     },
 };
+use crate::mockchain::helpers::compile_rust_package;
 
 /// Verify that another client (without the RPO-Falcon512 key) cannot create notes for
 /// the counter account which uses the Rust-compiled RPO-Falcon512 authentication component.
@@ -55,16 +60,12 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     );
 
     // Positive check: original client (with the key) can create a note
-    let mut rng = RandomCoin::new(note_package.unwrap_program().hash());
-    let own_note = create_note_from_package(
-        note_package.clone(),
-        counter_account.id(),
-        NoteCreationConfig {
-            tag: NoteTag::with_account_target(counter_account.id()),
-            ..Default::default()
-        },
-        &mut rng,
-    );
+    let rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let own_note = NoteBuilder::new(counter_account.id(), rng)
+        .package((*note_package).clone())
+        .tag(NoteTag::with_account_target(counter_account.id()).into())
+        .build()
+        .expect("failed to build own_note");
     let tx_script = build_send_notes_script(&counter_account, std::slice::from_ref(&own_note));
     let authenticator = BasicAuthenticator::new(std::slice::from_ref(&secret_key));
 
@@ -86,15 +87,12 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
 
     // Negative check: without the RPO-Falcon512 key, creating output notes should fail.
     let counter_account = chain.committed_account(counter_account_id).unwrap().clone();
-    let forged_note = create_note_from_package(
-        note_package,
-        counter_account.id(),
-        NoteCreationConfig {
-            tag: NoteTag::with_account_target(counter_account.id()),
-            ..Default::default()
-        },
-        &mut rng,
-    );
+    let rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let forged_note = NoteBuilder::new(counter_account.id(), rng)
+        .package((*note_package).clone())
+        .tag(NoteTag::with_account_target(counter_account.id()).into())
+        .build()
+        .expect("failed to build forged_note");
     let tx_script = build_send_notes_script(&counter_account, std::slice::from_ref(&forged_note));
 
     let tx_context_builder = chain
