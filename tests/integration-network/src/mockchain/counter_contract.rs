@@ -1,13 +1,16 @@
 //! Counter contract test module
 
 use miden_client::{
-    Word, account::component::BasicWallet, crypto::RandomCoin, note::NoteTag,
+    account::component::BasicWallet,
+    crypto::{RandomCoin, RpoRandomCoin},
+    note::NoteTag,
     transaction::RawOutputNote,
+    Word,
 };
 use miden_core::Felt;
 use miden_protocol::account::{
-    AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageMapKey, StorageSlot,
-    StorageSlotName, auth::AuthScheme,
+    auth::AuthScheme, AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageMapKey,
+    StorageSlot, StorageSlotName,
 };
 use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
@@ -15,8 +18,8 @@ use midenc_expect_test::expect;
 use super::{
     cycle_helpers::note_cycles,
     helpers::{
-        NoteCreationConfig, account_component_from_package, assert_counter_storage,
-        compile_rust_package, create_note_from_package, execute_tx,
+        account_component_from_package, assert_counter_storage, compile_rust_package,
+        create_note_from_package, execute_tx, NoteCreationConfig,
     },
 };
 use crate::mockchain::helpers::COUNTER_CONTRACT_STORAGE_KEY;
@@ -37,35 +40,27 @@ pub fn test_counter_contract() {
             .unwrap(),
     )];
 
-    let counter_component = account_component_from_package(contract_package, storage_slots);
-    let counter_account_builder = AccountBuilder::new([0_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
-        .with_component(BasicWallet)
-        .with_component(counter_component);
+    let mut init_storage_data = InitStorageData::default();
+    init_storage_data
+        .insert_map_entry(counter_storage_slot.clone(), key, value)
+        .unwrap();
+    let contract_package = AccountComponent::from_package(&contract_package, &init_storage_data)
+        .expect("Failed to build account component from counter project");
 
     let mut builder = MockChain::builder();
     let counter_account = builder
-        .add_account_from_builder(
-            Auth::BasicAuth {
-                auth_scheme: AuthScheme::Falcon512Poseidon2,
-            },
-            counter_account_builder,
-            AccountState::Exists,
+        .add_existing_account_from_components(
+            Auth::BasicAuth,
+            [BasicWallet.into(), contract_package],
         )
-        .expect("failed to add counter account to mock chain builder");
+        .unwrap();
 
-    let mut rng = RandomCoin::new(note_package.clone().unwrap_program().hash());
-    let counter_note = create_note_from_package(
-        note_package,
-        counter_account.id(),
-        NoteCreationConfig {
-            tag: NoteTag::with_account_target(counter_account.id()),
-            ..Default::default()
-        },
-        &mut rng,
-    );
-    builder.add_output_note(RawOutputNote::Full(counter_note.clone()));
+    let mut rng = RpoRandomCoin::new(note_package.clone().unwrap_program().hash());
+    let counter_note = NoteBuilder::new(counter_account.id(), &mut rng)
+        .package((*note_package).clone())
+        .build()
+        .unwrap();
+    builder.add_output_note(OutputNote::Full(counter_note.clone()));
 
     let mut chain = builder.build().expect("failed to build mock chain");
     chain.prove_next_block().unwrap();

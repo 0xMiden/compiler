@@ -1,26 +1,30 @@
 //! Counter contract test with no-auth authentication component
 
 use miden_client::{
-    Word, account::component::BasicWallet, crypto::RandomCoin, note::NoteTag,
-    transaction::RawOutputNote,
+    account::component::BasicWallet, crypto::RandomCoin, note::NoteTag, transaction::RawOutputNote,
+    Word,
 };
-use miden_core::Felt;
+use miden_core::{Felt, FieldElement};
 use miden_protocol::account::{
-    AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageMapKey, StorageSlot,
-    StorageSlotName, auth::AuthScheme,
+    auth::AuthScheme, AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageMapKey,
+    StorageSlot, StorageSlotName,
 };
 use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
 
 use super::{
+    crypto::RpoRandomCoin,
     cycle_helpers::{auth_procedure_cycles, note_cycles},
     helpers::{
-        NoteCreationConfig, assert_counter_storage,
-        build_existing_counter_account_builder_with_auth_package, compile_rust_package,
-        create_note_from_package, execute_tx,
+        assert_counter_storage, build_existing_counter_account_builder_with_auth_package,
+        compile_rust_package, create_note_from_package, execute_tx, NoteCreationConfig,
     },
+    note::NoteTag,
+    testing::{AccountState, Auth, MockChain, NoteBuilder},
+    transaction::OutputNote,
+    Word,
 };
-use crate::mockchain::helpers::COUNTER_CONTRACT_STORAGE_KEY;
+use crate::mockchain::helpers::compile_rust_package;
 
 /// Tests the counter contract with a "no-auth" authentication component.
 ///
@@ -32,7 +36,7 @@ use crate::mockchain::helpers::COUNTER_CONTRACT_STORAGE_KEY;
 #[test]
 pub fn test_counter_contract_no_auth() {
     // Compile the contracts first (before creating any runtime)
-    let contract_package = compile_rust_package("../../examples/counter-contract", true);
+    let counter_package = compile_rust_package("../../examples/counter-contract", true);
     let note_package = compile_rust_package("../../examples/counter-note", true);
     let no_auth_auth_component =
         compile_rust_package("../../examples/auth-component-no-auth", true);
@@ -47,12 +51,23 @@ pub fn test_counter_contract_no_auth() {
     )];
 
     let mut builder = MockChain::builder();
+    let counter_component = {
+        let mut init_storage_data = InitStorageData::default();
+        init_storage_data
+            .insert_map_entry(counter_storage_slot.clone(), key, value)
+            .unwrap();
+        AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
+    };
+
+    let mut counter_init_storage_data = InitStorageData::default();
+    counter_init_storage_data
+        .insert_map_entry(counter_storage_slot.clone(), key, value)
+        .expect("failed to insert counter map entry");
 
     let counter_account = build_existing_counter_account_builder_with_auth_package(
-        contract_package,
+        counter_component,
         no_auth_auth_component,
         vec![],
-        counter_storage_slots,
         [0_u8; 32],
     )
     .build_existing()
@@ -80,16 +95,13 @@ pub fn test_counter_contract_no_auth() {
     eprintln!("Sender account ID: {:?}", sender_account.id().to_hex());
 
     // Sender creates the counter note (note script increments counter's storage on consumption)
-    let mut rng = RandomCoin::new(note_package.unwrap_program().hash());
-    let counter_note = create_note_from_package(
-        note_package.clone(),
-        sender_account.id(),
-        NoteCreationConfig {
-            tag: NoteTag::with_account_target(counter_account.id()),
-            ..Default::default()
-        },
-        &mut rng,
-    );
+    let rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let counter_note = NoteBuilder::new(sender_account.id(), rng)
+        .package((*note_package).clone())
+        .tag(NoteTag::with_account_target(counter_account.id()).into())
+        .build()
+        .unwrap();
+
     eprintln!("Counter note hash: {:?}", counter_note.id().to_hex());
     builder.add_output_note(RawOutputNote::Full(counter_note.clone()));
 
