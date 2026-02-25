@@ -338,7 +338,14 @@ fn derive_from_felt_repr_impl(
             #[inline(always)]
             fn try_from(felts: &[#felt_ty]) -> Result<Self, Self::Error> {
                 let mut reader = #felt_repr_crate::FeltReader::new(felts);
-                <Self as #felt_repr_crate::FromFeltRepr>::from_felt_repr(&mut reader)
+                let value = <Self as #felt_repr_crate::FromFeltRepr>::from_felt_repr(&mut reader)?;
+                if reader.remaining() != 0 {
+                    return Err(#felt_repr_crate::FeltReprError::TrailingData {
+                        pos: reader.pos(),
+                        len: reader.len(),
+                    });
+                }
+                Ok(value)
             }
         }
     };

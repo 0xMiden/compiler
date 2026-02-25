@@ -46,6 +46,13 @@ pub enum FeltReprError {
         /// The decoded tag.
         tag: u32,
     },
+    /// Extra data remained after decoding a value.
+    TrailingData {
+        /// Current read position.
+        pos: usize,
+        /// Total number of felts available.
+        len: usize,
+    },
     /// A custom decoding error provided by a downstream implementation.
     Custom(&'static str),
 }
@@ -64,6 +71,30 @@ impl<'a> FeltReader<'a> {
     #[inline(always)]
     pub fn new(data: &'a [Felt]) -> Self {
         Self { data, pos: 0 }
+    }
+
+    /// Returns the current read position.
+    #[inline(always)]
+    pub fn pos(&self) -> usize {
+        self.pos
+    }
+
+    /// Returns the total number of felts in the underlying slice.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Returns `true` if the underlying slice is empty.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    /// Returns the number of unread felts remaining.
+    #[inline(always)]
+    pub fn remaining(&self) -> usize {
+        self.data.len().saturating_sub(self.pos)
     }
 
     /// Reads the next `Felt` element, advancing the position.
