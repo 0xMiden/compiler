@@ -3,7 +3,6 @@
 use std::{collections::BTreeSet, future::Future, sync::Arc};
 
 use miden_client::{
-    Word,
     account::component::BasicWallet,
     asset::FungibleAsset,
     auth::AuthSecretKey,
@@ -13,14 +12,16 @@ use miden_client::{
     },
     testing::{MockChain, TransactionContextBuilder},
     transaction::OutputNote,
+    Word,
 };
-use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
+use miden_core::{crypto::hash::Rpo256, Felt, FieldElement};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_protocol::{
     account::{
-        Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
-        AccountStorage, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
+        Account, AccountBuilder, AccountComponent, AccountComponentMetadata,
+        AccountComponentTemplate, AccountId, AccountStorageMode, AccountType, InitStorageData,
+        StorageMap, StorageSlot,
     },
     asset::Asset,
     note::PartialNote,
@@ -28,7 +29,7 @@ use miden_protocol::{
 };
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{rngs::StdRng, SeedableRng};
 
 /// Converts a value's felt representation into `miden_core::Felt` elements.
 pub(super) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
@@ -359,4 +360,132 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
     .expect("failed to build counter account");
 
     (account, secret_key)
+}
+
+pub trait ComponentFromProject {
+    fn build_project(project_path: &str) -> Arc<Package> {
+        let output = std::process::Command::new("miden")
+            .arg("build")
+            // Midenup's "miden build" command inherits all of cargo miden's flags.
+            .arg("--manifest-path")
+            .arg(std::path::Path::new(project_path).join("Cargo.toml"))
+            .arg("--release")
+            .output()
+            .expect("failed to execute `miden build`");
+
+        if !output.status.success() {
+            panic!("miden build failed:\n{}", String::from_utf8_lossy(&output.stderr))
+        }
+
+        // Read the .masp artifact from the project's target directory
+        let masp_path = std::path::Path::new(project_path)
+            .join("target/miden/release")
+            .read_dir()
+            .expect("failed to read target/miden/release")
+            .filter_map(|e| e.ok())
+            .find(|e| e.path().extension().is_some_and(|ext| ext == "masp"))
+            .map(|entry| entry.path())
+            .expect("no .masp file found in target/miden/release");
+
+        let masp_bytes = std::fs::read(&masp_path).expect("failed to read .masp artifact");
+        Arc::new(Package::read_from_bytes(&masp_bytes).expect("failed to parse .masp package"))
+    }
+}
+
+pub struct CustomWalletBuilder {
+    pub package: Option<Arc<Package>>,
+    pub init_storage_data: Option<InitStorageData>,
+}
+
+impl ComponentFromProject for CustomWallet {}
+
+impl CustomWalletBuilder {
+    pub(super) fn with_package(project_path: &str) -> CustomWalletBuilder {
+        CustomWalletBuilder {
+            package: Some(CustomWallet::build_project(project_path)),
+            init_storage_data: None,
+        }
+    }
+
+    pub(super) fn with_init_storage_data(
+        mut self,
+        init_storage_data: InitStorageData,
+    ) -> CustomWalletBuilder {
+        self.init_storage_data = Some(init_storage_data);
+        self
+    }
+
+    pub(super) fn build(self) -> CustomWallet {
+        let package = self.package.expect("package is required");
+        let init_storage_data = self.init_storage_data.unwrap_or_default();
+        CustomWallet {
+            package,
+            init_storage_data,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct CustomWallet {
+    pub package: Arc<Package>,
+    pub init_storage_data: InitStorageData,
+}
+
+impl From<CustomWallet> for AccountComponent {
+    fn from(value: CustomWallet) -> Self {
+        AccountComponent::from_package_with_init_data(&value.package, &value.init_storage_data)
+            .expect("failed to create account component from package")
+    }
+}
+
+pub(super) struct CustomNoteBuilder {
+    pub package: Option<Arc<Package>>,
+    pub sender_id: Option<AccountId>,
+    pub config: Option<NoteCreationConfig>,
+    pub rng: Option<miden_client::crypto::RpoRandomCoin>,
+}
+
+impl ComponentFromProject for CustomNote {}
+
+impl CustomNoteBuilder {
+    fn with_package(mut self, project_path: &str) -> CustomNoteBuilder {
+        self.package = Some(CustomNote::build_project(project_path));
+        self
+    }
+
+    fn with_sender_id(mut self, sender_id: AccountId) -> CustomNoteBuilder {
+        self.sender_id = Some(sender_id);
+        self
+    }
+
+    fn with_config(mut self, config: NoteCreationConfig) -> CustomNoteBuilder {
+        self.config = Some(config);
+        self
+    }
+
+    fn with_rng(mut self, rng: miden_client::crypto::RpoRandomCoin) -> CustomNoteBuilder {
+        self.rng = Some(rng);
+        self
+    }
+
+    fn build(self) -> CustomNote {
+        let package = self.package.expect("package is required");
+        let config = self.config.unwrap_or_default();
+        let sender_id = self.sender_id.unwrap_or(AccountId::try_from(0u128).unwrap());
+        let mut rng = self.rng.unwrap_or_else(|| {
+            miden_client::crypto::RpoRandomCoin::new(package.unwrap_program().hash())
+        });
+        let note = create_note_from_package(package, sender_id, config, &mut rng);
+        CustomNote { note }
+    }
+}
+
+pub(super) struct CustomNote {
+    pub note: Note,
+}
+
+impl From<CustomNote> for OutputNote {
+    fn from(value: CustomNote) -> Self {
+        OutputNote::Full(value.note)
+    }
 }

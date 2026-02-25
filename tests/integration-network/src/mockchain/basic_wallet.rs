@@ -1,6 +1,7 @@
 //! Basic wallet test module
 
 use miden_client::{
+    account::component::BasicWallet,
     asset::FungibleAsset,
     crypto::RpoRandomCoin,
     note::NoteAssets,
@@ -8,11 +9,12 @@ use miden_client::{
     transaction::OutputNote,
 };
 use miden_core::Felt;
+use miden_objects::account::AccountComponent;
 
 use super::helpers::{
-    NoteCreationConfig, assert_account_has_fungible_asset, build_asset_transfer_tx,
-    build_existing_basic_wallet_account_builder, build_send_notes_script, compile_rust_package,
-    create_note_from_package, execute_tx, to_core_felts,
+    CustomNoteBuilder, CustomWalletBuilder, NoteCreationConfig, assert_account_has_fungible_asset,
+    build_asset_transfer_tx, build_existing_basic_wallet_account_builder, build_send_notes_script,
+    compile_rust_package, create_note_from_package, execute_tx, to_core_felts,
 };
 
 /// Tests the basic-wallet contract deployment and p2id note consumption workflow on a mock chain.
@@ -124,7 +126,7 @@ pub fn test_basic_wallet_p2id() {
 #[test]
 pub fn test_basic_wallet_p2ide() {
     // Compile the contracts first (before creating any runtime)
-    let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
+    let wallet_package = CustomWalletBuilder::with_package("../../examples/basic-wallet").build();
     let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);
     let p2ide_note_package = compile_rust_package("../../examples/p2ide-note", true);
 
@@ -136,19 +138,17 @@ pub fn test_basic_wallet_p2ide() {
     let faucet_id = faucet_account.id();
 
     let alice_account = builder
-        .add_account_from_builder(
+        .add_existing_account_from_components(
             Auth::BasicAuth,
-            build_existing_basic_wallet_account_builder(wallet_package.clone(), true, [3_u8; 32]),
-            AccountState::Exists,
+            [AccountComponent::from(wallet_package.clone()), BasicWallet.into()],
         )
         .unwrap();
     let alice_id = alice_account.id();
 
     let bob_account = builder
-        .add_account_from_builder(
+        .add_existing_account_from_components(
             Auth::BasicAuth,
-            build_existing_basic_wallet_account_builder(wallet_package, false, [4_u8; 32]),
-            AccountState::Exists,
+            [AccountComponent::from(wallet_package)],
         )
         .unwrap();
     let bob_id = bob_account.id();
