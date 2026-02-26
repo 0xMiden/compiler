@@ -1349,11 +1349,14 @@ impl HirLowering for builtin::GlobalSymbol {
 
 impl HirLowering for wasm::I32Extend8S {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        let operand = inst_emitter.pop().expect("operand stack is empty");
+        // Modify the logical stack without emitting ops, so `sext` treats the operand as I8.
+        let operand = emitter.stack.pop().expect("operand stack is empty");
         assert_eq!(operand.ty(), Type::I32);
-        inst_emitter.push(Type::I8);
+        emitter.stack.push(Type::I8);
+
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
         inst_emitter.sext(&Type::I32, self.span());
+
         Ok(())
     }
 }
