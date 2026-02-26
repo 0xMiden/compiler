@@ -396,17 +396,17 @@ If not, follow the installation instructions in: https://github.com/0xMiden/mide
     }
 }
 
-pub struct CustomWalletBuilder {
+pub struct CustomComponentBuilder {
     pub package: Option<Arc<Package>>,
     pub init_storage_data: Option<InitStorageData>,
 }
 
-impl PackageFromProject for CustomWallet {}
+impl PackageFromProject for CustomComponent {}
 
-impl CustomWalletBuilder {
-    pub(super) fn with_package(project_path: &str) -> CustomWalletBuilder {
-        CustomWalletBuilder {
-            package: Some(CustomWallet::build_project(project_path)),
+impl CustomComponentBuilder {
+    pub(super) fn with_package(project_path: &str) -> CustomComponentBuilder {
+        CustomComponentBuilder {
+            package: Some(CustomComponent::build_project(project_path)),
             init_storage_data: None,
         }
     }
@@ -414,15 +414,15 @@ impl CustomWalletBuilder {
     pub(super) fn with_init_storage_data(
         mut self,
         init_storage_data: InitStorageData,
-    ) -> CustomWalletBuilder {
+    ) -> CustomComponentBuilder {
         self.init_storage_data = Some(init_storage_data);
         self
     }
 
-    pub(super) fn build(self) -> CustomWallet {
+    pub(super) fn build(self) -> CustomComponent {
         let package = self.package.expect("package is required");
         let init_storage_data = self.init_storage_data.unwrap_or_default();
-        CustomWallet {
+        CustomComponent {
             package,
             init_storage_data,
         }
@@ -430,13 +430,13 @@ impl CustomWalletBuilder {
 }
 
 #[derive(Clone)]
-pub(super) struct CustomWallet {
+pub(super) struct CustomComponent {
     pub package: Arc<Package>,
     pub init_storage_data: InitStorageData,
 }
 
-impl From<CustomWallet> for AccountComponent {
-    fn from(value: CustomWallet) -> Self {
+impl From<CustomComponent> for AccountComponent {
+    fn from(value: CustomComponent) -> Self {
         AccountComponent::from_package_with_init_data(&value.package, &value.init_storage_data)
             .expect("failed to create account component from package")
     }
@@ -452,34 +452,60 @@ pub(super) struct CustomNoteBuilder {
 impl PackageFromProject for CustomNote {}
 
 impl CustomNoteBuilder {
-    fn with_package(mut self, project_path: &str) -> CustomNoteBuilder {
-        self.package = Some(CustomNote::build_project(project_path));
-        self
+    pub(super) fn with_package(project_path: &str) -> CustomNoteBuilder {
+        CustomNoteBuilder {
+            package: Some(CustomNote::build_project(project_path)),
+            sender_id: None,
+            config: None,
+            rng: None,
+        }
     }
 
-    fn with_sender_id(mut self, sender_id: AccountId) -> CustomNoteBuilder {
+    pub(super) fn with_sender_id(mut self, sender_id: AccountId) -> CustomNoteBuilder {
         self.sender_id = Some(sender_id);
         self
     }
 
-    fn with_config(mut self, config: NoteCreationConfig) -> CustomNoteBuilder {
+    pub(super) fn with_config(mut self, config: NoteCreationConfig) -> CustomNoteBuilder {
         self.config = Some(config);
         self
     }
 
-    fn with_rng(mut self, rng: miden_client::crypto::RpoRandomCoin) -> CustomNoteBuilder {
+    pub(super) fn with_rng(
+        mut self,
+        rng: miden_client::crypto::RpoRandomCoin,
+    ) -> CustomNoteBuilder {
         self.rng = Some(rng);
         self
     }
 
-    fn build(self) -> CustomNote {
+    pub(super) fn build(self) -> CustomNote {
         let package = self.package.expect("package is required");
         let config = self.config.unwrap_or_default();
         let sender_id = self.sender_id.unwrap_or(AccountId::try_from(0u128).unwrap());
         let mut rng = self.rng.unwrap_or_else(|| {
             miden_client::crypto::RpoRandomCoin::new(package.unwrap_program().hash())
         });
-        let note = create_note_from_package(package, sender_id, config, &mut rng);
+
+        let note_program = package.unwrap_program();
+        let note_script =
+            NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
+
+        let serial_num = rng.draw_word();
+        let note_inputs = NoteInputs::new(config.inputs).unwrap();
+        let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
+
+        let metadata = NoteMetadata::new(
+            sender_id,
+            config.note_type,
+            config.tag,
+            config.execution_hint,
+            config.aux,
+        )
+        .unwrap();
+
+        let note = Note::new(config.assets, metadata, recipient);
+
         CustomNote { note }
     }
 }
