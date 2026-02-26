@@ -371,7 +371,10 @@ pub trait ComponentFromProject {
             .arg(std::path::Path::new(project_path).join("Cargo.toml"))
             .arg("--release")
             .output()
-            .expect("failed to execute `miden build`");
+            // TODO: Add the cargo install command once `midenup` is published
+            // in crates.io.
+            .expect("failed to execute `miden build`. Is midenup installed?.
+If not, follow the installation instructions in: https://github.com/0xMiden/midenup");
 
         if !output.status.success() {
             panic!("miden build failed:\n{}", String::from_utf8_lossy(&output.stderr))
