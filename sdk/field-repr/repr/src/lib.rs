@@ -117,6 +117,18 @@ impl<'a> FeltReader<'a> {
         self.data.len().saturating_sub(self.pos)
     }
 
+    /// Ensures there are no unread felts remaining.
+    #[inline(always)]
+    pub fn ensure_eof(&self) -> FeltReprResult<()> {
+        if self.remaining() != 0 {
+            return Err(FeltReprError::TrailingData {
+                pos: self.pos,
+                len: self.data.len(),
+            });
+        }
+        Ok(())
+    }
+
     /// Reads the next `Felt` element, advancing the position.
     #[inline(always)]
     pub fn read(&mut self) -> FeltReprResult<Felt> {
