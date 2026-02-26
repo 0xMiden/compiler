@@ -9,11 +9,14 @@ pub mod felt_repr {
     pub use miden_field_repr::{FeltReader, FeltReprError, FromFeltRepr};
 }
 
+#[derive(Debug)]
 #[note]
 struct UnitNote;
 
+#[derive(Debug)]
 #[note]
 struct OneFeltNote {
+    #[allow(dead_code)]
     a: miden::Felt,
 }
 
