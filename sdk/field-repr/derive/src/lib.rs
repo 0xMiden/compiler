@@ -305,21 +305,25 @@ fn derive_from_felt_repr_impl(
                 }
             });
 
-            quote! {
-                impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
-                    #[inline(always)]
-                    fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> #felt_repr_crate::FeltReprResult<Self> {
-                        let tag: u32 = <u32 as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)?;
-                        match tag {
-                            #(#arms,)*
-                            other => Err(#felt_repr_crate::FeltReprError::UnknownEnumTag {
-                                ty: stringify!(#name),
-                                tag: other,
-                            }),
-                        }
-                    }
-                }
-            }
+	            quote! {
+	                impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
+	                    #[inline(always)]
+	                    fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> #felt_repr_crate::FeltReprResult<Self> {
+	                        let tag_pos = reader.pos();
+	                        let len = reader.len();
+	                        let tag: u32 = <u32 as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)?;
+	                        match tag {
+	                            #(#arms,)*
+	                            other => Err(#felt_repr_crate::FeltReprError::UnknownEnumTag {
+	                                pos: tag_pos,
+	                                len,
+	                                ty: stringify!(#name),
+	                                tag: other,
+	                            }),
+	                        }
+	                    }
+	                }
+	            }
         }
         Data::Union(_) => {
             return Err(Error::new(
