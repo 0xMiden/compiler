@@ -111,6 +111,54 @@ impl<'a> FeltReader<'a> {
         self.pos += 1;
         Ok(felt)
     }
+
+    /// Reads the next element and decodes it as a `u32`.
+    #[inline(always)]
+    pub fn read_u32(&mut self) -> FeltReprResult<u32> {
+        let value = self.read()?.as_u64();
+        if value > u32::MAX as u64 {
+            return Err(FeltReprError::ValueOutOfRange {
+                ty: "u32",
+                value,
+                max: u32::MAX as u64,
+            });
+        }
+        Ok(value as u32)
+    }
+
+    /// Reads the next element and decodes it as a `u8`.
+    #[inline(always)]
+    pub fn read_u8(&mut self) -> FeltReprResult<u8> {
+        let value = self.read()?.as_u64();
+        if value > u8::MAX as u64 {
+            return Err(FeltReprError::ValueOutOfRange {
+                ty: "u8",
+                value,
+                max: u8::MAX as u64,
+            });
+        }
+        Ok(value as u8)
+    }
+
+    /// Reads the next element and decodes it as a boolean.
+    ///
+    /// Only `0` and `1` are accepted.
+    #[inline(always)]
+    pub fn read_bool(&mut self) -> FeltReprResult<bool> {
+        match self.read()?.as_u64() {
+            0 => Ok(false),
+            1 => Ok(true),
+            other => Err(FeltReprError::InvalidBool(other)),
+        }
+    }
+
+    /// Reads the next element and decodes it as a length prefix.
+    ///
+    /// The length is encoded as a `u32` in a single `Felt`.
+    #[inline(always)]
+    pub fn read_len_u32(&mut self) -> FeltReprResult<usize> {
+        Ok(self.read_u32()? as usize)
+    }
 }
 
 /// A writer that wraps a `Vec<Felt>` and appends elements to it.
@@ -157,23 +205,8 @@ impl FromFeltRepr for u64 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         // Encode u64 as 2 u32 limbs
-        let lo = reader.read()?.as_u64();
-        if lo > u32::MAX as u64 {
-            return Err(FeltReprError::ValueOutOfRange {
-                ty: "u32",
-                value: lo,
-                max: u32::MAX as u64,
-            });
-        }
-        let hi = reader.read()?.as_u64();
-        if hi > u32::MAX as u64 {
-            return Err(FeltReprError::ValueOutOfRange {
-                ty: "u32",
-                value: hi,
-                max: u32::MAX as u64,
-            });
-        }
-
+        let lo = reader.read_u32()? as u64;
+        let hi = reader.read_u32()? as u64;
         Ok((hi << 32) | lo)
     }
 }
@@ -181,41 +214,21 @@ impl FromFeltRepr for u64 {
 impl FromFeltRepr for u32 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
-        let value = reader.read()?.as_u64();
-        if value > u32::MAX as u64 {
-            return Err(FeltReprError::ValueOutOfRange {
-                ty: "u32",
-                value,
-                max: u32::MAX as u64,
-            });
-        }
-        Ok(value as u32)
+        reader.read_u32()
     }
 }
 
 impl FromFeltRepr for u8 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
-        let value = reader.read()?.as_u64();
-        if value > u8::MAX as u64 {
-            return Err(FeltReprError::ValueOutOfRange {
-                ty: "u8",
-                value,
-                max: u8::MAX as u64,
-            });
-        }
-        Ok(value as u8)
+        reader.read_u8()
     }
 }
 
 impl FromFeltRepr for bool {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
-        match reader.read()?.as_u64() {
-            0 => Ok(false),
-            1 => Ok(true),
-            other => Err(FeltReprError::InvalidBool(other)),
-        }
+        reader.read_bool()
     }
 }
 
@@ -247,15 +260,7 @@ where
 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
-        let len = reader.read()?.as_u64();
-        if len > u32::MAX as u64 {
-            return Err(FeltReprError::ValueOutOfRange {
-                ty: "u32",
-                value: len,
-                max: u32::MAX as u64,
-            });
-        }
-        let len = len as usize;
+        let len = reader.read_len_u32()?;
 
         let mut result = Vec::with_capacity(len);
 
