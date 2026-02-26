@@ -52,6 +52,7 @@ pub(super) fn block_on<F: Future>(future: F) -> F::Output {
 // COMPILATION
 // ================================================================================================
 
+/// NOTE: superseeded by the PackageFromProject trait.
 /// Helper to compile a Rust package to a Miden `Package`.
 pub(super) fn compile_rust_package(package_path: &str, release: bool) -> Arc<Package> {
     let config = WasmTranslationConfig::default();
@@ -362,7 +363,7 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
     (account, secret_key)
 }
 
-pub trait ComponentFromProject {
+pub trait PackageFromProject {
     fn build_project(project_path: &str) -> Arc<Package> {
         let output = std::process::Command::new("miden")
             .arg("build")
@@ -400,7 +401,7 @@ pub struct CustomWalletBuilder {
     pub init_storage_data: Option<InitStorageData>,
 }
 
-impl ComponentFromProject for CustomWallet {}
+impl PackageFromProject for CustomWallet {}
 
 impl CustomWalletBuilder {
     pub(super) fn with_package(project_path: &str) -> CustomWalletBuilder {
@@ -448,7 +449,7 @@ pub(super) struct CustomNoteBuilder {
     pub rng: Option<miden_client::crypto::RpoRandomCoin>,
 }
 
-impl ComponentFromProject for CustomNote {}
+impl PackageFromProject for CustomNote {}
 
 impl CustomNoteBuilder {
     fn with_package(mut self, project_path: &str) -> CustomNoteBuilder {
