@@ -1,4 +1,5 @@
 use core::convert::TryFrom;
+
 use miden_base_macros::note;
 
 extern crate self as miden;
@@ -25,22 +26,13 @@ fn unit_note_rejects_trailing_data() {
     let felts = [miden::Felt::from_u64_unchecked(0)];
 
     let err = UnitNote::try_from(felts.as_slice()).unwrap_err();
-    assert_eq!(
-        err,
-        miden::felt_repr::FeltReprError::TrailingData { pos: 0, len: 1 }
-    );
+    assert_eq!(err, miden::felt_repr::FeltReprError::TrailingData { pos: 0, len: 1 });
 }
 
 #[test]
 fn note_struct_rejects_trailing_data() {
-    let felts = [
-        miden::Felt::from_u64_unchecked(1),
-        miden::Felt::from_u64_unchecked(2),
-    ];
+    let felts = [miden::Felt::from_u64_unchecked(1), miden::Felt::from_u64_unchecked(2)];
 
     let err = OneFeltNote::try_from(felts.as_slice()).unwrap_err();
-    assert_eq!(
-        err,
-        miden::felt_repr::FeltReprError::TrailingData { pos: 1, len: 2 }
-    );
+    assert_eq!(err, miden::felt_repr::FeltReprError::TrailingData { pos: 1, len: 2 });
 }

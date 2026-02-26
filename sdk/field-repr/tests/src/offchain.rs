@@ -85,10 +85,7 @@ fn test_try_from_slice_rejects_trailing_data() {
     felts.push(Felt::from_u64_unchecked(0));
 
     let err = TwoFelts::try_from(felts.as_slice()).unwrap_err();
-    assert_eq!(
-        err,
-        miden_field_repr::FeltReprError::TrailingData { pos: 2, len: 3 }
-    );
+    assert_eq!(err, miden_field_repr::FeltReprError::TrailingData { pos: 2, len: 3 });
 }
 
 #[test]
