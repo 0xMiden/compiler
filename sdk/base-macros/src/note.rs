@@ -106,12 +106,7 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
                     #[inline(always)]
                     fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
                         let reader = ::miden::felt_repr::FeltReader::new(felts);
-                        if reader.remaining() != 0 {
-                            return Err(::miden::felt_repr::FeltReprError::TrailingData {
-                                pos: reader.pos(),
-                                len: reader.len(),
-                            });
-                        }
+                        reader.ensure_eof()?;
                         Ok(Self)
                     }
                 }
@@ -134,12 +129,7 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
                     fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
                         let mut reader = ::miden::felt_repr::FeltReader::new(felts);
                         let value = Self { #(#field_inits),* };
-                        if reader.remaining() != 0 {
-                            return Err(::miden::felt_repr::FeltReprError::TrailingData {
-                                pos: reader.pos(),
-                                len: reader.len(),
-                            });
-                        }
+                        reader.ensure_eof()?;
                         Ok(value)
                     }
                 }
@@ -161,12 +151,7 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
                     fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
                         let mut reader = ::miden::felt_repr::FeltReader::new(felts);
                         let value = Self(#(#field_inits),*);
-                        if reader.remaining() != 0 {
-                            return Err(::miden::felt_repr::FeltReprError::TrailingData {
-                                pos: reader.pos(),
-                                len: reader.len(),
-                            });
-                        }
+                        reader.ensure_eof()?;
                         Ok(value)
                     }
                 }
