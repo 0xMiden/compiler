@@ -92,10 +92,7 @@ impl core::fmt::Display for FeltReprError {
                 value,
                 max,
             } => {
-                write!(
-                    f,
-                    "value {value} out of range for {ty} at felt {pos} of {len} (max {max})"
-                )
+                write!(f, "value {value} out of range for {ty} at felt {pos} of {len} (max {max})")
             }
             Self::InvalidOptionTag { pos, len, tag } => {
                 write!(f, "invalid Option tag at felt {pos} of {len}: {tag}")
