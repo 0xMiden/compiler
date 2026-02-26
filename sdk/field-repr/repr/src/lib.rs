@@ -28,6 +28,10 @@ pub enum FeltReprError {
     },
     /// A decoded value did not fit into the target Rust type.
     ValueOutOfRange {
+        /// Position of the decoded value.
+        pos: usize,
+        /// Total number of felts available.
+        len: usize,
         /// Name of the target Rust type.
         ty: &'static str,
         /// The decoded value.
@@ -36,11 +40,29 @@ pub enum FeltReprError {
         max: u64,
     },
     /// An `Option<T>` tag was neither `0` nor `1`.
-    InvalidOptionTag(u64),
+    InvalidOptionTag {
+        /// Position of the decoded tag.
+        pos: usize,
+        /// Total number of felts available.
+        len: usize,
+        /// The decoded tag.
+        tag: u64,
+    },
     /// A boolean value was neither `0` nor `1`.
-    InvalidBool(u64),
+    InvalidBool {
+        /// Position of the decoded value.
+        pos: usize,
+        /// Total number of felts available.
+        len: usize,
+        /// The decoded value.
+        value: u64,
+    },
     /// An enum tag was not a valid variant ordinal.
     UnknownEnumTag {
+        /// Position of the decoded tag.
+        pos: usize,
+        /// Total number of felts available.
+        len: usize,
         /// Name of the decoded enum type.
         ty: &'static str,
         /// The decoded tag.
@@ -63,12 +85,27 @@ impl core::fmt::Display for FeltReprError {
             Self::UnexpectedEof { pos, len } => {
                 write!(f, "unexpected end of input at felt {pos} of {len}")
             }
-            Self::ValueOutOfRange { ty, value, max } => {
-                write!(f, "value {value} out of range for {ty} (max {max})")
+            Self::ValueOutOfRange {
+                pos,
+                len,
+                ty,
+                value,
+                max,
+            } => {
+                write!(
+                    f,
+                    "value {value} out of range for {ty} at felt {pos} of {len} (max {max})"
+                )
             }
-            Self::InvalidOptionTag(tag) => write!(f, "invalid Option tag: {tag}"),
-            Self::InvalidBool(value) => write!(f, "invalid bool value: {value}"),
-            Self::UnknownEnumTag { ty, tag } => write!(f, "unknown enum tag for {ty}: {tag}"),
+            Self::InvalidOptionTag { pos, len, tag } => {
+                write!(f, "invalid Option tag at felt {pos} of {len}: {tag}")
+            }
+            Self::InvalidBool { pos, len, value } => {
+                write!(f, "invalid bool value at felt {pos} of {len}: {value}")
+            }
+            Self::UnknownEnumTag { pos, len, ty, tag } => {
+                write!(f, "unknown enum tag for {ty} at felt {pos} of {len}: {tag}")
+            }
             Self::TrailingData { pos, len } => {
                 write!(f, "trailing data starting at felt {pos} of {len}")
             }
@@ -147,9 +184,13 @@ impl<'a> FeltReader<'a> {
     /// Reads the next element and decodes it as a `u32`.
     #[inline(always)]
     pub fn read_u32(&mut self) -> FeltReprResult<u32> {
+        let pos = self.pos;
+        let len = self.data.len();
         let value = self.read()?.as_u64();
         if value > u32::MAX as u64 {
             return Err(FeltReprError::ValueOutOfRange {
+                pos,
+                len,
                 ty: "u32",
                 value,
                 max: u32::MAX as u64,
@@ -161,9 +202,13 @@ impl<'a> FeltReader<'a> {
     /// Reads the next element and decodes it as a `u8`.
     #[inline(always)]
     pub fn read_u8(&mut self) -> FeltReprResult<u8> {
+        let pos = self.pos;
+        let len = self.data.len();
         let value = self.read()?.as_u64();
         if value > u8::MAX as u64 {
             return Err(FeltReprError::ValueOutOfRange {
+                pos,
+                len,
                 ty: "u8",
                 value,
                 max: u8::MAX as u64,
@@ -177,10 +222,12 @@ impl<'a> FeltReader<'a> {
     /// Only `0` and `1` are accepted.
     #[inline(always)]
     pub fn read_bool(&mut self) -> FeltReprResult<bool> {
+        let pos = self.pos;
+        let len = self.data.len();
         match self.read()?.as_u64() {
             0 => Ok(false),
             1 => Ok(true),
-            other => Err(FeltReprError::InvalidBool(other)),
+            value => Err(FeltReprError::InvalidBool { pos, len, value }),
         }
     }
 
@@ -275,10 +322,12 @@ where
 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
+        let pos = reader.pos();
+        let len = reader.len();
         match reader.read()?.as_u64() {
             0 => Ok(None),
             1 => Ok(Some(T::from_felt_repr(reader)?)),
-            other => Err(FeltReprError::InvalidOptionTag(other)),
+            tag => Err(FeltReprError::InvalidOptionTag { pos, len, tag }),
         }
     }
 }

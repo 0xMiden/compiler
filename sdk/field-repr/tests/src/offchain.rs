@@ -91,6 +91,79 @@ fn test_try_from_slice_rejects_trailing_data() {
     );
 }
 
+#[test]
+fn test_value_out_of_range_includes_position() {
+    let felts = [Felt::from_u64_unchecked(256)];
+    let mut reader = FeltReader::new(&felts);
+
+    let err = <u8 as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
+    assert_eq!(
+        err,
+        miden_field_repr::FeltReprError::ValueOutOfRange {
+            pos: 0,
+            len: 1,
+            ty: "u8",
+            value: 256,
+            max: u8::MAX as u64,
+        }
+    );
+}
+
+#[test]
+fn test_invalid_bool_includes_position() {
+    let felts = [Felt::from_u64_unchecked(2)];
+    let mut reader = FeltReader::new(&felts);
+
+    let err = <bool as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
+    assert_eq!(
+        err,
+        miden_field_repr::FeltReprError::InvalidBool {
+            pos: 0,
+            len: 1,
+            value: 2,
+        }
+    );
+}
+
+#[test]
+fn test_invalid_option_tag_includes_position() {
+    let felts = [Felt::from_u64_unchecked(2)];
+    let mut reader = FeltReader::new(&felts);
+
+    let err = <Option<u8> as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
+    assert_eq!(
+        err,
+        miden_field_repr::FeltReprError::InvalidOptionTag {
+            pos: 0,
+            len: 1,
+            tag: 2,
+        }
+    );
+}
+
+#[test]
+fn test_unknown_enum_tag_includes_position() {
+    #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+    enum TestEnum {
+        A,
+        B,
+    }
+
+    let felts = [Felt::from_u64_unchecked(2)];
+    let mut reader = FeltReader::new(&felts);
+
+    let err = TestEnum::from_felt_repr(&mut reader).unwrap_err();
+    assert_eq!(
+        err,
+        miden_field_repr::FeltReprError::UnknownEnumTag {
+            pos: 0,
+            len: 1,
+            ty: "TestEnum",
+            tag: 2,
+        }
+    );
+}
+
 /// Test struct containing multiple non-`Felt` fields.
 #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 struct MixedStruct {
