@@ -73,6 +73,24 @@ fn test_try_from_slice_roundtrip() {
     assert_eq!(roundtrip, original);
 }
 
+#[test]
+fn test_try_from_slice_rejects_trailing_data() {
+    use core::convert::TryFrom;
+
+    let original = TwoFelts {
+        a: Felt::from_u64_unchecked(12345),
+        b: Felt::from_u64_unchecked(67890),
+    };
+    let mut felts = original.to_felt_repr();
+    felts.push(Felt::from_u64_unchecked(0));
+
+    let err = TwoFelts::try_from(felts.as_slice()).unwrap_err();
+    assert_eq!(
+        err,
+        miden_field_repr::FeltReprError::TrailingData { pos: 2, len: 3 }
+    );
+}
+
 /// Test struct containing multiple non-`Felt` fields.
 #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 struct MixedStruct {
