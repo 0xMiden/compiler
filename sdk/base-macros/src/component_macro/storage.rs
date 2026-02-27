@@ -108,6 +108,7 @@ pub fn process_storage_fields(
     for field in fields.named.iter_mut() {
         if let Err(err) = typecheck_storage_field(field) {
             errors.push(err);
+            continue;
         }
         let field_name = field.ident.as_ref().expect("Named field must have an identifier");
         let field_name_str = field_name.to_string();
