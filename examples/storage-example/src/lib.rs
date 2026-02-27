@@ -39,6 +39,6 @@ impl foo::Guest for MyAccount {
     /// Returns the stored quantity for `asset`, or 0 if not present.
     fn get_asset_qty(asset: Asset) -> Felt {
         let my_account = MyAccount::default();
-        my_account.asset_qty_map.get(&asset)
+        my_account.asset_qty_map.get(asset)
     }
 }

@@ -19,9 +19,9 @@ impl WordValue for miden_base_sys::bindings::NoteType {}
 
 /// A type that can be used as a key in a storage map.
 ///
-/// Map keys are passed by reference for lookups (to match `HashMap` ergonomics), so keys must be
-/// cheaply clonable.
-pub trait WordKey: Clone + Into<Word> {}
+/// Map keys are passed by value for lookups to avoid requiring `Clone` just to materialize a
+/// [`Word`] for the host call.
+pub trait WordKey: Copy + Into<Word> {}
 
 impl WordKey for Word {}
 impl WordKey for Felt {}
@@ -99,8 +99,8 @@ impl<K: WordKey, V: WordValue> StorageMap<K, V> {
     /// Note: Unlike `HashMap::get`, this returns `V` by value.
     /// At the protocol layer, absent keys read as the default word value.
     #[inline(always)]
-    pub fn get(&self, key: &K) -> V {
-        let key: Word = key.clone().into();
+    pub fn get(&self, key: K) -> V {
+        let key: Word = key.into();
         storage::get_map_item(self.slot, &key).into()
     }
 
