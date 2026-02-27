@@ -162,7 +162,7 @@ fn expand_component_struct(
         }
     };
 
-    let component_metadata = acc_builder.build();
+    let component_metadata = acc_builder.build(call_site_span.into())?;
 
     let mut metadata_bytes = component_metadata.to_bytes();
     let padded_len = metadata_bytes.len().div_ceil(16) * 16;
