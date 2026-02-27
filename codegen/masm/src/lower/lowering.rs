@@ -3,6 +3,7 @@ use midenc_dialect_cf as cf;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
+use midenc_dialect_wasm as wasm;
 use midenc_hir::{
     Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
     dialects::builtin,
@@ -1341,6 +1342,20 @@ impl HirLowering for builtin::GlobalSymbol {
 
         // 2. Push computed address on the stack as the result
         emitter.inst_emitter(self.as_operation()).literal(addr, self.span());
+
+        Ok(())
+    }
+}
+
+impl HirLowering for wasm::I32Extend8S {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        // Modify the logical stack without emitting ops, so `sext` treats the operand as I8.
+        let operand = emitter.stack.pop().expect("operand stack is empty");
+        assert_eq!(operand.ty(), Type::I32);
+        emitter.stack.push(Type::I8);
+
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        inst_emitter.sext(&Type::I32, self.span());
 
         Ok(())
     }

@@ -9,6 +9,7 @@ use midenc_dialect_cf as cf;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
+use midenc_dialect_wasm as wasm;
 use midenc_hir::{
     AttributeValue, Felt, Immediate, Op, OperationRef, Overflow, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorInfo, Type,
@@ -2028,6 +2029,25 @@ impl Eval for arith::Cto {
                 ));
             }
         };
+        evaluator.set_value(self.result().as_value_ref(), result);
+        Ok(ControlFlowEffect::None)
+    }
+}
+
+impl Eval for wasm::I32Extend8S {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let lhs = self.operand();
+        let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
+
+        let Immediate::I32(x) = lhs_value else {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("expected i32 operand, got {}", lhs_value.ty()),
+            ));
+        };
+
+        let result = Immediate::I32((x as i8) as i32);
         evaluator.set_value(self.result().as_value_ref(), result);
         Ok(ControlFlowEffect::None)
     }
