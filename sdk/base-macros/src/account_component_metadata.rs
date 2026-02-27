@@ -76,7 +76,7 @@ impl AccountComponentMetadataBuilder {
                     self.storage.push((slot_name, slot_schema));
                 }
             }
-            Ok(StorageFieldType::Value) => {
+            Ok(StorageFieldType::Storage) => {
                 let r#type = if let Some(field_type) = field_type_attr.as_deref() {
                     SchemaTypeId::new(field_type)
                         .unwrap_or_else(|_| panic!("well formed attribute type {field_type}"))

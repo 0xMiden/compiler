@@ -111,7 +111,6 @@ pub fn process_storage_fields(
         }
         let field_name = field.ident.as_ref().expect("Named field must have an identifier");
         let field_name_str = field_name.to_string();
-        let field_type = &field.ty;
         let mut storage_args = None;
         let mut attr_indices_to_remove = Vec::new();
 
@@ -174,7 +173,7 @@ pub fn process_storage_fields(
 
             builder.add_storage_entry(slot_name.clone(), args.description, field, args.type_attr);
 
-            field_infos.push((field_name.clone(), field_type.clone(), slot_id));
+            field_infos.push((field_name.clone(), slot_id));
         } else {
             errors
                 .push(syn::Error::new(field.span(), "field is missing the `#[storage]` attribute"));
@@ -186,17 +185,17 @@ pub fn process_storage_fields(
     }
 
     let mut field_inits = Vec::with_capacity(field_infos.len());
-    for (field_name, field_type, slot_id) in field_infos.into_iter() {
+    for (field_name, slot_id) in field_infos.into_iter() {
         let slot = slot_id_tokens(slot_id);
         field_inits.push(quote! {
-            #field_name: #field_type { slot: #slot }
+            #field_name: ::core::convert::From::from(#slot)
         });
     }
 
     Ok(field_inits)
 }
 
-/// Checks that the type of `field` is either `StorageMap` or `Value` from the `miden` crate.
+/// Checks that the type of `field` is either `StorageMap` or `Storage` from the `miden` crate.
 ///
 /// # Limitations
 ///
@@ -204,7 +203,7 @@ pub fn process_storage_fields(
 /// written in the struct correspond to one of the expected values. Hence the following cannot
 /// be detected:
 ///
-/// * A developer defines their own `StorageMap` or `Value`
+/// * A developer defines their own `StorageMap` or `Storage`
 /// * A developer uses a valid type from miden but aliases it
 pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType, syn::Error> {
     let type_path = match &field.ty {
@@ -223,17 +222,17 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
 
     const BASE_CRATE: &str = "miden";
     const TYPENAME_MAP: &str = "StorageMap";
-    const TYPENAME_VALUE: &str = "Value";
+    const TYPENAME_STORAGE: &str = "Storage";
 
     match segments.as_slice() {
         [a] if a == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a] if a == TYPENAME_VALUE => Ok(StorageFieldType::Value),
+        [a] if a == TYPENAME_STORAGE => Ok(StorageFieldType::Storage),
         [a, b] if a == BASE_CRATE && b == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a, b] if a == BASE_CRATE && b == TYPENAME_VALUE => Ok(StorageFieldType::Value),
+        [a, b] if a == BASE_CRATE && b == TYPENAME_STORAGE => Ok(StorageFieldType::Storage),
         _ => Err(syn::Error::new(
             field.span(),
             format!(
-                "storage field type can only be `{TYPENAME_MAP}` or `{TYPENAME_VALUE}` from \
+                "storage field type can only be `{TYPENAME_MAP}` or `{TYPENAME_STORAGE}` from \
                  `{BASE_CRATE}` crate"
             ),
         )),
