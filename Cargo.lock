@@ -3221,6 +3221,7 @@ dependencies = [
  "miden-mast-package",
  "miden-protocol",
  "miden-standards",
+ "midenc-expect-test",
  "midenc-frontend-wasm",
  "rand",
  "tokio",

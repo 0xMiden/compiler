@@ -12,10 +12,14 @@ use miden_core::{Felt, FieldElement};
 use miden_protocol::account::{
     AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
 };
+use midenc_expect_test::expect;
 
-use super::helpers::{
-    NoteCreationConfig, account_component_from_package, assert_counter_storage,
-    compile_rust_package, create_note_from_package, execute_tx,
+use super::{
+    cycle_helpers::note_cycles,
+    helpers::{
+        NoteCreationConfig, account_component_from_package, assert_counter_storage,
+        compile_rust_package, create_note_from_package, execute_tx,
+    },
 };
 
 /// Tests the counter contract deployment and note consumption workflow on a mock chain.
@@ -75,7 +79,8 @@ pub fn test_counter_contract() {
     let tx_context_builder = chain
         .build_tx_context(counter_account.clone(), &[counter_note.id()], &[])
         .unwrap();
-    execute_tx(&mut chain, tx_context_builder);
+    let tx_measurements = execute_tx(&mut chain, tx_context_builder);
+    expect!["11916"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).
     assert_counter_storage(
