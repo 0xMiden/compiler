@@ -1,5 +1,5 @@
 use miden_base_sys::bindings::{StorageSlotId, storage};
-use miden_stdlib_sys::Word;
+use miden_stdlib_sys::{Digest, Felt, Word};
 
 /// A type that can be stored in (or loaded from) account storage.
 ///
@@ -7,7 +7,15 @@ use miden_stdlib_sys::Word;
 /// conversion between the Rust type and a [`Word`].
 pub trait WordValue: Into<Word> + From<Word> {}
 
-impl<T> WordValue for T where T: Into<Word> + From<Word> {}
+impl WordValue for Word {}
+impl WordValue for Felt {}
+impl WordValue for Digest {}
+impl WordValue for miden_base_sys::bindings::AccountId {}
+impl WordValue for miden_base_sys::bindings::Asset {}
+impl WordValue for miden_base_sys::bindings::Recipient {}
+impl WordValue for miden_base_sys::bindings::Tag {}
+impl WordValue for miden_base_sys::bindings::NoteIdx {}
+impl WordValue for miden_base_sys::bindings::NoteType {}
 
 /// A type that can be used as a key in a storage map.
 ///
@@ -15,7 +23,13 @@ impl<T> WordValue for T where T: Into<Word> + From<Word> {}
 /// cheaply clonable.
 pub trait WordKey: Clone + Into<Word> {}
 
-impl<T> WordKey for T where T: Clone + Into<Word> {}
+impl WordKey for Word {}
+impl WordKey for Felt {}
+impl WordKey for miden_base_sys::bindings::AccountId {}
+impl WordKey for miden_base_sys::bindings::Asset {}
+impl WordKey for miden_base_sys::bindings::Tag {}
+impl WordKey for miden_base_sys::bindings::NoteIdx {}
+impl WordKey for miden_base_sys::bindings::NoteType {}
 
 /// Typed access to a single account storage slot.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
