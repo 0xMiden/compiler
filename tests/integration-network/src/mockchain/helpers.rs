@@ -24,7 +24,7 @@ use miden_protocol::{
     },
     asset::Asset,
     note::PartialNote,
-    transaction::TransactionScript,
+    transaction::{TransactionMeasurements, TransactionScript},
 };
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use midenc_frontend_wasm::WasmTranslationConfig;
@@ -189,11 +189,21 @@ pub(super) fn build_send_notes_script(account: &Account, notes: &[Note]) -> Tran
 }
 
 /// Executes a transaction context against the chain and commits it in the next block.
-pub(super) fn execute_tx(chain: &mut MockChain, tx_context_builder: TransactionContextBuilder) {
+///
+/// Returns the transaction measurements captured during execution.
+pub(super) fn execute_tx(
+    chain: &mut MockChain,
+    tx_context_builder: TransactionContextBuilder,
+) -> TransactionMeasurements {
     let tx_context = tx_context_builder.build().unwrap();
     let executed_tx = block_on(tx_context.execute()).unwrap_or_else(|err| panic!("{err}"));
+
+    let measurements = executed_tx.measurements().clone();
+
     chain.add_pending_executed_transaction(&executed_tx).unwrap();
     chain.prove_next_block().unwrap();
+
+    measurements
 }
 
 /// Builds a transaction context which transfers an asset from `sender_id` to `recipient_id` using
