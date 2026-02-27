@@ -7,6 +7,7 @@ use miden_protocol::account::{
         WordSchema, storage::SchemaTypeId,
     },
 };
+use proc_macro2::Span;
 use semver::Version;
 use syn::spanned::Spanned;
 
@@ -98,6 +99,7 @@ impl AccountComponentMetadataBuilder {
         self.supported_types.insert(account_type);
     }
 
+    /// Creates a new [`AccountComponentMetadataBuilder`].
     pub fn new(name: String, version: Version, description: String) -> Self {
         AccountComponentMetadataBuilder {
             name,
@@ -108,17 +110,17 @@ impl AccountComponentMetadataBuilder {
         }
     }
 
+    /// Adds a storage slot schema entry for `field`.
     pub fn add_storage_entry(
         &mut self,
         slot_name: StorageSlotName,
         description: Option<String>,
         field: &syn::Field,
         field_type_attr: Option<String>,
-    ) {
-        match typecheck_storage_field(field) {
-            Ok(StorageFieldType::StorageMap) => {
-                let args = extract_storage_type_args(field)
-                    .unwrap_or_else(|err| panic!("invalid storage map type: {err}"));
+    ) -> Result<(), syn::Error> {
+        match typecheck_storage_field(field)? {
+            StorageFieldType::StorageMap => {
+                let args = extract_storage_type_args(field)?;
                 let key_schema = args
                     .first()
                     .map(word_schema_from_storage_type_arg)
@@ -135,13 +137,18 @@ impl AccountComponentMetadataBuilder {
                 ));
                 self.storage.push((slot_name, slot_schema));
             }
-            Ok(StorageFieldType::Storage) => {
+            StorageFieldType::Storage => {
                 let r#type = if let Some(field_type) = field_type_attr.as_deref() {
-                    SchemaTypeId::new(field_type)
-                        .unwrap_or_else(|_| panic!("well formed attribute type {field_type}"))
+                    SchemaTypeId::new(field_type).map_err(|err| {
+                        syn::Error::new(
+                            field.span(),
+                            format!(
+                                "invalid storage schema type identifier '{field_type}': {err}"
+                            ),
+                        )
+                    })?
                 } else {
-                    let args = extract_storage_type_args(field)
-                        .unwrap_or_else(|err| panic!("invalid storage type: {err}"));
+                    let args = extract_storage_type_args(field)?;
                     args.first()
                         .map(schema_type_id_from_storage_type_arg)
                         .unwrap_or_else(SchemaTypeId::native_word)
@@ -152,19 +159,23 @@ impl AccountComponentMetadataBuilder {
                     StorageSlotSchema::Value(ValueSlotSchema::new(description, word_schema));
                 self.storage.push((slot_name, slot_schema));
             }
-            Err(err) => panic!("invalid field type for storage: {err}"),
         }
+
+        Ok(())
     }
 
-    pub fn build(self) -> AccountComponentMetadata {
-        let storage_schema =
-            StorageSchema::new(self.storage).expect("failed to build component storage schema");
-        AccountComponentMetadata::new(
+    /// Builds a new [`AccountComponentMetadata`].
+    pub fn build(self, span: Span) -> Result<AccountComponentMetadata, syn::Error> {
+        let storage_schema = StorageSchema::new(self.storage).map_err(|err| {
+            syn::Error::new(span, format!("failed to build component storage schema: {err}"))
+        })?;
+
+        Ok(AccountComponentMetadata::new(
             self.name,
             self.description,
             self.version,
             self.supported_types,
             storage_schema,
-        )
+        ))
     }
 }
