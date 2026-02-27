@@ -142,9 +142,7 @@ impl AccountComponentMetadataBuilder {
                     SchemaTypeId::new(field_type).map_err(|err| {
                         syn::Error::new(
                             field.span(),
-                            format!(
-                                "invalid storage schema type identifier '{field_type}': {err}"
-                            ),
+                            format!("invalid storage schema type identifier '{field_type}': {err}"),
                         )
                     })?
                 } else {

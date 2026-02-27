@@ -172,9 +172,12 @@ pub fn process_storage_fields(
             slot_names.insert(slot_name_str, field_name_str.clone());
             slot_ids.insert(slot_id_key, field_name_str);
 
-            if let Err(err) =
-                builder.add_storage_entry(slot_name.clone(), args.description, field, args.type_attr)
-            {
+            if let Err(err) = builder.add_storage_entry(
+                slot_name.clone(),
+                args.description,
+                field,
+                args.type_attr,
+            ) {
                 errors.push(err);
             }
 
