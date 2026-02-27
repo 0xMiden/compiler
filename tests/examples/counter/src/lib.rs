@@ -11,14 +11,14 @@ use miden_test_harness::miden_test_suite;
 
 #[cfg(target_family = "wasm")]
 mod component {
-    use miden::{Felt, StorageMap, StorageMapAccess, Word, component, felt};
+    use miden::{Felt, StorageMap, Word, component, felt};
 
     /// Main contract structure for the counter example.
     #[component]
     struct CounterContract {
         /// Storage map holding the counter value.
         #[storage(description = "counter contract storage map")]
-        count_map: StorageMap,
+        count_map: StorageMap<Word, Felt>,
     }
 
     #[component]
