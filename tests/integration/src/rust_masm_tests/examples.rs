@@ -49,7 +49,7 @@ fn storage_example() {
 
         [storage.slots.type]
         key = "word"
-        value = "word"
+        value = "felt"
 
         [[storage.slots]]
         name = "miden::component::miden_storage_example::owner_public_key"
@@ -248,7 +248,7 @@ fn counter_contract() {
 
         [storage.slots.type]
         key = "word"
-        value = "word"
+        value = "felt"
     "#]]
     .assert_eq(&toml);
 }
