@@ -126,10 +126,9 @@ pub fn test_basic_wallet_p2id() {
 #[test]
 pub fn test_basic_wallet_p2ide() {
     // Compile the contracts first (before creating any runtime)
-    let wallet_package =
-        CustomComponentBuilder::with_package("../../examples/basic-wallet").build();
-    let p2id_note_mint = CustomNoteBuilder::with_package("../../examples/p2id-note");
-    let p2ide_note = CustomNoteBuilder::with_package("../../examples/p2ide-note");
+    let wallet_package = CustomWalletBuilder::with_package("../../examples/basic-wallet").build();
+    let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);
+    let p2ide_note_package = compile_rust_package("../../examples/p2ide-note", true);
 
     let mut builder = MockChain::builder();
     let max_supply = 1_000_000_000u64;
@@ -162,28 +161,31 @@ pub fn test_basic_wallet_p2ide() {
     let mint_amount = 100_000u64;
     let mint_asset = FungibleAsset::new(faucet_id, mint_amount).unwrap();
 
-    let p2id_note_mint = p2id_note_mint
-        .with_sender_id(faucet_id)
-        .with_config(NoteCreationConfig {
+    let mut p2id_rng = RpoRandomCoin::new(p2id_note_package.unwrap_program().hash());
+    let p2id_note_mint = create_note_from_package(
+        p2id_note_package.clone(),
+        faucet_id,
+        NoteCreationConfig {
             assets: NoteAssets::new(vec![mint_asset.into()]).unwrap(),
             inputs: to_core_felts(&alice_id),
             ..Default::default()
-        })
-        .build();
+        },
+        &mut p2id_rng,
+    );
 
     let faucet_account = chain.committed_account(faucet_id).unwrap().clone();
     let mint_tx_script =
-        build_send_notes_script(&faucet_account, std::slice::from_ref(&p2id_note_mint.note));
+        build_send_notes_script(&faucet_account, std::slice::from_ref(&p2id_note_mint));
     let mint_tx_context_builder = chain
         .build_tx_context(faucet_id, &[], &[])
         .unwrap()
         .tx_script(mint_tx_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(p2id_note_mint.note.clone())]);
+        .extend_expected_output_notes(vec![OutputNote::Full(p2id_note_mint.clone())]);
     execute_tx(&mut chain, mint_tx_context_builder);
 
     // Step 2: Alice consumes the p2id note
     let consume_tx_context_builder =
-        chain.build_tx_context(alice_id, &[p2id_note_mint.note.id()], &[]).unwrap();
+        chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
     execute_tx(&mut chain, consume_tx_context_builder);
 
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -207,22 +209,23 @@ pub fn test_basic_wallet_p2ide() {
                 inputs
             },
             ..Default::default()
-        })
-        .build();
+        },
+        &mut p2ide_rng,
+    );
 
     let alice_account = chain.committed_account(alice_id).unwrap().clone();
     let transfer_tx_script =
-        build_send_notes_script(&alice_account, std::slice::from_ref(&p2ide_note.note));
+        build_send_notes_script(&alice_account, std::slice::from_ref(&p2ide_note));
     let transfer_tx_context_builder = chain
         .build_tx_context(alice_id, &[], &[])
         .unwrap()
         .tx_script(transfer_tx_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(p2ide_note.note.clone())]);
+        .extend_expected_output_notes(vec![OutputNote::Full(p2ide_note.clone())]);
     execute_tx(&mut chain, transfer_tx_context_builder);
 
     // Step 4: Bob consumes the p2ide note
     let consume_tx_context_builder =
-        chain.build_tx_context(bob_id, &[p2ide_note.note.id()], &[]).unwrap();
+        chain.build_tx_context(bob_id, &[p2ide_note.id()], &[]).unwrap();
     execute_tx(&mut chain, consume_tx_context_builder);
 
     // Step 5: verify balances
