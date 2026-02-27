@@ -13,7 +13,7 @@ where
 {
     let felts = value.to_felt_repr();
     let mut reader = FeltReader::new(&felts);
-    let roundtrip = <T as FromFeltRepr>::from_felt_repr(&mut reader);
+    let roundtrip = <T as FromFeltRepr>::from_felt_repr(&mut reader).unwrap();
     assert_eq!(roundtrip, *value);
 }
 
@@ -43,7 +43,7 @@ fn test_deserialization() {
     let felts = [Felt::from_u64_unchecked(12345), Felt::from_u64_unchecked(67890)];
 
     let mut reader = FeltReader::new(&felts);
-    let value = TwoFelts::from_felt_repr(&mut reader);
+    let value = TwoFelts::from_felt_repr(&mut reader).unwrap();
 
     assert_eq!(value.a, Felt::from_u64_unchecked(12345));
     assert_eq!(value.b, Felt::from_u64_unchecked(67890));
@@ -57,6 +57,108 @@ fn test_roundtrip() {
     };
 
     assert_roundtrip(&original);
+}
+
+#[test]
+fn test_try_from_slice_roundtrip() {
+    use core::convert::TryFrom;
+
+    let original = TwoFelts {
+        a: Felt::from_u64_unchecked(12345),
+        b: Felt::from_u64_unchecked(67890),
+    };
+    let felts = original.to_felt_repr();
+
+    let roundtrip = TwoFelts::try_from(felts.as_slice()).unwrap();
+    assert_eq!(roundtrip, original);
+}
+
+#[test]
+fn test_try_from_slice_rejects_trailing_data() {
+    use core::convert::TryFrom;
+
+    let original = TwoFelts {
+        a: Felt::from_u64_unchecked(12345),
+        b: Felt::from_u64_unchecked(67890),
+    };
+    let mut felts = original.to_felt_repr();
+    felts.push(Felt::from_u64_unchecked(0));
+
+    let err = TwoFelts::try_from(felts.as_slice()).unwrap_err();
+    assert_eq!(err, miden_field_repr::FeltReprError::TrailingData { pos: 2, len: 3 });
+}
+
+#[test]
+fn test_value_out_of_range_includes_position() {
+    let felts = [Felt::from_u64_unchecked(256)];
+    let mut reader = FeltReader::new(&felts);
+
+    let err = <u8 as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
+    assert_eq!(
+        err,
+        miden_field_repr::FeltReprError::ValueOutOfRange {
+            pos: 0,
+            len: 1,
+            ty: "u8",
+            value: 256,
+            max: u8::MAX as u64,
+        }
+    );
+}
+
+#[test]
+fn test_invalid_bool_includes_position() {
+    let felts = [Felt::from_u64_unchecked(2)];
+    let mut reader = FeltReader::new(&felts);
+
+    let err = <bool as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
+    assert_eq!(
+        err,
+        miden_field_repr::FeltReprError::InvalidBool {
+            pos: 0,
+            len: 1,
+            value: 2,
+        }
+    );
+}
+
+#[test]
+fn test_invalid_option_tag_includes_position() {
+    let felts = [Felt::from_u64_unchecked(2)];
+    let mut reader = FeltReader::new(&felts);
+
+    let err = <Option<u8> as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
+    assert_eq!(
+        err,
+        miden_field_repr::FeltReprError::InvalidOptionTag {
+            pos: 0,
+            len: 1,
+            tag: 2,
+        }
+    );
+}
+
+#[test]
+fn test_unknown_enum_tag_includes_position() {
+    #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+    enum TestEnum {
+        A,
+        B,
+    }
+
+    let felts = [Felt::from_u64_unchecked(2)];
+    let mut reader = FeltReader::new(&felts);
+
+    let err = TestEnum::from_felt_repr(&mut reader).unwrap_err();
+    assert_eq!(
+        err,
+        miden_field_repr::FeltReprError::UnknownEnumTag {
+            pos: 0,
+            len: 1,
+            ty: "TestEnum",
+            tag: 2,
+        }
+    );
 }
 
 /// Test struct containing multiple non-`Felt` fields.
@@ -369,7 +471,7 @@ fn test_u64_roundtrip_uses_u32_limbs() {
         assert_eq!(felts[1].as_u64(), expected_hi);
 
         let mut reader = FeltReader::new(&felts);
-        let roundtripped = u64::from_felt_repr(&mut reader);
+        let roundtripped = u64::from_felt_repr(&mut reader).unwrap();
         assert_eq!(roundtripped, value);
     }
 }
