@@ -33,13 +33,13 @@ impl WordKey for miden_base_sys::bindings::NoteType {}
 
 /// Typed access to a single account storage slot.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Storage<T> {
+pub struct Storage<T: WordValue> {
     /// The underlying storage slot id.
     pub slot: StorageSlotId,
     _marker: core::marker::PhantomData<T>,
 }
 
-impl<T> Storage<T> {
+impl<T: WordValue> Storage<T> {
     /// Creates a new typed storage handle for `slot`.
     pub const fn new(slot: StorageSlotId) -> Self {
         Self {
@@ -49,7 +49,7 @@ impl<T> Storage<T> {
     }
 }
 
-impl<T> From<StorageSlotId> for Storage<T> {
+impl<T: WordValue> From<StorageSlotId> for Storage<T> {
     fn from(slot: StorageSlotId) -> Self {
         Self::new(slot)
     }
@@ -71,13 +71,13 @@ impl<T: WordValue> Storage<T> {
 
 /// Typed access to an account storage map.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct StorageMap<K, V> {
+pub struct StorageMap<K: WordKey, V: WordValue> {
     /// The underlying storage slot id.
     pub slot: StorageSlotId,
     _marker: core::marker::PhantomData<(K, V)>,
 }
 
-impl<K, V> StorageMap<K, V> {
+impl<K: WordKey, V: WordValue> StorageMap<K, V> {
     /// Creates a new typed storage map handle for `slot`.
     pub const fn new(slot: StorageSlotId) -> Self {
         Self {
@@ -87,7 +87,7 @@ impl<K, V> StorageMap<K, V> {
     }
 }
 
-impl<K, V> From<StorageSlotId> for StorageMap<K, V> {
+impl<K: WordKey, V: WordValue> From<StorageSlotId> for StorageMap<K, V> {
     fn from(slot: StorageSlotId) -> Self {
         Self::new(slot)
     }
