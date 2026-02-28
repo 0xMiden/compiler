@@ -111,18 +111,22 @@ fn load_dw() {
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u64>(), move |value| {
         // Write `value` to the start of the 17th page (1 page after the 16 pages reserved for the
-        // Rust stack).  Felts must be written in little endian order.
+        // Rust stack).  Felts must be written in little-endian order: lo at lower address.
         let value_felts = value.to_felts();
         let initializers = [Initializer::MemoryFelts {
             addr: write_to / 4,
-            felts: Cow::Borrowed(&[value_felts[1], value_felts[0]]),
+            felts: Cow::Borrowed(&value_felts),
         }];
 
         let args = [Felt::new(write_to as u64)];
         let output =
             eval_package::<u64, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let lo = trace.read_memory_element(write_to / 4).unwrap_or_default().as_int();
-                let hi = trace.read_memory_element((write_to / 4) + 1).unwrap_or_default().as_int();
+                let lo =
+                    trace.read_memory_element(write_to / 4).unwrap_or_default().as_canonical_u64();
+                let hi = trace
+                    .read_memory_element((write_to / 4) + 1)
+                    .unwrap_or_default()
+                    .as_canonical_u64();
 
                 log::trace!(target: "executor", "hi = {hi} ({hi:0x})");
                 log::trace!(target: "executor", "lo = {lo} ({lo:0x})");
@@ -130,15 +134,12 @@ fn load_dw() {
                 prop_assert_eq!(lo, value & 0xffffffff);
                 prop_assert_eq!(hi, value >> 32);
 
-                let mut stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
+                let stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
                     TestCaseError::fail(format!(
                         "expected {value} to have been written to byte address {write_to}, but \
                          read from that address failed"
                     ))
                 })?;
-
-                // read_from_rust_memory() still reads in big-endian limbs.
-                stored = ((stored >> 32) & 0xffffffff) | (stored << 32);
 
                 prop_assert_eq!(
                     stored,
@@ -527,8 +528,8 @@ fn store_u16() {
                 bytes: &initial_bytes,
             }];
 
-            // Note: Arguments are pushed in reverse order on the stack in Miden
-            let args = [Felt::new(store_value2 as u64), Felt::new(store_value1 as u64)];
+            // C calling convention: first argument on top of the stack
+            let args = [Felt::new(store_value1 as u64), Felt::new(store_value2 as u64)];
             let output = eval_package::<u32, _, _>(
                 &package,
                 initializers,
@@ -725,12 +726,12 @@ fn store_u8() {
                 bytes: &initial_bytes,
             }];
 
-            // Note: Arguments are pushed in reverse order on the stack in Miden
+            // C calling convention: first argument on top of the stack
             let args = [
-                Felt::new(store_value3 as u64),
-                Felt::new(store_value2 as u64),
-                Felt::new(store_value1 as u64),
                 Felt::new(store_value0 as u64),
+                Felt::new(store_value1 as u64),
+                Felt::new(store_value2 as u64),
+                Felt::new(store_value3 as u64),
             ];
             let output = eval_package::<u32, _, _>(
                 &package,
@@ -943,8 +944,8 @@ fn load_unaligned_u64() {
             |trace| {
                 //
                 let stack = trace.outputs();
-                let hi: u64 = stack.get_stack_item(0).unwrap().into();
-                let lo: u64 = stack.get_stack_item(1).unwrap().into();
+                let hi: u64 = stack.get_element(0).unwrap().as_canonical_u64();
+                let lo: u64 = stack.get_element(1).unwrap().as_canonical_u64();
 
                 eprintln!("hi limb = 0x{hi:08x}");
                 eprintln!("lo limb = 0x{lo:08x}");

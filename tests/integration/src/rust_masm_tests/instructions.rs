@@ -1,6 +1,6 @@
 use std::{any::type_name, marker::PhantomData};
 
-use miden_core::{Felt, FieldElement, Word};
+use miden_core::{Felt, Word};
 use miden_debug::{FromMidenRepr, ToMidenRepr};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;

@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
@@ -272,7 +272,7 @@ fn test_vec_realloc_copies_data_issue_811() {
     let args: [Felt; 0] = [];
 
     eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
-        let result: u64 = trace.parse_result::<Felt>().unwrap().as_int();
+        let result: u64 = trace.parse_result::<Felt>().unwrap().as_canonical_u64();
         assert_eq!(result, 166_665, "Vec reallocation failed to copy existing elements");
         Ok(())
     })

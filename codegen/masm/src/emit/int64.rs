@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::{Overflow, SourceSpan, Span};
 
 use super::{OpEmitter, P, dup_from_offset, masm, movup_from_offset};
@@ -517,7 +517,7 @@ impl OpEmitter<'_> {
     pub fn mul_u64(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Checked => {
-                self.raw_exec("::miden::core::math::u64::overflowing_mul", span);
+                self.raw_exec("::miden::core::math::u64::widening_mul", span);
                 self.raw_exec("::miden::core::math::u64::eqz", span);
                 self.emit(masm::Instruction::Assertz, span);
             }
@@ -525,7 +525,7 @@ impl OpEmitter<'_> {
                 self.raw_exec("::miden::core::math::u64::wrapping_mul", span);
             }
             Overflow::Overflowing => {
-                self.raw_exec("::miden::core::math::u64::overflowing_mul", span);
+                self.raw_exec("::miden::core::math::u64::widening_mul", span);
                 self.raw_exec("::miden::core::math::u64::eqz", span);
             }
         }
@@ -754,20 +754,23 @@ pub fn to_raw_parts(value: u64) -> (u32, u32) {
 }
 
 /// Construct a u64/i64 constant from raw parts, i.e. two 32-bit little-endian limbs
+///
+/// Pushes hi first, then lo, so the stack ends up as [lo, hi] (lo on top) matching the LE
+/// convention where the low limb is on top.
 #[inline]
 pub fn from_raw_parts(lo: u32, hi: u32, block: &mut Vec<masm::Op>, span: SourceSpan) {
     block.push(masm::Op::Inst(Span::new(
         span,
         masm::Instruction::Push(masm::Immediate::Value(Span::new(
             span,
-            Felt::new(lo as u64).into(),
+            Felt::new(hi as u64).into(),
         ))),
     )));
     block.push(masm::Op::Inst(Span::new(
         span,
         masm::Instruction::Push(masm::Immediate::Value(Span::new(
             span,
-            Felt::new(hi as u64).into(),
+            Felt::new(lo as u64).into(),
         ))),
     )));
 }

@@ -470,7 +470,7 @@ impl HirLowering for hir::AssertEq {
 
 impl HirLowering for hir::Breakpoint {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), masm::Instruction::Breakpoint)));
+        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), masm::Instruction::Nop)));
 
         Ok(())
     }

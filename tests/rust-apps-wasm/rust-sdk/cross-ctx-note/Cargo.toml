@@ -46,3 +46,6 @@ project-kind = "note-script"
 
 [package.metadata.component.target.dependencies]
 "miden:cross-ctx-account" = { path = "../cross-ctx-account/wit/cross-ctx-account.wit" }
+
+[patch.crates-io]
+miden-protocol = { path = "../../../../../miden-base/crates/miden-protocol" }

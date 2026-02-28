@@ -1,7 +1,6 @@
 use miden_assembly_syntax::parser::WordValue;
 use midenc_hir::{
-    self as hir, ArgumentExtension, ArgumentPurpose, Felt, FieldElement, Immediate, SourceSpan,
-    Type,
+    self as hir, ArgumentExtension, ArgumentPurpose, Felt, Immediate, SourceSpan, Type,
 };
 
 use super::{OpEmitter, int64, masm};

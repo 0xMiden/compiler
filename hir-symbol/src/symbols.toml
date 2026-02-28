@@ -124,6 +124,7 @@ faucet = {}
 falcon512rpo = {}
 tx = {}
 rpo256 = {}
+poseidon2 = {}
 collections = {}
 smt = {}
 protocol = {}

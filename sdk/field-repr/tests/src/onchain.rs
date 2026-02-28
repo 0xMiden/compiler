@@ -27,8 +27,8 @@ fn read_vec_felts(
         .read_from_rust_memory(vec_meta_addr)
         .expect("Failed to read Vec metadata from memory");
     // Vec metadata layout is: [capacity, ptr, len, ?]
-    let data_ptr = vec_metadata[1].0.as_int() as u32;
-    let len = vec_metadata[2].0.as_int() as usize;
+    let data_ptr = vec_metadata[1].0.as_canonical_u64() as u32;
+    let len = vec_metadata[2].0.as_canonical_u64() as usize;
 
     assert_eq!(len, expected_len, "Unexpected Vec length");
 

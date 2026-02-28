@@ -9,7 +9,7 @@ use miden_assembly::{
     ast::InvocationTarget,
     library::{LibraryExport, ProcedureExport},
 };
-use miden_core::{Program, Word};
+use miden_core::{Word, program::Program};
 use miden_mast_package::{MastArtifact, Package};
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
@@ -116,7 +116,6 @@ impl Rodata {
     /// only takes up 3 felts worth of bytes, then the resulting `Vec` will contain 4 felts, so that
     /// the total size is a valid number of words.
     pub fn bytes_to_elements(bytes: &[u8]) -> Vec<miden_processor::Felt> {
-        use miden_core::FieldElement;
         use miden_processor::Felt;
 
         let mut felts = Vec::with_capacity(bytes.len() / 4);
@@ -253,7 +252,7 @@ impl MasmComponent {
             self.generate_main(entrypoint, emit_test_harness, session.source_manager.clone())?;
         log::debug!(target: "assembly", "generated executable module:\n{main}");
         let program = assembler.assemble_program(main)?;
-        let advice_map: miden_core::AdviceMap =
+        let advice_map: miden_core::advice::AdviceMap =
             self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
         Ok(Arc::new(program.with_advice_map(advice_map)))
     }
@@ -308,7 +307,7 @@ impl MasmComponent {
         }
         let lib = assembler.assemble_library(modules)?;
 
-        let advice_map: miden_core::AdviceMap =
+        let advice_map: miden_core::advice::AdviceMap =
             self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
 
         let converted_exports = recover_wasm_cm_interfaces(&lib);
@@ -385,7 +384,7 @@ impl MasmComponent {
 
     fn emit_test_harness(&self, block: &mut masm::Block) {
         use masm::{Instruction as Inst, IntValue, Op, PushValue};
-        use miden_core::{Felt, FieldElement};
+        use miden_core::Felt;
 
         let span = SourceSpan::default();
 
@@ -524,7 +523,6 @@ fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExpor
 
 #[cfg(test)]
 mod tests {
-    use miden_core::FieldElement;
     use proptest::prelude::*;
 
     use super::*;

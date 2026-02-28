@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::SourceSpan;
 
 use super::{OpEmitter, masm};

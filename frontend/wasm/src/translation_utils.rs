@@ -1,6 +1,6 @@
 //! Helper functions and structures for the translation.
 
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_hir::{
     AbiParam, Builder, CallConv, FunctionType, Signature, SourceSpan, Type, ValueRef, Visibility,

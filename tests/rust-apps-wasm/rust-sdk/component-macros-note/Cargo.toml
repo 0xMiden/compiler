@@ -22,3 +22,6 @@ project-kind = "note-script"
 
 [package.metadata.component.target.dependencies]
 "miden:basic-wallet" = { path = "../component-macros-account/target/generated-wit/" }
+
+[patch.crates-io]
+miden-protocol = { path = "../../../../../miden-base/crates/miden-protocol" }

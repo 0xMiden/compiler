@@ -19,7 +19,7 @@ use midenc_dialect_hir::{HirOpBuilder, assertions};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
-    BlockRef, Builder, Felt, FieldElement, Immediate, PointerType,
+    BlockRef, Builder, Felt, Immediate, PointerType,
     Type::{self, *},
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,

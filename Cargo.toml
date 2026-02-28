@@ -27,7 +27,7 @@ members = [
     "tools/*",
     "tests/integration",
     "test-harness/*",
-    "tests/integration-network",
+    # "tests/integration-network",  # temporarily excluded: miden-node not yet migrated
 ]
 exclude = [
     "sdk/.cargo",
@@ -77,18 +77,18 @@ litcheck-filecheck = "0.4"
 log = { version = "0.4", features = ["kv"] }
 
 # Miden Dependencies
-miden-assembly = { version = "0.20", default-features = false }
-miden-core = { version = "0.20", default-features = false }
+miden-assembly = { version = "0.21", default-features = false }
+miden-core = { version = "0.21", default-features = false }
 miden-debug = { version = "0.4" }
-miden-debug-types = { version = "0.20", default-features = false }
-miden-assembly-syntax = { version = "0.20", default-features = false }
+miden-debug-types = { version = "0.21", default-features = false }
+miden-assembly-syntax = { version = "0.21", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
-miden-protocol = { version = "0.13", default-features = false }
-miden-standards = { version = "0.13", default-features = false }
-miden-processor = { version = "0.20", default-features = false }
-miden-core-lib = { version = "0.20", default-features = false }
-miden-mast-package = { version = "0.20", default-features = false }
-miette = { package = "miden-miette", version = "7.1.1" }
+miden-protocol = { version = "0.14", default-features = false }
+miden-standards = { version = "0.14", default-features = false }
+miden-processor = { version = "0.21", default-features = false }
+miden-core-lib = { version = "0.21", default-features = false }
+miden-mast-package = { version = "0.21", default-features = false }
+miette = { package = "miden-miette", version = "8.0" }
 paste = "1.0"
 parking_lot = "0.12"
 parking_lot_core = "0.9"
@@ -159,18 +159,52 @@ miden-test-harness = { path = "test-harness/test-harness-lib" }
 miden-test-harness-macros = { path = "test-harness/test-harness-macros" }
 
 [patch.crates-io]
-#miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-assembly = { path = "../miden-vm/assembly" }
-#miden-assembly-syntax = { path = "../miden-vm/assembly-syntax" }
-#miden-core = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-core = { path = "../miden-vm/core" }
-# miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "0a5add565d1388f77cd182f3639c16aa8f7ec674" }
-# miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "greenhat-migrate-vm-v0.20" }
-#miden-debug-types = { path = "../miden-vm/crates/debug/types" }
-#miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-processor = { path = "../miden-vm/processor" }
-#miden-mast-package = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-mast-package = { path = "../miden-vm/package" }
+# miden-vm crates (local v0.21.1)
+miden-assembly = { path = "../miden-vm/crates/assembly" }
+miden-assembly-syntax = { path = "../miden-vm/crates/assembly-syntax" }
+miden-core = { path = "../miden-vm/core" }
+miden-core-lib = { path = "../miden-vm/crates/lib/core" }
+miden-debug-types = { path = "../miden-vm/crates/debug-types" }
+miden-mast-package = { path = "../miden-vm/crates/mast-package" }
+miden-processor = { path = "../miden-vm/processor" }
+miden-prover = { path = "../miden-vm/prover" }
+miden-verifier = { path = "../miden-vm/verifier" }
+
+# miden-base crates (branch pr/migrate-to-vm-v0.21, v0.14)
+miden-protocol = { path = "../miden-base/crates/miden-protocol" }
+miden-standards = { path = "../miden-base/crates/miden-standards" }
+miden-testing = { path = "../miden-base/crates/miden-testing" }
+miden-tx = { path = "../miden-base/crates/miden-tx" }
+miden-agglayer = { path = "../miden-base/crates/miden-agglayer" }
+miden-block-prover = { path = "../miden-base/crates/miden-block-prover" }
+miden-tx-batch-prover = { path = "../miden-base/crates/miden-tx-batch-prover" }
+
+# miden-client (branch pr/migrate-to-vm-v0.21)
+miden-client = { path = "../miden-client/crates/rust-client" }
+
+# miden-debug (branch pr/migrate-to-vm-v0.21)
+miden-debug = { path = "../miden-debug" }
+
+# Patch git sources used by miden-client and miden-debug
+[patch."https://github.com/0xMiden/miden-base"]
+miden-protocol = { path = "../miden-base/crates/miden-protocol" }
+miden-standards = { path = "../miden-base/crates/miden-standards" }
+miden-testing = { path = "../miden-base/crates/miden-testing" }
+miden-tx = { path = "../miden-base/crates/miden-tx" }
+miden-agglayer = { path = "../miden-base/crates/miden-agglayer" }
+miden-block-prover = { path = "../miden-base/crates/miden-block-prover" }
+miden-tx-batch-prover = { path = "../miden-base/crates/miden-tx-batch-prover" }
+
+[patch."https://github.com/0xMiden/miden-vm"]
+miden-assembly = { path = "../miden-vm/crates/assembly" }
+miden-assembly-syntax = { path = "../miden-vm/crates/assembly-syntax" }
+miden-core = { path = "../miden-vm/core" }
+miden-core-lib = { path = "../miden-vm/crates/lib/core" }
+miden-debug-types = { path = "../miden-vm/crates/debug-types" }
+miden-mast-package = { path = "../miden-vm/crates/mast-package" }
+miden-processor = { path = "../miden-vm/processor" }
+miden-prover = { path = "../miden-vm/prover" }
+miden-verifier = { path = "../miden-vm/verifier" }
 
 
 [profile.dev]

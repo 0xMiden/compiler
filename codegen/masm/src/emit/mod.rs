@@ -726,8 +726,7 @@ mod tests {
     use alloc::rc::Rc;
 
     use midenc_hir::{
-        AbiParam, ArrayType, Context, Felt, FieldElement, Overflow, PointerType, Signature,
-        ValueRef,
+        AbiParam, ArrayType, Context, Felt, Overflow, PointerType, Signature, ValueRef,
     };
 
     use super::*;

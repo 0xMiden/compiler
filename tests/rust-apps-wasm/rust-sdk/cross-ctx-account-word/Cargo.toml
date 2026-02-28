@@ -41,3 +41,6 @@ trim-paths = ["diagnostics", "object"]
 [package.metadata.miden]
 project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
+
+[patch.crates-io]
+miden-protocol = { path = "../../../../../miden-base/crates/miden-protocol" }

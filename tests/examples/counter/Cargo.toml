@@ -15,8 +15,8 @@ miden-test-harness-macros = { path = "../../../test-harness/test-harness-macros"
 miden-test-harness = { path = "../../../test-harness/test-harness-lib"}
 
 [dev-dependencies]
-miden-protocol = { version = "0.13", default-features = false, features = ["std"] }
-miden-standards = { version = "0.13", default-features = false, features = ["std"] }
+miden-protocol = { version = "0.14", default-features = false, features = ["std"] }
+miden-standards = { version = "0.14", default-features = false, features = ["std"] }
 
 [package.metadata.component]
 package = "miden:counter-contract"

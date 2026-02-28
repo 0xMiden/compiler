@@ -24,3 +24,6 @@ debug-assertions = true
 overflow-checks = false
 debug = true
 trim-paths = ["diagnostics", "object"]
+
+[patch.crates-io]
+miden-protocol = { path = "../../../../../miden-base/crates/miden-protocol" }

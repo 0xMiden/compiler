@@ -4,7 +4,7 @@ use miden_protocol::account::{
     AccountType, StorageSlotName,
     component::{
         AccountComponentMetadata, MapSlotSchema, StorageSchema, StorageSlotSchema, ValueSlotSchema,
-        WordSchema, storage::SchemaTypeId,
+        WordSchema, storage::SchemaType,
     },
 };
 use semver::Version;
@@ -55,8 +55,8 @@ impl AccountComponentMetadataBuilder {
         match typecheck_storage_field(field) {
             Ok(StorageFieldType::StorageMap) => {
                 if let Some(description) = description {
-                    let key_schema = WordSchema::new_simple(SchemaTypeId::native_word());
-                    let value_schema = WordSchema::new_simple(SchemaTypeId::native_word());
+                    let key_schema = WordSchema::new_simple(SchemaType::native_word());
+                    let value_schema = WordSchema::new_simple(SchemaType::native_word());
                     let slot_schema = StorageSlotSchema::Map(MapSlotSchema::new(
                         Some(description),
                         None,
@@ -65,8 +65,8 @@ impl AccountComponentMetadataBuilder {
                     ));
                     self.storage.push((slot_name, slot_schema));
                 } else {
-                    let key_schema = WordSchema::new_simple(SchemaTypeId::native_word());
-                    let value_schema = WordSchema::new_simple(SchemaTypeId::native_word());
+                    let key_schema = WordSchema::new_simple(SchemaType::native_word());
+                    let value_schema = WordSchema::new_simple(SchemaType::native_word());
                     let slot_schema = StorageSlotSchema::Map(MapSlotSchema::new(
                         None,
                         None,
@@ -78,10 +78,10 @@ impl AccountComponentMetadataBuilder {
             }
             Ok(StorageFieldType::Value) => {
                 let r#type = if let Some(field_type) = field_type_attr.as_deref() {
-                    SchemaTypeId::new(field_type)
+                    SchemaType::new(field_type)
                         .unwrap_or_else(|_| panic!("well formed attribute type {field_type}"))
                 } else {
-                    SchemaTypeId::native_word()
+                    SchemaType::native_word()
                 };
 
                 let word_schema = WordSchema::new_simple(r#type);
@@ -96,12 +96,10 @@ impl AccountComponentMetadataBuilder {
     pub fn build(self) -> AccountComponentMetadata {
         let storage_schema =
             StorageSchema::new(self.storage).expect("failed to build component storage schema");
-        AccountComponentMetadata::new(
-            self.name,
-            self.description,
-            self.version,
-            self.supported_types,
-            storage_schema,
-        )
+        AccountComponentMetadata::new(self.name)
+            .with_description(self.description)
+            .with_version(self.version)
+            .with_supported_types(self.supported_types)
+            .with_storage_schema(storage_schema)
     }
 }

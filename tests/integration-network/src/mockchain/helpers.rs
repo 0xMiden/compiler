@@ -14,7 +14,7 @@ use miden_client::{
     testing::{MockChain, TransactionContextBuilder},
     transaction::OutputNote,
 };
-use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
+use miden_core::{Felt, crypto::hash::Rpo256};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_protocol::{
@@ -301,11 +301,11 @@ pub(super) fn assert_counter_storage(
 
     let val = word.last().unwrap();
     assert_eq!(
-        val.as_int(),
+        val.as_canonical_u64(),
         expected,
         "Counter value mismatch. Expected: {}, Got: {}",
         expected,
-        val.as_int()
+        val.as_canonical_u64()
     );
 }
 
