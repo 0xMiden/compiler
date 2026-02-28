@@ -14,6 +14,7 @@ use midenc_hir::{
 
 /// This transformation pass performs a simple common sub-expression elimination algorithm on
 /// operations within a region.
+#[derive(Default)]
 pub struct CommonSubexpressionElimination;
 
 impl Pass for CommonSubexpressionElimination {
@@ -458,18 +459,13 @@ impl PartialEq for OpKey {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{boxed::Box, format, string::ToString, sync::Arc};
+    use alloc::{format, string::ToString, sync::Arc};
 
     use litcheck_filecheck::filecheck;
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        Context, Ident, OpBuilder, OpPrinter, PointerType, SourceSpan, Type,
-        dialects::builtin::{
-            BuiltinOpBuilder, Function, FunctionBuilder, FunctionRef,
-            attributes::{AbiParam, Signature},
-        },
-        pass::PassManager,
-        print::AsmPrinter,
+        PointerType, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, print::AsmPrinter,
+        testing::Test,
     };
 
     use super::*;
@@ -484,23 +480,22 @@ mod tests {
             builder.ret([v0, v1], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_cse(true).expect("invalid ir");
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
-        test.function().borrow().print(&mut printer);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
         let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
-builtin.function @simple_constant() -> (i32, i32) {
-^block0:
-    // CHECK: [[V0:v\d+]] = arith.constant 1 : i32;
-    v0 = arith.constant 1 : i32;
+builtin.function public extern("C") @simple_constant() -> (i32, i32) {
+    // CHECK: [[V0:%\d+]] = arith.constant 1 : i32;
+    %0 = arith.constant 1 : i32;
 
     // CHECK-NEXT: builtin.ret [[V0]], [[V0]];
-    v1 = arith.constant 1 : i32;
-    builtin.ret v0, v1;
+    %1 = arith.constant 1 : i32;
+    builtin.ret %0, %1;
 };
             "#
         );
@@ -519,30 +514,29 @@ builtin.function @simple_constant() -> (i32, i32) {
             builder.ret([v3, v4], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_cse(true).expect("invalid ir");
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
-        test.function().borrow().print(&mut printer);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
         let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
-builtin.function @basic() -> (i32, i32) {
-^block0:
-    // CHECK: [[V0:v\d+]] = arith.constant 0 : i32;
-    v0 = arith.constant 0 : i32;
-    v1 = arith.constant 0 : i32;
+builtin.function public extern("C") @basic() -> (i32, i32) {
+    // CHECK: [[V0:%\d+]] = arith.constant 0 : i32;
+    %0 = arith.constant 0 : i32;
+    %1 = arith.constant 0 : i32;
 
-    // CHECK-NEXT: [[V2:v\d+]] = arith.constant 1 : i32;
-    v2 = arith.constant 1 : i32;
+    // CHECK-NEXT: [[V2:%\d+]] = arith.constant 1 : i32;
+    %2 = arith.constant 1 : i32;
 
-    // CHECK-NEXT: [[V3:v\d+]] = arith.mul [[V0]], [[V2]] : i32 #[overflow = checked];
-    v3 = arith.mul v0, v2 : i32 #[overflow = checked];
-    v4 = arith.mul v1, v2 : i32 #[overflow = checked];
+    // CHECK-NEXT: [[V3:%\d+]] = arith.mul [[V0]], [[V2]] <{ overflow = !builtin.overflow<checked> }>
+    %3 = arith.mul %0, %2 <{ overflow = !builtin.overflow<checked> }>
+    %4 = arith.mul %1, %2 <{ overflow = !builtin.overflow<checked> }>
 
     // CHECK-NEXT: builtin.ret [[V3]], [[V3]];
-    builtin.ret v3, v3;
+    builtin.ret %3, %3;
 };
             "#
         );
@@ -569,37 +563,36 @@ builtin.function @basic() -> (i32, i32) {
             builder.ret([v11], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_cse(true).expect("invalid ir");
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
-        test.function().borrow().print(&mut printer);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
         let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
-builtin.function @many(v0: i32, v1: i32) -> i32 {
-^block0(v0: i32, v1: i32):
-    // CHECK: [[V2:v\d+]] = arith.add v{{\d+}}, v{{\d+}} : i32 #[overflow = checked];
-    v2 = arith.add v0 v1 : i32 #[overflow = checked];
-    v3 = arith.add v0 v1 : i32 #[overflow = checked];
-    v4 = arith.add v0 v1 : i32 #[overflow = checked];
-    v5 = arith.add v0 v1 : i32 #[overflow = checked];
+builtin.function public extern("C") @many(%0: i32, %1: i32) -> i32 {
+    // CHECK: [[V2:%\d+]] = arith.add %{{\d+}}, %{{\d+}} <{ overflow = !builtin.overflow<checked> }>;
+    %2 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
+    %3 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
+    %4 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
+    %5 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
 
-    // CHECK-NEXT: [[V6:v\d+]] = arith.add [[V2]], [[V2]] : i32 #[overflow = checked];
-    v6 = arith.add v2, v3 : i32 #[overflow = checked];
-    v7 = arith.add v4, v5 : i32 #[overflow = checked];
-    v8 = arith.add v2, v4 : i32 #[overflow = checked];
+    // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V2]], [[V2]] <{ overflow = !builtin.overflow<checked> }>;
+    %6 = arith.add %2, %3 <{ overflow = !builtin.overflow<checked> }>;
+    %7 = arith.add %4, %5 <{ overflow = !builtin.overflow<checked> }>;
+    %8 = arith.add %2, %4 <{ overflow = !builtin.overflow<checked> }>;
 
-    // CHECK-NEXT: [[V9:v\d+]] = arith.add [[V6]], [[V6]] : i32 #[overflow = checked];
-    v9 = arith.add v6, v7 : i32 #[overflow = checked];
-    v10 = arith.add v7, v8 : i32 #[overflow = checked];
+    // CHECK-NEXT: [[V9:%\d+]] = arith.add [[V6]], [[V6]] <{ overflow = !builtin.overflow<checked> }>;
+    %9 = arith.add %6, %7 <{ overflow = !builtin.overflow<checked> }>;
+    %10 = arith.add %7, %8 <{ overflow = !builtin.overflow<checked> }>;
 
-    // CHECK-NEXT: [[V11:v\d+]] = arith.add [[V9]], [[V9]] : i32 #[overflow = checked];
-    v11 = arith.add v9, v10 : i32 #[overflow = checked];
+    // CHECK-NEXT: [[V11:%\d+]] = arith.add [[V9]], [[V9]] <{ overflow = !builtin.overflow<checked> }>;
+    %11 = arith.add %9, %10 <{ overflow = !builtin.overflow<checked> }>;
 
     // CHECK-NEXT: builtin.ret [[V11]];
-    builtin.ret v11;
+    builtin.ret %11;
 };
             "#
         );
@@ -616,24 +609,23 @@ builtin.function @many(v0: i32, v1: i32) -> i32 {
             builder.ret([v0, v1], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_cse(true).expect("invalid ir");
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
-        test.function().borrow().print(&mut printer);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
         let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
-builtin.function @different_operands() -> (i32, i32) {
-^block0:
-    // CHECK: [[V0:v\d+]] = arith.constant 0 : i32;
-    // CHECK-NEXT: [[V1:v\d+]] = arith.constant 1 : i32;
-    v0 = arith.constant 0 : i32;
-    v1 = arith.constant 1 : i32;
+builtin.function public extern("C") @different_operands() -> (i32, i32) {
+    // CHECK: [[V0:%\d+]] = arith.constant 0 : i32;
+    // CHECK-NEXT: [[V1:%\d+]] = arith.constant 1 : i32;
+    %0 = arith.constant 0 : i32;
+    %1 = arith.constant 1 : i32;
 
     // CHECK-NEXT: builtin.ret [[V0]], [[V1]];
-    builtin.ret v0, v1;
+    builtin.ret %0, %1;
 };
             "#
         );
@@ -651,24 +643,23 @@ builtin.function @different_operands() -> (i32, i32) {
             builder.ret([v1, v2], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_cse(true).expect("invalid ir");
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
-        test.function().borrow().print(&mut printer);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
         let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
-builtin.function @different_results(v0: i32) -> (i64, i128) {
-^block0(v0: i32):
-    // CHECK: [[V1:v\d+]] = arith.sext v0 : i64;
-    // CHECK-NEXT: [[V2:v\d+]] = arith.sext v0 : i128;
-    v1 = arith.cast v0 : i64;
-    v2 = arith.cast v0 : i128;
+builtin.function public extern("C") @different_results(%0: i32) -> (i64, i128) {
+    // CHECK: [[V1:%\d+]] = arith.sext %0 <{ ty = !builtin.type<i64> }>;
+    // CHECK-NEXT: [[V2:%\d+]] = arith.sext %0 <{ ty = !builtin.type<i128> }>;
+    v1 = arith.sext %0 <{ ty = !builtin.type<i64> }>;
+    v2 = arith.sext %0 <{ ty = !builtin.type<i128> }>;
 
     // CHECK-NEXT: builtin.ret [[V1]], [[V2]];
-    builtin.ret v1, v2;
+    builtin.ret %1, %2;
 };
             "#
         );
@@ -687,28 +678,27 @@ builtin.function @different_results(v0: i32) -> (i64, i128) {
             builder.ret([v2, v3], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_cse(true).expect("invalid ir");
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
-        test.function().borrow().print(&mut printer);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
         let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
-builtin.function @different_attributes(v0: i32) -> (i32, i32) {
-^block0(v0: i32):
-    // CHECK: [[V1:v\d+]] = arith.constant 1 : i32;
+builtin.function public extern("C") @different_attributes(%0: i32) -> (i32, i32) {
+    // CHECK: [[V1:%\d+]] = arith.constant 1 : i32;
     v1 = arith.constant 1 : i32;
 
-    // CHECK-NEXT: [[V2:v\d+]] = arith.add v0, v1 : i32 #[overflow = checked];
-    v2 = arith.add v0, v1 : i32 #[overflow = checked];
+    // CHECK-NEXT: [[V2:%\d+]] = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
+    v2 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
 
-    // CHECK-NEXT: [[V3:v\d+]] = arith.add v0, v1 : i32 #[overflow = unchecked];
-    v3 = arith.add v0, v1 : i32 #[overflow = unchecked];
+    // CHECK-NEXT: [[V3:%\d+]] = arith.add %0, %1 <{ overflow = !builtin.overflow<unchecked> }>;
+    v3 = arith.add %0, %1 <{ overflow = !builtin.overflow<unchecked> }>;
 
     // CHECK-NEXT: builtin.ret [[V2]], [[V3]];
-    builtin.ret v2, v3;
+    builtin.ret %2, %3;
 };
             "#
         );
@@ -733,32 +723,31 @@ builtin.function @different_attributes(v0: i32) -> (i32, i32) {
             builder.ret([v2, v3], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_cse(true).expect("invalid ir");
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
-        test.function().borrow().print(&mut printer);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
         let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
-builtin.function @side_effect(v0: ptr<u8, byte>) -> (u8, u8) {
-^block0(v0: ptr<u8, byte>):
-    // CHECK: [[V1:v\d+]] = arith.constant 1 : u8;
-    v1 = arith.constant 1 : u8;
+builtin.function public extern("C") @side_effect(%0: ptr<u8, byte>) -> (u8, u8) {
+    // CHECK: [[V1:%\d+]] = arith.constant 1 : u8;
+    %1 = arith.constant 1 : u8;
 
-    // CHECK-NEXT: hir.store v0, v1;
-    // CHECK-NEXT: [[V2:v\d+]] = hir.load v0 : u8;
-    hir.store v0, v1;
-    v2 = hir.load v0 : u8;
+    // CHECK-NEXT: hir.store %0, %1;
+    // CHECK-NEXT: [[V2:%\d+]] = hir.load %0;
+    hir.store %0, %1;
+    %2 = hir.load %0;
 
-    // CHECK-NEXT: hir.store v0, v1;
-    // CHECK-NEXT: [[V3:v\d+]] = hir.load v0 : u8;
-    hir.store v0, v1;
-    v3 = hir.load v0 : u8;
+    // CHECK-NEXT: hir.store %0, %1;
+    // CHECK-NEXT: [[V3:%\d+]] = hir.load %0;
+    hir.store v0, %1;
+    %3 = hir.load %0;
 
     // CHECK-NEXT: builtin.ret [[V2]], [[V3]];
-    builtin.ret v2, v3;
+    builtin.ret %2, %3;
 };
             "#
         );
@@ -796,104 +785,48 @@ builtin.function @side_effect(v0: ptr<u8, byte>) -> (u8, u8) {
             }
         }
 
-        test.run_cse(true).expect("invalid ir");
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
-        test.function().borrow().print(&mut printer);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
         let output = format!("{}", printer.finish());
         std::println!("output: {output}");
         filecheck!(
             output,
             r#"
-builtin.function @down_propagate_while() {
-^block0:
-    // CHECK: [[V0:v\d+]] = arith.constant 0 : i32;
-    v0 = arith.constant 0 : i32;
-    // CHECK: [[V1:v\d+]] = arith.constant 1 : i32;
-    v1 = arith.constant 1 : i32;
-    // CHECK: [[V2:v\d+]] = arith.constant 4 : i32;
-    v2 = arith.constant 4 : i32;
+builtin.function public extern("C") @down_propagate_while() {
+    // CHECK: [[V0:%\d+]] = arith.constant 0 : i32;
+    %0 = arith.constant 0 : i32;
+    // CHECK: [[V1:%\d+]] = arith.constant 1 : i32;
+    %1 = arith.constant 1 : i32;
+    // CHECK: [[V2:%\d+]] = arith.constant 4 : i32;
+    %2 = arith.constant 4 : i32;
 
-    // CHECK-NEXT: scf.while v0, v1 {
-    // CHECK-NEXT: ^block{{\d}}([[V3:v\d+]]: i32, [[V4:v\d+]]: i32):
-    scf.while v0, v1 {
-    ^block1(v3: i32, v4: i32):
-        // CHECK-NEXT: [[V6:v\d+]] = arith.add [[V3]], [[V1]] : i32 #[overflow = checked];
-        v5 = arith.constant 1 : i32;
-        v6 = arith.add v3, v5 : i32 #[overflow = checked];
-        // CHECK-NEXT: [[V7:v\d+]] = arith.lt [[V6]], [[V2]] : i1;
-        v7 = arith.lt v6, v2 : i1;
-        // CHECK-NEXT: scf.condition [[V7]], [[V6]], [[V4]];
-        scf.condition v7, v6, v4;
-    } do {
-    ^block2(v8: i32, v9: i32):
-        // CHECK-NEXT: } do {
-        // CHECK-NEXT: ^block{{\d}}([[V8:v\d+]]: i32, [[V9:v\d+]]: i32):
+    // CHECK-NEXT: scf.while %0, %1 before {
+    // CHECK-NEXT: ^block{{\d}}([[V3:%\d+]]: i32, [[V4:%\d+]]: i32):
+    scf.while %0, %1 before {
+    ^block1(%3: i32, %4: i32):
+        // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V3]], [[V1]] <{ overflow = !builtin.overflow<checked> }>;
+        %5 = arith.constant 1 : i32;
+        %6 = arith.add %3, %5 <{ overflow = !builtin.overflow<checked> }>;
+        // CHECK-NEXT: [[V7:%\d+]] = arith.lt [[V6]], [[V2]];
+        %7 = arith.lt %6, %2;
+        // CHECK-NEXT: scf.condition ([[V7]]) ([[V6]], [[V4]]);
+        scf.condition (%7) (%6, %4);
+    } after {
+    ^block2(%8: i32, %9: i32):
+        // CHECK-NEXT: } after {
+        // CHECK-NEXT: ^block{{\d}}([[V8:%\d+]]: i32, [[V9:%\d+]]: i32):
         // CHECK-NEXT: scf.yield [[V8]], [[V9]];
-        scf.yield v8, v9;
+        scf.yield %8, %9;
     }
 
-    // CHECK: builtin.ret ;
+    // CHECK: builtin.ret;
     builtin.ret;
 };
             "#
         );
-    }
-
-    fn enable_compiler_instrumentation() {
-        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-            .format_timestamp(None)
-            .is_test(true)
-            .try_init();
-    }
-
-    struct Test {
-        context: Rc<Context>,
-        builder: OpBuilder,
-        function: FunctionRef,
-    }
-
-    impl Test {
-        pub fn new(name: &'static str, params: &[Type], results: &[Type]) -> Self {
-            enable_compiler_instrumentation();
-
-            let context = Rc::new(Context::default());
-            let mut builder = OpBuilder::new(context.clone());
-            let function = builder
-                .create_function(
-                    Ident::with_empty_span(name.into()),
-                    Signature::new(
-                        params.iter().cloned().map(AbiParam::new),
-                        results.iter().cloned().map(AbiParam::new),
-                    ),
-                )
-                .unwrap();
-
-            Self {
-                context,
-                builder,
-                function,
-            }
-        }
-
-        pub fn function(&self) -> FunctionRef {
-            self.function
-        }
-
-        pub fn function_builder(&mut self) -> FunctionBuilder<'_, OpBuilder> {
-            FunctionBuilder::new(self.function, &mut self.builder)
-        }
-
-        pub fn run_cse(&self, verify: bool) -> Result<(), Report> {
-            let mut pm = PassManager::on::<Function>(
-                self.context.clone(),
-                midenc_hir::pass::Nesting::Explicit,
-            );
-            pm.add_pass(Box::new(CommonSubexpressionElimination));
-            pm.enable_verifier(verify);
-            pm.run(self.function.as_operation_ref())
-        }
     }
 }
 

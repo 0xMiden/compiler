@@ -150,39 +150,25 @@ mod tests {
     use alloc::rc::Rc;
 
     use midenc_hir::{
-        BuilderExt, Context, Ident, OpBuilder, Report, SourceSpan, Type,
-        dialects::builtin::{
-            BuiltinOpBuilder, Function, FunctionBuilder,
-            attributes::{AbiParam, Signature},
-        },
+        Report, SourceSpan, Type,
+        dialects::builtin::{BuiltinOpBuilder, Function},
         patterns::{
             FrozenRewritePatternSet, GreedyRewriteConfig, RegionSimplificationLevel,
             RewritePatternSet, apply_patterns_and_fold_greedily,
         },
+        testing::Test,
         traits::Canonicalizable,
     };
 
-    use crate::{ArithDialect, ArithOpBuilder, Join, Rotl, Rotr, Split};
+    use crate::{ArithOpBuilder, Join, Rotl, Rotr, Split};
 
-    fn build_rotate_by_32(
-        context: Rc<Context>,
-        ty: Type,
-        is_rotr: bool,
-    ) -> Result<midenc_hir::OperationRef, Report> {
-        let _arith = context.get_or_register_dialect::<ArithDialect>();
-
+    fn build_rotate_by_32(test: &mut Test, ty: Type, is_rotr: bool) -> Result<(), Report> {
         let span = SourceSpan::default();
-        let mut builder = OpBuilder::new(context);
 
-        let function = {
-            let builder = builder.create::<Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let ty = Signature::new([AbiParam::new(ty.clone())], [AbiParam::new(ty.clone())]);
-            builder(name, ty)?
-        };
+        test.with_function("test", core::slice::from_ref(&ty), core::slice::from_ref(&ty));
 
         {
-            let mut builder = FunctionBuilder::new(function, &mut builder);
+            let mut builder = test.function_builder();
             let input = builder.current_block().borrow().arguments()[0].upcast();
             let shift = builder.u32(32, span);
             let rotated = if is_rotr {
@@ -193,13 +179,11 @@ mod tests {
             builder.ret(Some(rotated), span)?;
         }
 
-        Ok(function.as_operation_ref())
+        Ok(())
     }
 
-    fn apply_rotate_canonicalization(
-        context: Rc<Context>,
-        function: midenc_hir::OperationRef,
-    ) -> bool {
+    fn apply_rotate_canonicalization(test: &Test) -> bool {
+        let context = test.context_rc();
         let mut patterns = RewritePatternSet::new(context.clone());
         Rotl::get_canonicalization_patterns(&mut patterns, context.clone());
         Rotr::get_canonicalization_patterns(&mut patterns, context);
@@ -208,6 +192,7 @@ mod tests {
         let mut config = GreedyRewriteConfig::default();
         config.with_region_simplification_level(RegionSimplificationLevel::None);
 
+        let function = test.function().as_operation_ref();
         match apply_patterns_and_fold_greedily(function, patterns, config) {
             Ok(changed) => changed,
             Err(changed) => panic!("canonicalization failed (changed={changed})"),
@@ -281,22 +266,22 @@ mod tests {
 
     #[test]
     fn canonicalize_rotl_u64_by_32_to_swap() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let function = build_rotate_by_32(context.clone(), Type::U64, false)?;
+        let mut test = Test::named("canonicalize_rotl_u64_by_32_to_swap");
+        build_rotate_by_32(&mut test, Type::U64, false)?;
 
-        assert!(apply_rotate_canonicalization(context.clone(), function));
-        assert_rotate_by_32_rewritten(function, Type::U64);
+        assert!(apply_rotate_canonicalization(&test));
+        assert_rotate_by_32_rewritten(test.function().as_operation_ref(), Type::U64);
 
         Ok(())
     }
 
     #[test]
     fn canonicalize_rotr_i64_by_32_to_swap() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let function = build_rotate_by_32(context.clone(), Type::I64, true)?;
+        let mut test = Test::named("canonicalize_rotr_i64_by_32_to_swap");
+        build_rotate_by_32(&mut test, Type::I64, true)?;
 
-        assert!(apply_rotate_canonicalization(context.clone(), function));
-        assert_rotate_by_32_rewritten(function, Type::I64);
+        assert!(apply_rotate_canonicalization(&test));
+        assert_rotate_by_32_rewritten(test.function().as_operation_ref(), Type::I64);
 
         Ok(())
     }

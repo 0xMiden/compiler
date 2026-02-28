@@ -734,7 +734,7 @@ mod tests {
 
     use midenc_hir::{
         ArrayType, Context, Felt, FieldElement, Overflow, PointerType, ValueRef,
-        dialects::builtin::attributes::{AbiParam, Signature},
+        dialects::builtin::attributes::Signature,
     };
 
     use super::*;
@@ -2098,10 +2098,7 @@ mod tests {
             let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
             masm::InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
         };
-        let signature = Signature::new(
-            [AbiParam::new(Type::U32), AbiParam::new(Type::I1)],
-            [AbiParam::new(return_ty.clone())],
-        );
+        let signature = Signature::new(&context, [Type::U32, Type::I1], [return_ty.clone()]);
 
         let t = Immediate::I1(true);
         let one = Immediate::U32(1);

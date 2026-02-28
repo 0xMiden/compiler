@@ -1,11 +1,7 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
-    Felt, Immediate, SourceSpan, Type, ValueRef,
-    dialects::builtin::{
-        BuiltinOpBuilder,
-        attributes::{AbiParam, Signature},
-    },
+    Felt, Immediate, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder,
 };
 
 use crate::testing::{compile_test_module, eval_package};
@@ -14,9 +10,7 @@ fn run_select_test(ty: Type, a: Immediate, a_result: &[u64], b: Immediate, b_res
     let span = SourceSpan::default();
 
     // Wrap 'select' in a function which takes a bool and returns selection from consts.
-    let signature = Signature::new([AbiParam::new(Type::I1)], [AbiParam::new(ty)]);
-
-    let (package, context) = compile_test_module(signature, |builder| {
+    let (package, context) = compile_test_module([Type::I1], [ty], |builder| {
         let block = builder.current_block();
         let cond_val = block.borrow().arguments()[0] as ValueRef;
 

@@ -26,6 +26,7 @@ use crate::*;
 /// supported for 'builtin.func' for now. If you potentially have infinite loops inside CFG regions
 /// not belonging to 'builtin.func', consider using the `transform_cfg_to_scf` function directly
 /// with a corresponding [CFGToSCFInterface::create_unreachable_terminator] implementation.
+#[derive(Default)]
 pub struct LiftControlFlowToSCF;
 
 impl Pass for LiftControlFlowToSCF {
@@ -372,36 +373,26 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{boxed::Box, format, rc::Rc};
+    use alloc::{boxed::Box, format};
 
-    use builtin::{BuiltinOpBuilder, FunctionBuilder};
+    use builtin::BuiltinOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        BuilderExt, Context, Ident, OpBuilder, PointerType, Report, SourceSpan, Type,
-        dialects::builtin::{
-            self,
-            attributes::{AbiParam, Signature},
-        },
-        pass,
+        PointerType, Report, SourceSpan, Type,
+        dialects::builtin::{self},
+        testing::Test,
     };
 
     use super::*;
 
     #[test]
     fn cfg_to_scf_lift_simple_conditional() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test = Test::new("cfg_to_scf_lift_simple_conditional", &[Type::U32], &[Type::U32]);
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
 
         // Define function body
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let if_is_zero = builder.create_block();
         let if_is_nonzero = builder.create_block();
@@ -426,19 +417,21 @@ mod tests {
         builder.switch_to_block(exit_block);
         builder.ret(Some(return_val), span)?;
 
-        let operation = function.as_operation_ref();
-        // Run transformation on function body
-        let input = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_simple_conditional_before.hir"].assert_eq(&input);
+        let operation = test.function().as_operation_ref();
 
-        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
-        pm.add_pass(Box::new(LiftControlFlowToSCF));
-        pm.run(operation)?;
+        // Run transformation on function body
+        let test_name = test.name();
+        let input = format!("{}", &operation.borrow());
+        let before_path = format!("expected/{test_name}_before.hir");
+        expect_file![&before_path].assert_eq(&input);
+
+        test.apply_pass::<LiftControlFlowToSCF>(true)?;
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // an `builtin.return`.
         let output = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_simple_conditional_after.hir"].assert_eq(&output);
+        let after_path = format!("expected/{test_name}_after.hir");
+        expect_file![&after_path].assert_eq(&output);
 
         Ok(())
     }
@@ -448,32 +441,16 @@ mod tests {
     /// the other branch performs additional computation before exiting.
     #[test]
     fn cfg_to_scf_lift_conditional_early_exit() -> Result<(), Report> {
-        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-            .is_test(true)
-            .format_timestamp(None)
-            .try_init();
-
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test = Test::new(
+            "cfg_to_scf_lift_conditional_early_exit",
+            &[Type::U32, Type::U32, Type::U32, Type::U32],
+            &[Type::U32],
+        );
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new(
-                [
-                    AbiParam::new(Type::U32),
-                    AbiParam::new(Type::U32),
-                    AbiParam::new(Type::U32),
-                    AbiParam::new(Type::U32),
-                ],
-                [AbiParam::new(Type::U32)],
-            );
-            builder(name, signature).unwrap()
-        };
 
         // Define function body
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         // This is the HIR we derived this test case from originally, as reported in issue #510
         //
@@ -555,41 +532,33 @@ mod tests {
         builder.switch_to_block(block40);
         builder.ret(Some(v343), span)?;
 
-        let operation = function.as_operation_ref();
+        let operation = test.function().as_operation_ref();
 
         // Run transformation on function body
         let input = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_conditional_early_exit_before.hir"]
-            .assert_eq(&input);
+        let test_name = test.name();
+        let before_path = format!("expected/{test_name}_before.hir");
+        expect_file![&before_path].assert_eq(&input);
 
-        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
-        pm.add_pass(Box::new(LiftControlFlowToSCF));
-        pm.run(operation)?;
+        test.apply_pass::<LiftControlFlowToSCF>(true)?;
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // a `cf.switch`, which branches to either a return, or an unreachable.
         let output = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_conditional_early_exit_after.hir"]
-            .assert_eq(&output);
+        let after_path = format!("expected/{test_name}_after.hir");
+        expect_file![&after_path].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn cfg_to_scf_lift_simple_while_loop() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test = Test::new("cfg_to_scf_lift_simple_while_loop", &[Type::U32], &[Type::U32]);
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
 
         // Define function body
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let loop_header = builder.create_block();
         let n = builder.append_block_param(loop_header, Type::U32, span);
@@ -616,43 +585,34 @@ mod tests {
         let counter_prime = builder.incr(counter, span)?;
         builder.br(loop_header, [n_prime, counter_prime], span)?;
 
-        let operation = function.as_operation_ref();
+        let operation = test.function().as_operation_ref();
 
         // Run transformation on function body
         let input = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_simple_while_loop_before.hir"].assert_eq(&input);
+        let test_name = test.name();
+        let before_path = format!("expected/{test_name}_before.hir");
+        expect_file![&before_path].assert_eq(&input);
 
-        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
-        pm.add_pass(Box::new(LiftControlFlowToSCF));
-        pm.run(operation)?;
+        test.apply_pass::<LiftControlFlowToSCF>(true)?;
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // an `builtin.return`.
         let output = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_simple_while_loop_after.hir"].assert_eq(&output);
+        let after_path = format!("expected/{test_name}_after.hir");
+        expect_file![&after_path].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn cfg_to_scf_lift_nested_while_loop() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test = Test::new(
+            "cfg_to_scf_lift_nested_while_loop",
+            &[Type::from(PointerType::new(Type::U32)), Type::U32, Type::U32],
+            &[Type::U32],
+        );
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new(
-                [
-                    AbiParam::new(Type::from(PointerType::new(Type::U32))),
-                    AbiParam::new(Type::U32),
-                    AbiParam::new(Type::U32),
-                ],
-                [AbiParam::new(Type::U32)],
-            );
-            builder(name, signature).unwrap()
-        };
 
         // Define function body for the following pseudocode:
         //
@@ -673,7 +633,7 @@ mod tests {
         //     return sum;
         // }
         //
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let outer_loop_header = builder.create_block();
         let inner_loop_header = builder.create_block();
@@ -729,43 +689,34 @@ mod tests {
         let new_sum = builder.add_unchecked(col_sum, cell, span)?;
         builder.br(inner_loop_header, [new_col_offset, new_sum], span)?;
 
-        let operation = function.as_operation_ref();
+        let operation = test.function().as_operation_ref();
 
         // Run transformation on function body
         let input = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_nested_while_loop_before.hir"].assert_eq(&input);
+        let test_name = test.name();
+        let before_path = format!("expected/{test_name}_before.hir");
+        expect_file![&before_path].assert_eq(&input);
 
-        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
-        pm.add_pass(Box::new(LiftControlFlowToSCF));
-        pm.run(operation)?;
+        test.apply_pass::<LiftControlFlowToSCF>(true)?;
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // an `builtin.return`.
         let output = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_nested_while_loop_after.hir"].assert_eq(&output);
+        let after_path = format!("expected/{test_name}_after.hir");
+        expect_file![&after_path].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn cfg_to_scf_lift_multiple_exit_nested_while_loop() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test = Test::new(
+            "cfg_to_scf_lift_multiple_exit_nested_while_loop",
+            &[Type::from(PointerType::new(Type::U32)), Type::U32, Type::U32],
+            &[Type::U32],
+        );
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new(
-                [
-                    AbiParam::new(Type::from(PointerType::new(Type::U32))),
-                    AbiParam::new(Type::U32),
-                    AbiParam::new(Type::U32),
-                ],
-                [AbiParam::new(Type::U32)],
-            );
-            builder(name, signature).unwrap()
-        };
 
         // Define function body for the following pseudocode:
         //
@@ -790,7 +741,7 @@ mod tests {
         //     return sum;
         // }
         //
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let outer_loop_header = builder.create_block();
         let inner_loop_header = builder.create_block();
@@ -857,23 +808,24 @@ mod tests {
         builder.switch_to_block(has_overflowed);
         builder.ret_imm(midenc_hir::Immediate::U32(u32::MAX), span)?;
 
-        let operation = function.as_operation_ref();
+        let operation = test.function().as_operation_ref();
 
         // Run transformation on function body
         let input = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_multiple_exit_nested_while_loop_before.hir"]
-            .assert_eq(&input);
+        let test_name = test.name();
+        let before_path = format!("expected/{test_name}_before.hir");
+        expect_file![&before_path].assert_eq(&input);
 
-        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
-        pm.add_pass(Box::new(LiftControlFlowToSCF));
-        pm.add_pass(transforms::Canonicalizer::create());
-        pm.run(operation)?;
+        test.apply_passes(
+            [Box::new(LiftControlFlowToSCF), transforms::Canonicalizer::create()],
+            true,
+        )?;
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // an `builtin.return`.
         let output = format!("{}", &operation.borrow());
-        expect_file!["expected/cfg_to_scf_lift_multiple_exit_nested_while_loop_after.hir"]
-            .assert_eq(&output);
+        let after_path = format!("expected/{test_name}_after.hir");
+        expect_file![&after_path].assert_eq(&output);
 
         Ok(())
     }

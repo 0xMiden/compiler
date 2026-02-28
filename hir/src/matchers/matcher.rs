@@ -671,25 +671,17 @@ where
 
 #[cfg(test)]
 mod tests {
-    use alloc::rc::Rc;
-
     use super::*;
     use crate::{
-        dialects::{
-            builtin::{
-                attributes::{AbiParam, Signature},
-                *,
-            },
-            test::*,
-        },
+        dialects::{builtin::*, test::*},
+        testing::Test,
         *,
     };
 
     #[test]
     fn matcher_match_any_value() {
-        let context = Rc::new(Context::default());
-
-        let (lhs, rhs, sum) = setup(context.clone());
+        let mut test = Test::default();
+        let (lhs, rhs, sum) = setup("matcher_match_any_value", &mut test);
 
         // All three values should `match_any_value`
         for value in [&lhs, &rhs, &sum] {
@@ -699,9 +691,8 @@ mod tests {
 
     #[test]
     fn matcher_match_value() {
-        let context = Rc::new(Context::default());
-
-        let (lhs, rhs, sum) = setup(context.clone());
+        let mut test = Test::default();
+        let (lhs, rhs, sum) = setup("matcher_match_value", &mut test);
 
         // All three values should match themselves via `match_value`
         for value in [&lhs, &rhs, &sum] {
@@ -711,9 +702,8 @@ mod tests {
 
     #[test]
     fn matcher_match_any() {
-        let context = Rc::new(Context::default());
-
-        let (lhs, _rhs, sum) = setup(context.clone());
+        let mut test = Test::default();
+        let (lhs, _rhs, sum) = setup("matcher_match_any", &mut test);
 
         // We should be able to match `lhs` and `sum` ops using `match_any`
         let lhs_op = lhs.borrow().get_defining_op().unwrap();
@@ -726,9 +716,9 @@ mod tests {
 
     #[test]
     fn matcher_match_op() {
-        let context = Rc::new(Context::default());
+        let mut test = Test::default();
+        let (lhs, rhs, sum) = setup("matcher_match_op", &mut test);
 
-        let (lhs, rhs, sum) = setup(context.clone());
         let lhs_op = lhs.borrow().get_defining_op().unwrap();
         let sum_op = sum.borrow().get_defining_op().unwrap();
         assert!(rhs.borrow().get_defining_op().is_none());
@@ -743,9 +733,9 @@ mod tests {
 
     #[test]
     fn matcher_match_both() {
-        let context = Rc::new(Context::default());
+        let mut test = Test::default();
+        let (lhs, _rhs, _sum) = setup("matcher_match_both", &mut test);
 
-        let (lhs, _rhs, _sum) = setup(context.clone());
         let lhs_op = lhs.borrow().get_defining_op().unwrap();
 
         // Ensure if the first matcher fails, then the whole match fails
@@ -770,9 +760,9 @@ mod tests {
 
     #[test]
     fn matcher_match_chain() {
-        let context = Rc::new(Context::default());
+        let mut test = Test::default();
+        let (_, rhs, sum) = setup("matcher_match_chain", &mut test);
 
-        let (_, rhs, sum) = setup(context.clone());
         let sum_op = sum.borrow().get_defining_op().unwrap();
 
         let [lhs_fr, rhs_fr] = binary_fold_results()
@@ -788,9 +778,9 @@ mod tests {
 
     #[test]
     fn matcher_constant_like() {
-        let context = Rc::new(Context::default());
+        let mut test = Test::default();
+        let (lhs, _rhs, sum) = setup("matcher_constant_like", &mut test);
 
-        let (lhs, _rhs, sum) = setup(context.clone());
         let lhs_op = lhs.borrow().get_defining_op().unwrap();
         let sum_op = sum.borrow().get_defining_op().unwrap();
 
@@ -801,9 +791,9 @@ mod tests {
 
     #[test]
     fn matcher_constant() {
-        let context = Rc::new(Context::default());
+        let mut test = Test::default();
+        let (lhs, _rhs, sum) = setup("matcher_constant", &mut test);
 
-        let (lhs, _rhs, sum) = setup(context.clone());
         let lhs_op = lhs.borrow().get_defining_op().unwrap();
         let sum_op = sum.borrow().get_defining_op().unwrap();
 
@@ -814,9 +804,8 @@ mod tests {
 
     #[test]
     fn matcher_constant_of() {
-        let context = Rc::new(Context::default());
-
-        let (lhs, _rhs, sum) = setup(context.clone());
+        let mut test = Test::default();
+        let (lhs, _rhs, sum) = setup("matcher_constant_of", &mut test);
         let lhs_op = lhs.borrow().get_defining_op().unwrap();
         let sum_op = sum.borrow().get_defining_op().unwrap();
 
@@ -825,18 +814,11 @@ mod tests {
         assert!(constant_of::<Immediate>().matches(&sum_op.borrow()).is_none());
     }
 
-    fn setup(context: Rc<Context>) -> (ValueRef, ValueRef, ValueRef) {
-        let mut builder = OpBuilder::new(Rc::clone(&context));
-
-        let function = {
-            let builder = builder.create::<Function, (_, _)>(SourceSpan::default());
-            let name = Ident::new("test".into(), SourceSpan::default());
-            let sig = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, sig).unwrap()
-        };
+    fn setup(name: &'static str, test: &mut Test) -> (ValueRef, ValueRef, ValueRef) {
+        test.with_function(name, &[Type::U32], &[Type::U32]);
 
         // Define function body
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
         let lhs = builder.u32(1, SourceSpan::default()).unwrap();
         let block = builder.current_block();
         let rhs = block.borrow().arguments()[0].upcast();

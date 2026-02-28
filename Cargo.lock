@@ -2569,7 +2569,6 @@ dependencies = [
  "midenc-frontend-wasm",
  "midenc-hir",
  "midenc-hir-eval",
- "midenc-log",
  "midenc-session",
  "num-traits",
  "proptest",
@@ -2971,7 +2970,6 @@ dependencies = [
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
- "midenc-log",
  "midenc-session",
  "petgraph 0.8.3",
  "proptest",
@@ -3031,7 +3029,6 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-analysis",
  "midenc-hir-transform",
- "midenc-log",
 ]
 
 [[package]]
@@ -3046,7 +3043,6 @@ dependencies = [
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-transform",
- "midenc-log",
 ]
 
 [[package]]
@@ -3153,7 +3149,6 @@ dependencies = [
  "midenc-dialect-scf",
  "midenc-expect-test",
  "midenc-hir",
- "midenc-log",
 ]
 
 [[package]]
@@ -3210,7 +3205,6 @@ dependencies = [
  "midenc-dialect-scf",
  "midenc-hir",
  "midenc-hir-analysis",
- "midenc-log",
  "midenc-session",
 ]
 

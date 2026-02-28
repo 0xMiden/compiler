@@ -10,6 +10,8 @@ use midenc_hir::{
 };
 
 use crate::{LoadLocal, StoreLocal};
+
+#[derive(Default)]
 pub struct Local2Reg;
 
 impl Pass for Local2Reg {
@@ -235,18 +237,15 @@ impl Pass for Local2Reg {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{boxed::Box, format, rc::Rc, string::ToString};
+    use alloc::{format, string::ToString};
 
     use litcheck_filecheck::filecheck;
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        Context, Ident, OpBuilder, OpPrinter, Report, SourceSpan, Type, ValueRef,
-        dialects::builtin::{
-            BuiltinOpBuilder, Function, FunctionBuilder, FunctionRef,
-            attributes::{AbiParam, Signature},
-        },
-        pass::PassManager,
+        OpPrinter, SourceSpan, Type, ValueRef,
+        dialects::builtin::{BuiltinOpBuilder, Function},
         print::AsmPrinter,
+        testing::Test,
     };
 
     use super::Local2Reg;
@@ -271,10 +270,10 @@ mod tests {
             builder.ret([v4], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_local2reg(true).expect("invalid ir");
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
         test.function().borrow().print(&mut printer);
         let output = format!("{}", printer.finish());
         filecheck!(
@@ -308,10 +307,10 @@ builtin.function @promotes_redundant(v0: i32, v1: i32) -> i32 {
             builder.ret([v0], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_local2reg(true).expect("invalid ir");
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
         test.function().borrow().print(&mut printer);
         let output = format!("{}", printer.finish());
         filecheck!(
@@ -349,10 +348,10 @@ builtin.function @erases_dead_stores(v0: i32) -> i32 {
             builder.ret([v6], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_local2reg(true).expect("invalid ir");
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
         test.function().borrow().print(&mut printer);
         let output = format!("{}", printer.finish());
         std::println!("output: {output}");
@@ -401,10 +400,10 @@ builtin.function @ignores_multiple_loads(v0: i32, v1: i32) -> i32 {
             builder.ret([v4], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_local2reg(true).expect("invalid ir");
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
         test.function().borrow().print(&mut printer);
         let output = format!("{}", printer.finish());
         std::println!("output: {output}");
@@ -444,10 +443,10 @@ builtin.function @ignores_multiple_stores(v0: i32, v1: i32) -> i32 {
             builder.ret([v3], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_local2reg(true).expect("invalid ir");
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
         test.function().borrow().print(&mut printer);
         let output = format!("{}", printer.finish());
         filecheck!(
@@ -489,10 +488,10 @@ builtin.function @ignores_poison_loads(v0: i32, v1: i32) -> i32 {
             builder.ret([v2], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_local2reg(true).expect("invalid ir");
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
 
         let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context.clone(), &flags);
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
         test.function().borrow().print(&mut printer);
         let output = format!("{}", printer.finish());
         filecheck!(
@@ -557,7 +556,7 @@ builtin.function @ignores_inter_block_candidates(v0: i32) -> i32 {
             builder.ret([v6], SourceSpan::UNKNOWN).unwrap();
         }
 
-        test.run_local2reg(true).expect("invalid ir");
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
 
         let output =
             format!("{}", <Function as Op>::print(&test.function().borrow(), &Default::default()));
@@ -597,60 +596,5 @@ builtin.function @ignores_intervening_scf(v0: i32, v1: i1) -> i32 {
 };
             "#
         );
-    }
-
-    fn enable_compiler_instrumentation() {
-        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-            .format_timestamp(None)
-            .is_test(true)
-            .try_init();
-    }
-
-    struct Test {
-        context: Rc<Context>,
-        builder: OpBuilder,
-        function: FunctionRef,
-    }
-
-    impl Test {
-        pub fn new(name: &'static str, params: &[Type], results: &[Type]) -> Self {
-            enable_compiler_instrumentation();
-
-            let context = Rc::new(Context::default());
-            let mut builder = OpBuilder::new(context.clone());
-            let function = builder
-                .create_function(
-                    Ident::with_empty_span(name.into()),
-                    Signature::new(
-                        params.iter().cloned().map(AbiParam::new),
-                        results.iter().cloned().map(AbiParam::new),
-                    ),
-                )
-                .unwrap();
-
-            Self {
-                context,
-                builder,
-                function,
-            }
-        }
-
-        pub fn function(&self) -> FunctionRef {
-            self.function
-        }
-
-        pub fn function_builder(&mut self) -> FunctionBuilder<'_, OpBuilder> {
-            FunctionBuilder::new(self.function, &mut self.builder)
-        }
-
-        pub fn run_local2reg(&self, verify: bool) -> Result<(), Report> {
-            let mut pm = PassManager::on::<Function>(
-                self.context.clone(),
-                midenc_hir::pass::Nesting::Explicit,
-            );
-            pm.add_pass(Box::new(Local2Reg));
-            pm.enable_verifier(verify);
-            pm.run(self.function.as_operation_ref())
-        }
     }
 }

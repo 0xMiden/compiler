@@ -768,7 +768,7 @@ mod tests {
     fn operand_movement_constraint_solver_duplicate() {
         use hir::Context;
 
-        testing::logger_setup();
+        testing::enable_compiler_instrumentation();
 
         let context = Rc::new(Context::default());
 

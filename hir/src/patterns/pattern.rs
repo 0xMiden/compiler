@@ -230,14 +230,9 @@ mod tests {
     use super::*;
     use crate::{
         attributes::IntegerLikeAttr,
-        dialects::{
-            builtin::{
-                attributes::{AbiParam, Signature},
-                *,
-            },
-            test::*,
-        },
+        dialects::{builtin::*, test::*},
         patterns::*,
+        testing::Test,
         *,
     };
 
@@ -329,32 +324,22 @@ mod tests {
 
     #[test]
     fn rewrite_pattern_api_test() {
-        let mut builder = midenc_log::Builder::from_env("MIDENC_TRACE");
-        builder.init();
+        let mut test = Test::new("rewrite_pattern_api_test", &[Type::U32], &[Type::U32]);
 
-        let context = Rc::new(Context::default());
-        let pattern = ConvertShiftLeftBy1ToMultiply::new(Rc::clone(&context));
-
-        let mut builder = OpBuilder::new(Rc::clone(&context));
-        let function = {
-            let builder = builder.create::<Function, (_, _)>(SourceSpan::default());
-            let name = Ident::new("test".into(), SourceSpan::default());
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
+        let pattern = ConvertShiftLeftBy1ToMultiply::new(test.context_rc());
 
         // Define function body
         {
-            let mut builder = FunctionBuilder::new(function, &mut builder);
+            let mut builder = test.function_builder();
             let shift = builder.u32(1, SourceSpan::default()).unwrap();
             let block = builder.current_block();
-            let lhs = block.borrow().arguments()[0].upcast();
+            let lhs = block.borrow().arguments()[0] as ValueRef;
             let result = builder.shl(lhs, shift, SourceSpan::default()).unwrap();
             builder.ret(Some(result), SourceSpan::default()).unwrap();
         }
 
         // Construct pattern set
-        let mut rewrites = RewritePatternSet::new(builder.context_rc());
+        let mut rewrites = RewritePatternSet::new(test.context_rc());
         rewrites.push(pattern);
         let rewrites = Rc::new(FrozenRewritePatternSet::new(rewrites));
 
@@ -362,20 +347,19 @@ mod tests {
         let mut config = GreedyRewriteConfig::default();
         config.with_region_simplification_level(RegionSimplificationLevel::None);
         let result =
-            apply_patterns_and_fold_greedily(function.as_operation_ref(), rewrites, config);
+            apply_patterns_and_fold_greedily(test.function().as_operation_ref(), rewrites, config);
 
         // The rewrite should converge and modify the IR
         assert_eq!(result, Ok(true));
 
         // Confirm that the expected rewrite occurred
-        let func = function.borrow();
+        let func = test.function().borrow();
         let output = func.as_operation().to_string();
         let expected = "\
-public builtin.function @test(v0: u32) -> u32 {
-^block0(v0: u32):
-    v3 = test.constant 2 : u32;
-    v4 = test.mul v0, v3 : u32 #[overflow = wrapping];
-    builtin.ret v4;
+builtin.function public extern(\"C\") @rewrite_pattern_api_test(%0: u32) -> u32 {
+    %3 = \"test.constant\"() <{ value = !builtin.number<2> }> : () -> u32;
+    %4 = \"test.mul\"(%0, %3) <{ overflow = !builtin.overflow<wrapping> }> : (u32, u32) -> u32;
+    builtin.ret %4;
 };";
         assert_str_eq!(output.as_str(), expected);
     }

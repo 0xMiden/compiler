@@ -505,19 +505,15 @@ pub fn schedule_stack_realignment(
 
 #[cfg(test)]
 mod tests {
-    use alloc::rc::Rc;
-
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        Context, Ident, OpBuilder, TraceTarget, Type,
-        dialects::builtin::{
-            self, BuiltinOpBuilder, FunctionBuilder, FunctionRef,
-            attributes::{AbiParam, Signature},
-        },
+        TraceTarget, Type,
+        dialects::builtin::{self, BuiltinOpBuilder, FunctionRef},
         formatter::PrettyPrint,
         pass::AnalysisManager,
+        testing::Test,
         version::Version,
     };
     use midenc_hir_analysis::analyses::LivenessAnalysis;
@@ -527,23 +523,12 @@ mod tests {
 
     #[test]
     fn util_emit_if_test() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        crate::register_dialect_hooks(&context);
+        let mut test = Test::new("util_emit_if_test", &[Type::U32, Type::U32], &[Type::U32]);
 
-        let mut builder = OpBuilder::new(context.clone());
-
-        let function_name = Ident::with_empty_span("test".into());
-        let function_ref = builder.create_function(
-            function_name,
-            Signature::new(
-                [AbiParam::new(Type::U32), AbiParam::new(Type::U32)],
-                [AbiParam::new(Type::U32)],
-            ),
-        )?;
-
+        let function_ref = test.function();
         let (a, b) = {
             let span = function_ref.span();
-            let mut builder = FunctionBuilder::new(function_ref, &mut builder);
+            let mut builder = test.function_builder();
             let entry = builder.entry_block();
             let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
             let b = builder.entry_block().borrow().arguments()[1] as ValueRef;
@@ -583,11 +568,12 @@ mod tests {
             version: Version::new(1, 0, 0),
         });
 
-        let mut stack = OperandStack::new(context.clone());
+        let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
         stack.push(a);
 
         // Instantiate block emitter
+        let function_name = *function_ref.borrow().get_name();
         let mut invoked = Default::default();
         let emitter = BlockEmitter {
             liveness: &liveness,
@@ -606,33 +592,25 @@ mod tests {
 
         // Verify emitted block contents
         let input = format!("{}", function.as_operation());
-        expect_file!["expected/utils_emit_if.hir"].assert_eq(&input);
+        let test_file_hir = format!("expected/{}.hir", test.name());
+        expect_file![&test_file_hir].assert_eq(&input);
 
         let output = body.to_pretty_string();
-        expect_file!["expected/utils_emit_if.masm"].assert_eq(&output);
+        let test_file_masm = format!("expected/{}.masm", test.name());
+        expect_file![&test_file_masm].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn util_emit_if_nested_test() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        crate::register_dialect_hooks(&context);
+        let mut test = Test::new("util_emit_if_nested_test", &[Type::U32, Type::U32], &[Type::U32]);
 
-        let mut builder = OpBuilder::new(context.clone());
-
-        let function_name = Ident::with_empty_span("test".into());
-        let function_ref = builder.create_function(
-            function_name,
-            Signature::new(
-                [AbiParam::new(Type::U32), AbiParam::new(Type::U32)],
-                [AbiParam::new(Type::U32)],
-            ),
-        )?;
+        let function_ref = test.function();
 
         let (a, b) = {
             let span = function_ref.span();
-            let mut builder = FunctionBuilder::new(function_ref, &mut builder);
+            let mut builder = test.function_builder();
             let entry = builder.entry_block();
             let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
             let b = builder.entry_block().borrow().arguments()[1] as ValueRef;
@@ -684,11 +662,12 @@ mod tests {
             version: Version::new(1, 0, 0),
         });
 
-        let mut stack = OperandStack::new(context.clone());
+        let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
         stack.push(a);
 
         // Instantiate block emitter
+        let function_name = *function_ref.borrow().get_name();
         let mut invoked = Default::default();
         let emitter = BlockEmitter {
             liveness: &liveness,
@@ -707,164 +686,135 @@ mod tests {
 
         // Verify emitted block contents
         let input = format!("{}", function.as_operation());
-        expect_file!["expected/utils_emit_if_nested.hir"].assert_eq(&input);
+        let test_file_hir = format!("expected/{}.hir", test.name());
+        expect_file![&test_file_hir].assert_eq(&input);
 
         let output = body.to_pretty_string();
-        expect_file!["expected/utils_emit_if_nested.masm"].assert_eq(&output);
+        let test_file_masm = format!("expected/{}.masm", test.name());
+        expect_file![&test_file_masm].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn util_emit_binary_search_single_case_test() -> Result<(), Report> {
-        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-            .format_timestamp(None)
-            .is_test(true)
-            .try_init();
+        let mut test = Test::named("util_emit_binary_search_single_case_test");
 
-        let context = Rc::new(Context::default());
-        crate::register_dialect_hooks(&context);
-
-        let (function, block) = generate_emit_binary_search_test(1, context.clone())?;
+        let (function, block) = generate_emit_binary_search_test(&mut test, 1)?;
 
         // Verify emitted block contents
+        let test_file_hir = format!("expected/{}.hir", test.name());
         let input = format!("{}", function.borrow().as_operation());
-        expect_file!["expected/utils_emit_binary_search_1_case.hir"].assert_eq(&input);
+        expect_file![&test_file_hir].assert_eq(&input);
 
+        let test_file_masm = format!("expected/{}.masm", test.name());
         let output = block.to_pretty_string();
-        expect_file!["expected/utils_emit_binary_search_1_case.masm"].assert_eq(&output);
+        expect_file![&test_file_masm].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn util_emit_binary_search_two_cases_test() -> Result<(), Report> {
-        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-            .format_timestamp(None)
-            .is_test(true)
-            .try_init();
+        let mut test = Test::named("util_emit_binary_search_two_cases_test");
 
-        let context = Rc::new(Context::default());
-        crate::register_dialect_hooks(&context);
-
-        let (function, block) = generate_emit_binary_search_test(2, context.clone())?;
+        let (function, block) = generate_emit_binary_search_test(&mut test, 2)?;
 
         // Verify emitted block contents
+        let test_file_hir = format!("expected/{}.hir", test.name());
         let input = format!("{}", function.borrow().as_operation());
-        expect_file!["expected/utils_emit_binary_search_2_cases.hir"].assert_eq(&input);
+        expect_file![&test_file_hir].assert_eq(&input);
 
+        let test_file_masm = format!("expected/{}.masm", test.name());
         let output = block.to_pretty_string();
-        expect_file!["expected/utils_emit_binary_search_2_cases.masm"].assert_eq(&output);
+        expect_file![&test_file_masm].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn util_emit_binary_search_three_cases_test() -> Result<(), Report> {
-        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-            .format_timestamp(None)
-            .is_test(true)
-            .try_init();
+        let mut test = Test::named("util_emit_binary_search_three_cases_test");
 
-        let context = Rc::new(Context::default());
-        crate::register_dialect_hooks(&context);
-
-        let (function, block) = generate_emit_binary_search_test(3, context.clone())?;
+        let (function, block) = generate_emit_binary_search_test(&mut test, 3)?;
 
         // Verify emitted block contents
+        let test_file_hir = format!("expected/{}.hir", test.name());
         let input = format!("{}", function.borrow().as_operation());
-        expect_file!["expected/utils_emit_binary_search_3_cases.hir"].assert_eq(&input);
+        expect_file![&test_file_hir].assert_eq(&input);
 
+        let test_file_masm = format!("expected/{}.masm", test.name());
         let output = block.to_pretty_string();
-        expect_file!["expected/utils_emit_binary_search_3_cases.masm"].assert_eq(&output);
+        expect_file![&test_file_masm].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn util_emit_binary_search_four_cases_test() -> Result<(), Report> {
-        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-            .format_timestamp(None)
-            .is_test(true)
-            .try_init();
+        let mut test = Test::named("util_emit_binary_search_four_cases_test");
 
-        let context = Rc::new(Context::default());
-        crate::register_dialect_hooks(&context);
-
-        let (function, block) = generate_emit_binary_search_test(4, context.clone())?;
+        let (function, block) = generate_emit_binary_search_test(&mut test, 4)?;
 
         // Verify emitted block contents
+        let test_file_hir = format!("expected/{}.hir", test.name());
         let input = format!("{}", function.borrow().as_operation());
-        expect_file!["expected/utils_emit_binary_search_4_cases.hir"].assert_eq(&input);
+        expect_file![&test_file_hir].assert_eq(&input);
 
+        let test_file_masm = format!("expected/{}.masm", test.name());
         let output = block.to_pretty_string();
-        expect_file!["expected/utils_emit_binary_search_4_cases.masm"].assert_eq(&output);
+        expect_file![&test_file_masm].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn util_emit_binary_search_five_cases_test() -> Result<(), Report> {
-        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-            .format_timestamp(None)
-            .is_test(true)
-            .try_init();
+        let mut test = Test::named("util_emit_binary_search_five_cases_test");
 
-        let context = Rc::new(Context::default());
-        crate::register_dialect_hooks(&context);
-
-        let (function, block) = generate_emit_binary_search_test(5, context.clone())?;
+        let (function, block) = generate_emit_binary_search_test(&mut test, 5)?;
 
         // Verify emitted block contents
+        let test_file_hir = format!("expected/{}.hir", test.name());
         let input = format!("{}", function.borrow().as_operation());
-        expect_file!["expected/utils_emit_binary_search_5_cases.hir"].assert_eq(&input);
+        expect_file![&test_file_hir].assert_eq(&input);
 
+        let test_file_masm = format!("expected/{}.masm", test.name());
         let output = block.to_pretty_string();
-        expect_file!["expected/utils_emit_binary_search_5_cases.masm"].assert_eq(&output);
+        expect_file![&test_file_masm].assert_eq(&output);
 
         Ok(())
     }
 
     #[test]
     fn util_emit_binary_search_seven_cases_test() -> Result<(), Report> {
-        let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-            .format_timestamp(None)
-            .is_test(true)
-            .try_init();
+        let mut test = Test::named("util_emit_binary_search_seven_cases_test");
 
-        let context = Rc::new(Context::default());
-        crate::register_dialect_hooks(&context);
-
-        let (function, block) = generate_emit_binary_search_test(7, context.clone())?;
+        let (function, block) = generate_emit_binary_search_test(&mut test, 7)?;
 
         // Verify emitted block contents
+        let test_file_hir = format!("expected/{}.hir", test.name());
         let input = format!("{}", function.borrow().as_operation());
-        expect_file!["expected/utils_emit_binary_search_7_cases.hir"].assert_eq(&input);
+        expect_file![&test_file_hir].assert_eq(&input);
 
+        let test_file_masm = format!("expected/{}.masm", test.name());
         let output = block.to_pretty_string();
-        expect_file!["expected/utils_emit_binary_search_7_cases.masm"].assert_eq(&output);
+        expect_file![&test_file_masm].assert_eq(&output);
 
         Ok(())
     }
 
     fn generate_emit_binary_search_test(
+        test: &mut Test,
         num_cases: usize,
-        context: Rc<Context>,
     ) -> Result<(FunctionRef, masm::Block), Report> {
-        let mut builder = OpBuilder::new(context.clone());
-
-        let function_name = Ident::with_empty_span("test".into());
-        let function_ref = builder.create_function(
-            function_name,
-            Signature::new(
-                [AbiParam::new(Type::U32), AbiParam::new(Type::U32)],
-                [AbiParam::new(Type::U32)],
-            ),
-        )?;
+        let name = test.name();
+        test.with_function(name, &[Type::U32, Type::U32], &[Type::U32]);
+        let function_ref = test.function();
 
         let (a, b) = {
             let span = function_ref.span();
-            let mut builder = FunctionBuilder::new(function_ref, &mut builder);
+            let mut builder = test.function_builder();
             let entry = builder.entry_block();
             let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
             let b = builder.entry_block().borrow().arguments()[1] as ValueRef;
@@ -904,7 +854,7 @@ mod tests {
             version: Version::new(1, 0, 0),
         });
 
-        let mut stack = OperandStack::new(context.clone());
+        let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
         stack.push(a);
 
@@ -916,8 +866,7 @@ mod tests {
             invoked: &mut invoked,
             target: Default::default(),
             stack,
-            trace_target: TraceTarget::category("codegen")
-                .with_relevant_symbol(function_name.as_symbol()),
+            trace_target: TraceTarget::category("codegen").with_relevant_symbol(name),
         };
 
         // Lower input

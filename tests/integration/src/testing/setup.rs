@@ -2,8 +2,9 @@
 use std::{path::PathBuf, rc::Rc};
 
 use midenc_compile::LinkOutput;
+pub use midenc_hir::testing::enable_compiler_instrumentation;
 use midenc_hir::{
-    BuilderExt, Context, Ident, Op, OpBuilder, SourceSpan,
+    BuilderExt, Context, Ident, Op, OpBuilder, SourceSpan, Visibility,
     dialects::builtin::{
         self, ComponentBuilder, FunctionBuilder, FunctionRef, ModuleBuilder, WorldBuilder,
         attributes::Signature,
@@ -14,14 +15,6 @@ use midenc_session::{InputFile, Session};
 
 use super::format_report;
 
-/// Enable compiler-internal tracing and instrumentation during tests
-pub fn enable_compiler_instrumentation() {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
-}
-
 /// Create a valid [Context] representing a compiler session with a "dummy" input that doesn't
 /// actually exist.
 ///
@@ -29,10 +22,7 @@ pub fn enable_compiler_instrumentation() {
 /// used for compilation (at least, not via the main compiler entrypoint).
 pub fn dummy_context(flags: &[&str]) -> Rc<Context> {
     let session = dummy_session(flags);
-    let context = Rc::new(Context::new(session));
-    midenc_codegen_masm::register_dialect_hooks(&context);
-    midenc_hir_eval::register_dialect_hooks(&context);
-    context
+    Rc::new(Context::new(session))
 }
 
 /// Create a valid [Session] with a "dummy" input that doesn't actually exist.
@@ -51,10 +41,7 @@ where
     S: AsRef<str>,
 {
     let session = default_session(inputs, argv);
-    let context = Rc::new(Context::new(session));
-    midenc_codegen_masm::register_dialect_hooks(&context);
-    midenc_hir_eval::register_dialect_hooks(&context);
-    context
+    Rc::new(Context::new(session))
 }
 
 /// Create a valid [Session] for compiling `inputs` with `argv`, with useful defaults.
@@ -133,7 +120,11 @@ where
     let function = {
         let mut module_builder = ModuleBuilder::new(module);
         module_builder
-            .define_function(Ident::with_empty_span("main".into()), signature.clone())
+            .define_function(
+                Ident::with_empty_span("main".into()),
+                Visibility::Public,
+                signature.clone(),
+            )
             .unwrap_or_else(|err| panic!("failed to define function:\n{}", format_report(err)))
     };
 

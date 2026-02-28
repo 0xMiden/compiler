@@ -10,6 +10,7 @@ use midenc_hir::{
 use midenc_hir_analysis::analyses::SpillAnalysis;
 use midenc_hir_transform::{self as transforms, ReloadLike, SpillLike, TransformSpillsInterface};
 
+#[derive(Default)]
 pub struct TransformSpills;
 
 impl Pass for TransformSpills {

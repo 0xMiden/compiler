@@ -1,5 +1,4 @@
-use alloc::{rc::Rc, sync::Arc};
-use std::string::ToString;
+use alloc::{format, string::ToString, sync::Arc, vec};
 
 use midenc_dialect_arith::ArithOpBuilder as Arith;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
@@ -7,13 +6,11 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder as Scf;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AddressSpace, BlockRef, Builder, Context, Ident, Op, OpBuilder, OperationRef, PointerType,
-    ProgramPoint, Report, SourceSpan, SymbolTable, Type, ValueRef,
-    dialects::builtin::{
-        BuiltinOpBuilder, Function, FunctionBuilder,
-        attributes::{AbiParam, Signature},
-    },
+    AddressSpace, BlockRef, Op, OperationRef, PointerType, ProgramPoint, Report, SourceSpan, Type,
+    ValueRef,
+    dialects::builtin::{BuiltinOpBuilder, Function},
     pass::AnalysisManager,
+    testing::Test,
 };
 
 use crate::analyses::{
@@ -66,56 +63,41 @@ type AnalysisResult<T> = Result<T, Report>;
 /// ```
 #[test]
 fn spills_intra_block() -> AnalysisResult<()> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
     let span = SourceSpan::UNKNOWN;
-    let context = Rc::new(Context::default());
-    let mut ob = OpBuilder::new(context.clone());
+    let mut test = Test::named("spills_intra_block").in_module("test");
 
     // Module and test function
-    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
-    let module_body = module.borrow().body().as_region_ref();
-    ob.create_block(module_body, None, &[]);
-    let func = ob.create_function(
-        Ident::with_empty_span("test::spill".into()),
-        Signature::new(
-            [AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
-                Type::U8,
-                AddressSpace::Element,
-            ))))],
-            [AbiParam::new(Type::U32)],
-        ),
-    )?;
-    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
+    test.with_function(
+        "spills_intra_block",
+        &[Type::Ptr(Arc::new(PointerType::new_with_address_space(
+            Type::U8,
+            AddressSpace::Element,
+        )))],
+        &[Type::U32],
+    );
+    let func = test.function();
     // Callee with signature: (ptr u128, u128, u128, u128, u64) -> u32
-    let callee_sig = Signature::new(
-        [
-            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+    let callee = test.define_function(
+        "example",
+        &[
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
                 Type::U128,
                 AddressSpace::Element,
-            )))),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U64),
+            ))),
+            Type::U128,
+            Type::U128,
+            Type::U128,
+            Type::U64,
         ],
-        [AbiParam::new(Type::U32)],
+        &[Type::U32],
     );
-    let callee =
-        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
-    module
-        .borrow_mut()
-        .symbol_manager_mut()
-        .insert_new(callee, ProgramPoint::Invalid);
     // Body
     let call_op;
     let store_op;
     let ret_op;
     let (v2, v3);
     {
-        let mut b = FunctionBuilder::new(func, &mut ob);
+        let mut b = test.function_builder();
         let entry = b.current_block();
         let v0 = entry.borrow().arguments()[0] as ValueRef;
         let v1 = b.ptrtoint(v0, Type::U32, span)?;
@@ -142,7 +124,8 @@ fn spills_intra_block() -> AnalysisResult<()> {
         )?;
         let v7 = b.load(v6, span)?;
         let v8 = b.u64(1, span);
-        let call = b.exec(callee, callee_sig.clone(), [v6, v4, v7, v7, v8], span)?;
+        let callee_sig = callee.borrow().get_signature().clone();
+        let call = b.exec(callee, callee_sig, [v6, v4, v7, v7, v8], span)?;
         call_op = call.as_operation_ref();
         let _v9 = call.borrow().results()[0] as ValueRef;
         let k72 = b.u32(72, span);
@@ -165,8 +148,8 @@ fn spills_intra_block() -> AnalysisResult<()> {
         v3 = v3c;
     }
 
-    expect_file!["expected/spills_intra_block.hir"]
-        .assert_eq(&func.as_operation_ref().borrow().to_string());
+    let test_file = format!("expected/{}.hir", test.name());
+    expect_file![&test_file].assert_eq(&func.as_operation_ref().borrow().to_string());
 
     let am = AnalysisManager::new(func.as_operation_ref(), None);
     let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
@@ -229,54 +212,39 @@ fn spills_intra_block() -> AnalysisResult<()> {
 /// ```
 #[test]
 fn spills_branching_control_flow() -> AnalysisResult<()> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    let mut test = Test::named("spills_branching_control_flow").in_module("test");
     let span = SourceSpan::UNKNOWN;
-    let context = Rc::new(Context::default());
-    let mut ob = OpBuilder::new(context.clone());
 
     // Module and test function
-    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
-    let module_body = module.borrow().body().as_region_ref();
-    ob.create_block(module_body, None, &[]);
-    let func = ob.create_function(
-        Ident::with_empty_span("test::spill_branch".into()),
-        Signature::new(
-            [AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
-                Type::U8,
-                AddressSpace::Element,
-            ))))],
-            [AbiParam::new(Type::U32)],
-        ),
-    )?;
-    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
+    test.with_function(
+        "spills_branching_control_flow",
+        &[Type::Ptr(Arc::new(PointerType::new_with_address_space(
+            Type::U8,
+            AddressSpace::Element,
+        )))],
+        &[Type::U32],
+    );
+    let func = test.function();
     // Callee with signature: (ptr u128, u128, u128, u128, u64) -> u32
-    let callee_sig = Signature::new(
-        [
-            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+    let callee = test.define_function(
+        "example",
+        &[
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
                 Type::U128,
                 AddressSpace::Element,
-            )))),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U64),
+            ))),
+            Type::U128,
+            Type::U128,
+            Type::U128,
+            Type::U64,
         ],
-        [AbiParam::new(Type::U32)],
+        &[Type::U32],
     );
-    let callee =
-        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
-    module
-        .borrow_mut()
-        .symbol_manager_mut()
-        .insert_new(callee, ProgramPoint::Invalid);
 
     let (block1, block2, block3);
     let (v2, v3);
     {
-        let mut b = FunctionBuilder::new(func, &mut ob);
+        let mut b = test.function_builder();
         let entry = b.current_block();
         let v0 = entry.borrow().arguments()[0] as ValueRef;
         let v1 = b.ptrtoint(v0, Type::U32, span)?;
@@ -311,7 +279,8 @@ fn spills_branching_control_flow() -> AnalysisResult<()> {
         // then
         b.switch_to_block(t);
         let v9 = b.u64(1, span);
-        let call = b.exec(callee, callee_sig.clone(), [v6, v4, v7, v7, v9], span)?;
+        let callee_sig = callee.borrow().get_signature().clone();
+        let call = b.exec(callee, callee_sig, [v6, v4, v7, v7, v9], span)?;
         let v10 = call.borrow().results()[0] as ValueRef;
         let join = b.create_block();
         b.br(join, [v10], span)?;
@@ -347,8 +316,8 @@ fn spills_branching_control_flow() -> AnalysisResult<()> {
         v3 = v3c;
     }
 
-    expect_file!["expected/spills_branch_cfg.hir"]
-        .assert_eq(&func.as_operation_ref().borrow().to_string());
+    let test_file = format!("expected/{}.hir", test.name());
+    expect_file![&test_file].assert_eq(&func.as_operation_ref().borrow().to_string());
 
     let am = AnalysisManager::new(func.as_operation_ref(), None);
     let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
@@ -442,58 +411,43 @@ fn spills_branching_control_flow() -> AnalysisResult<()> {
 /// ```
 #[test]
 fn spills_loop_nest() -> AnalysisResult<()> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    let mut test = Test::named("spills_loop_nest").in_module("test");
 
     let span = SourceSpan::UNKNOWN;
-    let context = Rc::new(Context::default());
-    let mut ob = OpBuilder::new(context.clone());
 
-    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
-    let module_body = module.borrow().body().as_region_ref();
-    ob.create_block(module_body, None, &[]);
-    let func = ob.create_function(
-        Ident::with_empty_span("test::spill_loop".into()),
-        Signature::new(
-            [
-                AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
-                    Type::U64,
-                    AddressSpace::Element,
-                )))),
-                AbiParam::new(Type::U32),
-                AbiParam::new(Type::U32),
-            ],
-            [AbiParam::new(Type::U64)],
-        ),
-    )?;
-    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
-    let callee_sig = Signature::new(
-        [
-            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+    test.with_function(
+        "spills_loop_nest",
+        &[
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
                 Type::U64,
                 AddressSpace::Element,
-            )))),
-            AbiParam::new(Type::U64),
-            AbiParam::new(Type::U64),
-            AbiParam::new(Type::U64),
-            AbiParam::new(Type::U64),
-            AbiParam::new(Type::U64),
-            AbiParam::new(Type::U64),
-            AbiParam::new(Type::U64),
+            ))),
+            Type::U32,
+            Type::U32,
         ],
-        [AbiParam::new(Type::U32)],
+        &[Type::U64],
     );
-    let callee =
-        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
-    module
-        .borrow_mut()
-        .symbol_manager_mut()
-        .insert_new(callee, ProgramPoint::Invalid);
+    let func = test.function();
+    let callee = test.define_function(
+        "example",
+        &[
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U64,
+                AddressSpace::Element,
+            ))),
+            Type::U64,
+            Type::U64,
+            Type::U64,
+            Type::U64,
+            Type::U64,
+            Type::U64,
+            Type::U64,
+        ],
+        &[Type::U32],
+    );
 
     let call_op6 = {
-        let mut b = FunctionBuilder::new(func, &mut ob);
+        let mut b = test.function_builder();
         let entry = b.current_block();
         let (v0, v1, v2) = {
             let entry_b = entry.borrow();
@@ -571,7 +525,8 @@ fn spills_loop_nest() -> AnalysisResult<()> {
         let k5 = b.u64(5, span);
         let k6 = b.u64(6, span);
         let _k7 = b.u64(7, span);
-        let call = b.exec(callee, callee_sig.clone(), [v3c, load, k1, k2, k3, k4, k5, k6], span)?;
+        let callee_sig = callee.borrow().get_signature().clone();
+        let call = b.exec(callee, callee_sig, [v3c, load, k1, k2, k3, k4, k5, k6], span)?;
         let accn = b.add_unchecked(acc, load, span)?;
         let one2 = b.u32(1, span);
         let coln = b.add_unchecked(col, one2, span)?;
@@ -581,8 +536,8 @@ fn spills_loop_nest() -> AnalysisResult<()> {
         call.as_operation_ref()
     };
 
-    expect_file!["expected/spills_loop_nest.hir"]
-        .assert_eq(&func.as_operation_ref().borrow().to_string());
+    let test_file = format!("expected/{}.hir", test.name());
+    expect_file![&test_file].assert_eq(&func.as_operation_ref().borrow().to_string());
 
     let am = AnalysisManager::new(func.as_operation_ref(), None);
     let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
@@ -615,34 +570,23 @@ fn spills_loop_nest() -> AnalysisResult<()> {
 
 #[test]
 fn spills_entry_block_args_over_k() -> AnalysisResult<()> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    let mut test = Test::named("spills_entry_block_args_over_k").in_module("test");
 
     let span = SourceSpan::UNKNOWN;
-    let context = Rc::new(Context::default());
-    let mut ob = OpBuilder::new(context.clone());
-
-    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
-    let module_body = module.borrow().body().as_region_ref();
-    ob.create_block(module_body, None, &[]);
 
     // Construct a function whose entry block arguments alone exceed K=16 stack slots.
     //
     // Each `u64` occupies 2 felts on the Miden stack, so 9×`u64` => 18 felts, which forces at least
     // one spill at the start of the entry block.
-    let params = (0..9).map(|_| AbiParam::new(Type::U64)).collect::<alloc::vec::Vec<_>>();
-    let func = ob.create_function(
-        Ident::with_empty_span("test::spill_entry_args_over_k".into()),
-        Signature::new(params, [AbiParam::new(Type::U32)]),
-    )?;
-    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
+    let params = vec![Type::U64; 9];
+
+    test.with_function("spills_entry_block_args_over_k", &params, &[Type::U32]);
+    let func = test.function();
 
     let entry_block: BlockRef;
     let block_args: alloc::vec::Vec<ValueRef>;
     {
-        let mut b = FunctionBuilder::new(func, &mut ob);
+        let mut b = test.function_builder();
         entry_block = b.current_block();
         // Capture the entry block arguments so we can assert which one is spilled, and where.
         block_args = entry_block
@@ -683,33 +627,21 @@ fn spills_entry_block_args_over_k() -> AnalysisResult<()> {
 
 #[test]
 fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    let mut test = Test::named("spills_region_branch_results_over_k").in_module("test");
 
     let span = SourceSpan::UNKNOWN;
-    let context = Rc::new(Context::default());
-    let mut ob = OpBuilder::new(context.clone());
-
-    let mut module = ob.create_module(Ident::with_empty_span("test".into()))?;
-    let module_body = module.borrow().body().as_region_ref();
-    ob.create_block(module_body, None, &[]);
 
     // Construct a function which returns an `scf.if` result set which alone exceeds K=16 stack slots.
     //
     // Each `u64` occupies 2 felts on the Miden stack, so 9×`u64` => 18 felts, which forces at least
     // one spill at `ProgramPoint::after(if_op)`.
-    let func = ob.create_function(
-        Ident::with_empty_span("test::spill_region_branch_results_over_k".into()),
-        Signature::new([], [AbiParam::new(Type::U64)]),
-    )?;
-    module.borrow_mut().symbol_manager_mut().insert_new(func, ProgramPoint::Invalid);
+    test.with_function("spills_region_branch_results_over_k", &[], &[Type::U64]);
+    let func = test.function();
 
     let if_op: OperationRef;
     let if_results: alloc::vec::Vec<ValueRef>;
     {
-        let mut b = FunctionBuilder::new(func, &mut ob);
+        let mut b = test.function_builder();
         let entry = b.current_block();
 
         let cond = b.i1(true, span);
