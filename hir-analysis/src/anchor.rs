@@ -1,9 +1,9 @@
-use core::{any::Any, fmt, hash::Hash, ptr::NonNull};
+use core::{fmt, hash::Hash, ptr::NonNull};
 
 use midenc_hir::{
     Block, BlockArgument, BlockArgumentRef, BlockRef, DynHash, DynPartialEq, FxHashMap, FxHasher,
-    OpResult, OpResultRef, Operation, OperationRef, ProgramPoint, RawEntityRef, SourceSpan,
-    Spanned, Value, ValueRef,
+    OpResult, OpResultRef, Operation, OperationRef, PartialEqable, ProgramPoint, RawEntityRef,
+    SourceSpan, Spanned, Value, ValueRef, any::AsAny,
 };
 
 /// This represents a pointer to a type-erased [LatticeAnchor] value.
@@ -109,7 +109,7 @@ impl fmt::Display for LatticeAnchorRef {
 ///
 /// [LatticeAnchor] provides the means to represent and work with any type of anchor.
 pub trait LatticeAnchor:
-    Any + Spanned + fmt::Debug + fmt::Display + DynPartialEq + DynHash
+    AsAny + Spanned + fmt::Debug + fmt::Display + PartialEqable + DynPartialEq + DynHash
 {
     fn is_value(&self) -> bool {
         false

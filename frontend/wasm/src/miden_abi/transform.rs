@@ -1,7 +1,7 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, Immediate, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
+    Builder, Immediate, Op, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
     dialects::builtin::FunctionRef, interner::symbols,
 };
 
@@ -270,7 +270,7 @@ pub fn no_transform<B: ?Sized + Builder>(
         .expect("failed to build an exec op in no_transform strategy");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
     results
@@ -289,7 +289,7 @@ pub fn list_return<B: ?Sized + Builder>(
         .expect("failed to build an exec op in list_return strategy");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
@@ -313,7 +313,7 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
         .expect("failed to build an exec op in return_via_pointer strategy");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 

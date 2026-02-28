@@ -7,7 +7,7 @@ use core::{
 use smallvec::SmallVec;
 
 use super::{PassInstrumentor, PassTarget};
-use crate::{FxHashMap, Op, Operation, OperationRef, Report};
+use crate::{FxHashMap, Op, Operation, OperationRef, Report, any::AsAny};
 
 /// The [Analysis] trait is used to define an analysis over some operation.
 ///
@@ -23,7 +23,7 @@ use crate::{FxHashMap, Op, Operation, OperationRef, Report};
 /// needs to be invalidated based on what analyses were preserved. If dependent analyses of this
 /// analysis haven't been invalidated, then this analysis may be able preserve itself as well,
 /// and avoid redundant recomputation.
-pub trait Analysis: Default + Any {
+pub trait Analysis: Default + AsAny {
     /// The specific type on which this analysis is performed.
     ///
     /// The analysis will only be run when an operation is of this type.
@@ -39,29 +39,19 @@ pub trait Analysis: Default + Any {
         TypeId::of::<Self>()
     }
 
-    /// Get a `dyn Any` reference to the underlying [Analysis] implementation
-    ///
     /// This is automatically implemented for you, but in some cases, such as wrapping an
     /// analysis in another type, you may want to implement this so that queries against the
     /// type return the expected [TypeId]
-    #[inline(always)]
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
-    }
+    fn as_any(&self) -> &dyn Any;
 
     /// Same as [Analysis::as_any], but used specifically for getting a reference-counted handle,
     /// rather than a raw reference.
-    #[inline(always)]
-    fn as_any_rc(self: Rc<Self>) -> Rc<dyn Any> {
-        self as Rc<dyn Any>
-    }
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn Any>;
 
     /// Returns the display name for this analysis
     ///
     /// By default this simply returns the name of the concrete implementation type.
-    fn name(&self) -> &'static str {
-        core::any::type_name::<Self>()
-    }
+    fn name(&self) -> &'static str;
 
     /// Analyze `op` using the provided [AnalysisManager].
     fn analyze(
@@ -295,7 +285,7 @@ impl<A: Analysis> Analysis for AnalysisWrapper<A> {
 
     #[inline]
     fn as_any(&self) -> &dyn Any {
-        self.analysis.as_any()
+        <A as Analysis>::as_any(&self.analysis)
     }
 
     #[inline]
@@ -303,12 +293,12 @@ impl<A: Analysis> Analysis for AnalysisWrapper<A> {
         // SAFETY: This transmute is safe because AnalysisWrapper is a transparent wrapper
         // around A, so a pointer to the former is a pointer to the latter
         let ptr = Rc::into_raw(self);
-        unsafe { Rc::<A>::from_raw(ptr.cast()) as Rc<dyn Any> }
+        <A as Analysis>::as_any_rc(unsafe { Rc::<A>::from_raw(ptr.cast()) })
     }
 
     #[inline]
     fn name(&self) -> &'static str {
-        self.analysis.name()
+        <A as Analysis>::name(&self.analysis)
     }
 
     #[inline]

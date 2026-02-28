@@ -213,7 +213,7 @@ fn generate_lowering_with_transformation(
     let call = fb.call(import_func_ref, new_import_func_sig, args_without_ptr, span)?;
 
     let borrow = call.borrow();
-    let results = borrow.as_ref().results().as_value_range().into_owned();
+    let results = borrow.results().as_value_range().into_owned();
 
     // Store values recursively based on the component-level type
     // This follows the canonical ABI store algorithm from:
@@ -311,7 +311,7 @@ fn generate_direct_lowering(
         .expect("failed to build an exec op");
 
     let borrow = call.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
     assert!(

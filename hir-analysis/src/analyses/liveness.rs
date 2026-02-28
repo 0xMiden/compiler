@@ -1,5 +1,6 @@
 mod next_use_set;
 
+use alloc::rc::Rc;
 use core::borrow::Borrow;
 
 use midenc_hir::{
@@ -199,8 +200,19 @@ impl LivenessAnalysis {
 impl Analysis for LivenessAnalysis {
     type Target = Operation;
 
+    #[inline(always)]
     fn name(&self) -> &'static str {
         "liveness"
+    }
+
+    #[inline(always)]
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+
+    #[inline(always)]
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn core::any::Any> {
+        self
     }
 
     fn analyze(

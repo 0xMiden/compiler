@@ -10,7 +10,7 @@ pub use self::{
     stack::StackOperand,
 };
 use super::*;
-use crate::{DynHash, DynPartialEq, interner};
+use crate::{DynHash, DynPartialEq, PartialEqable, any::AsAny, interner};
 
 /// A unique identifier for a [Value] in the IR
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -141,15 +141,18 @@ impl fmt::Display for ValueId {
 /// the graph formed of the edges between values and operations via operands forms the data-flow
 /// graph of the program.
 pub trait Value:
-    Any
+    AsAny
     + EntityWithId<Id = ValueId>
     + Spanned
     + Usable<Use = OpOperandImpl>
     + fmt::Debug
     + fmt::Display
+    + PartialEqable
     + DynPartialEq
     + DynHash
 {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
     /// Set the source location of this value
     fn set_span(&mut self, span: SourceSpan);
     /// Get the type of this value
@@ -210,17 +213,17 @@ pub trait Value:
 impl dyn Value {
     #[inline]
     pub fn is<T: Value>(&self) -> bool {
-        (self as &dyn Any).is::<T>()
+        Value::as_any(self).is::<T>()
     }
 
     #[inline]
     pub fn downcast_ref<T: Value>(&self) -> Option<&T> {
-        (self as &dyn Any).downcast_ref::<T>()
+        Value::as_any(self).downcast_ref::<T>()
     }
 
     #[inline]
     pub fn downcast_mut<T: Value>(&mut self) -> Option<&mut T> {
-        (self as &mut dyn Any).downcast_mut::<T>()
+        Value::as_any_mut(self).downcast_mut::<T>()
     }
 
     /// Replace all uses of `self` with `replacement` if `should_replace` returns true
@@ -321,6 +324,14 @@ macro_rules! value_impl {
         }
 
         impl Value for $ValueKind {
+            #[inline(always)]
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+            #[inline(always)]
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
+            }
             fn ty(&self) -> &Type {
                 &self.ty
             }

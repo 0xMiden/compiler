@@ -37,8 +37,19 @@ struct IntraRegionLoopInfo {
 impl Analysis for LoopInfo {
     type Target = Operation;
 
+    #[inline(always)]
     fn name(&self) -> &'static str {
         "loops"
+    }
+
+    #[inline(always)]
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+
+    #[inline(always)]
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn core::any::Any> {
+        self
     }
 
     fn analyze(

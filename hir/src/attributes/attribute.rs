@@ -22,7 +22,7 @@ pub use self::{
 };
 use crate::{
     Context, Dialect, Entity, EntityList, EntityListCursor, EntityListCursorMut, EntityListItem,
-    Immediate, Type, UnsafeIntrusiveEntityRef, any::AsAny,
+    Immediate, Type, UnsafeIntrusiveEntityRef,
 };
 
 pub type AttributeRef = UnsafeIntrusiveEntityRef<dyn Attribute>;
@@ -42,8 +42,16 @@ pub type AttrCursor<'a> = EntityListCursor<'a, Attr>;
 pub type AttrCursorMut<'a> = EntityListCursorMut<'a, Attr>;
 
 pub trait Attribute:
-    AsAny + CloneToUninit + fmt::Debug + crate::DynPartialEq + crate::DynHash
+    crate::any::AsAny
+    + CloneToUninit
+    + fmt::Debug
+    + crate::PartialEqable
+    + crate::DynPartialEq
+    + crate::DynHash
 {
+    fn type_name(&self) -> &'static str;
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
     fn context(&self) -> &Context;
     fn context_rc(&self) -> Rc<Context>;
     fn name(&self) -> &AttributeName;
@@ -76,22 +84,19 @@ impl core::hash::Hash for dyn Attribute {
 impl Eq for dyn Attribute {}
 impl PartialEq for dyn Attribute {
     fn eq(&self, other: &Self) -> bool {
-        use crate::DynPartialEq;
-
-        let partial_eqable = self as &dyn DynPartialEq;
-        partial_eqable.dyn_eq(other as &dyn DynPartialEq)
+        self.dyn_eq(other)
     }
 }
 
 impl dyn Attribute {
     /// Returns true if this attribute is an instance of type `T`
     pub fn is<T: AttributeRegistration>(&self) -> bool {
-        self.as_any().is::<T>()
+        Attribute::as_any(self).is::<T>()
     }
 
     /// Attempts to downcast a `&dyn Attribute` to `&T`, if the value is an instance of type `T`.
     pub fn downcast_ref<T: AttributeRegistration>(&self) -> Option<&T> {
-        self.as_any().downcast_ref::<T>()
+        Attribute::as_any(self).downcast_ref::<T>()
     }
 
     /// Attempts to downcast this attribute value reference to `&mut T`, if the value is an instance
@@ -99,7 +104,7 @@ impl dyn Attribute {
     ///
     /// Returns `None` if this value is not of type `T`.
     pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
-        self.as_any_mut().downcast_mut::<T>()
+        Attribute::as_any_mut(self).downcast_mut::<T>()
     }
 
     /// A convenience function for downcasting a `bool` attribute value to the concrete boolean
@@ -391,5 +396,62 @@ impl Attr {
         Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
     {
         self.name.upcast_mut(self.container().cast_mut())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::hash::Hasher;
+
+    use crate::{ImmediateAttr, dialects::builtin::attributes::U32Attr, testing::Test};
+
+    #[test]
+    fn attribute_dyn_hash() {
+        let test = Test::default();
+
+        let zero = test.context_rc().create_attribute::<U32Attr, _>(0u32).as_attribute_ref();
+        let zero_two = test.context_rc().create_attribute::<U32Attr, _>(0u32).as_attribute_ref();
+        let zero_three =
+            test.context_rc().create_attribute::<ImmediateAttr, _>(0u32).as_attribute_ref();
+        let one = test.context_rc().create_attribute::<U32Attr, _>(1u32).as_attribute_ref();
+
+        let mut hasher = crate::FxHasher::default();
+        zero.borrow().dyn_hash(&mut hasher);
+        let zero_hash = hasher.finish();
+
+        let mut hasher = crate::FxHasher::default();
+        zero_two.borrow().dyn_hash(&mut hasher);
+        let zero_two_hash = hasher.finish();
+
+        let mut hasher = crate::FxHasher::default();
+        zero_three.borrow().dyn_hash(&mut hasher);
+        let zero_three_hash = hasher.finish();
+
+        let mut hasher = crate::FxHasher::default();
+        one.borrow().dyn_hash(&mut hasher);
+        let one_hash = hasher.finish();
+
+        assert_eq!(zero_hash, zero_two_hash);
+        assert_ne!(zero_hash, zero_three_hash);
+        assert_ne!(zero_hash, one_hash);
+    }
+
+    #[test]
+    fn attribute_dyn_eq() {
+        let test = Test::default();
+
+        let zero = test.context_rc().create_attribute::<U32Attr, _>(0u32).as_attribute_ref();
+        let zero_two = test.context_rc().create_attribute::<U32Attr, _>(0u32).as_attribute_ref();
+        let zero_three =
+            test.context_rc().create_attribute::<ImmediateAttr, _>(0u32).as_attribute_ref();
+        let one = test.context_rc().create_attribute::<U32Attr, _>(1u32).as_attribute_ref();
+
+        let zero = zero.borrow();
+        let zero_two = zero_two.borrow();
+        let zero_three = zero_three.borrow();
+        let one = one.borrow();
+        assert_eq!(&zero, &zero_two);
+        assert_ne!(&zero, &zero_three);
+        assert_ne!(&zero, &one);
     }
 }

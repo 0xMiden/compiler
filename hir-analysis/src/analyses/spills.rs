@@ -1,4 +1,4 @@
-use alloc::{collections::VecDeque, vec::Vec};
+use alloc::{collections::VecDeque, rc::Rc, vec::Vec};
 
 use midenc_hir::{
     AttributeRef, Block, BlockRef, FxHashMap, FxHashSet, LoopLikeOpInterface, Op, Operation,
@@ -452,8 +452,19 @@ const K: usize = 16;
 impl Analysis for SpillAnalysis {
     type Target = Function;
 
+    #[inline(always)]
     fn name(&self) -> &'static str {
         "spills"
+    }
+
+    #[inline(always)]
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+
+    #[inline(always)]
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn core::any::Any> {
+        self
     }
 
     fn analyze(

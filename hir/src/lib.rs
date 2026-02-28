@@ -58,7 +58,7 @@ pub type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;
 pub use rustc_hash::{FxBuildHasher, FxHasher};
 
 pub mod adt;
-mod any;
+pub mod any;
 pub mod attributes;
 pub mod constants;
 pub mod demangle;
@@ -86,7 +86,7 @@ pub use self::{
     },
     dialects::builtin::attributes::{Location, Overflow, Visibility, version},
     direction::{Backward, Direction, Forward},
-    eq::DynPartialEq,
+    eq::{DynPartialEq, PartialEqable},
     folder::OperationFolder,
     hash::{DynHash, DynHasher},
     ir::*,

@@ -55,7 +55,7 @@ pub(crate) fn convert_mem_intrinsics<B: ?Sized + Builder>(
             drop(func);
             let exec = builder.exec(function_ref, signature, args.iter().copied(), span)?;
             let borrow = exec.borrow();
-            let results = borrow.as_ref().results();
+            let results = borrow.results();
             Ok(results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect())
         }
         _ => panic!("no memory intrinsics found with name '{function}'"),

@@ -32,7 +32,7 @@ impl PartialEq for AttributeDictEntryRef {
 /// not part of the code itself. For example, `cfg` flags in Rust are an example of something which
 /// you could represent using a [NamedAttribute]. They can also be used to store documentation,
 /// source locations, and more.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone)]
 pub struct NamedAttribute {
     /// The name of this attribute
     pub name: interner::Symbol,
@@ -50,6 +50,19 @@ impl NamedAttribute {
 
     pub fn value(&self) -> EntityRef<'_, dyn Attribute> {
         self.value.borrow()
+    }
+}
+
+impl Eq for NamedAttribute {}
+impl PartialEq for NamedAttribute {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.value.borrow().dyn_eq(&other.value.borrow())
+    }
+}
+impl core::hash::Hash for NamedAttribute {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.value.borrow().hash(state);
     }
 }
 
@@ -143,5 +156,28 @@ impl EntityWithParent for OpAttribute {
 impl EntityParent<OpAttribute> for Operation {
     fn offset() -> usize {
         core::mem::offset_of!(Operation, attrs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{dialects::builtin::attributes::ImmediateAttr, testing::Test};
+
+    #[test]
+    fn named_attribute_equality() {
+        let test = Test::default();
+
+        let zero = test.context_rc().create_attribute::<ImmediateAttr, _>(0u32);
+        let one = test.context_rc().create_attribute::<ImmediateAttr, _>(1u32);
+        let a = NamedAttribute::new("a", zero);
+        let a2 = NamedAttribute::new("a", zero);
+        let a3 = NamedAttribute::new("a", one);
+        let b = NamedAttribute::new("b", zero);
+
+        assert_eq!(&a, &a);
+        assert_eq!(&a, &a2);
+        assert_ne!(&a, &a3);
+        assert_ne!(&a, &b);
     }
 }

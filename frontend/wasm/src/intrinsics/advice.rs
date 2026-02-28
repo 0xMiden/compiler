@@ -1,6 +1,6 @@
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, FunctionType, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
+    Builder, FunctionType, Op, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
     dialects::builtin::FunctionRef,
     interner::{Symbol, symbols},
 };
@@ -88,7 +88,7 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
 
             // Extract the return value from the exec operation
             let borrow = exec.borrow();
-            let results = borrow.as_ref().results();
+            let results = borrow.results();
             let result_vals: SmallVec<[ValueRef; 1]> =
                 results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 

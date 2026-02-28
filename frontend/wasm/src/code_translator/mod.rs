@@ -19,7 +19,7 @@ use midenc_dialect_hir::{HirOpBuilder, assertions};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
-    BlockRef, Builder, Felt, FieldElement, Immediate, PointerType,
+    BlockRef, Builder, Felt, FieldElement, Immediate, Op, PointerType,
     Type::{self, *},
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,
@@ -817,7 +817,7 @@ fn translate_call<B: ?Sized + Builder>(
             let args = func_state.peekn(arity);
             let exec = builder.exec(function_ref, signature, args.iter().copied(), span)?;
             let borrow = exec.borrow();
-            let results = borrow.as_ref().results();
+            let results = borrow.results();
             func_state.popn(arity);
             let result_vals: Vec<ValueRef> =
                 results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();

@@ -86,8 +86,7 @@ impl Listener for SSABuilderListener {
     }
 
     fn notify_operation_inserted(&self, op: OperationRef, prev: ProgramPoint) {
-        let borrow = op.borrow();
-        let op = borrow.as_ref().as_operation();
+        let op = op.borrow();
         let mut builder = self.builder.borrow_mut();
 
         let block = prev.block().expect("invalid program point");

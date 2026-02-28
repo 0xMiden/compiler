@@ -38,7 +38,7 @@ impl core::hash::Hash for UniquedConstant {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.dialect.name().hash(state);
         self.ty.hash(state);
-        self.value.borrow().dyn_hash(state);
+        self.value.borrow().hash(state);
     }
 }
 
@@ -425,16 +425,12 @@ impl OperationFolder {
 fn materialize_constant(
     builder: &mut dyn Builder,
     dialect: Rc<dyn Dialect>,
-    mut value: AttributeRef,
+    value: AttributeRef,
     ty: &Type,
     span: SourceSpan,
 ) -> Option<OperationRef> {
     let ip = *builder.insertion_point();
 
-    {
-        let mut attr = value.borrow_mut();
-        attr.set_type(ty.clone());
-    }
     // Ask the dialect to materialize a constant operation for this value.
     let const_op = dialect.materialize_constant(builder, value, ty, span)?;
     assert_eq!(ip, *builder.insertion_point());
