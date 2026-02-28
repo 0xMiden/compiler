@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
-use miden_processor::AdviceInputs;
+use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
 use midenc_compile::LinkOutput;

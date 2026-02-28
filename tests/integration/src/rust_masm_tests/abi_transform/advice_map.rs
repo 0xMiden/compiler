@@ -1,9 +1,9 @@
 use core::panic;
 use std::{collections::VecDeque, sync::Arc};
 
-use miden_core::{FieldElement, StarkField, utils::group_slice_elements};
+use miden_core::{field::PrimeField64, utils::group_slice_elements};
 use miden_debug::{Executor, Felt as TestFelt, FromMidenRepr, ToMidenRepr};
-use miden_processor::AdviceInputs;
+use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
@@ -67,7 +67,7 @@ fn test_adv_load_preimage() {
         Felt::new(13),
         Felt::new(14),
         Felt::new(15),
-        Felt::new(Felt::MODULUS - 1),
+        Felt::new(Felt::ORDER_U64 - 1),
     ];
 
     let commitment = miden_core::crypto::hash::Rpo256::hash_elements(&input);
@@ -104,9 +104,9 @@ fn test_adv_load_preimage() {
     let vec_metadata: [TestFelt; 4] =
         trace.read_from_rust_memory(result_ptr).expect("Failed to read vec metadata");
 
-    let capacity = vec_metadata[0].0.as_int() as usize;
-    let data_ptr = vec_metadata[1].0.as_int() as u32;
-    let vec_len = vec_metadata[2].0.as_int() as usize;
+    let capacity = vec_metadata[0].0.as_canonical_u64() as usize;
+    let data_ptr = vec_metadata[1].0.as_canonical_u64() as u32;
+    let vec_len = vec_metadata[2].0.as_canonical_u64() as usize;
     dbg!(capacity, data_ptr, vec_len);
 
     // Reconstruct the Vec<Felt> by reading all words from memory

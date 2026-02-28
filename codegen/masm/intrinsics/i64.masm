@@ -187,7 +187,7 @@ pub proc overflowing_mul # [b, a]
         dup.1 dup.1 exec.unchecked_neg    # [-b_hi, -b_lo, b_hi, b_lo, -a or a hi, -a or a lo, is_b_signed, negate_result]
         movup.2 swap.1 dup.6 cdrop        # [-b or b hi, -b_lo, b_lo, -a or a hi, -a or a lo, is_b_signed, negate_result]
         movdn.2 movup.5 cdrop swap.1      # [-b or b hi, -b or b lo, -a or a hi, -a or a lo, negate_result]
-        exec.::miden::core::math::u64::overflowing_mul
+        exec.::miden::core::math::u64::widening_mul
         exec.::miden::core::math::u64::eqz        # [overflowed, result_hi, result_lo, negate_result]
 
         # if the unsigned op overflowed, we definitely overflowed, but overflow

@@ -5,7 +5,7 @@ use miden_core::Felt;
 use miden_debug::{Executor, Felt as TestFelt};
 use miden_protocol::{
     ProtocolLib,
-    note::{NoteInputs, NoteRecipient, NoteScript},
+    note::{NoteRecipient, NoteScript, NoteStorage},
 };
 use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
@@ -159,8 +159,8 @@ end
         miden_core::Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
     let input1 = Felt::new(5);
     let input2 = Felt::new(6);
-    let inputs = NoteInputs::new(vec![input1, input2]).expect("invalid note inputs");
-    let note_recipient = NoteRecipient::new(serial_num, note_script.clone(), inputs);
+    let storage = NoteStorage::new(vec![input1, input2]).expect("invalid note storage");
+    let note_recipient = NoteRecipient::new(serial_num, note_script.clone(), storage);
     let expected_digest = note_recipient.digest();
 
     let main_fn = r#"(serial_num: Word, script_digest: Digest, inputs: Vec<Felt>) -> Word {

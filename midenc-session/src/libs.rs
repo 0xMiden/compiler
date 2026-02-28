@@ -9,7 +9,7 @@ pub use miden_assembly_syntax::{
     Library as CompiledLibrary, PathBuf as LibraryPath, PathComponent as LibraryPathComponent,
 };
 #[cfg(feature = "std")]
-use miden_core::utils::Deserializable;
+use miden_core::serde::Deserializable;
 use miden_core_lib::CoreLibrary;
 use midenc_hir_symbol::sync::LazyLock;
 

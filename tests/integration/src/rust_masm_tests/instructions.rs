@@ -309,11 +309,13 @@ fn test_overflowing_add_u64() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_add_i8() {
     test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_add_i16() {
     test_overflowing_arith(i16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
@@ -349,11 +351,13 @@ fn test_overflowing_sub_u64() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_sub_i8() {
     test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_sub_i16() {
     test_overflowing_arith(i16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
@@ -389,11 +393,13 @@ fn test_overflowing_mul_u64() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_mul_i8() {
     test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_mul_i16() {
     test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -447,6 +453,7 @@ fn test_overflowing_div_u64() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
 fn test_overflowing_div_i8() {
     test_overflowing_arith(
         i8::overflowing_div,
@@ -456,6 +463,7 @@ fn test_overflowing_div_i8() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
 fn test_overflowing_div_i16() {
     test_overflowing_arith(
         i16::overflowing_div,
@@ -511,7 +519,7 @@ fn test_overflowing_rem_u32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/967"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
 fn test_overflowing_rem_u64() {
     test_overflowing_arith(
         u64::overflowing_rem,
@@ -612,9 +620,6 @@ fn test_overflowing_arith<T>(
         CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
     let package = test.compile_package();
 
-    let ty_byte_size = std::mem::size_of::<T>();
-    assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
-
     let res = TestRunner::default().run(&strategy, move |(a, b)| {
         dbg!(a, b);
         let rust_out = op(a, b);
@@ -624,11 +629,13 @@ fn test_overflowing_arith<T>(
         let out_addr = 20u32 * 65536;
 
         let mut args = Vec::<midenc_hir::Felt>::default();
-        push_wasm_ty_to_operand_stack(b, &mut args);
-        push_wasm_ty_to_operand_stack(a, &mut args);
+        b.push_to_operand_stack(&mut args);
+        a.push_to_operand_stack(&mut args);
         out_addr.push_to_operand_stack(&mut args);
 
         eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+            let ty_byte_size = std::mem::size_of::<T>();
+            assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
             // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
             let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
             let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written

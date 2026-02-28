@@ -71,7 +71,7 @@ macro_rules! test_bin_op_via_u64 {
                         dbg!(a, b);
                         let a_felt: Felt = a.0;
                         let b_felt: Felt = b.0;
-                        let rs_out = a_felt.as_int() $op b_felt.as_int();
+                        let rs_out = a_felt.as_canonical_u64() $op b_felt.as_canonical_u64();
                         dbg!(&rs_out);
                         let mut args = Vec::<midenc_hir::Felt>::default();
                         b.push_to_operand_stack(&mut args);

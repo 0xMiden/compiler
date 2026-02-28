@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, fmt, format, string::ToString, sync::Arc, vec};
 
-use miden_core::{prettier::PrettyPrint, utils::Serializable};
+use miden_core::{prettier::PrettyPrint, serde::Serializable};
 use miden_mast_package::MastArtifact;
 use midenc_hir_symbol::Symbol;
 
@@ -267,7 +267,7 @@ macro_rules! serialize_into {
 }
 
 struct ByteWriterAdapter<'a, W>(&'a mut W);
-impl<W: Writer> miden_assembly::utils::ByteWriter for ByteWriterAdapter<'_, W> {
+impl<W: Writer> miden_assembly::serde::ByteWriter for ByteWriterAdapter<'_, W> {
     fn write_u8(&mut self, value: u8) {
         self.0.write_all(&[value]).unwrap()
     }
@@ -356,7 +356,7 @@ impl Emit for miden_assembly::Library {
     }
 }
 
-impl Emit for miden_core::Program {
+impl Emit for miden_core::program::Program {
     fn name(&self) -> Option<Symbol> {
         None
     }
@@ -385,7 +385,7 @@ impl Emit for miden_core::Program {
 }
 
 #[cfg(feature = "std")]
-impl EmitExt for miden_core::Program {
+impl EmitExt for miden_core::program::Program {
     fn write_to_file(
         &self,
         path: &std::path::Path,

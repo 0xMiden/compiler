@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::{Overflow, SourceSpan};
 
 use super::{OpEmitter, dup_from_offset, felt, masm, movup_from_offset};
@@ -602,7 +602,7 @@ impl OpEmitter<'_> {
                         .emit_all([masm::Instruction::Mul, masm::Instruction::U32Assert], span);
                 }
                 Overflow::Wrapping => masm::Instruction::U32WrappingMul,
-                Overflow::Overflowing => masm::Instruction::U32OverflowingMul,
+                Overflow::Overflowing => masm::Instruction::U32WideningMul,
             },
             span,
         );
@@ -653,9 +653,7 @@ impl OpEmitter<'_> {
                             );
                         }
                         Overflow::Wrapping => masm::Instruction::U32WrappingMulImm(imm.into()),
-                        Overflow::Overflowing => {
-                            masm::Instruction::U32OverflowingMulImm(imm.into())
-                        }
+                        Overflow::Overflowing => masm::Instruction::U32WideningMulImm(imm.into()),
                     },
                     span,
                 );

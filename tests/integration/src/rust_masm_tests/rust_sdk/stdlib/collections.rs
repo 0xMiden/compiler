@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use miden_core::{
-    Felt, FieldElement, Word,
+    Felt, Word,
     crypto::merkle::{MerkleStore, Smt},
 };
 use miden_debug::Executor;
-use miden_processor::AdviceInputs;
+use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
@@ -26,7 +26,7 @@ fn build_advice_inputs_for_smt(smt: &Smt) -> AdviceInputs {
     let store = MerkleStore::from(smt);
     let map = smt
         .leaves()
-        .map(|(_, leaf)| (leaf.hash(), leaf.to_elements()))
+        .map(|(_, leaf)| (leaf.hash(), leaf.to_elements().collect()))
         .collect::<Vec<_>>();
 
     AdviceInputs::default()
@@ -41,7 +41,12 @@ fn word_components(word: Word) -> [Felt; 4] {
 
 fn word_to_u64s(word: Word) -> [u64; 4] {
     let [a, b, c, d] = word_components(word);
-    [a.as_int(), b.as_int(), c.as_int(), d.as_int()]
+    [
+        a.as_canonical_u64(),
+        b.as_canonical_u64(),
+        c.as_canonical_u64(),
+        d.as_canonical_u64(),
+    ]
 }
 
 fn push_word_args(args: &mut Vec<Felt>, word: Word) {

@@ -1,6 +1,6 @@
 //! Off-chain implementation of [`crate::Felt`].
 
-use miden_core::{Felt as CoreFelt, FieldElement};
+use miden_core::{Felt as CoreFelt, field::Field};
 
 use crate::FeltImpl;
 
@@ -23,7 +23,7 @@ impl FeltImpl for Felt {
 
     #[inline(always)]
     fn as_u64(self) -> u64 {
-        self.0.as_int()
+        self.0.as_canonical_u64()
     }
 
     #[inline(always)]
@@ -33,7 +33,7 @@ impl FeltImpl for Felt {
 
     #[inline(always)]
     fn inv(self) -> Self {
-        Self(self.0.inv())
+        Self(self.0.try_inverse().expect("cannot invert zero"))
     }
 
     #[inline(always)]
@@ -45,7 +45,7 @@ impl FeltImpl for Felt {
 
     #[inline(always)]
     fn exp(self, other: Self) -> Self {
-        Self(self.0.exp(other.as_u64()))
+        Self(self.0.exp_u64(other.as_u64()))
     }
 }
 

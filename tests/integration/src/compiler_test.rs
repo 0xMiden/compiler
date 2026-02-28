@@ -659,9 +659,12 @@ impl CompilerTestBuilder {
     opt-level = "z"
     debug = true
     trim-paths = ["diagnostics", "object"]
+
+    {patch_section}
 "#,
                     sdk_path = sdk_path.display(),
                     sdk_alloc_path = sdk_alloc_path.display(),
+                    patch_section = sdk_patch_section(),
                 )
                 .as_str(),
             )
@@ -950,6 +953,29 @@ pub fn sdk_alloc_crate_path() -> PathBuf {
 pub fn sdk_crate_path() -> PathBuf {
     let cwd = std::env::current_dir().unwrap();
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("sdk")
+}
+
+/// Returns the `[patch.crates-io]` section needed by test projects that depend on `miden` SDK.
+///
+/// This is necessary because the generated test projects are separate Cargo workspaces and
+/// don't inherit the compiler workspace's `[patch.crates-io]` section. The `miden-base-macros`
+/// proc-macro crate depends on `miden-protocol` which is at v0.14 (not yet published on
+/// crates.io), so we must patch it to the local checkout.
+pub fn sdk_patch_section() -> String {
+    let cwd = std::env::current_dir().unwrap();
+    let workspace_root = cwd.parent().unwrap().parent().unwrap();
+    let miden_protocol_path = workspace_root
+        .join("..")
+        .join("miden-base")
+        .join("crates")
+        .join("miden-protocol");
+    format!(
+        r#"
+[patch.crates-io]
+miden-protocol = {{ path = "{}" }}
+"#,
+        miden_protocol_path.display(),
+    )
 }
 
 /// Get the directory for the top-level workspace

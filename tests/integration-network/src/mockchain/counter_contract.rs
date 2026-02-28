@@ -8,7 +8,7 @@ use miden_client::{
     testing::{AccountState, Auth, MockChain},
     transaction::OutputNote,
 };
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use miden_protocol::account::{
     AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
 };

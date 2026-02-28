@@ -1,9 +1,9 @@
 use core::panic;
 use std::collections::VecDeque;
 
-use miden_core::{FieldElement, utils::group_slice_elements};
+use miden_core::utils::group_slice_elements;
 use miden_debug::{Executor, Felt as TestFelt, ToMidenRepr};
-use miden_processor::AdviceInputs;
+use miden_processor::advice::AdviceInputs;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
