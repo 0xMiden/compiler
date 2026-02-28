@@ -1,16 +1,31 @@
 use crate::{
-    AttrPrinter, Immediate, attributes::IntegerLikeAttr, derive::DialectAttribute,
-    dialects::builtin::BuiltinDialect, print::AsmPrinter,
+    AttrPrinter, Immediate,
+    attributes::{BoolLikeAttr, IntegerLikeAttr},
+    derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect,
+    print::AsmPrinter,
 };
 
 #[derive(DialectAttribute)]
 #[attribute(
     dialect = BuiltinDialect,
     remote = "bool",
-    implements(IntegerLikeAttr, AttrPrinter)
+    implements(BoolLikeAttr, IntegerLikeAttr, AttrPrinter)
 )]
 #[allow(unused)]
 struct Bool;
+
+impl BoolLikeAttr for BoolAttr {
+    #[inline(always)]
+    fn as_bool(&self) -> bool {
+        self.value
+    }
+
+    #[inline(always)]
+    fn set_bool(&mut self, value: bool) {
+        self.value = value;
+    }
+}
 
 impl IntegerLikeAttr for BoolAttr {
     #[inline]

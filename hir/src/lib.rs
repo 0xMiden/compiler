@@ -2,6 +2,7 @@
 #![feature(allocator_api)]
 #![feature(alloc_layout_extra)]
 #![feature(coerce_unsized)]
+#![feature(const_type_name)]
 #![feature(unsize)]
 #![feature(ptr_metadata)]
 #![feature(ptr_as_uninit)]
@@ -51,6 +52,7 @@ extern crate self as midenc_hir;
 
 pub use compact_str::{CompactString, CompactStringExt, ToCompactString};
 pub use hashbrown;
+pub use inventory;
 pub use smallvec::{SmallVec, ToSmallVec, smallvec};
 
 pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;

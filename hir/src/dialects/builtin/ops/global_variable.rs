@@ -2,17 +2,13 @@ use crate::{
     AsSymbolRef, Context, IdentAttr, OpPrinter, Operation, PointerType, Report, Spanned, Symbol,
     SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
     Visibility,
-    derive::operation,
+    derive::{EffectOpInterface, operation},
     dialects::builtin::{
         BuiltinDialect,
         attributes::{I32Attr, TypeAttr, VisibilityAttr},
     },
-    effects::{
-        AlwaysSpeculatable, ConditionallySpeculatable, EffectIterator, EffectOpInterface,
-        MemoryEffect, MemoryEffectOpInterface, Pure,
-    },
+    effects::{AlwaysSpeculatable, ConditionallySpeculatable, MemoryEffectOpInterface, Pure},
     print::AsmPrinter,
-    smallvec,
     traits::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
         SingleRegion, UInt8,
@@ -140,6 +136,7 @@ impl OpPrinter for GlobalVariable {
 /// internally.
 ///
 /// The result type is always a pointer, whose pointee type is derived from the referenced symbol.
+#[derive(EffectOpInterface)]
 #[operation(
     dialect = BuiltinDialect,
     traits(Pure, AlwaysSpeculatable),
@@ -180,15 +177,6 @@ impl OpPrinter for GlobalSymbol {
 impl ConditionallySpeculatable for GlobalSymbol {
     fn speculatability(&self) -> crate::effects::Speculatability {
         crate::effects::Speculatability::Speculatable
-    }
-}
-impl EffectOpInterface<MemoryEffect> for GlobalSymbol {
-    fn effects(&self) -> crate::effects::EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
-
-    fn has_no_effect(&self) -> bool {
-        true
     }
 }
 

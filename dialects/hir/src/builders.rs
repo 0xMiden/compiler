@@ -54,8 +54,19 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         rhs: ValueRef,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEq>, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::AssertEq, _>(span);
+        let op_builder = self.builder_mut().create::<crate::ops::AssertEq, (_, _)>(span);
         op_builder(lhs, rhs)
+    }
+
+    fn assert_eq_with_error(
+        &mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        code: u32,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEq>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::AssertEq, (_, _, _)>(span);
+        op_builder(lhs, rhs, code)
     }
 
     fn assert_eq_imm(
@@ -67,6 +78,18 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         use midenc_dialect_arith::ArithOpBuilder;
         let rhs = self.builder_mut().imm(rhs, span);
         self.assert_eq(lhs, rhs, span)
+    }
+
+    fn assert_eq_with_error_imm(
+        &mut self,
+        lhs: ValueRef,
+        rhs: Immediate,
+        code: u32,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEq>, Report> {
+        use midenc_dialect_arith::ArithOpBuilder;
+        let rhs = self.builder_mut().imm(rhs, span);
+        self.assert_eq_with_error(lhs, rhs, code, span)
     }
 
     fn breakpoint(

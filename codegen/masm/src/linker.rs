@@ -287,7 +287,7 @@ impl GlobalVariableLayout {
         if self.offsets.try_insert(key, offset).is_ok() {
             log::debug!(target: "linker",
                 "GlobalVariableLayout: allocated global '{}' at offset {:#x} (size: {} bytes)",
-                gv.name(),
+                gv.get_name().as_str(),
                 offset,
                 ty.size_in_bytes()
             );

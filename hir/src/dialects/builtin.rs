@@ -6,10 +6,14 @@ pub use self::{
     builders::{BuiltinOpBuilder, ComponentBuilder, FunctionBuilder, ModuleBuilder, WorldBuilder},
     ops::*,
 };
-use crate::{Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan};
+use crate::{
+    Dialect, DialectInfo,
+    derive::{Dialect, DialectRegistration},
+};
 
-#[derive(Debug)]
+#[derive(Dialect, DialectRegistration, Debug)]
 pub struct BuiltinDialect {
+    #[dialect(info)]
     info: DialectInfo,
 }
 
@@ -20,6 +24,7 @@ impl BuiltinDialect {
     }
 }
 
+/*
 impl DialectRegistration for BuiltinDialect {
     const NAMESPACE: &'static str = "builtin";
 
@@ -71,20 +76,4 @@ impl DialectRegistration for BuiltinDialect {
         info.register_attribute::<attributes::SextAttr>();
     }
 }
-
-impl Dialect for BuiltinDialect {
-    #[inline]
-    fn info(&self) -> &DialectInfo {
-        &self.info
-    }
-
-    fn materialize_constant(
-        &self,
-        _builder: &mut dyn Builder,
-        _attr: crate::AttributeRef,
-        _ty: &crate::Type,
-        _span: SourceSpan,
-    ) -> Option<OperationRef> {
-        None
-    }
-}
+*/

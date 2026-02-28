@@ -4,8 +4,8 @@ use core::ops::AddAssign;
 use super::*;
 use crate::{
     AsValueRange, Attribute, Block, Context, EntityList, FunctionType, Immediate, Location,
-    NamedAttribute, OpSuccessorRange, SymbolPath, Type, ValueRef,
-    dialects::builtin::attributes::Signature, formatter::Document, interner,
+    NamedAttribute, OpSuccessorRange, SuccessorOperands, SymbolPath, Type, ValueRef,
+    attributes::Marker, formatter::Document, interner,
 };
 
 /// [OperationPrinter] provides utilities for pretty-printing an operation in either the generic
@@ -25,6 +25,11 @@ impl<'a> AsmPrinter<'a> {
             flags,
             document: Document::Empty,
         }
+    }
+
+    #[inline(always)]
+    pub const fn flags(&self) -> &OpPrintingFlags {
+        self.flags
     }
 
     /// Get a reference to the [Context] this printer was instantiated with
@@ -55,6 +60,13 @@ impl<'a> AsmPrinter<'a> {
 }
 
 impl<'a> AsmPrinter<'a> {
+    /// Print `op` using its custom format if available, falling back to the generic format.
+    ///
+    /// See the [print](crate::print) module docs for the details of the generic format.
+    pub fn print_operation(&mut self, op: impl AsRef<Operation>) {
+        op.as_ref().print(self);
+    }
+
     /// Print `op` using the generic assembly format
     ///
     /// See the [print](crate::print) module docs for the details of the generic format.
@@ -236,8 +248,16 @@ impl<'a> AsmPrinter<'a> {
     pub fn print_colon_type_list<'t>(&mut self, types: impl IntoIterator<Item = Cow<'t, Type>>) {
         use crate::formatter::*;
 
-        self.document += const_text(":");
+        self.document += const_text(": ");
         self.print_type_list(types);
+    }
+
+    /// Prints a colon and then a single type
+    pub fn print_colon_type(&mut self, ty: &Type) {
+        use crate::formatter::*;
+
+        self.document += const_text(": ");
+        self.print_type(ty);
     }
 
     /// Prints an arrow and then zero or more types in parentheses, i.e. `-> (i1, i32)`.
@@ -288,23 +308,22 @@ impl<'a> AsmPrinter<'a> {
     ///
     /// The printed type will elide parens around single-result types
     pub fn print_function_type(&mut self, ty: &FunctionType) {
-        self.print_type_list(ty.params().iter().map(Cow::Borrowed));
-        self.print_space();
-        self.print_arrow_type_list(
-            /*elide_single_type_parens=*/ true,
-            ty.results().iter().map(Cow::Borrowed),
-        );
+        self.print_function_type_parts(ty.params().iter(), ty.results().iter());
     }
 
-    /// Print a function type (i.e. `(arg0, arg1) -> (result0, result1)`)
+    /// Print a function type (i.e. `(arg0, arg1) -> (result0, result1)`) given its component parts.
     ///
     /// The printed type will elide parens around single-result types
-    pub fn print_signature(&mut self, ty: &Signature) {
-        self.print_type_list(ty.params().iter().map(|p| Cow::Borrowed(&p.ty)));
+    pub fn print_function_type_parts<'f, P, R>(&mut self, params: P, results: R)
+    where
+        P: ExactSizeIterator<Item = &'f Type>,
+        R: ExactSizeIterator<Item = &'f Type>,
+    {
+        self.print_type_list(params.map(Cow::Borrowed));
         self.print_space();
         self.print_arrow_type_list(
             /*elide_single_type_parens=*/ true,
-            ty.results().iter().map(|p| Cow::Borrowed(&p.ty)),
+            results.map(Cow::Borrowed),
         );
     }
 
@@ -329,17 +348,43 @@ impl<'a> AsmPrinter<'a> {
             return;
         }
 
+        let elide_entry_block_label = if self.flags.print_entry_block_headers {
+            false
+        } else {
+            // This is the entry region - if we have the parent operation, and that operation
+            // has operands, then we need to print the block labels
+            let region_ref = region.as_region_ref();
+            region.parent().is_some_and(|op| {
+                let op = op.borrow();
+                if let Some(branch_interface) = op.as_trait::<dyn crate::RegionBranchOpInterface>()
+                {
+                    let has_no_region_arguments = branch_interface
+                        .get_entry_successor_operands(crate::RegionBranchPoint::Parent)
+                        .is_empty();
+                    let mut entries =
+                        branch_interface.get_successor_regions(crate::RegionBranchPoint::Parent);
+                    has_no_region_arguments
+                        && entries.any(|r| r.successor().is_some_and(|r| r == region_ref))
+                } else if let Some(callable) = op.as_trait::<dyn crate::CallableOpInterface>() {
+                    callable.get_callable_region().is_some_and(|r| r == region_ref)
+                } else {
+                    false
+                }
+            })
+        };
+
         self.document += const_text("{");
         let mut printer = AsmPrinter::new(self.context.clone(), self.flags);
-        let body = region.body().iter().enumerate().fold(Document::Empty, |acc, (i, block)| {
-            if i > 0 {
+        let body = region.body().iter().enumerate().fold(Document::Empty, |mut acc, (i, block)| {
+            if i > 0 || (i == 0 && !elide_entry_block_label) {
+                acc += nl();
                 printer.print_block_label_and_arguments(&block);
             }
             printer.print_block_body(block.body());
 
-            acc + nl() + printer.render()
+            acc + printer.render()
         });
-        self.document += indent(4, body);
+        self.document += body;
         self.document += nl() + const_text("}");
     }
 
@@ -420,11 +465,20 @@ impl<'a> AsmPrinter<'a> {
 
     /// Print an attribute value
     pub fn print_attribute_value(&mut self, value: &dyn Attribute) {
-        if let Some(value) = value.as_attr().as_trait::<dyn AttrPrinter>() {
+        use crate::formatter::*;
+
+        let attr = value.as_attr();
+        self.document += text(format!("!{}", attr.name()));
+        if attr.implements::<dyn Marker>() {
+            return;
+        }
+        self.document += const_text("<");
+        if let Some(value) = attr.as_trait::<dyn AttrPrinter>() {
             value.print(self);
         } else {
             self.print_string(format!("{value:?}"));
         }
+        self.document += const_text(">");
     }
 
     /// Print an attribute dictionary in `{` `}`
@@ -479,8 +533,9 @@ impl<'a> AsmPrinter<'a> {
     /// Print a possibly multi-component symbol path, i.e. `@foo::@bar`
     pub fn print_symbol_path(&mut self, path: &SymbolPath) {
         use crate::{SymbolNameComponent, formatter::*};
+        let is_absolute = path.is_absolute();
         for (i, component) in path.components().enumerate() {
-            if i > 0 || matches!(component, SymbolNameComponent::Root) {
+            if (is_absolute && i != 1) || (!is_absolute && i > 0) {
                 self.document += const_text("::");
             }
             match component {
@@ -553,7 +608,7 @@ impl<'a> AsmPrinter<'a> {
     pub fn print_string(&mut self, string: impl AsRef<str>) {
         use crate::formatter::*;
 
-        self.document += text(string.as_ref().escape_default());
+        self.document += text(format!("\"{}\"", string.as_ref().escape_default()));
     }
 
     /// Print a single '('

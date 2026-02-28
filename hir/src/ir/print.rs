@@ -7,7 +7,7 @@
 //! top-level := (operation | attribute-alias-def | type-alias-def)+
 //!
 //! # Operations
-//! operation         := op-results? (generic-operation | custom-operation) trailing-location?
+//! operation         := op-results? (generic-operation | custom-operation) trailing-location? ';'
 //! custom-operation  := custom-op-name custom-operation-format
 //! generic-operation := generic-op-name '(' value-uses? ')' successors? properties?
 //!                        regions? attributes? ':' function-type
@@ -87,7 +87,7 @@
 //! # Attribute Aliases
 //!
 //! attribute-alias := '#' alias-name
-//! attribute-alias-def := '#' alias-name '=' attribute-value
+//! attribute-alias-def := '#' alias-name '=' attribute-value ';'
 //!
 //! # Builtin Attributes
 //!
@@ -140,7 +140,7 @@
 //! # Type Aliases
 //!
 //! type-alias := '!' alias-name
-//! type-alias-def := '!' alias-name
+//! type-alias-def := '!' alias-name '=' type ';'
 //!
 //! # Builtin Types
 //!
@@ -261,19 +261,10 @@ pub use self::{
 use super::{OpOperandRange, OpResultRange, Operation, Region, RegionList, ValueRange};
 use crate::{EntityWithId, Value, formatter::Document};
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct OpPrintingFlags {
     pub print_entry_block_headers: bool,
     pub print_source_locations: bool,
-}
-
-impl Default for OpPrintingFlags {
-    fn default() -> Self {
-        Self {
-            print_entry_block_headers: true,
-            print_source_locations: false,
-        }
-    }
 }
 
 impl From<&Options> for OpPrintingFlags {
@@ -302,8 +293,13 @@ pub trait OpPrinter {
 impl OpPrinter for Operation {
     #[inline]
     fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
         if let Some(custom_printer) = self.as_trait::<dyn OpPrinter>() {
+            printer.print_results(self.results().all());
+            *printer += display(self.name());
             custom_printer.print(printer);
+            *printer += const_text(";");
         } else {
             printer.print_operation_generic(self);
         }

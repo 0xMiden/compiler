@@ -1,7 +1,11 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    derive::operation, dialects::builtin::attributes::OverflowAttr, effects::*, traits::*, *,
+    derive::{EffectOpInterface, OpPrinter, operation},
+    dialects::builtin::attributes::OverflowAttr,
+    effects::*,
+    traits::*,
+    *,
 };
 
 use crate::ArithDialect;
@@ -56,10 +60,11 @@ macro_rules! infer_return_ty_for_binary_op {
 }
 
 /// Two's complement sum
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Add {
     #[operand]
@@ -73,13 +78,13 @@ pub struct Add {
 }
 
 infer_return_ty_for_binary_op!(Add);
-has_no_effects!(Add);
 
 /// Two's complement sum with overflow bit
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct AddOverflowing {
     #[operand]
@@ -93,13 +98,13 @@ pub struct AddOverflowing {
 }
 
 infer_return_ty_for_binary_op!(AddOverflowing, overflowed: Type::I1);
-has_no_effects!(AddOverflowing);
 
 /// Two's complement difference (subtraction)
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Sub {
     #[operand]
@@ -113,13 +118,13 @@ pub struct Sub {
 }
 
 infer_return_ty_for_binary_op!(Sub);
-has_no_effects!(Sub);
 
 /// Two's complement difference (subtraction) with underflow bit
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct SubOverflowing {
     #[operand]
@@ -133,13 +138,13 @@ pub struct SubOverflowing {
 }
 
 infer_return_ty_for_binary_op!(SubOverflowing, overflowed: Type::I1);
-has_no_effects!(SubOverflowing);
 
 /// Two's complement product
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Mul {
     #[operand]
@@ -153,13 +158,13 @@ pub struct Mul {
 }
 
 infer_return_ty_for_binary_op!(Mul);
-has_no_effects!(Mul);
 
 /// Two's complement product with overflow bit
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct MulOverflowing {
     #[operand]
@@ -173,13 +178,13 @@ pub struct MulOverflowing {
 }
 
 infer_return_ty_for_binary_op!(MulOverflowing, overflowed: Type::I1);
-has_no_effects!(MulOverflowing);
 
 /// Exponentiation for field elements
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Exp {
     #[operand]
@@ -191,13 +196,13 @@ pub struct Exp {
 }
 
 infer_return_ty_for_binary_op!(Exp);
-has_no_effects!(Exp);
 
 /// Unsigned integer division, traps on division by zero
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Div {
     #[operand]
@@ -209,13 +214,13 @@ pub struct Div {
 }
 
 infer_return_ty_for_binary_op!(Div);
-has_no_effects!(Div);
 
 /// Signed integer division, traps on division by zero or dividing the minimum signed value by -1
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Sdiv {
     #[operand]
@@ -227,13 +232,13 @@ pub struct Sdiv {
 }
 
 infer_return_ty_for_binary_op!(Sdiv);
-has_no_effects!(Sdiv);
 
 /// Unsigned integer Euclidean modulo, traps on division by zero
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Mod {
     #[operand]
@@ -245,15 +250,15 @@ pub struct Mod {
 }
 
 infer_return_ty_for_binary_op!(Mod);
-has_no_effects!(Mod);
 
 /// Signed integer Euclidean modulo, traps on division by zero
 ///
 /// The result has the same sign as the dividend (lhs)
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Smod {
     #[operand]
@@ -265,15 +270,15 @@ pub struct Smod {
 }
 
 infer_return_ty_for_binary_op!(Smod);
-has_no_effects!(Smod);
 
 /// Combined unsigned integer Euclidean division and remainder (modulo).
 ///
 /// Traps on division by zero.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Divmod {
     #[operand]
@@ -285,8 +290,6 @@ pub struct Divmod {
     #[result]
     quotient: AnyInteger,
 }
-
-has_no_effects!(Divmod);
 
 impl InferTypeOpInterface for Divmod {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -302,10 +305,11 @@ impl InferTypeOpInterface for Divmod {
 /// Traps on division by zero.
 ///
 /// The remainder has the same sign as the dividend (lhs)
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Sdivmod {
     #[operand]
@@ -317,8 +321,6 @@ pub struct Sdivmod {
     #[result]
     quotient: AnyInteger,
 }
-
-has_no_effects!(Sdivmod);
 
 impl InferTypeOpInterface for Sdivmod {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -332,10 +334,11 @@ impl InferTypeOpInterface for Sdivmod {
 /// Logical AND
 ///
 /// Operands must be boolean.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct And {
     #[operand]
@@ -347,15 +350,15 @@ pub struct And {
 }
 
 infer_return_ty_for_binary_op!(And);
-has_no_effects!(And);
 
 /// Logical OR
 ///
 /// Operands must be boolean.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Or {
     #[operand]
@@ -367,15 +370,15 @@ pub struct Or {
 }
 
 infer_return_ty_for_binary_op!(Or);
-has_no_effects!(Or);
 
 /// Logical XOR
 ///
 /// Operands must be boolean.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Xor {
     #[operand]
@@ -387,13 +390,13 @@ pub struct Xor {
 }
 
 infer_return_ty_for_binary_op!(Xor);
-has_no_effects!(Xor);
 
 /// Bitwise AND
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Band {
     #[operand]
@@ -405,13 +408,13 @@ pub struct Band {
 }
 
 infer_return_ty_for_binary_op!(Band);
-has_no_effects!(Band);
 
 /// Bitwise OR
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Bor {
     #[operand]
@@ -423,15 +426,15 @@ pub struct Bor {
 }
 
 infer_return_ty_for_binary_op!(Bor);
-has_no_effects!(Bor);
 
 /// Bitwise XOR
 ///
 /// Operands must be boolean.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Bxor {
     #[operand]
@@ -443,15 +446,15 @@ pub struct Bxor {
 }
 
 infer_return_ty_for_binary_op!(Bxor);
-has_no_effects!(Bxor);
 
 /// Bitwise shift-left
 ///
 /// Shifts larger than the bitwidth of the value will be wrapped to zero.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Shl {
     #[operand]
@@ -463,15 +466,15 @@ pub struct Shl {
 }
 
 infer_return_ty_for_binary_op!(Shl);
-has_no_effects!(Shl);
 
 /// Bitwise (logical) shift-right
 ///
 /// Shifts larger than the bitwidth of the value will effectively truncate the value to zero.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Shr {
     #[operand]
@@ -483,16 +486,16 @@ pub struct Shr {
 }
 
 infer_return_ty_for_binary_op!(Shr);
-has_no_effects!(Shr);
 
 /// Arithmetic (signed) shift-right
 ///
 /// The result of shifts larger than the bitwidth of the value depend on the sign of the value;
 /// for positive values, it rounds to zero; for negative values, it rounds to MIN.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Ashr {
     #[operand]
@@ -504,15 +507,15 @@ pub struct Ashr {
 }
 
 infer_return_ty_for_binary_op!(Ashr);
-has_no_effects!(Ashr);
 
 /// Bitwise rotate-left
 ///
 /// The rotation count must be < the bitwidth of the value type.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Rotl {
     #[operand]
@@ -524,7 +527,6 @@ pub struct Rotl {
 }
 
 infer_return_ty_for_binary_op!(Rotl);
-has_no_effects!(Rotl);
 
 impl Canonicalizable for Rotl {
     fn get_canonicalization_patterns(
@@ -542,10 +544,11 @@ impl Canonicalizable for Rotl {
 /// Bitwise rotate-right
 ///
 /// The rotation count must be < the bitwidth of the value type.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Rotr {
     #[operand]
@@ -557,7 +560,6 @@ pub struct Rotr {
 }
 
 infer_return_ty_for_binary_op!(Rotr);
-has_no_effects!(Rotr);
 
 impl Canonicalizable for Rotr {
     fn get_canonicalization_patterns(
@@ -573,10 +575,11 @@ impl Canonicalizable for Rotr {
 }
 
 /// Equality comparison
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Eq {
     #[operand]
@@ -588,13 +591,13 @@ pub struct Eq {
 }
 
 infer_return_ty_for_binary_op!(Eq as Type::I1);
-has_no_effects!(Eq);
 
 /// Inequality comparison
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Neq {
     #[operand]
@@ -606,13 +609,13 @@ pub struct Neq {
 }
 
 infer_return_ty_for_binary_op!(Neq as Type::I1);
-has_no_effects!(Neq);
 
 /// Greater-than comparison
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Gt {
     #[operand]
@@ -624,13 +627,13 @@ pub struct Gt {
 }
 
 infer_return_ty_for_binary_op!(Gt as Type::I1);
-has_no_effects!(Gt);
 
 /// Greater-than-or-equal comparison
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Gte {
     #[operand]
@@ -642,13 +645,13 @@ pub struct Gte {
 }
 
 infer_return_ty_for_binary_op!(Gte as Type::I1);
-has_no_effects!(Gte);
 
 /// Less-than comparison
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Lt {
     #[operand]
@@ -660,13 +663,13 @@ pub struct Lt {
 }
 
 infer_return_ty_for_binary_op!(Lt as Type::I1);
-has_no_effects!(Lt);
 
 /// Less-than-or-equal comparison
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Lte {
     #[operand]
@@ -678,13 +681,13 @@ pub struct Lte {
 }
 
 infer_return_ty_for_binary_op!(Lte as Type::I1);
-has_no_effects!(Lte);
 
 /// Select minimum value
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Min {
     #[operand]
@@ -696,13 +699,13 @@ pub struct Min {
 }
 
 infer_return_ty_for_binary_op!(Min);
-has_no_effects!(Min);
 
 /// Select maximum value
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Max {
     #[operand]
@@ -714,4 +717,3 @@ pub struct Max {
 }
 
 infer_return_ty_for_binary_op!(Max);
-has_no_effects!(Max);

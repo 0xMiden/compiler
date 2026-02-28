@@ -5,7 +5,7 @@ use crate::{
     ImmediateAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, RegionRef,
     SmallVec, Symbol, SymbolUse, SymbolUseList, ToCompactString, Type, UnsafeIntrusiveEntityRef,
     Usable, Visibility,
-    derive::operation,
+    derive::{OpPrinter, operation},
     dialects::builtin::{
         BuiltinDialect,
         attributes::{
@@ -312,9 +312,11 @@ impl CallableOpInterface for Function {
 }
 
 /// Returns from the enclosing function with the provided operands as its results.
+#[derive(OpPrinter)]
 #[operation(
     dialect = BuiltinDialect,
     traits(Terminator, ReturnLike),
+    implements(OpPrinter)
 )]
 pub struct Ret {
     #[operands]

@@ -15,13 +15,13 @@ pub enum Visibility {
     /// Public visibility implies that we cannot remove the symbol even if we are unaware of any
     /// references, and no other constraints apply, as we must assume that the symbol has references
     /// we don't know about.
-    #[default]
     Public,
     /// The symbol is private and may only be referenced by ops local to operations within the
     /// current symbol table.
     ///
     /// Private visibility implies that we know all uses of the symbol, and that those uses must
     /// all exist within the current symbol table.
+    #[default]
     Private,
     /// The symbol is public, but may only be referenced by symbol tables in the current compilation
     /// graph, thus retaining the ability to observe all uses, and optimize based on that

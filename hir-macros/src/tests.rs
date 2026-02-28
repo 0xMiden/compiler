@@ -46,7 +46,128 @@ fn derive_remote_attribute_test() {
     match output {
         Ok(output) => {
             let formatted = format_output(&output.into_token_stream().to_string());
-            panic!("{formatted}");
+            println!("{formatted}");
+        }
+        Err(err) => {
+            panic!("{err}");
+        }
+    }
+}
+
+#[test]
+fn derive_effect_op_interface_test() {
+    let item_input: syn::DeriveInput = syn::parse_quote! {
+        /// A simple boolean attribute
+        #[derive(EffectOpInterface)]
+        #[effects(MemoryEffect(MemoryEffect::Write))]
+        pub struct Load {
+            ptr: Ptr
+        }
+    };
+
+    let output = crate::operations::derive_effect_op_interface(&item_input);
+    match output {
+        Ok(output) => {
+            let formatted = format_output(&output.into_token_stream().to_string());
+            println!("{formatted}");
+        }
+        Err(err) => {
+            panic!("{err}");
+        }
+    }
+}
+
+#[test]
+fn derive_effect_op_interface_fields_test() {
+    let item_input: syn::DeriveInput = syn::parse_quote! {
+        /// A simple boolean attribute
+        #[derive(EffectOpInterface)]
+        pub struct Load {
+            #[effects(MemoryEffect(MemoryEffect::Read))]
+            ptr: Ptr
+        }
+    };
+
+    let output = crate::operations::derive_effect_op_interface(&item_input);
+    match output {
+        Ok(output) => {
+            let formatted = format_output(&output.into_token_stream().to_string());
+            println!("{formatted}");
+        }
+        Err(err) => {
+            panic!("{err}");
+        }
+    }
+}
+
+#[test]
+fn operation_trait_no_verifier_test() {
+    let meta = Vec::default();
+    let item_input: syn::ItemTrait = syn::parse_quote! {
+        #[operation_trait]
+        pub trait SameOperandsAndResultType : SameTypeOperands {}
+    };
+
+    let output = crate::operations::derive_operation_trait(meta, item_input);
+    match output {
+        Ok(output) => {
+            let formatted = format_output(&output.into_token_stream().to_string());
+            println!("{formatted}");
+        }
+        Err(err) => {
+            panic!("{err}");
+        }
+    }
+}
+
+#[test]
+fn operation_trait_with_verifiers_test() {
+    let meta = Vec::default();
+    let item_input: syn::ItemTrait = syn::parse_quote! {
+        #[operation_trait]
+        pub trait SameOperandsAndResultType : SameTypeOperands {
+            #[verifier]
+            fn has_same_operands_and_result_type(_op: &::midenc_hir::Operation, _context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
+                true
+            }
+
+            #[verifier]
+            fn additional_check(_op: &::midenc_hir::Operation, _context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
+                true
+            }
+        }
+    };
+
+    let output = crate::operations::derive_operation_trait(meta, item_input);
+    match output {
+        Ok(output) => {
+            let formatted = format_output(&output.into_token_stream().to_string());
+            println!("{formatted}");
+        }
+        Err(err) => {
+            panic!("{err}");
+        }
+    }
+}
+
+#[test]
+fn operation_trait_with_generics_test() {
+    let meta = Vec::default();
+    let item_input: syn::ItemTrait = syn::parse_quote! {
+        #[operation_trait]
+        pub trait SameOperandsAndResultType<T: AttributeRegistration> : SameTypeOperands<T> + UnusedGenerics {
+            #[verifier]
+            fn verify_it<T: AttributeRegistration>(_op: &::midenc_hir::Operation, _context: &::midenc_hir::Context) -> Result<(), ::midenc_hir::diagnostics::Report> {
+                true
+            }
+        }
+    };
+
+    let output = crate::operations::derive_operation_trait(meta, item_input);
+    match output {
+        Ok(output) => {
+            let formatted = format_output(&output.into_token_stream().to_string());
+            println!("{formatted}");
         }
         Err(err) => {
             panic!("{err}");

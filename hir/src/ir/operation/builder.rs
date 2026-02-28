@@ -96,7 +96,12 @@ where
         symbol: impl AsSymbolRef,
     ) {
         let mut op = self.op.borrow_mut();
-        op.set_symbol_attribute(attr_name.into(), symbol);
+        let attr_name = attr_name.into();
+        if op.has_property(attr_name) {
+            op.unsafe_set_symbol_property(attr_name, symbol);
+        } else {
+            op.set_symbol_attribute(attr_name, symbol);
+        }
     }
 
     /// Like [with_symbol], but further constrains the range of valid input symbols to those which
@@ -109,7 +114,12 @@ where
     ) {
         let callable = callable.as_callable_symbol_ref();
         let mut op = self.op.borrow_mut();
-        op.set_symbol_attribute(attr_name.into(), callable);
+        let attr_name = attr_name.into();
+        if op.has_property(attr_name) {
+            op.unsafe_set_symbol_property(attr_name, callable);
+        } else {
+            op.set_symbol_attribute(attr_name, callable);
+        }
     }
 
     /// Add a new [Region] to this operation.

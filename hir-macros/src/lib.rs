@@ -4,6 +4,7 @@ extern crate proc_macro;
 
 mod dialect;
 mod operation;
+mod operations;
 mod spanned;
 #[cfg(test)]
 mod tests;
@@ -31,6 +32,30 @@ pub fn derive_spanned(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     }
 }
 
+#[proc_macro_derive(Dialect, attributes(dialect))]
+pub fn derive_dialect(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    // Parse into syntax tree
+    let derive = parse_macro_input!(input as DeriveInput);
+    // Structure name
+    let result = dialect::derive_dialect(&derive);
+    match result {
+        Ok(ts) => proc_macro::TokenStream::from(ts.into_token_stream()),
+        Err(err) => err.write_errors().into(),
+    }
+}
+
+#[proc_macro_derive(DialectRegistration, attributes(dialect))]
+pub fn derive_dialect_registration(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    // Parse into syntax tree
+    let derive = parse_macro_input!(input as DeriveInput);
+    // Structure name
+    let result = dialect::derive_dialect_registration(&derive);
+    match result {
+        Ok(ts) => proc_macro::TokenStream::from(ts.into_token_stream()),
+        Err(err) => err.write_errors().into(),
+    }
+}
+
 #[proc_macro_derive(DialectAttribute, attributes(attribute))]
 pub fn derive_dialect_attribute(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Parse into syntax tree
@@ -39,6 +64,49 @@ pub fn derive_dialect_attribute(input: proc_macro::TokenStream) -> proc_macro::T
     let result = dialect::derive_attribute(&derive);
     match result {
         Ok(ts) => proc_macro::TokenStream::from(ts.into_token_stream()),
+        Err(err) => err.write_errors().into(),
+    }
+}
+
+#[proc_macro_derive(EffectOpInterface, attributes(effects))]
+pub fn derive_effect_op_interface(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    // Parse into syntax tree
+    let derive = parse_macro_input!(input as DeriveInput);
+    // Structure name
+    let result = operations::derive_effect_op_interface(&derive);
+    match result {
+        Ok(ts) => proc_macro::TokenStream::from(ts.into_token_stream()),
+        Err(err) => err.write_errors().into(),
+    }
+}
+
+#[proc_macro_derive(OpPrinter)]
+pub fn derive_op_printer(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    // Parse into syntax tree
+    let derive = parse_macro_input!(input as DeriveInput);
+    // Structure name
+    let result = operations::derive_op_printer(&derive);
+    match result {
+        Ok(ts) => proc_macro::TokenStream::from(ts.into_token_stream()),
+        Err(err) => err.write_errors().into(),
+    }
+}
+
+#[proc_macro_attribute]
+pub fn operation_trait(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let attr = proc_macro2::TokenStream::from(attr);
+    let input = syn::parse_macro_input!(item as syn::ItemTrait);
+
+    let meta = match darling::ast::NestedMeta::parse_meta_list(attr) {
+        Ok(meta) => meta,
+        Err(err) => return err.into_compile_error().into(),
+    };
+
+    match self::operations::derive_operation_trait(meta, input) {
+        Ok(ts) => proc_macro::TokenStream::from(ts),
         Err(err) => err.write_errors().into(),
     }
 }

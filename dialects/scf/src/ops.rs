@@ -1,8 +1,12 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    derive::operation, dialects::builtin::attributes::ArrayAttr, effects::*,
-    patterns::RewritePatternSet, print::AsmPrinter, traits::*, *,
+    derive::{EffectOpInterface, OpPrinter, operation},
+    dialects::builtin::attributes::U32ArrayAttr,
+    effects::*,
+    patterns::RewritePatternSet,
+    traits::*,
+    *,
 };
 
 use crate::ScfDialect;
@@ -18,6 +22,7 @@ use crate::ScfDialect;
 /// * [Return] to return from the enclosing function directly
 /// * [Unreachable] to abort execution
 /// * [Yield] to return from the enclosing [If]
+#[derive(OpPrinter)]
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, NoRegionArguments, HasRecursiveMemoryEffects),
@@ -31,7 +36,7 @@ pub struct If {
     #[region]
     else_body: Region,
 }
-
+#[cfg(false)]
 impl OpPrinter for If {
     fn print(&self, _printer: &mut AsmPrinter<'_>) {
         /*
@@ -184,6 +189,7 @@ impl RegionBranchOpInterface for If {
 /// whose operands must be of the same arity and type as the "before" region's argument list. In
 /// this way, the "after" body can feed back input to the "before" body to determine whether to
 /// continue the loop.
+#[derive(OpPrinter)]
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, HasRecursiveMemoryEffects),
@@ -198,6 +204,7 @@ pub struct While {
     after: Region,
 }
 
+#[cfg(false)]
 impl OpPrinter for While {
     fn print(&self, _printer: &mut AsmPrinter<'_>) {
         /*
@@ -385,6 +392,7 @@ impl RegionBranchOpInterface for While {
 ///   scf.yield %3 : i32
 /// }
 /// ```
+#[derive(OpPrinter)]
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, HasRecursiveMemoryEffects),
@@ -394,11 +402,11 @@ pub struct IndexSwitch {
     #[operand]
     selector: UInt32,
     #[attr]
-    cases: ArrayAttr<u32>,
+    cases: U32ArrayAttr,
     #[region]
     default_region: Region,
 }
-
+#[cfg(false)]
 impl OpPrinter for IndexSwitch {
     fn print(&self, _printer: &mut AsmPrinter<'_>) {
         /*
@@ -569,10 +577,11 @@ impl Canonicalizable for IndexSwitch {
 /// NOTE: Attempting to use this op in any other context than the one described above is invalid,
 /// and the implementation of various interfaces by this op will panic if that assumption is
 /// violated.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ScfDialect,
     traits(Terminator, ReturnLike),
-    implements(RegionBranchTerminatorOpInterface)
+    implements(RegionBranchTerminatorOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Condition {
     #[operand]
@@ -651,13 +660,15 @@ impl RegionBranchTerminatorOpInterface for Condition {
 /// conjunction with [While], the arity and type of the operands must match the region arguments
 /// of the `before` region. When used in conjunction with [If], both the `if_true` and `if_false`
 /// regions must yield the same arity and types.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ScfDialect,
     traits(Terminator, ReturnLike, Pure, AlwaysSpeculatable),
     implements(
         RegionBranchTerminatorOpInterface,
         MemoryEffectOpInterface,
-        ConditionallySpeculatable
+        ConditionallySpeculatable,
+        OpPrinter,
     )
 )]
 pub struct Yield {
@@ -700,16 +711,6 @@ impl RegionBranchTerminatorOpInterface for Yield {
         } else {
             panic!("unsupported parent operation for '{}': '{}'", self.name(), parent_op.name())
         }
-    }
-}
-
-impl EffectOpInterface<MemoryEffect> for Yield {
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(&self) -> EffectIterator<::midenc_hir::effects::MemoryEffect> {
-        EffectIterator::from_smallvec(::midenc_hir::smallvec![])
     }
 }
 

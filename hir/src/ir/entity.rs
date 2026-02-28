@@ -652,6 +652,18 @@ pub struct EntityRef<'b, T: ?Sized + 'b> {
     value: NonNull<T>,
     borrow: BorrowRef<'b>,
 }
+impl<T: ?Sized> AsRef<T> for EntityRef<'_, T> {
+    default fn as_ref(&self) -> &T {
+        // SAFETY: the value is accessible as long as we hold our borrow.
+        unsafe { self.value.as_ref() }
+    }
+}
+impl<T: super::Op> AsRef<super::Operation> for EntityRef<'_, T> {
+    fn as_ref(&self) -> &super::Operation {
+        // SAFETY: the value is accessible as long as we hold our borrow.
+        unsafe { self.value.as_ref().as_operation() }
+    }
+}
 impl<T: ?Sized> core::ops::Deref for EntityRef<'_, T> {
     type Target = T;
 
@@ -710,13 +722,14 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
         Self { value, borrow }
     }
 }
-
+/*
 impl<'b, T, U> core::ops::CoerceUnsized<EntityRef<'b, U>> for EntityRef<'b, T>
 where
     T: ?Sized + core::marker::Unsize<U>,
     U: ?Sized,
 {
 }
+ */
 
 impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityRef<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -908,13 +921,14 @@ impl<T: ?Sized> DerefMut for EntityMut<'_, T> {
         unsafe { self.value.as_mut() }
     }
 }
-
+/*
 impl<'b, T, U> core::ops::CoerceUnsized<EntityMut<'b, U>> for EntityMut<'b, T>
 where
     T: ?Sized + core::marker::Unsize<U>,
     U: ?Sized,
 {
 }
+ */
 
 impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityMut<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

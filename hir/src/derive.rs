@@ -1,203 +1,78 @@
-pub use midenc_hir_macros::{DialectAttribute, operation};
-
-/// This macro is used to generate the boilerplate for operation trait implementations.
-/// Super traits have to be declared as a comma separated list of traits, instead of the traditional
-/// "+" separated list of traits.
-/// Example:
-///
-/// pub trait SomeTrait: SuperTraitA, SuperTraitB {}
-#[macro_export]
-macro_rules! derive {
-    (
-        $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident $(:)? $( $ParentTrait:ident ),* $(,)? {
-            $(
-                $OpTraitItem:item
-            )*
-        }
-
-        verify {
-            $(
-                fn $verify_fn:ident($op:ident: &$OperationPath:path, $ctx:ident: &$ContextPath:path) -> $VerifyResult:ty $verify:block
-            )+
-        }
-
-        $($t:tt)*
-    ) => {
-        $crate::__derive_op_trait! {
-            $(#[$outer])*
-            $vis trait $OpTrait : $( $ParentTrait , )*   {
-                $(
-                    $OpTraitItem:item
-                )*
-            }
-
-            verify {
-                $(
-                    fn $verify_fn($op: &$OperationPath, $ctx: &$ContextPath) -> $VerifyResult $verify
-                )*
-            }
-        }
-
-        $($t)*
-    };
-
-    (
-        $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident {
-            $(
-                $OpTraitItem:item
-            )*
-        }
-
-        $($t:tt)*
-    ) => {
-        $crate::__derive_op_trait! {
-            $(#[$outer])*
-            $vis trait $OpTrait {
-                $(
-                    $OpTraitItem:item
-                )*
-            }
-        }
-
-        $($t)*
-    };
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __derive_op_trait {
-    (
-        $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident $(:)? $( $ParentTrait:ident ),* $(,)? {
-            $(
-                $OpTraitItem:item
-            )*
-        }
-
-        verify {
-            $(
-                fn $verify_fn:ident($op:ident: &$OperationPath:path, $ctx:ident: &$ContextPath:path) -> $VerifyResult:ty $verify:block
-            )+
-        }
-    ) => {
-        $(#[$outer])*
-        $vis trait $OpTrait : $( $ParentTrait + )* {
-            $(
-                $OpTraitItem
-            )*
-        }
-
-        impl<T: $crate::Op + $OpTrait> $crate::Verify<dyn $OpTrait> for T {
-            #[inline]
-            fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
-                $(
-                <$crate::Operation as $crate::Verify<dyn $ParentTrait>>::verify(self.as_operation(), context)?;
-                 )*
-                <$crate::Operation as $crate::Verify<dyn $OpTrait>>::verify(self.as_operation(), context)
-            }
-        }
-
-        impl $crate::Verify<dyn $OpTrait> for $crate::Operation {
-            fn should_verify(&self, _context: &$crate::Context) -> bool {
-                $(
-                    self.implements::<dyn $ParentTrait>()
-                    &&
-                )*
-                self.implements::<dyn $OpTrait>()
-            }
-
-            fn verify(&self, context: &$crate::Context) -> Result<(), $crate::Report> {
-                $(
-                    #[inline]
-                    fn $verify_fn($op: &$OperationPath, $ctx: &$ContextPath) -> $VerifyResult $verify
-                )*
-
-                $(
-                    $verify_fn(self, context)?;
-                )*
-
-                Ok(())
-            }
-        }
-    };
-
-    (
-        $(#[$outer:meta])*
-        $vis:vis trait $OpTrait:ident {
-            $(
-                $OpTraitItem:item
-            )*
-        }
-    ) => {
-        $(#[$outer])*
-        $vis trait $OpTrait {
-            $(
-                $OpTraitItem
-            )*
-        }
-    };
-}
+pub use midenc_hir_macros::{
+    Dialect, DialectAttribute, DialectRegistration, EffectOpInterface, OpPrinter, operation,
+    operation_trait,
+};
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, rc::Rc};
+    use alloc::format;
 
     use midenc_session::diagnostics::Severity;
 
     use crate::{
-        Builder, BuilderExt, Context, Op, Operation, Report, Spanned, Value,
+        BuilderExt, Context, Op, Operation, Report, Spanned, Value, ValueRef,
+        derive::operation_trait,
         dialects::{
             builtin::attributes::Overflow,
             test::{self, Add},
         },
         pass::{Nesting, PassManager},
+        testing::Test,
     };
 
-    derive! {
-        /// A marker trait for arithmetic ops
-        trait ArithmeticOp {}
-
-        verify {
-            fn is_binary_op(op: &Operation, ctx: &Context) -> Result<(), Report> {
-                if op.num_operands() == 2 {
-                    Ok(())
-                } else {
-                    Err(
-                        ctx.diagnostics()
-                            .diagnostic(Severity::Error)
-                            .with_message("invalid operation")
-                            .with_primary_label(op.span(), format!("incorrect number of operands, expected 2, got {}", op.num_operands()))
-                            .with_help("this operator implements 'ArithmeticOp' which requires ops to be binary")
-                            .into_report()
+    /// A marker trait for arithmetic ops
+    #[operation_trait]
+    trait ArithmeticOp {
+        #[verifier]
+        fn is_binary_op(op: &Operation, ctx: &Context) -> Result<(), Report> {
+            if op.num_operands() == 2 {
+                Ok(())
+            } else {
+                Err(ctx
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid operation")
+                    .with_primary_label(
+                        op.span(),
+                        format!(
+                            "incorrect number of operands, expected 2, got {}",
+                            op.num_operands()
+                        ),
                     )
-                }
+                    .with_help(
+                        "this operator implements 'ArithmeticOp' which requires ops to be binary",
+                    )
+                    .into_report())
             }
         }
     }
 
     impl ArithmeticOp for Add {}
 
+    inventory::submit!(crate::DialectRegistrationHookInfo::new::<test::TestDialect>(
+        register_arithmetic_op_trait
+    ));
+
+    fn register_arithmetic_op_trait(info: &mut crate::DialectInfo) {
+        info.register_operation_trait::<Add, dyn ArithmeticOp>();
+    }
+
     #[test]
     fn derived_op_builder_test() {
         use crate::{SourceSpan, Type};
 
-        let context = Rc::new(Context::default());
-        context.register_dialect_hook::<test::TestDialect, _>(|info, _ctx| {
-            info.register_operation_trait::<Add, dyn ArithmeticOp>();
-        });
-        let block = context.create_block_with_params([Type::U32, Type::U32]);
+        let mut test = Test::new("derived_op_builder", &[Type::U32, Type::U32], &[]);
+
+        let entry = test.entry_block();
         let (lhs, rhs) = {
-            let block = block.borrow();
-            let lhs = block.get_argument(0).upcast::<dyn crate::Value>();
-            let rhs = block.get_argument(1).upcast::<dyn crate::Value>();
+            let block = entry.borrow();
+            let lhs = block.get_argument(0) as ValueRef;
+            let rhs = block.get_argument(1) as ValueRef;
             (lhs, rhs)
         };
-        let mut builder = context.builder();
-        builder.set_insertion_point_to_end(block);
-        let op_builder = builder.create::<Add, _>(SourceSpan::default());
-        let op = op_builder(lhs, rhs, Overflow::Wrapping);
+        let builder = test.builder_mut();
+        let add_builder = builder.create::<Add, _>(SourceSpan::default());
+        let op = add_builder(lhs, rhs, Overflow::Wrapping);
         let op = op.expect("failed to create AddOp");
         let op = op.borrow();
         assert!(op.as_operation().implements::<dyn ArithmeticOp>());
@@ -211,29 +86,23 @@ mod tests {
     fn derived_op_verifier_test() {
         use crate::{SourceSpan, Type};
 
-        let context = Rc::new(Context::default());
+        let mut test = Test::new("derived_op_verifier", &[Type::U32, Type::I64], &[]);
 
-        let block = context.create_block_with_params([Type::U32, Type::I64]);
-
-        context.get_or_register_dialect::<test::TestDialect>();
-        context.registered_dialects();
-
+        let entry = test.entry_block();
         let (lhs, invalid_rhs) = {
-            let block = block.borrow();
-            let lhs = block.get_argument(0).upcast::<dyn crate::Value>();
-            let rhs = block.get_argument(1).upcast::<dyn crate::Value>();
+            let block = entry.borrow();
+            let lhs = block.get_argument(0) as ValueRef;
+            let rhs = block.get_argument(1) as ValueRef;
             (lhs, rhs)
         };
 
-        let mut builder = context.clone().builder();
-        builder.set_insertion_point_to_end(block);
         // Try to create instance of AddOp with mismatched operand types
-        let op_builder = builder.create::<Add, _>(SourceSpan::default());
-        let op = op_builder(lhs, invalid_rhs, Overflow::Wrapping);
+        let add_builder = test.builder_mut().create::<Add, _>(SourceSpan::default());
+        let op = add_builder(lhs, invalid_rhs, Overflow::Wrapping);
         let op = op.unwrap();
 
         // Construct a pass manager with the default pass pipeline
-        let mut pm = PassManager::on::<Add>(context.clone(), Nesting::Implicit);
+        let mut pm = PassManager::on::<Add>(test.context_rc(), Nesting::Implicit);
         // Run pass pipeline
         pm.run(op.as_operation_ref()).unwrap();
     }
@@ -246,19 +115,18 @@ mod tests {
     fn same_operands_and_result_type_verifier_test() {
         use crate::{SourceSpan, Type};
 
-        let context = Rc::new(Context::default());
-        let block = context.create_block_with_params([Type::I32, Type::I32]);
+        let mut test =
+            Test::new("same_operands_and_result_type_verifier", &[Type::I32, Type::I32], &[]);
+        let block = test.entry_block();
         let (lhs, rhs) = {
             let block = block.borrow();
-            let lhs = block.get_argument(0).upcast::<dyn crate::Value>();
-            let rhs = block.get_argument(1).upcast::<dyn crate::Value>();
+            let lhs = block.get_argument(0) as ValueRef;
+            let rhs = block.get_argument(1) as ValueRef;
             (lhs, rhs)
         };
-        let mut builder = context.clone().builder();
-        builder.set_insertion_point_to_end(block);
 
-        let op_builder = builder.create::<Add, _>(SourceSpan::default());
-        let op = op_builder(lhs, rhs, Overflow::Wrapping);
+        let add_builder = test.builder_mut().create::<Add, _>(SourceSpan::default());
+        let op = add_builder(lhs, rhs, Overflow::Wrapping);
         let mut op = op.unwrap();
 
         // NOTE: We override the result's type in order to force the SameOperandsAndResultType
@@ -270,7 +138,7 @@ mod tests {
         }
 
         // Construct a pass manager with the default pass pipeline
-        let mut pm = PassManager::on::<Add>(context.clone(), Nesting::Implicit);
+        let mut pm = PassManager::on::<Add>(test.context_rc(), Nesting::Implicit);
         // Run pass pipeline
         pm.run(op.as_operation_ref()).unwrap();
     }

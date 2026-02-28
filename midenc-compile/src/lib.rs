@@ -38,8 +38,6 @@ pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
 
     log::info!("starting compilation session");
 
-    midenc_codegen_masm::register_dialect_hooks(&context);
-
     let session = context.session();
     match compile_inputs(session.inputs.clone(), context.clone())? {
         Artifact::Assembled(ref package) => {

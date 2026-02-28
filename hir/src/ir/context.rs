@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, rc::Rc, sync::Arc, vec::Vec};
+use alloc::{rc::Rc, sync::Arc, vec::Vec};
 use core::{
     cell::{Cell, RefCell},
     mem::MaybeUninit,
@@ -10,8 +10,8 @@ use traits::BranchOpInterface;
 
 use super::{traits::BuildableTypeConstraint, *};
 use crate::{
-    AttributeRegistration, FxHashMap,
-    attributes::{AttributeName, DerivableTypeAttribute},
+    AttributeRef, AttributeRegistration, FxHashMap,
+    attributes::{AttributeName, DerivableTypeAttribute, Marker},
     constants::{ConstantData, ConstantId, ConstantPool},
 };
 
@@ -31,9 +31,9 @@ pub struct Context {
     session: Rc<Session>,
     allocator: Rc<Blink>,
     registered_dialects: RefCell<FxHashMap<interner::Symbol, Rc<dyn Dialect>>>,
-    dialect_hooks: RefCell<FxHashMap<interner::Symbol, Vec<DialectRegistrationHook>>>,
     constants: RefCell<ConstantPool>,
     type_cache: RefCell<FxHashMap<core::any::TypeId, Arc<Type>>>,
+    uniqued_attr_cache: RefCell<FxHashMap<AttributeName, AttributeRef>>,
     next_block_id: Cell<u32>,
     next_value_id: Cell<u32>,
 }
@@ -56,14 +56,34 @@ impl Default for Context {
 impl Context {
     /// Create a new [Context] for the given [Session]
     pub fn new(session: Rc<Session>) -> Self {
+        use hashbrown::hash_map::Entry;
+
+        let mut registered_dialects = FxHashMap::default();
+        for dialect in inventory::iter::<DialectRegistrationInfo>() {
+            let namespace = interner::Symbol::intern(dialect.namespace());
+            match registered_dialects.entry(namespace) {
+                Entry::Vacant(entry) => {
+                    entry.insert(dialect.create());
+                }
+                Entry::Occupied(prev) => {
+                    panic!(
+                        "conflicting dialect registrations for namespace '{namespace}': {} \
+                         conflicts with previous registration of {}",
+                        dialect.type_name(),
+                        prev.key()
+                    );
+                }
+            }
+        }
+
         let allocator = Rc::new(Blink::new());
         Self {
             session,
             allocator,
-            registered_dialects: Default::default(),
-            dialect_hooks: Default::default(),
+            registered_dialects: RefCell::new(registered_dialects),
             constants: Default::default(),
             type_cache: Default::default(),
+            uniqued_attr_cache: Default::default(),
             next_block_id: Cell::new(0),
             next_value_id: Cell::new(0),
         }
@@ -119,32 +139,16 @@ impl Context {
             return dialect;
         }
 
-        let mut info = DialectInfo::new::<T>();
-
-        let dialect_hooks = self.dialect_hooks.borrow();
-        if let Some(hooks) = dialect_hooks.get(&dialect_name) {
-            for hook in hooks {
-                hook(&mut info, self);
-            }
-        }
-
-        <T as DialectRegistration>::register_operations(&mut info);
-
-        let dialect = Rc::new(T::init(info)) as Rc<dyn Dialect>;
+        let dialect = super::dialect::dialect_init::<T>();
         self.registered_dialects.borrow_mut().insert(dialect_name, Rc::clone(&dialect));
         dialect
     }
 
-    pub fn register_dialect_hook<T, F>(&self, hook: F)
+    pub fn get_marker<T>(self: &Rc<Context>) -> UnsafeIntrusiveEntityRef<T>
     where
-        T: DialectRegistration,
-        F: Fn(&mut DialectInfo, &Context) + 'static,
+        T: AttributeRegistration<Value = ()>,
     {
-        let dialect_name = <T as DialectRegistration>::NAMESPACE.into();
-        let mut dialect_hooks = self.dialect_hooks.borrow_mut();
-        let registered_hooks =
-            dialect_hooks.entry(dialect_name).or_insert_with(|| Vec::with_capacity(1));
-        registered_hooks.push(Box::new(hook));
+        <T as UniquedAttribute>::get_or_create_uniqued_attribute(self, ())
     }
 
     pub fn create_attribute<T, V>(self: &Rc<Context>, value: V) -> UnsafeIntrusiveEntityRef<T>
@@ -413,5 +417,72 @@ impl Context {
         let id = self.next_value_id.get();
         self.next_value_id.set(id + 1);
         ValueId::from_u32(id)
+    }
+}
+
+trait UniquedAttribute: AttributeRegistration {
+    fn get_or_create_uniqued_attribute(
+        context: &Rc<Context>,
+        value: <Self as AttributeRegistration>::Value,
+    ) -> UnsafeIntrusiveEntityRef<Self>;
+    #[allow(unused)]
+    fn get_or_create_uniqued_attribute_with_type(
+        context: &Rc<Context>,
+        value: <Self as AttributeRegistration>::Value,
+        ty: Type,
+    ) -> UnsafeIntrusiveEntityRef<Self>;
+}
+
+impl<T: AttributeRegistration> UniquedAttribute for T {
+    default fn get_or_create_uniqued_attribute(
+        context: &Rc<Context>,
+        value: <Self as AttributeRegistration>::Value,
+    ) -> UnsafeIntrusiveEntityRef<Self> {
+        context.create_attribute::<T, _>(value)
+    }
+
+    default fn get_or_create_uniqued_attribute_with_type(
+        context: &Rc<Context>,
+        value: <Self as AttributeRegistration>::Value,
+        ty: Type,
+    ) -> UnsafeIntrusiveEntityRef<Self> {
+        context.create_attribute_with_type::<T, _>(value, ty)
+    }
+}
+
+impl<T: AttributeRegistration + Marker> UniquedAttribute for T {
+    fn get_or_create_uniqued_attribute(
+        context: &Rc<Context>,
+        value: <Self as AttributeRegistration>::Value,
+    ) -> UnsafeIntrusiveEntityRef<Self> {
+        use hashbrown::hash_map::Entry;
+        let name = context.get_registered_attribute_name::<T>();
+        let mut cache = context.uniqued_attr_cache.borrow_mut();
+        match cache.entry(name) {
+            Entry::Vacant(entry) => {
+                let attr = context.create_attribute::<T, _>(value);
+                entry.insert(attr as AttributeRef);
+                attr
+            }
+            Entry::Occupied(entry) => entry.get().try_downcast().unwrap(),
+        }
+    }
+
+    fn get_or_create_uniqued_attribute_with_type(
+        context: &Rc<Context>,
+        value: <Self as AttributeRegistration>::Value,
+        ty: Type,
+    ) -> UnsafeIntrusiveEntityRef<Self> {
+        use hashbrown::hash_map::Entry;
+        let name = context.get_registered_attribute_name::<T>();
+        let mut cache = context.uniqued_attr_cache.borrow_mut();
+        match cache.entry(name) {
+            Entry::Vacant(entry) => {
+                let attr = context.create_attribute_with_type::<T, _>(value, ty);
+                entry.insert(attr as AttributeRef);
+                attr
+            }
+            Entry::Occupied(entry) => entry.get().try_downcast().unwrap(),
+        }
     }
 }

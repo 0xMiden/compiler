@@ -7,6 +7,7 @@ pub struct FunctionBuilder<'f, B: ?Sized> {
     pub func: FunctionRef,
     builder: &'f mut B,
 }
+
 impl<'f, B: ?Sized + Builder> FunctionBuilder<'f, B> {
     pub fn new(mut function: FunctionRef, builder: &'f mut B) -> Self {
         let mut func = function.borrow_mut();

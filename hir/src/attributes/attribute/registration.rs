@@ -1,18 +1,26 @@
 use alloc::{boxed::Box, format, rc::Rc};
 
 use super::AttributeValue;
-use crate::{Attribute, Context, Type, UnsafeIntrusiveEntityRef, traits::TraitInfo};
+use crate::{
+    Attribute, Context, DialectRegistration, Type, UnsafeIntrusiveEntityRef, interner,
+    traits::TraitInfo,
+};
 
 pub trait AttributeRegistration: Attribute {
+    type Dialect: DialectRegistration;
     type Value: AttributeValue;
 
     /// The name of the dialect this attribute is declared part of
-    fn dialect_name() -> ::midenc_hir_symbol::Symbol;
+    fn dialect_name() -> interner::Symbol {
+        interner::Symbol::intern(
+            <<Self as AttributeRegistration>::Dialect as DialectRegistration>::NAMESPACE,
+        )
+    }
     /// The name of the attribute
-    fn name() -> ::midenc_hir_symbol::Symbol;
+    fn name() -> interner::Symbol;
     /// The fully-qualified name of the attribute (i.e. `<dialect>.<name>`)
-    fn full_name() -> ::midenc_hir_symbol::Symbol {
-        ::midenc_hir_symbol::Symbol::intern(format!(
+    fn full_name() -> interner::Symbol {
+        interner::Symbol::intern(format!(
             "{}.{}",
             Self::dialect_name(),
             <Self as AttributeRegistration>::name()

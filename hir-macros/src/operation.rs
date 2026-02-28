@@ -452,20 +452,38 @@ impl quote::ToTokens for WithAttrInfos<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let op_ty = &self.0.name;
         for param in self.0.op_builder_impl.create_params.iter() {
-            if let OpCreateParamType::Attr(OpAttribute { name, kind, ty, .. }) = &param.param_ty {
-                let span = name.span();
-                let field_name = syn::Lit::Str(syn::LitStr::new(&format!("{name}"), name.span()));
-                let hidden =
-                    syn::Lit::Bool(syn::LitBool::new(matches!(kind, AttrKind::Hidden), span));
-                tokens.extend(quote_spanned! { span =>
-                    unsafe {
-                        ::midenc_hir::AttrInfo::new::<#ty>(
-                            #field_name.into(),
-                            ::core::mem::offset_of!(#op_ty, #name) as u16,
-                            #hidden,
-                        )
-                    },
-                });
+            match &param.param_ty {
+                OpCreateParamType::Attr(OpAttribute { name, kind, ty, .. }) => {
+                    let span = name.span();
+                    let field_name =
+                        syn::Lit::Str(syn::LitStr::new(&format!("{name}"), name.span()));
+                    let hidden =
+                        syn::Lit::Bool(syn::LitBool::new(matches!(kind, AttrKind::Hidden), span));
+                    tokens.extend(quote_spanned! { span =>
+                        unsafe {
+                            ::midenc_hir::AttrInfo::new::<#ty>(
+                                #field_name.into(),
+                                ::core::mem::offset_of!(#op_ty, #name) as u16,
+                                #hidden,
+                            )
+                        },
+                    });
+                }
+                OpCreateParamType::Symbol(Symbol { name, .. }) => {
+                    let span = name.span();
+                    let field_name =
+                        syn::Lit::Str(syn::LitStr::new(&format!("{name}"), name.span()));
+                    tokens.extend(quote_spanned! { span =>
+                        unsafe {
+                            ::midenc_hir::AttrInfo::new::<::midenc_hir::dialects::builtin::attributes::SymbolRefAttr>(
+                                #field_name.into(),
+                                ::core::mem::offset_of!(#op_ty, #name) as u16,
+                                false,
+                            )
+                        },
+                    });
+                }
+                _ => (),
             }
         }
     }
@@ -969,10 +987,7 @@ impl quote::ToTokens for OpDefinition {
             }
 
             impl #impl_generics ::midenc_hir::OpRegistration for #op_ident #ty_generics #where_clause {
-                fn dialect_name() -> ::midenc_hir::interner::Symbol {
-                    let namespace = <#dialect as ::midenc_hir::DialectRegistration>::NAMESPACE;
-                    ::midenc_hir::interner::Symbol::intern(namespace)
-                }
+                type Dialect = #dialect;
 
                 fn name() -> ::midenc_hir::interner::Symbol {
                     ::midenc_hir::interner::Symbol::intern(#opcode_str)
@@ -1001,6 +1016,8 @@ impl quote::ToTokens for OpDefinition {
                     Self::alloc_default(context).as_operation_ref()
                 }
             }
+
+            ::midenc_hir::inventory::submit!(::midenc_hir::DialectOpRegistrationInfo::new::<#op_ident #ty_generics>());
         });
 
         // impl $OpBuilder
@@ -2265,45 +2282,45 @@ pub struct OperationField {
     /// The name of this field.
     ///
     /// This will always be `Some`, as we do not support any types other than structs
-    ident: Option<Ident>,
+    pub ident: Option<Ident>,
     /// The visibility assigned to this field
-    vis: syn::Visibility,
+    pub vis: syn::Visibility,
     /// The type assigned to this field
-    ty: syn::Type,
+    pub ty: syn::Type,
     /// The processed attributes of this field
     #[darling(with = OperationFieldAttrs::new)]
-    attrs: OperationFieldAttrs,
+    pub attrs: OperationFieldAttrs,
 }
 
 #[derive(Default, Debug)]
 pub struct OperationFieldAttrs {
     /// Attributes we don't care about, and are forwarding along untouched
-    forwarded: Vec<syn::Attribute>,
+    pub forwarded: Vec<syn::Attribute>,
     /// Whether or not to create instances of this op using the `Default` impl for this field
-    r#default: Flag,
+    pub r#default: Flag,
     /// Whether or not to assign an explicit order to this field.
     ///
     /// Once an explicit order has been assigned to a field, all subsequent fields must either have
     /// an explicit order, or they will be assigned the next largest unallocated index in the order.
-    order: Option<u32>,
+    pub order: Option<u32>,
     /// Was this an `#[attr]` field?
-    attr: Option<SpannedValue<Option<AttrKind>>>,
+    pub attr: Option<SpannedValue<Option<AttrKind>>>,
     /// Was this an `#[operand]` field?
-    operand: Flag,
+    pub operand: Flag,
     /// Was this an `#[operands]` field?
-    operands: Flag,
+    pub operands: Flag,
     /// Was this a `#[result]` field?
-    result: Flag,
+    pub result: Flag,
     /// Was this a `#[results]` field?
-    results: Flag,
+    pub results: Flag,
     /// Was this a `#[region]` field?
-    region: Flag,
+    pub region: Flag,
     /// Was this a `#[successor]` field?
-    successor: Flag,
+    pub successor: Flag,
     /// Was this a `#[successors]` field?
-    successors: Option<SpannedValue<SuccessorsType>>,
+    pub successors: Option<SpannedValue<SuccessorsType>>,
     /// Was this a `#[symbol]` field?
-    symbol: Option<SpannedValue<Option<SymbolType>>>,
+    pub symbol: Option<SpannedValue<Option<SymbolType>>>,
 }
 
 impl OperationFieldAttrs {

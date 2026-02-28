@@ -587,6 +587,11 @@ impl Operation {
 
 /// Attributes
 impl Operation {
+    #[inline]
+    pub fn has_attributes(&self) -> bool {
+        !self.attrs.is_empty()
+    }
+
     /// Get the underlying attribute set for this operation
     #[inline(always)]
     pub fn attributes(&self) -> &EntityMap<OpAttribute> {
@@ -699,6 +704,51 @@ impl Operation {
             self.set_attribute(attr_name, attr.as_attribute_ref());
         }
 
+        symbol.borrow_mut().insert_use(user);
+    }
+
+    /// This function performs the same change as [`Self::set_symbol_attribute`], but is called
+    /// specifically when creating an operation and setting a symbol property of that operation.
+    ///
+    /// Because properties hold intially-dangling pointers to their attribute impls, we must not
+    /// try to dereference those pointers until a valid attribute value has been written.
+    fn unsafe_set_symbol_property(
+        &mut self,
+        attr_name: interner::Symbol,
+        symbol: impl AsSymbolRef,
+    ) {
+        let mut symbol = symbol.as_symbol_ref();
+
+        // Do not allow self-references
+        //
+        // NOTE: We are using this somewhat convoluted way to check identity of the symbol,
+        // so that we do not attempt to borrow `self` again if `symbol` and `self` are the
+        // same operation. That would fail due to the mutable reference to `self` we are
+        // already holding.
+        let (data_ptr, _) = SymbolRef::as_ptr(&symbol).to_raw_parts();
+        assert!(
+            !core::ptr::addr_eq(data_ptr, self.container()),
+            "a symbol cannot use itself, except via nested operations"
+        );
+
+        // Track the usage of `symbol` by `self`
+        let user = self.context().alloc_tracked(SymbolUse {
+            owner: self.as_operation_ref(),
+            attr: attr_name,
+        });
+
+        // Store the underlying attribute value
+        let attr = {
+            let symbol = symbol.borrow();
+            self.context_rc().create_attribute::<SymbolRefAttr, _>(
+                crate::dialects::builtin::attributes::SymbolRef {
+                    path: symbol.path(),
+                    user,
+                },
+            )
+        };
+        self.set_property(attr_name, attr)
+            .expect("not a valid value for this operation property");
         symbol.borrow_mut().insert_use(user);
     }
 }

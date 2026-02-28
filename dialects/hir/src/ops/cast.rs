@@ -1,6 +1,6 @@
 use midenc_hir::{
     attributes::IntegerLikeAttr,
-    derive::operation,
+    derive::{EffectOpInterface, OpPrinter, operation},
     dialects::builtin::attributes::{I32Attr, TypeAttr, U32Attr},
     effects::MemoryEffectOpInterface,
     matchers::Matcher,
@@ -39,10 +39,11 @@ pub enum CastKind {
 }
  */
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
  )]
 pub struct PtrToInt {
     #[operand]
@@ -52,8 +53,6 @@ pub struct PtrToInt {
     #[result]
     result: AnyInteger,
 }
-
-has_no_effects!(PtrToInt);
 
 impl InferTypeOpInterface for PtrToInt {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -118,10 +117,11 @@ impl Foldable for PtrToInt {
     }
 }
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct IntToPtr {
     #[operand]
@@ -131,8 +131,6 @@ pub struct IntToPtr {
     #[result]
     result: AnyPointer,
 }
-
-has_no_effects!(IntToPtr);
 
 impl InferTypeOpInterface for IntToPtr {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -180,10 +178,11 @@ impl Foldable for IntToPtr {
     }
 }
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Cast {
     #[operand]
@@ -194,8 +193,6 @@ pub struct Cast {
     result: AnyInteger,
 }
 
-has_no_effects!(Cast);
-
 impl InferTypeOpInterface for Cast {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         let ty = self.get_ty().clone();
@@ -204,10 +201,11 @@ impl InferTypeOpInterface for Cast {
     }
 }
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Bitcast {
     #[operand]
@@ -217,8 +215,6 @@ pub struct Bitcast {
     #[result]
     result: AnyPointerOrInteger,
 }
-
-has_no_effects!(Bitcast);
 
 impl InferTypeOpInterface for Bitcast {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {

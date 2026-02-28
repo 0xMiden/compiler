@@ -1,16 +1,21 @@
 use alloc::format;
 
 use midenc_hir::{
-    derive::operation, dialects::builtin::attributes::TypeAttr, effects::MemoryEffectOpInterface,
-    matchers::Matcher, traits::*, *,
+    derive::{EffectOpInterface, OpPrinter, operation},
+    dialects::builtin::attributes::TypeAttr,
+    effects::MemoryEffectOpInterface,
+    matchers::Matcher,
+    traits::*,
+    *,
 };
 
 use crate::*;
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Trunc {
     #[operand]
@@ -20,8 +25,6 @@ pub struct Trunc {
     #[result]
     result: AnyInteger,
 }
-
-has_no_effects!(Trunc);
 
 impl InferTypeOpInterface for Trunc {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -104,6 +107,7 @@ impl Foldable for Trunc {
     }
 }
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(UnaryOp),
@@ -117,8 +121,6 @@ pub struct Zext {
     #[result]
     result: AnyUnsignedInteger,
 }
-
-has_no_effects!(Zext);
 
 impl InferTypeOpInterface for Zext {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -193,10 +195,11 @@ impl Foldable for Zext {
     }
 }
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Sext {
     #[operand]
@@ -206,8 +209,6 @@ pub struct Sext {
     #[result]
     result: AnySignedInteger,
 }
-
-has_no_effects!(Sext);
 
 impl InferTypeOpInterface for Sext {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -301,10 +302,11 @@ fn is_64bit_limb(ty: &Type) -> bool {
 /// - `i64`/`u64` from 2× `felt`/`i32`/`u32`
 /// - `i128`/`u128` from 2× `i64`/`u64`
 /// - `i128`/`u128` from 4× `felt`/`i32`/`u32`
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ArithDialect,
     traits(SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Join {
     #[operands]
@@ -314,8 +316,6 @@ pub struct Join {
     #[result]
     result: AnyInteger,
 }
-
-has_no_effects!(Join);
 
 impl InferTypeOpInterface for Join {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -358,10 +358,11 @@ impl InferTypeOpInterface for Join {
 /// - `i64`/`u64` into 2× `felt`/`i32`/`u32`
 /// - `i128`/`u128` into 2× `i64`/`u64`
 /// - `i128`/`u128` into 4× `felt`/`i32`/`u32`
+#[derive(EffectOpInterface)]
 #[operation(
     dialect = ArithDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Split {
     #[operand]
@@ -372,7 +373,19 @@ pub struct Split {
     limbs: AnyInteger,
 }
 
-has_no_effects!(Split);
+impl OpPrinter for Split {
+    fn print(&self, printer: &mut print::AsmPrinter<'_>) {
+        use alloc::borrow::Cow;
+
+        use midenc_hir::formatter::*;
+
+        printer.print_space();
+        printer.print_value_uses(ValueRange::<1>::Borrowed(&[self.operand().as_value_ref()]));
+        *printer += const_text(" into ");
+        let results = self.results().all();
+        printer.print_type_list(results.iter().map(|r| Cow::Owned(r.borrow().ty().clone())));
+    }
+}
 
 impl InferTypeOpInterface for Split {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {

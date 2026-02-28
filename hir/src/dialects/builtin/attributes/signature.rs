@@ -1,7 +1,8 @@
 use alloc::{format, rc::Rc, vec::Vec};
 use core::fmt;
 
-use super::Visibility;
+use compact_str::ToCompactString;
+
 use crate::{
     AttrPrinter, CallConv, Context, NamedAttribute, OpPrintingFlags, Type,
     attributes::AttributeDict, derive::DialectAttribute, dialects::builtin::BuiltinDialect,
@@ -166,17 +167,39 @@ impl AbiParam {
         Self::new_with_attribute_dict(ty, AttributeDict::new())
     }
 
-    pub fn zext(ty: Type, context: Rc<Context>) -> Self {
+    pub fn new_with_attribute_dict(ty: Type, attrs: AttributeDict) -> Self {
+        Self { ty, attrs }
+    }
+
+    pub fn new_with_attrs(ty: Type, attributes: impl IntoIterator<Item = NamedAttribute>) -> Self {
+        let mut attrs = AttributeDict::new();
+        for attr in attributes {
+            let context = attr.value.borrow().context_rc();
+            attrs.insert(context.alloc_map_item(attr));
+        }
+        Self::new_with_attribute_dict(ty, attrs)
+    }
+
+    pub fn from_type_with_default_extension(ty: Type, context: &Rc<Context>) -> Self {
+        match ty {
+            Type::I1 | Type::U8 | Type::U16 => Self::zext(ty, context),
+            Type::I8 | Type::I16 => Self::sext(ty, context),
+            ty => Self::new(ty),
+        }
+    }
+
+    pub fn zext(ty: Type, context: &Rc<Context>) -> Self {
         let zext = context.create_attribute::<ZextAttr, _>(());
         Self::new_with_attrs(ty, [NamedAttribute::new("extend", zext)])
     }
 
-    pub fn sext(ty: Type, context: Rc<Context>) -> Self {
+    pub fn sext(ty: Type, context: &Rc<Context>) -> Self {
         let sext = context.create_attribute::<SextAttr, _>(());
         Self::new_with_attrs(ty, [NamedAttribute::new("extend", sext)])
     }
 
-    pub fn sret(ty: Type, context: Rc<Context>) -> Self {
+    pub fn sret(ty: Type, context: &Rc<Context>) -> Self {
+        assert!(ty.is_pointer(), "sret parameters must be pointers");
         let sret = context.create_attribute::<SretAttr, _>(());
         Self::new_with_attrs(ty, [NamedAttribute::new("sret", sret)])
     }
@@ -188,20 +211,6 @@ impl AbiParam {
             value: sret,
         });
         self.attrs.insert(attr);
-    }
-
-    pub fn new_with_attribute_dict(ty: Type, attrs: AttributeDict) -> Self {
-        assert!(ty.is_pointer(), "sret parameters must be pointers");
-        Self { ty, attrs }
-    }
-
-    pub fn new_with_attrs(ty: Type, attributes: impl IntoIterator<Item = NamedAttribute>) -> Self {
-        let mut attrs = AttributeDict::new();
-        for attr in attributes {
-            let context = attr.value.borrow().context_rc();
-            attrs.insert(context.alloc_map_item(attr));
-        }
-        Self::new_with_attribute_dict(ty, attrs)
     }
 
     pub fn is_sret_param(&self) -> bool {
@@ -297,7 +306,7 @@ impl fmt::Display for AbiParam {
 /// A function signature provides us with all of the necessary detail to correctly
 /// validate and emit code for a function, whether from the perspective of a caller,
 /// or the callee.
-#[derive(DialectAttribute, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(DialectAttribute, Default, Debug, Clone, PartialEq, Eq, Hash)]
 #[attribute(
     dialect = BuiltinDialect,
     implements(AttrPrinter)
@@ -309,14 +318,6 @@ pub struct Signature {
     pub results: Vec<AbiParam>,
     /// The calling convention that applies to this function
     pub cc: CallConv,
-    /// The linkage/visibility that should be used for this function
-    pub visibility: Visibility,
-}
-
-impl Default for Signature {
-    fn default() -> Self {
-        Self::new([], [])
-    }
 }
 
 impl fmt::Display for Signature {
@@ -339,39 +340,49 @@ impl fmt::Display for Signature {
                 builder.finish()
             })
             .entry(&"cc", &format_args!("{}", &self.cc))
-            .entry(&"visibility", &format_args!("{}", &self.visibility))
             .finish()
     }
 }
 
 impl Signature {
-    /// Create a new signature with the given parameter and result types,
-    /// for a public function using the `SystemV` calling convention
-    pub fn new<P: IntoIterator<Item = AbiParam>, R: IntoIterator<Item = AbiParam>>(
-        params: P,
-        results: R,
-    ) -> Self {
+    /// Create a new signature for a function with the given calling convention and types.
+    ///
+    /// The input types are mapped to [AbiParam] using the default exteension rules for a 32-bit
+    /// target.
+    pub fn with_convention<P, R>(context: &Rc<Context>, cc: CallConv, params: P, results: R) -> Self
+    where
+        P: IntoIterator<Item = Type>,
+        R: IntoIterator<Item = Type>,
+    {
         Self {
-            params: params.into_iter().collect(),
-            results: results.into_iter().collect(),
-            cc: CallConv::SystemV,
-            visibility: Visibility::Public,
+            params: params
+                .into_iter()
+                .map(|p| AbiParam::from_type_with_default_extension(p, context))
+                .collect(),
+            results: results
+                .into_iter()
+                .map(|p| AbiParam::from_type_with_default_extension(p, context))
+                .collect(),
+            cc,
         }
     }
 
-    /// Returns true if this function is externally visible
-    pub fn is_public(&self) -> bool {
-        matches!(self.visibility, Visibility::Public)
+    /// Create a new signature for a function with the default calling convention and given types.
+    ///
+    /// The input types are mapped to [AbiParam] using the default exteension rules for a 32-bit
+    /// target.
+    pub fn new<P, R>(context: &Rc<Context>, params: P, results: R) -> Self
+    where
+        P: IntoIterator<Item = Type>,
+        R: IntoIterator<Item = Type>,
+    {
+        Self::with_convention(context, Default::default(), params, results)
     }
 
-    /// Returns true if this function is only visible within it's containing module
-    pub fn is_private(&self) -> bool {
-        matches!(self.visibility, Visibility::Public)
-    }
-
-    /// Returns true if this function is a kernel function
-    pub fn is_kernel(&self) -> bool {
-        matches!(self.cc, CallConv::Kernel)
+    /// Get the calling convention of this function
+    #[inline(always)]
+    pub const fn calling_convention(&self) -> CallConv {
+        self.cc
     }
 
     /// Returns the number of arguments expected by this function
@@ -390,6 +401,12 @@ impl Signature {
         self.params.get(index)
     }
 
+    /// Returns the parameter at `index`, mutably, if present
+    #[inline]
+    pub fn param_mut(&mut self, index: usize) -> Option<&mut AbiParam> {
+        self.params.get_mut(index)
+    }
+
     /// Returns a slice containing the results of this function
     pub fn results(&self) -> &[AbiParam] {
         match self.results.as_slice() {
@@ -401,10 +418,30 @@ impl Signature {
             results => results,
         }
     }
+
+    /// Returns the result at `index`, if present
+    #[inline]
+    pub fn result(&self, index: usize) -> Option<&AbiParam> {
+        self.results.get(index)
+    }
+
+    /// Returns the result at `index`, mutably, if present
+    #[inline]
+    pub fn result_mut(&mut self, index: usize) -> Option<&mut AbiParam> {
+        self.results.get_mut(index)
+    }
 }
 
 impl AttrPrinter for SignatureAttr {
-    fn print(&self, _printer: &mut AsmPrinter<'_>) {
-        todo!()
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_keyword("extern");
+        printer.print_lparen();
+        printer.print_string(self.cc.to_compact_string());
+        printer.print_rparen();
+        printer.print_space();
+        printer.print_function_type_parts(
+            self.params().iter().map(|p| &p.ty),
+            self.results().iter().map(|p| &p.ty),
+        );
     }
 }

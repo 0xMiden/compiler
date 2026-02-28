@@ -7,12 +7,15 @@ pub use miden_core::{Felt, FieldElement, StarkField};
 
 use super::AttrPrinter;
 use crate::{
-    Type, attributes::InferAttributeType, derive::DialectAttribute,
-    dialects::builtin::BuiltinDialect, formatter::PrettyPrint,
+    Type,
+    attributes::{InferAttributeType, IntegerLikeAttr},
+    derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect,
+    formatter::PrettyPrint,
 };
 
 #[derive(DialectAttribute, Debug, Copy, Clone)]
-#[attribute(name = "number", dialect = BuiltinDialect, implements(AttrPrinter))]
+#[attribute(name = "number", dialect = BuiltinDialect, implements(AttrPrinter, IntegerLikeAttr))]
 pub enum Immediate {
     I1(bool),
     U8(u8),
@@ -33,6 +36,18 @@ impl Default for Immediate {
     fn default() -> Self {
         // We choose this as a default as it represents a zero value in both Wasm and MASM
         Self::I32(0)
+    }
+}
+
+impl IntegerLikeAttr for ImmediateAttr {
+    #[inline(always)]
+    fn as_immediate(&self) -> Immediate {
+        self.value
+    }
+
+    #[inline(always)]
+    fn set_from_immediate_lossy(&mut self, value: Immediate) {
+        self.value = value;
     }
 }
 

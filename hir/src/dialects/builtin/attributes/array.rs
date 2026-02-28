@@ -3,20 +3,30 @@ use core::fmt;
 use smallvec::SmallVec;
 
 use crate::{
-    AttrPrinter,
-    attributes::InferAttributeValueType,
-    derive::DialectAttribute,
-    dialects::builtin::BuiltinDialect,
-    formatter::{DisplayValues, PrettyPrint},
-    print::AsmPrinter,
+    AttrPrinter, attributes::InferAttributeValueType, derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect, formatter::DisplayValues, print::AsmPrinter,
 };
 
-#[derive(DialectAttribute, Clone, PartialEq, Eq, Hash)]
+#[derive(DialectAttribute)]
+#[attribute(
+    name = "array_u32",
+    dialect = BuiltinDialect,
+    remote = "Array<u32>",
+    implements(AttrPrinter),
+)]
+#[allow(unused)]
+struct U32Array;
+
+#[derive(DialectAttribute)]
 #[attribute(
     dialect = BuiltinDialect,
-    bounds = "T: Eq + core::hash::Hash + Clone + fmt::Debug + PrettyPrint + 'static",
-    implements(AttrPrinter)
+    remote = "Array<crate::Type>",
+    implements(AttrPrinter),
 )]
+#[allow(unused)]
+struct TypeArray;
+
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Array<T>(SmallVec<[T; 2]>);
 
 impl<T> Array<T> {
@@ -202,10 +212,7 @@ impl<T: Clone + InferAttributeValueType> InferAttributeValueType for Array<T> {
     }
 }
 
-impl<T> crate::print::AttrPrinter for ArrayAttr<T>
-where
-    T: crate::formatter::PrettyPrint,
-{
+impl crate::print::AttrPrinter for U32ArrayAttr {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         use crate::formatter::*;
 
@@ -214,6 +221,19 @@ where
                 *printer += const_text(", ");
             }
             *printer += value.render();
+        }
+    }
+}
+
+impl crate::print::AttrPrinter for TypeArrayAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
+        for (i, value) in self.0.iter().enumerate() {
+            if i > 0 {
+                *printer += const_text(", ");
+            }
+            printer.print_type(value);
         }
     }
 }

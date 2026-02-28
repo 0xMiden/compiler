@@ -1,8 +1,12 @@
-use alloc::sync::Arc;
+use alloc::{string::ToString, sync::Arc};
 
 use midenc_hir::{
-    constants::ConstantData, derive::operation, dialects::builtin::attributes::BytesAttr,
-    effects::MemoryEffectOpInterface, traits::*, *,
+    constants::ConstantData,
+    derive::{EffectOpInterface, operation},
+    dialects::builtin::attributes::BytesAttr,
+    effects::MemoryEffectOpInterface,
+    traits::*,
+    *,
 };
 
 use crate::{HirDialect, PointerAttr};
@@ -10,6 +14,7 @@ use crate::{HirDialect, PointerAttr};
 /// An operation for expressing constant pointer values.
 ///
 /// This is used to materialize folded constants for the HIR dialect.
+#[derive(EffectOpInterface)]
 #[operation(
     dialect = HirDialect,
     traits(ConstantLike),
@@ -21,8 +26,6 @@ pub struct ConstantPointer {
     #[result]
     result: AnyPointer,
 }
-
-has_no_effects!(ConstantPointer);
 
 impl InferTypeOpInterface for ConstantPointer {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -50,17 +53,28 @@ impl Foldable for ConstantPointer {
     }
 }
 
+impl OpPrinter for ConstantPointer {
+    fn print(&self, printer: &mut print::AsmPrinter<'_>) {
+        printer.print_space();
+        let ptr = self.get_value();
+        printer.print_decimal_integer(ptr.addr());
+        printer.print_space();
+        printer.print_colon_type(self.result().ty());
+    }
+}
+
 /// A constant operation used to define an array of arbitrary bytes.
 ///
 /// This is intended for use in [super::GlobalVariable] initializer regions only. For non-global
 /// uses, the maximum size of immediate values is limited to a single word. This restriction does
 /// not apply to global variable initializers, which are used to express the data that should be
 /// placed in memory at the address allocated for the variable, without explicit load/store ops.
+#[derive(EffectOpInterface)]
 #[operation(
     dialect = HirDialect,
     name = "bytes",
     traits(ConstantLike),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct ConstantBytes {
     #[attr(hidden)]
@@ -68,8 +82,6 @@ pub struct ConstantBytes {
     #[result]
     result: AnyArrayOf<UInt8>,
 }
-
-has_no_effects!(ConstantBytes);
 
 impl InferTypeOpInterface for ConstantBytes {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -104,5 +116,15 @@ impl ConstantBytes {
 
     pub fn value(&self) -> Arc<ConstantData> {
         self.get_bytes().clone()
+    }
+}
+
+impl OpPrinter for ConstantBytes {
+    fn print(&self, printer: &mut print::AsmPrinter<'_>) {
+        printer.print_space();
+        let bytes = self.get_bytes();
+        printer.print_string(bytes.to_string());
+        printer.print_space();
+        printer.print_colon_type(self.result().ty());
     }
 }

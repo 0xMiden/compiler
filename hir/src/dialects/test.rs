@@ -3,13 +3,20 @@ mod ops;
 
 pub use self::{builders::TestOpBuilder, ops::*};
 use crate::{
-    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, Immediate,
-    OperationRef, SourceSpan, Type, attributes::IntegerLikeAttr,
+    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, Immediate, OperationRef, SourceSpan,
+    Type, attributes::IntegerLikeAttr, derive::DialectRegistration,
 };
 
-#[derive(Debug)]
+#[derive(DialectRegistration, Debug)]
 pub struct TestDialect {
+    #[dialect(info)]
     info: DialectInfo,
+}
+
+impl From<DialectInfo> for TestDialect {
+    fn from(info: DialectInfo) -> Self {
+        Self { info }
+    }
 }
 
 impl TestDialect {
@@ -107,6 +114,7 @@ impl Dialect for TestDialect {
     }
 }
 
+/*
 impl DialectRegistration for TestDialect {
     const NAMESPACE: &'static str = "test";
 
@@ -126,3 +134,4 @@ impl DialectRegistration for TestDialect {
         info.register_operation::<ops::Store>();
     }
 }
+ */

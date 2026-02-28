@@ -330,7 +330,7 @@ impl Eval for hir::Assert {
                 } else {
                     Ok(ControlFlowEffect::Trap {
                         span: self.span(),
-                        reason: format!("assertion failed with code {}", self.code()),
+                        reason: format!("assertion failed with code {}", *self.get_code()),
                     })
                 }
             }
@@ -351,7 +351,7 @@ impl Eval for hir::Assertz {
                 if condition {
                     Ok(ControlFlowEffect::Trap {
                         span: self.span(),
-                        reason: format!("assertion failed with code {}", self.code()),
+                        reason: format!("assertion failed with code {}", *self.get_code()),
                     })
                 } else {
                     Ok(ControlFlowEffect::None)

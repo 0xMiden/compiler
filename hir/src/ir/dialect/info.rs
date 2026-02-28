@@ -82,6 +82,23 @@ impl DialectInfo {
         }
     }
 
+    pub fn get_or_register_with(
+        &mut self,
+        opcode: interner::Symbol,
+        init: fn(interner::Symbol, Vec<TraitInfo>) -> OperationName,
+    ) -> OperationName {
+        match self.registered_ops.binary_search_by_key(&opcode, |op| op.name()) {
+            Ok(index) => self.registered_ops[index].clone(),
+            Err(index) => {
+                let extra_traits =
+                    self.late_bound_operation_traits.remove(&opcode).unwrap_or_default();
+                let name = init(self.name, extra_traits);
+                self.registered_ops.insert(index, name.clone());
+                name
+            }
+        }
+    }
+
     pub fn register_operation_trait<T, Trait>(&mut self)
     where
         T: OpRegistration + Unsize<Trait> + 'static,
@@ -104,8 +121,25 @@ impl DialectInfo {
             Ok(index) => self.registered_attrs[index].clone(),
             Err(index) => {
                 let extra_traits =
-                    self.late_bound_operation_traits.remove(&name).unwrap_or_default();
+                    self.late_bound_attribute_traits.remove(&name).unwrap_or_default();
                 let name = AttributeName::new::<T>(self.name, extra_traits);
+                self.registered_attrs.insert(index, name.clone());
+                name
+            }
+        }
+    }
+
+    pub fn get_or_register_attribute_with(
+        &mut self,
+        name: interner::Symbol,
+        init: fn(interner::Symbol, Vec<TraitInfo>) -> AttributeName,
+    ) -> AttributeName {
+        match self.registered_attrs.binary_search_by_key(&name, |attr| attr.name()) {
+            Ok(index) => self.registered_attrs[index].clone(),
+            Err(index) => {
+                let extra_traits =
+                    self.late_bound_attribute_traits.remove(&name).unwrap_or_default();
+                let name = init(self.name, extra_traits);
                 self.registered_attrs.insert(index, name.clone());
                 name
             }

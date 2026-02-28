@@ -1,13 +1,19 @@
 use midenc_hir::{
-    derive::operation, dialects::builtin::attributes::U32Attr, effects::*, traits::*, *,
+    derive::{EffectOpInterface, OpPrinter, operation},
+    dialects::builtin::attributes::U32Attr,
+    effects::*,
+    traits::*,
+    *,
 };
 
 use crate::HirDialect;
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
+#[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct Assert {
     #[operand]
     value: Bool,
@@ -16,16 +22,12 @@ pub struct Assert {
     code: U32Attr,
 }
 
-impl EffectOpInterface<MemoryEffect> for Assert {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
-    }
-}
-
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
+#[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct Assertz {
     #[operand]
     value: Bool,
@@ -34,26 +36,19 @@ pub struct Assertz {
     code: U32Attr,
 }
 
-impl EffectOpInterface<MemoryEffect> for Assertz {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
-    }
-}
-
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = HirDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
+#[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct AssertEq {
     #[operand]
     lhs: AnyInteger,
     #[operand]
     rhs: AnyInteger,
-}
-
-impl EffectOpInterface<MemoryEffect> for AssertEq {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
-    }
+    #[attr]
+    #[default]
+    code: U32Attr,
 }

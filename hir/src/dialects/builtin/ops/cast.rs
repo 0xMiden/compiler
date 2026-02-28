@@ -1,15 +1,16 @@
 use crate::{
-    Context, Report, Spanned, Value,
-    derive::operation,
+    Context, OpPrinter, Report, Spanned, Value,
+    derive::{EffectOpInterface, OpPrinter, operation},
     dialects::builtin::{BuiltinDialect, attributes::TypeAttr},
-    effects::{EffectIterator, EffectOpInterface, MemoryEffect, MemoryEffectOpInterface},
+    effects::MemoryEffectOpInterface,
     traits::{AnyType, InferTypeOpInterface, UnaryOp},
 };
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = BuiltinDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct UnrealizedConversionCast {
     #[operand]
@@ -25,15 +26,5 @@ impl InferTypeOpInterface for UnrealizedConversionCast {
         let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
-    }
-}
-
-impl EffectOpInterface<MemoryEffect> for UnrealizedConversionCast {
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec::smallvec![])
     }
 }

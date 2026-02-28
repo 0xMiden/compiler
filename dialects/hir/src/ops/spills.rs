@@ -1,15 +1,22 @@
-use midenc_hir::{derive::operation, effects::*, traits::*, *};
+use midenc_hir::{
+    derive::{EffectOpInterface, OpPrinter, operation},
+    effects::*,
+    traits::*,
+    *,
+};
 use midenc_hir_transform::{ReloadLike, SpillLike};
 
 use crate::HirDialect;
 
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = HirDialect,
     traits(SameTypeOperands, SameOperandsAndResultType),
-    implements(MemoryEffectOpInterface, SpillLike)
+    implements(MemoryEffectOpInterface, SpillLike, OpPrinter)
 )]
 pub struct Spill {
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Write))]
     value: AnyType,
 }
 
@@ -23,22 +30,15 @@ impl SpillLike for Spill {
     }
 }
 
-impl EffectOpInterface<MemoryEffect> for Spill {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
-            MemoryEffect::Write,
-            self.spilled_value()
-        ),])
-    }
-}
-
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = HirDialect,
     traits(SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, ReloadLike)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, ReloadLike, OpPrinter)
 )]
 pub struct Reload {
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
     spill: AnyType,
     #[result]
     result: AnyType,
@@ -55,15 +55,6 @@ impl ReloadLike for Reload {
 
     fn reloaded(&self) -> ValueRef {
         self.result().as_value_ref()
-    }
-}
-
-impl EffectOpInterface<MemoryEffect> for Reload {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
-            MemoryEffect::Read,
-            self.spilled_value()
-        )])
     }
 }
 

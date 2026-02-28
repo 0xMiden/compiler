@@ -15,7 +15,7 @@ pub mod version;
 mod visibility;
 
 pub use self::{
-    array::{Array, ArrayAttr},
+    array::{Array, TypeArrayAttr, U32ArrayAttr},
     boolean::BoolAttr,
     bytes::{Bytes, BytesAttr},
     integer::*,

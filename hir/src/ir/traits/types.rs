@@ -4,7 +4,9 @@ use core::fmt;
 use midenc_hir_type::PointerType;
 use midenc_session::diagnostics::Severity;
 
-use crate::{CompactString, Context, Op, Operation, Report, Type, derive, ir::value::Value};
+use crate::{
+    CompactString, Context, Op, Operation, Report, Type, derive::operation_trait, ir::value::Value,
+};
 
 /// OpInterface to compute the return type(s) of an operation.
 pub trait InferTypeOpInterface: Op {
@@ -19,146 +21,131 @@ pub trait InferTypeOpInterface: Op {
     }
 }
 
-derive! {
-    /// Op expects all operands to be of the same type
-    pub trait SameTypeOperands {}
+/// Op expects all operands to be of the same type
+#[operation_trait]
+pub trait SameTypeOperands {
+    #[verifier]
+    fn operands_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
+        let mut operands = op.operands().iter();
+        // If there are no operands, then it is trivially true that operands agree on type
+        let Some(first_operand) = operands.next() else {
+            return Ok(());
+        };
+        let (expected_ty, set_by) = {
+            let operand = first_operand.borrow();
+            let value = operand.value();
+            (value.ty().clone(), value.span())
+        };
 
-    verify {
-        fn operands_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
-            let mut operands = op.operands().iter();
-            // If there are no operands, then it is trivially true that operands agree on type
-            let Some(first_operand) = operands.next() else { return Ok(()); };
-            let (expected_ty, set_by) = {
-                let operand = first_operand.borrow();
-                let value = operand.value();
-                (value.ty().clone(), value.span())
-            };
-
-            for operand in operands {
-                let operand = operand.borrow();
-                let value = operand.value();
-                let value_ty = value.ty();
-                if value_ty != &expected_ty {
-                    return Err(context
-                               .session()
-                               .diagnostics
-                               .diagnostic(Severity::Error)
-                               .with_message(::alloc::format!("invalid operation {}", op.name()))
-                               .with_primary_label(
-                                   op.span,
-                                   "this operation expects all operands to be of the same type"
-                               )
-                               .with_secondary_label(
-                                   set_by,
-                                   "inferred the expected type from this value"
-                               )
-                               .with_secondary_label(
-                                   value.span(),
-                                   "which differs from this value's type"
-                               )
-                               .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
-                               .into_report()
-                    );
-                }
+        for operand in operands {
+            let operand = operand.borrow();
+            let value = operand.value();
+            let value_ty = value.ty();
+            if value_ty != &expected_ty {
+                return Err(context
+                    .session()
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message(::alloc::format!("invalid operation {}", op.name()))
+                    .with_primary_label(
+                        op.span,
+                        "this operation expects all operands to be of the same type",
+                    )
+                    .with_secondary_label(set_by, "inferred the expected type from this value")
+                    .with_secondary_label(value.span(), "which differs from this value's type")
+                    .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
+                    .into_report());
             }
-
-            Ok(())
         }
+
+        Ok(())
     }
 }
 
-derive! {
-    /// Op expects all operands and results to be of the same type.
-    ///
-    /// **NOTE:** Operations that implement this trait must also explicitly implement
-    /// [`SameTypeOperands`]. This can be achieved by using the "traits" field in the [#operation]
-    /// macro, as shown below:
-    ///
-    /// ```rust,ignore
-    /// #[operation (
-    ///     dialect = ArithDialect,
-    ///     traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-    ///     implements(InferTypeOpInterface, MemoryEffectOpInterface)
-    /// )]
-    /// pub struct SomeOp {
-    ///     # ...
-    /// }
-    /// ```
-    pub trait SameOperandsAndResultType: SameTypeOperands {}
+/// Op expects all operands and results to be of the same type.
+///
+/// **NOTE:** Operations that implement this trait must also explicitly implement
+/// [`SameTypeOperands`]. This can be achieved by using the "traits" field in the [#operation]
+/// macro, as shown below:
+///
+/// ```rust,ignore
+/// #[operation (
+///     dialect = ArithDialect,
+///     traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
+///     implements(InferTypeOpInterface, MemoryEffectOpInterface)
+/// )]
+/// pub struct SomeOp {
+///     # ...
+/// }
+/// ```
+#[operation_trait]
+pub trait SameOperandsAndResultType: SameTypeOperands {
+    #[verifier]
+    fn operands_and_result_are_the_same_type(
+        op: &Operation,
+        context: &Context,
+    ) -> Result<(), Report> {
+        let mut operands = op.operands().iter();
+        // If there are no operands, then it is trivially true that operands and results agree
+        // on type
+        let Some(first_operand) = operands.next() else {
+            return Ok(());
+        };
+        let (expected_ty, set_by) = {
+            let operand = first_operand.borrow();
+            let value = operand.value();
+            (value.ty().clone(), value.span())
+        };
 
-    verify {
-        fn operands_and_result_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
-            let mut operands = op.operands().iter();
-            // If there are no operands, then it is trivially true that operands and results agree
-            // on type
-            let Some(first_operand) = operands.next() else { return Ok(()); };
-            let (expected_ty, set_by) = {
-                let operand = first_operand.borrow();
-                let value = operand.value();
-                (value.ty().clone(), value.span())
-            };
+        let results = op.results();
+        assert!(
+            !results.is_empty(),
+            "Operation: {} was marked as having SameOperandsAndResultType, however it has no \
+             results.",
+            op.name()
+        );
 
-            let results = op.results();
-            assert!(!results.is_empty(),
-                    "Operation: {} was marked as having SameOperandsAndResultType, however it has no results.", op.name());
+        for result in results.iter() {
+            let result = result.borrow();
+            let value = result.as_value_ref().borrow();
+            let result_ty = result.ty();
 
-            for result in results.iter() {
-                let result = result.borrow();
-                let value = result.as_value_ref().borrow();
-                let result_ty = result.ty();
-
-                if result_ty != &expected_ty {
-                    return Err(context
-                               .session()
-                               .diagnostics
-                               .diagnostic(Severity::Error)
-                               .with_message(::alloc::format!("invalid operation result {}", op.name()))
-                               .with_primary_label(
-                                   op.span,
-                                   "this operation expects the operands and the results to be of the same type"
-                               )
-                               .with_secondary_label(
-                                   set_by,
-                                   "inferred the expected type from this value"
-                               )
-                               .with_secondary_label(
-                                   value.span(),
-                                   "which differs from this value's type"
-                               )
-                               .with_help(format!("expected '{expected_ty}', got '{result_ty}'"))
-                               .into_report()
-                    );
-                }
+            if result_ty != &expected_ty {
+                return Err(context
+                    .session()
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message(::alloc::format!("invalid operation result {}", op.name()))
+                    .with_primary_label(
+                        op.span,
+                        "this operation expects the operands and the results to be of the same \
+                         type",
+                    )
+                    .with_secondary_label(set_by, "inferred the expected type from this value")
+                    .with_secondary_label(value.span(), "which differs from this value's type")
+                    .with_help(format!("expected '{expected_ty}', got '{result_ty}'"))
+                    .into_report());
             }
-
-            Ok(())
         }
+
+        Ok(())
     }
 }
 
 /// An operation trait that indicates it expects a variable number of operands, matching the given
 /// type constraint, i.e. zero or more of the base type.
-pub trait Variadic<T: TypeConstraint> {}
-
-impl<T, C: TypeConstraint> crate::Verify<dyn Variadic<C>> for T
-where
-    T: crate::Op + Variadic<C>,
-{
-    fn verify(&self, _context: &Context) -> Result<(), Report> {
-        self.as_operation().verify()
-    }
-}
-impl<C: TypeConstraint> crate::Verify<dyn Variadic<C>> for Operation {
-    fn should_verify(&self, _context: &Context) -> bool {
-        self.implements::<dyn Variadic<C>>()
-    }
-
-    fn verify(&self, context: &Context) -> Result<(), Report> {
-        for operand in self.operands().iter() {
+#[operation_trait]
+pub trait Variadic<T: TypeConstraint> {
+    #[verifier]
+    fn all_operands_match_constraint<T: TypeConstraint>(
+        op: &Operation,
+        context: &Context,
+    ) -> Result<(), Report> {
+        for operand in op.operands().iter() {
             let operand = operand.borrow();
             let value = operand.value();
             let ty = value.ty();
-            let constraint = <C as TypeConstraint>::get();
+            let constraint = <T as TypeConstraint>::get();
             if constraint.matches(ty) {
                 continue;
             } else {

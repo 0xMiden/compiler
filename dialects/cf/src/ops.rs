@@ -2,13 +2,11 @@ use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
     attributes::IntegerLikeAttr,
-    derive::operation,
+    derive::{EffectOpInterface, OpPrinter, operation},
     dialects::builtin::attributes::{BoolAttr, U32Attr},
     effects::*,
     matchers::Matcher,
     patterns::RewritePatternSet,
-    print::AsmPrinter,
-    smallvec,
     traits::*,
     *,
 };
@@ -16,10 +14,11 @@ use midenc_hir::{
 use crate::ControlFlowDialect;
 
 /// An unstructured control flow primitive representing an unconditional branch to `target`
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
-    implements(BranchOpInterface, MemoryEffectOpInterface)
+    implements(BranchOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Br {
     #[successor]
@@ -35,16 +34,6 @@ impl Canonicalizable for Br {
     }
 }
 
-impl EffectOpInterface<MemoryEffect> for Br {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
-
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-}
-
 impl BranchOpInterface for Br {
     #[inline]
     fn get_successor_for_operands(
@@ -57,10 +46,11 @@ impl BranchOpInterface for Br {
 
 /// An unstructured control flow primitive representing a conditional branch to either `then_dest`
 /// or `else_dest` depending on the value of `condition`, a boolean value.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
-    implements(BranchOpInterface, MemoryEffectOpInterface)
+    implements(BranchOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct CondBr {
     #[operand]
@@ -79,16 +69,6 @@ impl Canonicalizable for CondBr {
         rewrites.push(crate::canonicalization::SimplifyPassthroughCondBr::new(context.clone()));
         rewrites.push(crate::canonicalization::SplitCriticalEdges::for_op(context.clone(), name));
         rewrites.push(crate::canonicalization::RemoveUnusedSinglePredBlockArgs::new(context));
-    }
-}
-
-impl EffectOpInterface<MemoryEffect> for CondBr {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
-
-    fn has_no_effect(&self) -> bool {
-        true
     }
 }
 
@@ -118,6 +98,7 @@ impl BranchOpInterface for CondBr {
 /// then the `fallback` target is used instead.
 ///
 /// A `fallback` successor must always be provided.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
@@ -132,6 +113,7 @@ pub struct Switch {
     cases: SwitchCase,
 }
 
+#[cfg(false)]
 impl OpPrinter for Switch {
     fn print(&self, _printer: &mut AsmPrinter<'_>) {
         /*
@@ -193,16 +175,6 @@ impl Canonicalizable for Switch {
         rewrites.push(crate::canonicalization::SimplifyCondBrLikeSwitch::new(context.clone()));
         rewrites.push(crate::canonicalization::SimplifySwitchFallbackOverlap::new(context.clone()));
         rewrites.push(crate::canonicalization::SplitCriticalEdges::for_op(context.clone(), name));
-    }
-}
-
-impl EffectOpInterface<MemoryEffect> for Switch {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
-
-    fn has_no_effect(&self) -> bool {
-        true
     }
 }
 
@@ -310,9 +282,10 @@ impl KeyedSuccessor for SwitchCase {
 }
 
 /// Choose a value based on a boolean condition
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = ControlFlowDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Select {
     #[operand]
@@ -323,16 +296,6 @@ pub struct Select {
     second: AnyInteger,
     #[result]
     result: AnyInteger,
-}
-
-impl EffectOpInterface<MemoryEffect> for Select {
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
 }
 
 impl InferTypeOpInterface for Select {

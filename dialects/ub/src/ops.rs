@@ -1,4 +1,9 @@
-use midenc_hir::{derive::operation, effects::*, smallvec, traits::*, *};
+use midenc_hir::{
+    derive::{EffectOpInterface, OpPrinter, operation},
+    effects::*,
+    traits::*,
+    *,
+};
 
 use crate::*;
 
@@ -6,26 +11,17 @@ use crate::*;
 /// program point that is not supposed to be reachable.
 ///
 /// Any operation performed on a poison value, itself produces poison, and can be folded as such.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = UndefinedBehaviorDialect,
     traits(ConstantLike),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Poison {
     #[attr(hidden)]
     value: PoisonAttr,
     #[result]
     result: AnyType,
-}
-
-impl EffectOpInterface<MemoryEffect> for Poison {
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
 }
 
 impl Foldable for Poison {
@@ -56,15 +52,11 @@ impl InferTypeOpInterface for Poison {
 /// reachable.
 ///
 /// The specific way this gets lowered is up to the codegen backend and optimization choices.
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = UndefinedBehaviorDialect,
     traits(Terminator),
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
+#[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct Unreachable {}
-
-impl EffectOpInterface<MemoryEffect> for Unreachable {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
-    }
-}

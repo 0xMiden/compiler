@@ -1,16 +1,20 @@
 use alloc::{boxed::Box, format, rc::Rc};
 
 use super::*;
-use crate::{AttributeRef, any::AsAny, traits::TraitInfo};
+use crate::{AttributeRef, any::AsAny, interner, traits::TraitInfo};
 
 pub trait OpRegistration: Op {
+    type Dialect: DialectRegistration;
+
     /// The name of the dialect this op is declared part of
-    fn dialect_name() -> ::midenc_hir_symbol::Symbol;
+    fn dialect_name() -> interner::Symbol {
+        interner::Symbol::intern(<Self as OpRegistration>::Dialect::NAMESPACE)
+    }
     /// The name of the operation (i.e. its opcode)
-    fn name() -> ::midenc_hir_symbol::Symbol;
+    fn name() -> interner::Symbol;
     /// The fully-qualified name of the operation (i.e. `<dialect>.<opcode>`)
-    fn full_name() -> ::midenc_hir_symbol::Symbol {
-        ::midenc_hir_symbol::Symbol::intern(format!(
+    fn full_name() -> interner::Symbol {
+        interner::Symbol::intern(format!(
             "{}.{}",
             Self::dialect_name(),
             <Self as OpRegistration>::name()

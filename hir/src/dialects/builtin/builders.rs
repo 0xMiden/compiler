@@ -24,10 +24,11 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
     fn create_function(
         &mut self,
         name: Ident,
+        visibility: Visibility,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        let op_builder = self.builder_mut().create::<Function, (_, _)>(name.span());
-        op_builder(name, signature)
+        let op_builder = self.builder_mut().create::<Function, (_, _, _)>(name.span());
+        op_builder(name, visibility, signature)
     }
 
     fn create_global_variable(

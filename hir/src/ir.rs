@@ -37,7 +37,11 @@ pub use self::{
     builder::{Builder, BuilderExt, InsertionGuard, Listener, ListenerType, OpBuilder},
     callable::*,
     context::Context,
-    dialect::{Dialect, DialectInfo, DialectRegistration, DialectRegistrationHook},
+    dialect::{
+        Dialect, DialectAttributeRegistrationInfo, DialectInfo, DialectOpRegistrationInfo,
+        DialectRegistration, DialectRegistrationHook, DialectRegistrationHookInfo,
+        DialectRegistrationInfo,
+    },
     entity::{
         Entity, EntityGroup, EntityId, EntityList, EntityListCursor, EntityListCursorMut,
         EntityListItem, EntityListIter, EntityMap, EntityMapCursor, EntityMapCursorMut,

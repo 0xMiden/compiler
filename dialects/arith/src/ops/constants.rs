@@ -1,14 +1,20 @@
-use midenc_hir::{derive::operation, effects::MemoryEffectOpInterface, traits::*, *};
+use midenc_hir::{
+    derive::{EffectOpInterface, operation},
+    effects::MemoryEffectOpInterface,
+    traits::*,
+    *,
+};
 
 use crate::*;
 
 /// An operation for expressing constant immediate values.
 ///
 /// This is used to materialize folded constants for the arithmetic dialect.
+#[derive(EffectOpInterface)]
 #[operation(
     dialect = ArithDialect,
     traits(ConstantLike),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Constant {
     #[attr(hidden)]
@@ -16,8 +22,6 @@ pub struct Constant {
     #[result]
     result: AnyInteger,
 }
-
-has_no_effects!(Constant);
 
 impl InferTypeOpInterface for Constant {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -42,5 +46,14 @@ impl Foldable for Constant {
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
         self.fold(results)
+    }
+}
+
+impl OpPrinter for Constant {
+    fn print(&self, printer: &mut print::AsmPrinter<'_>) {
+        printer.print_space();
+        printer.print_decimal_integer(*self.get_value());
+        printer.print_space();
+        printer.print_colon_type(self.result().ty());
     }
 }
