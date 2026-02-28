@@ -1,5 +1,3 @@
-use alloc::borrow::Cow;
-
 use crate::{
     BlockRef, CallConv, CallableOpInterface, CallableSymbol, EntityRef, FunctionType, IdentAttr,
     ImmediateAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, RegionRef,
@@ -9,7 +7,8 @@ use crate::{
     dialects::builtin::{
         BuiltinDialect,
         attributes::{
-            ArrayAttr, FunctionTypeAttr, LocalVariable, Signature, SignatureAttr, VisibilityAttr,
+            FunctionTypeAttr, LocalVariable, Signature, SignatureAttr, TypeArrayAttr,
+            VisibilityAttr,
         },
     },
     interner,
@@ -37,13 +36,15 @@ pub struct Function {
     #[attr]
     name: IdentAttr,
     #[attr]
+    linkage: VisibilityAttr,
+    #[attr]
     signature: SignatureAttr,
     #[region]
     body: RegionRef,
     /// The set of local variables allocated within this function
     #[attr]
     #[default]
-    locals: ArrayAttr<Type>,
+    locals: TypeArrayAttr,
     /// The uses of this function as a symbol
     #[default]
     uses: SymbolUseList,
@@ -136,29 +137,38 @@ impl OpParser for Function {
 
 impl OpPrinter for Function {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use alloc::borrow::Cow;
         let sig = self.get_signature();
 
-        printer.print_keyword(sig.visibility.as_str());
+        printer.print_space();
+        printer.print_keyword(self.get_linkage().as_str());
         printer.print_space();
         printer.print_keyword("extern");
         printer.print_lparen();
-        printer.print_string(sig.cc.to_compact_string());
+        printer.print_string(sig.calling_convention().to_compact_string());
         printer.print_rparen();
         printer.print_space();
 
         printer.print_symbol_name(self.get_name().as_symbol());
-        printer.print_type_list(sig.params().iter().map(|p| Cow::Borrowed(&p.ty)));
-        printer.print_space();
-        printer.print_arrow_type_list(
-            /*elide_single_type_parens*/ true,
-            sig.results().iter().map(|p| Cow::Borrowed(&p.ty)),
-        );
-
         if self.is_declaration() {
-            return;
+            printer.print_function_type_parts(
+                sig.params().iter().map(|p| &p.ty),
+                sig.results().iter().map(|p| &p.ty),
+            );
+        } else {
+            let body = self.body();
+            let entry = body.entry();
+            printer.print_value_id_and_type_list(entry.argument_values());
+            if !sig.results().is_empty() {
+                printer.print_space();
+                printer.print_arrow_type_list(
+                    /*elide_single_type_parens=*/ true,
+                    sig.results().iter().map(|p| Cow::Borrowed(&p.ty)),
+                );
+            }
+            printer.print_space();
+            printer.print_region(&body);
         }
-
-        printer.print_region(&self.body());
     }
 }
 
@@ -281,11 +291,11 @@ impl Symbol for Function {
     }
 
     fn visibility(&self) -> Visibility {
-        self.get_signature().visibility
+        *self.get_linkage()
     }
 
     fn set_visibility(&mut self, visibility: Visibility) {
-        self.get_signature_mut().visibility = visibility;
+        *self.get_linkage_mut() = visibility;
     }
 
     /// Returns true if this operation is a declaration, rather than a definition, of a symbol

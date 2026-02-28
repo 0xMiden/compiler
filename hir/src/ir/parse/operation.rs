@@ -157,9 +157,17 @@ where
     P: Parser<'input>,
 {
     pub fn new(mut parser: P, top_level: WorldRef) -> Self {
-        parser
-            .builder_mut()
-            .set_insertion_point_to_end(top_level.borrow().body().entry_block_ref().unwrap());
+        // Ensure the world's body region is populated
+        {
+            let world_body = { top_level.borrow().body().as_region_ref() };
+            if world_body.borrow().is_empty() {
+                parser.builder_mut().create_block(world_body, None, &[]);
+            } else {
+                parser
+                    .builder_mut()
+                    .set_insertion_point_to_end(world_body.borrow().entry_block_ref().unwrap());
+            }
+        }
 
         let mut this = Self {
             parser,

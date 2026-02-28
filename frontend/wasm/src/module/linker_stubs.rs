@@ -4,17 +4,14 @@
 //! function name is expected to be a fully-qualified MASM function path like
 //! `miden::native_account::add_asset` and is used to locate the MASM callee.
 
-use core::str::FromStr;
-use std::cell::RefCell;
+use alloc::rc::Rc;
+use core::{cell::RefCell, str::FromStr};
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
-    FunctionType, Op, SmallVec, SymbolPath, ValueRef,
+    FunctionType, Op, SmallVec, SymbolPath, ValueRef, Visibility,
     diagnostics::WrapErr,
-    dialects::builtin::{
-        BuiltinOpBuilder, FunctionRef, ModuleBuilder,
-        attributes::{AbiParam, Signature},
-    },
+    dialects::builtin::{BuiltinOpBuilder, FunctionRef, ModuleBuilder, attributes::Signature},
 };
 use wasmparser::{FunctionBody, Operator};
 
@@ -84,27 +81,21 @@ pub fn maybe_lower_linker_stub(
         return Ok(false);
     }
 
+    let context = function_ref.borrow().as_operation().context_rc();
+
     // Classify intrinsics and obtain signature when needed
     let (import_sig, intrinsic): (Signature, Option<Intrinsic>) =
         match Intrinsic::try_from(&import_path) {
             Ok(intr) => (function_ref.borrow().get_signature().clone(), Some(intr)),
             Err(_) => {
                 let import_ft: FunctionType = miden_abi_function_type(&import_path);
-                (
-                    Signature::new(
-                        import_ft.params.into_iter().map(AbiParam::new),
-                        import_ft.results.into_iter().map(AbiParam::new),
-                    ),
-                    None,
-                )
+                (Signature::new(&context, import_ft.params, import_ft.results), None)
             }
         };
 
     // Build the function body for the stub and replace it with an exec to MASM
     let span = function_ref.borrow().name().span;
-    let context = function_ref.borrow().as_operation().context_rc();
-    let func_builder_ctx =
-        std::rc::Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
+    let func_builder_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
     let mut op_builder = midenc_hir::OpBuilder::new(context)
         .with_listener(SSABuilderListener::new(func_builder_ctx));
     let mut fb = FunctionBuilderExt::new(function_ref, &mut op_builder);
@@ -134,7 +125,7 @@ pub fn maybe_lower_linker_stub(
                 .wrap_err("failed to create module for intrinsics imports")?;
             let mut import_module_builder = ModuleBuilder::new(import_module_ref);
             let intrinsic_func_ref = import_module_builder
-                .define_function(import_path.name().into(), import_sig.clone())
+                .define_function(import_path.name().into(), Visibility::Public, import_sig.clone())
                 .wrap_err("failed to create intrinsic function ref")?;
             convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)?.to_vec()
         } else {
@@ -149,7 +140,7 @@ pub fn maybe_lower_linker_stub(
             .wrap_err("failed to create module for MASM imports")?;
         let mut import_module_builder = ModuleBuilder::new(import_module_ref);
         let import_func_ref = import_module_builder
-            .define_function(import_path.name().into(), import_sig)
+            .define_function(import_path.name().into(), Visibility::Public, import_sig)
             .wrap_err("failed to create MASM import function ref")?;
         transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)
     };

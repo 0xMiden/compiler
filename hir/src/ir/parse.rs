@@ -77,11 +77,11 @@ use super::{
     UnsafeIntrusiveEntityRef, ValueId, ValueRef, interner::Symbol, operation::ParseAssemblyFn,
 };
 use crate::{
-    Attribute, AttributeRef, CallableOpInterface, CompactString, FunctionType, FxHashMap,
+    Attribute, AttributeRef, Builder, CallableOpInterface, CompactString, FunctionType, FxHashMap,
     NamedAttribute, ProgramPoint, SmallVec, ToCompactString,
     adt::{SmallOrdMap, smallmap::SmallMap},
     dialects::builtin::{
-        WorldRef,
+        WorldBuilder, WorldRef,
         attributes::{Location, LocationAttr},
     },
     formatter::DisplayValues,

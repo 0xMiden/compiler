@@ -30,7 +30,7 @@ pub fn generate_export_lifting_function(
 ) -> WasmResult<()> {
     let context = { component_builder.component.borrow().as_operation().context_rc() };
     let cross_ctx_export_sig_flat =
-        flatten_function_type(context, &export_func_ty, CallConv::CanonLift).map_err(|e| {
+        flatten_function_type(&context, &export_func_ty, CallConv::CanonLift).map_err(|e| {
             let message = format!(
                 "Component export lifting generation. Signature for exported function \
                  {core_export_func_path} requires flattening. Error: {e}"
@@ -150,7 +150,7 @@ fn generate_lifting_with_transformation(
 
     // Extract flattened result types from the exported component-level function type
     let context = { core_export_func_ref.borrow().as_operation().context_rc() };
-    let flattened_results = flatten_types(context, &export_func_ty.results).map_err(|e| {
+    let flattened_results = flatten_types(&context, &export_func_ty.results).map_err(|e| {
         let message = format!(
             "Failed to flatten result types for exported function {core_export_func_path}: {e}"
         );
@@ -169,9 +169,9 @@ fn generate_lifting_with_transformation(
         params: cross_ctx_export_sig_flat.params,
         results: flattened_results.clone(),
         cc: cross_ctx_export_sig_flat.cc,
-        visibility: cross_ctx_export_sig_flat.visibility,
     };
-    let export_func_ref = component_builder.define_function(export_func_ident, new_func_sig)?;
+    let export_func_ref =
+        component_builder.define_function(export_func_ident, Visibility::Public, new_func_sig)?;
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -272,8 +272,11 @@ fn generate_direct_lifting(
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
 ) -> WasmResult<()> {
-    let export_func_ref =
-        component_builder.define_function(export_func_ident, cross_ctx_export_sig_flat.clone())?;
+    let export_func_ref = component_builder.define_function(
+        export_func_ident,
+        Visibility::Public,
+        cross_ctx_export_sig_flat.clone(),
+    )?;
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();

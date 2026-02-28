@@ -7,7 +7,7 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    CallConv, Context, FunctionType, PointerType, StructType, Type, Visibility,
+    CallConv, Context, FunctionType, PointerType, StructType, Type,
     diagnostics::{Diagnostic, miette},
     dialects::builtin::attributes::{AbiParam, Signature},
 };
@@ -23,7 +23,7 @@ pub enum CanonicalTypeError {
 }
 
 /// Flattens the given CanonABI type into a list of ABI parameters.
-pub fn flatten_type(context: Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
+pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
     // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
     Ok(match ty {
         Type::I1 => vec![AbiParam::zext(Type::I32, context)],
@@ -43,7 +43,7 @@ pub fn flatten_type(context: Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, Ca
         Type::Struct(struct_ty) => struct_ty
             .fields()
             .iter()
-            .map(|field| flatten_type(context.clone(), &field.ty))
+            .map(|field| flatten_type(context, &field.ty))
             .try_collect::<Vec<Vec<AbiParam>>>()?
             .into_iter()
             .flatten()
@@ -65,12 +65,12 @@ pub fn flatten_type(context: Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, Ca
 
 /// Flattens the given list of CanonABI types into a list of ABI parameters.
 pub fn flatten_types(
-    context: Rc<Context>,
+    context: &Rc<Context>,
     tys: &[Type],
 ) -> Result<Vec<AbiParam>, CanonicalTypeError> {
     Ok(tys
         .iter()
-        .map(|t| flatten_type(context.clone(), t))
+        .map(|t| flatten_type(context, t))
         .try_collect::<Vec<Vec<AbiParam>>>()?
         .into_iter()
         .flatten()
@@ -79,7 +79,7 @@ pub fn flatten_types(
 
 /// Flattens the given CanonABI function type
 pub fn flatten_function_type(
-    context: Rc<Context>,
+    context: &Rc<Context>,
     func_ty: &FunctionType,
     cc: CallConv,
 ) -> Result<Signature, CanonicalTypeError> {
@@ -97,8 +97,8 @@ pub fn flatten_function_type(
     );
     const MAX_FLAT_PARAMS: usize = 16;
     const MAX_FLAT_RESULTS: usize = 1;
-    let mut flat_params = flatten_types(context.clone(), &func_ty.params)?;
-    let mut flat_results = flatten_types(context.clone(), &func_ty.results)?;
+    let mut flat_params = flatten_types(context, &func_ty.params)?;
+    let mut flat_results = flatten_types(context, &func_ty.results)?;
     if flat_params.len() > MAX_FLAT_PARAMS {
         // from https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
         //
@@ -106,7 +106,7 @@ pub fn flatten_function_type(
         // (pointing to a tuple in linear memory). When lowering into linear memory, this requires the
         // Canonical ABI to call `realloc` to allocate space to put the tuple.
         let tuple = Type::from(StructType::new(func_ty.params.clone()));
-        flat_params = vec![AbiParam::sret(Type::from(PointerType::new(tuple)), context.clone())];
+        flat_params = vec![AbiParam::sret(Type::from(PointerType::new(tuple)), context)];
     }
     if flat_results.len() > MAX_FLAT_RESULTS {
         // from https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
@@ -132,7 +132,6 @@ pub fn flatten_function_type(
         params: flat_params,
         results: flat_results,
         cc,
-        visibility: Visibility::Public,
     })
 }
 
@@ -186,55 +185,55 @@ mod tests {
         let context = Rc::new(Context::default());
 
         // Test I1 (bool)
-        let result = flatten_type(context.clone(), &Type::I1).unwrap();
+        let result = flatten_type(&context, &Type::I1).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[0].extension(), ArgumentExtension::Zext);
 
         // Test I8
-        let result = flatten_type(context.clone(), &Type::I8).unwrap();
+        let result = flatten_type(&context, &Type::I8).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[0].extension(), ArgumentExtension::Sext);
 
         // Test U8
-        let result = flatten_type(context.clone(), &Type::U8).unwrap();
+        let result = flatten_type(&context, &Type::U8).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[0].extension(), ArgumentExtension::Zext);
 
         // Test I16
-        let result = flatten_type(context.clone(), &Type::I16).unwrap();
+        let result = flatten_type(&context, &Type::I16).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[0].extension(), ArgumentExtension::Sext);
 
         // Test U16
-        let result = flatten_type(context.clone(), &Type::U16).unwrap();
+        let result = flatten_type(&context, &Type::U16).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[0].extension(), ArgumentExtension::Zext);
 
         // Test I32
-        let result = flatten_type(context.clone(), &Type::I32).unwrap();
+        let result = flatten_type(&context, &Type::I32).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[0].extension(), ArgumentExtension::None);
 
         // Test U32
-        let result = flatten_type(context.clone(), &Type::U32).unwrap();
+        let result = flatten_type(&context, &Type::U32).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[0].extension(), ArgumentExtension::None);
 
         // Test I64
-        let result = flatten_type(context.clone(), &Type::I64).unwrap();
+        let result = flatten_type(&context, &Type::I64).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I64);
         assert_eq!(result[0].extension(), ArgumentExtension::None);
 
         // Test U64
-        let result = flatten_type(context.clone(), &Type::U64).unwrap();
+        let result = flatten_type(&context, &Type::U64).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I64);
         assert_eq!(result[0].extension(), ArgumentExtension::None);
@@ -244,7 +243,7 @@ mod tests {
     fn test_flatten_type_felt() {
         let context = Rc::new(Context::default());
 
-        let result = flatten_type(context.clone(), &Type::Felt).unwrap();
+        let result = flatten_type(&context, &Type::Felt).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::Felt);
         assert_eq!(result[0].extension(), ArgumentExtension::None);
@@ -256,12 +255,12 @@ mod tests {
 
         // Empty struct
         let empty_struct = Type::from(StructType::new(vec![]));
-        let result = flatten_type(context.clone(), &empty_struct).unwrap();
+        let result = flatten_type(&context, &empty_struct).unwrap();
         assert_eq!(result.len(), 0);
 
         // Simple struct with two fields
         let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
-        let result = flatten_type(context.clone(), &struct_ty).unwrap();
+        let result = flatten_type(&context, &struct_ty).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[1].ty, Type::Felt);
@@ -269,7 +268,7 @@ mod tests {
         // Nested struct
         let inner_struct = Type::from(StructType::new(vec![Type::I8, Type::U16]));
         let outer_struct = Type::from(StructType::new(vec![Type::I32, inner_struct]));
-        let result = flatten_type(context.clone(), &outer_struct).unwrap();
+        let result = flatten_type(&context, &outer_struct).unwrap();
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[1].ty, Type::I32); // I8 flattened to I32
@@ -284,19 +283,19 @@ mod tests {
 
         // Array of 3 I32s
         let array_ty = Type::from(ArrayType::new(Type::I32, 3));
-        let result = flatten_type(context.clone(), &array_ty).unwrap();
+        let result = flatten_type(&context, &array_ty).unwrap();
         assert_eq!(result.len(), 3);
         assert!(result.iter().all(|param| param.ty == Type::I32));
 
         // Array of 5 Felts
         let array_ty = Type::from(ArrayType::new(Type::Felt, 5));
-        let result = flatten_type(context.clone(), &array_ty).unwrap();
+        let result = flatten_type(&context, &array_ty).unwrap();
         assert_eq!(result.len(), 5);
         assert!(result.iter().all(|param| param.ty == Type::Felt));
 
         // Empty array
         let array_ty = Type::from(ArrayType::new(Type::I32, 0));
-        let result = flatten_type(context.clone(), &array_ty).unwrap();
+        let result = flatten_type(&context, &array_ty).unwrap();
         assert_eq!(result.len(), 0);
     }
 
@@ -306,7 +305,7 @@ mod tests {
 
         // List of I32s
         let list_ty = Type::List(Arc::new(Type::I32));
-        let result = flatten_type(context.clone(), &list_ty).unwrap();
+        let result = flatten_type(&context, &list_ty).unwrap();
         assert_eq!(result.len(), 2);
         assert!(matches!(result[0].ty, Type::Ptr(_)));
         assert!(result[0].is_sret_param());
@@ -315,7 +314,7 @@ mod tests {
         // List of structs
         let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
         let list_ty = Type::List(Arc::new(struct_ty));
-        let result = flatten_type(context.clone(), &list_ty).unwrap();
+        let result = flatten_type(&context, &list_ty).unwrap();
         assert_eq!(result.len(), 2);
         assert!(matches!(result[0].ty, Type::Ptr(_)));
         assert!(result[0].is_sret_param());
@@ -327,16 +326,16 @@ mod tests {
         let context = Rc::new(Context::default());
 
         // Empty types
-        let result = flatten_types(context.clone(), &[]).unwrap();
+        let result = flatten_types(&context, &[]).unwrap();
         assert_eq!(result.len(), 0);
 
         // Single type
-        let result = flatten_types(context.clone(), &[Type::I32]).unwrap();
+        let result = flatten_types(&context, &[Type::I32]).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::I32);
 
         // Multiple types
-        let result = flatten_types(context.clone(), &[Type::I32, Type::Felt, Type::I8]).unwrap();
+        let result = flatten_types(&context, &[Type::I32, Type::Felt, Type::I8]).unwrap();
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[1].ty, Type::Felt);
@@ -344,7 +343,7 @@ mod tests {
 
         // Types that expand (struct)
         let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
-        let result = flatten_types(context.clone(), &[Type::I32, struct_ty]).unwrap();
+        let result = flatten_types(&context, &[Type::I32, struct_ty]).unwrap();
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[1].ty, Type::I32);
@@ -358,7 +357,7 @@ mod tests {
         let mut func_ty =
             FunctionType::new(CallConv::Fast, vec![Type::I32, Type::Felt], vec![Type::I32]);
         func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(context.clone(), &func_ty, CallConv::CanonLift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
 
         assert_eq!(sig.params().len(), 2);
         assert_eq!(sig.params()[0].ty, Type::I32);
@@ -378,7 +377,7 @@ mod tests {
         let params = vec![Type::I32; 16];
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
         func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(context.clone(), &func_ty, CallConv::CanonLift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
 
         assert_eq!(sig.params().len(), 16);
         assert!(sig.params().iter().all(|p| p.ty == Type::I32));
@@ -387,7 +386,7 @@ mod tests {
         let params = vec![Type::I32; 17];
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
         func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(context.clone(), &func_ty, CallConv::CanonLift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
 
         assert_eq!(sig.params().len(), 1);
         assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
@@ -401,7 +400,7 @@ mod tests {
         // Single result - should not be transformed
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![Type::Felt]);
         func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(context.clone(), &func_ty, CallConv::CanonLift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
 
         assert_eq!(sig.results().len(), 1);
         assert_eq!(sig.results()[0].ty, Type::Felt);
@@ -410,7 +409,7 @@ mod tests {
         let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![struct_ty]);
         func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(context.clone(), &func_ty, CallConv::CanonLift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
 
         assert_eq!(sig.params().len(), 1);
         assert_eq!(sig.params()[0].ty, Type::I32);
@@ -428,7 +427,7 @@ mod tests {
         let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![struct_ty]);
         func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(context.clone(), &func_ty, CallConv::CanonLower).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLower).unwrap();
 
         assert_eq!(sig.params().len(), 2); // original param + return pointer
         assert_eq!(sig.params()[0].ty, Type::I32);
@@ -445,7 +444,7 @@ mod tests {
         // Empty function
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![], vec![]);
         func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(context.clone(), &func_ty, CallConv::CanonLift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
         assert_eq!(sig.params().len(), 0);
         assert_eq!(sig.results().len(), 0);
 
@@ -454,7 +453,7 @@ mod tests {
         let params = vec![struct_ty.clone(), struct_ty]; // 20 total params when flattened
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![]);
         func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(context, &func_ty, CallConv::CanonLift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
 
         assert_eq!(sig.params().len(), 1); // transformed to pointer
         assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
@@ -469,7 +468,6 @@ mod tests {
             params: vec![AbiParam::new(Type::I32), AbiParam::new(Type::Felt)],
             results: vec![AbiParam::new(Type::I32)],
             cc: CallConv::CanonLift,
-            visibility: Visibility::Public,
         };
         assert!(!needs_transformation(&sig));
 
@@ -481,9 +479,8 @@ mod tests {
         // Transformation needed - pointer in results
         let sig = Signature {
             params: vec![AbiParam::new(Type::I32)],
-            results: vec![AbiParam::sret(Type::from(PointerType::new(Type::I32)), context.clone())],
+            results: vec![AbiParam::sret(Type::from(PointerType::new(Type::I32)), &context)],
             cc: CallConv::CanonLift,
-            visibility: Visibility::Public,
         };
         assert!(needs_transformation(&sig));
 
@@ -493,7 +490,6 @@ mod tests {
             params,
             results: vec![],
             cc: CallConv::CanonLift,
-            visibility: Visibility::Public,
         };
         assert!(needs_transformation(&sig));
 
@@ -503,7 +499,6 @@ mod tests {
             params,
             results: vec![],
             cc: CallConv::CanonLift,
-            visibility: Visibility::Public,
         };
         assert!(!needs_transformation(&sig));
     }

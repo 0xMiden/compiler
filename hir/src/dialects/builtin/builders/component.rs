@@ -1,6 +1,6 @@
 use super::BuiltinOpBuilder;
 use crate::{
-    Builder, Ident, Op, OpBuilder, Report, SymbolName, SymbolPath, SymbolTable,
+    Builder, Ident, Op, OpBuilder, Report, SymbolName, SymbolPath, SymbolTable, Visibility,
     dialects::builtin::{
         ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef, attributes::Signature,
     },
@@ -56,8 +56,9 @@ impl ComponentBuilder {
     pub fn define_function(
         &mut self,
         name: Ident,
+        visibility: Visibility,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        self.builder.create_function(name, signature)
+        self.builder.create_function(name, visibility, signature)
     }
 }

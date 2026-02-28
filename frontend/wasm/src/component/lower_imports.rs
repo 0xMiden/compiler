@@ -7,6 +7,7 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     AsValueRange, Builder, CallConv, FunctionType, Op, SourceSpan, SymbolPath, ValueRef,
+    Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
@@ -35,20 +36,17 @@ pub fn generate_import_lowering_function(
     core_func_path: SymbolPath,
     core_func_sig: Signature,
 ) -> WasmResult<CallableFunction> {
-    let import_lowered_sig = flatten_function_type(
-        module_builder.builder().context_rc(),
-        import_func_ty,
-        CallConv::CanonLower,
-    )
-    .wrap_err_with(|| {
-        format!(
-            "failed to generate component import lowering: signature of '{import_func_path}' \
-             requires flattening"
-        )
-    })?;
+    let context = module_builder.builder().context_rc();
+    let import_lowered_sig = flatten_function_type(&context, import_func_ty, CallConv::CanonLower)
+        .wrap_err_with(|| {
+            format!(
+                "failed to generate component import lowering: signature of '{import_func_path}' \
+                 requires flattening"
+            )
+        })?;
 
     let core_func_ref = module_builder
-        .define_function(core_func_path.name().into(), core_func_sig.clone())
+        .define_function(core_func_path.name().into(), Visibility::Internal, core_func_sig.clone())
         .expect("failed to define the core function");
 
     let (span, context) = {
@@ -174,15 +172,14 @@ fn generate_lowering_with_transformation(
     // The import function should have the lifted signature (returns tuple)
     // not the lowered signature with pointer parameter
     let context = world_builder.context_rc();
-    let import_func_sig =
-        flatten_function_type(context.clone(), import_func_ty, CallConv::CanonLower)
-            .wrap_err_with(|| {
-                format!("failed to flatten import function signature for '{import_func_path}'")
-            })?;
+    let import_func_sig = flatten_function_type(&context, import_func_ty, CallConv::CanonLower)
+        .wrap_err_with(|| {
+            format!("failed to flatten import function signature for '{import_func_path}'")
+        })?;
 
     // Extract the actual result types from the import function type
     let flattened_results =
-        flatten_types(context, &import_func_ty.results).wrap_err_with(|| {
+        flatten_types(&context, &import_func_ty.results).wrap_err_with(|| {
             format!("failed to flatten result types for import function '{import_func_path}'")
         })?;
 
@@ -192,10 +189,13 @@ fn generate_lowering_with_transformation(
         params: params_without_ptr,
         results: flattened_results.clone(),
         cc: import_func_sig.cc,
-        visibility: import_func_sig.visibility,
     };
     let import_func_ref = component_builder
-        .define_function(import_func_path.name().into(), new_import_func_sig.clone())
+        .define_function(
+            import_func_path.name().into(),
+            Visibility::Internal,
+            new_import_func_sig.clone(),
+        )
         .expect("failed to define the import function");
 
     // Import lowering: The lowered function takes a pointer as the last parameter
@@ -297,13 +297,17 @@ fn generate_direct_lowering(
 
     let mut component_builder = ComponentBuilder::new(component_ref);
 
-    let import_func_sig =
-        flatten_function_type(world_builder.context_rc(), import_func_ty, CallConv::CanonLift)
-            .wrap_err_with(|| {
-                format!("failed to flatten import function signature for '{import_func_path}'")
-            })?;
+    let context = world_builder.context_rc();
+    let import_func_sig = flatten_function_type(&context, import_func_ty, CallConv::CanonLift)
+        .wrap_err_with(|| {
+            format!("failed to flatten import function signature for '{import_func_path}'")
+        })?;
     let import_func_ref = component_builder
-        .define_function(import_func_path.name().into(), import_func_sig.clone())
+        .define_function(
+            import_func_path.name().into(),
+            Visibility::Internal,
+            import_func_sig.clone(),
+        )
         .expect("failed to define the import function");
 
     let call = fb

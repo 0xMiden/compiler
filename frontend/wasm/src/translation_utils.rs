@@ -3,7 +3,7 @@
 use miden_core::{Felt, FieldElement};
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_hir::{
-    Builder, CallConv, FunctionType, SourceSpan, Type, ValueRef, Visibility,
+    Builder, CallConv, FunctionType, SourceSpan, Type, ValueRef,
     dialects::builtin::attributes::{AbiParam, Signature},
 };
 use midenc_session::DiagnosticsHandler;
@@ -136,15 +136,10 @@ pub fn emit_zero<B: ?Sized + Builder>(
     })
 }
 
-pub fn sig_from_func_type(
-    func_type: &FunctionType,
-    call_conv: CallConv,
-    visibility: Visibility,
-) -> Signature {
+pub fn sig_from_func_type(func_type: &FunctionType, call_conv: CallConv) -> Signature {
     Signature {
         params: func_type.params.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
         results: func_type.results.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
         cc: call_conv,
-        visibility,
     }
 }

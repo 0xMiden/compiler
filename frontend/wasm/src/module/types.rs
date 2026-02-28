@@ -4,7 +4,7 @@ use core::{fmt, ops::Index};
 
 use cranelift_entity::PrimaryMap;
 use midenc_hir::{
-    self as hir, CallConv, FxHashMap, Immediate, SmallVec, Visibility,
+    self as hir, CallConv, FxHashMap, Immediate, SmallVec,
     dialects::builtin::attributes::{AbiParam, Signature},
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
@@ -613,16 +613,11 @@ pub fn ir_type(ty: WasmType, diagnostics: &DiagnosticsHandler) -> WasmResult<hir
 }
 
 /// Makes an IR function signature from a Wasm function type
-pub fn ir_func_sig(
-    func_type: &hir::FunctionType,
-    call_conv: CallConv,
-    visibility: Visibility,
-) -> Signature {
+pub fn ir_func_sig(func_type: &hir::FunctionType, call_conv: CallConv) -> Signature {
     Signature {
         params: func_type.params.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
         results: func_type.results.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
         cc: call_conv,
-        visibility,
     }
 }
 

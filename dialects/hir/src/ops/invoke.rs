@@ -37,10 +37,14 @@ impl OpPrinter for Exec {
 
         let callee = self.callee();
         let callee_signature = self.get_signature();
+        printer.print_space();
         printer.print_symbol_path(callee.path());
         printer.print_operand_list(self.arguments());
         *printer += const_text(" : ");
-        printer.print_signature(&callee_signature);
+        printer.print_function_type_parts(
+            callee_signature.params().iter().map(|p| &p.ty),
+            callee_signature.results().iter().map(|p| &p.ty),
+        );
     }
 }
 

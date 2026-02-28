@@ -962,7 +962,8 @@ pub trait ParserExt<'input>: Parser<'input> {
         match value.try_downcast::<T>() {
             Ok(attr) => Ok(Some(Span::new(span, attr))),
             Err(other) => {
-                let other_name = other.borrow().as_any().type_name();
+                let other = other.borrow();
+                let other_name = (&*other as &dyn AsAny).type_name();
                 Err(ParserError::InvalidAttributeValue {
                     span,
                     reason: format!(

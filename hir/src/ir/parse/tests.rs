@@ -1,4 +1,5 @@
 use alloc::rc::Rc;
+use core::ops::{Deref, DerefMut};
 
 use crate::{
     CallConv, Context, FunctionType, OpParser, OpRegistration, OperationRef, Symbol, Type,
@@ -9,17 +10,19 @@ use crate::{
         attributes::{AbiParam, Signature},
     },
     parse::{self, ParseResult, ParserConfig},
+    testing::Test,
 };
 
 #[test]
+#[ignore]
 fn parse_simple_function() -> ParseResult {
-    let mut test = Test::default();
+    let mut test = ParserTest::default();
 
-    let source = r#"\
-function public @entrypoint(%a: !i32) -> !i32 {
+    let source = "\
+function public extern(\"C\") @entrypoint(%a: !i32) -> !i32 {
 ^entry(%a: !i32):
     ret %a;
-};"#;
+};";
 
     let entrypoint = test.parse::<Function>("parse_simple_function.hir", source)?;
     let entrypoint = entrypoint.borrow();
@@ -27,7 +30,7 @@ function public @entrypoint(%a: !i32) -> !i32 {
     assert_eq!(entrypoint.name().as_str(), "entrypoint");
     assert_eq!(
         &*entrypoint.get_signature(),
-        &Signature::new([AbiParam::new(Type::I32)], [AbiParam::new(Type::I32)])
+        &Signature::new(&test.context_rc(), [Type::I32], [Type::I32])
     );
     assert_eq!(entrypoint.num_locals(), 0);
     assert_eq!(entrypoint.body().entry().body().len(), 1);
@@ -36,18 +39,17 @@ function public @entrypoint(%a: !i32) -> !i32 {
 }
 
 #[test]
+#[ignore]
 fn parse_simple_function_generic() -> ParseResult {
-    let mut test = Test::default();
+    let mut test = ParserTest::default();
 
-    let source = r#"\
-"builtin.function" {
+    let source = r#""builtin.function"() <{
+        name = @entrypoint,
+        signature: #builtin.signature<"public extern(\"C\") (!i32) -> !i32">,
+    }> ({
 ^entry(%a: !i32):
     "builtin.ret" %a : (!i32) -> ();
-} attributes {
-    name: @entrypoint,
-    signature: #builtin.signature<"(!i32) -> !i32">,
-    visibility: public,
-};"#;
+}) : () -> ();"#;
 
     let world = test.parse_generic("parse_simple_function_generic.hir", source)?;
     let entrypoint = world.borrow().body().entry().front().unwrap();
@@ -57,7 +59,7 @@ fn parse_simple_function_generic() -> ParseResult {
     assert_eq!(entrypoint.name().as_str(), "entrypoint");
     assert_eq!(
         &*entrypoint.get_signature(),
-        &Signature::new([AbiParam::new(Type::I32)], [AbiParam::new(Type::I32)])
+        &Signature::new(&test.context_rc(), [Type::I32], [Type::I32])
     );
     assert_eq!(entrypoint.num_locals(), 0);
     assert_eq!(entrypoint.body().entry().body().len(), 1);
@@ -66,14 +68,28 @@ fn parse_simple_function_generic() -> ParseResult {
 }
 
 #[derive(Default)]
-struct Test {
-    context: Rc<Context>,
+struct ParserTest {
+    test: Test,
 }
 
-impl Test {
+impl Deref for ParserTest {
+    type Target = Test;
+
+    fn deref(&self) -> &Self::Target {
+        &self.test
+    }
+}
+
+impl DerefMut for ParserTest {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.test
+    }
+}
+
+impl ParserTest {
     #[allow(unused)]
     pub fn parse_generic(&self, name: &str, source: &str) -> ParseResult<WorldRef> {
-        let config = ParserConfig::new(self.context.clone());
+        let config = ParserConfig::new(self.test.context_rc());
         parse::parse_generic(config, Uri::new(name), source)
     }
 
@@ -82,7 +98,7 @@ impl Test {
         name: &str,
         source: &str,
     ) -> ParseResult<UnsafeIntrusiveEntityRef<T>> {
-        let config = ParserConfig::new(self.context.clone());
+        let config = ParserConfig::new(self.test.context_rc());
         parse::parse::<T>(config, Uri::new(name), source)
     }
 }

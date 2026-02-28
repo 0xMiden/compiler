@@ -398,7 +398,7 @@ impl ModuleInterface {
             let name = symbol.name();
             if let Some(func) = symbol.as_symbol_operation().downcast_ref::<Function>() {
                 let signature = func.get_signature().clone();
-                let visibility = signature.visibility;
+                let visibility = func.visibility();
                 let item = ModuleExport::Function { name, signature };
                 if func.is_declaration() {
                     // This is an import of an externally-defined function

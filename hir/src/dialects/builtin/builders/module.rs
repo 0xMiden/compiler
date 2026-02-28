@@ -49,9 +49,10 @@ impl ModuleBuilder {
     pub fn define_function(
         &mut self,
         name: Ident,
+        visibility: Visibility,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        self.builder.create_function(name, signature)
+        self.builder.create_function(name, visibility, signature)
     }
 
     /// Declare a new [GlobalVariable] in this module with the given name, visibility, and type.
@@ -99,13 +100,16 @@ impl ModuleBuilder {
                 let mut op = symbol_ref.borrow_mut();
                 match op.as_symbol_operation_mut().downcast_mut::<Function>() {
                     Some(function) => {
-                        function.get_signature_mut().visibility = visibility;
+                        *function.get_linkage_mut() = visibility;
                     }
                     None => panic!("expected {name} to be a function"),
                 }
             }
             None => {
-                panic!("failed to find function {name} in module {}", self.module.borrow().name())
+                panic!(
+                    "failed to find function {name} in module {}",
+                    self.module.borrow().get_name()
+                )
             }
         }
     }
