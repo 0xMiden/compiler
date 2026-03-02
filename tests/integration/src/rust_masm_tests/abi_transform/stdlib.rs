@@ -172,8 +172,10 @@ fn test_hash_words() {
 #[test]
 fn test_pipe_words_to_memory() {
     let main_fn = r#"
-        (num_words: Felt) -> Felt {
-            let (_state_word, copied) = miden_stdlib_sys::pipe_words_to_memory(num_words);
+        (h0: Felt, h1: Felt, h2: Felt, h3: Felt, num_words: Felt) -> Felt {
+            let expected = Word::new([h0, h1, h2, h3]);
+            let (state_word, copied) = miden_stdlib_sys::pipe_words_to_memory(num_words);
+            assert_eq!(state_word, expected);
             let mut acc = felt!(0);
             for v in copied {
                 acc = acc + v;
@@ -205,15 +207,27 @@ fn test_pipe_words_to_memory() {
                 flat_felts.extend_from_slice(w);
             }
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
+            let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&flat_felts);
 
             // `pipe_words_to_memory` reads words from the advice stack in LIFO order.
             // To preserve the original order, push the words in reverse.
             let mut advice_stack: Vec<Felt> = Vec::with_capacity(flat_felts.len());
             for w in raw_words.iter().rev() {
-                advice_stack.extend_from_slice(w);
+                // Push each word as `d, c, b, a` so that `a` is on top of the stack.
+                advice_stack.push(w[3]);
+                advice_stack.push(w[2]);
+                advice_stack.push(w[1]);
+                advice_stack.push(w[0]);
             }
 
-            let args = [Felt::from(raw_words.len() as u32)];
+            // `entrypoint` args are passed on the operand stack in reverse order.
+            let args = [
+                Felt::from(raw_words.len() as u32),
+                expected_digest[3],
+                expected_digest[2],
+                expected_digest[1],
+                expected_digest[0],
+            ];
 
             eval_package_with_advice_stack::<Felt, _, _, _>(
                 &package,
@@ -243,8 +257,10 @@ fn test_pipe_words_to_memory() {
 #[test]
 fn test_pipe_double_words_to_memory() {
     let main_fn = r#"
-        (num_words: Felt) -> Felt {
-            let (_state_word, copied) = miden_stdlib_sys::pipe_double_words_to_memory(num_words);
+        (h0: Felt, h1: Felt, h2: Felt, h3: Felt, num_words: Felt) -> Felt {
+            let expected = Word::new([h0, h1, h2, h3]);
+            let (state_word, copied) = miden_stdlib_sys::pipe_double_words_to_memory(num_words);
+            assert_eq!(state_word, expected);
             let mut acc = felt!(0);
             for v in copied {
                 acc = acc + v;
@@ -281,14 +297,26 @@ fn test_pipe_double_words_to_memory() {
                 flat_felts.extend_from_slice(w);
             }
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
+            let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&flat_felts);
 
             // `pipe_double_words_to_memory` reads words from the advice stack in LIFO order.
             let mut advice_stack: Vec<Felt> = Vec::with_capacity(flat_felts.len());
             for w in raw_words.iter().rev() {
-                advice_stack.extend_from_slice(w);
+                // Push each word as `d, c, b, a` so that `a` is on top of the stack.
+                advice_stack.push(w[3]);
+                advice_stack.push(w[2]);
+                advice_stack.push(w[1]);
+                advice_stack.push(w[0]);
             }
 
-            let args = [Felt::from(raw_words.len() as u32)];
+            // `entrypoint` args are passed on the operand stack in reverse order.
+            let args = [
+                Felt::from(raw_words.len() as u32),
+                expected_digest[3],
+                expected_digest[2],
+                expected_digest[1],
+                expected_digest[0],
+            ];
 
             eval_package_with_advice_stack::<Felt, _, _, _>(
                 &package,
