@@ -71,6 +71,7 @@ fn test_i32_extend8_s() {
             &[Felt::from(input)],
             context.session(),
             |trace| {
+                dbg!(format!("{:b}", input));
                 let outputs = trace.outputs().as_int_vec();
                 assert_single_output(expected_out as u64, outputs);
                 Ok(())
@@ -87,5 +88,5 @@ fn assert_single_output(expected: u64, outputs: Vec<u64>) {
         "expected all elements after first to be zero, but got {outputs:?}"
     );
 
-    assert_eq!(outputs[0], expected);
+    assert_eq!(outputs[0], expected, "actual {:#b}, expected {:#b}", outputs[0], expected);
 }
