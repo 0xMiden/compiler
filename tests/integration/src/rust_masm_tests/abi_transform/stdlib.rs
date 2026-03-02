@@ -17,7 +17,7 @@ use proptest::{
 
 use crate::{
     CompilerTest,
-    testing::{Initializer, eval_package},
+    testing::{Initializer, eval_package, eval_package_with_advice_stack},
 };
 
 #[test]
@@ -77,7 +77,7 @@ fn test_hash_elements() {
 
         let args = [Felt::new(wide_ptr_addr as u64)];
 
-        eval_package::<Felt, _, _, _>(&package, initializers, [], &args, &test.session, |trace| {
+        eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
             let res: Felt = trace.parse_result().unwrap();
             dbg!(res);
             dbg!(expected_digest[0]);
@@ -151,18 +151,11 @@ fn test_hash_words() {
 
             let args = [Felt::new(wide_ptr_addr as u64)];
 
-            eval_package::<Felt, _, _, _>(
-                &package,
-                initializers,
-                [],
-                &args,
-                &test.session,
-                |trace| {
-                    let res: Felt = trace.parse_result().unwrap();
-                    prop_assert_eq!(res, expected_digest[0]);
-                    Ok(())
-                },
-            )?;
+            eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
+                let res: Felt = trace.parse_result().unwrap();
+                prop_assert_eq!(res, expected_digest[0]);
+                Ok(())
+            })?;
 
             Ok(())
         });
@@ -222,7 +215,7 @@ fn test_pipe_words_to_memory() {
 
             let args = [Felt::from(raw_words.len() as u32)];
 
-            eval_package::<Felt, _, _, _>(
+            eval_package_with_advice_stack::<Felt, _, _, _>(
                 &package,
                 [],
                 advice_stack,
@@ -297,7 +290,7 @@ fn test_pipe_double_words_to_memory() {
 
             let args = [Felt::from(raw_words.len() as u32)];
 
-            eval_package::<Felt, _, _, _>(
+            eval_package_with_advice_stack::<Felt, _, _, _>(
                 &package,
                 [],
                 advice_stack,
@@ -344,7 +337,7 @@ fn test_vec_alloc_vec() {
 
     let args = [Felt::from(2u32)];
 
-    eval_package::<Felt, _, _, _>(&package, [], [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
         let res: u32 = trace.parse_result().unwrap();
         assert_eq!(res, 3, "unexpected result (regression test for https://github.com/0xMiden/compiler/issues/595)");
         Ok(())

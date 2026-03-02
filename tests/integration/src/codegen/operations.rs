@@ -26,10 +26,9 @@ fn run_select_test(ty: Type, a: Immediate, a_result: &[u64], b: Immediate, b_res
     });
 
     let run_test = |cond_val, expected: &[u64]| {
-        eval_package::<u32, _, _, _>(
+        eval_package::<u32, _, _>(
             &package,
             None,
-            [],
             &[Felt::from(cond_val)],
             context.session(),
             |trace| {
