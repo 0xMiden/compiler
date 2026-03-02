@@ -3,15 +3,18 @@
 use std::{collections::BTreeSet, future::Future, sync::Arc};
 
 use miden_client::{
-    Word,
-    account::component::BasicWallet,
+    Deserializable, Word,
+    account::{
+        AccountStorage, StorageSlotName,
+        component::{BasicWallet, InitStorageData},
+    },
     asset::FungibleAsset,
     auth::AuthSecretKey,
     crypto::FeltRng,
     note::{
         Note, NoteAssets, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag, NoteType,
     },
-    testing::{MockChain, TransactionContextBuilder},
+    testing::{MockChain, NoteBuilder, TransactionContextBuilder},
     transaction::OutputNote,
 };
 use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
@@ -20,7 +23,7 @@ use miden_mast_package::Package;
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
-        AccountStorage, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
+        AccountStorageMode, AccountType, StorageMap, StorageSlot,
     },
     asset::Asset,
     note::PartialNote,
@@ -51,6 +54,7 @@ pub(super) fn block_on<F: Future>(future: F) -> F::Output {
 // COMPILATION
 // ================================================================================================
 
+/// NOTE: superseeded by the PackageFromProject trait.
 /// Helper to compile a Rust package to a Miden `Package`.
 pub(super) fn compile_rust_package(package_path: &str, release: bool) -> Arc<Package> {
     let config = WasmTranslationConfig::default();
@@ -360,3 +364,84 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
 
     (account, secret_key)
 }
+
+pub trait PackageFromProject {
+    fn build_project(project_path: &str) -> Arc<Package> {
+        let output = std::process::Command::new("miden")
+            .arg("build")
+            // Midenup's "miden build" command inherits all of cargo miden's flags.
+            .arg("--manifest-path")
+            .arg(std::path::Path::new(project_path).join("Cargo.toml"))
+            .arg("--release")
+            .output()
+            // TODO: Add the cargo install command once `midenup` is published
+            // in crates.io.
+            .expect("failed to execute `miden build`. Is midenup installed?.
+If not, follow the installation instructions in: https://github.com/0xMiden/midenup");
+
+        if !output.status.success() {
+            panic!("miden build failed:\n{}", String::from_utf8_lossy(&output.stderr))
+        }
+
+        // Read the .masp artifact from the project's target directory
+        let masp_path = std::path::Path::new(project_path)
+            .join("target/miden/release")
+            .read_dir()
+            .expect("failed to read target/miden/release")
+            .filter_map(|e| e.ok())
+            .find(|e| e.path().extension().is_some_and(|ext| ext == "masp"))
+            .map(|entry| entry.path())
+            .expect("no .masp file found in target/miden/release");
+
+        let masp_bytes = std::fs::read(&masp_path).expect("failed to read .masp artifact");
+        Arc::new(Package::read_from_bytes(&masp_bytes).expect("failed to parse .masp package"))
+    }
+}
+
+pub struct CustomComponentBuilder {
+    pub package: Option<Arc<Package>>,
+    pub init_storage_data: Option<InitStorageData>,
+}
+
+impl PackageFromProject for CustomComponent {}
+
+impl CustomComponentBuilder {
+    pub(super) fn with_package(project_path: &str) -> CustomComponentBuilder {
+        CustomComponentBuilder {
+            package: Some(CustomComponent::build_project(project_path)),
+            init_storage_data: None,
+        }
+    }
+
+    pub(super) fn with_init_storage_data(
+        mut self,
+        init_storage_data: InitStorageData,
+    ) -> CustomComponentBuilder {
+        self.init_storage_data = Some(init_storage_data);
+        self
+    }
+
+    pub(super) fn build(self) -> CustomComponent {
+        let package = self.package.expect("package is required");
+        let init_storage_data = self.init_storage_data.unwrap_or_default();
+        CustomComponent {
+            package,
+            init_storage_data,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct CustomComponent {
+    pub package: Arc<Package>,
+    pub init_storage_data: InitStorageData,
+}
+
+impl From<CustomComponent> for AccountComponent {
+    fn from(value: CustomComponent) -> Self {
+        AccountComponent::from_package(&value.package, &value.init_storage_data)
+            .expect("failed to create account component from package")
+    }
+}
+
+impl PackageFromProject for NoteBuilder {}
