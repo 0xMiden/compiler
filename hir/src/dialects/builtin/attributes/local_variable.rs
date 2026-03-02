@@ -88,6 +88,10 @@ impl core::fmt::Display for LocalVariable {
 
 impl AttrPrinter for LocalVariableAttr {
     fn print(&self, printer: &mut crate::print::AsmPrinter<'_>) {
+        use crate::formatter::*;
+
         printer.print_decimal_integer(self.value.index);
+        *printer += const_text(", ");
+        printer.print_type(&self.value.ty());
     }
 }

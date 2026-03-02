@@ -5,6 +5,7 @@ use midenc_hir::{
     dialects::builtin::attributes::U32ArrayAttr,
     effects::*,
     patterns::RewritePatternSet,
+    print::AsmPrinter,
     traits::*,
     *,
 };
@@ -22,7 +23,6 @@ use crate::ScfDialect;
 /// * [Return] to return from the enclosing function directly
 /// * [Unreachable] to abort execution
 /// * [Yield] to return from the enclosing [If]
-#[derive(OpPrinter)]
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, NoRegionArguments, HasRecursiveMemoryEffects),
@@ -36,32 +36,46 @@ pub struct If {
     #[region]
     else_body: Region,
 }
-#[cfg(false)]
-impl OpPrinter for If {
-    fn print(&self, _printer: &mut AsmPrinter<'_>) {
-        /*
-        use formatter::*;
 
-        let result_types = print::render_operation_result_types(self.as_operation());
-        let result_types = if result_types.is_empty() {
-            result_types
-        } else {
-            result_types + const_text(" ")
-        };
-        let header = print::render_operation_results(self.as_operation())
-            + display(self.op.name())
-            + const_text(" ")
-            + display(self.condition().as_value_ref())
-            + result_types;
-        let body = if self.else_body().is_empty() {
-            self.then_body().print(flags) + const_text(";")
-        } else {
-            let then_body = self.then_body().print(flags);
-            then_body + const_text(" else ") + self.else_body().print(flags) + const_text(";")
-        };
-        header + body
-         */
-        todo!()
+impl OpPrinter for If {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use alloc::borrow::Cow;
+
+        printer.print_space();
+        printer.print_value_uses(ValueRange::<1>::Borrowed(&[self.condition().as_value_ref()]));
+        printer.print_space();
+
+        let then_region = self.then_body();
+        if !then_region.is_empty() {
+            printer.print_keyword("then");
+            printer.print_space();
+            printer.print_region(&then_region);
+        }
+
+        let else_region = self.else_body();
+        if !else_region.is_empty() {
+            if !then_region.is_empty() {
+                printer.print_space();
+            }
+            printer.print_keyword("else");
+            printer.print_space();
+            printer.print_region(&else_region);
+        }
+
+        let op = self.as_operation();
+        if op.has_attributes() {
+            printer.print_space();
+            printer.print_attribute_dictionary(
+                op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+
+        if op.has_results() {
+            printer.print_space();
+            printer.print_colon_type_list(
+                op.results().iter().map(|r| Cow::Owned(r.borrow().ty().clone())),
+            );
+        }
     }
 }
 

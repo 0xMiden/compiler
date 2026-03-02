@@ -1,9 +1,8 @@
-public builtin.function @test_wrapper() {
-^block4:
-    v0 = arith.constant 3 : i32;
-    v1 = arith.constant 1 : i32;
-    v2 = arith.add v0, v1 : i32 #[overflow = wrapping];
+builtin.function public extern("C") @test_wrapper() {
+    %0 = arith.constant 3 : i32;
+    %1 = arith.constant 1 : i32;
+    %2 = arith.add %0, %1 <{ overflow = !builtin.overflow<wrapping> }>;
     cf.br ^block5;
 ^block5:
-    builtin.ret ;
+    builtin.ret;
 };

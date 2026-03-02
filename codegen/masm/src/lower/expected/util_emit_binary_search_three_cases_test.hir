@@ -1,0 +1,7 @@
+builtin.function public extern("C") @util_emit_binary_search_three_cases_test(%0: u32, %1: u32) -> u32 {
+    %2 = scf.index_switch %0 <{ cases = !builtin.array_u32<0, 1, 2> }> default_region {
+        %6 = arith.mul %0, %1 <{ overflow = !builtin.overflow<checked> }>;
+        scf.yield %6;
+    };
+    builtin.ret %2;
+};

@@ -384,23 +384,23 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
     test.apply_pass::<TransformSpills>(false)?;
 
     let after = func.as_operation_ref().borrow().to_string();
+    std::println!("{after}");
 
     litcheck_filecheck::filecheck!(
         &after,
         r#"
 ; COM: Spill before call
-; CHECK: hir.store_local
-; CHECK: hir.exec @test/example
-; CHECK: scf.if
+; CHECK: hir.store_local %{{\d+}} <{ local = !builtin.local_variable<[[L0:\d+]], ptr<u128, element>> }>
+; CHECK-NEXT: hir.exec ::@test::@example
 
 ; COM: First reload in `then`
-; CHECK-LABEL: ^block3:
-; CHECK: hir.load_local
+; CHECK-LABEL: scf.if %{{\d+}} then {
+; CHECK-NEXT: hir.load_local <{ local = !builtin.local_variable<[[L0]], ptr<u128, element>> }>
 ; CHECK-NEXT: hir.store
 
 ; COM: Second reload in `else`
-; CHECK-LABEL: ^block4:
-; CHECK: hir.load_local
+; CHECK-LABEL: } else {
+; CHECK-NEXT: hir.load_local <{ local = !builtin.local_variable<[[L0]], ptr<u128, element>> }>
 ; CHECK-NEXT: hir.store
 "#
     );
@@ -558,11 +558,12 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
 
     let after = func.as_operation_ref().borrow().to_string();
 
+    std::println!("{after}");
     litcheck_filecheck::filecheck!(
         &after,
         r#"
 ; CHECK: hir.store_local
-; CHECK: hir.exec @test/example
+; CHECK: hir.exec ::@test::@example
 ; CHECK: hir.load_local
 ; CHECK: scf.while
 ; CHECK: hir.store

@@ -1,10 +1,9 @@
-public builtin.function @test_wrapper() {
-^block4:
-    v0 = arith.constant 1 : i32;
-    v1 = hir.bitcast v0 : u32;
-    v2 = hir.mem_grow v1 : u32;
-    v3 = hir.bitcast v2 : i32;
+builtin.function public extern("C") @test_wrapper() {
+    %0 = arith.constant 1 : i32;
+    %1 = hir.bitcast %0 <{ ty = !builtin.type<u32> }>;
+    %2 = hir.mem_grow %1;
+    %3 = hir.bitcast %2 <{ ty = !builtin.type<i32> }>;
     cf.br ^block5;
 ^block5:
-    builtin.ret ;
+    builtin.ret;
 };

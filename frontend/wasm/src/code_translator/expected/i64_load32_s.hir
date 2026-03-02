@@ -1,14 +1,13 @@
-public builtin.function @test_wrapper() {
-^block4:
-    v0 = arith.constant 1024 : i32;
-    v1 = hir.bitcast v0 : u32;
-    v2 = arith.constant 4 : u32;
-    v3 = arith.mod v1, v2 : u32;
-    hir.assertz v3 #[code = 250];
-    v4 = hir.int_to_ptr v1 : ptr<byte, i32>;
-    v5 = hir.load v4 : i32;
-    v6 = arith.sext v5 : i64;
+builtin.function public extern("C") @test_wrapper() {
+    %0 = arith.constant 1024 : i32;
+    %1 = hir.bitcast %0 <{ ty = !builtin.type<u32> }>;
+    %2 = arith.constant 4 : u32;
+    %3 = arith.mod %1, %2;
+    hir.assertz %3 <{ code = !builtin.u32<250> }>;
+    %4 = hir.int_to_ptr %1 <{ ty = !builtin.type<ptr<i32, byte>> }>;
+    %5 = hir.load %4;
+    %6 = arith.sext %5 <{ ty = !builtin.type<i64> }>;
     cf.br ^block5;
 ^block5:
-    builtin.ret ;
+    builtin.ret;
 };

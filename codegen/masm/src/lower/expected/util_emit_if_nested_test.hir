@@ -1,0 +1,18 @@
+builtin.function public extern("C") @util_emit_if_nested_test(%0: u32, %1: u32) -> u32 {
+    %2 = arith.eq %0, %1;
+    %3 = scf.if %2 then {
+        %4 = arith.constant 1 : u32;
+        scf.yield %4;
+    } else {
+        %5 = arith.lt %0, %1;
+        %6 = scf.if %5 then {
+            %7 = arith.constant 2 : u32;
+            scf.yield %7;
+        } else {
+            %8 = arith.mul %0, %1 <{ overflow = !builtin.overflow<checked> }>;
+            scf.yield %8;
+        } : (u32);
+        scf.yield %6;
+    } : (u32);
+    builtin.ret %3;
+};

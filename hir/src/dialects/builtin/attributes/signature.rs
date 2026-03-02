@@ -190,12 +190,12 @@ impl AbiParam {
 
     pub fn zext(ty: Type, context: &Rc<Context>) -> Self {
         let zext = context.create_attribute::<ZextAttr, _>(());
-        Self::new_with_attrs(ty, [NamedAttribute::new("extend", zext)])
+        Self::new_with_attrs(ty, [NamedAttribute::new("extension", zext)])
     }
 
     pub fn sext(ty: Type, context: &Rc<Context>) -> Self {
         let sext = context.create_attribute::<SextAttr, _>(());
-        Self::new_with_attrs(ty, [NamedAttribute::new("extend", sext)])
+        Self::new_with_attrs(ty, [NamedAttribute::new("extension", sext)])
     }
 
     pub fn sret(ty: Type, context: &Rc<Context>) -> Self {

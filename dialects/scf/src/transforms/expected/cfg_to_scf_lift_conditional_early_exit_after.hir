@@ -1,52 +1,28 @@
-public builtin.function @test(v0: u32, v1: u32, v2: u32, v3: u32) -> u32 {
-^block0(v0: u32, v1: u32, v2: u32, v3: u32):
-    v19 = arith.constant 1 : u32;
-    v18 = ub.poison u32 : u32;
-    v14 = arith.constant 0 : u32;
-    v5 = arith.constant 0 : u32;
-    v6 = arith.neq v1, v5 : i1;
-    v23, v24, v25 = scf.if v6 : u32, u32, u32 {
-    ^block2:
-        v10 = arith.incr v0 : u32;
-        scf.yield v10, v18, v14;
+builtin.function public extern("C") @cfg_to_scf_lift_conditional_early_exit(%0: u32, %1: u32, %2: u32, %3: u32) -> u32 {
+    %19 = arith.constant 1 : u32;
+    %18 = ub.poison <{ value = !ub.poison<u32> }>;
+    %14 = arith.constant 0 : u32;
+    %5 = arith.constant 0 : u32;
+    %6 = arith.neq %1, %5;
+    %23, %24, %25 = scf.if %6 then {
+        %10 = arith.incr %0;
+        scf.yield %10, %18, %14;
     } else {
-    ^block3:
-        v11 = arith.neq v3, v5 : i1;
-        v34, v35, v36 = scf.if v11 : u32, u32, u32 {
-        ^block4:
-            v12 = arith.incr v3 : u32;
-            scf.yield v12, v18, v14;
+        %11 = arith.neq %3, %5;
+        %34, %35, %36 = scf.if %11 then {
+            %12 = arith.incr %3;
+            scf.yield %12, %18, %14;
         } else {
-        ^block5:
-            scf.yield v18, v2, v19;
-        };
-        scf.yield v34, v35, v36;
+            scf.yield %18, %2, %19;
+        } : (u32, u32, u32);
+        scf.yield %34, %35, %36;
+    } : (u32, u32, u32);
+    %30, %31 = scf.index_switch %25 <{ cases = !builtin.array_u32<0> }> default_region {
+        scf.yield %24, %14;
     };
-    v30, v31 = scf.index_switch v25 : u32, u32 
-    case 0 {
-    ^block1:
-        v7 = arith.eq v23, v5 : i1;
-        v8 = arith.zext v7 : u32;
-        v9 = arith.neq v8, v5 : i1;
-        v32, v33 = scf.if v9 : u32, u32 {
-        ^block6:
-            scf.yield v18, v19;
-        } else {
-        ^block7:
-            scf.yield v23, v14;
-        };
-        scf.yield v32, v33;
-    }
-    default {
-    ^block13:
-        scf.yield v24, v14;
-    };
-    cf.switch v31 {
-        case 0 => ^block8(v30)
-        default => ^block9
-    };
-^block8(v13: u32):
-    builtin.ret v13;
+    cf.switch %31 !builtin.u32<0> => ^block8:(%30);
+^block8(%13: u32):
+    builtin.ret %13;
 ^block9:
-    ub.unreachable ;
+    ub.unreachable;
 };

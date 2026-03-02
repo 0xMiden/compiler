@@ -1,27 +1,24 @@
-public builtin.function @test(v0: u32) -> u32 {
-^block0(v0: u32):
-    v15 = ub.poison u32 : u32;
-    v14 = arith.constant 1 : u32;
-    v9 = arith.constant 0 : u32;
-    v3 = arith.constant 0 : u32;
-    v4 = arith.constant 1 : u32;
-    v23, v24, v25 = scf.while v0, v3, v15 : u32, u32, u32 {
-    ^block1(v1: u32, v2: u32, v19: u32):
-        v5 = arith.eq v1, v3 : i1;
-        v33, v34, v35, v36 = scf.if v5 : u32, u32, u32, u32 {
-        ^block10:
-            scf.yield v15, v15, v14, v9;
+builtin.function public extern("C") @cfg_to_scf_lift_simple_while_loop(%0: u32) -> u32 {
+    %15 = ub.poison <{ value = !ub.poison<u32> }>;
+    %14 = arith.constant 1 : u32;
+    %9 = arith.constant 0 : u32;
+    %3 = arith.constant 0 : u32;
+    %4 = arith.constant 1 : u32;
+    %23, %24, %25 = scf.while %0, %3, %15 before {
+    ^block1(%1: u32, %2: u32, %19: u32):
+        %5 = arith.eq %1, %3;
+        %33, %34, %35, %36 = scf.if %5 then {
+            scf.yield %15, %15, %14, %9;
         } else {
-        ^block3:
-            v6 = arith.sub v1, v4 : u32 #[overflow = unchecked];
-            v7 = arith.incr v2 : u32;
-            scf.yield v6, v7, v9, v14;
-        };
-        v32 = arith.trunc v36 : i1;
-        scf.condition v32, v33, v34, v2;
-    } do {
-    ^block9(v29: u32, v30: u32, v31: u32):
-        scf.yield v29, v30, v31;
+            %6 = arith.sub %1, %4 <{ overflow = !builtin.overflow<unchecked> }>;
+            %7 = arith.incr %2;
+            scf.yield %6, %7, %9, %14;
+        } : (u32, u32, u32, u32);
+        %32 = arith.trunc %36 <{ ty = !builtin.type<i1> }>;
+        scf.condition (%32) (%33, %34, %2);
+    } after {
+    ^block9(%29: u32, %30: u32, %31: u32):
+        scf.yield %29, %30, %31;
     };
-    builtin.ret v25;
+    builtin.ret %25;
 };
