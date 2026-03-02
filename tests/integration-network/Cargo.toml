@@ -12,7 +12,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-miden-client = { version = "0.13", features = ["std", "tonic", "testing"] }
+miden-client = { branch = "fabrizioorsi/miden-testing-compiler-backport", git = "https://github.com/lambdaclass/miden-client.git", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std"] }
 miden-standards = { workspace = true, features = ["std"] }

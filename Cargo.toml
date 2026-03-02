@@ -170,6 +170,12 @@ miden-test-harness-macros = { path = "test-harness/test-harness-macros" }
 #miden-processor = { path = "../miden-vm/processor" }
 #miden-mast-package = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-mast-package = { path = "../miden-vm/package" }
+miden-protocol        = { git = "https://github.com/lambdaclass/miden-base.git", branch = "fabrizioorsi/miden-testing-compiler-backport" }
+miden-standards       = { git = "https://github.com/lambdaclass/miden-base.git", branch = "fabrizioorsi/miden-testing-compiler-backport" }
+miden-testing         = { git = "https://github.com/lambdaclass/miden-base.git", branch = "fabrizioorsi/miden-testing-compiler-backport" }
+miden-tx              = { git = "https://github.com/lambdaclass/miden-base.git", branch = "fabrizioorsi/miden-testing-compiler-backport" }
+miden-block-prover    = { git = "https://github.com/lambdaclass/miden-base.git", branch = "fabrizioorsi/miden-testing-compiler-backport" }
+miden-tx-batch-prover = { git = "https://github.com/lambdaclass/miden-base.git", branch = "fabrizioorsi/miden-testing-compiler-backport" }
 
 
 [profile.dev]
