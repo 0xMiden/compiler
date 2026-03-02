@@ -3,7 +3,11 @@
 use std::{collections::BTreeSet, future::Future, sync::Arc};
 
 use miden_client::{
-    account::component::BasicWallet,
+    Deserializable, Word,
+    account::{
+        AccountStorage, StorageSlotName,
+        component::{BasicWallet, InitStorageData},
+    },
     asset::FungibleAsset,
     auth::AuthSecretKey,
     crypto::FeltRng,
@@ -12,16 +16,14 @@ use miden_client::{
     },
     testing::{MockChain, TransactionContextBuilder},
     transaction::OutputNote,
-    Word,
 };
-use miden_core::{crypto::hash::Rpo256, Felt, FieldElement};
+use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_protocol::{
     account::{
-        Account, AccountBuilder, AccountComponent, AccountComponentMetadata,
-        AccountComponentTemplate, AccountId, AccountStorageMode, AccountType, InitStorageData,
-        StorageMap, StorageSlot,
+        Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
+        AccountStorageMode, AccountType, StorageMap, StorageSlot,
     },
     asset::Asset,
     note::PartialNote,
@@ -29,7 +31,7 @@ use miden_protocol::{
 };
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Converts a value's felt representation into `miden_core::Felt` elements.
 pub(super) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
@@ -437,7 +439,7 @@ pub(super) struct CustomComponent {
 
 impl From<CustomComponent> for AccountComponent {
     fn from(value: CustomComponent) -> Self {
-        AccountComponent::from_package_with_init_data(&value.package, &value.init_storage_data)
+        AccountComponent::from_package(&value.package, &value.init_storage_data)
             .expect("failed to create account component from package")
     }
 }
@@ -495,14 +497,12 @@ impl CustomNoteBuilder {
         let note_inputs = NoteInputs::new(config.inputs).unwrap();
         let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
 
-        let metadata = NoteMetadata::new(
-            sender_id,
-            config.note_type,
-            config.tag,
-            config.execution_hint,
-            config.aux,
-        )
-        .unwrap();
+        let metadata = NoteMetadata::new(sender_id, config.note_type, config.tag);
+        //     ,
+        //     config.execution_hint,
+        //     config.aux,
+        // )
+        // .unwrap()
 
         let note = Note::new(config.assets, metadata, recipient);
 

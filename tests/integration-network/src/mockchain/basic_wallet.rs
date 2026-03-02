@@ -9,13 +9,14 @@ use miden_client::{
     transaction::OutputNote,
 };
 use miden_core::Felt;
-use miden_objects::account::AccountComponent;
+use miden_protocol::account::AccountComponent;
 
 use super::helpers::{
-    CustomNoteBuilder, CustomWalletBuilder, NoteCreationConfig, assert_account_has_fungible_asset,
+    CustomNoteBuilder, NoteCreationConfig, assert_account_has_fungible_asset,
     build_asset_transfer_tx, build_existing_basic_wallet_account_builder, build_send_notes_script,
     compile_rust_package, create_note_from_package, execute_tx, to_core_felts,
 };
+use crate::mockchain::helpers::CustomComponentBuilder;
 
 /// Tests the basic-wallet contract deployment and p2id note consumption workflow on a mock chain.
 #[test]
@@ -126,7 +127,8 @@ pub fn test_basic_wallet_p2id() {
 #[test]
 pub fn test_basic_wallet_p2ide() {
     // Compile the contracts first (before creating any runtime)
-    let wallet_package = CustomWalletBuilder::with_package("../../examples/basic-wallet").build();
+    let wallet_package =
+        CustomComponentBuilder::with_package("../../examples/basic-wallet").build();
     let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);
     let p2ide_note_package = compile_rust_package("../../examples/p2ide-note", true);
 
