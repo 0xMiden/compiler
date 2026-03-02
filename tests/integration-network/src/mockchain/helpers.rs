@@ -14,7 +14,7 @@ use miden_client::{
     note::{
         Note, NoteAssets, NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag, NoteType,
     },
-    testing::{MockChain, TransactionContextBuilder},
+    testing::{MockChain, NoteBuilder, TransactionContextBuilder},
     transaction::OutputNote,
 };
 use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
@@ -444,78 +444,4 @@ impl From<CustomComponent> for AccountComponent {
     }
 }
 
-pub(super) struct CustomNoteBuilder {
-    pub package: Option<Arc<Package>>,
-    pub sender_id: Option<AccountId>,
-    pub config: Option<NoteCreationConfig>,
-    pub rng: Option<miden_client::crypto::RpoRandomCoin>,
-}
-
-impl PackageFromProject for CustomNote {}
-
-impl CustomNoteBuilder {
-    pub(super) fn with_package(project_path: &str) -> CustomNoteBuilder {
-        CustomNoteBuilder {
-            package: Some(CustomNote::build_project(project_path)),
-            sender_id: None,
-            config: None,
-            rng: None,
-        }
-    }
-
-    pub(super) fn with_sender_id(mut self, sender_id: AccountId) -> CustomNoteBuilder {
-        self.sender_id = Some(sender_id);
-        self
-    }
-
-    pub(super) fn with_config(mut self, config: NoteCreationConfig) -> CustomNoteBuilder {
-        self.config = Some(config);
-        self
-    }
-
-    pub(super) fn with_rng(
-        mut self,
-        rng: miden_client::crypto::RpoRandomCoin,
-    ) -> CustomNoteBuilder {
-        self.rng = Some(rng);
-        self
-    }
-
-    pub(super) fn build(self) -> CustomNote {
-        let package = self.package.expect("package is required");
-        let config = self.config.unwrap_or_default();
-        let sender_id = self.sender_id.unwrap_or(AccountId::try_from(0u128).unwrap());
-        let mut rng = self.rng.unwrap_or_else(|| {
-            miden_client::crypto::RpoRandomCoin::new(package.unwrap_program().hash())
-        });
-
-        let note_program = package.unwrap_program();
-        let note_script =
-            NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
-
-        let serial_num = rng.draw_word();
-        let note_inputs = NoteInputs::new(config.inputs).unwrap();
-        let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
-
-        let metadata = NoteMetadata::new(sender_id, config.note_type, config.tag);
-        //     ,
-        //     config.execution_hint,
-        //     config.aux,
-        // )
-        // .unwrap()
-
-        let note = Note::new(config.assets, metadata, recipient);
-
-        CustomNote { note }
-    }
-}
-
-pub(super) struct CustomNote {
-    pub note: Note,
-}
-
-impl From<CustomNote> for OutputNote {
-    fn from(value: CustomNote) -> Self {
-        OutputNote::Full(value.note)
-    }
-}
+impl PackageFromProject for NoteBuilder {}
