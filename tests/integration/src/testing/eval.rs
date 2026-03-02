@@ -15,13 +15,17 @@ use super::*;
 ///
 /// * `initializers` is an optional set of [Initializer] to run at program start by the compiler-
 ///   emitted test harness, to set up memory or other global state.
+/// * `advice_stack` contains additional values to place on the advice stack before program start.
+///   The last element is treated as the top of the stack. Initializer-related values are pushed
+///   on top of these.
 /// * `args` are the set of arguments that will be placed on the operand stack, in order of
 ///   appearance
 /// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
 ///   things about the trace, such as the state of memory at program exit.
-pub fn eval_package<'a, T, I, F>(
+pub fn eval_package<'a, T, I, A, F>(
     package: &miden_mast_package::Package,
     initializers: I,
+    advice_stack: A,
     args: &[Felt],
     session: &Session,
     verify_trace: F,
@@ -29,6 +33,7 @@ pub fn eval_package<'a, T, I, F>(
 where
     T: Clone + FromMidenRepr + PartialEq + core::fmt::Debug,
     I: IntoIterator<Item = Initializer<'a>>,
+    A: IntoIterator<Item = Felt>,
     F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
 {
     // Provide input bytes/felts/words via the advice stack
@@ -38,7 +43,7 @@ where
     //
     // First, convert the input to words, zero-padding as needed; and push on to the
     // advice stack in reverse.
-    let mut advice_stack = Vec::<Felt>::with_capacity(64);
+    let mut advice_stack: Vec<Felt> = advice_stack.into_iter().collect();
     let mut num_initializers = 0u64;
     for initializer in initializers {
         num_initializers += 1;
@@ -175,6 +180,7 @@ pub fn compile_link_output_to_package(
 ///
 /// * `initializers` is an optional set of [Initializer] to run at program start by the compiler-
 ///   emitted test harness, to set up memory or other global state.
+/// * `advice_stack` contains additional values to place on the advice stack before program start.
 /// * `args` are the set of arguments that will be placed on the operand stack, in order of
 ///   appearance
 /// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
@@ -182,6 +188,7 @@ pub fn compile_link_output_to_package(
 pub fn eval_link_output<'a, T, I, F>(
     link_output: LinkOutput,
     initializers: I,
+    advice_stack: impl IntoIterator<Item = Felt>,
     args: &[Felt],
     session: &Session,
     verify_trace: F,
@@ -192,5 +199,5 @@ where
     F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
 {
     let package = compile_link_output_to_package(link_output)?;
-    eval_package::<T, _, _>(&package, initializers, args, session, verify_trace)
+    eval_package::<T, _, _, _>(&package, initializers, advice_stack, args, session, verify_trace)
 }

@@ -50,8 +50,13 @@ fn load_sw() {
         }];
 
         let args = [Felt::new(write_to as u64)];
-        let output =
-            eval_package::<u32, _, _>(&package, initializers, &args, context.session(), |trace| {
+        let output = eval_package::<u32, _, _, _>(
+            &package,
+            initializers,
+            [],
+            &args,
+            context.session(),
+            |trace| {
                 let stored = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
                     TestCaseError::fail(format!(
                         "expected {value} to have been written to byte address {write_to}, but \
@@ -68,7 +73,8 @@ fn load_sw() {
                     stored
                 );
                 Ok(())
-            })?;
+            },
+        )?;
 
         prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
@@ -119,8 +125,13 @@ fn load_dw() {
         }];
 
         let args = [Felt::new(write_to as u64)];
-        let output =
-            eval_package::<u64, _, _>(&package, initializers, &args, context.session(), |trace| {
+        let output = eval_package::<u64, _, _, _>(
+            &package,
+            initializers,
+            [],
+            &args,
+            context.session(),
+            |trace| {
                 let lo = trace.read_memory_element(write_to / 4).unwrap_or_default().as_int();
                 let hi = trace.read_memory_element((write_to / 4) + 1).unwrap_or_default().as_int();
 
@@ -150,7 +161,8 @@ fn load_dw() {
                     stored
                 );
                 Ok(())
-            })?;
+            },
+        )?;
 
         prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
@@ -229,6 +241,7 @@ fn global_u64_initializer_uses_immediate_store_dw() {
     let output = eval_link_output::<u64, _, _>(
         link_output,
         std::iter::empty::<Initializer<'_>>(),
+        [],
         &[],
         context.session(),
         |_| Ok(()),
@@ -273,8 +286,13 @@ fn load_u8() {
         }];
 
         let args = [Felt::new(write_to as u64)];
-        let output =
-            eval_package::<u8, _, _>(&package, initializers, &args, context.session(), |trace| {
+        let output = eval_package::<u8, _, _, _>(
+            &package,
+            initializers,
+            [],
+            &args,
+            context.session(),
+            |trace| {
                 let stored = trace.read_from_rust_memory::<u8>(write_to).ok_or_else(|| {
                     TestCaseError::fail(format!(
                         "expected {value} to have been written to byte address {write_to}, but \
@@ -291,7 +309,8 @@ fn load_u8() {
                     stored
                 );
                 Ok(())
-            })?;
+            },
+        )?;
 
         prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
@@ -342,8 +361,13 @@ fn load_u16() {
         }];
 
         let args = [Felt::new(write_to as u64)];
-        let output =
-            eval_package::<u16, _, _>(&package, initializers, &args, context.session(), |trace| {
+        let output = eval_package::<u16, _, _, _>(
+            &package,
+            initializers,
+            [],
+            &args,
+            context.session(),
+            |trace| {
                 let stored = trace.read_from_rust_memory::<u16>(write_to).ok_or_else(|| {
                     TestCaseError::fail(format!(
                         "expected {value} to have been written to byte address {write_to}, but \
@@ -360,7 +384,8 @@ fn load_u16() {
                     stored
                 );
                 Ok(())
-            })?;
+            },
+        )?;
 
         prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
@@ -411,9 +436,10 @@ fn load_bool() {
         }];
 
         let args = [Felt::new(write_to as u64)];
-        let output = eval_package::<bool, _, _>(
+        let output = eval_package::<bool, _, _, _>(
             &package,
             initializers,
+            [],
             &args,
             context.session(),
             |trace| {
@@ -529,9 +555,10 @@ fn store_u16() {
 
             // Note: Arguments are pushed in reverse order on the stack in Miden
             let args = [Felt::new(store_value2 as u64), Felt::new(store_value1 as u64)];
-            let output = eval_package::<u32, _, _>(
+            let output = eval_package::<u32, _, _, _>(
                 &package,
                 initializers,
+                [],
                 &args,
                 context.session(),
                 |trace| {
@@ -732,9 +759,10 @@ fn store_u8() {
                 Felt::new(store_value1 as u64),
                 Felt::new(store_value0 as u64),
             ];
-            let output = eval_package::<u32, _, _>(
+            let output = eval_package::<u32, _, _, _>(
                 &package,
                 initializers,
+                [],
                 &args,
                 context.session(),
                 |trace| {
@@ -851,9 +879,10 @@ fn store_unaligned_u32() {
             bytes: &[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88],
         }];
 
-        let output = eval_package::<u32, _, _>(
+        let output = eval_package::<u32, _, _, _>(
             &package,
             initializers,
+            [],
             &[Felt::new(offs as u64)],
             context.session(),
             |trace| {
@@ -935,9 +964,10 @@ fn load_unaligned_u64() {
             ],
         }];
 
-        let output = eval_package::<u64, _, _>(
+        let output = eval_package::<u64, _, _, _>(
             &package,
             initializers,
+            [],
             &[Felt::new(offs as u64)],
             context.session(),
             |trace| {
@@ -1012,9 +1042,10 @@ fn store_unaligned_u64() {
             ],
         }];
 
-        let output = eval_package::<u32, _, _>(
+        let output = eval_package::<u32, _, _, _>(
             &package,
             initializers,
+            [],
             &[Felt::new(offs as u64)],
             context.session(),
             |trace| {

@@ -29,7 +29,7 @@ pub fn run_masm_vs_rust<T>(
 where
     T: Clone + FromMidenRepr + PartialEq + std::fmt::Debug,
 {
-    eval_package::<Felt, _, _>(package, None, args, session, |trace| {
+    eval_package::<Felt, _, _, _>(package, None, [], args, session, |trace| {
         let vm_out_felt0 = trace.outputs().get_stack_item(0).unwrap();
         let vm_out_felt1 = trace.outputs().get_stack_item(1).unwrap();
         let vm_out: T = T::from_felts(&[vm_out_felt0, vm_out_felt1]);

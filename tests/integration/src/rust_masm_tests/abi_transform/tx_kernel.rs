@@ -221,17 +221,18 @@ end
         Felt::new(out_addr as u64),
     ];
 
-    let _ = eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
-        let actual: [TestFelt; 4] =
-            trace.read_from_rust_memory(out_addr).expect("expected output to be written");
-        let expected: [Felt; 4] = expected_digest.into();
-        assert_eq!(
-            [actual[0].0, actual[1].0, actual[2].0, actual[3].0],
-            expected,
-            "recipient digest mismatch"
-        );
-        Ok(())
-    })
-    .map_err(|err| Report::msg(err.to_string()))?;
+    let _ =
+        eval_package::<Felt, _, _, _>(&package, initializers, [], &args, &test.session, |trace| {
+            let actual: [TestFelt; 4] =
+                trace.read_from_rust_memory(out_addr).expect("expected output to be written");
+            let expected: [Felt; 4] = expected_digest.into();
+            assert_eq!(
+                [actual[0].0, actual[1].0, actual[2].0, actual[3].0],
+                expected,
+                "recipient digest mismatch"
+            );
+            Ok(())
+        })
+        .map_err(|err| Report::msg(err.to_string()))?;
     Ok(())
 }

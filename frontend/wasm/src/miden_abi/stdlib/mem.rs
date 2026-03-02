@@ -29,7 +29,9 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
                 I32,  // write_ptr
             ],
             [
-                Felt, Felt, Felt, Felt, // HASH
+                Felt, Felt, Felt, Felt, // R0
+                Felt, Felt, Felt, Felt, // R1 (digest)
+                Felt, Felt, Felt, Felt, // C (capacity)
                 I32,  // write_ptr'
             ],
         ),

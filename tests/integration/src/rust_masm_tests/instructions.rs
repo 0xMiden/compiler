@@ -89,7 +89,7 @@ macro_rules! test_wide_bin_op {
                     out_addr.push_to_operand_stack(&mut args);
                     dbg!(&args);
 
-                    eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+                    eval_package::<Felt, _, _, _>(&package, None, [], &args, &test.session, |trace| {
                         let vm_out_bytes: [u8; 16] =
                             trace.read_from_rust_memory(out_addr).expect("output was not written");
                         dbg!(&vm_out_bytes);
@@ -633,7 +633,7 @@ fn test_overflowing_arith<T>(
         a.push_to_operand_stack(&mut args);
         out_addr.push_to_operand_stack(&mut args);
 
-        eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+        eval_package::<Felt, _, _, _>(&package, None, [], &args, &test.session, |trace| {
             let ty_byte_size = std::mem::size_of::<T>();
             assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
             // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
@@ -826,7 +826,7 @@ fn test_hmerge() {
                 raw_felts_in1[1],
                 raw_felts_in1[0],
             ];
-            eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+            eval_package::<Felt, _, _, _>(&package, [], [], &args, &test.session, |trace| {
                 let res: Felt = trace.parse_result().unwrap();
                 prop_assert_eq!(res, digest_out[0]);
                 Ok(())

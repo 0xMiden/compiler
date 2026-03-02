@@ -34,7 +34,7 @@ fn test_func_arg_same() {
 
     // Test 1: addr1 is passed as x and should be returned
     let args1 = [Felt::from(addr2), Felt::from(addr1)]; // Arguments are pushed in reverse order on stack
-    eval_package::<i32, _, _>(&package, [], &args1, &test.session, |trace| {
+    eval_package::<i32, _, _, _>(&package, [], [], &args1, &test.session, |trace| {
         let result: u32 = trace.parse_result().unwrap();
         assert_eq!(result, addr1);
         Ok(())
@@ -43,7 +43,7 @@ fn test_func_arg_same() {
 
     // Test 1: addr2 is passed as x and should be returned
     let args2 = [Felt::from(addr1), Felt::from(addr2)]; // Arguments are pushed in reverse order on stack
-    eval_package::<i32, _, _>(&package, [], &args2, &test.session, |trace| {
+    eval_package::<i32, _, _, _>(&package, [], [], &args2, &test.session, |trace| {
         let result: u32 = trace.parse_result().unwrap();
         assert_eq!(result, addr2);
         Ok(())
@@ -109,7 +109,7 @@ fn test_invalid_stack_index_16_issue_872() {
 
     let expected = (1u32..=16u32).fold(Felt::ZERO, |acc, x| acc + Felt::from(x)) + Felt::from(2u32);
 
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _, _>(&package, [], [], &args, &test.session, |trace| {
         let res: Felt = trace.parse_result().unwrap();
         assert_eq!(res, expected);
         Ok(())
@@ -206,7 +206,7 @@ fn test_invalid_stack_index_4_word_1_felt_args() {
     // - main adds `post` (w0[0] + 1 == 2)
     let expected = (1u32..=16u32).fold(Felt::ZERO, |acc, x| acc + Felt::from(x)) + Felt::from(4u32);
 
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _, _>(&package, [], [], &args, &test.session, |trace| {
         let res: Felt = trace.parse_result().unwrap();
         assert_eq!(res, expected);
         Ok(())
@@ -271,7 +271,7 @@ fn test_vec_realloc_copies_data_issue_811() {
     let package = test.compile_package();
     let args: [Felt; 0] = [];
 
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _, _>(&package, [], [], &args, &test.session, |trace| {
         let result: u64 = trace.parse_result::<Felt>().unwrap().as_int();
         assert_eq!(result, 166_665, "Vec reallocation failed to copy existing elements");
         Ok(())
@@ -347,6 +347,8 @@ fn test_func_arg_order() {
         Felt::ZERO,
     ];
 
-    eval_package::<Felt, _, _>(&test.compile_package(), [], &args, &test.session, |trace| Ok(()))
-        .unwrap();
+    eval_package::<Felt, _, _, _>(&test.compile_package(), [], [], &args, &test.session, |trace| {
+        Ok(())
+    })
+    .unwrap();
 }

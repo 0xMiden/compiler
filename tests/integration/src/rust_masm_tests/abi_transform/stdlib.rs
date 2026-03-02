@@ -77,7 +77,7 @@ fn test_hash_elements() {
 
         let args = [Felt::new(wide_ptr_addr as u64)];
 
-        eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
+        eval_package::<Felt, _, _, _>(&package, initializers, [], &args, &test.session, |trace| {
             let res: Felt = trace.parse_result().unwrap();
             dbg!(res);
             dbg!(expected_digest[0]);
@@ -151,11 +151,164 @@ fn test_hash_words() {
 
             let args = [Felt::new(wide_ptr_addr as u64)];
 
-            eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
-                let res: Felt = trace.parse_result().unwrap();
-                prop_assert_eq!(res, expected_digest[0]);
-                Ok(())
-            })?;
+            eval_package::<Felt, _, _, _>(
+                &package,
+                initializers,
+                [],
+                &args,
+                &test.session,
+                |trace| {
+                    let res: Felt = trace.parse_result().unwrap();
+                    prop_assert_eq!(res, expected_digest[0]);
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        });
+
+    match res {
+        Err(TestError::Fail(_, value)) => {
+            panic!("Found minimal(shrinked) failing case: {:?}", value);
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
+
+#[test]
+fn test_pipe_words_to_memory() {
+    let main_fn = r#"
+        (num_words: Felt) -> Felt {
+            let (_state_word, copied) = miden_stdlib_sys::pipe_words_to_memory(num_words);
+            let mut acc = felt!(0);
+            for v in copied {
+                acc = acc + v;
+            }
+            acc
+        }"#
+    .to_string();
+
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "pipe_words_to_memory",
+        &main_fn,
+        config,
+        ["--test-harness".into()],
+    );
+
+    let package = test.compile_package();
+
+    let config = proptest::test_runner::Config::with_cases(32);
+    let res =
+        TestRunner::new(config).run(&any::<Vec<[miden_debug::Felt; 4]>>(), move |test_words| {
+            let raw_words: Vec<[Felt; 4]> = test_words
+                .into_iter()
+                .map(|w| [w[0].into(), w[1].into(), w[2].into(), w[3].into()])
+                .collect();
+
+            let mut flat_felts: Vec<Felt> = Vec::with_capacity(raw_words.len() * 4);
+            for w in &raw_words {
+                flat_felts.extend_from_slice(w);
+            }
+            let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
+
+            // `pipe_words_to_memory` reads words from the advice stack in LIFO order.
+            // To preserve the original order, push the words in reverse.
+            let mut advice_stack: Vec<Felt> = Vec::with_capacity(flat_felts.len());
+            for w in raw_words.iter().rev() {
+                advice_stack.extend_from_slice(w);
+            }
+
+            let args = [Felt::from(raw_words.len() as u32)];
+
+            eval_package::<Felt, _, _, _>(
+                &package,
+                [],
+                advice_stack,
+                &args,
+                &test.session,
+                |trace| {
+                    let res: Felt = trace.parse_result().unwrap();
+                    prop_assert_eq!(res, expected_sum);
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        });
+
+    match res {
+        Err(TestError::Fail(_, value)) => {
+            panic!("Found minimal(shrinked) failing case: {:?}", value);
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
+
+#[test]
+fn test_pipe_double_words_to_memory() {
+    let main_fn = r#"
+        (num_words: Felt) -> Felt {
+            let (_state_word, copied) = miden_stdlib_sys::pipe_double_words_to_memory(num_words);
+            let mut acc = felt!(0);
+            for v in copied {
+                acc = acc + v;
+            }
+            acc
+        }"#
+    .to_string();
+
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "pipe_double_words_to_memory",
+        &main_fn,
+        config,
+        ["--test-harness".into()],
+    );
+
+    let package = test.compile_package();
+
+    let config = proptest::test_runner::Config::with_cases(32);
+    let res =
+        TestRunner::new(config).run(&any::<Vec<[miden_debug::Felt; 4]>>(), move |test_words| {
+            let mut raw_words: Vec<[Felt; 4]> = test_words
+                .into_iter()
+                .map(|w| [w[0].into(), w[1].into(), w[2].into(), w[3].into()])
+                .collect();
+
+            // `pipe_double_words_to_memory` requires an even number of words.
+            if !raw_words.len().is_multiple_of(2) {
+                raw_words.push([Felt::ZERO; 4]);
+            }
+
+            let mut flat_felts: Vec<Felt> = Vec::with_capacity(raw_words.len() * 4);
+            for w in &raw_words {
+                flat_felts.extend_from_slice(w);
+            }
+            let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
+
+            // `pipe_double_words_to_memory` reads words from the advice stack in LIFO order.
+            let mut advice_stack: Vec<Felt> = Vec::with_capacity(flat_felts.len());
+            for w in raw_words.iter().rev() {
+                advice_stack.extend_from_slice(w);
+            }
+
+            let args = [Felt::from(raw_words.len() as u32)];
+
+            eval_package::<Felt, _, _, _>(
+                &package,
+                [],
+                advice_stack,
+                &args,
+                &test.session,
+                |trace| {
+                    let res: Felt = trace.parse_result().unwrap();
+                    prop_assert_eq!(res, expected_sum);
+                    Ok(())
+                },
+            )?;
 
             Ok(())
         });
@@ -191,7 +344,7 @@ fn test_vec_alloc_vec() {
 
     let args = [Felt::from(2u32)];
 
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _, _>(&package, [], [], &args, &test.session, |trace| {
         let res: u32 = trace.parse_result().unwrap();
         assert_eq!(res, 3, "unexpected result (regression test for https://github.com/0xMiden/compiler/issues/595)");
         Ok(())
