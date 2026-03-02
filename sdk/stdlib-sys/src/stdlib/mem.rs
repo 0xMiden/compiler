@@ -146,7 +146,7 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
     let num_felts_u32 = u32::try_from(num_felts).expect("num_felts must fit in u32");
     let miden_end_ptr = miden_write_ptr + num_felts_u32;
 
-    // Place for returned C, B, A, write_ptr
+    // Place for returned R0, R1, C, write_ptr
     let mut ret_area = ::core::mem::MaybeUninit::<Result>::uninit();
     let zero = felt!(0);
     unsafe {
