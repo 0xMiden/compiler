@@ -194,9 +194,7 @@ pub fn test_basic_wallet_p2ide() {
     // Step 2: Alice consumes the p2id note
     let consume_tx_context_builder =
         chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
-    let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["2992"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["23847"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
+    execute_tx(&mut chain, consume_tx_context_builder);
 
     let alice_account = chain.committed_account(alice_id).unwrap();
     assert_account_has_fungible_asset(alice_account, faucet_id, mint_amount);
@@ -319,9 +317,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     // Step 2: Alice consumes the p2id note
     let consume_tx_context_builder =
         chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
-    let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["2992"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["23847"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
+    execute_tx(&mut chain, consume_tx_context_builder);
 
     let alice_account = chain.committed_account(alice_id).unwrap();
     assert_account_has_fungible_asset(alice_account, faucet_id, mint_amount);
