@@ -29,6 +29,7 @@ miden-debug = { workspace = true, features = ["proptest"] }
 midenc-dialect-arith.workspace = true
 midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true
+midenc-dialect-wasm.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-hir.workspace = true
 midenc-hir-eval.workspace = true

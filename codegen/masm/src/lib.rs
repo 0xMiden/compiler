@@ -41,6 +41,7 @@ pub fn register_dialect_hooks(context: &midenc_hir::Context) {
     use midenc_dialect_hir as hir;
     use midenc_dialect_scf as scf;
     use midenc_dialect_ub as ub;
+    use midenc_dialect_wasm as wasm;
     use midenc_hir::dialects::builtin;
 
     context.register_dialect_hook::<builtin::BuiltinDialect, _>(|info, _context| {
@@ -115,6 +116,9 @@ pub fn register_dialect_hooks(context: &midenc_hir::Context) {
     context.register_dialect_hook::<ub::UndefinedBehaviorDialect, _>(|info, _context| {
         info.register_operation_trait::<ub::Unreachable, dyn HirLowering>();
         info.register_operation_trait::<ub::Poison, dyn HirLowering>();
+    });
+    context.register_dialect_hook::<wasm::WasmDialect, _>(|info, _context| {
+        info.register_operation_trait::<wasm::I32Extend8S, dyn HirLowering>();
     });
     context.register_dialect_hook::<hir::HirDialect, _>(|info, _context| {
         info.register_operation_trait::<hir::Assert, dyn HirLowering>();

@@ -1,0 +1,8 @@
+public builtin.function @test_wrapper() {
+^block4:
+    v0 = arith.constant 1 : i32;
+    v1 = wasm.i32_extend_8s v0 : i32;
+    cf.br ^block5;
+^block5:
+    builtin.ret ;
+};

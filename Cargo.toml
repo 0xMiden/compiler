@@ -140,6 +140,7 @@ midenc-dialect-hir = { version = "0.7.1", path = "dialects/hir" }
 midenc-dialect-scf = { version = "0.7.1", path = "dialects/scf" }
 midenc-dialect-cf = { version = "0.7.1", path = "dialects/cf" }
 midenc-dialect-ub = { version = "0.7.1", path = "dialects/ub" }
+midenc-dialect-wasm = { version = "0.7.1", path = "dialects/wasm" }
 midenc-hir = { version = "0.7.1", path = "hir" }
 midenc-hir-analysis = { version = "0.7.1", path = "hir-analysis" }
 midenc-hir-eval = { version = "0.7.1", path = "eval" }

@@ -6,6 +6,7 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
+use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
     OpBuilder, OperationRef, ProgramPoint, RegionRef, Signature, SmallVec, SourceSpan, Type,
@@ -462,6 +463,18 @@ impl<'f, B: ?Sized + Builder> ControlFlowOpBuilder<'f, B> for FunctionBuilderExt
 }
 
 impl<'f, B: ?Sized + Builder> UndefinedBehaviorOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+    #[inline(always)]
+    fn builder(&self) -> &B {
+        self.inner.builder()
+    }
+
+    #[inline(always)]
+    fn builder_mut(&mut self) -> &mut B {
+        self.inner.builder_mut()
+    }
+}
+
+impl<'f, B: ?Sized + Builder> WasmOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
     #[inline(always)]
     fn builder(&self) -> &B {
         self.inner.builder()

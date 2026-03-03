@@ -24,6 +24,7 @@ midenc-dialect-cf.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-ub.workspace = true
+midenc-dialect-wasm.workspace = true
 midenc-hir.workspace = true
 midenc-session.workspace = true
 thiserror.workspace = true

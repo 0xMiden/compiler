@@ -28,6 +28,7 @@ midenc-dialect-hir.workspace = true
 midenc-dialect-cf.workspace = true
 midenc-dialect-ub.workspace = true
 midenc-dialect-arith.workspace = true
+midenc-dialect-wasm.workspace = true
 midenc-hir-symbol.workspace = true
 midenc-session.workspace = true
 thiserror.workspace = true

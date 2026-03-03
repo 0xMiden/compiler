@@ -2562,6 +2562,7 @@ dependencies = [
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-hir",
+ "midenc-dialect-wasm",
  "midenc-expect-test",
  "midenc-frontend-wasm",
  "midenc-hir",
@@ -2964,6 +2965,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",
+ "midenc-dialect-wasm",
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
@@ -3053,6 +3055,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-dialect-wasm"
+version = "0.7.1"
+dependencies = [
+ "midenc-dialect-arith",
+ "midenc-hir",
+]
+
+[[package]]
 name = "midenc-driver"
 version = "0.7.1"
 dependencies = [
@@ -3088,6 +3098,7 @@ dependencies = [
  "midenc-dialect-cf",
  "midenc-dialect-hir",
  "midenc-dialect-ub",
+ "midenc-dialect-wasm",
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-symbol",
@@ -3151,6 +3162,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",
+ "midenc-dialect-wasm",
  "midenc-hir",
  "midenc-session",
 ]
