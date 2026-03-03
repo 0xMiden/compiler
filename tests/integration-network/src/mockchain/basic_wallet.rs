@@ -4,18 +4,15 @@ use miden_client::{
     account::component::BasicWallet,
     asset::FungibleAsset,
     crypto::RpoRandomCoin,
-    note::NoteAssets,
-    testing::{AccountState, Auth, MockChain, NoteBuilder},
+    testing::{Auth, MockChain, NoteBuilder},
     transaction::OutputNote,
 };
 use miden_core::Felt;
 use miden_protocol::{account::AccountComponent, asset::Asset};
-use rand::{SeedableRng, rngs::StdRng};
 
 use super::helpers::{
-    NoteCreationConfig, assert_account_has_fungible_asset, build_asset_transfer_tx,
-    build_existing_basic_wallet_account_builder, build_send_notes_script, compile_rust_package,
-    create_note_from_package, execute_tx, to_core_felts,
+    assert_account_has_fungible_asset, build_asset_transfer_tx, build_send_notes_script,
+    execute_tx, to_core_felts,
 };
 use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 
@@ -23,9 +20,10 @@ use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 #[test]
 pub fn test_basic_wallet_p2id() {
     // Compile the contracts first (before creating any runtime)
-    let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
-    let note_package = compile_rust_package("../../examples/p2id-note", true);
-    let tx_script_package = compile_rust_package("../../examples/basic-wallet-tx-script", true);
+    let wallet_package =
+        CustomComponentBuilder::with_package("../../examples/basic-wallet").build();
+    let note_package = NoteBuilder::build_project("../../examples/p2id-note");
+    let tx_script_package = NoteBuilder::build_project("../../examples/basic-wallet-tx-script");
 
     let mut builder = MockChain::builder();
     let max_supply = 1_000_000_000u64;
@@ -35,20 +33,12 @@ pub fn test_basic_wallet_p2id() {
     let faucet_id = faucet_account.id();
 
     let alice_account = builder
-        .add_account_from_builder(
-            Auth::BasicAuth,
-            build_existing_basic_wallet_account_builder(wallet_package.clone(), false, [1_u8; 32]),
-            AccountState::Exists,
-        )
+        .add_existing_account_from_components(Auth::BasicAuth, [wallet_package.clone().into()])
         .unwrap();
     let alice_id = alice_account.id();
 
     let bob_account = builder
-        .add_account_from_builder(
-            Auth::BasicAuth,
-            build_existing_basic_wallet_account_builder(wallet_package, false, [2_u8; 32]),
-            AccountState::Exists,
-        )
+        .add_existing_account_from_components(Auth::BasicAuth, [wallet_package.into()])
         .unwrap();
     let bob_id = bob_account.id();
 
@@ -61,16 +51,13 @@ pub fn test_basic_wallet_p2id() {
     let mint_asset = FungibleAsset::new(faucet_id, mint_amount).unwrap();
 
     let mut note_rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
-    let p2id_note_mint = create_note_from_package(
-        note_package.clone(),
-        faucet_id,
-        NoteCreationConfig {
-            assets: NoteAssets::new(vec![mint_asset.into()]).unwrap(),
-            inputs: to_core_felts(&alice_id),
-            ..Default::default()
-        },
-        &mut note_rng,
-    );
+    let p2id_note_mint = NoteBuilder::new(faucet_id, &mut note_rng)
+        .package((*note_package).clone())
+        .add_assets([Asset::from(mint_asset)])
+        .note_inputs(to_core_felts(&alice_id))
+        .unwrap()
+        .build()
+        .unwrap();
 
     let faucet_account = chain.committed_account(faucet_id).unwrap().clone();
     let mint_tx_script =
@@ -243,9 +230,10 @@ pub fn test_basic_wallet_p2ide() {
 #[test]
 pub fn test_basic_wallet_p2ide_reclaim() {
     // Compile the contracts first (before creating any runtime)
-    let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
-    let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);
-    let p2ide_note_package = compile_rust_package("../../examples/p2ide-note", true);
+    let wallet_package =
+        CustomComponentBuilder::with_package("../../examples/basic-wallet").build();
+    let p2id_note_package = NoteBuilder::build_project("../../examples/p2id-note");
+    let p2ide_note_package = NoteBuilder::build_project("../../examples/p2ide-note");
 
     let mut builder = MockChain::builder();
     let max_supply = 1_000_000_000u64;
@@ -255,20 +243,15 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let faucet_id = faucet_account.id();
 
     let alice_account = builder
-        .add_account_from_builder(
+        .add_existing_account_from_components(
             Auth::BasicAuth,
-            build_existing_basic_wallet_account_builder(wallet_package.clone(), true, [5_u8; 32]),
-            AccountState::Exists,
+            [wallet_package.clone().into(), BasicWallet.into()],
         )
         .unwrap();
     let alice_id = alice_account.id();
 
     let bob_account = builder
-        .add_account_from_builder(
-            Auth::BasicAuth,
-            build_existing_basic_wallet_account_builder(wallet_package, false, [6_u8; 32]),
-            AccountState::Exists,
-        )
+        .add_existing_account_from_components(Auth::BasicAuth, [wallet_package.into()])
         .unwrap();
     let bob_id = bob_account.id();
 
@@ -280,17 +263,14 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let mint_amount = 100_000u64;
     let mint_asset = FungibleAsset::new(faucet_id, mint_amount).unwrap();
 
-    let mut p2id_rng = RpoRandomCoin::new(p2id_note_package.unwrap_program().hash());
-    let p2id_note_mint = create_note_from_package(
-        p2id_note_package.clone(),
-        faucet_id,
-        NoteCreationConfig {
-            assets: NoteAssets::new(vec![mint_asset.into()]).unwrap(),
-            inputs: to_core_felts(&alice_id),
-            ..Default::default()
-        },
-        &mut p2id_rng,
-    );
+    let p2id_rng = RpoRandomCoin::new(p2id_note_package.unwrap_program().hash());
+    let p2id_note_mint = NoteBuilder::new(faucet_id, p2id_rng)
+        .package((*p2id_note_package).clone())
+        .add_assets([Asset::from(mint_asset)])
+        .note_inputs(to_core_felts(&alice_id))
+        .unwrap()
+        .build()
+        .unwrap();
 
     let faucet_account = chain.committed_account(faucet_id).unwrap().clone();
     let mint_tx_script =
@@ -316,21 +296,18 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let timelock_height = Felt::new(0);
     let reclaim_height = Felt::new(1000);
 
-    let mut p2ide_rng = RpoRandomCoin::new(p2ide_note_package.unwrap_program().hash());
-    let p2ide_note = create_note_from_package(
-        p2ide_note_package,
-        alice_id,
-        NoteCreationConfig {
-            assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
-            inputs: {
-                let mut inputs = to_core_felts(&bob_id);
-                inputs.extend([timelock_height, reclaim_height]);
-                inputs
-            },
-            ..Default::default()
-        },
-        &mut p2ide_rng,
-    );
+    let p2ide_rng = RpoRandomCoin::new(p2ide_note_package.unwrap_program().hash());
+    let p2ide_note = NoteBuilder::new(alice_id, p2ide_rng)
+        .package((*p2ide_note_package).clone())
+        .add_assets([Asset::from(transfer_asset)])
+        .note_inputs({
+            let mut inputs = to_core_felts(&bob_id);
+            inputs.extend([timelock_height, reclaim_height]);
+            inputs
+        })
+        .unwrap()
+        .build()
+        .unwrap();
 
     let alice_account = chain.committed_account(alice_id).unwrap().clone();
     let transfer_tx_script =
