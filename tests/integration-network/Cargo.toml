@@ -19,6 +19,7 @@ miden-standards = { workspace = true, features = ["std"] }
 miden-field-repr = { version = "0.10.0", path = "../../sdk/field-repr/repr" }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
+midenc-expect-test.workspace = true
 rand = "0.9"
 tokio.workspace = true
 

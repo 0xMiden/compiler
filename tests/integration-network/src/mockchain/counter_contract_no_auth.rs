@@ -12,11 +12,15 @@ use miden_core::{Felt, FieldElement};
 use miden_protocol::account::{
     AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
 };
+use midenc_expect_test::expect;
 
-use super::helpers::{
-    NoteCreationConfig, assert_counter_storage,
-    build_existing_counter_account_builder_with_auth_package, compile_rust_package,
-    create_note_from_package, execute_tx,
+use super::{
+    cycle_helpers::{auth_procedure_cycles, note_cycles},
+    helpers::{
+        NoteCreationConfig, assert_counter_storage,
+        build_existing_counter_account_builder_with_auth_package, compile_rust_package,
+        create_note_from_package, execute_tx,
+    },
 };
 
 /// Tests the counter contract with a "no-auth" authentication component.
@@ -98,7 +102,9 @@ pub fn test_counter_contract_no_auth() {
     let tx_context_builder = chain
         .build_tx_context(counter_account.clone(), &[counter_note.id()], &[])
         .unwrap();
-    execute_tx(&mut chain, tx_context_builder);
+    let tx_measurements = execute_tx(&mut chain, tx_context_builder);
+    expect!["2264"].assert_eq(auth_procedure_cycles(&tx_measurements));
+    expect!["11916"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(

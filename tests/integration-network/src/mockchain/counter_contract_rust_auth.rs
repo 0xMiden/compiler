@@ -9,10 +9,15 @@ use miden_client::{
     transaction::OutputNote,
 };
 use miden_protocol::account::StorageSlotName;
+use midenc_expect_test::expect;
 
-use super::helpers::{
-    NoteCreationConfig, assert_counter_storage, block_on, build_counter_account_with_rust_rpo_auth,
-    build_send_notes_script, compile_rust_package, create_note_from_package,
+use super::{
+    cycle_helpers::auth_procedure_cycles,
+    helpers::{
+        NoteCreationConfig, assert_counter_storage, block_on,
+        build_counter_account_with_rust_rpo_auth, build_send_notes_script, compile_rust_package,
+        create_note_from_package,
+    },
 };
 
 /// Verify that another client (without the RPO-Falcon512 key) cannot create notes for
@@ -74,6 +79,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     let tx_context = tx_context_builder.build().unwrap();
     let executed_tx =
         block_on(tx_context.execute()).expect("authorized client should be able to create a note");
+    expect!["73666"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
     assert_eq!(executed_tx.output_notes().get_note(0).id(), own_note.id());
 
