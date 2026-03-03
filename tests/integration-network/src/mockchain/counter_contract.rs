@@ -2,62 +2,48 @@
 
 use miden_client::{
     Word,
-    account::component::BasicWallet,
+    account::component::{BasicWallet, InitStorageData},
     crypto::RpoRandomCoin,
-    note::NoteTag,
-    testing::{AccountState, Auth, MockChain, NoteBuilder},
+    testing::{Auth, MockChain, NoteBuilder},
     transaction::OutputNote,
 };
 use miden_core::{Felt, FieldElement};
-use miden_protocol::account::{
-    AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
-};
+use miden_protocol::account::StorageSlotName;
 
-use super::helpers::{
-    NoteCreationConfig, account_component_from_package, assert_counter_storage,
-    create_note_from_package, execute_tx,
-};
+use super::helpers::{assert_counter_storage, execute_tx};
 use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 
 /// Tests the counter contract deployment and note consumption workflow on a mock chain.
 #[test]
 pub fn test_counter_contract() {
     // Compile the contracts first (before creating any runtime)
-    let contract_package =
-        CustomComponentBuilder::with_package("../../examples/counter-contract").build();
+    let contract_package = CustomComponentBuilder::with_package("../../examples/counter-contract");
     let note_package = NoteBuilder::build_project("../../examples/counter-note");
 
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let counter_storage_slot =
         StorageSlotName::new("miden::component::miden_counter_contract::count_map").unwrap();
-    let storage_slots = vec![StorageSlot::with_map(
-        counter_storage_slot.clone(),
-        StorageMap::with_entries([(key, value)]).unwrap(),
-    )];
 
-    let counter_component = account_component_from_package(contract_package.package, storage_slots);
-    let counter_account_builder = AccountBuilder::new([0_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
-        .with_component(BasicWallet)
-        .with_component(counter_component);
+    let mut init_storage_data = InitStorageData::default();
+    init_storage_data
+        .insert_map_entry(counter_storage_slot.clone(), key, value)
+        .unwrap();
+    let contract_package = contract_package.with_init_storage_data(init_storage_data).build();
 
     let mut builder = MockChain::builder();
     let counter_account = builder
-        .add_account_from_builder(Auth::BasicAuth, counter_account_builder, AccountState::Exists)
-        .expect("failed to add counter account to mock chain builder");
+        .add_existing_account_from_components(
+            Auth::BasicAuth,
+            [BasicWallet.into(), contract_package.into()],
+        )
+        .unwrap();
 
     let mut rng = RpoRandomCoin::new(note_package.clone().unwrap_program().hash());
-    let counter_note = create_note_from_package(
-        note_package,
-        counter_account.id(),
-        NoteCreationConfig {
-            tag: NoteTag::with_account_target(counter_account.id()),
-            ..Default::default()
-        },
-        &mut rng,
-    );
+    let counter_note = NoteBuilder::new(counter_account.id(), &mut rng)
+        .package((*note_package).clone())
+        .build()
+        .unwrap();
     builder.add_output_note(OutputNote::Full(counter_note.clone()));
 
     let mut chain = builder.build().expect("failed to build mock chain");
