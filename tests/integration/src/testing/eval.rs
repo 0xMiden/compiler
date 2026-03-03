@@ -31,6 +31,41 @@ where
     I: IntoIterator<Item = Initializer<'a>>,
     F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
 {
+    eval_package_with_advice_stack(
+        package,
+        initializers,
+        core::iter::empty::<Felt>(),
+        args,
+        session,
+        verify_trace,
+    )
+}
+
+/// Evaluates `package` using the debug executor, producing an output of type `T`
+///
+/// * `initializers` is an optional set of [Initializer] to run at program start by the compiler-
+///   emitted test harness, to set up memory or other global state.
+/// * `advice_stack` contains additional values to place on the advice stack before program start.
+///   The last element is treated as the top of the stack. Initializer-related values are pushed
+///   on top of these.
+/// * `args` are the set of arguments that will be placed on the operand stack, in order of
+///   appearance
+/// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
+///   things about the trace, such as the state of memory at program exit.
+pub fn eval_package_with_advice_stack<'a, T, I, A, F>(
+    package: &miden_mast_package::Package,
+    initializers: I,
+    advice_stack: A,
+    args: &[Felt],
+    session: &Session,
+    verify_trace: F,
+) -> Result<T, TestCaseError>
+where
+    T: Clone + FromMidenRepr + PartialEq + core::fmt::Debug,
+    I: IntoIterator<Item = Initializer<'a>>,
+    A: IntoIterator<Item = Felt>,
+    F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
+{
     // Provide input bytes/felts/words via the advice stack
     //
     // NOTE: This relies on MasmComponent to emit a test harness via `emit_test_harness` during
@@ -38,7 +73,7 @@ where
     //
     // First, convert the input to words, zero-padding as needed; and push on to the
     // advice stack in reverse.
-    let mut advice_stack = Vec::<Felt>::with_capacity(64);
+    let mut advice_stack: Vec<Felt> = advice_stack.into_iter().collect();
     let mut num_initializers = 0u64;
     for initializer in initializers {
         num_initializers += 1;
@@ -175,6 +210,7 @@ pub fn compile_link_output_to_package(
 ///
 /// * `initializers` is an optional set of [Initializer] to run at program start by the compiler-
 ///   emitted test harness, to set up memory or other global state.
+/// * `advice_stack` contains additional values to place on the advice stack before program start.
 /// * `args` are the set of arguments that will be placed on the operand stack, in order of
 ///   appearance
 /// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
@@ -191,6 +227,47 @@ where
     I: IntoIterator<Item = Initializer<'a>>,
     F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
 {
+    eval_link_output_with_advice_stack(
+        link_output,
+        initializers,
+        core::iter::empty::<Felt>(),
+        args,
+        session,
+        verify_trace,
+    )
+}
+
+/// Evaluates the package assembled from `link_output` using the debug executor, producing an
+/// output of type `T`
+///
+/// * `initializers` is an optional set of [Initializer] to run at program start by the compiler-
+///   emitted test harness, to set up memory or other global state.
+/// * `advice_stack` contains additional values to place on the advice stack before program start.
+/// * `args` are the set of arguments that will be placed on the operand stack, in order of
+///   appearance
+/// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
+///   things about the trace, such as the state of memory at program exit.
+pub fn eval_link_output_with_advice_stack<'a, T, I, A, F>(
+    link_output: LinkOutput,
+    initializers: I,
+    advice_stack: A,
+    args: &[Felt],
+    session: &Session,
+    verify_trace: F,
+) -> Result<T, TestCaseError>
+where
+    T: Clone + FromMidenRepr + PartialEq + core::fmt::Debug,
+    I: IntoIterator<Item = Initializer<'a>>,
+    A: IntoIterator<Item = Felt>,
+    F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
+{
     let package = compile_link_output_to_package(link_output)?;
-    eval_package::<T, _, _>(&package, initializers, args, session, verify_trace)
+    eval_package_with_advice_stack(
+        &package,
+        initializers,
+        advice_stack,
+        args,
+        session,
+        verify_trace,
+    )
 }
