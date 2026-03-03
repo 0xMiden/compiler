@@ -18,7 +18,6 @@ use miden_client::{
     transaction::OutputNote,
 };
 use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
-use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_protocol::{
     account::{
@@ -30,7 +29,6 @@ use miden_protocol::{
     transaction::TransactionScript,
 };
 use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
-use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Converts a value's felt representation into `miden_core::Felt` elements.
@@ -53,20 +51,6 @@ pub(super) fn block_on<F: Future>(future: F) -> F::Output {
 
 // COMPILATION
 // ================================================================================================
-
-/// NOTE: superseeded by the PackageFromProject trait.
-/// Helper to compile a Rust package to a Miden `Package`.
-pub(super) fn compile_rust_package(package_path: &str, release: bool) -> Arc<Package> {
-    let config = WasmTranslationConfig::default();
-    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(package_path, config, []);
-
-    if release {
-        builder.with_release(true);
-    }
-
-    let mut test = builder.build();
-    test.compile_package()
-}
 
 // NOTE HELPERS
 // ================================================================================================
@@ -128,30 +112,6 @@ pub(super) fn account_component_from_package(
     AccountComponent::new(package.unwrap_library().as_ref().clone(), storage_slots)
         .unwrap()
         .with_metadata(metadata)
-}
-
-// BASIC WALLET HELPERS
-// ================================================================================================
-
-/// Builds an account builder for an existing basic-wallet account based on the provided component
-/// package.
-pub(super) fn build_existing_basic_wallet_account_builder(
-    wallet_package: Arc<Package>,
-    with_std_basic_wallet: bool,
-    seed: [u8; 32],
-) -> AccountBuilder {
-    let wallet_component = account_component_from_package(wallet_package, vec![]);
-
-    let mut builder = AccountBuilder::new(seed)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
-        .with_component(wallet_component);
-
-    if with_std_basic_wallet {
-        builder = builder.with_component(BasicWallet);
-    }
-
-    builder
 }
 
 /// Asserts that the account vault contains a fungible asset from the expected faucet with the

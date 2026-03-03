@@ -5,7 +5,7 @@ use miden_client::{
     account::component::BasicWallet,
     crypto::RpoRandomCoin,
     note::NoteTag,
-    testing::{AccountState, Auth, MockChain},
+    testing::{AccountState, Auth, MockChain, NoteBuilder},
     transaction::OutputNote,
 };
 use miden_core::{Felt, FieldElement};
@@ -15,9 +15,9 @@ use miden_protocol::account::{
 
 use super::helpers::{
     NoteCreationConfig, assert_counter_storage,
-    build_existing_counter_account_builder_with_auth_package, compile_rust_package,
-    create_note_from_package, execute_tx,
+    build_existing_counter_account_builder_with_auth_package, create_note_from_package, execute_tx,
 };
+use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 
 /// Tests the counter contract with a "no-auth" authentication component.
 ///
@@ -29,10 +29,11 @@ use super::helpers::{
 #[test]
 pub fn test_counter_contract_no_auth() {
     // Compile the contracts first (before creating any runtime)
-    let contract_package = compile_rust_package("../../examples/counter-contract", true);
-    let note_package = compile_rust_package("../../examples/counter-note", true);
+    let contract_package =
+        CustomComponentBuilder::with_package("../../examples/counter-contract").build();
+    let note_package = NoteBuilder::build_project("../../examples/counter-note");
     let no_auth_auth_component =
-        compile_rust_package("../../examples/auth-component-no-auth", true);
+        CustomComponentBuilder::with_package("../../examples/auth-component-no-auth").build();
 
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
@@ -46,8 +47,8 @@ pub fn test_counter_contract_no_auth() {
     let mut builder = MockChain::builder();
 
     let counter_account = build_existing_counter_account_builder_with_auth_package(
-        contract_package,
-        no_auth_auth_component,
+        contract_package.package,
+        no_auth_auth_component.package,
         vec![],
         counter_storage_slots,
         [0_u8; 32],

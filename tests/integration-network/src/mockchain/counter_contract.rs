@@ -5,7 +5,7 @@ use miden_client::{
     account::component::BasicWallet,
     crypto::RpoRandomCoin,
     note::NoteTag,
-    testing::{AccountState, Auth, MockChain},
+    testing::{AccountState, Auth, MockChain, NoteBuilder},
     transaction::OutputNote,
 };
 use miden_core::{Felt, FieldElement};
@@ -15,15 +15,17 @@ use miden_protocol::account::{
 
 use super::helpers::{
     NoteCreationConfig, account_component_from_package, assert_counter_storage,
-    compile_rust_package, create_note_from_package, execute_tx,
+    create_note_from_package, execute_tx,
 };
+use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 
 /// Tests the counter contract deployment and note consumption workflow on a mock chain.
 #[test]
 pub fn test_counter_contract() {
     // Compile the contracts first (before creating any runtime)
-    let contract_package = compile_rust_package("../../examples/counter-contract", true);
-    let note_package = compile_rust_package("../../examples/counter-note", true);
+    let contract_package =
+        CustomComponentBuilder::with_package("../../examples/counter-contract").build();
+    let note_package = NoteBuilder::build_project("../../examples/counter-note");
 
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
@@ -34,7 +36,7 @@ pub fn test_counter_contract() {
         StorageMap::with_entries([(key, value)]).unwrap(),
     )];
 
-    let counter_component = account_component_from_package(contract_package, storage_slots);
+    let counter_component = account_component_from_package(contract_package.package, storage_slots);
     let counter_account_builder = AccountBuilder::new([0_u8; 32])
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
