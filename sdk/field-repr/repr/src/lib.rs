@@ -18,6 +18,7 @@ pub use miden_field_repr_derive::DeriveToFeltRepr as ToFeltRepr;
 
 /// Error returned when decoding a type from its felt representation.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FeltReprError {
     /// Attempted to read beyond the end of the felt slice.
     UnexpectedEof {
