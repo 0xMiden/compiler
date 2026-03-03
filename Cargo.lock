@@ -2440,9 +2440,8 @@ dependencies = [
 
 [[package]]
 name = "miden-debug"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39b757124b749cb4226c7d78758514b8eb0b2fdd948c8937ef0fd60dab107bf3"
+version = "0.4.2"
+source = "git+https://github.com/0xMiden/miden-debug.git?branch=mooori%2Fi8i16-encoding#2ace5d145102e4b6db37bb97ebd6bcce12f10ee6"
 dependencies = [
  "clap",
  "crossterm",
@@ -2457,6 +2456,7 @@ dependencies = [
  "miden-mast-package",
  "miden-processor",
  "miden-thiserror",
+ "num-traits",
  "proptest",
  "ratatui",
  "rustc-demangle",
@@ -4252,7 +4252,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5926,15 +5926,6 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
 ]
