@@ -2292,6 +2292,8 @@ name = "miden-base-macros"
 version = "0.10.0"
 dependencies = [
  "heck",
+ "miden-field",
+ "miden-field-repr",
  "miden-protocol",
  "proc-macro2",
  "quote",

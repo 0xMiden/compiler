@@ -100,10 +100,14 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
     let from_impl = match &item_struct.fields {
         syn::Fields::Unit => {
             quote! {
-                impl ::core::convert::From<&[::miden::Felt]> for #struct_ident {
+                impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
+                    type Error = ::miden::felt_repr::FeltReprError;
+
                     #[inline(always)]
-                    fn from(_felts: &[::miden::Felt]) -> Self {
-                        Self
+                    fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
+                        let reader = ::miden::felt_repr::FeltReader::new(felts);
+                        reader.ensure_eof()?;
+                        Ok(Self)
                     }
                 }
             }
@@ -113,16 +117,20 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
                 let ident = field.ident.as_ref().expect("named fields must have identifiers");
                 let ty = &field.ty;
                 quote! {
-                    #ident: <#ty as ::miden::felt_repr::FromFeltRepr>::from_felt_repr(&mut reader)
+                    #ident: <#ty as ::miden::felt_repr::FromFeltRepr>::from_felt_repr(&mut reader)?
                 }
             });
 
             quote! {
-                impl ::core::convert::From<&[::miden::Felt]> for #struct_ident {
+                impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
+                    type Error = ::miden::felt_repr::FeltReprError;
+
                     #[inline(always)]
-                    fn from(felts: &[::miden::Felt]) -> Self {
+                    fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
                         let mut reader = ::miden::felt_repr::FeltReader::new(felts);
-                        Self { #(#field_inits),* }
+                        let value = Self { #(#field_inits),* };
+                        reader.ensure_eof()?;
+                        Ok(value)
                     }
                 }
             }
@@ -131,16 +139,20 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
             let field_inits = fields.unnamed.iter().map(|field| {
                 let ty = &field.ty;
                 quote! {
-                    <#ty as ::miden::felt_repr::FromFeltRepr>::from_felt_repr(&mut reader)
+                    <#ty as ::miden::felt_repr::FromFeltRepr>::from_felt_repr(&mut reader)?
                 }
             });
 
             quote! {
-                impl ::core::convert::From<&[::miden::Felt]> for #struct_ident {
+                impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
+                    type Error = ::miden::felt_repr::FeltReprError;
+
                     #[inline(always)]
-                    fn from(felts: &[::miden::Felt]) -> Self {
+                    fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
                         let mut reader = ::miden::felt_repr::FeltReader::new(felts);
-                        Self(#(#field_inits),*)
+                        let value = Self(#(#field_inits),*);
+                        reader.ensure_eof()?;
+                        Ok(value)
                     }
                 }
             }
@@ -260,10 +272,16 @@ fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
     // notes can execute without requiring a full active-note runtime context.
     quote! {
         let __miden_note: #note_ty = if ::core::mem::size_of::<#note_ty>() == 0 {
-            (&[] as &[::miden::Felt]).into()
+            match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(&[]) {
+                Ok(note) => note,
+                Err(err) => ::core::panic!("failed to decode note inputs: {err:?}"),
+            }
         } else {
             let inputs = ::miden::active_note::get_inputs();
-            inputs.as_slice().into()
+            match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(inputs.as_slice()) {
+                Ok(note) => note,
+                Err(err) => ::core::panic!("failed to decode note inputs: {err:?}"),
+            }
         };
     }
 }
