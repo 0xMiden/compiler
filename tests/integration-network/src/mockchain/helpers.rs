@@ -255,7 +255,7 @@ pub(super) fn build_asset_transfer_tx(
     // Ensure word alignment for `adv_load_preimage` in the tx script.
     commitment_input.extend([Felt::ZERO, Felt::ZERO]);
 
-    let commitment_key: Word = Rpo256::hash_elements(&commitment_input);
+    let commitment_key: Word = miden_core::crypto::hash::Poseidon2::hash_elements(&commitment_input);
     assert_eq!(commitment_input.len() % 4, 0, "commitment input needs to be word-aligned");
 
     // NOTE: passed on the stack reversed
