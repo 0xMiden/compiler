@@ -2,7 +2,7 @@ use std::{env, fs};
 
 use cargo_miden::{OutputType, run};
 use miden_mast_package::Package;
-use midenc_session::miden_assembly::utils::Deserializable;
+use midenc_session::diagnostics::serde::Deserializable;
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
     let template = if template.is_empty() {

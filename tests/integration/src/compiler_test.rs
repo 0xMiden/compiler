@@ -955,6 +955,7 @@ pub fn sdk_crate_path() -> PathBuf {
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("sdk")
 }
 
+// TODO: remove when the migration to VM v0.21 is complete
 /// Returns the `[patch.crates-io]` section needed by test projects that depend on `miden` SDK.
 ///
 /// This is necessary because the generated test projects are separate Cargo workspaces and
@@ -964,6 +965,7 @@ pub fn sdk_crate_path() -> PathBuf {
 pub fn sdk_patch_section() -> String {
     let cwd = std::env::current_dir().unwrap();
     let workspace_root = cwd.parent().unwrap().parent().unwrap();
+    // TODO: use the same git branch as in the root workspace Cargo.toml
     let miden_protocol_path = workspace_root
         .join("..")
         .join("miden-base")
