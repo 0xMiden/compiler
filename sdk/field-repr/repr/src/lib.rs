@@ -184,7 +184,7 @@ impl<'a> FeltReader<'a> {
     pub fn read_u32(&mut self) -> FeltReprResult<u32> {
         let pos = self.pos;
         let len = self.data.len();
-        let value = self.read()?.as_u64();
+        let value = self.read()?.as_canonical_u64();
         if value > u32::MAX as u64 {
             return Err(FeltReprError::ValueOutOfRange {
                 pos,
@@ -202,7 +202,7 @@ impl<'a> FeltReader<'a> {
     pub fn read_u8(&mut self) -> FeltReprResult<u8> {
         let pos = self.pos;
         let len = self.data.len();
-        let value = self.read()?.as_u64();
+        let value = self.read()?.as_canonical_u64();
         if value > u8::MAX as u64 {
             return Err(FeltReprError::ValueOutOfRange {
                 pos,
@@ -222,7 +222,7 @@ impl<'a> FeltReader<'a> {
     pub fn read_bool(&mut self) -> FeltReprResult<bool> {
         let pos = self.pos;
         let len = self.data.len();
-        match self.read()?.as_u64() {
+        match self.read()?.as_canonical_u64() {
             0 => Ok(false),
             1 => Ok(true),
             value => Err(FeltReprError::InvalidBool { pos, len, value }),
@@ -270,14 +270,6 @@ impl FromFeltRepr for Felt {
     }
 }
 
-#[cfg(not(target_family = "wasm"))]
-impl FromFeltRepr for miden_core::Felt {
-    #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
-        Ok(Self::from(reader.read()?))
-    }
-}
-
 impl FromFeltRepr for u64 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
@@ -322,7 +314,7 @@ where
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         let pos = reader.pos();
         let len = reader.len();
-        match reader.read()?.as_u64() {
+        match reader.read()?.as_canonical_u64() {
             0 => Ok(None),
             1 => Ok(Some(T::from_felt_repr(reader)?)),
             tag => Err(FeltReprError::InvalidOptionTag { pos, len, tag }),
@@ -373,42 +365,34 @@ impl ToFeltRepr for Felt {
     }
 }
 
-#[cfg(not(target_family = "wasm"))]
-impl ToFeltRepr for miden_core::Felt {
-    #[inline(always)]
-    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write((*self).into());
-    }
-}
-
 impl ToFeltRepr for u64 {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         let lo = (*self & 0xffff_ffff) as u32;
         let hi = (*self >> 32) as u32;
-        writer.write(Felt::from_u32(lo));
-        writer.write(Felt::from_u32(hi));
+        writer.write(Felt::new(lo as u64));
+        writer.write(Felt::new(hi as u64));
     }
 }
 
 impl ToFeltRepr for u32 {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::from_u64_unchecked(*self as u64));
+        writer.write(Felt::new(*self as u64));
     }
 }
 
 impl ToFeltRepr for u8 {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::from_u64_unchecked(*self as u64));
+        writer.write(Felt::new(*self as u64));
     }
 }
 
 impl ToFeltRepr for bool {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::from_u64_unchecked(*self as u64));
+        writer.write(Felt::new(*self as u64));
     }
 }
 
@@ -424,9 +408,9 @@ where
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         match self {
-            None => writer.write(Felt::from_u64_unchecked(0)),
+            None => writer.write(Felt::new(0)),
             Some(value) => {
-                writer.write(Felt::from_u64_unchecked(1));
+                writer.write(Felt::new(1));
                 value.write_felt_repr(writer);
             }
         }
@@ -444,7 +428,7 @@ where
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         let len = self.len();
         assert!(len <= u32::MAX as usize, "Vec: length out of range");
-        writer.write(Felt::from_u64_unchecked(len as u64));
+        writer.write(Felt::new(len as u64));
 
         let mut i = 0usize;
         while i < len {

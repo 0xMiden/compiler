@@ -14,7 +14,7 @@ struct MyNote;
 impl MyNote {
     #[note_script]
     pub fn execute(self, _arg: Word) {
-        let foo_val = Word::from_u64_unchecked(11, 22, 33, 44);
+        let foo_val = Word::new([felt!(11), felt!(22), felt!(33), felt!(44)]);
         let asset = Asset::new([felt!(99), felt!(88), felt!(77), felt!(66)]);
         let value = StructA {
             foo: foo_val,
@@ -22,8 +22,8 @@ impl MyNote {
         };
         let result = test_custom_types(value, asset);
         let expected = StructB {
-            bar: foo_val.inner.0,
-            baz: asset.inner.inner.0,
+            bar: foo_val.a,
+            baz: asset.inner.a,
         };
 
         assert_eq!(result.bar, expected.bar);

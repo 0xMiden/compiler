@@ -17,7 +17,6 @@ members = [
     "midenc-log",
     "midenc-session",
     "sdk/field-repr/*",
-    "sdk/field",
     "sdk/alloc",
     "sdk/base",
     "sdk/base-macros",
@@ -78,6 +77,7 @@ litcheck-filecheck = "0.4"
 log = { version = "0.4", features = ["kv"] }
 
 # Miden Dependencies
+miden-field = {  version = "0.22" }
 miden-assembly = { version = "0.21", default-features = false }
 miden-core = { version = "0.21", default-features = false }
 miden-debug = { version = "0.4" }

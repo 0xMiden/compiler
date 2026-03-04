@@ -279,7 +279,7 @@ mod imp {
             let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
             let miden_ptr = rust_ptr / 4;
             // Since our BumpAlloc produces word-aligned allocations the pointer should be word-aligned
-            assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
+            assert_eq(Felt::new((miden_ptr % 4) as u64), felt!(0));
 
             if element_count.is_multiple_of(4) {
                 let start_addr = miden_ptr;
@@ -289,7 +289,7 @@ mod imp {
                 extern_hash_elements(miden_ptr, num_elements, result_ptr);
             }
 
-            Digest::from_word(ret_area.assume_init().reverse())
+            Digest::from_word(ret_area.assume_init().reversed())
         }
     }
 
@@ -306,7 +306,7 @@ mod imp {
 
         let miden_ptr = rust_ptr / 4;
         // It's safe to assume the `words` ptr is word-aligned.
-        assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
+        assert_eq(Felt::new((miden_ptr % 4) as u64), felt!(0));
 
         unsafe {
             let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
@@ -315,7 +315,7 @@ mod imp {
             let end_addr = start_addr + (words.len() as u32 * 4);
             extern_hash_words(start_addr, end_addr, result_ptr);
 
-            Digest::from_word(ret_area.assume_init().reverse())
+            Digest::from_word(ret_area.assume_init().reversed())
         }
     }
 }

@@ -1959,7 +1959,7 @@ dependencies = [
  "miden-base",
  "miden-base-macros",
  "miden-base-sys",
- "miden-field 0.10.0",
+ "miden-field",
  "miden-field-repr",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
@@ -2029,7 +2029,7 @@ name = "miden-base-macros"
 version = "0.10.0"
 dependencies = [
  "heck",
- "miden-field 0.10.0",
+ "miden-field",
  "miden-field-repr",
  "miden-protocol",
  "proc-macro2",
@@ -2104,7 +2104,7 @@ dependencies = [
  "hkdf",
  "k256",
  "miden-crypto-derive",
- "miden-field 0.22.4",
+ "miden-field",
  "miden-serde-utils",
  "num",
  "num-complex",
@@ -2198,13 +2198,6 @@ dependencies = [
 
 [[package]]
 name = "miden-field"
-version = "0.10.0"
-dependencies = [
- "miden-core",
-]
-
-[[package]]
-name = "miden-field"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f821a07c16cfa6e500d5a56d05c11523984e3cd562cfc80ef657e4264d708067"
@@ -2225,7 +2218,7 @@ name = "miden-field-repr"
 version = "0.10.0"
 dependencies = [
  "miden-core",
- "miden-field 0.10.0",
+ "miden-field",
  "miden-field-repr-derive",
 ]
 
@@ -2244,7 +2237,7 @@ version = "0.10.0"
 dependencies = [
  "miden-core",
  "miden-debug",
- "miden-field 0.10.0",
+ "miden-field",
  "miden-field-repr",
  "miden-integration-tests",
  "miden-processor",
@@ -2440,7 +2433,7 @@ dependencies = [
 name = "miden-stdlib-sys"
 version = "0.10.0"
 dependencies = [
- "miden-field 0.10.0",
+ "miden-field",
 ]
 
 [[package]]
