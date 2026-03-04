@@ -162,7 +162,7 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
         Some(merged) => {
             let data = alloc::sync::Arc::new(ConstantData::from(merged.data));
             let felts = crate::Rodata::bytes_to_elements(data.as_slice());
-            let digest = miden_core::crypto::hash::Rpo256::hash_elements(&felts);
+            let digest = miden_core::crypto::hash::Poseidon2::hash_elements(&felts);
             alloc::vec![crate::Rodata {
                 component: link_info.component().clone(),
                 digest,

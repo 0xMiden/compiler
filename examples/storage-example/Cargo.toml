@@ -18,3 +18,7 @@ package = "miden:storage-example"
 [package.metadata.miden]
 project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
+
+[patch.crates-io]
+miden-protocol = { git = "https://github.com/0xMiden/protocol", branch = "next" }
+miden-standards = { git = "https://github.com/0xMiden/protocol", branch = "next" }

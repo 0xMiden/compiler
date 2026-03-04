@@ -48,4 +48,5 @@ project-kind = "note-script"
 "miden:cross-ctx-account" = { path = "../cross-ctx-account/wit/cross-ctx-account.wit" }
 
 [patch.crates-io]
-miden-protocol = { path = "../../../../../miden-base/crates/miden-protocol" }
+miden-protocol = { git = "https://github.com/0xMiden/protocol", branch = "next" }
+miden-standards = { git = "https://github.com/0xMiden/protocol", branch = "next" }

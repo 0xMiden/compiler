@@ -45,7 +45,7 @@ fn test_hash_elements() {
         let raw_felts: Vec<Felt> = test_felts.into_iter().map(From::from).collect();
 
         dbg!(raw_felts.len());
-        let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&raw_felts);
+        let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&raw_felts);
         let expected_felts: [TestFelt; 4] = [
             TestFelt(expected_digest[0]),
             TestFelt(expected_digest[1]),
@@ -130,7 +130,7 @@ fn test_hash_words() {
                 flat_felts.extend_from_slice(w);
             }
 
-            let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&flat_felts);
+            let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
             let wide_ptr_addr = 20u32 * 65536;
 
@@ -207,7 +207,7 @@ fn test_pipe_words_to_memory() {
                 flat_felts.extend_from_slice(w);
             }
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
-            let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&flat_felts);
+            let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
             // `pipe_words_to_memory` reads words from the advice stack in LIFO order.
             // To preserve the original order, push the words in reverse.
@@ -297,7 +297,7 @@ fn test_pipe_double_words_to_memory() {
                 flat_felts.extend_from_slice(w);
             }
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
-            let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&flat_felts);
+            let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
             // `pipe_double_words_to_memory` reads words from the advice stack in LIFO order.
             let mut advice_stack: Vec<Felt> = Vec::with_capacity(flat_felts.len());

@@ -70,7 +70,7 @@ fn test_adv_load_preimage() {
         Felt::new(Felt::ORDER_U64 - 1),
     ];
 
-    let commitment = miden_core::crypto::hash::Rpo256::hash_elements(&input);
+    let commitment = miden_core::crypto::hash::Poseidon2::hash_elements(&input);
     dbg!(&commitment.to_hex());
     let mut advice_map = std::collections::BTreeMap::new();
     advice_map.insert(commitment, input.clone());
