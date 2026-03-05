@@ -324,7 +324,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
         }
         Operator::I32Extend16S => {
             let val = state.pop1();
-            state.push1(builder.sext(val, I32, span)?);
+            state.push1(builder.i32_extend_s(val, wasm::LogicalTyAttrI32::I16, span)?);
         }
         Operator::I64ExtendI32S => {
             let val = state.pop1();

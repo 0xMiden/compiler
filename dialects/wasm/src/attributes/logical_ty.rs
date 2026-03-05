@@ -57,7 +57,7 @@ impl AttributeValue for LogicalTyAttrI32 {
     }
 
     fn clone_value(&self) -> Box<dyn AttributeValue> {
-        Box::new(self.clone())
+        Box::new(*self)
     }
 }
 
