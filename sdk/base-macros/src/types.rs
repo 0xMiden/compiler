@@ -50,7 +50,7 @@ pub(crate) struct ExportedTypeDef {
 #[derive(Clone, Debug)]
 pub(crate) enum StorageFieldType {
     StorageMap,
-    Value,
+    Storage,
 }
 
 pub(crate) fn register_export_type(def: ExportedTypeDef, _span: Span) -> Result<(), syn::Error> {

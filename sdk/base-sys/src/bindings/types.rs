@@ -19,6 +19,28 @@ impl AccountId {
     }
 }
 
+impl From<AccountId> for Word {
+    #[inline]
+    fn from(value: AccountId) -> Self {
+        Word::from([
+            Felt::from_u64_unchecked(0),
+            Felt::from_u64_unchecked(0),
+            value.suffix,
+            value.prefix,
+        ])
+    }
+}
+
+impl From<Word> for AccountId {
+    #[inline]
+    fn from(value: Word) -> Self {
+        Self {
+            prefix: value[3],
+            suffix: value[2],
+        }
+    }
+}
+
 /// A fungible or a non-fungible asset.
 ///
 /// All assets are encoded using a single word (4 elements) such that it is easy to determine the
@@ -160,6 +182,19 @@ impl From<Word> for Recipient {
     }
 }
 
+impl From<Recipient> for Word {
+    #[inline]
+    fn from(value: Recipient) -> Self {
+        value.inner
+    }
+}
+
+impl AsRef<Word> for Recipient {
+    fn as_ref(&self) -> &Word {
+        &self.inner
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Tag {
@@ -172,10 +207,42 @@ impl From<Felt> for Tag {
     }
 }
 
+impl From<Tag> for Word {
+    #[inline]
+    fn from(value: Tag) -> Self {
+        Word::from(value.inner)
+    }
+}
+
+impl From<Word> for Tag {
+    #[inline]
+    fn from(value: Word) -> Self {
+        Tag {
+            inner: Felt::from(value),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct NoteIdx {
     pub inner: Felt,
+}
+
+impl From<NoteIdx> for Word {
+    #[inline]
+    fn from(value: NoteIdx) -> Self {
+        Word::from(value.inner)
+    }
+}
+
+impl From<Word> for NoteIdx {
+    #[inline]
+    fn from(value: Word) -> Self {
+        NoteIdx {
+            inner: Felt::from(value),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -187,6 +254,22 @@ pub struct NoteType {
 impl From<Felt> for NoteType {
     fn from(value: Felt) -> Self {
         NoteType { inner: value }
+    }
+}
+
+impl From<NoteType> for Word {
+    #[inline]
+    fn from(value: NoteType) -> Self {
+        Word::from(value.inner)
+    }
+}
+
+impl From<Word> for NoteType {
+    #[inline]
+    fn from(value: Word) -> Self {
+        NoteType {
+            inner: Felt::from(value),
+        }
     }
 }
 
