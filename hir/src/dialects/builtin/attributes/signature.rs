@@ -5,8 +5,11 @@ use compact_str::ToCompactString;
 
 use crate::{
     AttrPrinter, CallConv, Context, NamedAttribute, OpPrintingFlags, Type,
-    attributes::AttributeDict, derive::DialectAttribute, dialects::builtin::BuiltinDialect,
-    formatter, print::AsmPrinter,
+    attributes::{AttrParser, AttributeDict},
+    derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect,
+    formatter,
+    print::AsmPrinter,
 };
 
 /// A marker attribute for "struct return" parameters of a function.
@@ -443,5 +446,39 @@ impl AttrPrinter for SignatureAttr {
             self.params().iter().map(|p| &p.ty),
             self.results().iter().map(|p| &p.ty),
         );
+    }
+}
+
+impl AttrParser for SignatureAttr {
+    fn parse(
+        parser: &mut dyn crate::parse::Parser<'_>,
+    ) -> crate::parse::ParseResult<crate::AttributeRef> {
+        use crate::parse::ParserError;
+
+        parser.parse_custom_keyword("extern")?;
+        parser.parse_lparen()?;
+        let cc_string = parser.parse_string()?;
+        parser.parse_rparen()?;
+        let ty = parser.parse_function_type()?.into_inner();
+
+        let cc = match cc_string.as_str() {
+            "fast" => CallConv::Fast,
+            "C" => CallConv::SystemV,
+            "canon-lift" => CallConv::CanonLift,
+            "canon-lower" => CallConv::CanonLower,
+            "wasm" => CallConv::Wasm,
+            "kernel" => CallConv::Kernel,
+            other => {
+                return Err(ParserError::InvalidAttributeValue {
+                    span: cc_string.span(),
+                    reason: format!("calling convention '{other}' is unrecognized"),
+                });
+            }
+        };
+
+        let context = parser.context_rc();
+        let signature = Signature::with_convention(&context, cc, ty.params, ty.results);
+        let attr = context.create_attribute::<SignatureAttr, _>(signature);
+        Ok(attr)
     }
 }

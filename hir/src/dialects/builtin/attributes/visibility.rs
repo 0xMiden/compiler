@@ -1,7 +1,8 @@
 use core::{fmt, str::FromStr};
 
 use crate::{
-    AttrPrinter, derive::DialectAttribute, dialects::builtin::BuiltinDialect, print::AsmPrinter,
+    AttrPrinter, SmallVec, attributes::AttrParser, derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect, print::AsmPrinter,
 };
 
 /// The types of visibility that a [Symbol] may have
@@ -35,6 +36,27 @@ pub enum Visibility {
 impl AttrPrinter for VisibilityAttr {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         printer.print_keyword(self.value.as_str());
+    }
+}
+
+impl AttrParser for Visibility {
+    fn parse(
+        parser: &mut dyn crate::parse::Parser<'_>,
+    ) -> crate::parse::ParseResult<crate::AttributeRef> {
+        use crate::parse::Token;
+
+        let keywords = SmallVec::<[Token; 4]>::from_iter(
+            ([Visibility::Public, Visibility::Private, Visibility::Internal])
+                .iter()
+                .map(Visibility::as_str)
+                .map(Token::BareIdent),
+        );
+
+        let visibility = parser.parse_keyword_from(&keywords)?;
+        let visibility = visibility.as_str().parse::<Visibility>().unwrap();
+
+        let attr = parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility);
+        Ok(attr)
     }
 }
 

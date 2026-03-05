@@ -1,7 +1,10 @@
-use core::fmt;
+use core::{fmt, str::FromStr};
+
+use smallvec::SmallVec;
 
 use crate::{
-    AttrPrinter, derive::DialectAttribute, dialects::builtin::BuiltinDialect, print::AsmPrinter,
+    AttrPrinter, attributes::AttrParser, derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect, print::AsmPrinter,
 };
 
 /// This enumeration represents the various ways in which arithmetic operations
@@ -40,6 +43,32 @@ impl AttrPrinter for OverflowAttr {
     }
 }
 
+impl AttrParser for OverflowAttr {
+    fn parse(
+        parser: &mut dyn crate::parse::Parser<'_>,
+    ) -> crate::parse::ParseResult<crate::AttributeRef> {
+        use crate::parse::Token;
+
+        let keywords = SmallVec::<[Token; 4]>::from_iter(
+            ([
+                Overflow::Unchecked,
+                Overflow::Checked,
+                Overflow::Wrapping,
+                Overflow::Overflowing,
+            ])
+            .iter()
+            .map(Overflow::as_str)
+            .map(Token::BareIdent),
+        );
+
+        let overflow = parser.parse_keyword_from(&keywords)?;
+        let overflow = overflow.as_str().parse::<Overflow>().unwrap();
+
+        let attr = parser.context_rc().create_attribute::<OverflowAttr, _>(overflow);
+        Ok(attr)
+    }
+}
+
 impl Overflow {
     /// Returns true if overflow is unchecked
     pub fn is_unchecked(&self) -> bool {
@@ -62,6 +91,20 @@ impl Overflow {
             Self::Checked => "checked",
             Self::Wrapping => "wrapping",
             Self::Overflowing => "overflow",
+        }
+    }
+}
+
+impl FromStr for Overflow {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "unchecked" => Ok(Self::Unchecked),
+            "checked" => Ok(Self::Checked),
+            "wrapping" => Ok(Self::Wrapping),
+            "overflowing" => Ok(Self::Overflowing),
+            _ => Err("unknown overflow type"),
         }
     }
 }

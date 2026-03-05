@@ -1,7 +1,9 @@
 use crate::{
     AttrPrinter, Type,
+    attributes::AttrParser,
     derive::DialectAttribute,
     dialects::builtin::{BuiltinDialect, FunctionRef},
+    parse::ParserExt,
 };
 
 #[derive(DialectAttribute, Copy, Clone, PartialEq, Eq, Hash)]
@@ -93,5 +95,26 @@ impl AttrPrinter for LocalVariableAttr {
         printer.print_decimal_integer(self.value.index);
         *printer += const_text(", ");
         printer.print_type(&self.value.ty());
+    }
+}
+
+impl AttrParser for LocalVariableAttr {
+    fn parse(
+        parser: &mut dyn crate::parse::Parser<'_>,
+    ) -> crate::parse::ParseResult<crate::AttributeRef> {
+        let index = parser.parse_decimal_integer::<u16>()?.into_inner();
+        parser.parse_comma()?;
+        let ty = parser.parse_non_function_type()?.into_inner();
+
+        let attr = parser.context_rc().create_attribute_with_type::<LocalVariableAttr, _>(
+            LocalVariable {
+                index,
+                function: FunctionRef::dangling(),
+                is_uninit: true,
+            },
+            ty,
+        );
+
+        Ok(attr)
     }
 }

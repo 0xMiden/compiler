@@ -1,8 +1,12 @@
+use alloc::format;
 use core::fmt;
 
+use smallvec::SmallVec;
+
 use crate::{
-    AttrPrinter, SymbolNameComponent, SymbolPath, SymbolUseRef, derive::DialectAttribute,
-    dialects::builtin::BuiltinDialect, print::AsmPrinter,
+    AttrPrinter, SymbolNameComponent, SymbolPath, SymbolUseRef, attributes::AttrParser,
+    derive::DialectAttribute, diagnostics::SourceSpan, dialects::builtin::BuiltinDialect,
+    print::AsmPrinter,
 };
 
 #[derive(DialectAttribute, Debug, Clone, PartialEq, Eq, Hash)]
@@ -108,5 +112,48 @@ impl SymbolRefAttr {
 impl AttrPrinter for SymbolRefAttr {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         printer.print_symbol_path(&self.path);
+    }
+}
+
+impl AttrParser for SymbolRefAttr {
+    fn parse(
+        parser: &mut dyn crate::parse::Parser<'_>,
+    ) -> crate::parse::ParseResult<crate::AttributeRef> {
+        use crate::{
+            SymbolNameComponent,
+            parse::{ParserError, Token},
+        };
+
+        let start = parser.token_stream().current_span();
+        let is_absolute = parser.token_stream_mut().next_if_eq(Token::ColonColon)?;
+
+        let mut components = SmallVec::<[SymbolNameComponent; 2]>::default();
+        if is_absolute {
+            components.push(SymbolNameComponent::Root);
+        }
+        loop {
+            let component = parser.parse_symbol_name()?;
+            if parser.token_stream_mut().next_if_eq(Token::ColonColon)? {
+                components.push(SymbolNameComponent::Component(component.as_symbol()));
+            } else {
+                components.push(SymbolNameComponent::Leaf(component.as_symbol()));
+                break;
+            }
+        }
+
+        let end = parser.token_stream().current_position();
+        let span = SourceSpan::new(start.source_id(), start.start()..end);
+        let path =
+            SymbolPath::new(components).map_err(|err| ParserError::InvalidAttributeValue {
+                span,
+                reason: format!("invalid symbol reference: {err}"),
+            })?;
+
+        let attr = parser.context_rc().create_attribute::<SymbolRefAttr, _>(SymbolRef {
+            path,
+            user: SymbolUseRef::dangling(),
+        });
+
+        Ok(attr)
     }
 }
