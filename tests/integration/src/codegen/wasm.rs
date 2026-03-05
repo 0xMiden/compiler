@@ -1,4 +1,4 @@
-use midenc_dialect_wasm::WasmOpBuilder;
+use midenc_dialect_wasm::{LogicalTyAttrI32, WasmOpBuilder};
 use midenc_hir::{
     AbiParam, Felt, Signature, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder,
 };
@@ -13,7 +13,7 @@ fn test_i32_extend8_s() {
     let (package, context) = compile_test_module(signature, |builder| {
         let block = builder.current_block();
         let input = block.borrow().arguments()[0] as ValueRef;
-        let result = builder.i32_extend8_s(input, span).unwrap();
+        let result = builder.i32_extend_s(input, LogicalTyAttrI32::I8, span).unwrap();
         builder.ret(Some(result), span).unwrap();
     });
 

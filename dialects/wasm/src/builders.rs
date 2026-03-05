@@ -3,10 +3,17 @@ use midenc_hir::{
     dialects::builtin::FunctionBuilder,
 };
 
+use crate::attributes::LogicalTyAttrI32;
+
 pub trait WasmOpBuilder<'f, B: ?Sized + Builder> {
-    fn i32_extend8_s(&mut self, operand: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::I32Extend8S, _>(span);
-        let op = op_builder(operand)?;
+    fn i32_extend_s(
+        &mut self,
+        arg: ValueRef,
+        logical_ty: LogicalTyAttrI32,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::I32ExtendS, _>(span);
+        let op = op_builder(arg, logical_ty)?;
         Ok(op.borrow().result().as_value_ref())
     }
 

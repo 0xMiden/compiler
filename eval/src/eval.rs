@@ -2034,7 +2034,7 @@ impl Eval for arith::Cto {
     }
 }
 
-impl Eval for wasm::I32Extend8S {
+impl Eval for wasm::I32ExtendS {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         let lhs = self.operand();
         let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
@@ -2047,7 +2047,8 @@ impl Eval for wasm::I32Extend8S {
             ));
         };
 
-        let result = Immediate::I32((x as i8) as i32);
+        let extended = self.logical_ty().sext(x);
+        let result = Immediate::I32(extended);
         evaluator.set_value(self.result().as_value_ref(), result);
         Ok(ControlFlowEffect::None)
     }

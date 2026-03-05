@@ -101,7 +101,7 @@ pub fn register_dialect_hooks(context: &midenc_hir::Context) {
         info.register_operation_trait::<ub::Poison, dyn Eval>();
     });
     context.register_dialect_hook::<wasm::WasmDialect, _>(|info, _context| {
-        info.register_operation_trait::<wasm::I32Extend8S, dyn Eval>();
+        info.register_operation_trait::<wasm::I32ExtendS, dyn Eval>();
     });
     context.register_dialect_hook::<hir::HirDialect, _>(|info, _context| {
         info.register_operation_trait::<hir::Assert, dyn Eval>();

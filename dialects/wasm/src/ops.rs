@@ -4,7 +4,7 @@ use midenc_hir::{
     derive::operation, effects::MemoryEffectOpInterface, matchers::Matcher, traits::*, *,
 };
 
-use crate::WasmDialect;
+use crate::{WasmDialect, attributes::LogicalTyAttrI32};
 
 macro_rules! has_no_effects {
     ($Op:ty) => {
@@ -22,33 +22,41 @@ macro_rules! has_no_effects {
     };
 }
 
+/// Interprets the operand as value its logical type and sign-extends it to `I32`.
+///
+/// Handles the following Wasm instructions:
+///
+/// - `i32.extend8_s`
+/// - `i32.extend16_s`
 #[operation(
     dialect = WasmDialect,
     traits(UnaryOp),
     implements(UnaryOp, InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
 )]
-pub struct I32Extend8S {
+pub struct I32ExtendS {
     #[operand]
     operand: Int32,
+    #[attr]
+    logical_ty: LogicalTyAttrI32,
     #[result]
     result: Int32,
 }
 
-has_no_effects!(I32Extend8S);
+has_no_effects!(I32ExtendS);
 
-impl InferTypeOpInterface for I32Extend8S {
+impl InferTypeOpInterface for I32ExtendS {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         self.result_mut().set_type(Type::I32);
         Ok(())
     }
 }
 
-impl Foldable for I32Extend8S {
+impl Foldable for I32ExtendS {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         if let Some(mut value) =
             matchers::foldable_operand_of::<Immediate>().matches(&self.operand().as_operand_ref())
         {
-            let extended = value.as_i32().map(|v| Immediate::I32((v as i8) as i32));
+            let extended = value.as_i32().map(|v| Immediate::I32(self.logical_ty().sext(v)));
 
             if let Some(extended) = extended {
                 *value = extended;
@@ -66,7 +74,7 @@ impl Foldable for I32Extend8S {
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
         if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>()) {
-            let extended = value.as_i32().map(|v| Immediate::I32((v as i8) as i32));
+            let extended = value.as_i32().map(|v| Immediate::I32(self.logical_ty().sext(v)));
 
             if let Some(extended) = extended {
                 results.push(OpFoldResult::Attribute(Box::new(extended)));
