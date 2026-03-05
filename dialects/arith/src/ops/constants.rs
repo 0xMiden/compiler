@@ -94,6 +94,7 @@ impl OpParser for Constant {
         };
 
         if let Some(new_value) = new_value {
+            imm_mut.set_type(ty.clone());
             *imm_mut.as_value_mut() = new_value;
         } else {
             return Err(ParserError::InvalidAttributeValue {

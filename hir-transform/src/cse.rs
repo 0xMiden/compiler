@@ -17,6 +17,10 @@ use midenc_hir::{
 #[derive(Default)]
 pub struct CommonSubexpressionElimination;
 
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<
+    CommonSubexpressionElimination,
+>("cse", "common subexpression elimintation"));
+
 impl Pass for CommonSubexpressionElimination {
     type Target = Operation;
 
@@ -25,7 +29,7 @@ impl Pass for CommonSubexpressionElimination {
     }
 
     fn argument(&self) -> &'static str {
-        "common-subexpression-elimination"
+        "cse"
     }
 
     fn can_schedule_on(&self, _name: &OperationName) -> bool {

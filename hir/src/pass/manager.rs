@@ -265,6 +265,11 @@ impl PassManager {
     pub fn add_nested_pass<T: OpRegistration>(&mut self, pass: Box<dyn OperationPass>) {
         self.pm.add_nested_pass::<T>(pass)
     }
+
+    #[inline(always)]
+    pub fn op_pass_manager_mut(&mut self) -> &mut OpPassManager {
+        &mut self.pm
+    }
 }
 
 /// This class represents a pass manager that runs passes on either a specific

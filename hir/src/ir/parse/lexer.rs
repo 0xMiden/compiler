@@ -461,7 +461,7 @@ impl<'input> Lexer<'input> {
 
         loop {
             match self.read() {
-                '_' | '$' | '.' => self.skip(),
+                '_' | '-' | '$' | '.' => self.skip(),
                 c if c.is_ascii_alphanumeric() => self.skip(),
                 _ => break,
             }
@@ -676,6 +676,7 @@ impl<'input> TokenStream<'input> {
     }
 
     /// Pops the next token from the stream.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> ParseResult<Option<Span<Token<'input>>>> {
         if let Some(lexed) = self.upcoming.take() {
             self.advance();

@@ -15,7 +15,13 @@ use midenc_hir_analysis::{
 /// This transformation pass uses liveness analysis to remove any instructions which consist solely
 /// of dead values, and which have no side effects (i.e. `MemoryEffect::Write` or
 /// `MemoryEffect::Free`).
+#[derive(Default)]
 pub struct DeadCodeElimination;
+
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<DeadCodeElimination>(
+    "dce",
+    "dead code elimination"
+));
 
 impl Pass for DeadCodeElimination {
     type Target = Operation;
@@ -25,7 +31,7 @@ impl Pass for DeadCodeElimination {
     }
 
     fn argument(&self) -> &'static str {
-        "dead-code-elimination"
+        "dce"
     }
 
     fn can_schedule_on(&self, _name: &OperationName) -> bool {

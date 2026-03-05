@@ -1,0 +1,8 @@
+// RUN: hir-opt %s | filecheck %s
+
+// CHECK:  builtin.function public extern("C") @entrypoint([[V0:%\d+]]: i32) -> i32 {
+builtin.function public extern("C") @entrypoint(%a: i32) -> i32 {
+// CHECK-NEXT: builtin.ret [[V0]] : (i32);
+    builtin.ret %a : (i32);
+// CHECK-NEXT: };
+};

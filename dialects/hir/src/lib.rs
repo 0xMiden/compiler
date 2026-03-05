@@ -20,15 +20,21 @@ pub mod transforms;
 
 use midenc_dialect_arith as arith;
 use midenc_hir::{
-    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, OperationRef,
-    SourceSpan, Type, attributes::IntegerLikeAttr,
+    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, OperationRef, SourceSpan, Type,
+    attributes::IntegerLikeAttr, derive::DialectRegistration,
 };
 
 pub use self::{attributes::*, builders::HirOpBuilder, ops::*};
 
-#[derive(Debug)]
+#[derive(Debug, DialectRegistration)]
 pub struct HirDialect {
     info: DialectInfo,
+}
+
+impl From<DialectInfo> for HirDialect {
+    fn from(info: DialectInfo) -> Self {
+        Self { info }
+    }
 }
 
 impl HirDialect {
@@ -95,6 +101,7 @@ impl Dialect for HirDialect {
     }
 }
 
+#[cfg(false)]
 impl DialectRegistration for HirDialect {
     const NAMESPACE: &'static str = "hir";
 

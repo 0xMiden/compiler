@@ -52,7 +52,7 @@ pub struct DialectRegistration {
     ident: Ident,
     generics: syn::Generics,
     #[darling(default)]
-    name: Option<Ident>,
+    name: Option<syn::LitStr>,
 }
 
 #[derive(Debug, darling::FromField)]
@@ -132,12 +132,17 @@ impl quote::ToTokens for Dialect {
 
 impl quote::ToTokens for DialectRegistration {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let dialect_name = self.name.clone().unwrap_or_else(|| {
-            let name = self.ident.to_string();
-            let name = name.strip_suffix("Dialect").unwrap_or(&name);
-            let name = name.to_snake_case();
-            format_ident!("{name}", span = self.ident.span())
-        });
+        let dialect_name = self
+            .name
+            .as_ref()
+            .map(|name| format_ident!("{}", name.value(), span = name.span()))
+            .clone()
+            .unwrap_or_else(|| {
+                let name = self.ident.to_string();
+                let name = name.strip_suffix("Dialect").unwrap_or(&name);
+                let name = name.to_snake_case();
+                format_ident!("{name}", span = self.ident.span())
+            });
         let dialect_struct_name = &self.ident;
 
         let dialect_namespace =

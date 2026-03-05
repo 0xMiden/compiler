@@ -158,7 +158,6 @@ pub trait Builder: Listener {
         let mut op = state.name.alloc_default(self.context_rc());
         op.borrow_mut().set_span(state.span);
 
-        std::dbg!(&state.operands);
         let mut builder = crate::GenericOperationBuilder::new(self, op);
 
         for prop in op.name().properties() {

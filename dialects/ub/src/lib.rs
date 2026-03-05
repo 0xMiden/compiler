@@ -17,15 +17,22 @@ mod builders;
 mod ops;
 
 use midenc_hir::{
-    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, OperationRef,
-    SourceSpan, Type,
+    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, OperationRef, SourceSpan, Type,
+    derive::DialectRegistration,
 };
 
 pub use self::{attributes::PoisonAttr, builders::UndefinedBehaviorOpBuilder, ops::*};
 
-#[derive(Debug)]
+#[derive(Debug, DialectRegistration)]
+#[dialect(name = "ub")]
 pub struct UndefinedBehaviorDialect {
     info: DialectInfo,
+}
+
+impl From<DialectInfo> for UndefinedBehaviorDialect {
+    fn from(info: DialectInfo) -> Self {
+        Self { info }
+    }
 }
 
 impl UndefinedBehaviorDialect {
@@ -57,6 +64,7 @@ impl Dialect for UndefinedBehaviorDialect {
     }
 }
 
+#[cfg(false)]
 impl DialectRegistration for UndefinedBehaviorDialect {
     const NAMESPACE: &'static str = "ub";
 

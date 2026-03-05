@@ -75,7 +75,13 @@ use midenc_hir::{
 /// `move_into_region` must move the operation into the region such that dominance of the operation
 /// is preserved; for example, by moving the operation to the start of the entry block. This ensures
 /// the preservation of SSA dominance of the operation's results.
+#[derive(Default)]
 pub struct ControlFlowSink;
+
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<ControlFlowSink>(
+    "control-flow-sink",
+    "control flow sinking"
+));
 
 impl Pass for ControlFlowSink {
     type Target = Operation;

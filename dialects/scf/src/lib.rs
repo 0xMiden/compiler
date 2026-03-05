@@ -18,15 +18,21 @@ mod ops;
 pub mod transforms;
 
 use midenc_hir::{
-    AttributeRef, Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan,
-    Type,
+    AttributeRef, Builder, Dialect, DialectInfo, OperationRef, SourceSpan, Type,
+    derive::DialectRegistration,
 };
 
 pub use self::{builders::StructuredControlFlowOpBuilder, ops::*};
 
-#[derive(Debug)]
+#[derive(Debug, DialectRegistration)]
 pub struct ScfDialect {
     info: DialectInfo,
+}
+
+impl From<DialectInfo> for ScfDialect {
+    fn from(info: DialectInfo) -> Self {
+        Self { info }
+    }
 }
 
 impl ScfDialect {
@@ -53,6 +59,7 @@ impl Dialect for ScfDialect {
     }
 }
 
+#[cfg(false)]
 impl DialectRegistration for ScfDialect {
     const NAMESPACE: &'static str = "scf";
 

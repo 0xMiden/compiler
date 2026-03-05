@@ -17,15 +17,21 @@ mod canonicalization;
 mod ops;
 
 use midenc_hir::{
-    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, Immediate,
-    OperationRef, SourceSpan, Type, attributes::IntegerLikeAttr,
+    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, Immediate, OperationRef, SourceSpan,
+    Type, attributes::IntegerLikeAttr, derive::DialectRegistration,
 };
 
 pub use self::{builders::ArithOpBuilder, ops::*};
 
-#[derive(Debug)]
+#[derive(Debug, DialectRegistration)]
 pub struct ArithDialect {
     info: DialectInfo,
+}
+
+impl From<DialectInfo> for ArithDialect {
+    fn from(info: DialectInfo) -> Self {
+        Self { info }
+    }
 }
 
 impl ArithDialect {
@@ -118,6 +124,7 @@ impl Dialect for ArithDialect {
     }
 }
 
+#[cfg(false)]
 impl DialectRegistration for ArithDialect {
     const NAMESPACE: &'static str = "arith";
 

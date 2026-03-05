@@ -19,6 +19,11 @@ pub struct Canonicalizer {
     require_convergence: bool,
 }
 
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Canonicalizer>(
+    Canonicalizer::NAME,
+    "canonicalization"
+));
+
 impl Default for Canonicalizer {
     fn default() -> Self {
         let mut config = GreedyRewriteConfig::default();

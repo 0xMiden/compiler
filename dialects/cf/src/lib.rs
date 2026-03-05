@@ -17,15 +17,22 @@ mod canonicalization;
 mod ops;
 
 use midenc_hir::{
-    AttributeRef, Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan,
-    Type,
+    AttributeRef, Builder, Dialect, DialectInfo, OperationRef, SourceSpan, Type,
+    derive::DialectRegistration,
 };
 
 pub use self::{builders::ControlFlowOpBuilder, ops::*};
 
-#[derive(Debug)]
+#[derive(Debug, DialectRegistration)]
+#[dialect(name = "cf")]
 pub struct ControlFlowDialect {
     info: DialectInfo,
+}
+
+impl From<DialectInfo> for ControlFlowDialect {
+    fn from(info: DialectInfo) -> Self {
+        Self { info }
+    }
 }
 
 impl ControlFlowDialect {
@@ -52,6 +59,7 @@ impl Dialect for ControlFlowDialect {
     }
 }
 
+#[cfg(false)]
 impl DialectRegistration for ControlFlowDialect {
     const NAMESPACE: &'static str = "cf";
 

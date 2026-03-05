@@ -24,10 +24,10 @@ mod asm_parser;
 mod delimiter;
 mod error;
 mod from_str_radix;
-mod lexer;
+pub mod lexer;
 mod operation;
 mod parser;
-mod scanner;
+pub mod scanner;
 #[cfg(test)]
 mod tests;
 mod token;
@@ -51,8 +51,8 @@ use midenc_hir_type::{AddressSpace, PointerType};
 use midenc_session::{
     SourceManager,
     diagnostics::{
-        ColumnNumber, Diagnostic, FileLineCol, LabeledSpan, LineNumber, Report, Severity,
-        SourceFile, SourceId, SourceManagerExt, SourceSpan, Span, Uri, WrapErr,
+        ColumnNumber, Diagnostic, FileLineCol, LabeledSpan, LineNumber, RelatedError, Report,
+        Severity, SourceFile, SourceId, SourceManagerExt, SourceSpan, Span, Uri, WrapErr,
         miette::{self, diagnostic},
     },
 };
@@ -228,6 +228,94 @@ pub fn parse_file<T: OpParser + OpRegistration>(
     let source_manager = &config.context.session().source_manager;
     let source_file = source_manager.load_file(path.as_ref()).map_err(Report::msg)?;
     parse_source(config, source_file)
+}
+
+pub fn parse_any(
+    config: ParserConfig,
+    uri: Uri,
+    source: impl Into<String>,
+) -> Result<OperationRef, Report> {
+    use midenc_session::diagnostics::SourceLanguage;
+    let source_manager = &config.context.session().source_manager;
+    let source_file = source_manager.load(SourceLanguage::Other("hir"), uri, source.into());
+    parse_anchored_source(None, config, source_file)
+}
+
+pub fn parse_anchored(
+    name: OperationName,
+    config: ParserConfig,
+    uri: Uri,
+    source: impl Into<String>,
+) -> Result<OperationRef, Report> {
+    use midenc_session::diagnostics::SourceLanguage;
+    let source_manager = &config.context.session().source_manager;
+    let source_file = source_manager.load(SourceLanguage::Other("hir"), uri, source.into());
+    parse_anchored_source(Some(name), config, source_file)
+}
+
+#[cfg(feature = "std")]
+pub fn parse_file_any(
+    config: ParserConfig,
+    path: impl AsRef<std::path::Path>,
+) -> Result<OperationRef, Report> {
+    let source_manager = &config.context.session().source_manager;
+    let source_file = source_manager.load_file(path.as_ref()).map_err(Report::msg)?;
+    parse_anchored_source(None, config, source_file)
+}
+
+#[cfg(feature = "std")]
+pub fn parse_file_anchored(
+    anchor: OperationName,
+    config: ParserConfig,
+    path: impl AsRef<std::path::Path>,
+) -> Result<OperationRef, Report> {
+    let source_manager = &config.context.session().source_manager;
+    let source_file = source_manager.load_file(path.as_ref()).map_err(Report::msg)?;
+    parse_anchored_source(Some(anchor), config, source_file)
+}
+
+fn parse_anchored_source(
+    anchor: Option<OperationName>,
+    config: ParserConfig,
+    source_file: Arc<SourceFile>,
+) -> Result<OperationRef, Report> {
+    use crate::{BuilderExt, dialects::builtin::World};
+
+    let source = source_file.as_str();
+    let scanner = Scanner::new(source);
+    let token_stream = TokenStream::new(source_file.id(), scanner);
+    let mut parser = DefaultParser::new(ParserState::new(config, token_stream));
+    let span = parser.current_location();
+    let world = parser.builder_mut().create::<World, ()>(span)()?;
+    let mut operation_parser = operation::OperationParser::new(parser, world);
+    let op = operation_parser
+        .parse_operation()
+        .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
+
+    let should_verify = operation_parser.state().config.should_verify_after_parse();
+    match anchor {
+        None if should_verify => {
+            let operation = op.borrow();
+            operation.recursively_verify()?;
+            Ok(op)
+        }
+        None => Ok(op),
+        Some(anchor) => {
+            let operation = op.borrow();
+            if operation.name() != anchor {
+                return Err(Report::msg(format!(
+                    "expected operation '{anchor}', got '{}'",
+                    operation.name()
+                )));
+            }
+
+            if should_verify {
+                operation.recursively_verify()?;
+            }
+
+            Ok(op)
+        }
+    }
 }
 
 fn parse_source<T: OpParser + OpRegistration>(

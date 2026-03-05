@@ -29,6 +29,13 @@ use crate::*;
 #[derive(Default)]
 pub struct LiftControlFlowToSCF;
 
+midenc_hir::inventory::submit!(
+    ::midenc_hir::pass::registry::PassInfo::new::<LiftControlFlowToSCF>(
+        "cfg-to-scf",
+        "Lift unstructured control flow graphs to structured control flow"
+    )
+);
+
 impl Pass for LiftControlFlowToSCF {
     type Target = Operation;
 
@@ -37,7 +44,7 @@ impl Pass for LiftControlFlowToSCF {
     }
 
     fn argument(&self) -> &'static str {
-        "lift-control-flow"
+        "cfg-to-scf"
     }
 
     fn description(&self) -> &'static str {

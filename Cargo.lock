@@ -3146,6 +3146,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-hir-opt"
+version = "0.7.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "log",
+ "miden-thiserror",
+ "midenc-compile",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
+ "midenc-dialect-hir",
+ "midenc-dialect-scf",
+ "midenc-dialect-ub",
+ "midenc-hir",
+ "midenc-log",
+ "midenc-session",
+]
+
+[[package]]
 name = "midenc-hir-symbol"
 version = "0.7.1"
 dependencies = [
