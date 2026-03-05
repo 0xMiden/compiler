@@ -1,10 +1,11 @@
-use alloc::{string::ToString, sync::Arc};
+use alloc::{format, string::ToString, sync::Arc};
 
 use midenc_hir::{
     constants::ConstantData,
     derive::{EffectOpInterface, operation},
     dialects::builtin::attributes::BytesAttr,
     effects::MemoryEffectOpInterface,
+    parse::ParserExt,
     traits::*,
     *,
 };
@@ -60,6 +61,22 @@ impl OpPrinter for ConstantPointer {
         printer.print_decimal_integer(ptr.addr());
         printer.print_space();
         printer.print_colon_type(self.result().ty());
+    }
+}
+
+impl OpParser for ConstantPointer {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        let addr = parser.parse_decimal_integer::<u32>()?;
+        let result_ty = parser.parse_colon_type()?.into_inner();
+
+        let attr = parser.context_rc().create_attribute::<PointerAttr, _>(crate::Pointer::new(
+            addr.into_inner(),
+            result_ty.clone(),
+        ));
+        state.attrs.push(NamedAttribute::new("value", attr));
+        state.results.push(result_ty);
+
+        Ok(())
     }
 }
 
@@ -126,5 +143,27 @@ impl OpPrinter for ConstantBytes {
         printer.print_string(bytes.to_string());
         printer.print_space();
         printer.print_colon_type(self.result().ty());
+    }
+}
+
+impl OpParser for ConstantBytes {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        use midenc_hir::parse::ParserError;
+
+        let (span, bytes_as_string) = parser.parse_string()?.into_parts();
+        match ConstantData::from_str_be(bytes_as_string.as_str()) {
+            Ok(bytes) => {
+                let constant_id = parser.context().create_constant(bytes);
+                let bytes = parser.context().get_constant(constant_id);
+                let attr = parser.context_rc().create_attribute::<BytesAttr, _>(bytes);
+                state.results.push(attr.borrow().ty().clone());
+                state.add_attribute("bytes", attr);
+                Ok(())
+            }
+            Err(err) => Err(ParserError::InvalidAttributeValue {
+                span,
+                reason: format!("unable to parse big-endian bytes from string: {err}"),
+            }),
+        }
     }
 }

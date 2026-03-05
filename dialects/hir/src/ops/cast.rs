@@ -1,6 +1,6 @@
 use midenc_hir::{
     attributes::IntegerLikeAttr,
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::attributes::{I32Attr, TypeAttr, U32Attr},
     effects::MemoryEffectOpInterface,
     matchers::Matcher,
@@ -39,7 +39,7 @@ pub enum CastKind {
 }
  */
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
@@ -117,7 +117,7 @@ impl Foldable for PtrToInt {
     }
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
@@ -178,7 +178,7 @@ impl Foldable for IntToPtr {
     }
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
@@ -201,7 +201,7 @@ impl InferTypeOpInterface for Cast {
     }
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),

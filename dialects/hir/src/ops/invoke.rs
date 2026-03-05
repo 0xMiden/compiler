@@ -1,3 +1,5 @@
+use alloc::format;
+
 use midenc_hir::{
     derive::operation, dialects::builtin::attributes::SignatureAttr, print::AsmPrinter, traits::*,
     *,
@@ -36,15 +38,80 @@ impl OpPrinter for Exec {
         use formatter::*;
 
         let callee = self.callee();
-        let callee_signature = self.get_signature();
         printer.print_space();
         printer.print_symbol_path(callee.path());
         printer.print_operand_list(self.arguments());
+        let callee_sig = self.signature();
         *printer += const_text(" : ");
-        printer.print_function_type_parts(
-            callee_signature.params().iter().map(|p| &p.ty),
-            callee_signature.results().iter().map(|p| &p.ty),
+        callee_sig.print(printer);
+        if self.op.has_attributes() {
+            printer.print_space();
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+    }
+}
+
+impl OpParser for Exec {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        use midenc_hir::parse::ParserError;
+
+        let callee = parser.parse_symbol_ref()?;
+
+        state.attrs.push(NamedAttribute::new("callee", callee.into_inner()));
+
+        let mut operands = SmallVec::default();
+        parser.parse_operand_list(
+            &mut operands,
+            parse::Delimiter::OptionalParen,
+            /*allow_result_number=*/ true,
+            None,
+        )?;
+
+        parser.parse_colon()?;
+        let sig_attr = <SignatureAttr as midenc_hir::attributes::AttrParser>::parse(parser)?;
+        state.attrs.push(NamedAttribute::new("signature", sig_attr));
+
+        let span = SourceSpan::new(
+            state.span.source_id(),
+            state.span.start()..parser.current_location().end(),
         );
+        let sig_attribute = sig_attr.borrow();
+        let Some(signature) = sig_attribute.downcast_ref::<SignatureAttr>() else {
+            return Err(ParserError::InvalidAttributeValue {
+                span,
+                reason: format!(
+                    "expected 'signature' property to be of type #builtin.signature, got '{}' \
+                     instead",
+                    sig_attribute.name()
+                ),
+            });
+        };
+
+        let span = SourceSpan::new(
+            state.span.source_id(),
+            state.span.start()..parser.current_location().end(),
+        );
+        if operands.len() != signature.arity() {
+            return Err(ParserError::MismatchedValueAndTypeLists {
+                span,
+                num_values: operands.len(),
+                num_types: signature.arity(),
+            });
+        }
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
+
+        let type_params =
+            signature.results.iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
+        let mut operand_values = SmallVec::default();
+        parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
+
+        state.operands.push(operand_values);
+
+        Ok(())
     }
 }
 
@@ -119,7 +186,7 @@ impl CallOpInterface for Exec {
 // any types which are invalid for cross-context calls
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface, InferTypeOpInterface)
+    implements(CallOpInterface, InferTypeOpInterface, OpPrinter)
 )]
 pub struct Call {
     #[symbol(callable)]
@@ -140,6 +207,27 @@ impl InferTypeOpInterface for Call {
             self.op.results.push(value);
         }
         Ok(())
+    }
+}
+
+impl OpPrinter for Call {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use formatter::*;
+
+        let callee = self.callee();
+        printer.print_space();
+        printer.print_symbol_path(callee.path());
+        printer.print_operand_list(self.arguments());
+        *printer += const_text(" <");
+        printer.print_attribute_dictionary(self.op.properties().filter(|p| p.name == "signature"));
+        *printer += const_text(" >");
+        if self.op.has_attributes() {
+            printer.print_space();
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
     }
 }
 

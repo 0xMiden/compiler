@@ -1,5 +1,5 @@
 use midenc_hir::{
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::attributes::LocalVariableAttr,
     effects::*,
     traits::*,
@@ -10,7 +10,7 @@ use midenc_hir_transform::SpillLike;
 use crate::HirDialect;
 
 /// Store `value` on the heap at `addr`
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(MemoryEffectOpInterface, OpPrinter)
@@ -24,7 +24,7 @@ pub struct Store {
 }
 
 /// Store `value` on in procedure local memory
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(MemoryEffectOpInterface, SpillLike, OpPrinter)
@@ -52,7 +52,7 @@ impl SpillLike for StoreLocal {
 /// The type of load is determined by the pointer operand type - cast the pointer to the type you
 /// wish to load, so long as such a load is safe according to the semantics of your high-level
 /// language.
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
@@ -98,7 +98,7 @@ impl InferTypeOpInterface for Load {
     }
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)

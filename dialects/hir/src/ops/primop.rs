@@ -1,5 +1,5 @@
 use midenc_hir::{
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     effects::*,
     traits::*,
     *,
@@ -7,7 +7,7 @@ use midenc_hir::{
 
 use crate::HirDialect;
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(SameTypeOperands, SameOperandsAndResultType),
@@ -28,7 +28,7 @@ impl InferTypeOpInterface for MemGrow {
     }
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
@@ -46,7 +46,7 @@ impl InferTypeOpInterface for MemSize {
     }
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(MemoryEffectOpInterface, OpPrinter)
@@ -61,10 +61,10 @@ pub struct MemSet {
     value: AnyType,
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct MemCpy {
     #[operand]
@@ -77,7 +77,7 @@ pub struct MemCpy {
     count: UInt32,
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(MemoryEffectOpInterface, OpPrinter)

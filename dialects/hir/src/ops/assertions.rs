@@ -1,5 +1,5 @@
 use midenc_hir::{
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::attributes::U32Attr,
     effects::*,
     traits::*,
@@ -8,7 +8,7 @@ use midenc_hir::{
 
 use crate::HirDialect;
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(MemoryEffectOpInterface, OpPrinter)
@@ -22,7 +22,7 @@ pub struct Assert {
     code: U32Attr,
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(MemoryEffectOpInterface, OpPrinter)
@@ -36,7 +36,7 @@ pub struct Assertz {
     code: U32Attr,
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),

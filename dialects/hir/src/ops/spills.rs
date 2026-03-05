@@ -1,5 +1,5 @@
 use midenc_hir::{
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     effects::*,
     traits::*,
     *,
@@ -8,7 +8,7 @@ use midenc_hir_transform::{ReloadLike, SpillLike};
 
 use crate::HirDialect;
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(SameTypeOperands, SameOperandsAndResultType),
@@ -30,7 +30,7 @@ impl SpillLike for Spill {
     }
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(SameTypeOperands, SameOperandsAndResultType),
