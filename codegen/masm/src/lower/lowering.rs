@@ -1291,7 +1291,7 @@ impl HirLowering for builtin::GlobalSymbol {
         let current_module = self
             .nearest_parent_op::<builtin::Module>()
             .expect("expected 'hir.global_symbol' op to have a module ancestor");
-        let symbol = current_module.borrow().resolve(&self.symbol().path).ok_or_else(|| {
+        let symbol = current_module.borrow().resolve(self.symbol().path()).ok_or_else(|| {
             context
                 .diagnostics()
                 .diagnostic(Severity::Error)

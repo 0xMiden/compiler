@@ -71,6 +71,23 @@ impl<'input> Scanner<'input> {
         self.pending = self.chars.next().unwrap_or((self.end, '\0'));
     }
 
+    /// Advance the scanner to `pos`
+    ///
+    /// This will assert if `pos` is not at a valid codepoint boundary, or if `pos` is out of bounds.
+    pub fn advance_to(&mut self, pos: usize) {
+        assert!(pos <= self.end);
+        loop {
+            self.advance();
+            if self.current.0 > pos {
+                panic!(
+                    "tried to advance to a byte position that is not the start of a utf8 codepoint"
+                );
+            } else if self.current.0 == pos {
+                return;
+            }
+        }
+    }
+
     /// Return the current character and advance our position in the source
     #[inline]
     pub fn pop(&mut self) -> (usize, char) {
@@ -102,6 +119,13 @@ impl<'input> Scanner<'input> {
     pub fn slice(&self, span: impl Into<Range<usize>>) -> &'input str {
         let range = span.into();
         let bytes = &self.input.as_bytes()[range];
+        core::str::from_utf8(bytes).expect("invalid slice indices")
+    }
+
+    /// Get a string slice representing the rest of the source starting from offset `start`
+    #[inline]
+    pub fn slice_from(&self, start: usize) -> &'input str {
+        let bytes = &self.input.as_bytes()[start..];
         core::str::from_utf8(bytes).expect("invalid slice indices")
     }
 }

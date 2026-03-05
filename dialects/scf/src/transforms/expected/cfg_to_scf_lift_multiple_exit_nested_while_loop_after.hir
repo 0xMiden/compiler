@@ -1,22 +1,22 @@
 builtin.function public extern("C") @cfg_to_scf_lift_multiple_exit_nested_while_loop(%0: ptr<u32, byte>, %1: u32, %2: u32) -> u32 {
     %28 = arith.constant 2 : u32;
-    %27 = ub.poison <{ value = !ub.poison<u32> }>;
+    %27 = ub.poison <{ value = #ub.poison<u32> }>;
     %26 = arith.constant 1 : u32;
     %21 = arith.constant 0 : u32;
     %143, %144, %145, %146 = scf.while %21, %21 before {
     ^block27(%147: u32, %148: u32):
         %8 = arith.lt %147, %1;
         %111, %112, %113, %114 = scf.if %8 then {
-            %9 = arith.mul %147, %2 <{ overflow = !builtin.overflow<unchecked> }>;
+            %9 = arith.mul %147, %2 <{ overflow = #builtin.overflow<unchecked> }>;
             %183, %184, %185, %186, %187, %188, %189 = scf.while %21, %148 before {
             ^block31(%190: u32, %191: u32):
                 %10 = arith.lt %190, %2;
                 %177, %178, %179, %180, %181, %182 = scf.if %10 then {
-                    %12 = arith.add %9, %190 <{ overflow = !builtin.overflow<unchecked> }>;
-                    %13 = builtin.unrealized_conversion_cast %0 <{ ty = !builtin.type<u32> }>;
-                    %14 = arith.add %13, %12 <{ overflow = !builtin.overflow<unchecked> }>;
-                    %15 = builtin.unrealized_conversion_cast %14 <{ ty = !builtin.type<ptr<u32, byte>> }>;
-                    %16 = builtin.unrealized_conversion_cast %15 <{ ty = !builtin.type<u32> }>;
+                    %12 = arith.add %9, %190 <{ overflow = #builtin.overflow<unchecked> }>;
+                    %13 = builtin.unrealized_conversion_cast %0 <{ ty = #builtin.type<u32> }>;
+                    %14 = arith.add %13, %12 <{ overflow = #builtin.overflow<unchecked> }>;
+                    %15 = builtin.unrealized_conversion_cast %14 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+                    %16 = builtin.unrealized_conversion_cast %15 <{ ty = #builtin.type<u32> }>;
                     %17 = arith.incr %190;
                     %18, %19 = arith.add_overflowing %191, %16;
                     %171 = cf.select %18, %27, %17;
@@ -25,34 +25,38 @@ builtin.function public extern("C") @cfg_to_scf_lift_multiple_exit_nested_while_
                     %174 = cf.select %18, %21, %27;
                     %175 = cf.select %18, %26, %21;
                     %176 = cf.select %18, %21, %26;
-                    scf.yield %171, %172, %173, %174, %175, %176;
+                    scf.yield %171, %172, %173, %174, %175, %176 : (u32, u32, u32, u32, u32, u32);
                 } else {
-                    scf.yield %27, %27, %27, %27, %28, %21;
-                } : (u32, u32, u32, u32, u32, u32);
-                %106 = arith.trunc %182 <{ ty = !builtin.type<i1> }>;
-                scf.condition (%106) (%177, %178, %191, %27, %179, %180, %181);
+                    scf.yield %27, %27, %27, %27, %28, %21 : (u32, u32, u32, u32, u32, u32);
+                } : (i1) -> (u32, u32, u32, u32, u32, u32);
+                %106 = arith.trunc %182 <{ ty = #builtin.type<i1> }>;
+                scf.condition %106, %177, %178, %191, %27, %179, %180, %181 : (i1, u32, u32, u32, u32, u32, u32, u32);
             } after {
             ^block32(%192: u32, %193: u32, %194: u32, %195: u32, %196: u32, %197: u32, %198: u32):
-                scf.yield %192, %193;
-            };
-            %115, %116, %117, %118 = scf.index_switch %189 <{ cases = !builtin.array_u32<1> }> default_region {
+                scf.yield %192, %193 : (u32, u32);
+            } : (u32, u32);
+            %115, %116, %117, %118 = scf.index_switch %189 
+            case 1 {
+                scf.yield %186, %186, %187, %188 : (u32, u32, u32, u32);
+            }
+            default {
                 %11 = arith.incr %147;
-                scf.yield %11, %185, %21, %26;
-            };
-            scf.yield %115, %116, %117, %118;
+                scf.yield %11, %185, %21, %26 : (u32, u32, u32, u32);
+            } : (u32, u32, u32, u32);
+            scf.yield %115, %116, %117, %118 : (u32, u32, u32, u32);
         } else {
-            scf.yield %27, %27, %28, %21;
-        } : (u32, u32, u32, u32);
-        %51 = arith.trunc %114 <{ ty = !builtin.type<i1> }>;
-        scf.condition (%51) (%111, %112, %148, %113);
+            scf.yield %27, %27, %28, %21 : (u32, u32, u32, u32);
+        } : (i1) -> (u32, u32, u32, u32);
+        %51 = arith.trunc %114 <{ ty = #builtin.type<i1> }>;
+        scf.condition %51, %111, %112, %148, %113 : (i1, u32, u32, u32, u32);
     } after {
     ^block28(%149: u32, %150: u32, %151: u32, %152: u32):
-        scf.yield %149, %150;
-    };
+        scf.yield %149, %150 : (u32, u32);
+    } : (u32, u32);
     %200 = arith.eq %146, %26;
-    cf.cond_br %200 ^block7, ^block4;
+    cf.cond_br %200 ^block7, ^block4 : (i1);
 ^block4:
-    builtin.ret %145;
+    builtin.ret %145 : (u32);
 ^block7:
-    builtin.ret_imm !builtin.number<4294967295>;
+    builtin.ret_imm #builtin.number<4294967295>;
 };

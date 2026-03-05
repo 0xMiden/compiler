@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 pub use self::{
     builder::{GenericOperationBuilder, OperationBuilder},
     name::{AttrInfo, OperationName, ParseAssemblyFn},
-    state::OperationState,
+    state::{OperationState, PendingSuccessorInfo},
 };
 use super::{
     effects::{
@@ -699,7 +699,7 @@ impl Operation {
             attr.set_path(symbol.path());
         } else {
             let path = symbol.borrow().path();
-            let symbol_ref = crate::dialects::builtin::attributes::SymbolRef { path, user };
+            let symbol_ref = crate::dialects::builtin::attributes::SymbolRef::new(path, user);
             let attr = self.context_rc().create_attribute::<SymbolRefAttr, _>(symbol_ref);
             self.set_attribute(attr_name, attr.as_attribute_ref());
         }
@@ -741,10 +741,7 @@ impl Operation {
         let attr = {
             let symbol = symbol.borrow();
             self.context_rc().create_attribute::<SymbolRefAttr, _>(
-                crate::dialects::builtin::attributes::SymbolRef {
-                    path: symbol.path(),
-                    user,
-                },
+                crate::dialects::builtin::attributes::SymbolRef::new(symbol.path(), user),
             )
         };
         self.set_property(attr_name, attr)

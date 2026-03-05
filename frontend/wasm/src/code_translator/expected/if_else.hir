@@ -2,7 +2,7 @@ builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 2 : i32;
     %1 = arith.constant 0 : i32;
     %2 = arith.neq %0, %1;
-    cf.cond_br %2 ^block6, ^block8;
+    cf.cond_br %2 ^block6, ^block8 : (i1);
 ^block5:
     builtin.ret;
 ^block6:

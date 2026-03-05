@@ -390,17 +390,17 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
         &after,
         r#"
 ; COM: Spill before call
-; CHECK: hir.store_local %{{\d+}} <{ local = !builtin.local_variable<[[L0:\d+]], ptr<u128, element>> }>
+; CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<[[L0:\d+]], ptr<u128, element>> }>
 ; CHECK-NEXT: hir.exec ::@test::@example
 
 ; COM: First reload in `then`
 ; CHECK-LABEL: scf.if %{{\d+}} then {
-; CHECK-NEXT: hir.load_local <{ local = !builtin.local_variable<[[L0]], ptr<u128, element>> }>
+; CHECK-NEXT: hir.load_local <{ local = #builtin.local_variable<[[L0]], ptr<u128, element>> }>
 ; CHECK-NEXT: hir.store
 
 ; COM: Second reload in `else`
 ; CHECK-LABEL: } else {
-; CHECK-NEXT: hir.load_local <{ local = !builtin.local_variable<[[L0]], ptr<u128, element>> }>
+; CHECK-NEXT: hir.load_local <{ local = #builtin.local_variable<[[L0]], ptr<u128, element>> }>
 ; CHECK-NEXT: hir.store
 "#
     );

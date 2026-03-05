@@ -1,5 +1,6 @@
 use crate::{
-    AttrPrinter, derive::DialectAttribute, dialects::builtin::BuiltinDialect, print::AsmPrinter,
+    AttrPrinter, attributes::AttrParser, derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect, parse::Token, print::AsmPrinter,
 };
 
 #[derive(DialectAttribute, Debug, Clone, PartialEq, Eq, Hash)]
@@ -15,6 +16,20 @@ struct Type;
 impl AttrPrinter for TypeAttr {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         printer.print_type(&self.value);
+    }
+}
+
+impl AttrParser for TypeAttr {
+    fn parse(
+        parser: &mut dyn crate::parse::Parser<'_>,
+    ) -> crate::parse::ParseResult<crate::AttributeRef> {
+        let ty = if parser.token_stream_mut().is_next(|tok| matches!(tok, Token::Lparen)) {
+            crate::Type::Function(parser.parse_function_type()?.into_inner().into())
+        } else {
+            parser.parse_non_function_type()?.into_inner()
+        };
+
+        Ok(parser.context_rc().create_attribute::<TypeAttr, _>(ty))
     }
 }
 

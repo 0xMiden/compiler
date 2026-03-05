@@ -1,12 +1,12 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = builtin.global_symbol ::@root_ns:root@1.0.0::@noname::@MyGlobalVal : ptr<u8, byte>;
-    %1 = hir.bitcast %0 <{ ty = !builtin.type<ptr<i32, byte>> }>;
+    %1 = hir.bitcast %0 <{ ty = #builtin.type<ptr<i32, byte>> }>;
     %2 = hir.load %1;
     %3 = arith.constant 9 : i32;
-    %4 = arith.add %2, %3 <{ overflow = !builtin.overflow<wrapping> }>;
+    %4 = arith.add %2, %3 <{ overflow = #builtin.overflow<wrapping> }>;
     %5 = builtin.global_symbol ::@root_ns:root@1.0.0::@noname::@MyGlobalVal : ptr<u8, byte>;
-    %6 = hir.bitcast %5 <{ ty = !builtin.type<ptr<i32, byte>> }>;
-    hir.store %6, %4;
+    %6 = hir.bitcast %5 <{ ty = #builtin.type<ptr<i32, byte>> }>;
+    hir.store %6, %4 : (ptr<i32, byte>, i32);
     cf.br ^block5;
 ^block5:
     builtin.ret;

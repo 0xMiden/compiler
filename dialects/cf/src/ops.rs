@@ -2,7 +2,7 @@ use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
     attributes::IntegerLikeAttr,
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::attributes::{BoolAttr, U32Attr},
     effects::*,
     matchers::Matcher,
@@ -14,7 +14,7 @@ use midenc_hir::{
 use crate::ControlFlowDialect;
 
 /// An unstructured control flow primitive representing an unconditional branch to `target`
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
@@ -46,7 +46,7 @@ impl BranchOpInterface for Br {
 
 /// An unstructured control flow primitive representing a conditional branch to either `then_dest`
 /// or `else_dest` depending on the value of `condition`, a boolean value.
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
@@ -98,7 +98,7 @@ impl BranchOpInterface for CondBr {
 /// then the `fallback` target is used instead.
 ///
 /// A `fallback` successor must always be provided.
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
@@ -107,64 +107,10 @@ impl BranchOpInterface for CondBr {
 pub struct Switch {
     #[operand]
     selector: UInt32,
-    #[successor]
-    fallback: Successor,
     #[successors(keyed)]
     cases: SwitchCase,
-}
-
-#[cfg(false)]
-impl OpPrinter for Switch {
-    fn print(&self, _printer: &mut AsmPrinter<'_>) {
-        /*
-        use formatter::*;
-        let header =
-            display(self.op.name()) + const_text(" ") + display(self.selector().as_value_ref());
-        let cases = self.cases().iter().fold(Document::Empty, |acc, case| {
-            let key = case.key().unwrap();
-            let dest = case.block();
-            let operands = case.arguments();
-            let args = if operands.is_empty() {
-                Document::Empty
-            } else {
-                operands.iter().enumerate().fold(const_text("("), |acc, (i, o)| {
-                    if i > 0 {
-                        acc + const_text(", ") + display(o.borrow().as_value_ref())
-                    } else {
-                        acc + display(o.borrow().as_value_ref())
-                    }
-                }) + const_text(")")
-            };
-            acc + nl()
-                + const_text("case ")
-                + display(*key)
-                + const_text(" => ")
-                + display(dest)
-                + args
-        });
-        let fallback = self.fallback();
-        let fallback_dest = fallback.successor();
-        let fallback_args = if fallback.arguments.is_empty() {
-            Document::Empty
-        } else {
-            fallback.arguments.iter().enumerate().fold(const_text("("), |acc, (i, o)| {
-                if i > 0 {
-                    acc + const_text(", ") + display(o.borrow().as_value_ref())
-                } else {
-                    acc + display(o.borrow().as_value_ref())
-                }
-            }) + const_text(")")
-        };
-        let fallback = nl() + const_text("default => ") + display(fallback_dest) + fallback_args;
-        header
-            + const_text(" {")
-            + indent(4, cases + fallback)
-            + nl()
-            + const_text("}")
-            + const_text(";")
-             */
-        todo!()
-    }
+    #[successor]
+    fallback: Successor,
 }
 
 impl Canonicalizable for Switch {
@@ -197,7 +143,7 @@ impl BranchOpInterface for Switch {
         };
 
         for switch_case in self.cases().iter() {
-            let key = *switch_case.key().unwrap();
+            let key = *switch_case.key();
             if selector == key {
                 return Some(*switch_case.info());
             }
@@ -282,7 +228,7 @@ impl KeyedSuccessor for SwitchCase {
 }
 
 /// Choose a value based on a boolean condition
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ControlFlowDialect,
     implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
@@ -360,5 +306,52 @@ impl Foldable for Select {
             }
         }
         FoldResult::Failed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use midenc_hir::{Type, testing::Test};
+
+    use super::*;
+    use crate::ControlFlowOpBuilder;
+
+    #[test]
+    fn switch_building() {
+        let mut test = Test::new("foo", &[Type::U32], &[]);
+        let context = test.context_rc();
+        let selector = test.function().borrow().entry_block().borrow().arguments()[0] as ValueRef;
+        let mut builder = test.function_builder();
+        let block2 = builder.create_block();
+        let block3 = builder.create_block();
+        builder.append_block_param(block3, Type::U32, SourceSpan::UNKNOWN);
+        let fallback = builder.create_block();
+        let cases = vec![
+            SwitchCase {
+                value: context.create_attribute::<U32Attr, _>(1u32),
+                successor: block2,
+                arguments: vec![],
+            },
+            SwitchCase {
+                value: context.create_attribute::<U32Attr, _>(2u32),
+                successor: block3,
+                arguments: vec![selector],
+            },
+        ];
+        let op = builder.switch(selector, cases, fallback, [], SourceSpan::UNKNOWN).unwrap();
+        let switch_op = op.borrow();
+
+        assert_eq!(switch_op.fallback().successor(), fallback);
+        let cases = switch_op.cases();
+        let block2_case = cases.get(0).unwrap();
+        assert_eq!(block2_case.block(), block2);
+        assert_eq!(*block2_case.key(), 1u32);
+        let block3_case = cases.get(1).unwrap();
+        assert_eq!(block3_case.block(), block3);
+        assert_eq!(*block3_case.key(), 2u32);
+        assert_eq!(block3_case.arguments().len(), 1);
+        assert_eq!(block3_case.arguments()[0].borrow().as_value_ref(), selector);
     }
 }

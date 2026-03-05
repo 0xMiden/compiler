@@ -88,7 +88,8 @@ impl ValueId {
     }
 
     pub const fn as_u32(&self) -> u32 {
-        (self.0 >> Self::ID_SHIFT) & !(Self::USER_DEFINED_TAG | Self::OP_RESULT_TAG)
+        let untagged = self.0 & !(Self::USER_DEFINED_TAG | Self::OP_RESULT_TAG);
+        untagged >> Self::ID_SHIFT
     }
 
     pub const fn as_symbol_id(self) -> Option<interner::Symbol> {

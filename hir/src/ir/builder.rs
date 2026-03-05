@@ -1,9 +1,10 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{boxed::Box, format, rc::Rc, vec};
 
 use super::OperationState;
 use crate::{
     BlockArgument, BlockRef, BuildableOp, Context, OperationRef, ProgramPoint, RegionRef,
-    SourceSpan, Type, Value, diagnostics::Report,
+    SourceSpan, Type, Value,
+    diagnostics::{LabeledSpan, Report, Severity, miette::diagnostic},
 };
 
 /// The [Builder] trait encompasses all of the functionality needed to construct and insert blocks
@@ -157,7 +158,21 @@ pub trait Builder: Listener {
         let mut op = state.name.alloc_default(self.context_rc());
         op.borrow_mut().set_span(state.span);
 
+        std::dbg!(&state.operands);
         let mut builder = crate::GenericOperationBuilder::new(self, op);
+
+        for prop in op.name().properties() {
+            if !state.attrs.iter().any(|p| p.name == prop.name) {
+                return Err(Report::from(diagnostic!(
+                    severity = Severity::Error,
+                    labels = vec![LabeledSpan::at(
+                        state.span,
+                        format!("missing required property '{}'", prop.name)
+                    )],
+                    "invalid operation"
+                )));
+            }
+        }
 
         for attr in state.attrs.drain(..) {
             if state.name.has_property(attr.name) {
@@ -167,17 +182,13 @@ pub trait Builder: Listener {
             }
         }
 
-        /*
-        if !state.symbols.is_empty() {
-            let mut op = op.borrow_mut();
-            for (name, sym) in state.symbols.drain(..) {
-                op.set_symbol_attribute(name, sym);
-            }
+        for (i, group) in state.operands.drain(..).enumerate() {
+            builder.with_operands_in_group(i, group);
         }
-         */
 
-        // TODO: Properly handle operand groups
-        builder.with_operands(state.operands.drain(..));
+        for successor in state.successors.drain(..) {
+            builder.with_pending_successor(successor);
+        }
 
         if !state.regions.is_empty() {
             let mut op = op.borrow_mut();
@@ -185,6 +196,10 @@ pub trait Builder: Listener {
             for region in state.regions.drain(..) {
                 regions.push_back(region);
             }
+        }
+
+        if !state.results.is_empty() {
+            builder.with_results(state.results.drain(..));
         }
 
         builder.build()

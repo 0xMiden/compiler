@@ -27,6 +27,8 @@ compact_str.workspace = true
 hashbrown.workspace = true
 intrusive-collections.workspace = true
 inventory.workspace = true
+litcheck.workspace = true
+litcheck-filecheck.workspace = true
 log.workspace = true
 memchr = { version = "2.8", default-features = false, features = ["alloc"] }
 miden-core.workspace = true

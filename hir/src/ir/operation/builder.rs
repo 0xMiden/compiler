@@ -2,6 +2,7 @@ use alloc::{rc::Rc, vec, vec::Vec};
 
 use midenc_session::diagnostics::Severity;
 
+use super::state::PendingSuccessorInfo;
 use crate::{
     AsCallableSymbolRef, AsSymbolRef, AttributeRef, AttributeRegistration, BlockRef, Builder,
     KeyedSuccessor, Op, OpBuilder, OperationRef, Report, Spanned, SuccessorInfo, Type,
@@ -133,6 +134,20 @@ where
         op.regions.push_back(region);
     }
 
+    // TODO: This needs to replicate the behavior of with_(keyed_)successor
+    pub fn with_pending_successor(&mut self, succ: PendingSuccessorInfo) {
+        let owner = self.op;
+        let mut op = self.op.borrow_mut();
+        // Record SuccessorInfo for this successor in the op
+        let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
+        let successor = self.builder.context().make_block_operand(succ.block, owner, succ_index);
+        op.successors.push(SuccessorInfo {
+            block: successor,
+            key: succ.key,
+            operand_group: succ.operand_group,
+        });
+    }
+
     pub fn with_successor(
         &mut self,
         dest: BlockRef,
@@ -243,15 +258,27 @@ where
         op.operands.extend_group(group, operands);
     }
 
-    /// Allocate `n` results for this op, of unknown type, to be filled in later
-    pub fn with_results(&mut self, n: usize) {
+    /// Allocate results for this op, with the provided types
+    pub fn with_results(&mut self, types: impl IntoIterator<Item = Type>) {
         let span = self.op.borrow().span;
         let owner = self.op;
-        let results = (0..n)
-            .map(|idx| self.builder.context().make_result(span, Type::Unknown, owner, idx as u8));
+        let results = types
+            .into_iter()
+            .enumerate()
+            .map(|(idx, ty)| self.builder.context().make_result(span, ty, owner, idx as u8));
         let mut op = self.op.borrow_mut();
         op.results.clear();
         op.results.extend(results);
+    }
+
+    /// Allocate a result for this op, with the provided type
+    pub fn with_result(&mut self, ty: Type) {
+        let span = self.op.borrow().span;
+        let owner = self.op;
+        let index = { self.op.borrow().num_results() };
+        let result = self.builder.context().make_result(span, ty, owner, index as u8);
+        let mut op = self.op.borrow_mut();
+        op.results.push(result);
     }
 
     /// Consume this builder, verify the op, and return a handle to it, or an error if validation

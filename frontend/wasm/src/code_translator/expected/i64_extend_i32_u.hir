@@ -1,8 +1,8 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 1 : i32;
-    %1 = hir.bitcast %0 <{ ty = !builtin.type<u32> }>;
-    %2 = "arith.zext"(%1) <{ ty = !builtin.type<u64> }> : u32 -> u64;
-    %3 = hir.bitcast %2 <{ ty = !builtin.type<i64> }>;
+    %1 = hir.bitcast %0 <{ ty = #builtin.type<u32> }>;
+    %2 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
+    %3 = hir.bitcast %2 <{ ty = #builtin.type<i64> }>;
     cf.br ^block5;
 ^block5:
     builtin.ret;

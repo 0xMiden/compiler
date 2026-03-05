@@ -1,16 +1,23 @@
 builtin.function public extern("C") @fold_redundant_yields_all_switch_if(%0: u32) -> u32 {
-    %3 = "test.constant"() <{ value = !builtin.number<11> }> : () -> u32;
-    %4 = "test.constant"() <{ value = !builtin.number<22> }> : () -> u32;
-    %5 = "test.constant"() <{ value = !builtin.number<0> }> : () -> u32;
-    %6 = "test.neq"(%0, %5) : (u32, u32) -> i1;
+    %3 = test.constant 11 : u32;
+    %4 = test.constant 22 : u32;
+    %5 = test.constant 0 : u32;
+    %6 = test.neq %0, %5;
     %12, %13 = scf.if %6 then {
-        %14, %15 = scf.index_switch %0 <{ cases = !builtin.array_u32<1, 2> }> default_region {
-            scf.yield %3, %4;
-        };
-        scf.yield %14, %15;
+        %14, %15 = scf.index_switch %0 
+        case 1 {
+            scf.yield %3, %4 : (u32, u32);
+        }
+        case 2 {
+            scf.yield %3, %4 : (u32, u32);
+        }
+        default {
+            scf.yield %3, %4 : (u32, u32);
+        } : (u32, u32);
+        scf.yield %14, %15 : (u32, u32);
     } else {
-        scf.yield %3, %4;
-    } : (u32, u32);
-    %7 = "test.add"(%12, %13) <{ overflow = !builtin.overflow<checked> }> : (u32, u32) -> u32;
-    builtin.ret %7;
+        scf.yield %3, %4 : (u32, u32);
+    } : (i1) -> (u32, u32);
+    %7 = test.add %12, %13 <{ overflow = #builtin.overflow<checked> }>;
+    builtin.ret %7 : (u32);
 };

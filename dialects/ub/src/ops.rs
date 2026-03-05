@@ -1,5 +1,5 @@
 use midenc_hir::{
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     effects::*,
     traits::*,
     *,
@@ -11,7 +11,7 @@ use crate::*;
 /// program point that is not supposed to be reachable.
 ///
 /// Any operation performed on a poison value, itself produces poison, and can be folded as such.
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = UndefinedBehaviorDialect,
     traits(ConstantLike),
@@ -52,7 +52,7 @@ impl InferTypeOpInterface for Poison {
 /// reachable.
 ///
 /// The specific way this gets lowered is up to the codegen backend and optimization choices.
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = UndefinedBehaviorDialect,
     traits(Terminator),

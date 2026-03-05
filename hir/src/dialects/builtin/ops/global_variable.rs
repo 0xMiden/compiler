@@ -1,6 +1,6 @@
 use crate::{
-    AsSymbolRef, Context, IdentAttr, OpPrinter, Operation, PointerType, Report, Spanned, Symbol,
-    SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
+    AsSymbolRef, Context, IdentAttr, OpParser, OpPrinter, Operation, PointerType, Report, Spanned,
+    Symbol, SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
     Visibility,
     derive::{EffectOpInterface, operation},
     dialects::builtin::{
@@ -8,6 +8,7 @@ use crate::{
         attributes::{I32Attr, TypeAttr, VisibilityAttr},
     },
     effects::{AlwaysSpeculatable, ConditionallySpeculatable, MemoryEffectOpInterface, Pure},
+    parse::ParserExt,
     print::AsmPrinter,
     traits::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
@@ -130,6 +131,47 @@ impl OpPrinter for GlobalVariable {
     }
 }
 
+impl OpParser for GlobalVariable {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use crate::parse::Token;
+
+        let visibility = parser
+            .parse_keyword_from(&[
+                Token::BareIdent("public"),
+                Token::BareIdent("private"),
+                Token::BareIdent("internal"),
+            ])?
+            .into_inner()
+            .parse::<Visibility>()
+            .unwrap();
+        state.add_attribute(
+            "visibility",
+            parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility),
+        );
+
+        let name = parser.parse_symbol_name()?;
+        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+
+        let ty = parser.parse_colon_type()?;
+        state.add_attribute(
+            "name",
+            parser.context_rc().create_attribute::<TypeAttr, _>(ty.into_inner()),
+        );
+
+        let initializer =
+            parser.parse_optional_region(&[], /*enable_name_shadowing=*/ false)?;
+        // We always add the initializer region, even if empty
+        state
+            .regions
+            .push(initializer.unwrap_or_else(|| parser.context().create_region()));
+
+        Ok(())
+    }
+}
+
 /// A [GlobalSymbol] reifies the address of a [GlobalVariable] as a value.
 ///
 /// An optional signed offset value may also be provided, which will be applied by the operation
@@ -159,7 +201,7 @@ impl OpPrinter for GlobalSymbol {
         use crate::formatter::*;
 
         printer.print_space();
-        printer.print_symbol_path(&self.get_symbol().path);
+        printer.print_symbol_path(self.get_symbol().path());
         let offset = *self.get_offset();
         match offset {
             0 => (),
@@ -171,6 +213,33 @@ impl OpPrinter for GlobalSymbol {
 
         *printer += const_text(" : ");
         printer.print_type(self.addr().ty());
+    }
+}
+
+impl OpParser for GlobalSymbol {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use crate::parse::Token;
+
+        let symbol = parser.parse_symbol_ref()?.into_inner();
+        state.add_attribute("symbol", symbol);
+
+        let offset = if parser.token_stream_mut().next_if_eq(Token::Plus)? {
+            parser.parse_decimal_integer::<i32>()?.into_inner()
+        } else {
+            parser
+                .parse_optional_decimal_integer::<i32>()?
+                .map(|spanned| spanned.into_inner())
+                .unwrap_or(0)
+        };
+        let offset = parser.context_rc().create_attribute::<I32Attr, _>(offset);
+        state.add_attribute("offset", offset);
+
+        state.results.push(Type::Ptr(PointerType::new(Type::U8).into()));
+
+        Ok(())
     }
 }
 

@@ -282,14 +282,14 @@ mod tests {
             r#"
 builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32 {
 // CHECK-LABEL: builtin.function public extern("C") @promotes_redundant
-    hir.store_local %0 <{ local = !builtin.local_variable<0, i32> }>;
-    hir.store_local %1 <{ local = !builtin.local_variable<1, i32> }>;
-    %2 = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    %3 = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    // CHECK-NEXT: [[V4:%\d+]] = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
-    %4 = arith.add %2, %3 <{ overflow = !builtin.overflow<checked> }>;
-    // CHECK-NEXT: builtin.ret [[V4]];
-    builtin.ret %4;
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+    %2 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    %3 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    // CHECK-NEXT: [[V4:%\d+]] = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+    %4 = arith.add %2, %3 <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: builtin.ret [[V4]] : (i32);
+    builtin.ret %4 : (i32);
 };
             "#
         );
@@ -318,9 +318,9 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
             r#"
 builtin.function public extern("C") @erases_dead_stores(%0: i32) -> i32 {
 // CHECK-LABEL: builtin.function public extern("C") @erases_dead_stores
-    hir.store_local %0 <{ local = !builtin.local_variable<0, i32> }>;
-    // CHECK-NEXT: builtin.ret %0;
-    builtin.ret %0;
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    // CHECK-NEXT: builtin.ret %0 : (i32);
+    builtin.ret %0 : (i32);
 };
             "#
         );
@@ -359,20 +359,20 @@ builtin.function public extern("C") @erases_dead_stores(%0: i32) -> i32 {
             r#"
 builtin.function public extern("C") @ignores_multiple_loads(%0: i32, %1: i32) -> i32 {
 // CHECK-LABEL: builtin.function public extern("C") @ignores_multiple_loads
-    hir.store_local %0 <{ local = !builtin.local_variable<0, i32> }>;
-    // CHECK-NEXT: hir.store_local %1 <{ local = !builtin.local_variable<1, i32> }>;
-    hir.store_local %1 <{ local = !builtin.local_variable<1, i32> }>;
-    %2 = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    // CHECK-NEXT: [[V3:%\d+]] = hir.load_local <{ local = !builtin.local_variable<1, i32> }>;
-    // CHECK-NEXT: [[V4:%\d+]] = hir.load_local <{ local = !builtin.local_variable<1, i32> }>;
-    %3 = hir.load_local <{ local = !builtin.local_variable<1, i32> }>;
-    %4 = hir.load_local <{ local = !builtin.local_variable<1, i32> }>;
-    // CHECK-NEXT: [[V5:%\d+]] = arith.add %0, [[V3]] <{ overflow = !builtin.overflow<checked> }>;
-    %5 = arith.add %2, %3 <{ overflow = !builtin.overflow<checked> }>
-    // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V5]], [[V4]] <{ overflow = !builtin.overflow<checked> }>
-    %6 = arith.add %5, %4 <{ overflow = !builtin.overflow<checked> }>
-    // CHECK-NEXT: builtin.ret [[V6]];
-    builtin.ret %6;
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    // CHECK-NEXT: hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+    hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+    %2 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    // CHECK-NEXT: [[V3:%\d+]] = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+    // CHECK-NEXT: [[V4:%\d+]] = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+    %3 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+    %4 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+    // CHECK-NEXT: [[V5:%\d+]] = arith.add %0, [[V3]] <{ overflow = #builtin.overflow<checked> }>;
+    %5 = arith.add %2, %3 <{ overflow = #builtin.overflow<checked> }>
+    // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V5]], [[V4]] <{ overflow = #builtin.overflow<checked> }>
+    %6 = arith.add %5, %4 <{ overflow = #builtin.overflow<checked> }>
+    // CHECK-NEXT: builtin.ret [[V6]] : (i32);
+    builtin.ret %6 : (i32);
 };
             "#
         );
@@ -410,18 +410,18 @@ builtin.function public extern("C") @ignores_multiple_loads(%0: i32, %1: i32) ->
             r#"
 builtin.function public extern("C") @ignores_multiple_stores(%0: i32, %1: i32) -> i32 {
 // CHECK-LABEL: builtin.function public extern("C") @ignores_multiple_stores
-    hir.store_local %0 <{ local = !builtin.local_variable<0, i32> }>;
-    // CHECK-NEXT: hir.store_local %1 <{ local = !builtin.local_variable<1, i32> }>;
-    hir.store_local %1 <{ local = !builtin.local_variable<1, i32> }>;
-    %2 = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    // CHECK-NEXT: [[V3:%\d+]] = hir.load_local <{ local = !builtin.local_variable<1, i32> }>;
-    %3 = hir.load_local <{ local = !builtin.local_variable<1, i32> }>;
-    // CHECK-NEXT: hir.store_local %1 <{ local = !builtin.local_variable<1, i32> }>;
-    hir.store_local %1 <{ local = !builtin.local_variable<1, i32> }>;
-    // CHECK-NEXT: [[V4:%\d+]] = arith.add %0, [[V3]] <{ overflow = !builtin.overflow<checked> }>;
-    %4 = arith.add %2, %3 <{ overflow = !builtin.overflow<checked> }>;
-    // CHECK-NEXT: builtin.ret [[V4]];
-    builtin.ret %4;
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    // CHECK-NEXT: hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+    hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+    %2 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    // CHECK-NEXT: [[V3:%\d+]] = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+    %3 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+    // CHECK-NEXT: hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+    hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+    // CHECK-NEXT: [[V4:%\d+]] = arith.add %0, [[V3]] <{ overflow = #builtin.overflow<checked> }>;
+    %4 = arith.add %2, %3 <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: builtin.ret [[V4]] : (i32);
+    builtin.ret %4 : (i32);
 };
             "#
         );
@@ -451,12 +451,12 @@ builtin.function public extern("C") @ignores_multiple_stores(%0: i32, %1: i32) -
             r#"
 builtin.function public extern("C") @ignores_poison_loads(%0: i32, %1: i32) -> i32 {
 // CHECK-LABEL: builtin.function public extern("C") @ignores_poison_loads
-    // CHECK-NEXT: [[V2:%\d+]] = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    %2 = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    // CHECK-NEXT: [[V3:%\d+]] = arith.add %0, [[V2]] <{ overflow = !builtin.overflow<checked> }>;
-    %3 = arith.add %0, %2 <{ overflow = !builtin.overflow<checked> }>;
-    // CHECK-NEXT: builtin.ret [[V3]];
-    builtin.ret %3;
+    // CHECK-NEXT: [[V2:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    %2 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    // CHECK-NEXT: [[V3:%\d+]] = arith.add %0, [[V2]] <{ overflow = #builtin.overflow<checked> }>;
+    %3 = arith.add %0, %2 <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: builtin.ret [[V3]] : (i32);
+    builtin.ret %3 : (i32);
 };
             "#
         );
@@ -495,18 +495,18 @@ builtin.function public extern("C") @ignores_poison_loads(%0: i32, %1: i32) -> i
             r#"
 builtin.function public extern("C") @ignores_inter_block_candidates(%0: i32) -> i32 {
 // CHECK-LABEL: builtin.function public extern("C") @ignores_inter_block_candidates
-    // CHECK-NEXT: hir.store_local %0 <{ local = !builtin.local_variable<0, i32> }>;
-    hir.store_local %0 <{ local = !builtin.local_variable<0, i32> }>;
+    // CHECK-NEXT: hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
     // CHECK-NEXT: cf.br ^block1;
     cf.br ^block1
 // CHECK-LABEL: ^block1:
 ^block1:
-    // CHECK-NEXT: [[V1:%\d+]] = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    v1 = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    // CHECK-NEXT: [[V2:%\d+]] = arith.add %0, [[V1]] <{ overflow = !builtin.overflow<checked> }>;
-    v2 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
-    // CHECK-NEXT: builtin.ret [[V2]];
-    builtin.ret %2;
+    // CHECK-NEXT: [[V1:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    v1 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    // CHECK-NEXT: [[V2:%\d+]] = arith.add %0, [[V1]] <{ overflow = #builtin.overflow<checked> }>;
+    v2 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: builtin.ret [[V2]] : (i32);
+    builtin.ret %2 : (i32);
 };
             "#
         );
@@ -561,28 +561,28 @@ builtin.function public extern("C") @ignores_inter_block_candidates(%0: i32) -> 
             r#"
 builtin.function public extern("C") @ignores_intervening_scf(%0: i32, %1: i1) -> i32 {
 // CHECK-LABEL: builtin.function public extern("C") @ignores_intervening_scf
-    // CHECK-NEXT: hir.store_local %0 <{ local = !builtin.local_variable<0, i32> }>;
-    hir.store_local %0 <{ local = !builtin.local_variable<0, i32> }>;
+    // CHECK-NEXT: hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
     // CHECK-NEXT: [[V2:%\d+]] = scf.if %1 then {
     %2 = scf.if %1 then {
         // CHECK-NEXT: [[V3:%\d+]] = arith.constant 1 : i32;
         %3 = arith.constant 1 : i32;
-        // CHECK-NEXT: scf.yield [[V3]];
-        scf.yield v3;
+        // CHECK-NEXT: scf.yield [[V3]] : (i32);
+        scf.yield v3 : (i32);
     // CHECK-NEXT: } else {
     } else {
         // CHECK-NEXT: [[V4:%\d+]] = arith.constant 2 : i32;
         %4 = arith.constant 2 : i32;
-        // CHECK-NEXT: scf.yield [[V4]];
-        scf.yield %4;
-    // CHECK-NEXT: } : (i32);
-    } : i32;
-    // CHECK-NEXT: [[V5:%\d+]] = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    %5 = hir.load_local <{ local = !builtin.local_variable<0, i32> }>;
-    // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V5]], [[V2]] <{ overflow = !builtin.overflow<checked> }>;
-    %6 = arith.add %5, %2 <{ overflow = !builtin.overflow<checked> }>;
-    // CHECK-NEXT: builtin.ret [[V6]];
-    builtin.ret %6;
+        // CHECK-NEXT: scf.yield [[V4]] : (i32);
+        scf.yield %4 : (i32);
+    // CHECK-NEXT: } : (i1) -> (i32);
+    } : (i1) -> (i32);
+    // CHECK-NEXT: [[V5:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    %5 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V5]], [[V2]] <{ overflow = #builtin.overflow<checked> }>;
+    %6 = arith.add %5, %2 <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: builtin.ret [[V6]] : (i32);
+    builtin.ret %6 : (i32);
 };
             "#
         );

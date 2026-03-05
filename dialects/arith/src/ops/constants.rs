@@ -57,3 +57,54 @@ impl OpPrinter for Constant {
         printer.print_colon_type(self.result().ty());
     }
 }
+
+impl OpParser for Constant {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        use alloc::format;
+
+        use midenc_hir::{attributes::AttrParser, parse::ParserError};
+
+        let start = parser.current_location();
+        let imm = ImmediateAttr::parse(parser)?;
+        let mut imm = imm.try_downcast::<ImmediateAttr>().unwrap();
+
+        let (ty_span, ty) = parser.parse_colon_type()?.into_parts();
+        let span = SourceSpan::new(start.source_id(), start.start()..ty_span.end());
+
+        let mut imm_mut = imm.borrow_mut();
+        let new_value = match ty {
+            Type::I1 => imm_mut.as_bool().map(Immediate::I1),
+            Type::I8 => imm_mut.as_i8().map(Immediate::I8),
+            Type::U8 => imm_mut.as_u8().map(Immediate::U8),
+            Type::I16 => imm_mut.as_i16().map(Immediate::I16),
+            Type::U16 => imm_mut.as_u16().map(Immediate::U16),
+            Type::I32 => imm_mut.as_i32().map(Immediate::I32),
+            Type::U32 => imm_mut.as_u32().map(Immediate::U32),
+            Type::I64 => imm_mut.as_i64().map(Immediate::I64),
+            Type::U64 => imm_mut.as_u64().map(Immediate::U64),
+            Type::I128 => imm_mut.as_i128().map(Immediate::I128),
+            Type::U128 => imm_mut.as_u128().map(Immediate::U128),
+            invalid => {
+                return Err(ParserError::InvalidOperationType {
+                    span,
+                    ty_span,
+                    reason: format!("expected integer type, got '{invalid}'"),
+                });
+            }
+        };
+
+        if let Some(new_value) = new_value {
+            *imm_mut.as_value_mut() = new_value;
+        } else {
+            return Err(ParserError::InvalidAttributeValue {
+                span,
+                reason: format!("could not convert value to type {ty}: value is out of range"),
+            });
+        }
+
+        state.add_attribute("value", imm);
+        state.results.push(ty);
+
+        Ok(())
+    }
+}

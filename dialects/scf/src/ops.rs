@@ -1,9 +1,10 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::attributes::U32ArrayAttr,
     effects::*,
+    parse::ParserExt,
     patterns::RewritePatternSet,
     print::AsmPrinter,
     traits::*,
@@ -23,6 +24,7 @@ use crate::ScfDialect;
 /// * [Return] to return from the enclosing function directly
 /// * [Unreachable] to abort execution
 /// * [Yield] to return from the enclosing [If]
+#[derive(OpPrinter, OpParser)]
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, NoRegionArguments, HasRecursiveMemoryEffects),
@@ -31,52 +33,12 @@ use crate::ScfDialect;
 pub struct If {
     #[operand]
     condition: Bool,
-    #[region]
+    #[region(name = "then")]
     then_body: Region,
-    #[region]
+    #[region(name = "else")]
     else_body: Region,
-}
-
-impl OpPrinter for If {
-    fn print(&self, printer: &mut AsmPrinter<'_>) {
-        use alloc::borrow::Cow;
-
-        printer.print_space();
-        printer.print_value_uses(ValueRange::<1>::Borrowed(&[self.condition().as_value_ref()]));
-        printer.print_space();
-
-        let then_region = self.then_body();
-        if !then_region.is_empty() {
-            printer.print_keyword("then");
-            printer.print_space();
-            printer.print_region(&then_region);
-        }
-
-        let else_region = self.else_body();
-        if !else_region.is_empty() {
-            if !then_region.is_empty() {
-                printer.print_space();
-            }
-            printer.print_keyword("else");
-            printer.print_space();
-            printer.print_region(&else_region);
-        }
-
-        let op = self.as_operation();
-        if op.has_attributes() {
-            printer.print_space();
-            printer.print_attribute_dictionary(
-                op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
-
-        if op.has_results() {
-            printer.print_space();
-            printer.print_colon_type_list(
-                op.results().iter().map(|r| Cow::Owned(r.borrow().ty().clone())),
-            );
-        }
-    }
+    #[results]
+    returns: AnyType,
 }
 
 impl If {
@@ -203,7 +165,7 @@ impl RegionBranchOpInterface for If {
 /// whose operands must be of the same arity and type as the "before" region's argument list. In
 /// this way, the "after" body can feed back input to the "before" body to determine whether to
 /// continue the loop.
-#[derive(OpPrinter)]
+#[derive(OpPrinter, OpParser)]
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, HasRecursiveMemoryEffects),
@@ -216,27 +178,6 @@ pub struct While {
     before: Region,
     #[region]
     after: Region,
-}
-
-#[cfg(false)]
-impl OpPrinter for While {
-    fn print(&self, _printer: &mut AsmPrinter<'_>) {
-        /*
-        use formatter::*;
-
-        let result_types = print::render_operation_result_types(self.as_operation());
-        let result_types = result_types + const_text(" ");
-        let results = print::render_operation_results(self.as_operation());
-        let operands = print::render_operation_operands(self.as_operation());
-        let header = results + display(self.op.name()) + const_text(" ") + operands + result_types;
-        let body = self.before().print(flags)
-            + const_text(" do ")
-            + self.after().print(flags)
-            + const_text(";");
-        header + body
-         */
-        todo!()
-    }
 }
 
 impl While {
@@ -406,7 +347,6 @@ impl RegionBranchOpInterface for While {
 ///   scf.yield %3 : i32
 /// }
 /// ```
-#[derive(OpPrinter)]
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, HasRecursiveMemoryEffects),
@@ -420,38 +360,92 @@ pub struct IndexSwitch {
     #[region]
     default_region: Region,
 }
-#[cfg(false)]
+
 impl OpPrinter for IndexSwitch {
-    fn print(&self, _printer: &mut AsmPrinter<'_>) {
-        /*
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use alloc::borrow::Cow;
+
         use formatter::*;
 
-        let result_types = print::render_operation_result_types(self.as_operation());
-        let result_types = if result_types.is_empty() {
-            result_types
-        } else {
-            result_types + const_text(" ")
-        };
-        let results = print::render_operation_results(self.as_operation());
-        let header = results
-            + display(self.op.name())
-            + const_text(" ")
-            + display(self.selector().as_value_ref())
-            + result_types;
-        let cases = self.cases().iter().fold(Document::Empty, |acc, case| {
+        printer.print_space();
+        printer.print_value_uses(ValueRange::<1>::Operands(&[self.selector().as_operand_ref()]));
+        printer.print_space();
+
+        for case in self.cases().iter() {
             let index = self.get_case_index_for_selector(*case).unwrap();
             let region = self.get_case_region(index);
-            acc + nl()
-                + const_text("case ")
-                + display(*case)
-                + const_text(" ")
-                + region.borrow().print(flags)
-        });
-        let fallback =
-            nl() + const_text("default ") + self.default_region().print(flags) + const_text(";");
-        header + cases + fallback
-         */
-        todo!()
+            *printer += nl() + const_text("case ") + display(*case) + const_text(" ");
+            printer.print_region(&region.borrow());
+        }
+
+        *printer += nl() + const_text("default ");
+        printer.print_region(&self.default_region());
+
+        if self.op.has_attributes() {
+            printer.print_space();
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+
+        printer.print_space();
+        printer.print_colon_type_list(
+            self.results().iter().map(|r| Cow::Owned(r.borrow().ty().clone())),
+        );
+    }
+}
+
+impl OpParser for IndexSwitch {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        use alloc::{format, vec};
+
+        use midenc_hir::{
+            diagnostics::{LabeledSpan, RelatedError, Report, Severity, miette::diagnostic},
+            dialects::builtin::attributes::Array,
+            parse::ParserError,
+        };
+
+        let selector = parser.parse_operand(/*allow_result_number=*/ true)?;
+        let selector = parser.resolve_operand(selector, Type::U32)?;
+        state.add_operand(selector);
+
+        let mut cases = Array::<u32>::default();
+        let mut regions = SmallVec::<[RegionRef; 2]>::default();
+        while parser.parse_optional_custom_keyword("case")?.is_some() {
+            let case_value = parser.parse_decimal_integer::<u32>()?;
+            if cases.contains(&case_value) {
+                return Err(ParserError::Report(RelatedError::new(Report::from(diagnostic!(
+                    severity = Severity::Error,
+                    labels = vec![LabeledSpan::at(
+                        case_value.span(),
+                        "this case selector has already been used"
+                    )],
+                    "invalid scf.index_switch operation"
+                )))));
+            }
+
+            let region = parser.context().create_region();
+            parser.parse_region(region, &[], false)?;
+
+            cases.push(case_value.into_inner());
+            regions.push(region);
+        }
+
+        parser.parse_custom_keyword("default")?;
+        let fallback_region = parser.context().create_region();
+        parser.parse_region(fallback_region, &[], false)?;
+
+        state
+            .add_attribute("cases", parser.context_rc().create_attribute::<U32ArrayAttr, _>(cases));
+        for region in regions {
+            state.add_region(region);
+        }
+        state.add_region(fallback_region);
+
+        parser.parse_optional_attribute_dict(&mut state.attrs)?;
+        parser.parse_colon_type_list(&mut state.results)?;
+
+        Ok(())
     }
 }
 
@@ -591,7 +585,7 @@ impl Canonicalizable for IndexSwitch {
 /// NOTE: Attempting to use this op in any other context than the one described above is invalid,
 /// and the implementation of various interfaces by this op will panic if that assumption is
 /// violated.
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ScfDialect,
     traits(Terminator, ReturnLike),
@@ -674,7 +668,7 @@ impl RegionBranchTerminatorOpInterface for Condition {
 /// conjunction with [While], the arity and type of the operands must match the region arguments
 /// of the `before` region. When used in conjunction with [If], both the `if_true` and `if_false`
 /// regions must yield the same arity and types.
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ScfDialect,
     traits(Terminator, ReturnLike, Pure, AlwaysSpeculatable),

@@ -1,17 +1,15 @@
 use alloc::{collections::VecDeque, sync::Arc};
 use core::fmt;
 
-use midenc_hir_macros::operation;
-use midenc_session::diagnostics::{Diagnostic, miette};
-
 use crate::{
     Alignable, OpPrinter, UnsafeIntrusiveEntityRef,
     constants::ConstantData,
+    derive::{OpParser, OpPrinter, operation},
+    diagnostics::{Diagnostic, miette},
     dialects::builtin::{
         BuiltinDialect,
         attributes::{BoolAttr, BytesAttr, U32Attr},
     },
-    print::AsmPrinter,
     traits::*,
 };
 
@@ -35,6 +33,7 @@ pub type SegmentRef = UnsafeIntrusiveEntityRef<Segment>;
 /// NOTE: It is not guaranteed that the optimizer will make any assumptions with regard to data
 /// segments. For the moment, even if `readonly` is set, the compiler assumes that segments are
 /// mutable.
+#[derive(OpPrinter, OpParser)]
 #[operation(
     dialect = BuiltinDialect,
     traits(
@@ -80,19 +79,6 @@ impl fmt::Debug for Segment {
             .field("init", &format_args!("{data}"))
             .field("readonly", &self.get_readonly())
             .finish()
-    }
-}
-
-impl OpPrinter for Segment {
-    fn print(&self, printer: &mut AsmPrinter<'_>) {
-        use crate::Op;
-
-        if *self.get_readonly() {
-            printer.print_space();
-            printer.print_keyword("readonly");
-        }
-        printer.print_space();
-        printer.print_attribute_dictionary(self.as_operation().properties());
     }
 }
 

@@ -3084,6 +3084,8 @@ dependencies = [
  "hashbrown 0.15.5",
  "intrusive-collections",
  "inventory",
+ "litcheck-core",
+ "litcheck-filecheck",
  "log",
  "memchr",
  "miden-core",

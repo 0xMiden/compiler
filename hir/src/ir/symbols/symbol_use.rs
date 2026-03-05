@@ -43,7 +43,7 @@ impl fmt::Debug for SymbolUse {
         let value = value.as_ref().map(|v| v.borrow());
         f.debug_struct("SymbolUse")
             .field("attr", &self.attr)
-            .field("symbol", &value.as_ref().map(|value| &value.path))
+            .field("symbol", &value.as_ref().map(|value| value.path()))
             .finish_non_exhaustive()
     }
 }

@@ -165,7 +165,7 @@ impl Eval for cf::Switch {
                 let successor = self
                     .cases()
                     .iter()
-                    .find(|succ| succ.key().is_some_and(|k| *k == selector))
+                    .find(|succ| *succ.key() == selector)
                     .map(|succ| *succ.info())
                     .unwrap_or_else(|| self.successors()[0]);
                 Ok(ControlFlowEffect::Jump(successor))
@@ -456,7 +456,8 @@ impl Eval for hir::Exec {
 
         let symbol_table = symbol_table.borrow();
         let symbol_table = symbol_table.as_symbol_table().unwrap();
-        let symbol_path = &self.callee().path;
+        let callee = self.callee();
+        let symbol_path = callee.path();
         let Some(symbol) = symbol_table.resolve(symbol_path) else {
             return Err(evaluator.report(
                 "evaluation failed",

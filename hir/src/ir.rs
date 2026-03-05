@@ -60,7 +60,8 @@ pub use self::{
     },
     operation::{
         AttrInfo, GenericOperationBuilder, OpCursor, OpCursorMut, OpList, Operation,
-        OperationBuilder, OperationName, OperationRef, OperationState, equivalence,
+        OperationBuilder, OperationName, OperationRef, OperationState, PendingSuccessorInfo,
+        equivalence,
     },
     parse::{AsmParser, OpAsmParser, OpParser, ParseResult},
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},

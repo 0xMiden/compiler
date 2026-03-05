@@ -1,17 +1,17 @@
+use alloc::format;
+
 use crate::{
-    BlockRef, CallConv, CallableOpInterface, CallableSymbol, EntityRef, FunctionType, IdentAttr,
-    ImmediateAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, RegionRef,
-    SmallVec, Symbol, SymbolUse, SymbolUseList, ToCompactString, Type, UnsafeIntrusiveEntityRef,
-    Usable, Visibility,
-    derive::{OpPrinter, operation},
+    AsValueRange, BlockRef, CallConv, CallableOpInterface, CallableSymbol, EntityRef, IdentAttr,
+    Immediate, ImmediateAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface,
+    RegionRef, SmallVec, Symbol, SymbolUse, SymbolUseList, ToCompactString, Type,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    derive::operation,
     dialects::builtin::{
         BuiltinDialect,
-        attributes::{
-            FunctionTypeAttr, LocalVariable, Signature, SignatureAttr, TypeArrayAttr,
-            VisibilityAttr,
-        },
+        attributes::{LocalVariable, Signature, SignatureAttr, TypeArrayAttr, VisibilityAttr},
     },
     interner,
+    parse::ParserExt,
     print::AsmPrinter,
     traits::{AnyType, IsolatedFromAbove, ReturnLike, SingleRegion, Terminator},
 };
@@ -116,21 +116,28 @@ impl OpParser for Function {
         let mut results = SmallVec::new_const();
         parser.parse_optional_arrow_type_list(&mut results)?;
 
-        let ty = FunctionType::new(cc, args.iter().map(|arg| arg.ty.clone()), results);
+        let sig = Signature::with_convention(
+            &parser.context_rc(),
+            cc,
+            args.iter().map(|arg| arg.ty.clone()),
+            results,
+        );
 
         let name = parser.context_rc().create_attribute::<IdentAttr, _>(name);
         state.add_attribute("name", name);
 
         let visibility = parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility);
-        state.add_attribute("visibility", visibility);
+        state.add_attribute("linkage", visibility);
 
-        let ty = parser.context_rc().create_attribute::<FunctionTypeAttr, _>(ty);
-        state.add_attribute("ty", ty);
+        let ty = parser.context_rc().create_attribute::<SignatureAttr, _>(sig);
+        state.add_attribute("signature", ty);
+
+        let locals = parser.context_rc().create_attribute::<TypeArrayAttr, _>([]);
+        state.add_attribute("locals", locals);
 
         if let Some(body) = parser.parse_optional_region(&args, false)? {
             state.add_region(body);
         }
-
         Ok(())
     }
 }
@@ -322,7 +329,6 @@ impl CallableOpInterface for Function {
 }
 
 /// Returns from the enclosing function with the provided operands as its results.
-#[derive(OpPrinter)]
 #[operation(
     dialect = BuiltinDialect,
     traits(Terminator, ReturnLike),
@@ -331,6 +337,60 @@ impl CallableOpInterface for Function {
 pub struct Ret {
     #[operands]
     values: AnyType,
+}
+
+impl OpPrinter for Ret {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use alloc::borrow::Cow;
+
+        let returning = self.values();
+        if returning.is_empty() {
+            return;
+        }
+
+        printer.print_space();
+        printer.print_value_uses(returning.as_value_range());
+        printer.print_space();
+        printer.print_colon_type_list(returning.iter().map(|r| Cow::Owned(r.borrow().ty())));
+    }
+}
+
+impl OpParser for Ret {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use crate::{
+            diagnostics::SourceSpan,
+            parse::{Delimiter, Token},
+        };
+
+        if !parser.token_stream_mut().is_next(|tok| matches!(tok, Token::PercentIdent(_))) {
+            return Ok(());
+        }
+
+        let start = parser.token_stream().current_position();
+        let mut args = SmallVec::default();
+        parser.parse_operand_list(
+            &mut args,
+            Delimiter::None,
+            /*allow_result_number=*/ true,
+            None,
+        )?;
+
+        let mut types = SmallVec::default();
+        parser.parse_colon_type_list(&mut types)?;
+
+        let end = parser.token_stream().current_span();
+        let span = SourceSpan::new(end.source_id(), start..end.end());
+
+        let mut operands = SmallVec::default();
+        parser.resolve_operands(span, &args, &types, &mut operands)?;
+
+        state.operands.push(operands);
+
+        Ok(())
+    }
 }
 
 /// Returns from the enclosing function with the provided immediate value as its result.
@@ -348,5 +408,35 @@ impl OpPrinter for RetImm {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         printer.print_space();
         printer.print_attribute_value(&*self.value());
+    }
+}
+
+impl OpParser for RetImm {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use crate::{diagnostics::SourceSpan, parse::ParserError};
+
+        let start = parser.token_stream().current_position();
+        let imm = parser.parse_integer::<Immediate>()?;
+        let ty = parser.parse_colon_type()?;
+        let end = parser.token_stream().current_span();
+        let span = SourceSpan::new(end.source_id(), start..end.end());
+
+        if ty.is_numeric() {
+            let attr = parser
+                .context_rc()
+                .create_attribute_with_type::<ImmediateAttr, _>(imm.into_inner(), ty.into_inner());
+            state.add_attribute("value", attr);
+        } else {
+            return Err(ParserError::InvalidOperationType {
+                span,
+                ty_span: ty.span(),
+                reason: format!("expected numeric type, got {ty}"),
+            });
+        }
+
+        Ok(())
     }
 }

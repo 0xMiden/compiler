@@ -6,7 +6,7 @@ use miden_core::{
     utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable},
 };
 
-use crate::CompactString;
+use crate::{CompactString, Type};
 
 /// The token type produced by [crate::parser::Lexer], and consumed by the parser.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -62,6 +62,7 @@ pub enum Token<'input> {
     Never,
     Ptr,
     Struct,
+    List,
     Array,
     Byte,
     Element,
@@ -163,6 +164,7 @@ impl Token<'_> {
             Self::Ptr => CompactString::const_new("ptr"),
             Self::Struct => CompactString::const_new("struct"),
             Self::Array => CompactString::const_new("array"),
+            Self::List => CompactString::const_new("list"),
             Self::Byte => CompactString::const_new("byte"),
             Self::Element => CompactString::const_new("element"),
             Self::Langle => CompactString::const_new("<"),
@@ -233,6 +235,7 @@ impl fmt::Display for Token<'_> {
             Self::Ptr => f.write_str("ptr"),
             Self::Struct => f.write_str("struct"),
             Self::Array => f.write_str("array"),
+            Self::List => f.write_str("list"),
             Self::Byte => f.write_str("byte"),
             Self::Element => f.write_str("element"),
             Self::Langle => f.write_char('<'),
@@ -290,14 +293,32 @@ impl<'input> Token<'input> {
                 | Token::Felt
                 | Token::Ptr
                 | Token::Array
+                | Token::List
                 | Token::Struct
-                | Token::Byte
-                | Token::Element
         )
     }
 
+    pub fn as_type(&self) -> Option<Type> {
+        match self {
+            Token::I1 => Some(Type::I1),
+            Token::I8 => Some(Type::I8),
+            Token::I16 => Some(Type::I16),
+            Token::I32 => Some(Type::I32),
+            Token::I64 => Some(Type::I64),
+            Token::I128 => Some(Type::I128),
+            Token::U8 => Some(Type::U8),
+            Token::U16 => Some(Type::U16),
+            Token::U32 => Some(Type::U32),
+            Token::U64 => Some(Type::U64),
+            Token::U128 => Some(Type::U128),
+            Token::Felt => Some(Type::Felt),
+            _ => None,
+        }
+    }
+
     pub fn is_keyword(&self) -> bool {
-        matches!(self, Token::True | Token::False | Token::Loc) || self.is_type_keyword()
+        matches!(self, Token::True | Token::False | Token::Loc | Token::Byte | Token::Element)
+            || self.is_type_keyword()
     }
 
     /// Returns true if this token represents a known delimiter, e.g. `(`
@@ -337,6 +358,7 @@ impl<'input> Token<'input> {
             "ptr" => Self::Ptr,
             "struct" => Self::Struct,
             "array" => Self::Array,
+            "list" => Self::List,
             "byte" => Self::Byte,
             "element" => Self::Element,
             _ => Self::BareIdent(s),

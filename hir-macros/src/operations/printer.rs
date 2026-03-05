@@ -2,7 +2,7 @@ use darling::FromDeriveInput;
 use quote::quote;
 use syn::Ident;
 
-use crate::operation::OperationField;
+use crate::operation::{OperationFormat, ParamShape, RegionInfo, RegionOptions, ResultShape};
 
 pub fn derive_op_printer(input: &syn::DeriveInput) -> darling::Result<DeriveOpPrinter> {
     DeriveOpPrinter::from_derive_input(input)
@@ -13,7 +13,7 @@ pub fn derive_op_printer(input: &syn::DeriveInput) -> darling::Result<DeriveOpPr
 /// Only named structs are allowed at this time.
 #[derive(Debug, FromDeriveInput)]
 #[darling(
-    attributes(printer),
+    attributes(operation, printer),
     supports(struct_named),
     forward_attrs(doc, cfg, allow, derive)
 )]
@@ -21,195 +21,269 @@ pub struct DeriveOpPrinter {
     ident: Ident,
     generics: syn::Generics,
     data: darling::ast::Data<(), crate::operation::OperationField>,
+    #[allow(unused)]
+    dialect: Ident,
+    #[allow(unused)]
+    #[darling(default)]
+    name: Option<Ident>,
+    #[darling(default)]
+    traits: darling::util::PathList,
+    #[darling(default)]
+    implements: darling::util::PathList,
 }
 
 impl quote::ToTokens for DeriveOpPrinter {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let struct_data = self.data.as_ref().take_struct().unwrap();
-        let has_successors = struct_data
-            .fields
-            .iter()
-            .any(|f| f.attrs.successor.is_present() || f.attrs.successors.is_some());
-        let has_properties = struct_data
-            .fields
-            .iter()
-            .any(|f| f.attrs.attr.is_some() || f.attrs.symbol.is_some());
-        let has_results = struct_data
-            .fields
-            .iter()
-            .any(|f| f.attrs.result.is_present() || f.attrs.results.is_present());
-        let min_result_count = struct_data
-            .fields
-            .iter()
-            .map(|f| if f.attrs.result.is_present() { 1 } else { 0 })
-            .sum::<usize>();
 
-        let properties = if has_properties {
-            quote! {
+        let format = match OperationFormat::from_struct(
+            &self.ident,
+            &struct_data.fields,
+            &self.traits,
+            &self.implements,
+        ) {
+            Ok(format) => format,
+            Err(err) => {
+                tokens.extend(err.write_errors());
+                return;
+            }
+        };
+
+        let mut operands = quote! {};
+        match &format.signature.params {
+            ParamShape::None => {}
+            ParamShape::Static(operand_group) => {
+                let operand_group_index =
+                    syn::Lit::Int(syn::LitInt::new(&operand_group.to_string(), self.ident.span()));
+                operands.extend(quote! {
+                    {
+                        use ::midenc_hir::AsValueRange;
+                        printer.print_space();
+                        printer.print_value_uses(op.operands().group(#operand_group_index).as_value_range());
+                    }
+                });
+            }
+            ParamShape::TrailingVarArgs { fixed, varargs } => {
+                let fixed_group_index =
+                    syn::Lit::Int(syn::LitInt::new(&fixed.to_string(), self.ident.span()));
+                let varargs_group_index =
+                    syn::Lit::Int(syn::LitInt::new(&varargs.to_string(), self.ident.span()));
+                operands.extend(quote! {
+                    {
+                        use ::midenc_hir::AsValueRange;
+                        printer.print_space();
+                        printer.print_value_uses(op.operands().group(#fixed_group_index).as_value_range());
+
+                        if !op.operands().group(#varargs_group_index).is_empty() {
+                            *printer += ::midenc_hir::formatter::const_text(", ");
+                            printer.print_value_uses(op.operands().group(#varargs_group_index).as_value_range());
+                        }
+                    }
+                });
+            }
+            ParamShape::Dynamic(operand_group_index) => {
+                let operand_group = &format.operand_groups[*operand_group_index];
+                let operand_group_index_lit = syn::Lit::Int(syn::LitInt::new(
+                    &operand_group_index.to_string(),
+                    self.ident.span(),
+                ));
+
+                operands.extend(if operand_group.requires_delimiter {
+                    quote! {
+                        if !op.operands().group(#operand_group_index_lit).is_empty() {
+                            use ::midenc_hir::AsValueRange;
+                            printer.print_space();
+                            printer.print_operand_list(op.operands().group(#operand_group_index_lit));
+                        }
+                    }
+                } else {
+                    quote! {
+                        if !op.operands().group(#operand_group_index_lit).is_empty() {
+                            use ::midenc_hir::AsValueRange;
+                            printer.print_space();
+                            printer.print_value_uses(op.operands().group(#operand_group_index_lit).as_value_range());
+                        }
+                    }
+                });
+            }
+        };
+
+        let mut properties = quote! {};
+        if !format.properties.is_empty() {
+            properties.extend(quote! {
                 *printer += midenc_hir::formatter::const_text(" <");
                 printer.print_attribute_dictionary(op.properties());
                 *printer += midenc_hir::formatter::const_text(">");
-            }
-        } else {
-            quote! {}
-        };
+            });
+        }
 
-        let regions = RegionPrinter {
-            fields: &struct_data.fields,
-        };
-
-        let successors = if has_successors {
-            let keyed_successors = struct_data.fields.iter().find(|s| s.attrs.successors.is_some());
-            if let Some(field) = keyed_successors {
-                let field_name = field.ident.as_ref().unwrap();
-                quote! {
-                    printer.print_space();
-                    let mut p = ::midenc_hir::print::AsmPrinter::new(op.context_rc(), printer.flags());
-                    for (i, keyed_succ) in self.#field_name().iter().enumerate() {
-                        use ::midenc_hir::AsValueRange;
-                        if i > 0 {
-                            p += ::midenc_hir::formatter::nl();
-                        }
-                        let dest = keyed_succ.block();
-                        let operands = keyed_succ.arguments();
-                        if let Some(key_attr_ref) = keyed_succ.key_storage() {
+        let mut successors = quote! {};
+        if !format.successor_groups.is_empty() {
+            for (succ_group_index, succ_group) in format.successor_groups.iter().enumerate() {
+                let field_name = &succ_group.field_name;
+                if succ_group.keyed.is_some() {
+                    successors.extend(quote! {
+                        printer.print_space();
+                        let mut p = ::midenc_hir::print::AsmPrinter::new(op.context_rc(), printer.flags());
+                        for (i, keyed_succ) in self.#field_name().iter().enumerate() {
+                            use ::midenc_hir::AsValueRange;
+                            if i > 0 {
+                                p += ::midenc_hir::formatter::const_text(", ");
+                                p += ::midenc_hir::formatter::nl();
+                            }
+                            let dest = keyed_succ.block();
+                            let operands = keyed_succ.arguments();
+                            let key_attr_ref = keyed_succ.key_storage();
                             p.print_attribute_value(&*key_attr_ref.borrow());
-                        } else {
-                            p.print_keyword("default");
+                            p += ::midenc_hir::formatter::const_text(" -> ");
+                            p += ::midenc_hir::formatter::display(dest.borrow().id());
+                            if operands.is_empty() {
+                                continue;
+                            }
+                            p += ::midenc_hir::formatter::const_text(":(");
+                            p.print_value_uses(operands.as_value_range());
+                            p += ::midenc_hir::formatter::const_text(")");
                         }
-                        p += ::midenc_hir::formatter::const_text(" => ");
-                        p += ::midenc_hir::formatter::display(dest.borrow().id());
-                        if operands.is_empty() {
-                            continue;
-                        }
-                        p += ::midenc_hir::formatter::const_text(":(");
-                        p.print_value_uses(operands.as_value_range());
-                        p += ::midenc_hir::formatter::const_text(")");
-                    }
-                    *printer += ::midenc_hir::formatter::indent(4, p.finish());
-                }
-            } else {
-                quote! {
-                    printer.print_space();
-                    for (i, succ) in op.successors().iter().enumerate() {
-                        if i > 0 {
-                            *printer += ::midenc_hir::formatter::const_text(", ");
-                        }
-                        let target = succ.successor();
-                        let target_operands = succ.successor_operands();
-                        *printer += ::midenc_hir::formatter::display(target.borrow().id());
-                        if target_operands.is_empty() {
-                            continue;
-                        }
-                        *printer += ::midenc_hir::formatter::const_text(":(");
-                        printer.print_value_uses(target_operands);
-                        *printer += ::midenc_hir::formatter::const_text(")");
-                    }
-                }
-            }
-        } else {
-            quote! {}
-        };
-
-        let results = if has_results {
-            if min_result_count > 1 {
-                quote! {
-                    if !op.implements::<dyn ::midenc_hir::traits::InferTypeOpInterface>() {
+                        *printer += ::midenc_hir::formatter::indent(4, p.finish());
+                    });
+                } else if succ_group.successors.is_empty() && succ_group.requires_delimiter {
+                    successors.extend(quote! {
                         printer.print_space();
-                        printer.print_colon_type_list(op.results().all().iter().map(|r| ::alloc::borrow::Cow::Owned(r.borrow().ty().clone())));
-                    }
-                }
-            } else {
-                let result_field = struct_data
-                    .fields
-                    .iter()
-                    .find_map(|f| {
-                        if f.attrs.result.is_present() || f.attrs.results.is_present() {
-                            f.ident.clone()
-                        } else {
-                            None
+                        printer.print_lbracket();
+                        for (i, succ) in self.#field_name().iter().enumerate() {
+                            if i > 0 {
+                                *printer += ::midenc_hir::formatter::const_text(", ");
+                            }
+                            let target = succ.successor();
+                            let target_operands = succ.successor_operands();
+                            *printer += ::midenc_hir::formatter::display(target.borrow().id());
+                            if target_operands.is_empty() {
+                                continue;
+                            }
+                            *printer += ::midenc_hir::formatter::const_text(":(");
+                            printer.print_value_uses(target_operands);
+                            *printer += ::midenc_hir::formatter::const_text(")");
                         }
-                    })
-                    .unwrap();
-                quote! {
-                    if !op.implements::<dyn ::midenc_hir::traits::InferTypeOpInterface>() {
+                        printer.print_rbracket();
+                    });
+                } else if succ_group.successors.is_empty() {
+                    successors.extend(quote! {
                         printer.print_space();
-                        printer.print_colon_type(&self.#result_field().ty());
-                    }
-                }
-            }
-        } else {
-            quote! {}
-        };
-
-        let mut num_non_successor_operand_groups = 0usize;
-        let mut current_group_size = 0usize;
-        let mut next_group_index = 0usize;
-        let operand_groups_to_print = struct_data
-            .fields
-            .iter()
-            .filter_map(|f| {
-                if f.attrs.operand.is_present() {
-                    if current_group_size == 0 {
-                        let index = next_group_index;
-                        next_group_index += 1;
-                        num_non_successor_operand_groups += 1;
-                        current_group_size = 2;
-                        Some(syn::Lit::Int(syn::LitInt::new(
-                            &index.to_string(),
-                            f.attrs.operands.span(),
-                        )))
-                    } else if current_group_size == 1 {
-                        // Previous group was an #[operands] group, so we start a new group
-                        let index = next_group_index;
-                        next_group_index += 1;
-                        num_non_successor_operand_groups += 1;
-                        current_group_size = 2;
-                        Some(syn::Lit::Int(syn::LitInt::new(
-                            &index.to_string(),
-                            f.attrs.operands.span(),
-                        )))
-                    } else {
-                        current_group_size += 1;
-                        None
-                    }
-                } else if f.attrs.operands.is_present() {
-                    let index = next_group_index;
-                    next_group_index += 1;
-                    num_non_successor_operand_groups += 1;
-                    current_group_size = 1;
-                    Some(syn::Lit::Int(syn::LitInt::new(
-                        &index.to_string(),
-                        f.attrs.operands.span(),
-                    )))
-                } else if f.attrs.successor.is_present() || f.attrs.successors.is_some() {
-                    next_group_index += 1;
-                    current_group_size = 1;
-                    None
+                        for (i, succ) in self.#field_name().iter().enumerate() {
+                            if i > 0 {
+                                *printer += ::midenc_hir::formatter::const_text(", ");
+                            }
+                            let target = succ.successor();
+                            let target_operands = succ.successor_operands();
+                            *printer += ::midenc_hir::formatter::display(target.borrow().id());
+                            if target_operands.is_empty() {
+                                continue;
+                            }
+                            *printer += ::midenc_hir::formatter::const_text(":(");
+                            printer.print_value_uses(target_operands);
+                            *printer += ::midenc_hir::formatter::const_text(")");
+                        }
+                    });
                 } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let operands = if num_non_successor_operand_groups == 1 {
-            quote! {
-                #(
-                    if !op.operands().group(#operand_groups_to_print).is_empty() {
-                        use ::midenc_hir::AsValueRange;
-                        printer.print_space();
-                        printer.print_value_uses(op.operands().group(#operand_groups_to_print).as_value_range());
+                    if succ_group_index > 0 || succ_group.index > 0 {
+                        successors.extend(quote! {
+                            *printer += ::midenc_hir::formatter::const_text(", ");
+                        });
+                    } else {
+                        successors.extend(quote! {
+                            printer.print_space();
+                        });
                     }
-                )*
+                    for (i, succ) in succ_group.successors.iter().enumerate() {
+                        let field_name = &succ.field;
+                        if i > 0 {
+                            successors.extend(quote! {
+                                *printer += ::midenc_hir::formatter::const_text(", ");
+                            });
+                        }
+                        successors.extend(quote! {
+                            {
+                                use ::midenc_hir::AsValueRange;
+                                let succ = self.#field_name();
+                                let target = succ.successor();
+                                let target_operands = &succ.arguments;
+                                *printer += ::midenc_hir::formatter::display(target.borrow().id());
+                                if !target_operands.is_empty() {
+                                    *printer += ::midenc_hir::formatter::const_text(":(");
+                                    printer.print_value_uses(target_operands.as_value_range());
+                                    *printer += ::midenc_hir::formatter::const_text(")");
+                                }
+                            }
+                        });
+                    }
+                }
             }
-        } else {
-            quote! {
-                #(
-                    printer.print_space();
-                    printer.print_operand_list(op.operands().group(#operand_groups_to_print));
-                )*
+        }
+
+        let regions = RegionPrinter { format: &format };
+
+        let mut signature = quote! {};
+        if !format.signature.can_infer {
+            let has_param_type = !matches!(&format.signature.params, ParamShape::None);
+            match &format.signature.params {
+                ParamShape::None => {}
+                ParamShape::Static(group) | ParamShape::Dynamic(group) => {
+                    let operand_group_index =
+                        syn::Lit::Int(syn::LitInt::new(&group.to_string(), self.ident.span()));
+                    signature.extend(quote! {
+                        printer.print_space();
+                        printer.print_colon_type_list(op.operands().group(#operand_group_index).iter().map(|r| ::alloc::borrow::Cow::Owned(r.borrow().ty().clone())));
+                    });
+                }
+                ParamShape::TrailingVarArgs { fixed, varargs } => {
+                    let fixed_group_index =
+                        syn::Lit::Int(syn::LitInt::new(&fixed.to_string(), self.ident.span()));
+                    let varargs_group_index =
+                        syn::Lit::Int(syn::LitInt::new(&varargs.to_string(), self.ident.span()));
+                    signature.extend(quote! {
+                        {
+                            let fixed_group = op.operands().group(#fixed_group_index).into_iter();
+                            let varargs_group = op.operands().group(#varargs_group_index).into_iter();
+                            printer.print_space();
+                            printer.print_colon_type_list(fixed_group.chain(varargs_group).map(|r| ::alloc::borrow::Cow::Owned(r.borrow().ty().clone())));
+                        }
+                    });
+                }
             }
-        };
+            match &format.signature.results {
+                ResultShape::None => {}
+                ResultShape::Static(_) => {
+                    signature.extend(if has_param_type {
+                        quote! {
+                            printer.print_space();
+                            printer.print_arrow();
+                            printer.print_space();
+                            printer.print_type_list(op.results().all().iter().map(|r| ::alloc::borrow::Cow::Owned(r.borrow().ty().clone())));
+                        }
+                    } else {
+                        quote! {
+                            printer.print_space();
+                            printer.print_colon_type_list(op.results().all().iter().map(|r| ::alloc::borrow::Cow::Owned(r.borrow().ty().clone())));
+                        }
+                    });
+                }
+                ResultShape::Dynamic(_) => {
+                    signature.extend(if has_param_type {
+                        quote! {
+                            printer.print_space();
+                            printer.print_arrow();
+                            printer.print_space();
+                            printer.print_type_list(op.results().all().iter().map(|r| ::alloc::borrow::Cow::Owned(r.borrow().ty().clone())));
+                        }
+                    } else {
+                        quote! {
+                            printer.print_space();
+                            printer.print_colon_type_list(op.results().all().iter().map(|r| ::alloc::borrow::Cow::Owned(r.borrow().ty().clone())));
+                        }
+                    });
+                }
+            }
+        }
 
         let op_type = &self.ident;
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
@@ -227,31 +301,56 @@ impl quote::ToTokens for DeriveOpPrinter {
                         printer.print_space();
                         printer.print_attribute_dictionary(op.attributes().iter().map(|attr| *attr.as_named_attribute()));
                     }
-                    #results
+                    #signature
                 }
             }
         });
     }
 }
 
-struct RegionPrinter<'a, 'f: 'a> {
-    fields: &'a Vec<&'f OperationField>,
+struct RegionPrinter<'a> {
+    format: &'a OperationFormat,
 }
 
-impl quote::ToTokens for RegionPrinter<'_, '_> {
+impl quote::ToTokens for RegionPrinter<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        for region_field in self.fields.iter().filter(|f| f.attrs.region.is_present()) {
-            let region_field_name = region_field.ident.as_ref().unwrap();
-            let region_name = syn::Lit::Str(syn::LitStr::new(
-                &region_field_name.to_string(),
-                region_field_name.span(),
-            ));
-            tokens.extend(quote! {
-                printer.print_space();
-                printer.print_keyword(#region_name);
-                printer.print_space();
-                printer.print_region(&self.#region_field_name());
-            });
+        let elide_region_name = self.format.regions.len() == 1;
+        for RegionInfo {
+            name: region_field_name,
+            options: RegionOptions { name: region_alias },
+        } in self.format.regions.iter()
+        {
+            let region_name = if let Some(region_alias) = region_alias.as_deref() {
+                syn::Lit::Str(syn::LitStr::new(region_alias, region_field_name.span()))
+            } else {
+                syn::Lit::Str(syn::LitStr::new(
+                    &region_field_name.to_string(),
+                    region_field_name.span(),
+                ))
+            };
+            if elide_region_name {
+                tokens.extend(quote! {
+                    {
+                        let region = self.#region_field_name();
+                        if !region.is_empty() {
+                            printer.print_space();
+                            printer.print_region(&region);
+                        }
+                    }
+                });
+            } else {
+                tokens.extend(quote! {
+                    {
+                        let region = self.#region_field_name();
+                        if !region.is_empty() {
+                            printer.print_space();
+                            printer.print_keyword(#region_name);
+                            printer.print_space();
+                            printer.print_region(&region);
+                        }
+                    }
+                });
+            }
         }
     }
 }

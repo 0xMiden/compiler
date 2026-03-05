@@ -5,10 +5,10 @@ use core::{
 
 pub use miden_core::{Felt, FieldElement, StarkField};
 
-use super::AttrPrinter;
+use super::{AttrPrinter, parse::ParserExt};
 use crate::{
     Type,
-    attributes::{InferAttributeType, IntegerLikeAttr},
+    attributes::{AttrParser, InferAttributeType, IntegerLikeAttr},
     derive::DialectAttribute,
     dialects::builtin::BuiltinDialect,
     formatter::PrettyPrint,
@@ -59,6 +59,22 @@ impl AttrPrinter for ImmediateAttr {
                 printer.print_decimal_integer(value);
             }
         }
+    }
+}
+
+impl AttrParser for ImmediateAttr {
+    fn parse(
+        parser: &mut dyn super::parse::Parser<'_>,
+    ) -> super::parse::ParseResult<crate::AttributeRef> {
+        use crate::parse::Token;
+
+        let imm = if parser.token_stream_mut().is_next(|tok| matches!(tok, Token::Minus)) {
+            Immediate::I128(parser.parse_decimal_integer::<i128>()?.into_inner())
+        } else {
+            Immediate::U128(parser.parse_decimal_integer::<u128>()?.into_inner())
+        };
+
+        Ok(parser.context_rc().create_attribute::<ImmediateAttr, _>(imm))
     }
 }
 

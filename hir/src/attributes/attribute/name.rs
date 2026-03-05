@@ -5,7 +5,7 @@ use core::{
     ptr::{DynMetadata, Pointee},
 };
 
-use super::{AttrRef, Attribute, AttributeRef, AttributeRegistration};
+use super::{Attribute, AttributeRef, AttributeRegistration};
 use crate::{
     Context, UnsafeIntrusiveEntityRef, attributes::AttrParser, interner, parse, traits::TraitInfo,
 };
@@ -33,6 +33,7 @@ struct AttributeInfo {
     parse_assembly: Option<ParseAssemblyFn>,
     /// Allocates a new uninitialized instance of this attribute
     alloc_uninit: AllocUninit,
+    create_default: fn(&Rc<Context>) -> AttributeRef,
 }
 
 unsafe fn alloc_uninit<T: AttributeRegistration>(context: Rc<Context>) -> *mut dyn Attribute {
@@ -41,9 +42,13 @@ unsafe fn alloc_uninit<T: AttributeRegistration>(context: Rc<Context>) -> *mut d
     UnsafeIntrusiveEntityRef::into_raw(assumed_init.as_attribute_ref()).cast_mut()
 }
 
+fn create_default<T: AttributeRegistration>(context: &Rc<Context>) -> AttributeRef {
+    <T as AttributeRegistration>::create_default(context).as_attribute_ref()
+}
+
 type AllocUninit = unsafe fn(context: Rc<Context>) -> *mut dyn Attribute;
 
-pub type ParseAssemblyFn = fn(&mut dyn parse::Parser<'_>) -> parse::ParseResult<AttrRef>;
+pub type ParseAssemblyFn = fn(&mut dyn parse::Parser<'_>) -> parse::ParseResult<AttributeRef>;
 
 trait MaybeAttrParser {
     fn parse_assembly() -> Option<ParseAssemblyFn>;
@@ -80,6 +85,7 @@ impl AttributeName {
             traits: traits.into_boxed_slice(),
             parse_assembly,
             alloc_uninit: alloc_uninit::<T>,
+            create_default: create_default::<T>,
         }))
     }
 
@@ -103,6 +109,11 @@ impl AttributeName {
     #[inline(always)]
     pub fn parse_assembly_fn(&self) -> Option<ParseAssemblyFn> {
         self.0.parse_assembly
+    }
+
+    #[inline(always)]
+    pub fn create_default(&self, context: &Rc<Context>) -> AttributeRef {
+        (self.0.create_default)(context)
     }
 
     /// Returns a freshly allocated clone of `attr`, produced by allocating a new uninitialized

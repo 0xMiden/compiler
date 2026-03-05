@@ -1,7 +1,7 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 1 : i64;
     %1 = arith.clz %0;
-    %2 = hir.bitcast %1 <{ ty = !builtin.type<i32> }>;
+    %2 = hir.bitcast %1 <{ ty = #builtin.type<i32> }>;
     cf.br ^block5;
 ^block5:
     builtin.ret;

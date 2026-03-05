@@ -4,9 +4,9 @@ pub use self::interface::{
     ComponentExport, ComponentId, ComponentInterface, ModuleExport, ModuleInterface,
 };
 use crate::{
-    IdentAttr, Op, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef,
-    Usable, Visibility,
+    Ident, IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol,
+    SymbolManager, SymbolManagerMut, SymbolMap, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
     dialects::builtin::{BuiltinDialect, attributes::VisibilityAttr},
     interner,
@@ -96,10 +96,69 @@ impl OpPrinter for Component {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         use alloc::string::ToString;
 
+        printer.print_space();
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
         printer.print_symbol_name(interner::Symbol::intern(self.id().to_string()));
+        printer.print_space();
         printer.print_region(&self.body());
+    }
+}
+
+impl OpParser for Component {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use alloc::{format, string::ToString, vec};
+
+        use crate::{
+            diagnostics::{LabeledSpan, RelatedError, Report, Severity, miette::diagnostic},
+            parse::{ParserError, Token},
+        };
+
+        let context = parser.context_rc();
+        let visibility = parser
+            .parse_keyword_from(&[
+                Token::BareIdent("public"),
+                Token::BareIdent("private"),
+                Token::BareIdent("internal"),
+            ])?
+            .into_inner()
+            .parse::<Visibility>()
+            .expect("one or more of these visibilities are no longer valid");
+        state
+            .add_attribute("visibility", context.create_attribute::<VisibilityAttr, _>(visibility));
+
+        let name = parser.parse_symbol_name()?;
+
+        let name_span = name.span;
+        let component_id = name.as_str().parse::<ComponentId>().map_err(|err| {
+            ParserError::Report(RelatedError::new(Report::from(diagnostic!(
+                severity = Severity::Error,
+                labels = vec![LabeledSpan::at(name_span, err.to_string())],
+                "invalid component name"
+            ))))
+        })?;
+
+        state.add_attribute(
+            "namespace",
+            context.create_attribute::<IdentAttr, _>(Ident::new(component_id.namespace, name_span)),
+        );
+        state.add_attribute(
+            "name",
+            context.create_attribute::<IdentAttr, _>(Ident::new(component_id.name, name_span)),
+        );
+        state.add_attribute(
+            "version",
+            context.create_attribute::<VersionAttr, _>(component_id.version),
+        );
+
+        let region = parser.context().create_region();
+        parser.parse_region(region, &[], true)?;
+        state.add_region(region);
+
+        Ok(())
     }
 }
 

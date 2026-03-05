@@ -34,6 +34,19 @@ pub enum ParserError {
         #[label("missing closing quote for string starting here")]
         span: SourceSpan,
     },
+    #[error("invalid syntax")]
+    #[diagnostic()]
+    UnclosedDelimiter {
+        #[label("missing closing delimiter '{expected}'")]
+        span: SourceSpan,
+        expected: char,
+    },
+    #[error("invalid syntax")]
+    #[diagnostic(help("Only '\"', '\\r', '\\n', and '\\t' may be escaped in strings"))]
+    InvalidEscapeSequence {
+        #[label("invalid escape sequence")]
+        span: SourceSpan,
+    },
     #[error("invalid integer literal")]
     #[diagnostic()]
     InvalidIntegerLiteral {
@@ -189,6 +202,12 @@ pub enum ParserError {
     #[diagnostic()]
     UnknownOperation {
         #[label("unknown/unregistered operation")]
+        span: SourceSpan,
+    },
+    #[error("invalid attribute")]
+    #[diagnostic()]
+    UnknownAttribute {
+        #[label("unknown/unregistered attribute")]
         span: SourceSpan,
     },
     #[error("invalid custom operation")]

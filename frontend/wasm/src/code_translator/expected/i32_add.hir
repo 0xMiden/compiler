@@ -1,7 +1,7 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 3 : i32;
     %1 = arith.constant 1 : i32;
-    %2 = arith.add %0, %1 <{ overflow = !builtin.overflow<wrapping> }>;
+    %2 = arith.add %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
     cf.br ^block5;
 ^block5:
     builtin.ret;

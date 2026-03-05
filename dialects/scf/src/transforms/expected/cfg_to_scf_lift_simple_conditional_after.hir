@@ -3,10 +3,10 @@ builtin.function public extern("C") @cfg_to_scf_lift_simple_conditional(%0: u32)
     %3 = arith.eq %0, %2;
     %8 = scf.if %3 then {
         %4 = arith.incr %0;
-        scf.yield %4;
+        scf.yield %4 : (u32);
     } else {
-        %5 = arith.mul %0, %0 <{ overflow = !builtin.overflow<checked> }>;
-        scf.yield %5;
-    } : (u32);
-    builtin.ret %8;
+        %5 = arith.mul %0, %0 <{ overflow = #builtin.overflow<checked> }>;
+        scf.yield %5 : (u32);
+    } : (i1) -> (u32);
+    builtin.ret %8 : (u32);
 };

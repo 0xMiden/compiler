@@ -8,8 +8,13 @@ use crate::{
 #[derive(DialectAttribute, Debug, Clone, PartialEq, Eq, Hash)]
 #[attribute(name = "symbol", dialect = BuiltinDialect, implements(AttrPrinter))]
 pub struct SymbolRef {
-    pub path: SymbolPath,
-    pub user: SymbolUseRef,
+    /// The referenced path
+    path: SymbolPath,
+    /// The SymbolUse reference, established when we've linked the referenced operation to this use
+    ///
+    /// This is guaranteed to be a valid reference when attached to an operation that has been
+    /// built - otherwise it is possibly dangling.
+    user: SymbolUseRef,
 }
 
 impl Default for SymbolRef {
@@ -34,9 +39,18 @@ impl AsMut<SymbolPath> for SymbolRef {
 }
 
 impl SymbolRef {
+    pub const fn new(path: SymbolPath, user: SymbolUseRef) -> Self {
+        Self { path, user }
+    }
+
     #[inline(always)]
     pub const fn path(&self) -> &SymbolPath {
         &self.path
+    }
+
+    #[inline(always)]
+    pub fn path_mut(&mut self) -> &mut SymbolPath {
+        &mut self.path
     }
 
     #[inline]

@@ -357,9 +357,9 @@ mod tests {
         let output = func.as_operation().to_string();
         let expected = "\
 builtin.function public extern(\"C\") @rewrite_pattern_api_test(%0: u32) -> u32 {
-    %3 = \"test.constant\"() <{ value = !builtin.number<2> }> : () -> u32;
-    %4 = \"test.mul\"(%0, %3) <{ overflow = !builtin.overflow<wrapping> }> : (u32, u32) -> u32;
-    builtin.ret %4;
+    %3 = test.constant 2 : u32;
+    %4 = test.mul %0, %3 <{ overflow = #builtin.overflow<wrapping> }>;
+    builtin.ret %4 : (u32);
 };";
         assert_str_eq!(output.as_str(), expected);
     }

@@ -1,7 +1,7 @@
 use crate::{
-    OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
-    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
-    Visibility,
+    OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
@@ -87,11 +87,44 @@ impl Module {
 
 impl OpPrinter for Module {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_space();
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
         printer.print_symbol_name(self.get_name().as_symbol());
         printer.print_space();
         printer.print_region(&self.body());
+    }
+}
+
+impl OpParser for Module {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use crate::parse::Token;
+
+        let visibility = parser
+            .parse_keyword_from(&[
+                Token::BareIdent("public"),
+                Token::BareIdent("private"),
+                Token::BareIdent("internal"),
+            ])?
+            .into_inner()
+            .parse::<Visibility>()
+            .expect("one or more of these visibilities are no longer valid");
+        state.add_attribute(
+            "visibility",
+            parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility),
+        );
+
+        let name = parser.parse_symbol_name()?;
+        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+
+        let region = parser.context().create_region();
+        parser.parse_region(region, &[], true)?;
+        state.add_region(region);
+
+        Ok(())
     }
 }
 

@@ -3,23 +3,23 @@ builtin.function public extern("C") @cfg_to_scf_lift_nested_while_loop(%0: ptr<u
     cf.br ^block1:(%7, %7);
 ^block1(%3: u32, %4: u32):
     %8 = arith.lt %3, %1;
-    cf.cond_br %8 ^block4, ^block3:(%4);
+    cf.cond_br %8 ^block4, ^block3:(%4) : (i1);
 ^block2(%5: u32, %6: u32):
     %10 = arith.lt %5, %2;
-    cf.cond_br %10 ^block6, ^block5:(%6);
+    cf.cond_br %10 ^block6, ^block5:(%6) : (i1);
 ^block3:
-    %9 = arith.mul %3, %2 <{ overflow = !builtin.overflow<unchecked> }>;
+    %9 = arith.mul %3, %2 <{ overflow = #builtin.overflow<unchecked> }>;
     cf.br ^block2:(%7, %4);
 ^block4:
-    builtin.ret %4;
+    builtin.ret %4 : (u32);
 ^block5:
-    %12 = arith.add %9, %5 <{ overflow = !builtin.overflow<unchecked> }>;
-    %13 = builtin.unrealized_conversion_cast %0 <{ ty = !builtin.type<u32> }>;
-    %14 = arith.add %13, %12 <{ overflow = !builtin.overflow<unchecked> }>;
-    %15 = builtin.unrealized_conversion_cast %14 <{ ty = !builtin.type<ptr<u32, byte>> }>;
-    %16 = builtin.unrealized_conversion_cast %15 <{ ty = !builtin.type<u32> }>;
+    %12 = arith.add %9, %5 <{ overflow = #builtin.overflow<unchecked> }>;
+    %13 = builtin.unrealized_conversion_cast %0 <{ ty = #builtin.type<u32> }>;
+    %14 = arith.add %13, %12 <{ overflow = #builtin.overflow<unchecked> }>;
+    %15 = builtin.unrealized_conversion_cast %14 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+    %16 = builtin.unrealized_conversion_cast %15 <{ ty = #builtin.type<u32> }>;
     %17 = arith.incr %5;
-    %18 = arith.add %6, %16 <{ overflow = !builtin.overflow<unchecked> }>;
+    %18 = arith.add %6, %16 <{ overflow = #builtin.overflow<unchecked> }>;
     cf.br ^block2:(%17, %18);
 ^block6:
     %11 = arith.incr %3;

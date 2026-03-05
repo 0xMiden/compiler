@@ -92,6 +92,18 @@ pub fn derive_op_printer(input: proc_macro::TokenStream) -> proc_macro::TokenStr
     }
 }
 
+#[proc_macro_derive(OpParser)]
+pub fn derive_op_parser(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    // Parse into syntax tree
+    let derive = parse_macro_input!(input as DeriveInput);
+    // Structure name
+    let result = operations::derive_op_parser(&derive);
+    match result {
+        Ok(ts) => proc_macro::TokenStream::from(ts.into_token_stream()),
+        Err(err) => err.write_errors().into(),
+    }
+}
+
 #[proc_macro_attribute]
 pub fn operation_trait(
     attr: proc_macro::TokenStream,

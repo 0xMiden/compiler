@@ -247,6 +247,9 @@ fn parse_source<T: OpParser + OpRegistration>(
 
     let op = op.borrow();
     if op.is::<T>() {
+        if operation_parser.state().config.should_verify_after_parse() {
+            op.recursively_verify()?;
+        }
         // We know this is safe because the underlying operation was allocated as a T
         Ok(unsafe { UnsafeIntrusiveEntityRef::from_raw(op.container().cast()) })
     } else {
@@ -331,7 +334,20 @@ pub trait OpAsmParser<'input>: AsmParser<'input> {
         allow_result_number: bool,
         required_operand_count: Option<NonZeroU8>,
     ) -> ParseResult {
-        todo!()
+        self.parse_comma_separated_list(delimiter, Some("operand list"), |parser| {
+            let operand = parser.parse_operand(allow_result_number)?;
+            result.push(operand);
+
+            Ok(true)
+        })?;
+
+        if let Some(required) = required_operand_count
+            && result.len() != required.get() as usize
+        {
+            todo!()
+        }
+
+        Ok(())
     }
 
     /// Parse zero or more trailing SSA comma-separated trailing operand references with a specified
@@ -446,6 +462,22 @@ pub trait OpAsmParser<'input>: AsmParser<'input> {
         enable_name_shadowing: bool,
     ) -> ParseResult<Option<RegionRef>>;
 
+    /// Parses a region preceded by the given keyword token, if the keyword is the next token
+    fn parse_optional_region_with_token(
+        &mut self,
+        keyword: &str,
+        arguments: &[Argument],
+        enable_name_shadowing: bool,
+    ) -> ParseResult<Option<RegionRef>> {
+        if self.token_stream_mut().next_if_eq(Token::BareIdent(keyword))? {
+            let region = self.context().create_region();
+            self.parse_region(region, arguments, enable_name_shadowing)?;
+            Ok(Some(region))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Parse a single operation successor.
     fn parse_successor(&mut self) -> ParseResult<Span<BlockRef>>;
 
@@ -521,6 +553,7 @@ pub trait OpAsmOpInterface: crate::Op {
     }
 }
 
+#[derive(Debug)]
 pub struct Argument {
     pub name: UnresolvedOperand,
     pub ty: Type,
@@ -535,10 +568,18 @@ impl Argument {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct UnresolvedOperand {
     pub loc: SourceSpan,
     pub name: ValueId,
+}
+
+impl core::fmt::Debug for UnresolvedOperand {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("UnresolvedOperand")
+            .field_with("name", |f| write!(f, "{}", &self.name))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -367,6 +367,8 @@ impl<'a> AsmPrinter<'a> {
                         && entries.any(|r| r.successor().is_some_and(|r| r == region_ref))
                 } else if let Some(callable) = op.as_trait::<dyn crate::CallableOpInterface>() {
                     callable.get_callable_region().is_some_and(|r| r == region_ref)
+                } else if let Some(entry) = region.entry_block_ref() {
+                    entry.borrow().arguments().is_empty()
                 } else {
                     false
                 }
@@ -468,7 +470,7 @@ impl<'a> AsmPrinter<'a> {
         use crate::formatter::*;
 
         let attr = value.as_attr();
-        self.document += text(format!("!{}", attr.name()));
+        self.document += text(format!("#{}", attr.name()));
         if attr.implements::<dyn Marker>() {
             return;
         }
@@ -621,6 +623,12 @@ impl<'a> AsmPrinter<'a> {
     pub fn print_rparen(&mut self) {
         use crate::formatter::*;
         self.document += const_text(")");
+    }
+
+    /// Print a `->`
+    pub fn print_arrow(&mut self) {
+        use crate::formatter::*;
+        self.document += const_text("->");
     }
 
     /// Print a single space

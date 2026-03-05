@@ -104,7 +104,7 @@ impl fmt::Display for Callable {
 }
 impl From<&SymbolRefAttr> for Callable {
     fn from(value: &SymbolRefAttr) -> Self {
-        Self::Symbol(value.path.clone())
+        Self::Symbol(value.path().clone())
     }
 }
 impl From<&SymbolPath> for Callable {

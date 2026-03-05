@@ -1,13 +1,13 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 1024 : i32;
-    %1 = hir.bitcast %0 <{ ty = !builtin.type<u32> }>;
+    %1 = hir.bitcast %0 <{ ty = #builtin.type<u32> }>;
     %2 = arith.constant 2 : u32;
     %3 = arith.mod %1, %2;
-    hir.assertz %3 <{ code = !builtin.u32<250> }>;
-    %4 = hir.int_to_ptr %1 <{ ty = !builtin.type<ptr<u16, byte>> }>;
+    hir.assertz %3 <{ code = #builtin.u32<250> }> : (u32);
+    %4 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u16, byte>> }>;
     %5 = hir.load %4;
-    %6 = "arith.zext"(%5) <{ ty = !builtin.type<u64> }> : u16 -> u64;
-    %7 = hir.bitcast %6 <{ ty = !builtin.type<i64> }>;
+    %6 = arith.zext %5 <{ ty = #builtin.type<u64> }>;
+    %7 = hir.bitcast %6 <{ ty = #builtin.type<i64> }>;
     cf.br ^block5;
 ^block5:
     builtin.ret;

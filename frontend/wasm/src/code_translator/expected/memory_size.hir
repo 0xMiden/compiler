@@ -1,6 +1,6 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = hir.mem_size;
-    %1 = hir.bitcast %0 <{ ty = !builtin.type<i32> }>;
+    %1 = hir.bitcast %0 <{ ty = #builtin.type<i32> }>;
     cf.br ^block5;
 ^block5:
     builtin.ret;

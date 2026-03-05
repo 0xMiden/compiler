@@ -1,9 +1,9 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 1024 : i32;
-    %1 = hir.bitcast %0 <{ ty = !builtin.type<u32> }>;
-    %2 = hir.int_to_ptr %1 <{ ty = !builtin.type<ptr<i8, byte>> }>;
+    %1 = hir.bitcast %0 <{ ty = #builtin.type<u32> }>;
+    %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<i8, byte>> }>;
     %3 = hir.load %2;
-    %4 = arith.sext %3 <{ ty = !builtin.type<i64> }>;
+    %4 = arith.sext %3 <{ ty = #builtin.type<i64> }>;
     cf.br ^block5;
 ^block5:
     builtin.ret;

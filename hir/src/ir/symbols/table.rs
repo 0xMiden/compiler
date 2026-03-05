@@ -707,7 +707,7 @@ impl<'a> SymbolManagerMut<'a> {
             let mut symbol_name_attr = user_op
                 .get_typed_attribute::<SymbolRefAttr>(user.attr)
                 .expect("invalid symbol use");
-            symbol_name_attr.borrow_mut().path.set_name(to);
+            symbol_name_attr.borrow_mut().path_mut().set_name(to);
         }
 
         Ok(())

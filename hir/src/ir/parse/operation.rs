@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     BlockArgument, Builder, EntityWithId, Forward, FunctionType, FxHashSet, InsertionGuard, Op,
-    RawWalk, Value, WalkResult,
+    PendingSuccessorInfo, RawWalk, Value, WalkResult,
     adt::{SmallDenseMap, SmallSet},
     dialects::builtin::{
         UnrealizedConversionCast, WorldRef,
@@ -75,6 +75,11 @@ where
     #[inline(always)]
     fn token_stream_mut(&mut self) -> &mut TokenStream<'input> {
         self.parser.token_stream_mut()
+    }
+
+    #[inline]
+    fn parse_extended_attribute(&mut self, ty: &Type) -> ParseResult<Span<AttributeRef>> {
+        super::parser::parse_extended_attribute(self, ty)
     }
 }
 
@@ -317,8 +322,7 @@ where
         let entries = self.get_ssa_value_entry(use_info.name);
 
         // Make sure there is a slot for this value.
-        let result_index =
-            use_info.name.result_index().expect("expected value to be an op result") as usize;
+        let result_index = use_info.name.result_index().unwrap_or(0) as usize;
         if entries.len() <= result_index {
             entries.resize(result_index + 1, None);
         }
@@ -450,7 +454,7 @@ where
             let (span, value_ref) = value_ref.into_parts();
             let value = value_ref.borrow();
             let prev_ty = value.ty();
-            if prev_ty == &ty {
+            if prev_ty == &ty || matches!(ty, Type::Unknown) {
                 if let Some(asm_state) = self.parser.state_mut().asm_state.as_deref_mut() {
                     asm_state.add_uses(value_ref, &[use_info.loc]);
                 }
@@ -565,8 +569,8 @@ where
             .last_mut()
             .unwrap()
             .values
-            .get_mut(&id.without_result_index())
-            .unwrap()
+            .entry(id.without_result_index())
+            .or_default()
     }
 
     /// Create and remember a new placeholder for a forward reference.
@@ -865,6 +869,8 @@ where
         };
         self.parse_trailing_location_specifier(OpOrArgument::Op(op))?;
 
+        self.parse_semicolon()?;
+
         let end = self.current_location();
         if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
             asm_state.finalize_operation_definition(op, span, end, &[]);
@@ -896,16 +902,33 @@ where
             self.parse_optional_ssa_use_list(&mut operand_info)?;
             self.parser.parse_rparen()?;
         }
+        if !operand_info.is_empty() {
+            result.operands.push(Default::default());
+        }
 
         // Parse the successor list, if not explicitly provided.
         if let Some(provided_succs) = parsed_successors {
-            result.successors.extend_from_slice(provided_succs);
+            result.successors.extend(provided_succs.iter().copied().enumerate().map(
+                |(i, block)| PendingSuccessorInfo {
+                    block,
+                    key: None,
+                    operand_group: (i + 1) as u8,
+                },
+            ));
         } else if self.parser.token_stream_mut().is_next(|tok| matches!(tok, Token::Lbracket)) {
             // Check if the operation is not a known terminator.
             if !result.name.implements::<dyn Terminator>() {
                 return Err(ParserError::NonTerminatorWithSuccessors { span: result.span });
             }
-            self.parse_successors(&mut result.successors)?;
+            let mut successors = SmallVec::<[_; 2]>::default();
+            self.parse_successors(&mut successors)?;
+            result.successors.extend(successors.into_iter().enumerate().map(|(i, block)| {
+                PendingSuccessorInfo {
+                    block,
+                    key: None,
+                    operand_group: (i + 1) as u8,
+                }
+            }));
         }
 
         // Parse the region list, if not explicitly provided.
@@ -955,7 +978,7 @@ where
         // Resolve all of the operands.
         for (use_info, ty) in operand_info.iter().zip(fn_ty.params()) {
             let value = self.resolve_ssa_use(*use_info, ty.clone())?;
-            result.operands.push(value);
+            result.operands[0].push(value);
         }
 
         Ok(())
@@ -1052,7 +1075,7 @@ where
         let Some(parse_assembly_fn) = name.parse_assembly_fn() else {
             return Err(ParserError::InvalidCustomOperation {
                 span: name_span,
-                reason: "operation does not implement OpParser".to_string(),
+                reason: format!("operation '{name}' does not implement OpParser"),
             });
         };
         let isolated_from_above = name.implements::<dyn IsolatedFromAbove>();
@@ -1088,6 +1111,8 @@ where
         let op = self.builder_mut().create_operation(&mut guard)?;
 
         self.parse_trailing_location_specifier(OpOrArgument::Op(op))?;
+
+        self.parse_semicolon()?;
 
         Ok(op)
     }
@@ -1218,7 +1243,10 @@ where
                 let arg = self
                     .context()
                     .append_block_argument(owning_block, arg.ty.clone(), arg_info.loc)
-                    .downcast::<BlockArgument, dyn Value>();
+                    .borrow()
+                    .downcast_ref::<BlockArgument>()
+                    .unwrap()
+                    .as_block_argument_ref();
                 // Add a definition of this arg to the assembly state if provided.
                 if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
                     asm_state.add_block_argument_definition(arg, arg_info.loc);
@@ -1654,12 +1682,8 @@ where
         self.parser.parse_function_result_types()
     }
 
-    fn parse_dialect_symbol_body(&mut self, body: &str) -> ParseResult {
-        self.parser.parse_dialect_symbol_body(body)
-    }
-
-    fn parse_complex_type(&mut self) -> ParseResult<Span<Type>> {
-        self.parser.parse_complex_type()
+    fn parse_dialect_symbol_body(&mut self) -> ParseResult<Span<CompactString>> {
+        self.parser.parse_dialect_symbol_body()
     }
 
     fn parse_extended_type(&mut self) -> ParseResult<Span<Type>> {

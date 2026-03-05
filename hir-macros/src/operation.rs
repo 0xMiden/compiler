@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{num::NonZeroU8, rc::Rc};
 
 use darling::{
     Error, FromDeriveInput, FromField, FromMeta,
@@ -296,7 +296,7 @@ impl OpDefinition {
                             .with_span(&field_name));
                     }
                 },
-                Some(OperationFieldType::Region) => {
+                Some(OperationFieldType::Region(_options)) => {
                     self.regions.push(field_name);
                 }
                 Some(OperationFieldType::Successor) => {
@@ -318,21 +318,54 @@ impl OpDefinition {
                     }
                 }
                 Some(OperationFieldType::Successors(SuccessorsType::Default)) => {
+                    match self.successors.last() {
+                        None => {
+                            self.successors.push(SuccessorGroup::Named(field_name.clone()));
+                        }
+                        Some(SuccessorGroup::Unnamed(_)) if self.successors.len() == 1 => {
+                            self.successors.push(SuccessorGroup::Named(field_name.clone()));
+                        }
+                        Some(
+                            SuccessorGroup::Unnamed(_)
+                            | SuccessorGroup::Named(_)
+                            | SuccessorGroup::Keyed(..),
+                        ) => {
+                            return Err(Error::custom(
+                                "#[successors] may only appear on a single field",
+                            )
+                            .with_span(&field_name));
+                        }
+                    }
                     create_params.push(OpCreateParam {
-                        param_ty: OpCreateParamType::SuccessorGroupNamed(field_name.clone()),
+                        param_ty: OpCreateParamType::SuccessorGroupNamed(field_name),
                         r#default: field.attrs.default.is_present(),
                     });
-                    self.successors.push(SuccessorGroup::Named(field_name));
                 }
                 Some(OperationFieldType::Successors(SuccessorsType::Keyed)) => {
+                    match self.successors.last() {
+                        None => {
+                            self.successors
+                                .push(SuccessorGroup::Keyed(field_name.clone(), field_ty.clone()));
+                        }
+                        Some(SuccessorGroup::Unnamed(_)) if self.successors.len() == 1 => {
+                            self.successors
+                                .push(SuccessorGroup::Keyed(field_name.clone(), field_ty.clone()));
+                        }
+                        Some(
+                            SuccessorGroup::Unnamed(_)
+                            | SuccessorGroup::Named(_)
+                            | SuccessorGroup::Keyed(..),
+                        ) => {
+                            return Err(Error::custom(
+                                "#[successors] may only appear on a single field",
+                            )
+                            .with_span(&field_name));
+                        }
+                    }
                     create_params.push(OpCreateParam {
-                        param_ty: OpCreateParamType::SuccessorGroupKeyed(
-                            field_name.clone(),
-                            field_ty.clone(),
-                        ),
+                        param_ty: OpCreateParamType::SuccessorGroupKeyed(field_name, field_ty),
                         r#default: field.attrs.default.is_present(),
                     });
-                    self.successors.push(SuccessorGroup::Keyed(field_name, field_ty));
                 }
                 Some(OperationFieldType::Symbol(None)) => {
                     let symbol_path_attr_path: syn::Path = parse_quote_spanned! { field_span =>
@@ -668,7 +701,7 @@ impl quote::ToTokens for WithResults<'_> {
                 let num_results =
                     syn::Lit::Int(syn::LitInt::new(&format!("{}usize", results.len()), group_span));
                 tokens.extend(quote_spanned! { group_span =>
-                    op_builder.with_results(#num_results);
+                    op_builder.with_results(::alloc::vec![::midenc_hir::Type::Unknown; #num_results]);
                 });
             }
             // Named result groups can have an arbitrary number of results
@@ -2314,13 +2347,18 @@ pub struct OperationFieldAttrs {
     /// Was this a `#[results]` field?
     pub results: Flag,
     /// Was this a `#[region]` field?
-    pub region: Flag,
+    pub region: Option<SpannedValue<Option<RegionOptions>>>,
     /// Was this a `#[successor]` field?
     pub successor: Flag,
     /// Was this a `#[successors]` field?
     pub successors: Option<SpannedValue<SuccessorsType>>,
     /// Was this a `#[symbol]` field?
     pub symbol: Option<SpannedValue<Option<SymbolType>>>,
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct RegionOptions {
+    pub name: Option<String>,
 }
 
 impl OperationFieldAttrs {
@@ -2409,7 +2447,31 @@ impl OperationFieldAttrs {
                             ))
                             .with_span(&attr));
                         }
-                        result.region = Flag::from_meta(&attr.meta).unwrap();
+                        let span = attr.span();
+                        let mut region_options = None::<RegionOptions>;
+                        if attr.meta.require_path_only().is_ok() {
+                            result.region = Some(SpannedValue::new(region_options, span));
+                        } else {
+                            match attr.parse_nested_meta(|meta| {
+                                if meta.path.is_ident("name") {
+                                    let value = meta.value()?;
+                                    let name: syn::LitStr = value.parse()?;
+                                    region_options.get_or_insert_default().name =
+                                        Some(name.value());
+                                    Ok(())
+                                } else {
+                                    Err(meta.error(format!(
+                                        "invalid #[region] option '{}'",
+                                        meta.path.to_token_stream()
+                                    )))
+                                }
+                            }) {
+                                Ok(_) => {
+                                    result.region = Some(SpannedValue::new(region_options, span));
+                                }
+                                Err(err) => return Err(Error::from(err)),
+                            }
+                        }
                     }
                     "successor" => {
                         if let Some(prev) = prev_decorator.replace("successor") {
@@ -2532,8 +2594,10 @@ impl OperationFieldAttrs {
             Some(SpannedValue::new(OperationFieldType::Result, self.result.span()))
         } else if self.results.is_present() {
             Some(SpannedValue::new(OperationFieldType::Results, self.results.span()))
-        } else if self.region.is_present() {
-            Some(SpannedValue::new(OperationFieldType::Region, self.region.span()))
+        } else if self.region.is_some() {
+            self.region.as_ref().map(|region| {
+                region.map_ref(|s| OperationFieldType::Region(s.clone().unwrap_or_default()))
+            })
         } else if self.successor.is_present() {
             Some(SpannedValue::new(OperationFieldType::Successor, self.successor.span()))
         } else if self.successors.is_some() {
@@ -2562,7 +2626,7 @@ pub enum OperationFieldType {
     /// A named variadic result group (zero or more results)
     Results,
     /// A named region
-    Region,
+    Region(RegionOptions),
     /// A named successor
     Successor,
     /// A named variadic successor group (zero or more successors)
@@ -2586,7 +2650,10 @@ impl core::fmt::Display for OperationFieldType {
             Self::Operands => f.write_str("operands"),
             Self::Result => f.write_str("result"),
             Self::Results => f.write_str("results"),
-            Self::Region => f.write_str("region"),
+            Self::Region(RegionOptions { name: None }) => f.write_str("region"),
+            Self::Region(RegionOptions { name: Some(name) }) => {
+                write!(f, "region(name = {name:?})")
+            }
             Self::Successor => f.write_str("successor"),
             Self::Successors(SuccessorsType::Default) => f.write_str("successors"),
             Self::Successors(SuccessorsType::Keyed) => f.write_str("successors(keyed)"),
@@ -2979,5 +3046,484 @@ fn make_path<'a>(parts: impl IntoIterator<Item = &'a str>, style: PathStyle) -> 
                 arguments: syn::PathArguments::None,
             }
         })),
+    }
+}
+
+#[allow(unused)]
+#[derive(Debug, Clone)]
+pub struct PropertyInfo {
+    pub name: Ident,
+    pub ty: syn::Type,
+    pub symbol: Option<SymbolType>,
+    pub is_optional: bool,
+    pub hide: bool,
+}
+
+#[allow(unused)]
+#[derive(Debug, Clone)]
+pub struct UserdataFieldInfo {
+    pub name: Ident,
+    pub ty: syn::Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct OperandGroupInfo {
+    #[allow(unused)]
+    pub field_name: Ident,
+    /// The name of the operand group, if applicable.
+    ///
+    /// This is only set when the group is derived from a `#[operands]` or `#[successor]` field
+    pub name: Option<Ident>,
+    /// The type constraint of the operand group, if applicable.
+    ///
+    /// This is only set when the group is derived from a `#[operands]` field
+    #[allow(unused)]
+    pub ty: Option<syn::Type>,
+    /// The index of this group
+    pub index: usize,
+    /// This group has an exact size
+    pub size: Option<NonZeroU8>,
+    /// This group must contain at least `min_size` operands
+    ///
+    /// If `size` is provided, `min_size` is always the same value
+    pub min_size: u8,
+    /// If this operand group requires surrounding `(` `)` delimiters
+    pub requires_delimiter: bool,
+    /// Whether this group holds successor operands
+    pub successor_operands: bool,
+    /// If this group represents one or more #[operand] fields, then `size` will be set, and this
+    /// vector will contain `size` operands
+    pub operands: Vec<OperandInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct OperandInfo {
+    /// The name of the operand field
+    #[allow(unused)]
+    pub name: Ident,
+    /// The index of this operand relative to its containing group
+    pub index: usize,
+    /// The type of the field, representing the type constraint associated with this result
+    #[allow(unused)]
+    pub ty: syn::Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct SuccessorGroupInfo {
+    pub field_name: Ident,
+    /// The name of the successor group, if applicable.
+    ///
+    /// This is only set when the group is derived from a `#[successors]` field
+    pub name: Option<Ident>,
+    /// The starting successor index of this group
+    pub index: usize,
+    /// The starting operand group index for successors in this group
+    pub base_operand_group: usize,
+    /// If this successor group requires surrounding `[` `]` delimiters
+    pub requires_delimiter: bool,
+    /// The successors in this group
+    pub successors: Vec<SuccessorInfo>,
+    /// Whether this group was decorated with `#[successors(keyed)]`, and if so, the field type
+    pub keyed: Option<syn::Type>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SuccessorInfo {
+    /// The field decorated with #[successor]
+    #[allow(unused)]
+    pub field: Ident,
+    /// The concrete type of the field specified in the Rust source code
+    #[allow(unused)]
+    pub field_ty: syn::Type,
+    /// The index of this successor relative to its group
+    #[allow(unused)]
+    pub index: usize,
+}
+
+#[allow(unused)]
+#[derive(Debug, Clone)]
+pub struct ResultsInfo {
+    /// The name of the result group, if applicable.
+    ///
+    /// This is only set when the group is derived from a `#[results]` field
+    pub field: Option<Ident>,
+    /// This group has an exact size
+    pub size: Option<NonZeroU8>,
+    /// This group must contain at least `min_size` operands
+    ///
+    /// If `size` is provided, `min_size` is always the same value
+    pub min_size: u8,
+    /// If this result group requires surrounding `(` `)` delimiters
+    pub requires_delimiter: bool,
+    /// If this group represents one or more #[result] fields, then `size` will be set, and this
+    /// vector will contain `size` results
+    pub results: Vec<ResultInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResultInfo {
+    /// The name of the operand field
+    #[allow(unused)]
+    pub name: Ident,
+    /// The type of the field, representing the type constraint associated with this result
+    #[allow(unused)]
+    pub ty: syn::Type,
+}
+
+#[derive(Default, Debug, Clone)]
+pub enum ParamShape {
+    #[default]
+    None,
+    /// A statically known shape, given by the types of all the operands of the given operand group
+    #[allow(unused)]
+    Static(usize),
+    /// A shape consisting of a fixed portion and a trailing variable-length group
+    #[allow(unused)]
+    TrailingVarArgs {
+        /// The operand group of the fixed component
+        fixed: usize,
+        /// The operand group of the varargs component
+        varargs: usize,
+    },
+    /// A shape that is determined entirely dynamically, corresponding to the given operand group
+    #[allow(unused)]
+    Dynamic(usize),
+}
+
+#[derive(Default, Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
+pub enum ResultShape {
+    #[default]
+    None,
+    /// One or more statically known results
+    Static(Vec<ResultInfo>),
+    /// A shape that is determined entirely dynamically
+    #[allow(unused)]
+    Dynamic(ResultInfo),
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct OpSignature {
+    /// The inputs to this operation
+    pub params: ParamShape,
+    /// The results of this operation, if applicable
+    pub results: ResultShape,
+    /// Whether or not the operation implements InferTypeOpInterface OR all type constraints
+    /// are concrete, so we are able to infer the type statically
+    pub can_infer: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegionInfo {
+    pub name: Ident,
+    pub options: RegionOptions,
+}
+
+#[derive(Default, Debug)]
+pub struct OperationFormat {
+    pub signature: OpSignature,
+    pub properties: Vec<PropertyInfo>,
+    #[allow(unused)]
+    pub fields: Vec<UserdataFieldInfo>,
+    pub operand_groups: Vec<OperandGroupInfo>,
+    pub successor_groups: Vec<SuccessorGroupInfo>,
+    pub regions: Vec<RegionInfo>,
+    pub isolated_from_above: bool,
+}
+
+impl OperationFormat {
+    pub fn from_struct(
+        _ident: &Ident,
+        fields: &[&OperationField],
+        traits: &darling::util::PathList,
+        implements: &darling::util::PathList,
+    ) -> darling::Result<Self> {
+        let mut format = Self::default();
+
+        if traits.iter().any(|p| p.segments.last().unwrap().ident == "IsolatedFromAbove") {
+            format.isolated_from_above = true;
+        }
+        if implements
+            .iter()
+            .any(|p| p.segments.last().unwrap().ident == "InferTypeOpInterface")
+        {
+            format.signature.can_infer = true;
+        }
+
+        for f in fields.iter() {
+            let field_name = f.ident.clone().unwrap();
+            if let Some(kind) = f.attrs.attr.as_deref().cloned() {
+                let hide = matches!(kind, Some(AttrKind::Hidden));
+                let is_optional = f.attrs.default.is_present();
+                format.properties.push(PropertyInfo {
+                    name: f.ident.clone().unwrap(),
+                    ty: f.ty.clone(),
+                    symbol: None,
+                    is_optional,
+                    hide,
+                });
+            } else if let Some(symbol) = f.attrs.symbol.as_deref().cloned() {
+                let is_optional = f.attrs.default.is_present();
+                format.properties.push(PropertyInfo {
+                    name: f.ident.clone().unwrap(),
+                    ty: f.ty.clone(),
+                    symbol,
+                    is_optional,
+                    hide: false,
+                });
+            } else if f.attrs.operand.is_present() {
+                let mut param_operand_group_index = 0;
+                if let Some(prev_group) = format.operand_groups.last()
+                    && prev_group.name.is_some()
+                {
+                    assert!(prev_group.successor_operands);
+                    let index = prev_group.index + prev_group.min_size as usize;
+                    param_operand_group_index = index;
+                    let requires_delimiter =
+                        !prev_group.requires_delimiter && prev_group.size.is_none();
+                    let name = field_name.clone();
+                    format.operand_groups.push(OperandGroupInfo {
+                        field_name,
+                        name: None,
+                        ty: None,
+                        index,
+                        size: None,
+                        min_size: 1,
+                        requires_delimiter,
+                        successor_operands: false,
+                        operands: vec![OperandInfo {
+                            name,
+                            index,
+                            ty: f.ty.clone(),
+                        }],
+                    });
+                } else if let Some(group) = format.operand_groups.last_mut() {
+                    param_operand_group_index = group.index;
+                    let index = group.operands.last().unwrap().index + 1;
+                    {
+                        let size = group.size.as_mut().unwrap();
+                        *size = size.checked_add(1).unwrap();
+                    }
+                    group.min_size += 1;
+                    group.operands.push(OperandInfo {
+                        name: f.ident.clone().unwrap(),
+                        index,
+                        ty: f.ty.clone(),
+                    });
+                } else {
+                    let name = field_name.clone();
+                    format.operand_groups.push(OperandGroupInfo {
+                        field_name,
+                        name: None,
+                        ty: None,
+                        index: 0,
+                        size: NonZeroU8::new(1),
+                        min_size: 1,
+                        requires_delimiter: false,
+                        successor_operands: false,
+                        operands: vec![OperandInfo {
+                            name,
+                            index: 0,
+                            ty: f.ty.clone(),
+                        }],
+                    });
+                }
+                match &mut format.signature.params {
+                    params @ ParamShape::None => {
+                        *params = ParamShape::Static(param_operand_group_index);
+                    }
+                    ParamShape::Static(group) => {
+                        assert_eq!(*group, param_operand_group_index);
+                    }
+                    ParamShape::Dynamic(_) | ParamShape::TrailingVarArgs { .. } => {
+                        panic!("cannot have #[operand] fields after an #[operands] field")
+                    }
+                }
+            } else if f.attrs.operands.is_present() {
+                let name = Some(field_name.clone());
+                let mut param_operand_group_index = 0;
+                if let Some(prev_group) = format.operand_groups.last() {
+                    assert!(prev_group.successor_operands || !prev_group.operands.is_empty());
+                    let index = prev_group.index + prev_group.min_size as usize;
+                    param_operand_group_index = index;
+                    let requires_delimiter =
+                        !prev_group.requires_delimiter && prev_group.size.is_none();
+                    format.operand_groups.push(OperandGroupInfo {
+                        field_name,
+                        name,
+                        ty: Some(f.ty.clone()),
+                        index,
+                        size: None,
+                        min_size: 0,
+                        requires_delimiter,
+                        successor_operands: false,
+                        operands: vec![],
+                    });
+                } else {
+                    format.operand_groups.push(OperandGroupInfo {
+                        field_name,
+                        name,
+                        ty: Some(f.ty.clone()),
+                        index: 0,
+                        size: None,
+                        min_size: 0,
+                        requires_delimiter: false,
+                        successor_operands: false,
+                        operands: vec![],
+                    });
+                }
+                match &mut format.signature.params {
+                    params @ ParamShape::None => {
+                        *params = ParamShape::Dynamic(param_operand_group_index);
+                    }
+                    ParamShape::Static(group) => {
+                        let group = *group;
+                        format.signature.params = ParamShape::TrailingVarArgs {
+                            fixed: group,
+                            varargs: param_operand_group_index,
+                        };
+                    }
+                    ParamShape::Dynamic(_) | ParamShape::TrailingVarArgs { .. } => {
+                        panic!("cannot have multiple #[operands] fields in a struct")
+                    }
+                }
+            } else if f.attrs.successor.is_present() {
+                let operand_group_index = format.operand_groups.len();
+                let starting_operand_index = format
+                    .operand_groups
+                    .last()
+                    .map(|group| group.index + group.min_size as usize)
+                    .unwrap_or(0);
+                let name = Some(field_name.clone());
+                format.operand_groups.push(OperandGroupInfo {
+                    field_name: field_name.clone(),
+                    name,
+                    ty: None,
+                    index: starting_operand_index,
+                    size: None,
+                    min_size: 0,
+                    requires_delimiter: true,
+                    successor_operands: true,
+                    operands: vec![],
+                });
+                if let Some(prev_group) = format.successor_groups.last()
+                    && prev_group.name.is_some()
+                {
+                    let index = prev_group.index + prev_group.successors.len();
+                    let requires_delimiter =
+                        !prev_group.requires_delimiter && prev_group.successors.is_empty();
+                    let field = field_name.clone();
+                    format.successor_groups.push(SuccessorGroupInfo {
+                        field_name,
+                        name: None,
+                        index,
+                        requires_delimiter,
+                        base_operand_group: operand_group_index,
+                        keyed: None,
+                        successors: vec![SuccessorInfo {
+                            field,
+                            field_ty: f.ty.clone(),
+                            index: 0,
+                        }],
+                    });
+                } else if let Some(group) = format.successor_groups.last_mut() {
+                    let index = group.index + group.successors.len();
+                    group.successors.push(SuccessorInfo {
+                        field: field_name,
+                        field_ty: f.ty.clone(),
+                        index,
+                    });
+                } else {
+                    let field = field_name.clone();
+                    format.successor_groups.push(SuccessorGroupInfo {
+                        field_name,
+                        name: None,
+                        index: 0,
+                        base_operand_group: operand_group_index,
+                        requires_delimiter: false,
+                        keyed: None,
+                        successors: vec![SuccessorInfo {
+                            field,
+                            field_ty: f.ty.clone(),
+                            index: 0,
+                        }],
+                    });
+                }
+            } else if let Some(ty) = f.attrs.successors.as_deref() {
+                let keyed = if matches!(ty, SuccessorsType::Keyed) {
+                    Some(f.ty.clone())
+                } else {
+                    None
+                };
+                let name = Some(field_name.clone());
+                let operand_group_index = format.operand_groups.len();
+                let starting_operand_index = format
+                    .operand_groups
+                    .last()
+                    .map(|group| group.index + group.min_size as usize)
+                    .unwrap_or(0);
+                let index = format
+                    .successor_groups
+                    .last()
+                    .map(|prev_group| prev_group.index + prev_group.successors.len())
+                    .unwrap_or(0);
+                format.operand_groups.push(OperandGroupInfo {
+                    field_name: field_name.clone(),
+                    name: None,
+                    ty: None,
+                    index: starting_operand_index,
+                    size: None,
+                    min_size: 0,
+                    requires_delimiter: true,
+                    successor_operands: true,
+                    operands: vec![],
+                });
+                format.successor_groups.push(SuccessorGroupInfo {
+                    field_name,
+                    name,
+                    index,
+                    base_operand_group: operand_group_index,
+                    requires_delimiter: false,
+                    keyed,
+                    successors: vec![],
+                });
+            } else if let Some(region) = f.attrs.region.as_ref() {
+                format.regions.push(RegionInfo {
+                    name: field_name,
+                    options: region.clone().into_inner().unwrap_or_default(),
+                });
+            } else if f.attrs.result.is_present() {
+                match &mut format.signature.results {
+                    result @ ResultShape::None => {
+                        *result = ResultShape::Static(vec![ResultInfo {
+                            name: field_name,
+                            ty: f.ty.clone(),
+                        }]);
+                    }
+                    ResultShape::Static(results) => {
+                        results.push(ResultInfo {
+                            name: field_name,
+                            ty: f.ty.clone(),
+                        });
+                    }
+                    ResultShape::Dynamic(_) => panic!("#[result] and #[results] cannot be mixed"),
+                }
+            } else if f.attrs.results.is_present() {
+                match &mut format.signature.results {
+                    result @ ResultShape::None => {
+                        *result = ResultShape::Dynamic(ResultInfo {
+                            name: field_name,
+                            ty: f.ty.clone(),
+                        });
+                    }
+                    ResultShape::Static(_) => panic!("#[result] and #[results] cannot be mixed"),
+                    ResultShape::Dynamic(_) => {
+                        panic!("#[results] cannot appear twice in the same struct")
+                    }
+                }
+            }
+        }
+
+        Ok(format)
     }
 }

@@ -521,22 +521,25 @@ where
         self.info
     }
 
-    pub fn key(&self) -> Option<EntityRef<'_, <T as KeyedSuccessor>::Key>> {
-        self.info.key.and_then(|storage| {
-            let storage = storage.try_downcast::<<T as KeyedSuccessor>::KeyStorage>().ok()?;
-            Some(EntityRef::map(
-                storage.borrow(),
-                <<T as KeyedSuccessor>::KeyStorage as AttributeRegistration>::underlying_value,
-            ))
-        })
+    pub fn key(&self) -> EntityRef<'_, <T as KeyedSuccessor>::Key> {
+        let storage = self
+            .info
+            .key
+            .expect("invalid keyed successor: missing key")
+            .try_downcast::<<T as KeyedSuccessor>::KeyStorage>()
+            .expect("invalid keyed successor: key is invalid");
+        EntityRef::map(
+            storage.borrow(),
+            <<T as KeyedSuccessor>::KeyStorage as AttributeRegistration>::underlying_value,
+        )
     }
 
-    pub fn key_storage(
-        &self,
-    ) -> Option<UnsafeIntrusiveEntityRef<<T as KeyedSuccessor>::KeyStorage>> {
+    pub fn key_storage(&self) -> UnsafeIntrusiveEntityRef<<T as KeyedSuccessor>::KeyStorage> {
         self.info
             .key
-            .and_then(|storage| storage.try_downcast::<<T as KeyedSuccessor>::KeyStorage>().ok())
+            .expect("invalid keyed successor: missing key")
+            .try_downcast::<<T as KeyedSuccessor>::KeyStorage>()
+            .expect("invalid keyed successor: key is invalid")
     }
 
     pub fn block(&self) -> BlockRef {

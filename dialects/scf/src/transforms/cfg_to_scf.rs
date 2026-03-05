@@ -188,8 +188,9 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         if let Some(switch) = cf_op.downcast_ref::<cf::Switch>() {
             let span = switch.span();
             let cases = switch.cases();
-            assert_eq!(regions.len(), cases.len() + 1);
-            let cases = cases.iter().map(|case| *case.key().unwrap());
+            let num_cases = cases.len();
+            assert_eq!(regions.len(), num_cases + 1);
+            let cases = cases.iter().map(|case| *case.key());
             let mut switch_op = builder.index_switch(
                 switch.selector().as_value_ref(),
                 cases,
@@ -203,12 +204,12 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
             // we will fail to properly lower the input
 
             // The order of the regions match the original 'cf.switch', hence the fallback region
-            // coming first.
-            op.default_region_mut().take_body(regions[0]);
-            for (index, source_region) in regions.iter().copied().skip(1).enumerate() {
+            // coming last.
+            for (index, source_region) in regions.iter().copied().take(num_cases).enumerate() {
                 let mut case_region = op.get_case_region(index);
                 case_region.borrow_mut().take_body(source_region);
             }
+            op.default_region_mut().take_body(*regions.last().unwrap());
 
             return Ok(operation);
         }

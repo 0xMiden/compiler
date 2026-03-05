@@ -1,8 +1,14 @@
 use super::*;
 use crate::{
-    AttributeRef, AttributeRegistration, FunctionType, ImmediateAttr,
-    dialects::builtin::attributes::{
-        BoolAttr, I8Attr, I16Attr, I32Attr, StringAttr, TypeAttr, U8Attr, U16Attr, U32Attr,
+    ArrayType, AttributeRef, AttributeRegistration, FunctionType, ImmediateAttr, PointerType,
+    StructType, SymbolNameComponent, SymbolPath, SymbolUse,
+    diagnostics::{LabeledSpan, RelatedError, Severity, miette::diagnostic},
+    dialects::builtin::{
+        self,
+        attributes::{
+            BoolAttr, I8Attr, I16Attr, I32Attr, StringAttr, SymbolRefAttr, TypeAttr, U8Attr,
+            U16Attr, U32Attr,
+        },
     },
 };
 
@@ -48,6 +54,11 @@ impl<'input> Parser<'input> for DefaultParser<'input> {
     fn token_stream_mut(&mut self) -> &mut TokenStream<'input> {
         &mut self.state.token_stream
     }
+
+    #[inline]
+    fn parse_extended_attribute(&mut self, ty: &Type) -> ParseResult<Span<AttributeRef>> {
+        parse_extended_attribute(self, ty)
+    }
 }
 
 pub struct ParserImpl<P> {
@@ -92,6 +103,11 @@ impl<'input, P: Parser<'input>> Parser<'input> for ParserImpl<P> {
     #[inline(always)]
     fn token_stream_mut(&mut self) -> &mut TokenStream<'input> {
         self.parser.token_stream_mut()
+    }
+
+    #[inline]
+    fn parse_extended_attribute(&mut self, ty: &Type) -> ParseResult<Span<AttributeRef>> {
+        parse_extended_attribute(self, ty)
     }
 }
 
@@ -174,6 +190,8 @@ pub trait Parser<'input> {
 
     token_method!(comma, ',', Token::Comma);
 
+    token_method!(semicolon, ';', Token::Semicolon);
+
     token_method!(colon, ':', Token::Colon);
 
     token_method!(colon_colon, "::", Token::ColonColon);
@@ -210,6 +228,50 @@ pub trait Parser<'input> {
             Token::BareIdent(_) => true,
             tok => tok.is_keyword(),
         })
+    }
+
+    /// Parse a custom keyword
+    fn parse_custom_keyword(&mut self, keyword: &str) -> ParseResult<SourceSpan> {
+        self.token_stream_mut()
+            .expect_if(keyword, |tok| matches!(tok, Token::BareIdent(kw) if kw == keyword))
+            .map(|tok| tok.span())
+    }
+
+    /// Parse a custom keyword, if present
+    fn parse_optional_custom_keyword(&mut self, keyword: &str) -> ParseResult<Option<SourceSpan>> {
+        self.token_stream_mut()
+            .next_if(|tok| matches!(tok, Token::BareIdent(kw) if kw == keyword))
+            .map(|matched| matched.map(|tok| tok.span()))
+    }
+
+    /// Parse a keyword from the given set of keyword tokens
+    fn parse_keyword_from(&mut self, keywords: &[Token<'_>]) -> ParseResult<Span<CompactString>> {
+        debug_assert!(
+            keywords.iter().all(|kw| kw.is_keyword() || matches!(kw, Token::BareIdent(_))),
+            "expected all keywords to be valid keyword tokens"
+        );
+        match self.token_stream_mut().next_if(|tok| keywords.contains(&tok))? {
+            Some(tok) => Ok(tok.map(|tok| tok.into_compact_string())),
+            None => match self.token_stream_mut().peek().unwrap() {
+                Some((start, t, end)) => {
+                    let expected = format!(
+                        "any keyword in: {}",
+                        DisplayValues::new(keywords.iter().map(|kw| kw.into_compact_string()))
+                    );
+                    Err(ParserError::UnexpectedToken {
+                        span: SourceSpan::new(self.source_id(), start..end),
+                        token: t.to_string(),
+                        expected: Some(expected),
+                    })
+                }
+                None => Err(ParserError::UnexpectedEof {
+                    expected: keywords
+                        .iter()
+                        .map(|kw| kw.into_compact_string().into_string())
+                        .collect(),
+                }),
+            },
+        }
     }
 
     /// Parse a keyword, if present.
@@ -361,7 +423,7 @@ pub trait Parser<'input> {
             }
             Token::AtIdent(_) => {
                 // Parse symbol reference attribute
-                todo!("parsing of symbol references")
+                self.parse_symbol_ref().map(|spanned| spanned.map(|sym| sym.as_attribute_ref()))
             }
             Token::Lbracket => {
                 // Parse value list
@@ -464,9 +526,7 @@ pub trait Parser<'input> {
         }
     }
 
-    fn parse_extended_attribute(&mut self, ty: &Type) -> ParseResult<Span<AttributeRef>> {
-        todo!()
-    }
+    fn parse_extended_attribute(&mut self, ty: &Type) -> ParseResult<Span<AttributeRef>>;
 
     fn parse_optional_attribute(&mut self, ty: &Type) -> ParseResult<Option<Span<AttributeRef>>> {
         if self.token_stream_mut().is_next(|tok| match tok {
@@ -561,6 +621,57 @@ pub trait Parser<'input> {
             }))
     }
 
+    fn parse_symbol_ref(&mut self) -> ParseResult<Span<UnsafeIntrusiveEntityRef<SymbolRefAttr>>> {
+        let mut components = SmallVec::<[SymbolNameComponent; 2]>::new_const();
+        let start = self.current_location();
+        if self.token_stream_mut().next_if_eq(Token::ColonColon)? {
+            components.push(SymbolNameComponent::Root);
+        }
+        while let Some(component) = self.token_stream_mut().next_if_map(|tok| match tok {
+            Token::AtIdent(name) => Some(interner::Symbol::intern(name)),
+            _ => None,
+        })? {
+            if !self.token_stream_mut().next_if_eq(Token::ColonColon)? {
+                components.push(SymbolNameComponent::Leaf(component.into_inner()));
+                break;
+            }
+            components.push(SymbolNameComponent::Component(component.into_inner()));
+        }
+        let end = self.token_stream().current_position();
+        let span = SourceSpan::new(start.source_id(), start.start()..end);
+
+        if components.is_empty() {
+            match self.token_stream_mut().peek()? {
+                Some((start, tok, end)) => Err(ParserError::UnexpectedToken {
+                    span: SourceSpan::new(self.source_id(), start..end),
+                    token: tok.to_string(),
+                    expected: Some("symbol reference".to_string()),
+                }),
+                None => Err(ParserError::UnexpectedEof {
+                    expected: vec!["symbol reference".to_string()],
+                }),
+            }
+        } else if matches!(components.as_slice(), [SymbolNameComponent::Root]) {
+            Err(ParserError::Report(RelatedError::new(Report::from(diagnostic!(
+                severity = Severity::Error,
+                labels = vec![LabeledSpan::at(span, "expected at least one non-root component")],
+                "invalid symbol reference"
+            )))))
+        } else {
+            let path = SymbolPath::new(components).map_err(|err| {
+                ParserError::Report(RelatedError::new(Report::from(diagnostic!(
+                    severity = Severity::Error,
+                    labels = vec![LabeledSpan::at(span, err.to_string())],
+                    "invalid symbol reference"
+                ))))
+            })?;
+            let attr = self.context_rc().create_attribute::<SymbolRefAttr, _>(
+                builtin::attributes::SymbolRef::new(path, UnsafeIntrusiveEntityRef::dangling()),
+            );
+            Ok(Span::new(span, attr))
+        }
+    }
+
     /// Parse a type.
     fn parse_type(&mut self) -> ParseResult<Span<Type>> {
         let Some(ty) = self.parse_optional_type()? else {
@@ -644,10 +755,16 @@ pub trait Parser<'input> {
 
     /// Parse a type list.
     fn parse_type_list(&mut self, result: &mut SmallVec<[Type; 4]>) -> ParseResult {
-        self.parse_comma_separated_list(Delimiter::OptionalParen, Some("type list"), |parser| {
-            result.push(parser.parse_type()?.into_inner());
-            Ok(true)
-        })
+        if self.token_stream_mut().is_next(|tok| matches!(tok, Token::Lparen)) {
+            self.parse_comma_separated_list(Delimiter::OptionalParen, Some("type list"), |parser| {
+                result.push(parser.parse_type()?.into_inner());
+                Ok(true)
+            })
+        } else {
+            let ty = self.parse_type()?;
+            result.push(ty.into_inner());
+            Ok(())
+        }
     }
 
     /// Parse a type list, but without any surrounding parentheses.
@@ -706,14 +823,141 @@ pub trait Parser<'input> {
     /// Parse the body of a dialect symbol, which starts and ends with <>'s, and may be
     /// recursive.
     ///
-    /// Return with the 'body' string encompassing the entire body.
-    fn parse_dialect_symbol_body(&mut self, body: &str) -> ParseResult {
-        todo!()
-    }
+    /// Return with a string encompassing the entire body.
+    ///
+    ///   pretty-dialect-sym-body ::= '<' pretty-dialect-sym-contents+ '>'
+    ///   pretty-dialect-sym-contents ::= pretty-dialect-sym-body
+    ///                                  | '(' pretty-dialect-sym-contents+ ')'
+    ///                                  | '[' pretty-dialect-sym-contents+ ']'
+    ///                                  | '{' pretty-dialect-sym-contents+ '}'
+    ///                                  | '[^[<({>\])}\0]+'
+    ///
+    fn parse_dialect_symbol_body(&mut self) -> ParseResult<Span<CompactString>> {
+        // Symbol bodies are a relatively unstructured format that contains a series of properly
+        // nested punctuation, with anything else in the middle. Scan ahead to find it and consume
+        // it if successful, otherwise emit an error.
+        let start_span = self.token_stream().current_span();
+        let source = self.token_stream().remaining_source();
 
-    /// Parse a complex type.
-    fn parse_complex_type(&mut self) -> ParseResult<Span<Type>> {
-        todo!()
+        let mut chars = source.char_indices().peekable();
+        assert_eq!(chars.peek().unwrap().1, '<');
+
+        let mut punctuation_stack = SmallVec::<[(usize, char); 8]>::default();
+
+        let end = loop {
+            match chars.next() {
+                Some((start, left @ ('(' | '[' | '{'))) => {
+                    punctuation_stack.push((start, left));
+                }
+                Some((_, '-')) => {
+                    // We treat -> as a special symbol
+                    chars.next_if(|(_, c)| *c == '>');
+                }
+                Some((end, '>')) if punctuation_stack.is_empty() => {
+                    // We've reached the end successfully
+                    break end;
+                }
+                Some((end, '>')) => {
+                    let start = punctuation_stack.last().map(|(pos, _)| *pos).unwrap_or(end);
+                    if punctuation_stack.pop().is_none_or(|(_, open)| open != '<') {
+                        return Err(ParserError::UnclosedDelimiter {
+                            span: SourceSpan::at(
+                                start_span.source_id(),
+                                start_span.start().to_u32() + (start as u32),
+                            ),
+                            expected: '>',
+                        });
+                    }
+                }
+                Some((end, ')')) => {
+                    let start = punctuation_stack.last().map(|(pos, _)| *pos).unwrap_or(end);
+                    if punctuation_stack.pop().is_none_or(|(_, open)| open != '(') {
+                        return Err(ParserError::UnclosedDelimiter {
+                            span: SourceSpan::at(
+                                start_span.source_id(),
+                                start_span.start().to_u32() + (start as u32),
+                            ),
+                            expected: ')',
+                        });
+                    }
+                }
+                Some((end, ']')) => {
+                    let start = punctuation_stack.last().map(|(pos, _)| *pos).unwrap_or(end);
+                    if punctuation_stack.pop().is_none_or(|(_, open)| open != '[') {
+                        return Err(ParserError::UnclosedDelimiter {
+                            span: SourceSpan::at(
+                                start_span.source_id(),
+                                start_span.start().to_u32() + (start as u32),
+                            ),
+                            expected: ']',
+                        });
+                    }
+                }
+                Some((end, '}')) => {
+                    let start = punctuation_stack.last().map(|(pos, _)| *pos).unwrap_or(end);
+                    if punctuation_stack.pop().is_none_or(|(_, open)| open != '{') {
+                        return Err(ParserError::UnclosedDelimiter {
+                            span: SourceSpan::at(
+                                start_span.source_id(),
+                                start_span.start().to_u32() + (start as u32),
+                            ),
+                            expected: '}',
+                        });
+                    }
+                }
+                Some((mut last_pos, '"')) => loop {
+                    match chars.next() {
+                        None => {
+                            return Err(ParserError::UnexpectedEof {
+                                expected: vec!["'\"'".to_string()],
+                            });
+                        }
+                        Some((_, '"')) => break,
+                        Some((pos, '\\')) => {
+                            last_pos = pos;
+                            match chars.next() {
+                                None => {
+                                    return Err(ParserError::UnexpectedEof {
+                                        expected: vec!["'\"'".to_string()],
+                                    });
+                                }
+                                Some((_, '"' | '\t' | '\r' | '\n' | '\\')) => continue,
+                                Some((pos, _)) => {
+                                    return Err(ParserError::InvalidEscapeSequence {
+                                        span: SourceSpan::at(
+                                            start_span.source_id(),
+                                            start_span.start().to_u32() + (pos as u32),
+                                        ),
+                                    });
+                                }
+                            }
+                        }
+                        Some((pos, c)) => {
+                            last_pos = pos;
+                        }
+                    }
+                },
+                Some((..)) => continue,
+                None => {
+                    return Err(ParserError::UnexpectedEof {
+                        expected: vec![format!(
+                            "{}",
+                            punctuation_stack.last().map(|(_, c)| *c).unwrap_or('>')
+                        )],
+                    });
+                }
+            }
+        };
+
+        // If we reached here, we've successfully parsed the body of the dialect symbol.
+        // We must now manually advance the tokenizer to consume everything thus far, and
+        // return the parsed string
+        let body = CompactString::from_utf8(&source.as_bytes()[1..end]).unwrap();
+        let span = SourceSpan::new(start_span.source_id(), start_span.start().to_u32()..end as u32);
+
+        self.token_stream_mut().reset_to(end + 1);
+
+        Ok(Span::new(span, body))
     }
 
     /// Parse an extended type.
@@ -723,27 +967,237 @@ pub trait Parser<'input> {
 
     /// Parse an extended type.
     fn parse_function_type(&mut self) -> ParseResult<Span<FunctionType>> {
-        todo!()
+        let start = self.token_stream().current_position();
+        let cc = if self.token_stream_mut().next_if_eq(Token::BareIdent("extern"))? {
+            self.parse_lparen()?;
+            let cc = self.parse_string()?;
+            self.parse_rparen()?;
+            let cc_span = cc.span();
+            Some(match cc.as_str() {
+                "C" => crate::CallConv::SystemV,
+                "canon-lift" => crate::CallConv::CanonLift,
+                "canon-lower" => crate::CallConv::CanonLower,
+                "fast" => crate::CallConv::Fast,
+                "wasm" => crate::CallConv::Wasm,
+                other => {
+                    return Err(ParserError::Report(RelatedError::new(Report::from(diagnostic!(
+                        severity = Severity::Error,
+                        labels = vec![LabeledSpan::at(
+                            cc_span,
+                            format!("unrecognized calling convention '{other}'")
+                        )],
+                        "invalid calling convention string"
+                    )))));
+                }
+            })
+        } else {
+            None
+        };
+        let mut params = SmallVec::<[Type; _]>::default();
+        self.parse_type_list(&mut params)?;
+        let mut results = SmallVec::<[Type; _]>::default();
+        self.parse_arrow_type_list(&mut results)?;
+
+        let end = self.token_stream().current_span();
+        let span = SourceSpan::new(end.source_id(), start..end.end());
+        Ok(Span::new(span, FunctionType::new(cc.unwrap_or_default(), params, results)))
     }
 
     /// Parse a non function type.
     fn parse_non_function_type(&mut self) -> ParseResult<Span<Type>> {
-        todo!()
+        if let Some(tok) = self.token_stream_mut().next_if_map(|tok| tok.as_type())? {
+            return Ok(tok);
+        }
+
+        if self.token_stream_mut().next_if_eq(Token::Ptr)? {
+            let start = self.token_stream().current_position();
+            self.parse_langle()?;
+            let pointee_ty = self.parse_type()?;
+            let addrspace = if self.parse_optional_comma()? {
+                self.token_stream_mut()
+                    .expect_map("pointer address space, e.g. byte or element", |tok| match tok {
+                        Token::Byte => Some(AddressSpace::Byte),
+                        Token::Element | Token::Felt => Some(AddressSpace::Element),
+                        _ => None,
+                    })?
+                    .into_inner()
+            } else {
+                AddressSpace::Byte
+            };
+            self.parse_rangle()?;
+            let end = self.token_stream().current_span();
+
+            let span = SourceSpan::new(end.source_id(), start..end.end());
+            return Ok(Span::new(
+                span,
+                Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                    pointee_ty.into_inner(),
+                    addrspace,
+                ))),
+            ));
+        }
+
+        if self.token_stream_mut().next_if_eq(Token::Array)? {
+            let start = self.token_stream().current_position();
+            self.parse_langle()?;
+            let element_ty = self.parse_type()?;
+            self.parse_semicolon()?;
+            let arity = self.parse_decimal_integer::<usize>()?;
+            self.parse_rangle()?;
+            let end = self.token_stream().current_span();
+
+            let span = SourceSpan::new(end.source_id(), start..end.end());
+            return Ok(Span::new(
+                span,
+                Type::Array(Arc::new(ArrayType::new(element_ty.into_inner(), arity.into_inner()))),
+            ));
+        }
+
+        if self.token_stream_mut().next_if_eq(Token::Struct)? {
+            let start = self.token_stream().current_position();
+            self.parse_langle()?;
+
+            let repr = match self.token_stream_mut().next_if_map(|tok| match tok {
+                Token::BareIdent(repr @ ("transparent" | "align" | "packed")) => Some(repr),
+                _ => None,
+            })? {
+                None => crate::TypeRepr::Default,
+                Some(repr) => {
+                    let repr = repr.into_inner();
+                    let repr = match repr {
+                        "transparent" => crate::TypeRepr::Transparent,
+                        "align" => {
+                            self.parse_lparen()?;
+                            let alignment = self.parse_decimal_integer::<u16>()?;
+                            let span = alignment.span();
+                            let Some(alignment) =
+                                core::num::NonZeroU16::new(alignment.into_inner())
+                            else {
+                                return Err(ParserError::InvalidIntegerLiteral {
+                                    span,
+                                    reason: "expected non-zero alignment".to_string(),
+                                });
+                            };
+                            self.parse_rparen()?;
+                            crate::TypeRepr::Align(alignment)
+                        }
+                        "packed" => {
+                            self.parse_lparen()?;
+                            let alignment = self.parse_decimal_integer::<u16>()?;
+                            let span = alignment.span();
+                            let Some(alignment) =
+                                core::num::NonZeroU16::new(alignment.into_inner())
+                            else {
+                                return Err(ParserError::InvalidIntegerLiteral {
+                                    span,
+                                    reason: "expected non-zero alignment".to_string(),
+                                });
+                            };
+                            self.parse_rparen()?;
+                            self.parse_semicolon()?;
+                            crate::TypeRepr::Packed(alignment)
+                        }
+                        _ => unreachable!(),
+                    };
+                    self.parse_semicolon()?;
+                    repr
+                }
+            };
+
+            let mut fields = SmallVec::<[Type; 4]>::default();
+            self.parse_comma_separated_list_until(
+                Token::Rangle,
+                /*allow_empty=*/ false,
+                |parser| {
+                    let ty = parser.parse_type()?.into_inner();
+                    if parser.token_stream_mut().next_if_eq(Token::BareIdent("align"))? {
+                        parser.parse_lparen()?;
+                        let _alignment = parser.parse_decimal_integer::<u16>()?.into_inner();
+                        parser.parse_rparen()?;
+                    }
+                    fields.push(ty);
+                    Ok(true)
+                },
+            )?;
+
+            self.parse_rangle()?;
+            let end = self.token_stream().current_span();
+
+            let span = SourceSpan::new(end.source_id(), start..end.end());
+
+            return Ok(Span::new(
+                span,
+                Type::Struct(Arc::new(StructType::new_with_repr(repr, fields))),
+            ));
+        }
+
+        if self.token_stream_mut().is_next(|tok| matches!(tok, Token::Lparen)) {
+            let ty = self.parse_tuple_type()?;
+            if self.token_stream_mut().is_next(|tok| matches!(tok, Token::Rstab)) {
+                return Err(ParserError::Report(
+                    Report::from(diagnostic!(
+                        severity = Severity::Error,
+                        labels =
+                            vec![LabeledSpan::at(ty.span(), "expected non-function type here")],
+                        "invalid type"
+                    ))
+                    .into(),
+                ));
+            }
+            return Ok(ty);
+        }
+
+        self.parse_extended_type()
     }
 
     /// Parse a tuple type.
     fn parse_tuple_type(&mut self) -> ParseResult<Span<Type>> {
-        todo!()
+        let mut elements = SmallVec::<[Type; 4]>::default();
+        let start = self.token_stream().current_position();
+        self.parse_type_list(&mut elements)?;
+        let end = self.token_stream().current_span();
+
+        let span = SourceSpan::new(end.source_id(), start..end.end());
+        Ok(Span::new(span, Type::Struct(Arc::new(StructType::new(elements)))))
     }
 
     /// Parse an attribute dictionary.
     fn parse_attribute_dict(&mut self, attrs: &mut ParsedAttrs) -> ParseResult {
-        todo!()
+        self.parse_lbrace()?;
+        self.parse_comma_separated_list_until(
+            Token::Rbrace,
+            /*allow_empty=*/ true,
+            move |parser| {
+                let key =
+                    parser.token_stream_mut().expect_map("attribute dictionary key", |tok| {
+                        match tok {
+                            Token::BareIdent(id) => Some(interner::Symbol::intern(id)),
+                            Token::String(id) => Some(interner::Symbol::intern(id)),
+                            tok if tok.is_keyword() => {
+                                Some(interner::Symbol::intern(tok.into_compact_string()))
+                            }
+                            _ => None,
+                        }
+                    })?;
+
+                parser.parse_equal()?;
+
+                let value = parser.parse_attribute(&Type::Unknown)?;
+
+                attrs.push(NamedAttribute::new(key.into_inner(), value.into_inner()));
+
+                Ok(true)
+            },
+        )
     }
 
     /// Parse an optional attribute dictionary.
     fn parse_optional_attribute_dict(&mut self, attrs: &mut ParsedAttrs) -> ParseResult {
-        todo!()
+        if !self.token_stream_mut().is_next(|tok| matches!(tok, Token::Lbrace)) {
+            return Ok(());
+        }
+
+        self.parse_attribute_dict(attrs)
     }
 
     /// Parse an optional attribute dictionary, if the `attributes` keyword is present.
@@ -751,7 +1205,15 @@ pub trait Parser<'input> {
         &mut self,
         attrs: &mut ParsedAttrs,
     ) -> ParseResult {
-        todo!()
+        if self
+            .token_stream_mut()
+            .next_if(|tok| matches!(tok, Token::BareIdent("attributes")))?
+            .is_some()
+        {
+            self.parse_attribute_dict(attrs)
+        } else {
+            Ok(())
+        }
     }
 
     /// Parse a decimal or a hexadecimal literal, which can be either an integer or a float
@@ -974,6 +1436,35 @@ pub trait ParserExt<'input>: Parser<'input> {
             }
         }
     }
+
+    fn parse_typed_attribute<T>(&mut self, ty: &Type) -> ParseResult<Span<AttributeRef>>
+    where
+        T: AttributeRegistration,
+    {
+        let name = self.context().get_registered_attribute_name::<T>();
+        let default_dialect = *self.state().default_dialect_stack.last().unwrap();
+        let allow_dialect_elision = name.dialect() == default_dialect;
+        let tok =
+            self.token_stream_mut()
+                .expect_if(&format!("{name} attribute"), |tok| match tok {
+                    Token::HashIdent(id) => {
+                        id == name.dialect().as_str()
+                            || allow_dialect_elision && id == name.name().as_str()
+                    }
+                    _ => false,
+                })?;
+
+        let attr = self.parse_extended_attribute(ty)?;
+
+        if attr.borrow().is::<T>() {
+            Ok(attr)
+        } else {
+            Err(ParserError::InvalidAttributeValue {
+                span: attr.span(),
+                reason: format!("expected attribute of type '{name}'"),
+            })
+        }
+    }
 }
 
 impl<'input, P: ?Sized + Parser<'input>> ParserExt<'input> for P {}
@@ -998,4 +1489,46 @@ where
 
     let attr = context.create_attribute_with_type::<A, _>(parsed, ty.clone());
     Ok(Span::new(span, attr))
+}
+
+pub(super) fn parse_extended_attribute<'input, P: Parser<'input>>(
+    parser: &mut P,
+    ty: &Type,
+) -> ParseResult<Span<AttributeRef>> {
+    let (name_span, name) = parser
+        .token_stream_mut()
+        .expect_map("attribute name", |tok| match tok {
+            Token::HashIdent(id) => Some(interner::Symbol::intern(id)),
+            _ => None,
+        })?
+        .into_parts();
+
+    let (dialect, name) = name
+        .as_str()
+        .split_once('.')
+        .unwrap_or((parser.state().default_dialect_stack.last().unwrap().as_str(), name.as_str()));
+
+    let dialect = parser.context().get_registered_dialect(dialect);
+    let Some(name) = dialect.registered_attrs().iter().find(|attr| attr.name() == name).cloned()
+    else {
+        return Err(ParserError::UnknownAttribute { span: name_span });
+    };
+
+    if parser.token_stream_mut().next_if_eq(Token::Langle)? {
+        if let Some(attr_parser) = name.parse_assembly_fn() {
+            let attr = attr_parser(parser)?;
+            parser.parse_rangle()?;
+            let end = parser.token_stream().current_position();
+            let span = SourceSpan::new(name_span.source_id(), name_span.start()..end);
+            Ok(Span::new(span, attr))
+        } else {
+            todo!("AttrParser is not yet implemented for '{name}'")
+        }
+    } else {
+        let mut value = name.create_default(&parser.context_rc());
+        if !matches!(ty, Type::Unknown) {
+            value.borrow_mut().set_type(ty.clone());
+        }
+        Ok(Span::new(name_span, value))
+    }
 }

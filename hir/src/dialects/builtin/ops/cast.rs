@@ -1,12 +1,12 @@
 use crate::{
     Context, OpPrinter, Report, Spanned, Value,
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::{BuiltinDialect, attributes::TypeAttr},
     effects::MemoryEffectOpInterface,
     traits::{AnyType, InferTypeOpInterface, UnaryOp},
 };
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = BuiltinDialect,
     traits(UnaryOp),

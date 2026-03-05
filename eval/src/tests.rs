@@ -154,7 +154,7 @@ fn call_handling_test() -> Result<(), Report> {
         {
             let call = call.borrow();
             let callee = call.callee();
-            assert_eq!(callee.path.name().as_str(), "callee");
+            assert_eq!(callee.path().name().as_str(), "callee");
         }
         let conditional = builder.r#if(cond, &[Type::U32], SourceSpan::default())?;
         let result = conditional.borrow().results()[0] as ValueRef;

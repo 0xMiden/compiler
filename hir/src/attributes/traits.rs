@@ -1,10 +1,10 @@
-use super::{AttrRef, Attribute, AttributeRegistration};
+use super::{Attribute, AttributeRef, AttributeRegistration};
 use crate::{Immediate, parse};
 
 /// When implemented on an attribute type, this function will be invoked to parse the contents
 /// of the attribute data, if present.
 pub trait AttrParser {
-    fn parse(parser: &mut dyn parse::Parser<'_>) -> parse::ParseResult<AttrRef>;
+    fn parse(parser: &mut dyn parse::Parser<'_>) -> parse::ParseResult<AttributeRef>;
 }
 
 /// Implemented on attribute types which are markers, which have the following properties:

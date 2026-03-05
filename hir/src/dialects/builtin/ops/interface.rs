@@ -1,8 +1,8 @@
 use midenc_session::LibraryPath;
 
 use crate::{
-    IdentAttr, Op, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol,
+    SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
     UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
     dialects::builtin::{self, BuiltinDialect},
@@ -46,7 +46,7 @@ pub type InterfaceRef = UnsafeIntrusiveEntityRef<Interface>;
         GraphRegionNoTerminator,
         IsolatedFromAbove,
     ),
-    implements(RegionKindInterface, SymbolTable, Symbol)
+    implements(RegionKindInterface, SymbolTable, Symbol, OpPrinter)
 )]
 pub struct Interface {
     #[attr]
@@ -57,6 +57,31 @@ pub struct Interface {
     symbols: SymbolMap,
     #[default]
     uses: SymbolUseList,
+}
+
+impl OpPrinter for Interface {
+    fn print(&self, printer: &mut crate::print::AsmPrinter<'_>) {
+        printer.print_space();
+        printer.print_symbol_name(self.get_name().as_symbol());
+        printer.print_space();
+        printer.print_region(&self.body());
+    }
+}
+
+impl OpParser for Interface {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        let name = parser.parse_symbol_name()?;
+        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+
+        let region = parser.context().create_region();
+        parser.parse_region(region, &[], true)?;
+        state.add_region(region);
+
+        Ok(())
+    }
 }
 
 impl RegionKindInterface for Interface {

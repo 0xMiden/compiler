@@ -493,9 +493,9 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
     // CHECK: [[V0:%\d+]] = arith.constant 1 : i32;
     %0 = arith.constant 1 : i32;
 
-    // CHECK-NEXT: builtin.ret [[V0]], [[V0]];
+    // CHECK-NEXT: builtin.ret [[V0]], [[V0]] : (i32, i32);
     %1 = arith.constant 1 : i32;
-    builtin.ret %0, %1;
+    builtin.ret %0, %1 : (i32, i32);
 };
             "#
         );
@@ -531,12 +531,12 @@ builtin.function public extern("C") @basic() -> (i32, i32) {
     // CHECK-NEXT: [[V2:%\d+]] = arith.constant 1 : i32;
     %2 = arith.constant 1 : i32;
 
-    // CHECK-NEXT: [[V3:%\d+]] = arith.mul [[V0]], [[V2]] <{ overflow = !builtin.overflow<checked> }>
-    %3 = arith.mul %0, %2 <{ overflow = !builtin.overflow<checked> }>
-    %4 = arith.mul %1, %2 <{ overflow = !builtin.overflow<checked> }>
+    // CHECK-NEXT: [[V3:%\d+]] = arith.mul [[V0]], [[V2]] <{ overflow = #builtin.overflow<checked> }>
+    %3 = arith.mul %0, %2 <{ overflow = #builtin.overflow<checked> }>
+    %4 = arith.mul %1, %2 <{ overflow = #builtin.overflow<checked> }>
 
-    // CHECK-NEXT: builtin.ret [[V3]], [[V3]];
-    builtin.ret %3, %3;
+    // CHECK-NEXT: builtin.ret [[V3]], [[V3]] : (i32, i32);
+    builtin.ret %3, %3 : (i32, i32);
 };
             "#
         );
@@ -573,26 +573,26 @@ builtin.function public extern("C") @basic() -> (i32, i32) {
             output,
             r#"
 builtin.function public extern("C") @many(%0: i32, %1: i32) -> i32 {
-    // CHECK: [[V2:%\d+]] = arith.add %{{\d+}}, %{{\d+}} <{ overflow = !builtin.overflow<checked> }>;
-    %2 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
-    %3 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
-    %4 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
-    %5 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
+    // CHECK: [[V2:%\d+]] = arith.add %{{\d+}}, %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    %2 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+    %3 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+    %4 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+    %5 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
 
-    // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V2]], [[V2]] <{ overflow = !builtin.overflow<checked> }>;
-    %6 = arith.add %2, %3 <{ overflow = !builtin.overflow<checked> }>;
-    %7 = arith.add %4, %5 <{ overflow = !builtin.overflow<checked> }>;
-    %8 = arith.add %2, %4 <{ overflow = !builtin.overflow<checked> }>;
+    // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V2]], [[V2]] <{ overflow = #builtin.overflow<checked> }>;
+    %6 = arith.add %2, %3 <{ overflow = #builtin.overflow<checked> }>;
+    %7 = arith.add %4, %5 <{ overflow = #builtin.overflow<checked> }>;
+    %8 = arith.add %2, %4 <{ overflow = #builtin.overflow<checked> }>;
 
-    // CHECK-NEXT: [[V9:%\d+]] = arith.add [[V6]], [[V6]] <{ overflow = !builtin.overflow<checked> }>;
-    %9 = arith.add %6, %7 <{ overflow = !builtin.overflow<checked> }>;
-    %10 = arith.add %7, %8 <{ overflow = !builtin.overflow<checked> }>;
+    // CHECK-NEXT: [[V9:%\d+]] = arith.add [[V6]], [[V6]] <{ overflow = #builtin.overflow<checked> }>;
+    %9 = arith.add %6, %7 <{ overflow = #builtin.overflow<checked> }>;
+    %10 = arith.add %7, %8 <{ overflow = #builtin.overflow<checked> }>;
 
-    // CHECK-NEXT: [[V11:%\d+]] = arith.add [[V9]], [[V9]] <{ overflow = !builtin.overflow<checked> }>;
-    %11 = arith.add %9, %10 <{ overflow = !builtin.overflow<checked> }>;
+    // CHECK-NEXT: [[V11:%\d+]] = arith.add [[V9]], [[V9]] <{ overflow = #builtin.overflow<checked> }>;
+    %11 = arith.add %9, %10 <{ overflow = #builtin.overflow<checked> }>;
 
-    // CHECK-NEXT: builtin.ret [[V11]];
-    builtin.ret %11;
+    // CHECK-NEXT: builtin.ret [[V11]] : (i32);
+    builtin.ret %11 : (i32);
 };
             "#
         );
@@ -624,8 +624,8 @@ builtin.function public extern("C") @different_operands() -> (i32, i32) {
     %0 = arith.constant 0 : i32;
     %1 = arith.constant 1 : i32;
 
-    // CHECK-NEXT: builtin.ret [[V0]], [[V1]];
-    builtin.ret %0, %1;
+    // CHECK-NEXT: builtin.ret [[V0]], [[V1]] : (i32, i32);
+    builtin.ret %0, %1 : (i32, i32);
 };
             "#
         );
@@ -653,13 +653,13 @@ builtin.function public extern("C") @different_operands() -> (i32, i32) {
             output,
             r#"
 builtin.function public extern("C") @different_results(%0: i32) -> (i64, i128) {
-    // CHECK: [[V1:%\d+]] = arith.sext %0 <{ ty = !builtin.type<i64> }>;
-    // CHECK-NEXT: [[V2:%\d+]] = arith.sext %0 <{ ty = !builtin.type<i128> }>;
-    v1 = arith.sext %0 <{ ty = !builtin.type<i64> }>;
-    v2 = arith.sext %0 <{ ty = !builtin.type<i128> }>;
+    // CHECK: [[V1:%\d+]] = arith.sext %0 <{ ty = #builtin.type<i64> }>;
+    // CHECK-NEXT: [[V2:%\d+]] = arith.sext %0 <{ ty = #builtin.type<i128> }>;
+    v1 = arith.sext %0 <{ ty = #builtin.type<i64> }>;
+    v2 = arith.sext %0 <{ ty = #builtin.type<i128> }>;
 
-    // CHECK-NEXT: builtin.ret [[V1]], [[V2]];
-    builtin.ret %1, %2;
+    // CHECK-NEXT: builtin.ret [[V1]], [[V2]] : (i64, i128);
+    builtin.ret %1, %2 : (i64, i128);
 };
             "#
         );
@@ -691,14 +691,14 @@ builtin.function public extern("C") @different_attributes(%0: i32) -> (i32, i32)
     // CHECK: [[V1:%\d+]] = arith.constant 1 : i32;
     v1 = arith.constant 1 : i32;
 
-    // CHECK-NEXT: [[V2:%\d+]] = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
-    v2 = arith.add %0, %1 <{ overflow = !builtin.overflow<checked> }>;
+    // CHECK-NEXT: [[V2:%\d+]] = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+    v2 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
 
-    // CHECK-NEXT: [[V3:%\d+]] = arith.add %0, %1 <{ overflow = !builtin.overflow<unchecked> }>;
-    v3 = arith.add %0, %1 <{ overflow = !builtin.overflow<unchecked> }>;
+    // CHECK-NEXT: [[V3:%\d+]] = arith.add %0, %1 <{ overflow = #builtin.overflow<unchecked> }>;
+    v3 = arith.add %0, %1 <{ overflow = #builtin.overflow<unchecked> }>;
 
-    // CHECK-NEXT: builtin.ret [[V2]], [[V3]];
-    builtin.ret %2, %3;
+    // CHECK-NEXT: builtin.ret [[V2]], [[V3]] : (i32, i32);
+    builtin.ret %2, %3 : (i32, i32);
 };
             "#
         );
@@ -729,6 +729,7 @@ builtin.function public extern("C") @different_attributes(%0: i32) -> (i32, i32)
         let mut printer = AsmPrinter::new(test.context_rc(), &flags);
         printer.print_operation(test.function().borrow());
         let output = format!("{}", printer.finish());
+        std::println!("{output}");
         filecheck!(
             output,
             r#"
@@ -736,18 +737,18 @@ builtin.function public extern("C") @side_effect(%0: ptr<u8, byte>) -> (u8, u8) 
     // CHECK: [[V1:%\d+]] = arith.constant 1 : u8;
     %1 = arith.constant 1 : u8;
 
-    // CHECK-NEXT: hir.store %0, %1;
+    // CHECK-NEXT: hir.store %0, %1 : (ptr<u8, byte>, u8);
     // CHECK-NEXT: [[V2:%\d+]] = hir.load %0;
-    hir.store %0, %1;
+    hir.store %0, %1 : (ptr<u8, byte>, u8);
     %2 = hir.load %0;
 
-    // CHECK-NEXT: hir.store %0, %1;
+    // CHECK-NEXT: hir.store %0, %1 : (ptr<u8, byte>, u8);
     // CHECK-NEXT: [[V3:%\d+]] = hir.load %0;
-    hir.store v0, %1;
+    hir.store v0, %1 : (ptr<u8, byte>, u8);
     %3 = hir.load %0;
 
-    // CHECK-NEXT: builtin.ret [[V2]], [[V3]];
-    builtin.ret %2, %3;
+    // CHECK-NEXT: builtin.ret [[V2]], [[V3]] : (u8, u8);
+    builtin.ret %2, %3 : (u8, u8);
 };
             "#
         );
@@ -807,20 +808,20 @@ builtin.function public extern("C") @down_propagate_while() {
     // CHECK-NEXT: ^block{{\d}}([[V3:%\d+]]: i32, [[V4:%\d+]]: i32):
     scf.while %0, %1 before {
     ^block1(%3: i32, %4: i32):
-        // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V3]], [[V1]] <{ overflow = !builtin.overflow<checked> }>;
+        // CHECK-NEXT: [[V6:%\d+]] = arith.add [[V3]], [[V1]] <{ overflow = #builtin.overflow<checked> }>;
         %5 = arith.constant 1 : i32;
-        %6 = arith.add %3, %5 <{ overflow = !builtin.overflow<checked> }>;
+        %6 = arith.add %3, %5 <{ overflow = #builtin.overflow<checked> }>;
         // CHECK-NEXT: [[V7:%\d+]] = arith.lt [[V6]], [[V2]];
         %7 = arith.lt %6, %2;
-        // CHECK-NEXT: scf.condition ([[V7]]) ([[V6]], [[V4]]);
-        scf.condition (%7) (%6, %4);
+        // CHECK-NEXT: scf.condition [[V7]], [[V6]], [[V4]] : (i1, i32, i32);
+        scf.condition %7, %6, %4 : (i1, i32, i32);
     } after {
     ^block2(%8: i32, %9: i32):
         // CHECK-NEXT: } after {
         // CHECK-NEXT: ^block{{\d}}([[V8:%\d+]]: i32, [[V9:%\d+]]: i32):
-        // CHECK-NEXT: scf.yield [[V8]], [[V9]];
-        scf.yield %8, %9;
-    }
+        // CHECK-NEXT: scf.yield [[V8]], [[V9]] : (i32, i32);
+        scf.yield %8, %9 : (i32, i32);
+    } : (i32, i32);
 
     // CHECK: builtin.ret;
     builtin.ret;

@@ -1,11 +1,11 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 1024 : i32;
     %1 = arith.constant 1 : i32;
-    %2 = hir.bitcast %1 <{ ty = !builtin.type<u32> }>;
-    %3 = arith.trunc %2 <{ ty = !builtin.type<u8> }>;
-    %4 = hir.bitcast %0 <{ ty = !builtin.type<u32> }>;
-    %5 = hir.int_to_ptr %4 <{ ty = !builtin.type<ptr<u8, byte>> }>;
-    hir.store %5, %3;
+    %2 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
+    %3 = arith.trunc %2 <{ ty = #builtin.type<u8> }>;
+    %4 = hir.bitcast %0 <{ ty = #builtin.type<u32> }>;
+    %5 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u8, byte>> }>;
+    hir.store %5, %3 : (ptr<u8, byte>, u8);
     cf.br ^block5;
 ^block5:
     builtin.ret;

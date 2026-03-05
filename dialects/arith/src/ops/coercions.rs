@@ -1,7 +1,7 @@
-use alloc::format;
+use alloc::{format, string::ToString};
 
 use midenc_hir::{
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::attributes::TypeAttr,
     effects::MemoryEffectOpInterface,
     matchers::Matcher,
@@ -11,7 +11,7 @@ use midenc_hir::{
 
 use crate::*;
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
     traits(UnaryOp),
@@ -107,11 +107,11 @@ impl Foldable for Trunc {
     }
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Zext {
     #[operand]
@@ -195,7 +195,7 @@ impl Foldable for Zext {
     }
 }
 
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
     traits(UnaryOp),
@@ -302,7 +302,7 @@ fn is_64bit_limb(ty: &Type) -> bool {
 /// - `i64`/`u64` from 2× `felt`/`i32`/`u32`
 /// - `i128`/`u128` from 2× `i64`/`u64`
 /// - `i128`/`u128` from 4× `felt`/`i32`/`u32`
-#[derive(EffectOpInterface, OpPrinter)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
     traits(SameTypeOperands),
@@ -375,15 +375,83 @@ pub struct Split {
 
 impl OpPrinter for Split {
     fn print(&self, printer: &mut print::AsmPrinter<'_>) {
-        use alloc::borrow::Cow;
-
         use midenc_hir::formatter::*;
 
         printer.print_space();
         printer.print_value_uses(ValueRange::<1>::Borrowed(&[self.operand().as_value_ref()]));
-        *printer += const_text(" into ");
-        let results = self.results().all();
-        printer.print_type_list(results.iter().map(|r| Cow::Owned(r.borrow().ty().clone())));
+        printer.print_space();
+        *printer += const_text(" : ");
+        let operand_ty = self.operand().ty();
+        let result_types: SmallVec<[_; 4]> =
+            smallvec![self.get_limb_ty().clone(); self.num_results()];
+        printer.print_function_type_parts(
+            core::slice::from_ref(&operand_ty).iter(),
+            result_types.iter(),
+        );
+    }
+}
+
+impl OpParser for Split {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        use midenc_hir::parse::ParserError;
+
+        let start = state.span;
+        let operand = parser.parse_operand(/*allow_result_number=*/ true)?;
+        parser.parse_colon()?;
+        let (
+            ty_span,
+            FunctionType {
+                mut params,
+                results,
+                ..
+            },
+        ) = parser.parse_function_type()?.into_parts();
+
+        let Some(operand_ty) = params.pop() else {
+            return Err(ParserError::InvalidOperationType {
+                span: start,
+                ty_span,
+                reason: "expected type for 'operand' parameter".to_string(),
+            });
+        };
+
+        if !params.is_empty() {
+            return Err(ParserError::InvalidOperationType {
+                span: start,
+                ty_span,
+                reason: "expected only a single input operand to this operation".to_string(),
+            });
+        }
+
+        if results.len() < 2 {
+            return Err(ParserError::InvalidOperationType {
+                span: start,
+                ty_span,
+                reason: "expected two or more result types".to_string(),
+            });
+        }
+
+        {
+            let limb_ty = results.first().unwrap();
+            if results.iter().any(|ty| ty != limb_ty) {
+                return Err(ParserError::InvalidOperationType {
+                    span: start,
+                    ty_span,
+                    reason: "expected all result types to be the same".to_string(),
+                });
+            }
+            state.add_attribute(
+                "limb_ty",
+                parser.context_rc().create_attribute::<TypeAttr, _>(limb_ty.clone()),
+            );
+        }
+
+        let operand = parser.resolve_operand(operand, operand_ty)?;
+        state.add_operand(operand);
+
+        state.results.extend(results);
+
+        Ok(())
     }
 }
 

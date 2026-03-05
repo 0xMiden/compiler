@@ -164,6 +164,19 @@ impl<'input> Lexer<'input> {
         }
     }
 
+    fn advance_to(&mut self, pos: usize) {
+        self.scanner.advance_to(pos);
+        self.token_start = pos;
+        match self.tokenize() {
+            Ok(tok) => {
+                self.token = tok;
+            }
+            Err(err) => {
+                self.error = Some(err);
+            }
+        }
+    }
+
     #[inline]
     fn advance_start(&mut self) {
         let mut position: usize;
@@ -601,10 +614,24 @@ impl<'input> TokenStream<'input> {
         }
     }
 
+    pub fn reset_to(&mut self, pos: usize) {
+        self.lexer.advance_to(pos);
+        let current_position = self.lexer.current_position();
+        let upcoming = self.lexer.next();
+        self.current_position = current_position;
+        self.upcoming = upcoming;
+    }
+
     /// Get the [SourceId] of the input file being tokenized
     #[inline]
     pub const fn source_id(&self) -> SourceId {
         self.lexer.source_id
+    }
+
+    /// Get the rest of the source code from the current position of the lexer
+    #[inline]
+    pub fn remaining_source(&self) -> &str {
+        self.lexer.scanner.slice_from(self.current_position.to_usize())
     }
 
     /// Get the byte position of the underlying lexer.
