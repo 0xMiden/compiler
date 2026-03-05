@@ -13,7 +13,7 @@ builtin.function public extern("C") @spills_branching_control_flow(%0: ptr<u8, e
     cf.cond_br %11 ^block2, ^block3 : (i1);
 ^block2:
     %12 = arith.constant 1 : u64;
-    %13 = hir.exec ::@test::@example(%8, %5, %9, %9, %12) : (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+    %13 = hir.exec ::@test::@example(%8, %5, %9, %9, %12) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
     cf.br ^block4:(%13);
 ^block3:
     %14 = arith.constant 8 : u32;

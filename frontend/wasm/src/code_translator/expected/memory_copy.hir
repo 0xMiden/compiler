@@ -7,7 +7,7 @@ builtin.function public extern("C") @test_wrapper() {
     %5 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u8, byte>> }>;
     %6 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
     %7 = hir.int_to_ptr %6 <{ ty = #builtin.type<ptr<u8, byte>> }>;
-    "hir.mem_cpy"(%7, %5, %3) : (ptr<u8, byte>, ptr<u8, byte>, u32) -> ();
+    hir.mem_cpy %7, %5, %3 : (ptr<u8, byte>, ptr<u8, byte>, u32);
     cf.br ^block5;
 ^block5:
     builtin.ret;

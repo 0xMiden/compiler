@@ -9,7 +9,7 @@ builtin.function public extern("C") @spills_intra_block(%0: ptr<u8, element>) ->
     %8 = hir.int_to_ptr %7 <{ ty = #builtin.type<ptr<u128, element>> }>;
     %9 = hir.load %8;
     %10 = arith.constant 1 : u64;
-    %11 = hir.exec ::@test::@example(%8, %5, %9, %9, %10) : (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+    %11 = hir.exec ::@test::@example(%8, %5, %9, %9, %10) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
     %12 = arith.constant 72 : u32;
     %13 = arith.add %1, %12 <{ overflow = #builtin.overflow<unchecked> }>;
     hir.store %4, %9 : (ptr<u128, element>, u128);

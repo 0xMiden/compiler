@@ -33,7 +33,7 @@ builtin.function public extern("C") @spills_loop_nest(%0: ptr<u64, element>, %1:
     %29 = arith.constant 5 : u64;
     %30 = arith.constant 6 : u64;
     %31 = arith.constant 7 : u64;
-    %32 = hir.exec ::@test::@example(%23, %24, %25, %26, %27, %28, %29, %30) : (ptr<u64, element>, u64, u64, u64, u64, u64, u64, u64) -> u32;
+    %32 = hir.exec ::@test::@example(%23, %24, %25, %26, %27, %28, %29, %30) : extern("C") (ptr<u64, element>, u64, u64, u64, u64, u64, u64, u64) -> u32;
     %33 = arith.add %11, %24 <{ overflow = #builtin.overflow<unchecked> }>;
     %34 = arith.constant 1 : u32;
     %35 = arith.add %10, %34 <{ overflow = #builtin.overflow<unchecked> }>;

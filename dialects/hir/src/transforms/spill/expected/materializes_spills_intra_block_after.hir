@@ -11,7 +11,7 @@ builtin.function public extern("C") @materializes_spills_intra_block(%0: ptr<u8,
     %10 = arith.constant 1 : u64;
     hir.store_local %3 <{ local = #builtin.local_variable<0, u32> }> : (u32);
     hir.store_local %4 <{ local = #builtin.local_variable<1, ptr<u128, element>> }> : (ptr<u128, element>);
-    %11 = hir.exec ::@test::@example(%8, %5, %9, %9, %10) : (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+    %11 = hir.exec ::@test::@example(%8, %5, %9, %9, %10) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
     %12 = arith.constant 72 : u32;
     %13 = arith.add %1, %12 <{ overflow = #builtin.overflow<unchecked> }>;
     %18 = hir.load_local <{ local = #builtin.local_variable<1, ptr<u128, element>> }>;
