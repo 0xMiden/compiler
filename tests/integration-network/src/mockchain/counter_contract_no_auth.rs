@@ -1,21 +1,19 @@
 //! Counter contract test with no-auth authentication component
 
 use miden_client::{
+    Word,
     account::component::{BasicWallet, InitStorageData},
     crypto::RpoRandomCoin,
     note::NoteTag,
     testing::{AccountState, Auth, MockChain, NoteBuilder},
     transaction::OutputNote,
-    Word,
 };
 use miden_core::{Felt, FieldElement};
-use miden_protocol::account::{
-    AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
-};
+use miden_protocol::account::{AccountBuilder, AccountStorageMode, AccountType, StorageSlotName};
 
 use super::helpers::{
-    assert_counter_storage, build_existing_counter_account_builder_with_auth_package,
-    create_note_from_package, execute_tx, NoteCreationConfig,
+    NoteCreationConfig, assert_counter_storage,
+    build_existing_counter_account_builder_with_auth_package, create_note_from_package, execute_tx,
 };
 use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 
@@ -38,11 +36,6 @@ pub fn test_counter_contract_no_auth() {
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let counter_storage_slot =
         StorageSlotName::new("miden::component::miden_counter_contract::count_map").unwrap();
-    let counter_storage_slots = vec![StorageSlot::with_map(
-        counter_storage_slot.clone(),
-        StorageMap::with_entries([(key, value)]).unwrap(),
-    )];
-
     let mut builder = MockChain::builder();
     let counter_component = {
         let mut init_storage_data = InitStorageData::default();
@@ -57,16 +50,16 @@ pub fn test_counter_contract_no_auth() {
         .with_init_storage_data(InitStorageData::default())
         .build();
 
-    let counter_account = builder.add_existing_account_from_components(
-        Auth::BasicAuth,
-        [BasicWallet.into(), counter_component.into()],
-    );
-    // contract package + counter storage slots. Done
+    let mut counter_init_storage_data = InitStorageData::default();
+    counter_init_storage_data
+        .insert_map_entry(counter_storage_slot.clone(), key, value)
+        .expect("failed to insert counter map entry");
+
     let counter_account = build_existing_counter_account_builder_with_auth_package(
-        contract_package.package, //listo
+        counter_component.package,
         no_auth_auth_component.package,
         vec![],
-        counter_storage_slots, //listo
+        counter_init_storage_data,
         [0_u8; 32],
     )
     .build_existing()

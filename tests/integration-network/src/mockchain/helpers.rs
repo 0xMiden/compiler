@@ -21,8 +21,8 @@ use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
 use miden_mast_package::Package;
 use miden_protocol::{
     account::{
-        Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
-        AccountStorageMode, AccountType, StorageMap, StorageSlot,
+        Account, AccountBuilder, AccountComponent, AccountId, AccountStorageMode, AccountType,
+        StorageSlot,
     },
     asset::Asset,
     note::PartialNote,
@@ -101,18 +101,6 @@ pub(super) fn create_note_from_package(
 
 // ACCOUNT COMPONENT HELPERS
 // ================================================================================================
-
-/// Creates an account component from a compiled package's component metadata.
-pub(super) fn account_component_from_package(
-    package: Arc<Package>,
-    storage_slots: Vec<StorageSlot>,
-) -> AccountComponent {
-    let metadata = AccountComponentMetadata::try_from(package.as_ref())
-        .expect("no account component metadata present");
-    AccountComponent::new(package.unwrap_library().as_ref().clone(), storage_slots)
-        .unwrap()
-        .with_metadata(metadata)
-}
 
 /// Asserts that the account vault contains a fungible asset from the expected faucet with the
 /// expected total amount.
@@ -269,7 +257,7 @@ pub(super) fn build_existing_counter_account_builder_with_auth_package(
     contract_package: Arc<Package>,
     auth_component_package: Arc<Package>,
     auth_storage_slots: Vec<StorageSlot>,
-    counter_storage_slots: Vec<StorageSlot>,
+    counter_init_storage_data: InitStorageData,
     seed: [u8; 32],
 ) -> AccountBuilder {
     let supported_types = BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode]);
@@ -279,7 +267,9 @@ pub(super) fn build_existing_counter_account_builder_with_auth_package(
     )
     .unwrap()
     .with_supported_types(supported_types);
-    let counter_component = account_component_from_package(contract_package, counter_storage_slots);
+    let counter_component =
+        AccountComponent::from_package(&contract_package, &counter_init_storage_data)
+            .expect("failed to create counter component from package");
 
     AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
@@ -300,10 +290,10 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
 ) -> (Account, AuthSecretKey) {
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-    let counter_storage_slots = vec![StorageSlot::with_map(
-        counter_storage_slot_name(),
-        StorageMap::with_entries([(key, value)]).unwrap(),
-    )];
+    let mut counter_init_storage_data = InitStorageData::default();
+    counter_init_storage_data
+        .insert_map_entry(counter_storage_slot_name(), key, value)
+        .expect("failed to insert counter map entry");
 
     let mut rng = StdRng::seed_from_u64(1);
     let secret_key = AuthSecretKey::new_falcon512_rpo_with_rng(&mut rng);
@@ -316,7 +306,7 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
         component_package,
         auth_component_package,
         auth_storage_slots,
-        counter_storage_slots,
+        counter_init_storage_data,
         seed,
     )
     .build_existing()

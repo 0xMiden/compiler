@@ -2222,7 +2222,7 @@ dependencies = [
 [[package]]
 name = "miden-agglayer"
 version = "0.13.3"
-source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#d424a11c271118c8236f8bee9157c68e4767d38f"
+source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#b4852646e9508c4df51d9e62e00cb8b1fe99317e"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -2321,7 +2321,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.13.3"
-source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#d424a11c271118c8236f8bee9157c68e4767d38f"
+source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#b4852646e9508c4df51d9e62e00cb8b1fe99317e"
 dependencies = [
  "miden-protocol",
  "thiserror",
@@ -2683,7 +2683,7 @@ dependencies = [
 [[package]]
 name = "miden-protocol"
 version = "0.13.3"
-source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#d424a11c271118c8236f8bee9157c68e4767d38f"
+source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#b4852646e9508c4df51d9e62e00cb8b1fe99317e"
 dependencies = [
  "bech32",
  "fs-err",
@@ -2713,7 +2713,7 @@ dependencies = [
 [[package]]
 name = "miden-protocol-macros"
 version = "0.13.3"
-source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#d424a11c271118c8236f8bee9157c68e4767d38f"
+source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#b4852646e9508c4df51d9e62e00cb8b1fe99317e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2762,7 +2762,7 @@ version = "0.10.0"
 [[package]]
 name = "miden-standards"
 version = "0.13.3"
-source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#d424a11c271118c8236f8bee9157c68e4767d38f"
+source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#b4852646e9508c4df51d9e62e00cb8b1fe99317e"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -2810,7 +2810,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.13.3"
-source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#d424a11c271118c8236f8bee9157c68e4767d38f"
+source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#b4852646e9508c4df51d9e62e00cb8b1fe99317e"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -2851,7 +2851,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.13.3"
-source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#d424a11c271118c8236f8bee9157c68e4767d38f"
+source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#b4852646e9508c4df51d9e62e00cb8b1fe99317e"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -2864,7 +2864,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.13.3"
-source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#d424a11c271118c8236f8bee9157c68e4767d38f"
+source = "git+https://github.com/lambdaclass/miden-base.git?branch=fabrizioorsi%2Fmiden-testing-compiler-backport#b4852646e9508c4df51d9e62e00cb8b1fe99317e"
 dependencies = [
  "miden-protocol",
  "miden-tx",
