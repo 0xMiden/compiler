@@ -166,7 +166,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 }
                 symbols::ActiveNote => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::active_note::GET_INPUTS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::active_note::GET_STORAGE => Some(TransformStrategy::ListReturn),
                         tx_kernel::active_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
                         tx_kernel::active_note::GET_SENDER
                         | tx_kernel::active_note::GET_RECIPIENT
