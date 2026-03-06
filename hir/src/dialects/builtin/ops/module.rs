@@ -16,29 +16,29 @@ use crate::{
 
 pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 
-/// A [Module] is a namespaced container for [Function] definitions, and represents the most atomic
-/// translation unit that supports compilation to Miden Assembly.
+/// A [Module] is a namespaced container for [super::Function] definitions, and represents the most
+/// atomic translation unit that supports compilation to Miden Assembly.
 ///
-/// [Module] cannot be nested, use [Component] for such use cases.
+/// [Module] cannot be nested, use [super::Component] for such use cases.
 ///
 /// Modules can contain one of the following entities:
 ///
-/// * [Segment], describing how a specific region of memory should be initialized (i.e. what content
-///   it should be assumed to contain on program start). Segment definitions must not conflict
-///   within a shared-everything boundary. For example, multiple segments within the same module,
-///   or segments defined in sibling modules of the same [Component].
-/// * [Function], either a declaration of an externally-defined function, or a definition.
+/// * [super::Segment], describing how a specific region of memory should be initialized (i.e. what
+///   content it should be assumed to contain on program start). Segment definitions must not
+///   conflict within a shared-everything boundary. For example, multiple segments within the same
+///   module, or segments defined in sibling modules of the same [super::Component].
+/// * [super::Function], either a declaration of an externally-defined function, or a definition.
 ///   Declarations are required in order to reference functions which are not in the compilation
 ///   graph, but are expected to be provided at runtime. The difference between the two depends on
-///   whether or not the [Function] operation has a region (no region == declaration).
-/// * [GlobalVariable], either a declaration of an externally-defined global, or a definition, same
-///   as [Function].
+///   whether or not the [super::Function] operation has a region (no region == declaration).
+/// * [super::GlobalVariable], either a declaration of an externally-defined global, or a
+///   definition, same as [super::Function].
 ///
-/// Multiple modules can be grouped together into a [Component]. Doing so allows interprocedural
-/// analysis to reason across call boundaries for functions defined in different modules, in
-/// particular, dead code analysis.
+/// Multiple modules can be grouped together into a [super::Component]. Doing so allows
+/// interprocedural analysis to reason across call boundaries for functions defined in different
+/// modules, in particular, dead code analysis.
 ///
-/// Modules may also have a specified [Visibility]:
+/// Modules may also have a specified [crate::dialects::builtin::attributes::Visibility]:
 ///
 /// * `Visibility::Public` indicates that all functions exported from the module with `Public`
 ///   visibility form the public interface of the module, and thus are not permitted to be dead-
@@ -50,7 +50,7 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 ///   callsites are known statically. If the address of any of those functions is captured, they
 ///   must not be modified.
 /// * `Visibility::Private` indicates that the module and its exports are only visible to other
-///   modules in the same [Component], and otherwise adheres to the same rules as `Internal`.
+///   modules in the same [super::Component], and otherwise adheres to the same rules as `Internal`.
 #[operation(
     dialect = BuiltinDialect,
     traits(

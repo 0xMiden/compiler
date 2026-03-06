@@ -12,7 +12,7 @@ pub type OpOperandCursor<'a> = crate::EntityListCursor<'a, OpOperandImpl>;
 #[allow(unused)]
 pub type OpOperandCursorMut<'a> = crate::EntityListCursorMut<'a, OpOperandImpl>;
 
-/// An [OpOperand] represents a use of a [Value] by an [Operation]
+/// An [OpOperand] represents a use of a [Value] by a [super::Operation]
 pub struct OpOperandImpl {
     /// The operand value
     pub value: Option<ValueRef>,

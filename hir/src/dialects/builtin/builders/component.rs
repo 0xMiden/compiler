@@ -51,7 +51,7 @@ impl ComponentBuilder {
         })
     }
 
-    /// Declare a new [crate::dialects::hir::Function] in this component with the given name and
+    /// Declare a new [crate::dialects::builtin::Function] in this component with the given name and
     /// signature.
     pub fn define_function(
         &mut self,

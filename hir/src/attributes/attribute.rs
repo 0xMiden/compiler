@@ -61,15 +61,6 @@ pub trait Attribute:
     fn set_type(&mut self, ty: Type);
     fn as_attr(&self) -> &Attr;
     fn as_attr_mut(&mut self) -> &mut Attr;
-    /*
-    /// Print this attribute using the provided [OpPrintingFlags]
-    fn print(&self, flags: &OpPrintingFlags) -> crate::formatter::Document {
-        let context = self.context_rc();
-        let mut printer = crate::print::AsmPrinter::new(context, flags);
-        <Self as AttrPrinter>::print(self, &mut printer);
-        printer.finish()
-    }
-     */
 }
 
 impl core::hash::Hash for dyn Attribute {
@@ -262,8 +253,8 @@ impl UnsafeIntrusiveEntityRef<dyn Attribute> {
         // that the data pointer for a Attribute trait object can be safely cast to Attr.
         let ptr = Self::into_raw(*self).cast::<Attr>();
         // SAFETY: The `name` field of Attribute is read-only after it is allocated, and the
-        // safety guarantees of AttrRef require that the allocation never moves for the
-        // lifetime of the ref. So it is always safe to read this field via direct pointer, even
+        // safety guarantees of UnsafeIntrusiveEntityRef require that the allocation never moves for
+        // the lifetime of the ref. So it is always safe to read this field via direct pointer, even
         // if a mutable borrow of the containing attribute exists, because the field is never
         // written to after allocation.
         unsafe {
@@ -334,7 +325,7 @@ impl Attr {
         }
     }
 
-    /// Convert this reference into an [AttrRef]
+    /// Convert this reference into an [`UnsafeIntrusiveEntityRef<Attr>`]
     #[inline(always)]
     pub fn as_attr_ref(&self) -> UnsafeIntrusiveEntityRef<Self> {
         // SAFETY: This is safe under the assumption that we always allocate Attrs using the

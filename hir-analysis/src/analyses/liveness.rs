@@ -79,14 +79,14 @@ pub const LOOP_EXIT_DISTANCE: u32 = 100_000;
 #[derive(Default)]
 pub struct Liveness;
 
-/// This type is used to compute the [LivenessAnalysis] results for an entire [Function].
+/// This type is used to compute the [LivenessAnalysis] results for an entire function.
 ///
 /// Internally, it instantiates a [DataFlowSolver] with [DeadCodeAnalysis],
 /// [SparseConstantPropagation], and [LivenessAnalysis], and runs them to fixpint. It additionally
-/// relies on the [DominanceInfo] and [LoopForest] analyses to provide us with details about the
-/// CFG structure that we then use both to optimize the work done by the solver, as well as feed
-/// into the actual liveness information itself (i.e. by specifying how much distance a given
-/// control flow edge adds).
+/// relies on the [DominanceInfo] and [midenc_hir::loops::LoopForest] analyses to provide us with
+/// details about the CFG structure that we then use both to optimize the work done by the solver,
+/// as well as feed into the actual liveness information itself (i.e. by specifying how much
+/// distance a given control flow edge adds).
 #[derive(Default)]
 pub struct LivenessAnalysis {
     solver: DataFlowSolver,

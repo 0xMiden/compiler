@@ -8,7 +8,7 @@ use miden_core::{
 
 use crate::{CompactString, Type};
 
-/// The token type produced by [crate::parser::Lexer], and consumed by the parser.
+/// The token type produced by [super::Lexer], and consumed by the parser.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Token<'input> {
     // Markers

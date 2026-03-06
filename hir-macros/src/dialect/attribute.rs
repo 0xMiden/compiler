@@ -72,7 +72,7 @@ impl quote::ToTokens for Attribute {
 
         let value_type_name_str = value_type_name.clone().into_token_stream().to_string();
         let struct_doc = syn::Lit::Str(syn::LitStr::new(
-            &format!("An attribute which represents [{value_type_name_str}] values."),
+            &format!("An attribute which represents `{value_type_name_str}` values."),
             self.ident.span(),
         ));
 
@@ -111,7 +111,7 @@ impl quote::ToTokens for Attribute {
             #[doc = #struct_doc]
             ///
             /// It is not possible to construct values of this type directly, instead you must
-            /// allocate them using a [Context](::midenc_hir::Context) via [`Self::create`].
+            /// allocate them using a [Context](::midenc_hir::Context) via `Self::create`.
             #[derive(Clone, PartialEq, Eq, Hash)]
             #[repr(C)]
             pub struct #attr_struct_name #ty_generics {

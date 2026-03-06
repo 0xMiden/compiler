@@ -1198,16 +1198,6 @@ where
 
         // Parse the first block directly to allow for it to be unnamed.
         let owning_block = self.builder().context_rc().create_block();
-        /*
-        llvm::scope_exit failureCleanup([&] {
-          if (owningBlock) {
-            // If parsing failed, as indicated by the fact that `owningBlock` still
-            // owns the block, drop all forward references from preceding operations
-            // to definitions within the parsed block.
-            owningBlock->dropAllDefinedValueUses();
-          }
-        });
-         */
 
         // If this block is not defined in the source file, add a definition for it now in the
         // assembly state. Blocks with a name will be defined when the name is parsed.
@@ -1725,8 +1715,6 @@ where
         self.parser.parse_dec_or_hex_attr(ty, is_negative)
     }
 }
-
-impl<'a, 'input: 'a, P> AsmParser<'input> for CustomOpAsmParser<'a, P> where P: Parser<'input> {}
 
 impl<'a, 'input: 'a, P> OpAsmParser<'input> for CustomOpAsmParser<'a, P>
 where

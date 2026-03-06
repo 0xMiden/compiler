@@ -42,7 +42,7 @@ pub struct Compiler {
     pub working_dir: Option<PathBuf>,
     /// The path to the root directory of the Miden toolchain libraries
     ///
-    /// By default this is assumed to be ~/.miden/toolchains/<version>
+    /// By default this is assumed to be `~/.miden/toolchains/<version>`
     #[cfg_attr(
         feature = "std",
         arg(

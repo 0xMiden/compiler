@@ -708,7 +708,7 @@ impl Loop {
         unsafe { (*self.parent_loop.as_ptr()).clone() }
     }
 
-    /// This is a low-level API for bypassing [add_child_loop].
+    /// This is a low-level API for bypassing [Self::add_child_loop].
     pub fn set_parent_loop(&self, parent: Option<Rc<Loop>>) {
         self.parent_loop.set(parent);
     }
@@ -1164,7 +1164,7 @@ impl Loop {
     /// This adds a basic block directly to the basic block list.
     ///
     /// This should only be used by transformations that create new loops.  Other transformations
-    /// should use [add_block_to_loop].
+    /// should use [Self::add_block_to_loop].
     pub fn add_block_entry(&self, block: BlockRef) {
         self.blocks.borrow_mut().push(block);
         self.block_set.borrow_mut().insert(block);

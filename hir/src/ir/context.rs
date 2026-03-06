@@ -393,13 +393,12 @@ impl Context {
         UnsafeIntrusiveEntityRef::new_with_metadata(value, Default::default(), &self.allocator)
     }
 
-    /// Allocate a new `UnsafeIntrusiveEntityMapRef<T>`.
+    /// Allocate a new `UnsafeIntrusiveMapEntityRef<T>`.
     ///
-    /// [UnsafeIntrusiveEntityMapRef] is like [UnsafeEntityRef], except that it is specially designed
-    /// for entities which are meant to be tracked in intrusive red/black trees. For example, the
-    /// attributes of an op.
-    /// It does this without requiring the entity to know about the link at all, while still making
-    /// it possible to access the link from the entity.
+    /// [UnsafeIntrusiveMapEntityRef] is like [UnsafeEntityRef], except that it is specially
+    /// designed for entities which are meant to be tracked in intrusive red/black trees. For
+    /// example, the attributes of an op. It does this without requiring the entity to know about
+    /// the link at all, while still making it possible to access the link from the entity.
     pub fn alloc_map_item<T: EntityMapItem + 'static>(
         &self,
         value: T,

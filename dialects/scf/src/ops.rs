@@ -21,8 +21,8 @@ use crate::ScfDialect;
 ///
 /// Neither region allows any arguments, and both regions must be terminated with one of:
 ///
-/// * [Return] to return from the enclosing function directly
-/// * [Unreachable] to abort execution
+/// * [midenc_hir::dialects::builtin::Ret] to return from the enclosing function directly
+/// * `midenc_dialect_ub::Unreachable` to abort execution
 /// * [Yield] to return from the enclosing [If]
 #[derive(OpPrinter, OpParser)]
 #[operation(
@@ -657,7 +657,7 @@ impl RegionBranchTerminatorOpInterface for Condition {
 
 /// The [Yield] op is used in conjunction with [If] and [While] ops as a return-like terminator.
 ///
-/// * With [If], its regions must be terminated with either a [Yield] or an [Unreachable] op.
+/// * With [If], its regions must be terminated with either a [Yield] or an `Unreachable` op.
 /// * With [While], a [Yield] is only valid in the `after` region, and the yielded operands must
 ///   match the region arguments of the `before` region. Thus to return values from the body of a
 ///   loop, one must first yield them from the `after` region to the `before` region using [Yield],

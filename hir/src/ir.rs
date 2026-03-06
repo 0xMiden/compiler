@@ -63,7 +63,7 @@ pub use self::{
         OperationBuilder, OperationName, OperationRef, OperationState, PendingSuccessorInfo,
         equivalence,
     },
-    parse::{AsmParser, OpAsmParser, OpParser, ParseResult},
+    parse::{OpAsmParser, OpParser, ParseResult},
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
     region::{
         InvocationBounds, LoopLikeOpInterface, Region, RegionBranchOpInterface, RegionBranchPoint,

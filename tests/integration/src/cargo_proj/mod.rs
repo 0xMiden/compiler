@@ -153,15 +153,12 @@ impl SymlinkBuilder {
 
 /// A cargo project to run tests against.
 ///
-/// See [`ProjectBuilder`] or [`Project::from_template`] to get started.
+/// See [`ProjectBuilder`] to get started.
 pub struct Project {
     root: PathBuf,
 }
 
 /// Create a project to run tests against
-///
-/// The project can be constructed programmatically or from the filesystem with
-/// [`Project::from_template`]
 #[must_use]
 pub struct ProjectBuilder {
     root: Project,

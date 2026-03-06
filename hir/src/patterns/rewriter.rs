@@ -1123,8 +1123,8 @@ impl<Base: RewriterListener, Derived: RewriterListener> RewriterListener
     }
 }
 
-/// Wraps an in-place modification of an [Operation] to ensure the rewriter is properly notified
-/// about the progress and outcome of the in-place notification.
+/// Wraps an in-place modification of an [crate::Operation] to ensure the rewriter is properly
+/// notified about the progress and outcome of the in-place notification.
 ///
 /// This is a minor efficiency win, as it avoids creating a new operation, and removing the old one,
 /// but also often allows simpler code in the client.

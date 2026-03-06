@@ -430,7 +430,7 @@ pub struct ReloadInfo {
 pub enum Placement {
     /// A concrete location in the current program.
     ///
-    /// The operation will be placed according to the semantics of the given [InsertionPoint]
+    /// The operation will be placed according to the semantics of the given program point
     At(ProgramPoint),
     /// A pseudo-location, corresponding to the end of the block that will be materialized
     /// to split the control flow edge represented by [Split].

@@ -21,12 +21,12 @@ where
 {
     /// Create a new [OperationBuilder] for `op` using the provided [Builder].
     ///
-    /// The [Operation] underlying `op` must have been initialized correctly:
+    /// The [super::Operation] underlying `op` must have been initialized correctly:
     ///
     /// * Allocated via the same context as `builder`
     /// * Initialized via [crate::Operation::uninit]
     /// * All op traits implemented by the concrete type must have been registered with its
-    ///   [OperationName]
+    ///   [super::OperationName]
     /// * All fields of the concrete type must have been initialized to actual or default
     ///   values. This builder will invoke verification at the end, and if `T` is not correctly
     ///   initialized, it will result in undefined behavior.
@@ -105,8 +105,8 @@ where
         }
     }
 
-    /// Like [with_symbol], but further constrains the range of valid input symbols to those which
-    /// are valid [CallableOpInterface] implementations.
+    /// Like [Self::with_symbol], but further constrains the range of valid input symbols to those
+    /// which are valid [crate::CallableOpInterface] implementations.
     #[inline]
     pub fn with_callable_symbol(
         &mut self,
@@ -123,11 +123,11 @@ where
         }
     }
 
-    /// Add a new [Region] to this operation.
+    /// Add a new [crate::Region] to this operation.
     ///
-    /// NOTE: You must ensure this is called _after_ [Self::with_operands], and [Self::implements]
-    /// if the op implements the [traits::NoRegionArguments] trait. Otherwise, the inserted region
-    /// may not be valid for this op.
+    /// NOTE: You must ensure this is called _after_ [Self::with_operands], if the op implements the
+    /// [crate::traits::NoRegionArguments] trait. Otherwise, the inserted region may not be valid
+    /// for this op.
     pub fn create_region(&mut self) {
         let region = self.builder.context().create_region();
         let mut op = self.op.borrow_mut();
@@ -320,11 +320,11 @@ where
     }
 }
 
-/// The [OperationBuilder] is a primitive for imperatively constructing an [Operation].
+/// The [OperationBuilder] is a primitive for imperatively constructing an [super::Operation].
 ///
 /// Currently, this is primarily used by our `#[operation]` macro infrastructure, to finalize
-/// construction of the underlying [Operation] of an [Op] implementation, after both have been
-/// allocated and initialized with only basic metadata. This builder is then used to add all of
+/// construction of the underlying [super::Operation] of an [Op] implementation, after both have
+/// been allocated and initialized with only basic metadata. This builder is then used to add all of
 /// the data under the op, e.g. operands, results, attributes, etc. Once complete, verification is
 /// run on the constructed op.
 ///
@@ -342,11 +342,11 @@ where
 {
     /// Create a new [OperationBuilder] for `op` using the provided [Builder].
     ///
-    /// The [Operation] underlying `op` must have been initialized correctly:
+    /// The [super::Operation] underlying `op` must have been initialized correctly:
     ///
     /// * Allocated via the same context as `builder`
     /// * Initialized via [crate::Operation::uninit]
-    /// * All op traits implemented by `T` must have been registered with its [OperationName]
+    /// * All op traits implemented by `T` must have been registered with its [super::OperationName]
     /// * All fields of `T` must have been initialized to actual or default values. This builder
     ///   will invoke verification at the end, and if `T` is not correctly initialized, it will
     ///   result in undefined behavior.

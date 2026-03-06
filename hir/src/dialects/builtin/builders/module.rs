@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-/// A specialized builder for constructing/modifying [crate::dialects::hir::Module]
+/// A specialized builder for constructing/modifying [crate::dialects::builtin::Module]
 pub struct ModuleBuilder {
     pub module: ModuleRef,
     builder: OpBuilder,
@@ -41,11 +41,11 @@ impl ModuleBuilder {
         &mut self.builder
     }
 
-    /// Declare a new [crate::dialects::hir::Function] in this module with the given name and
+    /// Declare a new [crate::dialects::builtin::Function] in this module with the given name and
     /// signature.
     ///
-    /// The returned [FunctionRef] can be used to construct a [FunctionBuilder] to define the body
-    /// of the function.
+    /// The returned [FunctionRef] can be used to construct a [super::FunctionBuilder] to define the
+    /// body of the function.
     pub fn define_function(
         &mut self,
         name: Ident,
@@ -57,8 +57,8 @@ impl ModuleBuilder {
 
     /// Declare a new [GlobalVariable] in this module with the given name, visibility, and type.
     ///
-    /// The returned [UnsafeIntrusiveEntityRef] can be used to construct a [InitializerBuilder]
-    /// over the body of the global variable initializer region.
+    /// The returned [UnsafeIntrusiveEntityRef] can be used to construct a builder over the body
+    /// of the global variable initializer region.
     pub fn define_global_variable(
         &mut self,
         name: Ident,

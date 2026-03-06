@@ -12,7 +12,7 @@ pub type SymbolUseIter<'a> = crate::EntityListIter<'a, SymbolUse>;
 pub type SymbolUseCursor<'a> = crate::EntityListCursor<'a, SymbolUse>;
 pub type SymbolUseCursorMut<'a> = crate::EntityListCursorMut<'a, SymbolUse>;
 
-/// A [SymbolUse] represents a use of a [Symbol] by an [Operation]
+/// A [SymbolUse] represents a use of a [super::Symbol] by an [crate::Operation]
 #[derive(Copy, Clone)]
 pub struct SymbolUse {
     /// The user of the symbol

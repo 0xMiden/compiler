@@ -34,7 +34,7 @@ pub enum InvalidSymbolPathError {
     UnexpectedRootPlacement,
 }
 
-/// This type is a custom [Attribute] for [Symbol] references.
+/// This type is a custom [crate::Attribute] for [super::Symbol] references.
 ///
 /// A [SymbolPath] is represented much like a filesystem path, i.e. as a vector of components.
 /// Each component refers to a distinct `Symbol` that must be resolvable, the details of which
@@ -659,7 +659,7 @@ impl SymbolNameComponents {
         }
     }
 
-    /// Convert this iterator into a single [Symbol] consisting of all components.
+    /// Convert this iterator into a single [super::Symbol] consisting of all components.
     ///
     /// Returns `None` if the input is empty.
     pub fn into_symbol_name(self) -> Option<SymbolName> {

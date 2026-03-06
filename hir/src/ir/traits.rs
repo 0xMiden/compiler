@@ -50,7 +50,7 @@ pub trait Involution {}
 #[operation_trait]
 pub trait IsolatedFromAbove {}
 
-/// Marker trait for ops which have only regions of [`RegionKind::Graph`]
+/// Marker trait for ops which have only regions of [`crate::RegionKind::Graph`]
 #[operation_trait]
 pub trait HasOnlyGraphRegion {}
 

@@ -156,7 +156,7 @@ impl<T> EntityMap<T> {
         }
     }
 
-    /// Get an [EntityCursor] pointing to the first entity in the map, or the null object if
+    /// Get an [EntityMapCursor] pointing to the first entity in the map, or the null object if
     /// the map is empty
     pub fn front(&self) -> EntityMapCursor<'_, T> {
         EntityMapCursor {
@@ -164,7 +164,7 @@ impl<T> EntityMap<T> {
         }
     }
 
-    /// Get an [EntityCursor] pointing to the last entity in the map, or the null object if
+    /// Get an [EntityMapCursor] pointing to the last entity in the map, or the null object if
     /// the map is empty
     pub fn back(&self) -> EntityMapCursor<'_, T> {
         EntityMapCursor {
@@ -232,11 +232,11 @@ trait EntityMapTraits<T: EntityWithKey>: Sized {
         ptr: UnsafeIntrusiveMapEntityRef<T>,
     ) -> EntityMapCursorMut<'_, T>;
 
-    /// Get an [EntityCursorMut] pointing to the first entity in the map, or the null object if
+    /// Get an [EntityMapCursorMut] pointing to the first entity in the map, or the null object if
     /// the map is empty
     fn front_mut(&mut self) -> EntityMapCursorMut<'_, T>;
 
-    /// Get an [EntityCursorMut] pointing to the last entity in the map, or the null object if
+    /// Get an [EntityMapCursorMut] pointing to the last entity in the map, or the null object if
     /// the map is empty
     fn back_mut(&mut self) -> EntityMapCursorMut<'_, T>;
 
@@ -294,7 +294,7 @@ impl<T: EntityMapItem> EntityMapTraits<T> for EntityMap<T> {
         }
     }
 
-    /// Get an [EntityCursorMut] pointing to the first entity in the map, or the null object if
+    /// Get an [EntityMapCursorMut] pointing to the first entity in the map, or the null object if
     /// the map is empty
     default fn front_mut(&mut self) -> EntityMapCursorMut<'_, T> {
         EntityMapCursorMut {
@@ -303,7 +303,7 @@ impl<T: EntityMapItem> EntityMapTraits<T> for EntityMap<T> {
         }
     }
 
-    /// Get an [EntityCursorMut] pointing to the last entity in the map, or the null object if
+    /// Get an [EntityMapCursorMut] pointing to the last entity in the map, or the null object if
     /// the map is empty
     default fn back_mut(&mut self) -> EntityMapCursorMut<'_, T> {
         EntityMapCursorMut {
@@ -511,13 +511,13 @@ impl<T: EntityMapItem> EntityMap<T> {
         unsafe { <Self as EntityMapTraits<T>>::cursor_mut_from_ptr(self, ptr) }
     }
 
-    /// Get an [EntityCursorMut] pointing to the first entity in the map, or the null object if
+    /// Get an [EntityMapCursorMut] pointing to the first entity in the map, or the null object if
     /// the map is empty
     pub fn front_mut(&mut self) -> EntityMapCursorMut<'_, T> {
         <Self as EntityMapTraits<T>>::front_mut(self)
     }
 
-    /// Get an [EntityCursorMut] pointing to the last entity in the map, or the null object if
+    /// Get an [EntityMapCursorMut] pointing to the last entity in the map, or the null object if
     /// the map is empty
     pub fn back_mut(&mut self) -> EntityMapCursorMut<'_, T> {
         <Self as EntityMapTraits<T>>::back_mut(self)
@@ -647,7 +647,7 @@ impl<'a, T> EntityMapCursor<'a, T> {
     /// Returns `None` if the cursor is currently pointing to the null object.
     ///
     /// NOTE: This returns an [EntityRef] whose lifetime is bound to the underlying [EntityMap],
-    /// _not_ the [EntityCursor], since the cursor cannot mutate the map.
+    /// _not_ the [EntityMapCursor], since the cursor cannot mutate the map.
     #[track_caller]
     pub fn get(&self) -> Option<EntityRef<'a, T>> {
         Some(self.cursor.get()?.entity.borrow())
@@ -764,9 +764,9 @@ impl<'a, T: EntityMapItem> EntityMapCursorMut<'a, T> {
 
     /// Returns a read-only cursor pointing to the current element.
     ///
-    /// The lifetime of the returned [EntityCursor] is bound to that of the [EntityCursorMut], which
-    /// means it cannot outlive the [EntityCursorMut] and that the [EntityCursorMut] is frozen for
-    /// the lifetime of the [EntityCursor].
+    /// The lifetime of the returned [EntityMapCursor] is bound to that of the [EntityMapCursorMut],
+    /// which means it cannot outlive the [EntityMapCursorMut] and that the [EntityMapCursorMut] is
+    /// frozen for the lifetime of the [EntityMapCursor].
     pub fn as_cursor(&self) -> EntityMapCursor<'_, T> {
         EntityMapCursor {
             cursor: self.cursor.as_cursor(),
@@ -840,7 +840,7 @@ impl<'a, T: EntityMapItem> EntityMapCursorMut<'a, T> {
     /// Removes the current entity from the [EntityMap].
     ///
     /// A pointer to the element that was removed is returned, and the cursor is moved to point to
-    /// the next element in the [Entitymap].
+    /// the next element in the [EntityMap].
     ///
     /// If the cursor is currently pointing to the null object then nothing is removed and `None` is
     /// returned.
@@ -1042,7 +1042,7 @@ impl<T> RawEntityRef<T, IntrusiveLink> {
     }
 }
 
-/// A trait implemented by any [Entity] that is storeable in an [EntityMap].
+/// A trait implemented by any [super::Entity] that is storeable in an [EntityMap].
 ///
 /// This trait defines callbacks that are executed any time the entity is added, removed, or
 /// transferred between collections.

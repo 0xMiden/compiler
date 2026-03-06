@@ -58,7 +58,7 @@ pub trait ValueHasher {
 
 /// A [ValueHasher] impl that hashes a value based on its address in memory.
 ///
-/// This is generally used with [OperationEquivalence] to require operands/results between two
+/// This is generally used with [OperationHasher] to require operands/results between two
 /// operations to be exactly the same.
 #[derive(Default)]
 pub struct DefaultValueHasher;

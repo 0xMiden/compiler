@@ -11,7 +11,7 @@ pub use self::{
 };
 use crate::Report;
 
-/// A result-like type used to control traversals of a [Walkable] entity.
+/// A result-like type used to control traversals of a [Walk]able entity.
 ///
 /// It is comparable to [core::ops::ControlFlow], with an additional option to continue traversal,
 /// but with a sibling, rather than visiting any further children of the current item.

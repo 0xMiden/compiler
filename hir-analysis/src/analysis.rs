@@ -121,8 +121,8 @@ pub trait BuildableDataFlowAnalysis {
     /// Construct a fresh instance of the underlying analysis type.
     ///
     /// The current [DataFlowSolver] instance is provided, allowing an implementation to access the
-    /// global [DataFlowConfig], as well as load any other analyses that it depends on. Any analysis
-    /// that has already been loaded prior to calling this function, will be ignored.
+    /// global [crate::DataFlowConfig], as well as load any other analyses that it depends on. Any
+    /// analysis that has already been loaded prior to calling this function, will be ignored.
     fn new(solver: &mut DataFlowSolver) -> Self;
 }
 
@@ -141,8 +141,8 @@ pub trait AnalysisStrategy<T: ?Sized>: DataFlowAnalysis {
     /// of the underlying analysis type.
     ///
     /// The current [DataFlowSolver] instance is provided, allowing an implementation to access the
-    /// global [DataFlowConfig], as well as load any analyses that it depends on. Any analysis that
-    /// has already been loaded prior to calling this function, will be ignored.
+    /// global [crate::DataFlowConfig], as well as load any analyses that it depends on. Any analysis
+    /// that has already been loaded prior to calling this function, will be ignored.
     ///
     /// The `analysis` instance is expected to have been constructed using
     /// [BuildableDataFlowAnalysis::new], if `T` implements the trait.

@@ -126,7 +126,6 @@ impl AsmParserState {
             }
             self.symbol_table_operations.push((op, symbol_uses));
         } else {
-            // TODO: Register uses here to be resolved at the end
             let mut symbol_uses = symbol_uses.borrow_mut();
             self.symbol_uses
                 .entry(op)

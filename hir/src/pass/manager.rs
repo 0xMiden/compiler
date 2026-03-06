@@ -86,9 +86,9 @@ pub struct PassManager {
     pm: OpPassManager,
     /// A manager for pass instrumentation
     instrumentor: Rc<PassInstrumentor>,
-    /// An optional crash reproducer generator, if this pass manager is setup to
-    /// generate reproducers.
-    ///crash_reproducer_generator: Rc<PassCrashReproducerGenerator>,
+    // An optional crash reproducer generator, if this pass manager is setup to
+    // generate reproducers.
+    //crash_reproducer_generator: Rc<PassCrashReproducerGenerator>,
     /// Indicates whether to print pass statistics
     statistics: Option<PassDisplayMode>,
     /// Indicates whether or not pass timing is enabled

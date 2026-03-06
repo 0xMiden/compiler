@@ -201,7 +201,7 @@ impl NextUseSet {
         self.get(value).is_none()
     }
 
-    /// Gets the [NextUse] associated with the given `value`, if known
+    /// Gets the `NextUse` associated with the given `value`, if known
     #[inline]
     pub fn get<V>(&self, value: V) -> Option<&NextUse>
     where

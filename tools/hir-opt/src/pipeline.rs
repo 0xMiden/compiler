@@ -1,8 +1,10 @@
 //! This module handles parsing pass pipelines adhering to the following format:
 //!
+//! ```text
 //! pipeline          ::= op-anchor `(` pipeline-element (`,` pipeline-element)* `)`
 //! pipeline-element  ::= pipeline | (pass-name | pass-pipeline-name) options?
 //! options           ::= '{' (key ('=' value)?)+ '}'
+//! ```
 //!
 //! * `op-anchor` is the operation name that anchors execution of the pass manager, this must be
 //!   either a concrete operation name, or `any`, to apply against any operation type.
@@ -16,7 +18,7 @@
 //!
 //! For example, the following pipeline:
 //!
-//! ```
+//! ```text
 //! $ hir-opt foo.hir --pass-pipeline='builtin.module(builtin.function(cse,canonicalize),convert-to-masm{key=value})'
 //! ```
 //!

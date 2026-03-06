@@ -866,11 +866,11 @@ impl quote::ToTokens for OpCreateFn<'_> {
         let build_op = BuildOp(self.op);
 
         let create_doc = syn::Lit::Str(syn::LitStr::new(
-            &format!("Manually construct a new [{}]", &self.op.name),
+            &format!("Manually construct a new `{}`", &self.op.name),
             self.op.span,
         ));
         let alloc_default_doc = syn::Lit::Str(syn::LitStr::new(
-            &format!("Allocate a new, default-initialized [{}]", &self.op.name),
+            &format!("Allocate a new, default-initialized `{}`", &self.op.name),
             self.op.span,
         ));
 
@@ -878,7 +878,7 @@ impl quote::ToTokens for OpCreateFn<'_> {
         tokens.extend(quote_spanned! { op_span =>
             #[doc = #create_doc]
             ///
-            /// It is generally preferable to use [`::midenc_hir::Builder::create`] instead.
+            /// It is generally preferable to use [`::midenc_hir::BuilderExt::create`] instead.
             #[allow(clippy::too_many_arguments)]
             pub fn create #impl_generics_all(
                 builder: &mut B,
@@ -1754,12 +1754,16 @@ impl OpBuilderImpl {
         let doc = DocString::new(
             op.span(),
             format!(
-                " A specialized builder for [{op}], which is used by calling it like a function."
+                " A specialized builder for [struct@{op}], which is used by calling it like a \
+                 function."
             ),
         );
         let new_doc = DocString::new(
             op.span(),
-            format!(" Get a new [{name}] from the provided [::midenc_hir::Builder] impl and span."),
+            format!(
+                " Get a new [struct@{name}] from the provided [::midenc_hir::Builder] impl and \
+                 span."
+            ),
         );
         let create_params = Rc::<[OpCreateParam]>::from([]);
         let buildable_op_impl = BuildableOpImpl {
@@ -2187,13 +2191,13 @@ impl quote::ToTokens for OpVerifierImpl {
             ];
             for derived_trait in self.traits.iter() {
                 lines.push(syn::Lit::Str(syn::LitStr::new(
-                    &format!(" * [{}]", derived_trait.get_ident().unwrap()),
+                    &format!(" * `{}`", derived_trait.get_ident().unwrap()),
                     span,
                 )));
             }
             for implemented_trait in self.implements.iter() {
                 lines.push(syn::Lit::Str(syn::LitStr::new(
-                    &format!(" * [{}]", implemented_trait.get_ident().unwrap()),
+                    &format!(" * `{}`", implemented_trait.get_ident().unwrap()),
                     span,
                 )));
             }

@@ -131,7 +131,7 @@ pub trait Pattern {
     }
 }
 
-/// [PatternBase] describes all of the data related to a pattern, but does not express any actual
+/// [PatternInfo] describes all of the data related to a pattern, but does not express any actual
 /// pattern logic, i.e. it is solely used for metadata about a pattern.
 pub struct PatternInfo {
     #[allow(unused)]

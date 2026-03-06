@@ -45,7 +45,8 @@ impl ComponentId {
             && self.version == Version::new(1, 0, 0)
     }
 
-    /// Get the Miden Assembly [`LibraryPath`] that uniquely identifies this interface.
+    /// Get the Miden Assembly [`midenc_session::LibraryPath`] that uniquely identifies this
+    /// interface.
     ///
     /// The returned path is a single quoted component so that `:` and `@` are preserved.
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {

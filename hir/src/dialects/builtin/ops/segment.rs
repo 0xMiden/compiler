@@ -15,10 +15,10 @@ use crate::{
 
 pub type SegmentRef = UnsafeIntrusiveEntityRef<Segment>;
 
-/// Declare a data segment in the shared memory of a [Component].
+/// Declare a data segment in the shared memory of a [super::Component].
 ///
-/// This operation type is only permitted in the body of a [Module] op, it is an error to use it
-/// anywhere else. At best it will be ignored.
+/// This operation type is only permitted in the body of a [super::Module] op, it is an error to use
+/// it anywhere else. At best it will be ignored.
 ///
 /// Data segments can have a size that is larger than the initializer data it describes; in such
 /// cases, the remaining memory is either assumed to be arbitrary bytes, or if `zeroed` is set,

@@ -10,11 +10,11 @@ use midenc_hir::{
 ///
 /// # Safety
 ///
-/// Anchors are immutable, so dereferencing these are always safe while the [DataFlowSolver] which
-/// allocated them is still live. However, you must ensure that a reference never outlives the
-/// parent [DataFlowSolver]. In practice, this is basically enforced in terms of API - you can't
-/// do anything useful with one of these without the solver, however it is still incumbent on users
-/// of this type to uphold this guarantee.
+/// Anchors are immutable, so dereferencing these are always safe while the [crate::DataFlowSolver]
+/// which allocated them is still live. However, you must ensure that a reference never outlives the
+/// parent [crate::DataFlowSolver]. In practice, this is basically enforced in terms of API - you
+/// can't do anything useful with one of these without the solver, however it is still incumbent on
+/// users of this type to uphold this guarantee.
 #[derive(Copy, Clone)]
 pub struct LatticeAnchorRef(NonNull<dyn LatticeAnchor>);
 

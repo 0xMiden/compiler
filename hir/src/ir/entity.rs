@@ -55,7 +55,7 @@ pub trait EntityWithParent: Entity {
 
 /// A trait implemented by an [Entity] that has a unique identifier
 ///
-/// Currently, this is used only for [Value]s and [Block]s.
+/// Currently, this is used only for [crate::Value]s and [crate::Block]s.
 pub trait EntityWithId: Entity {
     type Id: EntityId;
 
@@ -147,7 +147,7 @@ pub type UnsafeIntrusiveEntityRef<T> = RawEntityRef<T, list::IntrusiveLink>;
 /// A raw pointer to an IR entity that has an intrusive red-black tree link as its metadata
 pub type UnsafeIntrusiveMapEntityRef<T> = RawEntityRef<T, map::IntrusiveLink>;
 
-/// A [RawEntityRef] is an unsafe smart pointer type for IR entities allocated in a [Context].
+/// A [RawEntityRef] is an unsafe smart pointer type for IR entities allocated in a [crate::Context].
 ///
 /// Along with the type of entity referenced, it can be instantiated with extra metadata of any
 /// type. For example, [UnsafeIntrusiveEntityRef] stores an intrusive link in the entity metadata,
@@ -168,7 +168,7 @@ pub type UnsafeIntrusiveMapEntityRef<T> = RawEntityRef<T, map::IntrusiveLink>;
 ///
 /// # SAFETY
 ///
-/// Unlike most smart-pointer types, e.g. `Rc`, [RAwEntityRef] does not provide any protection
+/// Unlike most smart-pointer types, e.g. `Rc`, [RawEntityRef] does not provide any protection
 /// against the underlying allocation being deallocated (i.e. the arena it points into is dropped).
 /// This is by design, as the type is meant to be stored in objects inside the arena, and
 /// _not_ dropped when the arena is dropped. This requires care when using it however, to ensure
@@ -300,9 +300,9 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     /// Convert this handle into a raw pointer to the underlying entity.
     ///
     /// This should only be used in situations where the returned pointer will not be used to
-    /// actually access the underlying entity. Use [get] or [get_mut] for that. [RawEntityRef]
-    /// ensures that Rust's aliasing rules are not violated when using it, but if you use the
-    /// returned pointer to do so, no such guarantee is provided, and undefined behavior can
+    /// actually access the underlying entity. Use [Self::borrow] or [Self::borrow_mut] for that.
+    /// [RawEntityRef] ensures that Rust's aliasing rules are not violated when using it, but if you
+    /// use the returned pointer to do so, no such guarantee is provided, and undefined behavior can
     /// result.
     ///
     /// # Safety
@@ -722,14 +722,12 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
         Self { value, borrow }
     }
 }
-/*
 impl<'b, T, U> core::ops::CoerceUnsized<EntityRef<'b, U>> for EntityRef<'b, T>
 where
     T: ?Sized + core::marker::Unsize<U>,
     U: ?Sized,
 {
 }
- */
 
 impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityRef<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -921,14 +919,12 @@ impl<T: ?Sized> DerefMut for EntityMut<'_, T> {
         unsafe { self.value.as_mut() }
     }
 }
-/*
 impl<'b, T, U> core::ops::CoerceUnsized<EntityMut<'b, U>> for EntityMut<'b, T>
 where
     T: ?Sized + core::marker::Unsize<U>,
     U: ?Sized,
 {
 }
- */
 
 impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityMut<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1253,7 +1249,7 @@ fn raw_entity_metadata_layout_for_value_layout<Metadata>(layout: Layout) -> Layo
         .pad_to_align()
 }
 
-/// A [RawEntity] wraps an entity to be allocated in a [Context], and provides dynamic borrow-
+/// A [RawEntity] wraps an entity to be allocated in a [crate::Context], and provides dynamic borrow-
 /// checking functionality for [UnsafeEntityRef], thereby protecting the entity by ensuring that
 /// all accesses adhere to Rust's aliasing rules.
 #[repr(C)]

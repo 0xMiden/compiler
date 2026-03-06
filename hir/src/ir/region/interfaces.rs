@@ -70,8 +70,8 @@ pub trait RegionBranchOpInterface: Op {
     }
     /// Returns the potential region successors when first executing the op.
     ///
-    /// Unlike [get_successor_regions], this method also passes along the constant operands of this
-    /// op. Based on these, the implementation may filter out certain successors. By default, it
+    /// Unlike [Self::get_successor_regions], this method also passes along the constant operands of
+    /// this op. Based on these, the implementation may filter out certain successors. By default, it
     /// simply dispatches to `get_successor_regions`. `operands` contains an entry for every operand
     /// of this op, with `None` representing if the operand is non-constant.
     ///
@@ -113,7 +113,7 @@ pub trait RegionBranchOpInterface: Op {
     /// this operation will invoke each attached region (assuming the regions yield normally, i.e.
     /// do not abort or invoke an infinite loop). The minimum number of invocations is at least 0.
     /// If the maximum number of invocations cannot be statically determined, then it will be set to
-    /// [InvocationBounds::unknown].
+    /// [InvocationBounds::Unknown].
     ///
     /// This function also passes along the constant operands of this op. `operands` contains an
     /// entry for every operand of this op, with `None` representing if the operand is non-constant.

@@ -122,7 +122,7 @@ impl<T> EntityList<T> {
         }
     }
 
-    /// Get an [EntityCursor] pointing to the first entity in the list, or the null object if
+    /// Get an [EntityListCursor] pointing to the first entity in the list, or the null object if
     /// the list is empty
     pub fn front(&self) -> EntityListCursor<'_, T> {
         EntityListCursor {
@@ -130,7 +130,7 @@ impl<T> EntityList<T> {
         }
     }
 
-    /// Get an [EntityCursor] pointing to the last entity in the list, or the null object if
+    /// Get an [EntityListCursor] pointing to the last entity in the list, or the null object if
     /// the list is empty
     pub fn back(&self) -> EntityListCursor<'_, T> {
         EntityListCursor {
@@ -198,11 +198,11 @@ trait EntityListTraits<T>: Sized {
         ptr: UnsafeIntrusiveEntityRef<T>,
     ) -> EntityListCursorMut<'_, T>;
 
-    /// Get an [EntityCursorMut] pointing to the first entity in the list, or the null object if
+    /// Get an [EntityListCursorMut] pointing to the first entity in the list, or the null object if
     /// the list is empty
     fn front_mut(&mut self) -> EntityListCursorMut<'_, T>;
 
-    /// Get an [EntityCursorMut] pointing to the last entity in the list, or the null object if
+    /// Get an [EntityListCursorMut] pointing to the last entity in the list, or the null object if
     /// the list is empty
     fn back_mut(&mut self) -> EntityListCursorMut<'_, T>;
 
@@ -327,7 +327,7 @@ impl<T: EntityListItem> EntityListTraits<T> for EntityList<T> {
         }
     }
 
-    /// Get an [EntityCursorMut] pointing to the first entity in the list, or the null object if
+    /// Get an [EntityListCursorMut] pointing to the first entity in the list, or the null object if
     /// the list is empty
     default fn front_mut(&mut self) -> EntityListCursorMut<'_, T> {
         EntityListCursorMut {
@@ -336,7 +336,7 @@ impl<T: EntityListItem> EntityListTraits<T> for EntityList<T> {
         }
     }
 
-    /// Get an [EntityCursorMut] pointing to the last entity in the list, or the null object if
+    /// Get an [EntityListCursorMut] pointing to the last entity in the list, or the null object if
     /// the list is empty
     default fn back_mut(&mut self) -> EntityListCursorMut<'_, T> {
         EntityListCursorMut {
@@ -629,13 +629,13 @@ impl<T: EntityListItem> EntityList<T> {
         unsafe { <Self as EntityListTraits<T>>::cursor_mut_from_ptr(self, ptr) }
     }
 
-    /// Get an [EntityCursorMut] pointing to the first entity in the list, or the null object if
+    /// Get an [EntityListCursorMut] pointing to the first entity in the list, or the null object if
     /// the list is empty
     pub fn front_mut(&mut self) -> EntityListCursorMut<'_, T> {
         <Self as EntityListTraits<T>>::front_mut(self)
     }
 
-    /// Get an [EntityCursorMut] pointing to the last entity in the list, or the null object if
+    /// Get an [EntityListCursorMut] pointing to the last entity in the list, or the null object if
     /// the list is empty
     pub fn back_mut(&mut self) -> EntityListCursorMut<'_, T> {
         <Self as EntityListTraits<T>>::back_mut(self)
@@ -749,7 +749,7 @@ impl<'a, T> EntityListCursor<'a, T> {
     /// Returns `None` if the cursor is currently pointing to the null object.
     ///
     /// NOTE: This returns an [EntityRef] whose lifetime is bound to the underlying [EntityList],
-    /// _not_ the [EntityCursor], since the cursor cannot mutate the list.
+    /// _not_ the [EntityListCursor], since the cursor cannot mutate the list.
     #[track_caller]
     pub fn get(&self) -> Option<EntityRef<'a, T>> {
         Some(self.cursor.get()?.entity.borrow())
@@ -866,9 +866,9 @@ impl<'a, T: EntityListItem> EntityListCursorMut<'a, T> {
 
     /// Returns a read-only cursor pointing to the current element.
     ///
-    /// The lifetime of the returned [EntityCursor] is bound to that of the [EntityCursorMut], which
-    /// means it cannot outlive the [EntityCursorMut] and that the [EntityCursorMut] is frozen for
-    /// the lifetime of the [EntityCursor].
+    /// The lifetime of the returned [EntityListCursor] is bound to that of the
+    /// [EntityListCursorMut], which means it cannot outlive the [EntityListCursorMut] and that the
+    /// [EntityListCursorMut] is frozen for the lifetime of the [EntityListCursor].
     pub fn as_cursor(&self) -> EntityListCursor<'_, T> {
         EntityListCursor {
             cursor: self.cursor.as_cursor(),
@@ -942,7 +942,7 @@ impl<'a, T: EntityListItem> EntityListCursorMut<'a, T> {
     /// Removes the current entity from the [EntityList].
     ///
     /// A pointer to the element that was removed is returned, and the cursor is moved to point to
-    /// the next element in the [Entitylist].
+    /// the next element in the [EntityList].
     ///
     /// If the cursor is currently pointing to the null object then nothing is removed and `None` is
     /// returned.
@@ -1237,7 +1237,7 @@ impl<T> RawEntityRef<T, IntrusiveLink> {
     }
 }
 
-/// A trait implemented by any [Entity] that is storeable in an [EntityList].
+/// A trait implemented by any [super::Entity] that is storeable in an [EntityList].
 ///
 /// This trait defines callbacks that are executed any time the entity is added, removed, or
 /// transferred between collections.

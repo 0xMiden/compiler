@@ -18,7 +18,7 @@ pub fn build_package() -> std::path::PathBuf {
 
 // ============================= Test function ================================
 
-/// Struct that represents a function marked with #[miden_test].
+/// Struct that represents a function marked with `#[miden_test]`.
 /// NOTE: This structure is only intended to be used by the
 /// miden-test-harness-macros crate.
 pub struct MidenTest {
@@ -74,7 +74,7 @@ fn runner(test: fn() -> ()) -> impl FnOnce() -> Result<(), libtest_mimic::Failed
 
 // =========================== Querying functions ==============================
 
-/// Access all functions tagged with #[miden_test].
+/// Access all functions tagged with `#[miden_test]`.
 ///
 /// NOTE: currently we don't use `inventory`'s vector to execute tests, since we
 /// rely on cargo's default registration mechanism. This stems from the fact

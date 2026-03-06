@@ -123,6 +123,11 @@ pub fn operation_trait(
     }
 }
 
+/// Define an operation.
+///
+/// ## Examples
+///
+/// ```text
 /// #[operation(
 ///     dialect = HirDialect,
 ///     traits(Terminator),
@@ -155,6 +160,7 @@ pub fn operation_trait(
 ///     #[region]
 ///     else_region: RegionRef,
 /// }
+/// ```
 #[proc_macro_attribute]
 pub fn operation(
     attr: proc_macro::TokenStream,

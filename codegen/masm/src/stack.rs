@@ -279,13 +279,13 @@ impl Operand {
         self.word.len()
     }
 
-    /// Get the [OperandType] representing the value of this operand
+    /// Get the `OperandType` representing the value of this operand
     #[inline(always)]
     pub fn value(&self) -> &OperandType {
         &self.operand
     }
 
-    /// Get this operand as a [Value]
+    /// Get this operand as a [ValueRef]
     #[inline]
     pub fn as_value(&self) -> Option<ValueRef> {
         self.try_into().ok()

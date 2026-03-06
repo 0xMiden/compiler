@@ -82,10 +82,11 @@ impl OpParser for ConstantPointer {
 
 /// A constant operation used to define an array of arbitrary bytes.
 ///
-/// This is intended for use in [super::GlobalVariable] initializer regions only. For non-global
-/// uses, the maximum size of immediate values is limited to a single word. This restriction does
-/// not apply to global variable initializers, which are used to express the data that should be
-/// placed in memory at the address allocated for the variable, without explicit load/store ops.
+/// This is intended for use in [midenc_hir::dialects::builtin::GlobalVariable] initializer regions
+/// only. For non-global uses, the maximum size of immediate values is limited to a single word.
+/// This restriction does not apply to global variable initializers, which are used to express the
+/// data that should be placed in memory at the address allocated for the variable, without explicit
+/// load/store ops.
 #[derive(EffectOpInterface)]
 #[operation(
     dialect = HirDialect,

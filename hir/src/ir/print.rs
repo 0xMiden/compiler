@@ -2,7 +2,7 @@
 //!
 //! The grammar for the printed assembly format is given below:
 //!
-//! ```
+//! ```text
 //! # File
 //! top-level := (operation | attribute-alias-def | type-alias-def)+
 //!
@@ -232,7 +232,7 @@
 //! * The operand and successor arguments both show how individual values of a result pack produced
 //!   by a previous operation can be referenced.
 //!
-//! ```
+//! ```text
 //! %overflowing_add:2 = arith.add %lhs, %rhs <{ overflow = overflowing }>;
 //! "cf.cond_br"(%overflowing_add#0) [
 //!     ^overflowed,
@@ -261,9 +261,12 @@ pub use self::{
 use super::{OpOperandRange, OpResultRange, Operation, Region, RegionList, ValueRange};
 use crate::{EntityWithId, Location, Value, formatter::Document};
 
+/// Options which configure how IR entities are printed to IR assembly
 #[derive(Default, Debug)]
 pub struct OpPrintingFlags {
+    /// When `true`, forces printing of entry block headers for all regions
     pub print_entry_block_headers: bool,
+    /// When `true`, prints trailing location specifiers after all operations, i.e. `loc(..)`
     pub print_source_locations: bool,
 }
 
@@ -282,9 +285,9 @@ pub trait AttrPrinter {
     fn print(&self, printer: &mut AsmPrinter<'_>);
 }
 
-/// The `OpPrinter` trait is expected to be implemented by all [Op] impls as a prequisite.
+/// The `OpPrinter` trait is expected to be implemented by all [crate::Op] impls as a prequisite.
 ///
-/// The actual implementation is typically generated as part of deriving [Op].
+/// The actual implementation is typically generated as part of deriving [crate::Op].
 pub trait OpPrinter {
     /// Prints this operation with the given `flags`
     fn print(&self, printer: &mut AsmPrinter<'_>);

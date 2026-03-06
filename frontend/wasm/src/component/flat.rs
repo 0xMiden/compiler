@@ -1,7 +1,7 @@
 //! Convertion between the Wasm CM types and the Miden cross-context ABI types.
 //!
-//! See https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
-//! and https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md
+//! See [the Canonical ABI docs](https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening)
+//! and [Wasm C ABI docs](https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md)
 //! for the Wasm CM <-> core Wasm types conversion rules.
 
 use alloc::rc::Rc;

@@ -31,7 +31,7 @@ pub enum Overflow {
     /// The operation will wrap around, depending on the range of the integral type. For example,
     /// given a u32 value, this is done by applying `mod 2^32` to the result.
     Wrapping,
-    /// The result of the operation will be computed as in [Wrapping], however in addition to the
+    /// The result of the operation will be computed as in `Wrapping`, however in addition to the
     /// result, this variant also pushes a value on the stack which represents whether or not the
     /// operation over/underflowed; either 1 if over/underflow occurred, or 0 otherwise.
     Overflowing,

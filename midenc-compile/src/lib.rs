@@ -32,7 +32,7 @@ pub type CompilerResult<T> = Result<T, Report>;
 #[diagnostic()]
 pub struct CompilerStopped;
 
-/// Run the compiler using the provided [Session]
+/// Run the compiler using the provided [midenc_session::Session]
 pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
     use midenc_hir::formatter::DisplayHex;
 

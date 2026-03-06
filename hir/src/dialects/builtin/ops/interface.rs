@@ -18,23 +18,23 @@ pub type InterfaceRef = UnsafeIntrusiveEntityRef<Interface>;
 /// related functionality meant to be produced/consumed together.
 ///
 /// An [Interface] itself represents a shared-nothing boundary, i.e. the functionality it exports
-/// uses the Canonical ABI of the Wasm Component Model. However, it is possible for a [Component]
-/// to export multiple interfaces which are implemented within the same shared-everything boundary.
-/// Even when that is the case, calls to any [Interface] export from within that boundary, will
-/// still be treated as crossing a shared-nothing boundary. In this way, components can both define
-/// and re-export interfaces from other components, without callers needing to know where the
-/// actual definition is provided from.
+/// uses the Canonical ABI of the Wasm Component Model. However, it is possible for a
+/// [super::Component] to export multiple interfaces which are implemented within the same
+/// shared-everything boundary. Even when that is the case, calls to any [Interface] export from
+/// within that boundary, will still be treated as crossing a shared-nothing boundary. In this way,
+/// components can both define and re-export interfaces from other components, without callers
+/// needing to know where the actual definition is provided from.
 ///
 /// Interfaces correspond to component _instances_ exported from a component _definition_ in the
 /// Wasm Component Model. This means that they are almost identical concepts, however we distinguish
-/// between [Component] and [Interface] in the IR to better model the relationships between these
-/// concepts, as well as to draw a connection to interfaces in WIT (WebAssembly Interface Types).
+/// between [super::Component] and [Interface] in the IR to better model the relationships between
+/// these concepts, as well as to draw a connection to interfaces in WIT (WebAssembly Interface Types).
 ///
 /// ## Contents
 ///
-/// Interfaces may only contain [Function] items, and may only _export_ functions with the
+/// Interfaces may only contain [builtin::Function] items, and may only _export_ functions with the
 /// `CanonLift` calling convention. It is expected that these functions will rely on implementation
-/// details defined in a sibling [Module], though that is not strictly required.
+/// details defined in a sibling [builtin::Module], though that is not strictly required.
 #[operation(
     dialect = BuiltinDialect,
     traits(

@@ -8,7 +8,7 @@ use crate::{
     attributes::Marker, formatter::Document, interner,
 };
 
-/// [OperationPrinter] provides utilities for pretty-printing an operation in either the generic
+/// [AsmPrinter] provides utilities for pretty-printing an operation in either the generic
 /// or custom formats. It provides access to the current printer flags, and manages the output
 /// document to ensure that custom printers adhere to the requirements expected of all printers.
 pub struct AsmPrinter<'a> {
@@ -391,8 +391,6 @@ impl<'a> AsmPrinter<'a> {
     }
 
     /// Print a single block
-    ///
-    /// This delegates to [`Block::print`] internally.
     pub fn print_block(&mut self, block: &Block) {
         let is_entry_block = block.is_entry_block() && !self.flags.print_entry_block_headers;
 

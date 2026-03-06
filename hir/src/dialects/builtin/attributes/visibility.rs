@@ -5,7 +5,7 @@ use crate::{
     dialects::builtin::BuiltinDialect, print::AsmPrinter,
 };
 
-/// The types of visibility that a [Symbol] may have
+/// The types of visibility that a [crate::Symbol] may have
 #[derive(DialectAttribute, Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
 #[repr(u8)]

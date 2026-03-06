@@ -41,7 +41,7 @@ pub trait SparseBackwardDataFlowAnalysis: 'static {
     /// The transfer function for calls to external functions.
     ///
     /// This function is expected to set lattice values of the call operands. By default, this calls
-    /// [visit_call_operand] for all operands.
+    /// [Self::visit_call_operand] for all operands.
     fn visit_external_call(
         &self,
         call: &dyn CallOpInterface,

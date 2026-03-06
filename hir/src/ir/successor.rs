@@ -153,7 +153,7 @@ impl SuccessorOperands for SuccessorOperandRange<'_> {
     }
 }
 
-/// The mutable variant of [SuccessorOperandsRange].
+/// The mutable variant of [SuccessorOperandRange].
 pub struct SuccessorOperandRangeMut<'a> {
     /// The explicit op operands which are to be passed along to the successor
     forwarded: OpOperandRangeMut<'a>,
@@ -227,7 +227,7 @@ impl SuccessorOperand {
 /// taken.
 ///
 /// The ability to associate a successor with a user-defined key, is intended for modeling things
-/// such as [crate::dialects::hir::Switch], which has one or more successors which are guarded by
+/// such as `midenc_dialect_cf::Switch`, which has one or more successors which are guarded by
 /// an integer value that is matched against the input, or selector, value. Most importantly, doing
 /// so in a way that keeps everything in sync as the IR is modified.
 ///

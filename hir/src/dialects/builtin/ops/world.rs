@@ -12,9 +12,9 @@ use crate::{
 pub type WorldRef = UnsafeIntrusiveEntityRef<World>;
 
 /// A [World] is a component abstraction operation, i.e. it is designed to tie particular
-/// [Component]s together.
+/// [super::Component]s together.
 ///
-/// Worlds can contain only [Component]s.
+/// Worlds can contain only [super::Component]s.
 ///
 /// NOTE: Worlds always have `Public` visibility.
 ///

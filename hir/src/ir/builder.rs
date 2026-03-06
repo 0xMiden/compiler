@@ -153,7 +153,7 @@ pub trait Builder: Listener {
         self.notify_operation_inserted(op, *self.insertion_point());
     }
 
-    /// Create an [Operation] from the provided [OperationState]
+    /// Create an [super::Operation] from the provided [OperationState]
     fn create_operation(&mut self, state: &mut OperationState) -> Result<OperationRef, Report> {
         let mut op = state.name.alloc_default(self.context_rc());
         op.borrow_mut().set_span(state.span);
@@ -206,8 +206,8 @@ pub trait Builder: Listener {
 }
 
 pub trait BuilderExt: Builder {
-    /// Returns a specialized builder for a concrete [Op], `T`, which can be called like a closure
-    /// with the arguments required to create an instance of the specified operation.
+    /// Returns a specialized builder for a concrete [super::Op], `T`, which can be called like a
+    /// closure with the arguments required to create an instance of the specified operation.
     ///
     /// # How it works
     ///

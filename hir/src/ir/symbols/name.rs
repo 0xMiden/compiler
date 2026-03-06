@@ -1,4 +1,4 @@
-/// Represents the name of a [Symbol] in its local [SymbolTable]
+/// Represents the name of a [super::Symbol] in its local [super::SymbolTable]
 pub type SymbolName = crate::interner::Symbol;
 
 /// Generate a unique symbol name.

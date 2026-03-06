@@ -5,8 +5,8 @@ use smallvec::SmallVec;
 use super::Graph;
 use crate::adt::SmallSet;
 
-/// By implementing this trait, you can refine the traversal performed by [DfsVisitor], as well as
-/// hook in custom behavior to be executed upon reaching a node in both pre-order and post-order
+/// By implementing this trait, you can refine the traversal performed by [LazyDfsVisitor], as well
+/// as hook in custom behavior to be executed upon reaching a node in both pre-order and post-order
 /// visits.
 ///
 /// There are two callbacks, both with default implementations that align with the default

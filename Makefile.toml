@@ -418,6 +418,12 @@ cwd = "./docs/external"
 command = "npm"
 args = ["run", "start:dev"]
 
+[tasks.rustdocs]
+category = "Documentation"
+command = "cargo"
+args = ["doc"]
+
+
 [tasks.docusaurus]
 category = "Build"
 cwd = "./docs/external"

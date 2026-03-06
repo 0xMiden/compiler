@@ -90,13 +90,23 @@ use crate::{
     smallvec,
 };
 
+/// The interface for parsing operations printed to IR assembly
 pub trait OpParser {
+    /// Parse the current operation into `state` using `parser`.
+    ///
+    /// The following may be assumed by the parser implementation:
+    ///
+    /// 1. The parser has already consumed all operation results and the operation name, and it is
+    ///    up to this trait function to parse everything after that point.
+    /// 2. The trailing location specifier and terminating `;` will be handled by the parser, and
+    ///    do not need to be parsed by this function.
+    ///
     fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult;
 }
 
 pub type ParseResult<T = ()> = Result<T, ParserError>;
 
-/// This struct contains configuration for the MLIR assembly parser.
+/// This struct contains configuration for the IR assembly parser.
 pub struct ParserConfig {
     /// The context in which IR entities should be constructed
     pub context: Rc<Context>,
@@ -124,6 +134,7 @@ impl ParserConfig {
     }
 }
 
+/// This struct contains the state of the parser relevant to high-level parser implementations
 pub struct ParserState<'input> {
     pub config: ParserConfig,
     pub token_stream: TokenStream<'input>,
@@ -170,6 +181,7 @@ pub struct SymbolState {
     pub type_alias_definitions: FxHashMap<interner::Symbol, Span<Type>>,
 }
 
+/// Parse IR assembly in the generic format from `source` with the provided `uri` and `config`
 pub fn parse_generic(
     config: ParserConfig,
     uri: Uri,
@@ -181,6 +193,7 @@ pub fn parse_generic(
     parse_source_generic(config, source_file)
 }
 
+/// Parse IR assembly in the generic format from `path` with the provided `config`
 #[cfg(feature = "std")]
 pub fn parse_file_generic(
     config: ParserConfig,
@@ -212,6 +225,7 @@ fn parse_source_generic(
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))
 }
 
+/// Parse an operation of type `T` from `source` with the provided `uri` and `config`
 pub fn parse<T: OpParser + OpRegistration>(
     config: ParserConfig,
     uri: Uri,
@@ -223,6 +237,7 @@ pub fn parse<T: OpParser + OpRegistration>(
     parse_source(config, source_file)
 }
 
+/// Parse an operation of type `T` from `path` with the provided `config`
 #[cfg(feature = "std")]
 pub fn parse_file<T: OpParser + OpRegistration>(
     config: ParserConfig,
@@ -233,6 +248,7 @@ pub fn parse_file<T: OpParser + OpRegistration>(
     parse_source(config, source_file)
 }
 
+/// Parse any operation from `source` with the provided `uri` and `config`
 pub fn parse_any(
     config: ParserConfig,
     uri: Uri,
@@ -244,6 +260,7 @@ pub fn parse_any(
     parse_anchored_source(None, config, source_file)
 }
 
+/// Parse IR assembly anchored at an operation `name`, from `source` with the provided `uri` and `config`
 pub fn parse_anchored(
     name: OperationName,
     config: ParserConfig,
@@ -256,6 +273,7 @@ pub fn parse_anchored(
     parse_anchored_source(Some(name), config, source_file)
 }
 
+/// Parse any operation from `path` with the provided `config`
 #[cfg(feature = "std")]
 pub fn parse_file_any(
     config: ParserConfig,
@@ -266,6 +284,7 @@ pub fn parse_file_any(
     parse_anchored_source(None, config, source_file)
 }
 
+/// Parse IR assembly anchored at an operation `name`, from `path` with the provided `config`
 #[cfg(feature = "std")]
 pub fn parse_file_anchored(
     anchor: OperationName,
@@ -329,9 +348,9 @@ fn parse_source<T: OpParser + OpRegistration>(
     Ok(unsafe { UnsafeIntrusiveEntityRef::from_raw(op.downcast_ref::<T>().unwrap()) })
 }
 
-pub trait AsmParser<'input>: Parser<'input> {}
-
-pub trait OpAsmParser<'input>: AsmParser<'input> {
+/// This trait is implemented by parsers which can parse operations from IR assembly, and provides
+/// higher-level parser functions for that purpose.
+pub trait OpAsmParser<'input>: Parser<'input> {
     /// Parse a `loc(...)` specifier if present.
     ///
     /// Location for BlockArgument and Operation may be deferred with an alias, in
@@ -558,8 +577,12 @@ pub trait OpAsmParser<'input>: AsmParser<'input> {
     ) -> ParseResult<Span<BlockRef>>;
 }
 
+/// This trait is implemented by dialects which hook into IR assembly parsing in specific ways.
+///
+/// NOTE: This is currently an empty trait until we add support for dialect parsing hooks.
 pub trait OpAsmDialectInterface: crate::Dialect {}
 
+/// This trait is implemented by operations which hook into IR assembly parsing in specific ways.
 pub trait OpAsmOpInterface: crate::Op {
     /// Get the special names to use when printing the results of this operation.
     ///
@@ -570,12 +593,12 @@ pub trait OpAsmOpInterface: crate::Op {
     /// For example, if you have an operation that has four results and you want to split these into
     /// three distinct groups you could do the following:
     ///
-    /// ```rust,ignore
+    /// ```text
     /// let results = self.results().all();
-    /// smallvec![
+    /// smallvec::smallvec![
     ///     (results[0], Some("first_result".into()),
     ///     (results[1], Some("middle_results".into()),
-    ///     (results[3], None), // use the default numbering
+    ///     (results[3], None /* use the default numbering */)
     /// ]
     /// ```
     ///
@@ -620,6 +643,10 @@ pub trait OpAsmOpInterface: crate::Op {
     }
 }
 
+/// Represents a value parsed from an argument list, with an associated type and attributes.
+///
+/// This is a richer version of [UnresolvedOperand], as most operands cannot have associated
+/// attributes.
 #[derive(Debug)]
 pub struct Argument {
     pub name: UnresolvedOperand,
@@ -635,6 +662,8 @@ impl Argument {
     }
 }
 
+/// Represents a value parsed from IR assembly that has not been resolved to a concrete [ValueRef]
+/// yet.
 #[derive(Copy, Clone)]
 pub struct UnresolvedOperand {
     pub loc: SourceSpan,
@@ -649,10 +678,5 @@ impl core::fmt::Debug for UnresolvedOperand {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct UnresolvedBlockOperand {
-    pub loc: SourceSpan,
-    pub name: BlockId,
-}
-
+/// A type alias for a vector of [NamedAttribute]
 pub type ParsedAttrs = SmallVec<[NamedAttribute; 1]>;
