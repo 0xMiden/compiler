@@ -1,12 +1,12 @@
 //! Counter contract test with no-auth authentication component
 
 use miden_client::{
-    Word,
-    account::component::BasicWallet,
+    account::component::{BasicWallet, InitStorageData},
     crypto::RpoRandomCoin,
     note::NoteTag,
     testing::{AccountState, Auth, MockChain, NoteBuilder},
     transaction::OutputNote,
+    Word,
 };
 use miden_core::{Felt, FieldElement};
 use miden_protocol::account::{
@@ -14,8 +14,8 @@ use miden_protocol::account::{
 };
 
 use super::helpers::{
-    NoteCreationConfig, assert_counter_storage,
-    build_existing_counter_account_builder_with_auth_package, create_note_from_package, execute_tx,
+    assert_counter_storage, build_existing_counter_account_builder_with_auth_package,
+    create_note_from_package, execute_tx, NoteCreationConfig,
 };
 use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 
@@ -29,11 +29,10 @@ use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 #[test]
 pub fn test_counter_contract_no_auth() {
     // Compile the contracts first (before creating any runtime)
-    let contract_package =
-        CustomComponentBuilder::with_package("../../examples/counter-contract").build();
+    let counter_component = CustomComponentBuilder::with_package("../../examples/counter-contract");
     let note_package = NoteBuilder::build_project("../../examples/counter-note");
     let no_auth_auth_component =
-        CustomComponentBuilder::with_package("../../examples/auth-component-no-auth").build();
+        CustomComponentBuilder::with_package("../../examples/auth-component-no-auth");
 
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
@@ -45,12 +44,29 @@ pub fn test_counter_contract_no_auth() {
     )];
 
     let mut builder = MockChain::builder();
+    let counter_component = {
+        let mut init_storage_data = InitStorageData::default();
+        init_storage_data
+            .insert_map_entry(counter_storage_slot.clone(), key, value)
+            .unwrap();
+        let counter_component = counter_component.with_init_storage_data(init_storage_data);
+        counter_component.build()
+    };
 
+    let no_auth_auth_component = no_auth_auth_component
+        .with_init_storage_data(InitStorageData::default())
+        .build();
+
+    let counter_account = builder.add_existing_account_from_components(
+        Auth::BasicAuth,
+        [BasicWallet.into(), counter_component.into()],
+    );
+    // contract package + counter storage slots. Done
     let counter_account = build_existing_counter_account_builder_with_auth_package(
-        contract_package.package,
+        contract_package.package, //listo
         no_auth_auth_component.package,
         vec![],
-        counter_storage_slots,
+        counter_storage_slots, //listo
         [0_u8; 32],
     )
     .build_existing()
