@@ -2,6 +2,7 @@
 //! [crate::CompilerTest] infrastructure.
 mod eval;
 mod initializer;
+mod memory;
 pub mod setup;
 
 use std::sync::Arc;
@@ -19,6 +20,7 @@ pub use self::{
         eval_link_output_with_advice_stack, eval_package, eval_package_with_advice_stack,
     },
     initializer::Initializer,
+    memory::read_rust_memory,
 };
 
 /// Creates an executor with standard library and base library loaded.
