@@ -51,10 +51,10 @@ fn word_to_u64s(word: Word) -> [u64; 4] {
 
 fn push_word_args(args: &mut Vec<Felt>, word: Word) {
     let [a, b, c, d] = word_components(word);
-    args.push(d);
-    args.push(c);
-    args.push(b);
     args.push(a);
+    args.push(b);
+    args.push(c);
+    args.push(d);
 }
 
 fn executor_with_std(args: Vec<Felt>) -> Executor {
@@ -130,8 +130,8 @@ fn test_smt_get_binding() {
     let advice_inputs = build_advice_inputs_for_smt(&smt);
 
     let mut args = Vec::new();
-    push_word_args(&mut args, root);
     push_word_args(&mut args, key);
+    push_word_args(&mut args, root);
 
     let mut exec = executor_with_std(args.clone());
     exec.with_dependencies(package.manifest.dependencies())
@@ -218,9 +218,9 @@ fn test_smt_set_binding() {
     let advice_inputs = build_advice_inputs_for_smt(&smt);
 
     let mut args = Vec::new();
-    push_word_args(&mut args, root);
-    push_word_args(&mut args, key);
     push_word_args(&mut args, new_value);
+    push_word_args(&mut args, key);
+    push_word_args(&mut args, root);
 
     let mut exec = executor_with_std(args.clone());
     exec.with_dependencies(package.manifest.dependencies())

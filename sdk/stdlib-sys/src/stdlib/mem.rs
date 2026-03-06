@@ -110,7 +110,7 @@ pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
         );
         buf.set_len(num_felts);
         let Result { r0, .. } = ret_area.assume_init();
-        (r0.reversed(), buf)
+        (r0, buf)
     }
 }
 
@@ -170,7 +170,7 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
         );
         buf.set_len(num_felts);
         let Result { r0, .. } = ret_area.assume_init();
-        (r0.reversed(), buf)
+        (r0, buf)
     }
 }
 
@@ -196,10 +196,10 @@ pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
         extern_pipe_preimage_to_memory(
             num_words,
             result_miden_ptr as *mut Felt,
-            commitment[3],
-            commitment[2],
-            commitment[1],
             commitment[0],
+            commitment[1],
+            commitment[2],
+            commitment[3],
         );
 
         // Set the length of the Vec to match what was loaded
