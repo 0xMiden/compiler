@@ -36,7 +36,6 @@ pub fn test_counter_contract() {
         .add_existing_account_from_components(
             Auth::BasicAuth,
             [BasicWallet.into(), contract_package.into()],
-            [],
         )
         .unwrap();
 
