@@ -34,13 +34,6 @@ impl From<DialectInfo> for ArithDialect {
     }
 }
 
-impl ArithDialect {
-    #[inline]
-    pub fn num_registered(&self) -> usize {
-        self.registered_ops().len()
-    }
-}
-
 impl Dialect for ArithDialect {
     #[inline]
     fn info(&self) -> &DialectInfo {

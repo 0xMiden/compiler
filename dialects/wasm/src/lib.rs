@@ -34,13 +34,6 @@ impl From<DialectInfo> for WasmDialect {
     }
 }
 
-impl WasmDialect {
-    #[inline]
-    pub fn num_registered(&self) -> usize {
-        self.registered_ops().len()
-    }
-}
-
 impl Dialect for WasmDialect {
     #[inline]
     fn info(&self) -> &DialectInfo {

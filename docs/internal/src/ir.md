@@ -643,7 +643,7 @@ use midenc_hir::{derive::{Dialect, DialectRegistration}, DialectInfo};
 // This would have been the default, but we're making it explicit here
 #[dialect(name = "my")]
 pub struct MyDialect {
-    #[info]
+    #[dialect(info)]
     info: DialectInfo,
 }
 ```

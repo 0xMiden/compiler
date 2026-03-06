@@ -19,13 +19,6 @@ impl From<DialectInfo> for TestDialect {
     }
 }
 
-impl TestDialect {
-    #[inline]
-    pub fn num_registered(&self) -> usize {
-        self.registered_ops().len()
-    }
-}
-
 impl Dialect for TestDialect {
     #[inline]
     fn info(&self) -> &DialectInfo {
@@ -113,25 +106,3 @@ impl Dialect for TestDialect {
         None
     }
 }
-
-/*
-impl DialectRegistration for TestDialect {
-    const NAMESPACE: &'static str = "test";
-
-    #[inline]
-    fn init(info: DialectInfo) -> Self {
-        Self { info }
-    }
-
-    fn register_operations(info: &mut DialectInfo) {
-        info.register_operation::<ops::Add>();
-        info.register_operation::<ops::Mul>();
-        info.register_operation::<ops::Shl>();
-        info.register_operation::<ops::Ret>();
-        info.register_operation::<ops::Constant>();
-        info.register_operation::<ops::Eq>();
-        info.register_operation::<ops::Neq>();
-        info.register_operation::<ops::Store>();
-    }
-}
- */

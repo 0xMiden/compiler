@@ -35,13 +35,6 @@ impl From<DialectInfo> for UndefinedBehaviorDialect {
     }
 }
 
-impl UndefinedBehaviorDialect {
-    #[inline]
-    pub fn num_registered(&self) -> usize {
-        self.registered_ops().len()
-    }
-}
-
 impl Dialect for UndefinedBehaviorDialect {
     #[inline]
     fn info(&self) -> &DialectInfo {
@@ -61,24 +54,5 @@ impl Dialect for UndefinedBehaviorDialect {
             return op_builder(poison_value).ok().map(|op| op.as_operation_ref());
         }
         None
-    }
-}
-
-#[cfg(false)]
-impl DialectRegistration for UndefinedBehaviorDialect {
-    const NAMESPACE: &'static str = "ub";
-
-    #[inline]
-    fn init(info: DialectInfo) -> Self {
-        Self { info }
-    }
-
-    fn register_operations(info: &mut DialectInfo) {
-        info.register_operation::<ops::Poison>();
-        info.register_operation::<ops::Unreachable>();
-    }
-
-    fn register_attributes(info: &mut DialectInfo) {
-        info.register_attribute::<attributes::PoisonAttr>();
     }
 }

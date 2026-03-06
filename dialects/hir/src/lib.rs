@@ -37,13 +37,6 @@ impl From<DialectInfo> for HirDialect {
     }
 }
 
-impl HirDialect {
-    #[inline]
-    pub fn num_registered(&self) -> usize {
-        self.registered_ops().len()
-    }
-}
-
 impl Dialect for HirDialect {
     #[inline]
     fn info(&self) -> &DialectInfo {
