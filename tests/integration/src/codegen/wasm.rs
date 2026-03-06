@@ -6,7 +6,6 @@ use midenc_hir::{
 use crate::testing::{compile_test_module, eval_package};
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/pull/986#discussion_r2859923681"]
 fn test_i32_extend8_s() {
     let span = SourceSpan::default();
     let signature = Signature::new([AbiParam::new(Type::I32)], [AbiParam::new(Type::I32)]);
