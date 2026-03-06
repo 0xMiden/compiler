@@ -17,7 +17,7 @@ struct AuthComponent {
     /// The account owner's public key (RPO-Falcon512 public key hash).
     #[storage(
         description = "owner public key",
-        type = "miden::standards::auth::falcon512_rpo::pub_key"
+        type = "miden::standards::auth::pub_key"
     )]
     owner_public_key: Storage<Word>,
 }
