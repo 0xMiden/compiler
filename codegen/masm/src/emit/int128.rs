@@ -234,8 +234,7 @@ impl OpEmitter<'_> {
             matches!(overflow, Overflow::Wrapping),
             "Only 128bit *wrapping* adds implemented as yet."
         );
-
-        self.raw_exec("::intrinsics::i128::add", span);
+        self.raw_exec("::miden::core::math::u128::wrapping_add", span);
     }
 
     /// Pops two i128 values off the stack, `b` and `a`, and performs `a - b`.
@@ -244,13 +243,12 @@ impl OpEmitter<'_> {
             matches!(overflow, Overflow::Wrapping),
             "Only 128bit *wrapping* subs implemented as yet."
         );
-
-        self.raw_exec("::intrinsics::i128::sub", span);
+        self.raw_exec("::miden::core::math::u128::wrapping_sub", span);
     }
 
     /// Pops two i128 values off the stack, `b` and `a`, and performs `a * b`.
     #[inline]
     pub fn mul_i128(&mut self, span: SourceSpan) {
-        self.raw_exec("::intrinsics::i128::mul", span);
+        self.raw_exec("::miden::core::math::u128::wrapping_mul", span);
     }
 }
