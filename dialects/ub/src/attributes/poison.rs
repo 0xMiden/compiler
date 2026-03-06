@@ -1,5 +1,6 @@
 use midenc_hir::{
-    AttrPrinter, Felt, Immediate, Type, derive::DialectAttribute, formatter, print::AsmPrinter,
+    AttrPrinter, Felt, Immediate, Type, attributes::AttrParser, derive::DialectAttribute,
+    formatter, print::AsmPrinter,
 };
 
 use crate::UndefinedBehaviorDialect;
@@ -52,5 +53,14 @@ impl formatter::PrettyPrint for PoisonAttr {
 impl AttrPrinter for PoisonAttr {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         printer.print_type(&self.value);
+    }
+}
+
+impl AttrParser for PoisonAttr {
+    fn parse(
+        parser: &mut dyn midenc_hir::parse::Parser<'_>,
+    ) -> midenc_hir::parse::ParseResult<midenc_hir::AttributeRef> {
+        let ty = parser.parse_type()?;
+        Ok(parser.context_rc().create_attribute::<PoisonAttr, _>(ty.into_inner()))
     }
 }
