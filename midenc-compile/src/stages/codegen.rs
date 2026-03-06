@@ -5,8 +5,8 @@ use miden_mast_package::Package;
 use midenc_codegen_masm::{
     self as masm, MasmComponent, ToMasmComponent,
     intrinsics::{
-        ADVICE_INTRINSICS_MODULE_NAME, CRYPTO_INTRINSICS_MODULE_NAME, I32_INTRINSICS_MODULE_NAME,
-        I64_INTRINSICS_MODULE_NAME, MEM_INTRINSICS_MODULE_NAME,
+        ADVICE_INTRINSICS_MODULE_NAME, I32_INTRINSICS_MODULE_NAME, I64_INTRINSICS_MODULE_NAME,
+        MEM_INTRINSICS_MODULE_NAME,
     },
 };
 use midenc_hir::{interner::Symbol, pass::AnalysisManager};
@@ -91,9 +91,6 @@ fn required_intrinsics_modules(session: &Session) -> impl IntoIterator<Item = Ar
             .map(Arc::from)
             .expect("undefined intrinsics module"),
         masm::intrinsics::load(I64_INTRINSICS_MODULE_NAME, session.source_manager.clone())
-            .map(Arc::from)
-            .expect("undefined intrinsics module"),
-        masm::intrinsics::load(CRYPTO_INTRINSICS_MODULE_NAME, session.source_manager.clone())
             .map(Arc::from)
             .expect("undefined intrinsics module"),
         masm::intrinsics::load(ADVICE_INTRINSICS_MODULE_NAME, session.source_manager.clone())
