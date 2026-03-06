@@ -1,3 +1,5 @@
+use alloc::format;
+
 use crate::{
     AsSymbolRef, Context, IdentAttr, OpParser, OpPrinter, Operation, PointerType, Report, Spanned,
     Symbol, SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
@@ -8,7 +10,7 @@ use crate::{
         attributes::{I32Attr, TypeAttr, VisibilityAttr},
     },
     effects::{AlwaysSpeculatable, ConditionallySpeculatable, MemoryEffectOpInterface, Pure},
-    parse::ParserExt,
+    parse::{ParserError, ParserExt},
     print::AsmPrinter,
     traits::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
@@ -128,6 +130,13 @@ impl OpPrinter for GlobalVariable {
         }
         printer.print_space();
         printer.print_region(&self.initializer());
+
+        if self.op.has_attributes() {
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
     }
 }
 
@@ -157,7 +166,7 @@ impl OpParser for GlobalVariable {
 
         let ty = parser.parse_colon_type()?;
         state.add_attribute(
-            "name",
+            "ty",
             parser.context_rc().create_attribute::<TypeAttr, _>(ty.into_inner()),
         );
 
@@ -167,6 +176,8 @@ impl OpParser for GlobalVariable {
         state
             .regions
             .push(initializer.unwrap_or_else(|| parser.context().create_region()));
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
         Ok(())
     }
@@ -213,6 +224,13 @@ impl OpPrinter for GlobalSymbol {
 
         *printer += const_text(" : ");
         printer.print_type(self.addr().ty());
+
+        if self.op.has_attributes() {
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
     }
 }
 
@@ -237,7 +255,18 @@ impl OpParser for GlobalSymbol {
         let offset = parser.context_rc().create_attribute::<I32Attr, _>(offset);
         state.add_attribute("offset", offset);
 
-        state.results.push(Type::Ptr(PointerType::new(Type::U8).into()));
+        let ty = parser.parse_colon_type()?;
+
+        if !ty.is_pointer() {
+            return Err(ParserError::InvalidAttributeValue {
+                span: ty.span(),
+                reason: format!("expected pointer type, got '{ty}'"),
+            });
+        }
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
+
+        state.results.push(ty.into_inner());
 
         Ok(())
     }

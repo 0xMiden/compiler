@@ -391,7 +391,7 @@ args = [
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit",
 ]
-dependencies = ["litcheck", "midenc", "cargo-miden"]
+dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt"]
 
 [tasks.lit]
 category = "Test"

@@ -1,13 +1,16 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, rc::Rc};
+use core::cell::RefCell;
 
 use crate::{
-    Attribute, AttributeRef, BlockArgument, BlockArgumentRef, BlockRef, FxHashMap, OpResult,
-    OperationName, OperationRef, SmallVec, SymbolMap, SymbolPath, SymbolTable, Type, ValueRef,
-    adt::SmallDenseMap, diagnostics::SourceSpan, interner,
+    Attribute, AttributeRef, BlockArgument, BlockArgumentRef, BlockRef, FxHashMap, Ident, OpResult,
+    OperationName, OperationRef, SmallVec, Symbol, SymbolMap, SymbolPath, SymbolTable, Type,
+    UnsafeIntrusiveEntityRef, ValueRef, adt::SmallDenseMap, diagnostics::SourceSpan,
+    dialects::builtin::attributes::SymbolRefAttr, interner, smallvec,
 };
 
 /// A map from a SymbolPath to a range of uses
-type SymbolUseMap = FxHashMap<SymbolPath, SmallVec<[SmallVec<[SourceSpan; 1]>; 2]>>;
+type SymbolUseMap =
+    Rc<RefCell<FxHashMap<SymbolPath, SmallVec<[UnsafeIntrusiveEntityRef<SymbolRefAttr>; 1]>>>>;
 
 /// This struct represents state from a parsed HIR textual format string.
 ///
@@ -46,8 +49,8 @@ pub struct AsmParserState {
     /// This is used when collecting symbol table uses during parsing.
     symbol_use_scopes: SmallVec<[SymbolUseMap; 1]>,
 
-    /// A symbol table containing all of the symbol table operations in the IR.
-    symbol_table: SymbolMap,
+    /// A global map of symbol users and the symbols they use
+    symbol_uses: FxHashMap<OperationRef, SmallVec<[UnsafeIntrusiveEntityRef<SymbolRefAttr>; 1]>>,
 }
 
 impl AsmParserState {
@@ -59,15 +62,14 @@ impl AsmParserState {
         // If the top-level operation is a symbol table, push a new symbol scope.
         let partial = self.partial_operations.last().unwrap();
         if partial.is_symbol_table() {
-            // TODO: Do we need to make this Rc<RefCell<>>?
-            self.symbol_use_scopes.push(partial.symbol_table.clone());
+            self.symbol_use_scopes.push(partial.symbol_uses.clone());
         }
     }
 
     /// Finalize any in-progress parser state under the given top-level operation.
     pub fn finalize(&mut self, top_level_op: OperationRef) {
         let PartialOpDef {
-            symbol_table,
+            symbol_uses: symbol_table,
             is_symbol_table,
         } = self
             .partial_operations
@@ -90,13 +92,13 @@ impl AsmParserState {
     /// Finalize the most recently started operation definition.
     pub fn finalize_operation_definition(
         &mut self,
-        op: OperationRef,
+        mut op: OperationRef,
         at: SourceSpan,
         end: SourceSpan,
         result_groups: &[(usize, SourceSpan)],
     ) {
         let PartialOpDef {
-            symbol_table,
+            symbol_uses,
             is_symbol_table,
         } = self
             .partial_operations
@@ -114,14 +116,29 @@ impl AsmParserState {
 
         // If this operation is a symbol table, resolve any symbol uses.
         if is_symbol_table {
-            self.symbol_table_operations.push((op, symbol_table));
+            // Populate symbol table first
+            {
+                let mut op = op.borrow_mut();
+                let symbol_table = SymbolMap::build(&op);
+                if let Some(op_symbol_table) = op.as_trait_mut::<dyn SymbolTable>() {
+                    **op_symbol_table.symbol_manager_mut().symbols_mut() = symbol_table;
+                }
+            }
+            self.symbol_table_operations.push((op, symbol_uses));
+        } else {
+            // TODO: Register uses here to be resolved at the end
+            let mut symbol_uses = symbol_uses.borrow_mut();
+            self.symbol_uses
+                .entry(op)
+                .or_default()
+                .extend(symbol_uses.drain().flat_map(|(_, uses)| uses));
         }
     }
 
     /// Start a definition for a region nested under the current operation.
     pub fn start_region_definition(&mut self) {
         let PartialOpDef {
-            symbol_table,
+            symbol_uses: symbol_table,
             is_symbol_table,
         } = self
             .partial_operations
@@ -131,14 +148,14 @@ impl AsmParserState {
         // If the parent operation of this region is a symbol table, we also push a new symbol
         // scope.
         if *is_symbol_table {
-            self.symbol_use_scopes.push(symbol_table.clone());
+            self.symbol_use_scopes.push(Rc::clone(symbol_table));
         }
     }
 
     /// Finalize the most recently started region definition.
     pub fn finalize_region_definition(&mut self) {
         let PartialOpDef {
-            symbol_table,
+            symbol_uses: symbol_table,
             is_symbol_table,
         } = self
             .partial_operations
@@ -299,31 +316,25 @@ impl AsmParserState {
         self.type_aliases[*index].definition.uses.extend_from_slice(locations);
     }
 
-    /// Add source uses for all the references nested under `refAttr`.
-    ///
-    /// The provided `locations` should match 1-1 with the number of references in `refAttr`, i.e.:
-    ///   nestedReferences.size() + /*leafReference=*/1 == refLocations.size()
-    pub fn add_symbol_uses(&mut self, symbol: &SymbolPath, locations: &[SourceSpan]) {
+    /// Register that a symbol `path` was used by the current operation via `attr` at `loc`
+    pub fn add_symbol_use(
+        &mut self,
+        path: &SymbolPath,
+        attr: UnsafeIntrusiveEntityRef<SymbolRefAttr>,
+        _loc: SourceSpan,
+    ) {
         // Ignore this symbol if no scopes are active.
         if self.symbol_use_scopes.is_empty() {
             return;
         }
 
-        let nested_references = symbol
-            .components()
-            .filter(|c| !matches!(c, crate::SymbolNameComponent::Root))
-            .count();
-        assert_eq!(
-            nested_references,
-            locations.len(),
-            "expected the same number of references as provided locations"
-        );
         self.symbol_use_scopes
             .last_mut()
             .unwrap()
-            .get_mut(symbol)
-            .unwrap()
-            .push(SmallVec::from_slice(locations));
+            .borrow_mut()
+            .entry(path.clone())
+            .or_default()
+            .push(attr);
     }
 
     /// Refine `old` to `new`.
@@ -383,21 +394,88 @@ impl AsmParserState {
     /// Resolve any symbol table uses in the IR
     pub fn resolve_symbol_uses(&mut self) {
         let mut symbol_ops = SmallVec::<[OperationRef; 4]>::new_const();
+        let root_symbol_table = self.symbol_table_operations.last().map(|(op, _)| *op);
         for (op, symbol_uses) in self.symbol_table_operations.iter() {
-            let op = op.borrow();
+            let operation = op.borrow();
+            let context = operation.context_rc();
+            let root_operation = root_symbol_table.unwrap();
+            let symbol_uses = symbol_uses.borrow();
             for (path, uses) in symbol_uses.iter() {
-                symbol_ops.clear();
-                if self.symbol_table.resolve_all_in(&op, path, &mut symbol_ops).is_none() {
+                let Some(symbol_op) =
+                    (if path.is_absolute() && !OperationRef::ptr_eq(op, &root_operation) {
+                        let mut rst = root_operation.borrow();
+                        let symbol_table = rst.as_symbol_table().unwrap();
+                        symbol_table.symbol_manager().lookup_symbol_ref(path)
+                    } else {
+                        let symbol_table = operation.as_symbol_table().unwrap();
+                        symbol_table.symbol_manager().lookup_symbol_ref(path)
+                    })
+                else {
                     continue;
-                }
+                };
 
-                for use_range in uses.iter() {
-                    for (used, user) in symbol_ops.iter().zip(use_range) {
-                        if let Some(index) = self.operation_to_idx.get(used).copied() {
-                            self.operations[index].symbol_uses.push(*user);
-                        }
+                for mut user in uses.iter().copied() {
+                    let symbol_use = context.alloc_tracked(crate::SymbolUse {
+                        owner: *op,
+                        attr: user,
+                    });
+                    user.borrow_mut().set_user(symbol_use);
+                    if let Some(index) = self.operation_to_idx.get(&symbol_op).copied() {
+                        self.operations[index].symbol_uses.push(symbol_use);
                     }
                 }
+            }
+        }
+
+        for (user, uses) in self.symbol_uses.drain() {
+            let (context, nearest_symbol_table) = {
+                let user_op = user.borrow();
+                let context = user_op.context_rc();
+                let symbol_table = match user_op.nearest_symbol_table() {
+                    Some(symbol_table) => symbol_table,
+                    None => {
+                        if user_op.implements::<dyn SymbolTable>() {
+                            user
+                        } else {
+                            continue;
+                        }
+                    }
+                };
+                (context, symbol_table)
+            };
+            for mut using_attr in uses {
+                let path = using_attr.borrow().path().clone();
+                let symbol_table = nearest_symbol_table.borrow();
+                let Some(resolved) = symbol_table
+                    .as_symbol_table()
+                    .unwrap()
+                    .symbol_manager()
+                    .lookup_symbol_ref(&path)
+                else {
+                    continue;
+                };
+
+                let symbol_use = context.alloc_tracked(crate::SymbolUse {
+                    owner: user,
+                    attr: using_attr,
+                });
+                using_attr.borrow_mut().set_user(symbol_use);
+                if let Some(index) = self.operation_to_idx.get(&resolved).copied() {
+                    self.operations[index].symbol_uses.push(symbol_use);
+                }
+            }
+        }
+
+        for definition in self.operations.iter() {
+            if definition.symbol_uses.is_empty() {
+                continue;
+            }
+
+            let mut op = definition.op;
+            let mut op_mut = op.borrow_mut();
+            let mut symbol = op_mut.as_trait_mut::<dyn Symbol>().unwrap();
+            for user in definition.symbol_uses.iter().copied() {
+                symbol.insert_use(user);
             }
         }
     }
@@ -405,7 +483,7 @@ impl AsmParserState {
 
 struct PartialOpDef {
     /// If this operation is a symbol table, this map contains symbol uses within the operation
-    symbol_table: SymbolUseMap,
+    symbol_uses: SymbolUseMap,
     is_symbol_table: bool,
 }
 
@@ -413,7 +491,7 @@ impl PartialOpDef {
     pub fn new(name: &OperationName) -> Self {
         let is_symbol_table = name.implements::<dyn SymbolTable>();
         Self {
-            symbol_table: Default::default(),
+            symbol_uses: Default::default(),
             is_symbol_table,
         }
     }
@@ -455,7 +533,7 @@ pub struct OperationDefinition {
     /// Source definitions for any result groups of this operation
     pub result_groups: SmallVec<[ResultGroupDefinition; 1]>,
     /// The uses of this operation as a symbol, if it is a symbol operation
-    pub symbol_uses: SmallVec<[SourceSpan; 1]>,
+    pub symbol_uses: SmallVec<[crate::SymbolUseRef; 1]>,
 }
 
 impl OperationDefinition {

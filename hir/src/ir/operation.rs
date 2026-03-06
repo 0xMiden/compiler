@@ -678,31 +678,36 @@ impl Operation {
             "a symbol cannot use itself, except via nested operations"
         );
 
-        // Track the usage of `symbol` by `self`
-        let user = self.context().alloc_tracked(SymbolUse {
-            owner: self.as_operation_ref(),
-            attr: attr_name,
-        });
-
         // Store the underlying attribute value
-        if self.has_property(attr_name) {
+        let owner = self.as_operation_ref();
+        let context = self.context_rc();
+        let user = if self.has_property(attr_name) {
             let mut prop = self.get_property_mut(attr_name);
-            let attr = prop.downcast_mut::<SymbolRefAttr>().unwrap();
+            let prop = prop.downcast_mut::<SymbolRefAttr>().unwrap();
+            let attr = unsafe { UnsafeIntrusiveEntityRef::from_raw(prop) };
+
+            // Track the usage of `symbol` by `self`
+            let user = context.alloc_tracked(SymbolUse { owner, attr });
             let symbol = symbol.borrow();
-            attr.set_user(user);
-            attr.set_path(symbol.path());
+            prop.set_user(user);
+            prop.set_path(symbol.path());
+            user
         } else if self.has_attribute(attr_name) {
             let mut attr = self.get_typed_attribute::<SymbolRefAttr>(attr_name).unwrap();
+            let user = context.alloc_tracked(SymbolUse { owner, attr });
             let mut attr = attr.borrow_mut();
             let symbol = symbol.borrow();
             attr.set_user(user);
             attr.set_path(symbol.path());
+            user
         } else {
             let path = symbol.borrow().path();
-            let symbol_ref = crate::dialects::builtin::attributes::SymbolRef::new(path, user);
-            let attr = self.context_rc().create_attribute::<SymbolRefAttr, _>(symbol_ref);
-            self.set_attribute(attr_name, attr.as_attribute_ref());
-        }
+            let symbol_ref = crate::dialects::builtin::attributes::SymbolRef::new(path, None);
+            let mut attr = context.create_attribute::<SymbolRefAttr, _>(symbol_ref);
+            let user = context.alloc_tracked(SymbolUse { owner, attr });
+            attr.borrow_mut().set_user(user);
+            user
+        };
 
         symbol.borrow_mut().insert_use(user);
     }
@@ -732,18 +737,20 @@ impl Operation {
         );
 
         // Track the usage of `symbol` by `self`
-        let user = self.context().alloc_tracked(SymbolUse {
-            owner: self.as_operation_ref(),
-            attr: attr_name,
-        });
+        let context = self.context_rc();
+        let owner = self.as_operation_ref();
+        let (attr, user) = {
+            let symbol = symbol.borrow();
+            let mut attr = context.create_attribute::<SymbolRefAttr, _>(
+                crate::dialects::builtin::attributes::SymbolRef::new(symbol.path(), None),
+            );
+
+            let user = context.alloc_tracked(SymbolUse { owner, attr });
+            attr.borrow_mut().set_user(user);
+            (attr, user)
+        };
 
         // Store the underlying attribute value
-        let attr = {
-            let symbol = symbol.borrow();
-            self.context_rc().create_attribute::<SymbolRefAttr, _>(
-                crate::dialects::builtin::attributes::SymbolRef::new(symbol.path(), user),
-            )
-        };
         self.set_property(attr_name, attr)
             .expect("not a valid value for this operation property");
         symbol.borrow_mut().insert_use(user);

@@ -164,18 +164,20 @@ pub trait Symbol: Usable<Use = SymbolUse> + 'static {
     /// Attempt to replace all uses of this symbol nested within `from`, with the provided replacement
     fn replace_all_uses(
         &mut self,
-        replacement: SymbolRef,
+        mut replacement: SymbolRef,
         from: OperationRef,
     ) -> Result<(), Report> {
+        let path = replacement.borrow().path();
         for user in self.symbol_uses_in(from) {
-            let SymbolUse { mut owner, attr } = *user.borrow();
-            let mut owner = owner.borrow_mut();
+            let SymbolUse { mut attr, .. } = *user.borrow();
+            //let mut owner = owner.borrow_mut();
             // Unlink previously used symbol
             unsafe {
                 self.uses_mut().cursor_mut_from_ptr(user).remove();
             }
             // Link replacement symbol
-            owner.set_symbol_attribute(attr, replacement);
+            attr.borrow_mut().set_path(path.clone());
+            replacement.borrow_mut().uses_mut().push_back(user);
         }
 
         Ok(())

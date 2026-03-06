@@ -287,18 +287,18 @@ fn parse_anchored_source(
     let mut parser = DefaultParser::new(ParserState::new(config, token_stream));
     let span = parser.current_location();
     let world = parser.builder_mut().create::<World, ()>(span)()?;
+    let mut asm_state = Box::<AsmParserState>::default();
+    {
+        asm_state.initialize(world.as_operation_ref());
+        parser.state_mut().asm_state = Some(asm_state);
+    }
     let mut operation_parser = operation::OperationParser::new(parser, world);
     let op = operation_parser
         .parse_operation()
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
+    operation_parser.finalize()?;
 
-    let should_verify = operation_parser.state().config.should_verify_after_parse();
     match anchor {
-        None if should_verify => {
-            let operation = op.borrow();
-            operation.recursively_verify()?;
-            Ok(op)
-        }
         None => Ok(op),
         Some(anchor) => {
             let operation = op.borrow();
@@ -307,10 +307,6 @@ fn parse_anchored_source(
                     "expected operation '{anchor}', got '{}'",
                     operation.name()
                 )));
-            }
-
-            if should_verify {
-                operation.recursively_verify()?;
             }
 
             Ok(op)
@@ -335,9 +331,6 @@ fn parse_source<T: OpParser + OpRegistration>(
 
     let op = op.borrow();
     if op.is::<T>() {
-        if operation_parser.state().config.should_verify_after_parse() {
-            op.recursively_verify()?;
-        }
         // We know this is safe because the underlying operation was allocated as a T
         Ok(unsafe { UnsafeIntrusiveEntityRef::from_raw(op.container().cast()) })
     } else {

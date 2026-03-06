@@ -3,7 +3,6 @@ use smallvec::SmallVec;
 use super::{Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolRef, generate_symbol_name};
 use crate::{
     FxHashMap, Op, Operation, OperationRef, ProgramPoint, Report, UnsafeIntrusiveEntityRef,
-    dialects::builtin::attributes::SymbolRefAttr,
     traits::{GraphRegionNoTerminator, NoTerminator, Terminator},
 };
 
@@ -499,6 +498,10 @@ impl<'a> SymbolManagerMut<'a> {
         }
     }
 
+    pub(crate) fn symbols_mut<'b: 'a, 'this: 'b>(&'this mut self) -> &'this mut SymbolsMut<'b> {
+        &mut self.symbols
+    }
+
     /// Returns an immutable reference to the underlying symbol table [Operation]
     ///
     /// NOTE: This requires a mutable reference to `self`, because the underlying [Operation]
@@ -702,12 +705,8 @@ impl<'a> SymbolManagerMut<'a> {
         while let Some(user) = users.as_pointer() {
             users.move_next();
 
-            let user = user.borrow();
-            let user_op = user.owner.borrow();
-            let mut symbol_name_attr = user_op
-                .get_typed_attribute::<SymbolRefAttr>(user.attr)
-                .expect("invalid symbol use");
-            symbol_name_attr.borrow_mut().path_mut().set_name(to);
+            let mut attr = user.borrow().attr;
+            attr.borrow_mut().path_mut().set_name(to);
         }
 
         Ok(())

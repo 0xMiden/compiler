@@ -18,32 +18,25 @@ pub struct SymbolUse {
     /// The user of the symbol
     pub owner: OperationRef,
     /// The symbol attribute of the op that stores the symbol
-    pub attr: crate::interner::Symbol,
+    pub attr: UnsafeIntrusiveEntityRef<SymbolRefAttr>,
 }
+
 impl SymbolUse {
     #[inline]
-    pub fn new(owner: OperationRef, symbol: crate::interner::Symbol) -> Self {
-        Self {
-            owner,
-            attr: symbol,
-        }
+    pub fn new(owner: OperationRef, attr: UnsafeIntrusiveEntityRef<SymbolRefAttr>) -> Self {
+        Self { owner, attr }
     }
 
     pub fn symbol(&self) -> UnsafeIntrusiveEntityRef<SymbolRefAttr> {
-        self.owner
-            .borrow()
-            .get_typed_attribute::<SymbolRefAttr>(self.attr)
-            .expect("expected symbol")
+        self.attr
     }
 }
+
 impl fmt::Debug for SymbolUse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let op = self.owner.borrow();
-        let value = op.get_typed_attribute::<SymbolRefAttr>(self.attr);
-        let value = value.as_ref().map(|v| v.borrow());
+        let value = self.attr.borrow();
         f.debug_struct("SymbolUse")
-            .field("attr", &self.attr)
-            .field("symbol", &value.as_ref().map(|value| value.path()))
+            .field("symbol", &value.path())
             .finish_non_exhaustive()
     }
 }

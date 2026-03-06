@@ -259,7 +259,7 @@ where
 
         // Verify that the parsed operations are valid.
         if self.parser.state().config.should_verify_after_parse() {
-            self.top_level.borrow().as_operation().verify()?;
+            self.top_level.borrow().as_operation().recursively_verify()?;
         }
 
         // If we are populating the parser state, finalize the top-level operation.

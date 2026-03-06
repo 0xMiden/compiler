@@ -6,10 +6,10 @@ use pretty_assertions::assert_eq;
 
 use crate::{
     BuilderExt, CallConv, Context, FunctionType, OpParser, OpRegistration, OperationRef, Symbol,
-    Type, UnsafeIntrusiveEntityRef, ValueRef, Visibility,
-    diagnostics::{SourceSpan, Uri},
+    SymbolTable, Type, UnsafeIntrusiveEntityRef, ValueRef, Visibility,
+    diagnostics::{Report, SourceSpan, Uri},
     dialects::builtin::{
-        BuiltinOpBuilder, Function, Ret, UnrealizedConversionCast, WorldRef,
+        BuiltinOpBuilder, Function, Module, Ret, UnrealizedConversionCast, WorldRef,
         attributes::{AbiParam, Signature},
     },
     parse::{self, ParseResult, ParserConfig},
@@ -65,6 +65,40 @@ fn parse_simple_function_generic() -> ParseResult {
     );
     assert_eq!(entrypoint.num_locals(), 0);
     assert_eq!(entrypoint.body().entry().body().len(), 1);
+
+    Ok(())
+}
+
+#[test]
+fn parse_module_with_intra_function_symbol_references() -> Result<(), Report> {
+    let mut test = ParserTest::default();
+
+    let source = "\
+    builtin.module public @test {
+        builtin.global_variable public @var : i32;
+
+        builtin.function public extern(\"C\") @entrypoint(%a: i32) -> ptr<u8, byte> {
+            %ptr = builtin.global_symbol ::@test::@var+8 : ptr<u8, byte>;
+            builtin.ret %ptr : (ptr<u8, byte>);
+        };
+    };";
+
+    let parsed = test.parse_any("parse_module_with_intra_function_symbol_refs.hir", source)?;
+    let parsed = parsed.borrow();
+    let module = parsed.downcast_ref::<Module>().unwrap();
+
+    assert_eq!(module.get_name().as_str(), "test");
+    let symbol_manager = module.symbol_manager();
+    assert_eq!(symbol_manager.symbols().symbols().count(), 2);
+    let var = symbol_manager
+        .lookup_op("var")
+        .expect("'var' was not registered in symbol table after parsing");
+    let entrypoint = symbol_manager
+        .lookup_op("entrypoint")
+        .expect("'entrypoint' was not registered in symbol table after parsing");
+    let var = var.borrow();
+    let var_uses = var.as_symbol().unwrap().iter_uses().count();
+    assert_eq!(var_uses, 1);
 
     Ok(())
 }
@@ -141,5 +175,10 @@ impl ParserTest {
     ) -> ParseResult<UnsafeIntrusiveEntityRef<T>> {
         let config = ParserConfig::new(self.test.context_rc());
         parse::parse::<T>(config, Uri::new(name), source)
+    }
+
+    pub fn parse_any(&self, name: &str, source: &str) -> Result<OperationRef, Report> {
+        let config = ParserConfig::new(self.test.context_rc());
+        parse::parse_any(config, Uri::new(name), source)
     }
 }

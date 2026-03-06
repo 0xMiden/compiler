@@ -1,11 +1,8 @@
-use alloc::format;
 use core::fmt;
 
-use smallvec::SmallVec;
-
 use crate::{
-    AttrPrinter, SymbolNameComponent, SymbolPath, SymbolUseRef, attributes::AttrParser,
-    derive::DialectAttribute, diagnostics::SourceSpan, dialects::builtin::BuiltinDialect,
+    AttrPrinter, AttributeRef, SymbolNameComponent, SymbolPath, SymbolUseRef,
+    attributes::AttrParser, derive::DialectAttribute, dialects::builtin::BuiltinDialect,
     print::AsmPrinter,
 };
 
@@ -15,17 +12,14 @@ pub struct SymbolRef {
     /// The referenced path
     path: SymbolPath,
     /// The SymbolUse reference, established when we've linked the referenced operation to this use
-    ///
-    /// This is guaranteed to be a valid reference when attached to an operation that has been
-    /// built - otherwise it is possibly dangling.
-    user: SymbolUseRef,
+    user: Option<SymbolUseRef>,
 }
 
 impl Default for SymbolRef {
     fn default() -> Self {
         Self {
             path: SymbolPath::new([SymbolNameComponent::Root]).unwrap(),
-            user: SymbolUseRef::dangling(),
+            user: None,
         }
     }
 }
@@ -43,7 +37,7 @@ impl AsMut<SymbolPath> for SymbolRef {
 }
 
 impl SymbolRef {
-    pub const fn new(path: SymbolPath, user: SymbolUseRef) -> Self {
+    pub const fn new(path: SymbolPath, user: Option<SymbolUseRef>) -> Self {
         Self { path, user }
     }
 
@@ -63,16 +57,16 @@ impl SymbolRef {
     }
 
     #[inline(always)]
-    pub const fn user(&self) -> SymbolUseRef {
-        self.user
+    pub fn user(&self) -> SymbolUseRef {
+        self.user.expect("user has not been initialized")
     }
 
     pub fn set_user(&mut self, user: SymbolUseRef) {
         assert!(
-            !self.user.is_linked(),
+            self.user.is_none_or(|user| !user.is_linked()),
             "attempted to replace symbol use without unlinking the previously used symbol first"
         );
-        self.user = user;
+        self.user = Some(user);
     }
 }
 
@@ -100,7 +94,7 @@ impl SymbolRefAttr {
     }
 
     #[inline(always)]
-    pub const fn user(&self) -> SymbolUseRef {
+    pub fn user(&self) -> SymbolUseRef {
         self.value.user()
     }
 
@@ -119,41 +113,6 @@ impl AttrParser for SymbolRefAttr {
     fn parse(
         parser: &mut dyn crate::parse::Parser<'_>,
     ) -> crate::parse::ParseResult<crate::AttributeRef> {
-        use crate::{
-            SymbolNameComponent,
-            parse::{ParserError, Token},
-        };
-
-        let start = parser.token_stream().current_span();
-        let is_absolute = parser.token_stream_mut().next_if_eq(Token::ColonColon)?;
-
-        let mut components = SmallVec::<[SymbolNameComponent; 2]>::default();
-        if is_absolute {
-            components.push(SymbolNameComponent::Root);
-        }
-        loop {
-            let component = parser.parse_symbol_name()?;
-            if parser.token_stream_mut().next_if_eq(Token::ColonColon)? {
-                components.push(SymbolNameComponent::Component(component.as_symbol()));
-            } else {
-                components.push(SymbolNameComponent::Leaf(component.as_symbol()));
-                break;
-            }
-        }
-
-        let end = parser.token_stream().current_position();
-        let span = SourceSpan::new(start.source_id(), start.start()..end);
-        let path =
-            SymbolPath::new(components).map_err(|err| ParserError::InvalidAttributeValue {
-                span,
-                reason: format!("invalid symbol reference: {err}"),
-            })?;
-
-        let attr = parser.context_rc().create_attribute::<SymbolRefAttr, _>(SymbolRef {
-            path,
-            user: SymbolUseRef::dangling(),
-        });
-
-        Ok(attr)
+        parser.parse_symbol_ref().map(|spanned| spanned.into_inner() as AttributeRef)
     }
 }

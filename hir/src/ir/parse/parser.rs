@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     ArrayType, AttributeRef, AttributeRegistration, FunctionType, ImmediateAttr, PointerType,
     StructType, SymbolNameComponent, SymbolPath, SymbolUse,
-    diagnostics::{LabeledSpan, RelatedError, Severity, miette::diagnostic},
+    diagnostics::{LabeledSpan, RelatedError, Report, Severity, miette::diagnostic},
     dialects::builtin::{
         self,
         attributes::{
@@ -337,6 +337,9 @@ pub trait Parser<'input> {
     }
 
     /// Parse an arbitrary attribute whose value type is `A`
+    ///
+    /// If `name` is provided, it will be used for maintaining symbol references if the attribute
+    /// is a symbol reference.
     fn parse_attribute(&mut self, ty: &Type) -> ParseResult<Span<AttributeRef>> {
         if self.token_stream_mut().is_next(|tok| matches!(tok, Token::HashIdent(_))) {
             return self.parse_extended_attribute(ty);
@@ -595,81 +598,95 @@ pub trait Parser<'input> {
         }
     }
 
-    /// Parse an @-identifier and return it (without the '@') as an [Ident]
-    fn parse_symbol_name(&mut self) -> ParseResult<Ident> {
-        let (span, sym) = self
-            .token_stream_mut()
+    fn parse_at_identifier(&mut self) -> ParseResult<Ident> {
+        self.token_stream_mut()
             .expect_map("'@'-identifier", |tok| match tok {
                 Token::AtIdent(s) => Some(Symbol::intern(s)),
                 _ => None,
-            })?
-            .into_parts();
-        Ok(Ident::new(sym, span))
-    }
-
-    /// Parse an @-identifier and return it (without the '@') as an [Ident]
-    fn parse_optional_symbol_name(&mut self) -> ParseResult<Option<Ident>> {
-        Ok(self
-            .token_stream_mut()
-            .next_if_map(|tok| match tok {
-                Token::AtIdent(s) => Some(Symbol::intern(s)),
-                _ => None,
-            })?
+            })
             .map(|spanned| {
                 let (span, sym) = spanned.into_parts();
                 Ident::new(sym, span)
-            }))
+            })
     }
 
-    fn parse_symbol_ref(&mut self) -> ParseResult<Span<UnsafeIntrusiveEntityRef<SymbolRefAttr>>> {
-        let mut components = SmallVec::<[SymbolNameComponent; 2]>::new_const();
+    fn parse_optional_at_identifier(&mut self) -> ParseResult<Option<Ident>> {
+        self.token_stream_mut()
+            .next_if_map(|tok| match tok {
+                Token::AtIdent(s) => Some(Symbol::intern(s)),
+                _ => None,
+            })
+            .map(|spanned| {
+                spanned.map(|spanned| {
+                    let (span, sym) = spanned.into_parts();
+                    Ident::new(sym, span)
+                })
+            })
+    }
+
+    /// Parse an @-identifier and return it (without the '@') as an [Ident]
+    ///
+    /// If `context` is provided with the name of an attribute, then the use of this symbol will
+    /// be tracked for the current operation.
+    fn parse_symbol_name(&mut self) -> ParseResult<Ident> {
+        self.parse_at_identifier()
+    }
+
+    /// Parse an @-identifier and return it (without the '@') as an [Ident]
+    ///
+    /// If `context` is provided with the name of an attribute, then the use of this symbol will
+    /// be tracked for the current operation.
+    fn parse_optional_symbol_name(&mut self) -> ParseResult<Option<Ident>> {
+        self.parse_optional_at_identifier()
+    }
+
+    /// Parse a symbol path.
+    ///
+    /// If `context` is provided with the name of an attribute, then the use of this symbol will
+    /// be tracked for the current operation.
+    fn parse_symbol_path(&mut self) -> ParseResult<Span<SymbolPath>> {
         let start = self.current_location();
+        let mut components = SmallVec::<[SymbolNameComponent; 2]>::new_const();
         if self.token_stream_mut().next_if_eq(Token::ColonColon)? {
             components.push(SymbolNameComponent::Root);
         }
-        while let Some(component) = self.token_stream_mut().next_if_map(|tok| match tok {
-            Token::AtIdent(name) => Some(interner::Symbol::intern(name)),
-            _ => None,
-        })? {
-            if !self.token_stream_mut().next_if_eq(Token::ColonColon)? {
-                components.push(SymbolNameComponent::Leaf(component.into_inner()));
+        loop {
+            let component = self.parse_at_identifier()?;
+            if self.token_stream_mut().next_if_eq(Token::ColonColon)? {
+                components.push(SymbolNameComponent::Component(component.name));
+            } else {
+                components.push(SymbolNameComponent::Leaf(component.name));
                 break;
             }
-            components.push(SymbolNameComponent::Component(component.into_inner()));
         }
         let end = self.token_stream().current_position();
         let span = SourceSpan::new(start.source_id(), start.start()..end);
 
-        if components.is_empty() {
-            match self.token_stream_mut().peek()? {
-                Some((start, tok, end)) => Err(ParserError::UnexpectedToken {
-                    span: SourceSpan::new(self.source_id(), start..end),
-                    token: tok.to_string(),
-                    expected: Some("symbol reference".to_string()),
-                }),
-                None => Err(ParserError::UnexpectedEof {
-                    expected: vec!["symbol reference".to_string()],
-                }),
-            }
-        } else if matches!(components.as_slice(), [SymbolNameComponent::Root]) {
-            Err(ParserError::Report(RelatedError::new(Report::from(diagnostic!(
+        let path = SymbolPath::new(components).map_err(|err| {
+            ParserError::Report(RelatedError::new(Report::from(diagnostic!(
                 severity = Severity::Error,
-                labels = vec![LabeledSpan::at(span, "expected at least one non-root component")],
-                "invalid symbol reference"
-            )))))
-        } else {
-            let path = SymbolPath::new(components).map_err(|err| {
-                ParserError::Report(RelatedError::new(Report::from(diagnostic!(
-                    severity = Severity::Error,
-                    labels = vec![LabeledSpan::at(span, err.to_string())],
-                    "invalid symbol reference"
-                ))))
-            })?;
-            let attr = self.context_rc().create_attribute::<SymbolRefAttr, _>(
-                builtin::attributes::SymbolRef::new(path, UnsafeIntrusiveEntityRef::dangling()),
-            );
-            Ok(Span::new(span, attr))
+                labels = vec![LabeledSpan::at(span, err.to_string())],
+                "invalid symbol path"
+            ))))
+        })?;
+
+        Ok(Span::new(span, path))
+    }
+
+    /// Parse a symbol reference.
+    ///
+    /// If `context` is provided with the name of an attribute, then the use of this symbol will
+    /// be tracked for the current operation.
+    fn parse_symbol_ref(&mut self) -> ParseResult<Span<UnsafeIntrusiveEntityRef<SymbolRefAttr>>> {
+        let (span, path) = self.parse_symbol_path()?.into_parts();
+
+        let attr = self.context_rc().create_attribute::<SymbolRefAttr, _>(
+            builtin::attributes::SymbolRef::new(path.clone(), None),
+        );
+        if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
+            asm_state.add_symbol_use(&path, attr, span);
         }
+        Ok(Span::new(span, attr))
     }
 
     /// Parse a type.
@@ -1405,6 +1422,9 @@ pub trait ParserExt<'input>: Parser<'input> {
     }
 
     /// Parse an optional attribute that is demarcated by a specific token.
+    ///
+    /// If `name` is provided, it will be used to maintain symbol references of the parsed
+    /// attribute, if relevant.
     fn parse_optional_attribute_with_token<T>(
         &mut self,
         token: Token<'_>,

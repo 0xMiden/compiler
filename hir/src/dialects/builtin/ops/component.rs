@@ -131,7 +131,6 @@ impl OpParser for Component {
             .add_attribute("visibility", context.create_attribute::<VisibilityAttr, _>(visibility));
 
         let name = parser.parse_symbol_name()?;
-
         let name_span = name.span;
         let component_id = name.as_str().parse::<ComponentId>().map_err(|err| {
             ParserError::Report(RelatedError::new(Report::from(diagnostic!(
