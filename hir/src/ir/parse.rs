@@ -174,7 +174,7 @@ pub fn parse_generic(
     config: ParserConfig,
     uri: Uri,
     source: impl Into<String>,
-) -> ParseResult<WorldRef> {
+) -> Result<WorldRef, Report> {
     use midenc_session::diagnostics::SourceLanguage;
     let source_manager = &config.context.session().source_manager;
     let source_file = source_manager.load(SourceLanguage::Other("hir"), uri, source.into());
@@ -185,7 +185,7 @@ pub fn parse_generic(
 pub fn parse_file_generic(
     config: ParserConfig,
     path: impl AsRef<std::path::Path>,
-) -> ParseResult<WorldRef> {
+) -> Result<WorldRef, Report> {
     let source_manager = &config.context.session().source_manager;
     let source_file = source_manager.load_file(path.as_ref()).map_err(Report::msg)?;
     parse_source_generic(config, source_file)
@@ -198,22 +198,25 @@ pub fn parse_file_generic(
 fn parse_source_generic(
     config: ParserConfig,
     source_file: Arc<SourceFile>,
-) -> ParseResult<WorldRef> {
+) -> Result<WorldRef, Report> {
     let source = source_file.as_str();
     let scanner = Scanner::new(source);
     let token_stream = TokenStream::new(source_file.id(), scanner);
     let mut parser = DefaultParser::new(ParserState::new(config, token_stream));
+    parser.state_mut().asm_state = Some(Default::default());
 
     let span = parser.current_location();
     let mut operation_parser = operation::TopLevelOperationParser::new(parser);
-    operation_parser.parse(span)
+    operation_parser
+        .parse(span)
+        .map_err(|err| Report::from(err).with_source_code(source_file.clone()))
 }
 
 pub fn parse<T: OpParser + OpRegistration>(
     config: ParserConfig,
     uri: Uri,
     source: impl Into<String>,
-) -> ParseResult<UnsafeIntrusiveEntityRef<T>> {
+) -> Result<UnsafeIntrusiveEntityRef<T>, Report> {
     use midenc_session::diagnostics::SourceLanguage;
     let source_manager = &config.context.session().source_manager;
     let source_file = source_manager.load(SourceLanguage::Other("hir"), uri, source.into());
@@ -224,7 +227,7 @@ pub fn parse<T: OpParser + OpRegistration>(
 pub fn parse_file<T: OpParser + OpRegistration>(
     config: ParserConfig,
     path: impl AsRef<std::path::Path>,
-) -> ParseResult<UnsafeIntrusiveEntityRef<T>> {
+) -> Result<UnsafeIntrusiveEntityRef<T>, Report> {
     let source_manager = &config.context.session().source_manager;
     let source_file = source_manager.load_file(path.as_ref()).map_err(Report::msg)?;
     parse_source(config, source_file)
@@ -296,7 +299,9 @@ fn parse_anchored_source(
     let op = operation_parser
         .parse_operation()
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
-    operation_parser.finalize()?;
+    operation_parser
+        .finalize()
+        .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
 
     match anchor {
         None => Ok(op),
@@ -317,30 +322,11 @@ fn parse_anchored_source(
 fn parse_source<T: OpParser + OpRegistration>(
     config: ParserConfig,
     source_file: Arc<SourceFile>,
-) -> ParseResult<UnsafeIntrusiveEntityRef<T>> {
-    use crate::{BuilderExt, dialects::builtin::World};
-
-    let source = source_file.as_str();
-    let scanner = Scanner::new(source);
-    let token_stream = TokenStream::new(source_file.id(), scanner);
-    let mut parser = DefaultParser::new(ParserState::new(config, token_stream));
-    let span = parser.current_location();
-    let world = parser.builder_mut().create::<World, ()>(span)()?;
-    let mut operation_parser = operation::OperationParser::new(parser, world);
-    let op = operation_parser.parse_operation()?;
-
+) -> Result<UnsafeIntrusiveEntityRef<T>, Report> {
+    let name = config.context.get_registered_name::<T>();
+    let op = parse_anchored_source(Some(name), config, source_file)?;
     let op = op.borrow();
-    if op.is::<T>() {
-        // We know this is safe because the underlying operation was allocated as a T
-        Ok(unsafe { UnsafeIntrusiveEntityRef::from_raw(op.container().cast()) })
-    } else {
-        Err(Report::msg(format!(
-            "expected '{}', got '{}'",
-            <T as OpRegistration>::full_name(),
-            op.name()
-        ))
-        .into())
-    }
+    Ok(unsafe { UnsafeIntrusiveEntityRef::from_raw(op.downcast_ref::<T>().unwrap()) })
 }
 
 pub trait AsmParser<'input>: Parser<'input> {}

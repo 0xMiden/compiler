@@ -17,8 +17,10 @@ use crate::{
     testing::Test,
 };
 
+type TestResult<T = ()> = Result<T, Report>;
+
 #[test]
-fn parse_simple_function() -> ParseResult {
+fn parse_simple_function() -> TestResult {
     let mut test = ParserTest::default();
 
     let source = "\
@@ -42,7 +44,7 @@ builtin.function public extern(\"C\") @entrypoint(%a: i32) -> i32 {
 
 #[test]
 #[ignore]
-fn parse_simple_function_generic() -> ParseResult {
+fn parse_simple_function_generic() -> TestResult {
     let mut test = ParserTest::default();
 
     let source = r#""builtin.function"() <{
@@ -70,7 +72,7 @@ fn parse_simple_function_generic() -> ParseResult {
 }
 
 #[test]
-fn parse_module_with_intra_function_symbol_references() -> Result<(), Report> {
+fn parse_module_with_intra_function_symbol_references() -> TestResult {
     let mut test = ParserTest::default();
 
     let source = "\
@@ -104,7 +106,7 @@ fn parse_module_with_intra_function_symbol_references() -> Result<(), Report> {
 }
 
 #[test]
-fn derive_roundtrip_test() -> ParseResult {
+fn derive_roundtrip_test() -> TestResult {
     let test = Test::new("derive_roundtrip_test", &[Type::I32], &[Type::U32]);
     let mut test = ParserTest { test };
 
@@ -163,7 +165,7 @@ impl DerefMut for ParserTest {
 
 impl ParserTest {
     #[allow(unused)]
-    pub fn parse_generic(&self, name: &str, source: &str) -> ParseResult<WorldRef> {
+    pub fn parse_generic(&self, name: &str, source: &str) -> TestResult<WorldRef> {
         let config = ParserConfig::new(self.test.context_rc());
         parse::parse_generic(config, Uri::new(name), source)
     }
@@ -172,12 +174,12 @@ impl ParserTest {
         &self,
         name: &str,
         source: &str,
-    ) -> ParseResult<UnsafeIntrusiveEntityRef<T>> {
+    ) -> TestResult<UnsafeIntrusiveEntityRef<T>> {
         let config = ParserConfig::new(self.test.context_rc());
         parse::parse::<T>(config, Uri::new(name), source)
     }
 
-    pub fn parse_any(&self, name: &str, source: &str) -> Result<OperationRef, Report> {
+    pub fn parse_any(&self, name: &str, source: &str) -> TestResult<OperationRef> {
         let config = ParserConfig::new(self.test.context_rc());
         parse::parse_any(config, Uri::new(name), source)
     }
