@@ -14,6 +14,7 @@ extern crate std;
 
 use alloc::boxed::Box;
 
+mod attributes;
 mod builders;
 mod ops;
 
@@ -23,7 +24,7 @@ use midenc_hir::{
     Type,
 };
 
-pub use self::{builders::WasmOpBuilder, ops::*};
+pub use self::{attributes::LogicalTyAttrI32, builders::WasmOpBuilder, ops::*};
 
 #[derive(Debug)]
 pub struct WasmDialect {
@@ -72,6 +73,6 @@ impl DialectRegistration for WasmDialect {
     }
 
     fn register_operations(info: &mut DialectInfo) {
-        info.register_operation::<ops::I32Extend8S>();
+        info.register_operation::<ops::I32ExtendS>();
     }
 }
