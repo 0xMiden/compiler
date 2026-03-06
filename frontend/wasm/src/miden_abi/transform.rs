@@ -61,7 +61,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         symbols::Poseidon2 => {
                             match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                                 stdlib::crypto::hashes::poseidon2::HASH_ELEMENTS
-                                | stdlib::crypto::hashes::poseidon2::HASH_WORDS => {
+                                | stdlib::crypto::hashes::poseidon2::HASH_WORDS
+                                | stdlib::crypto::hashes::poseidon2::MERGE => {
                                     Some(TransformStrategy::ReturnViaPointer)
                                 }
                                 _ => None,
