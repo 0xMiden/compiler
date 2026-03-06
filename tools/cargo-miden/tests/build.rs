@@ -29,6 +29,7 @@ fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
 // NOTE: This test sets the current working directory so don't run it in parallel with tests
 // that depend on the current directory
 
+#[ignore = "until `as_canonical_u64` is resolved"]
 #[test]
 fn test_all_templates() {
     let _cwd_lock = current_dir_lock();
