@@ -48,12 +48,13 @@ fn load_sw() {
         let args = [Felt::new(write_to as u64)];
         let output =
             eval_package::<u32, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let stored = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
-                })?;
+                let stored =
+                    crate::testing::read_rust_memory::<u32>(trace, write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, \
+                             but read from that address failed"
+                        ))
+                    })?;
                 prop_assert_eq!(
                     stored,
                     value,
@@ -126,12 +127,13 @@ fn load_dw() {
                 prop_assert_eq!(lo, value & 0xffffffff);
                 prop_assert_eq!(hi, value >> 32);
 
-                let stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
-                })?;
+                let stored =
+                    crate::testing::read_rust_memory::<u64>(trace, write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, \
+                             but read from that address failed"
+                        ))
+                    })?;
 
                 prop_assert_eq!(
                     stored,
@@ -268,12 +270,13 @@ fn load_u8() {
         let args = [Felt::new(write_to as u64)];
         let output =
             eval_package::<u8, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let stored = trace.read_from_rust_memory::<u8>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
-                })?;
+                let stored =
+                    crate::testing::read_rust_memory::<u8>(trace, write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, \
+                             but read from that address failed"
+                        ))
+                    })?;
                 prop_assert_eq!(
                     stored,
                     value,
@@ -333,12 +336,13 @@ fn load_u16() {
         let args = [Felt::new(write_to as u64)];
         let output =
             eval_package::<u16, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let stored = trace.read_from_rust_memory::<u16>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
-                })?;
+                let stored =
+                    crate::testing::read_rust_memory::<u16>(trace, write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, \
+                             but read from that address failed"
+                        ))
+                    })?;
                 prop_assert_eq!(
                     stored,
                     value,
@@ -402,12 +406,13 @@ fn load_bool() {
             &args,
             context.session(),
             |trace| {
-                let stored = trace.read_from_rust_memory::<u8>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
-                })?;
+                let stored =
+                    crate::testing::read_rust_memory::<u8>(trace, write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, \
+                             but read from that address failed"
+                        ))
+                    })?;
                 let stored_bool = stored != 0;
                 prop_assert_eq!(
                     stored_bool,
@@ -523,9 +528,12 @@ fn store_u16() {
 
                     // Read final memory state for verification
                     // Since trace reader requires 4-byte alignment, read the full word and extract u16 values
-                    let word0 = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
-                        TestCaseError::fail(format!("failed to read from byte address {write_to}"))
-                    })?;
+                    let word0 = crate::testing::read_rust_memory::<u32>(trace, write_to)
+                        .ok_or_else(|| {
+                            TestCaseError::fail(format!(
+                                "failed to read from byte address {write_to}"
+                            ))
+                        })?;
 
                     // Extract u16 values from the 32-bit word (little-endian)
                     let stored1 = (word0 & 0xffff) as u16;
@@ -715,9 +723,12 @@ fn store_u8() {
                     // All assertions in the program passed, so we know each store only affected its target byte
 
                     // Read final memory state for verification
-                    let word0 = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
-                        TestCaseError::fail(format!("failed to read from byte address {write_to}"))
-                    })?;
+                    let word0 = crate::testing::read_rust_memory::<u32>(trace, write_to)
+                        .ok_or_else(|| {
+                            TestCaseError::fail(format!(
+                                "failed to read from byte address {write_to}"
+                            ))
+                        })?;
 
                     // Extract u8 values from the 32-bit word (little-endian)
                     let stored0 = (word0 & 0xff) as u8;
@@ -827,8 +838,8 @@ fn store_unaligned_u32() {
             context.session(),
             |trace| {
                 // Get the overwritten words.
-                let word0 = trace.read_from_rust_memory::<u32>(write_to).unwrap();
-                let word1 = trace.read_from_rust_memory::<u32>(write_to + 4).unwrap();
+                let word0 = crate::testing::read_rust_memory::<u32>(trace, write_to).unwrap();
+                let word1 = crate::testing::read_rust_memory::<u32>(trace, write_to + 4).unwrap();
 
                 eprintln!("word0: 0x{word0:0>8x}");
                 eprintln!("word1: 0x{word1:0>8x}");
@@ -982,10 +993,10 @@ fn store_unaligned_u64() {
             context.session(),
             |trace| {
                 // Get the overwritten words.
-                let word0 = trace.read_from_rust_memory::<u32>(write_to).unwrap();
-                let word1 = trace.read_from_rust_memory::<u32>(write_to + 4).unwrap();
-                let word2 = trace.read_from_rust_memory::<u32>(write_to + 8).unwrap();
-                let word3 = trace.read_from_rust_memory::<u32>(write_to + 12).unwrap();
+                let word0 = crate::testing::read_rust_memory::<u32>(trace, write_to).unwrap();
+                let word1 = crate::testing::read_rust_memory::<u32>(trace, write_to + 4).unwrap();
+                let word2 = crate::testing::read_rust_memory::<u32>(trace, write_to + 8).unwrap();
+                let word3 = crate::testing::read_rust_memory::<u32>(trace, write_to + 12).unwrap();
 
                 eprintln!("word0: 0x{word0:0>8x}");
                 eprintln!("word1: 0x{word1:0>8x}");
