@@ -7,8 +7,9 @@ use super::{AccountId, Asset, NoteMetadata, Recipient};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
-    #[link_name = "miden::protocol::active_note::get_inputs"]
-    pub fn extern_note_get_inputs(ptr: *mut Felt) -> usize;
+    // NOTE: In protocol v0.14, note "inputs" are exposed via `active_note::get_storage`.
+    #[link_name = "miden::protocol::active_note::get_storage"]
+    pub fn extern_note_get_storage(ptr: *mut Felt) -> usize;
     #[link_name = "miden::protocol::active_note::get_assets"]
     pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
     #[link_name = "miden::protocol::active_note::get_sender"]
@@ -58,7 +59,7 @@ pub fn get_inputs() -> Vec<Felt> {
         // #! - dest_ptr is the memory address to write the inputs.
         // Compiler generated adapter code at call site will drop the returned dest_ptr
         // and return the number of inputs
-        extern_note_get_inputs(ptr as *mut Felt)
+        extern_note_get_storage(ptr as *mut Felt)
     };
     unsafe {
         inputs.set_len(num_inputs);
