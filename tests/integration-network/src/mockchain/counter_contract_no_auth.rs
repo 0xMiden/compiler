@@ -88,16 +88,13 @@ pub fn test_counter_contract_no_auth() {
     eprintln!("Sender account ID: {:?}", sender_account.id().to_hex());
 
     // Sender creates the counter note (note script increments counter's storage on consumption)
-    let mut rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
-    let counter_note = create_note_from_package(
-        note_package.clone(),
-        sender_account.id(),
-        NoteCreationConfig {
-            tag: NoteTag::with_account_target(counter_account.id()),
-            ..Default::default()
-        },
-        &mut rng,
-    );
+    let rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let counter_note = NoteBuilder::new(sender_account.id(), rng)
+        .package((*note_package).clone())
+        .tag(NoteTag::with_account_target(counter_account.id()).into())
+        .build()
+        .unwrap();
+
     eprintln!("Counter note hash: {:?}", counter_note.id().to_hex());
     builder.add_output_note(OutputNote::Full(counter_note.clone()));
 
