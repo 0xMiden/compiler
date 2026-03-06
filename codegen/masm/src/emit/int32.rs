@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::{Overflow, SourceSpan};
 
 use super::{OpEmitter, dup_from_offset, felt, masm, movup_from_offset};
@@ -346,6 +346,16 @@ impl OpEmitter<'_> {
         let num_bits = n % 32;
         let num_elements = (n / 32) + (num_bits > 0) as u32;
         let needed = num_elements - 1;
+        if needed == 0 {
+            return;
+        }
+
+        // Multi-limb integers are represented in little-endian limb order on the operand stack,
+        // i.e. the least-significant limb is on top. When extending a single u32 limb, we must
+        // place the additional zero limbs *below* the existing value.
+        //
+        // We do this by first pushing the required number of zero limbs, and then moving the
+        // original value back to the top.
         self.emit_n(
             needed as usize,
             masm::Instruction::Push(masm::Immediate::Value(masm::Span::new(
@@ -354,6 +364,10 @@ impl OpEmitter<'_> {
             ))),
             span,
         );
+        match needed {
+            1 => self.emit(masm::Instruction::Swap1, span),
+            n => self.emit(movup_from_offset(n as usize), span),
+        }
     }
 
     /// Emit code to sign-extend a signed 32-bit value to N bits, where N <= 128
@@ -366,9 +380,21 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn sext_int32(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 32);
+        if n <= 32 {
+            return;
+        }
         self.is_signed_int32(span);
         self.select_int32(u32::MAX, 0, span);
         self.pad_int32(n, span);
+        // Multi-limb integers are represented in little-endian limb order on the operand stack,
+        // i.e. the least-significant limb is on top. `select_int32` leaves `[pad, value]` on the
+        // stack, so after padding we must move `value` back to the top so the resulting ordering is
+        // `[value, pad, pad, ...]`.
+        let num_elements = n / 32;
+        match num_elements {
+            2 => self.emit(masm::Instruction::Swap1, span),
+            n => self.emit(movup_from_offset((n - 1) as usize), span),
+        }
     }
 
     /// Emit code to pad a 32-bit value out to N bits, where N >= 32.
@@ -602,7 +628,7 @@ impl OpEmitter<'_> {
                         .emit_all([masm::Instruction::Mul, masm::Instruction::U32Assert], span);
                 }
                 Overflow::Wrapping => masm::Instruction::U32WrappingMul,
-                Overflow::Overflowing => masm::Instruction::U32OverflowingMul,
+                Overflow::Overflowing => masm::Instruction::U32WideningMul,
             },
             span,
         );
@@ -653,9 +679,7 @@ impl OpEmitter<'_> {
                             );
                         }
                         Overflow::Wrapping => masm::Instruction::U32WrappingMulImm(imm.into()),
-                        Overflow::Overflowing => {
-                            masm::Instruction::U32OverflowingMulImm(imm.into())
-                        }
+                        Overflow::Overflowing => masm::Instruction::U32WideningMulImm(imm.into()),
                     },
                     span,
                 );

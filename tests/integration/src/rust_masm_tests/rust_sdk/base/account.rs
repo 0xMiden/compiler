@@ -47,10 +47,13 @@ supported-types = ["RegularAccountUpdatableCode"]
 opt-level = "z"
 panic = "abort"
 debug = false
+
+{patch_section}
 "#,
         name = name,
         sdk_path = sdk_path.display(),
         component_package = component_package,
+        patch_section = crate::compiler_test::sdk_patch_section(),
     );
 
     let cargo_proj = project(name)
@@ -128,7 +131,7 @@ fn rust_sdk_account_get_initial_balance_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_initial_balance_binding",
         "pub fn binding(&self) -> Felt {
-        let faucet = AccountId { prefix: Felt::from_u32(1), suffix: Felt::from_u32(0) };
+        let faucet = AccountId { prefix: Felt::new(1), suffix: Felt::new(0) };
         self.get_initial_balance(faucet)
     }",
     );
@@ -139,11 +142,11 @@ fn rust_sdk_account_has_non_fungible_asset_binding() {
     run_account_binding_test(
         "rust_sdk_account_has_non_fungible_asset_binding",
         "pub fn binding(&self) -> Felt {
-        let asset = Asset::from([Felt::from_u32(0); 4]);
+        let asset = Asset::from([Felt::new(0); 4]);
         if self.has_non_fungible_asset(asset) {
-            Felt::from_u32(1)
+            Felt::new(1)
         } else {
-            Felt::from_u32(0)
+            Felt::new(0)
         }
     }",
     );
@@ -194,11 +197,11 @@ fn rust_sdk_account_has_procedure_binding() {
     run_account_binding_test(
         "rust_sdk_account_has_procedure_binding",
         "pub fn binding(&self) -> Felt {
-        let proc_root = Word::from([Felt::from_u32(0); 4]);
+        let proc_root = Word::from([Felt::new(0); 4]);
         if self.has_procedure(proc_root) {
-            Felt::from_u32(1)
+            Felt::new(1)
         } else {
-            Felt::from_u32(0)
+            Felt::new(0)
         }
     }",
     );
@@ -209,11 +212,11 @@ fn rust_sdk_account_was_procedure_called_binding() {
     run_account_binding_test(
         "rust_sdk_account_was_procedure_called_binding",
         "pub fn binding(&self) -> Felt {
-        let proc_root = Word::from([Felt::from_u32(0); 4]);
+        let proc_root = Word::from([Felt::new(0); 4]);
         if self.was_procedure_called(proc_root) {
-            Felt::from_u32(1)
+            Felt::new(1)
         } else {
-            Felt::from_u32(0)
+            Felt::new(0)
         }
     }",
     );
@@ -242,7 +245,7 @@ fn rust_sdk_account_storage_get_initial_map_item_binding() {
     map: StorageMap,
 }"#,
         "pub fn binding(&self) -> Word {
-        let key = Word::from([Felt::from_u32(0); 4]);
+        let key = Word::from([Felt::new(0); 4]);
         storage::get_initial_map_item(Self::default().map.slot, &key)
     }",
     );

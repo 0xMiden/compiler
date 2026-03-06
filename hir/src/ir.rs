@@ -45,7 +45,7 @@ pub use self::{
         UnsafeIntrusiveEntityRef,
     },
     ident::{FunctionIdent, Ident},
-    immediates::{Felt, FieldElement, Immediate, StarkField},
+    immediates::{Felt, Immediate},
     op::{BuildableOp, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,

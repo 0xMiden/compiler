@@ -58,10 +58,11 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                                 _ => None,
                             }
                         }
-                        symbols::Rpo256 => {
+                        symbols::Poseidon2 => {
                             match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                                stdlib::crypto::hashes::rpo256::HASH_ELEMENTS
-                                | stdlib::crypto::hashes::rpo256::HASH_WORDS => {
+                                stdlib::crypto::hashes::poseidon2::HASH_ELEMENTS
+                                | stdlib::crypto::hashes::poseidon2::HASH_WORDS
+                                | stdlib::crypto::hashes::poseidon2::MERGE => {
                                     Some(TransformStrategy::ReturnViaPointer)
                                 }
                                 _ => None,
@@ -166,7 +167,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 }
                 symbols::ActiveNote => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::active_note::GET_INPUTS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::active_note::GET_STORAGE => Some(TransformStrategy::ListReturn),
                         tx_kernel::active_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
                         tx_kernel::active_note::GET_SENDER
                         | tx_kernel::active_note::GET_RECIPIENT

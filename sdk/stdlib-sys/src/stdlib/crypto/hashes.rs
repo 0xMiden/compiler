@@ -107,91 +107,99 @@ mod imp {
         /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
         /// hash function.
         ///
-        /// This maps to the `miden::core::crypto::hashes::rpo256::hash_elements` procedure.
+        /// This maps to the `miden::core::crypto::hashes::poseidon2::hash_elements` procedure.
         ///
         /// Input: A pointer to the memory location and the number of elements to hash
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "miden::core::crypto::hashes::rpo256::hash_elements"]
+        #[link_name = "miden::core::crypto::hashes::poseidon2::hash_elements"]
         pub fn extern_hash_elements(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
 
         /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO) hash
         /// function.
         ///
-        /// This maps to the `miden::core::crypto::hashes::rpo256::hash_words` procedure.
+        /// This maps to the `miden::core::crypto::hashes::poseidon2::hash_words` procedure.
         ///
         /// Input: The start and end addresses (in field elements) of the words to hash.
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
-        #[link_name = "miden::core::crypto::hashes::rpo256::hash_words"]
+        #[link_name = "miden::core::crypto::hashes::poseidon2::hash_words"]
         pub fn extern_hash_words(start_addr: u32, end_addr: u32, result_ptr: *mut Felt);
     }
 
-    /// Hashes a 32-byte input to a 32-byte output using the given hash function.
+    /// Encodes 32 bytes as 8 little-endian u32 lanes.
     #[inline(always)]
-    fn hash(
-        input: [u8; 32],
-        extern_hash: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, *mut u8),
-    ) -> [u8; 32] {
-        use crate::intrinsics::WordAligned;
-        let input = unsafe { core::mem::transmute::<[u8; 32], [u32; 8]>(input) };
-        unsafe {
-            let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
-            let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_hash(
-                input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7], ptr,
-            );
-            ret_area.assume_init().into_inner()
-        }
+    fn bytes_to_u32_le_8(input: [u8; 32]) -> [u32; 8] {
+        core::array::from_fn(|i| {
+            let off = i * 4;
+            u32::from_le_bytes([input[off], input[off + 1], input[off + 2], input[off + 3]])
+        })
     }
 
-    /// Hashes a 64-byte input to a 32-byte output using the given hash function.
+    /// Encodes 64 bytes as 16 little-endian u32 lanes.
     #[inline(always)]
-    fn merge(
-        input: [u8; 64],
-        extern_merge: unsafe extern "C" fn(
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            u32,
-            *mut u8,
-        ),
-    ) -> [u8; 32] {
-        let input = unsafe { core::mem::transmute::<[u8; 64], [u32; 16]>(input) };
-        unsafe {
-            let mut ret_area = ::core::mem::MaybeUninit::<[u8; 32]>::uninit();
-            let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_merge(
-                input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7],
-                input[8], input[9], input[10], input[11], input[12], input[13], input[14],
-                input[15], ptr,
-            );
-            ret_area.assume_init()
+    fn bytes_to_u32_le_16(input: [u8; 64]) -> [u32; 16] {
+        core::array::from_fn(|i| {
+            let off = i * 4;
+            u32::from_le_bytes([input[off], input[off + 1], input[off + 2], input[off + 3]])
+        })
+    }
+
+    /// Encodes 32 bytes as 8 big-endian u32 lanes.
+    #[inline(always)]
+    fn bytes_to_u32_be_8(input: [u8; 32]) -> [u32; 8] {
+        core::array::from_fn(|i| {
+            let off = i * 4;
+            u32::from_be_bytes([input[off], input[off + 1], input[off + 2], input[off + 3]])
+        })
+    }
+
+    /// Encodes 64 bytes as 16 big-endian u32 lanes.
+    #[inline(always)]
+    fn bytes_to_u32_be_16(input: [u8; 64]) -> [u32; 16] {
+        core::array::from_fn(|i| {
+            let off = i * 4;
+            u32::from_be_bytes([input[off], input[off + 1], input[off + 2], input[off + 3]])
+        })
+    }
+
+    #[inline(always)]
+    fn decode_be_lanes_in_place(bytes: &mut [u8]) {
+        for chunk in bytes.chunks_exact_mut(4) {
+            chunk.reverse();
         }
     }
 
     /// Hashes a 32-byte input to a 32-byte output using the BLAKE3 hash function.
     #[inline]
     pub fn blake3_hash(input: [u8; 32]) -> [u8; 32] {
-        hash(input, extern_blake3_hash)
+        use crate::intrinsics::WordAligned;
+
+        let lanes = bytes_to_u32_le_8(input);
+        unsafe {
+            let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
+            let ptr = ret_area.as_mut_ptr() as *mut u8;
+            extern_blake3_hash(
+                lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6], lanes[7], ptr,
+            );
+            ret_area.assume_init().into_inner()
+        }
     }
 
     /// Hashes a 64-byte input to a 32-byte output using the BLAKE3 hash function.
     #[inline]
     pub fn blake3_merge(input: [u8; 64]) -> [u8; 32] {
-        merge(input, extern_blake3_merge)
+        let lanes = bytes_to_u32_le_16(input);
+        unsafe {
+            let mut ret_area = ::core::mem::MaybeUninit::<[u8; 32]>::uninit();
+            let ptr = ret_area.as_mut_ptr() as *mut u8;
+            extern_blake3_merge(
+                lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6], lanes[7],
+                lanes[8], lanes[9], lanes[10], lanes[11], lanes[12], lanes[13], lanes[14],
+                lanes[15], ptr,
+            );
+            ret_area.assume_init()
+        }
     }
 
     /// Hashes a 32-byte input to a 32-byte output using the SHA256 hash function.
@@ -199,30 +207,15 @@ mod imp {
     pub fn sha256_hash(input: [u8; 32]) -> [u8; 32] {
         use crate::intrinsics::WordAligned;
 
-        let swapped_words = {
-            let mut be_bytes = input;
-            // The SHA-2 family is specified over big-endian 32-bit words. The Miden ABI mirrors that
-            // spec, so each lane we pass across the boundary must be encoded as a big-endian word.
-            // Our public Rust API uses `[u8; 32]` in native little-endian order, so we convert the bytes
-            // here before calling into the ABI.
-            for chunk in be_bytes.chunks_exact_mut(4) {
-                chunk.reverse();
-            }
-            unsafe { core::mem::transmute::<[u8; 32], [u32; 8]>(be_bytes) }
-        };
-
-        let [w0, w1, w2, w3, w4, w5, w6, w7] = swapped_words;
-
+        let lanes = bytes_to_u32_be_8(input);
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
-            extern_sha256_hash(w0, w1, w2, w3, w4, w5, w6, w7, ptr);
+            extern_sha256_hash(
+                lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6], lanes[7], ptr,
+            );
             let mut output = ret_area.assume_init().into_inner();
-            // The extern returns the digest as big-endian words as well; flip each lane so callers see
-            // the conventional Rust `[u8; 32]` ordering.
-            for chunk in output.chunks_exact_mut(4) {
-                chunk.reverse();
-            }
+            decode_be_lanes_in_place(&mut output);
             output
         }
     }
@@ -230,31 +223,17 @@ mod imp {
     /// Hashes a 64-byte input to a 32-byte output using the SHA256 hash function.
     #[inline]
     pub fn sha256_merge(input: [u8; 64]) -> [u8; 32] {
-        use crate::intrinsics::WordAligned;
-
-        let swapped_words = {
-            let mut be_bytes = input;
-            // Same story as `sha256_hash`: adjust the byte layout so the ABI receives big-endian
-            // 32-bit words.
-            for chunk in be_bytes.chunks_exact_mut(4) {
-                chunk.reverse();
-            }
-            unsafe { core::mem::transmute::<[u8; 64], [u32; 16]>(be_bytes) }
-        };
-
-        let [w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15] = swapped_words;
-
+        let lanes = bytes_to_u32_be_16(input);
         unsafe {
-            let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
+            let mut ret_area = ::core::mem::MaybeUninit::<[u8; 32]>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
             extern_sha256_merge(
-                w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15, ptr,
+                lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6], lanes[7],
+                lanes[8], lanes[9], lanes[10], lanes[11], lanes[12], lanes[13], lanes[14],
+                lanes[15], ptr,
             );
-            let mut output = ret_area.assume_init().into_inner();
-            // Restore the little-endian byte layout expected by Rust callers.
-            for chunk in output.chunks_exact_mut(4) {
-                chunk.reverse();
-            }
+            let mut output = ret_area.assume_init();
+            decode_be_lanes_in_place(&mut output);
             output
         }
     }
@@ -262,8 +241,8 @@ mod imp {
     /// Computes the hash of a sequence of field elements using the Rescue Prime Optimized (RPO)
     /// hash function.
     ///
-    /// This maps to the `miden::core::crypto::hashes::rpo256::hash_elements` procedure and to the
-    /// `miden::core::crypto::hashes::rpo256::hash_words` word-optimized variant when the input
+    /// This maps to the `miden::core::crypto::hashes::poseidon2::hash_elements` procedure and to the
+    /// `miden::core::crypto::hashes::poseidon2::hash_words` word-optimized variant when the input
     /// length is a multiple of 4.
     ///
     /// # Arguments
@@ -279,7 +258,7 @@ mod imp {
             let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
             let miden_ptr = rust_ptr / 4;
             // Since our BumpAlloc produces word-aligned allocations the pointer should be word-aligned
-            assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
+            assert_eq(Felt::new((miden_ptr % 4) as u64), felt!(0));
 
             if element_count.is_multiple_of(4) {
                 let start_addr = miden_ptr;
@@ -289,14 +268,14 @@ mod imp {
                 extern_hash_elements(miden_ptr, num_elements, result_ptr);
             }
 
-            Digest::from_word(ret_area.assume_init().reverse())
+            Digest::from_word(ret_area.assume_init())
         }
     }
 
     /// Computes the hash of a sequence of words using the Rescue Prime Optimized (RPO)
     /// hash function.
     ///
-    /// This maps to the `miden::core::crypto::hashes::rpo256::hash_words` procedure.
+    /// This maps to the `miden::core::crypto::hashes::poseidon2::hash_words` procedure.
     ///
     /// # Arguments
     /// * `words` - A slice of words to be hashed
@@ -306,7 +285,7 @@ mod imp {
 
         let miden_ptr = rust_ptr / 4;
         // It's safe to assume the `words` ptr is word-aligned.
-        assert_eq(Felt::from_u32(miden_ptr % 4), felt!(0));
+        assert_eq(Felt::new((miden_ptr % 4) as u64), felt!(0));
 
         unsafe {
             let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
@@ -315,7 +294,7 @@ mod imp {
             let end_addr = start_addr + (words.len() as u32 * 4);
             extern_hash_words(start_addr, end_addr, result_ptr);
 
-            Digest::from_word(ret_area.assume_init().reverse())
+            Digest::from_word(ret_area.assume_init())
         }
     }
 }
@@ -376,7 +355,7 @@ mod imp {
         )
     }
 
-    /// ABI helper for `miden::core::crypto::hashes::rpo256::hash_elements`.
+    /// ABI helper for `miden::core::crypto::hashes::poseidon2::hash_elements`.
     #[inline]
     pub fn extern_hash_elements(_ptr: u32, _num_elements: u32, _result_ptr: *mut Felt) {
         unimplemented!(
@@ -384,7 +363,7 @@ mod imp {
         )
     }
 
-    /// ABI helper for `miden::core::crypto::hashes::rpo256::hash_words`.
+    /// ABI helper for `miden::core::crypto::hashes::poseidon2::hash_words`.
     #[inline]
     pub fn extern_hash_words(_start_addr: u32, _end_addr: u32, _result_ptr: *mut Felt) {
         unimplemented!(

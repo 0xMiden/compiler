@@ -14,7 +14,7 @@ use miden_client::{
     testing::{MockChain, TransactionContextBuilder},
     transaction::OutputNote,
 };
-use miden_core::{Felt, FieldElement, crypto::hash::Rpo256};
+use miden_core::{Felt, crypto::hash::Rpo256};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_protocol::{
@@ -255,7 +255,7 @@ pub(super) fn build_asset_transfer_tx(
     // Ensure word alignment for `adv_load_preimage` in the tx script.
     commitment_input.extend([Felt::ZERO, Felt::ZERO]);
 
-    let commitment_key: Word = Rpo256::hash_elements(&commitment_input);
+    let commitment_key: Word = miden_core::crypto::hash::Poseidon2::hash_elements(&commitment_input);
     assert_eq!(commitment_input.len() % 4, 0, "commitment input needs to be word-aligned");
 
     // NOTE: passed on the stack reversed
@@ -286,26 +286,27 @@ fn auth_public_key_slot_name() -> StorageSlotName {
         .expect("auth component storage slot name should be valid")
 }
 
+pub const COUNTER_CONTRACT_STORAGE_KEY: Word =
+    Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+
 /// Asserts the counter value stored in the counter contract's storage map at `storage_slot`.
 pub(super) fn assert_counter_storage(
     counter_account_storage: &AccountStorage,
     storage_slot: &StorageSlotName,
     expected: u64,
 ) {
-    // according to `examples/counter-contract` for inner (slot, key) values
-    let counter_contract_storage_key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-
     let word = counter_account_storage
-        .get_map_item(storage_slot, counter_contract_storage_key)
+        .get_map_item(storage_slot, COUNTER_CONTRACT_STORAGE_KEY)
         .expect("Failed to get counter value from storage slot");
 
-    let val = word.last().unwrap();
+    // According to the counter-contract the counter value is stored in the last element.
+    let val = word[3];
     assert_eq!(
-        val.as_int(),
+        val.as_canonical_u64(),
         expected,
         "Counter value mismatch. Expected: {}, Got: {}",
         expected,
-        val.as_int()
+        val.as_canonical_u64()
     );
 }
 

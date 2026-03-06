@@ -31,14 +31,14 @@ unsafe extern "C" {
     /// no value has previously been inserted under `key`, the procedure returns the empty word.
     #[link_name = "miden::core::collections::smt::get"]
     fn extern_smt_get(
-        k3: Felt,
-        k2: Felt,
-        k1: Felt,
         k0: Felt,
-        r3: Felt,
-        r2: Felt,
-        r1: Felt,
+        k1: Felt,
+        k2: Felt,
+        k3: Felt,
         r0: Felt,
+        r1: Felt,
+        r2: Felt,
+        r3: Felt,
         ptr: *mut (Word, Word),
     );
 
@@ -55,18 +55,18 @@ unsafe extern "C" {
     /// Fails if the tree with the specified `root` does not exist in the VM's advice provider.
     #[link_name = "miden::core::collections::smt::set"]
     fn extern_smt_set(
-        v3: Felt,
-        v2: Felt,
-        v1: Felt,
         v0: Felt,
-        k3: Felt,
-        k2: Felt,
-        k1: Felt,
+        v1: Felt,
+        v2: Felt,
+        v3: Felt,
         k0: Felt,
-        r3: Felt,
-        r2: Felt,
-        r1: Felt,
+        k1: Felt,
+        k2: Felt,
+        k3: Felt,
         r0: Felt,
+        r1: Felt,
+        r2: Felt,
+        r3: Felt,
         ptr: *mut (Word, Word),
     );
 }
@@ -81,11 +81,11 @@ pub fn smt_get(key: Word, root: Word) -> SmtGetResponse {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<(Word, Word)>>::uninit();
         let ptr = ret_area.as_mut_ptr() as *mut (Word, Word);
-        extern_smt_get(key[3], key[2], key[1], key[0], root[3], root[2], root[1], root[0], ptr);
+        extern_smt_get(key[0], key[1], key[2], key[3], root[0], root[1], root[2], root[3], ptr);
         let (value, returned_root) = ret_area.assume_init().into_inner();
         SmtGetResponse {
-            value: value.reverse(),
-            root: returned_root.reverse(),
+            value,
+            root: returned_root,
         }
     }
 }
@@ -100,13 +100,13 @@ pub fn smt_set(value: Word, key: Word, root: Word) -> SmtSetResponse {
         let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<(Word, Word)>>::uninit();
         let ptr = ret_area.as_mut_ptr() as *mut (Word, Word);
         extern_smt_set(
-            value[3], value[2], value[1], value[0], key[3], key[2], key[1], key[0], root[3],
-            root[2], root[1], root[0], ptr,
+            value[0], value[1], value[2], value[3], key[0], key[1], key[2], key[3], root[0],
+            root[1], root[2], root[3], ptr,
         );
         let (old_value, new_root) = ret_area.assume_init().into_inner();
         SmtSetResponse {
-            old_value: old_value.reverse(),
-            new_root: new_root.reverse(),
+            old_value,
+            new_root,
         }
     }
 }

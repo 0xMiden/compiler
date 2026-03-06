@@ -51,7 +51,7 @@ pub fn create_fungible_asset(amount: Felt) -> Asset {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
         extern_faucet_create_fungible_asset(amount, ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -66,7 +66,7 @@ pub fn create_non_fungible_asset(data_hash: Word) -> Asset {
             data_hash[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -81,7 +81,7 @@ pub fn mint(asset: Asset) -> Asset {
             asset.inner[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -96,7 +96,7 @@ pub fn burn(asset: Asset) -> Asset {
             asset.inner[0],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().reverse()
+        ret_area.assume_init().reversed()
     }
 }
 
@@ -116,6 +116,6 @@ pub fn is_non_fungible_asset_issued(asset: Asset) -> bool {
             asset.inner[1],
             asset.inner[0],
         );
-        result != Felt::from_u32(0)
+        result != Felt::new(0)
     }
 }

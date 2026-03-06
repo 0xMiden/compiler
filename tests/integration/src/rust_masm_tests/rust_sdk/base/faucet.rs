@@ -46,10 +46,13 @@ supported-types = ["FungibleFaucet", "NonFungibleFaucet"]
 opt-level = "z"
 panic = "abort"
 debug = false
+
+{patch_section}
 "#,
         name = name,
         sdk_path = sdk_path.display(),
         component_package = component_package,
+        patch_section = crate::compiler_test::sdk_patch_section(),
     );
 
     let cargo_proj = project(name)
@@ -72,7 +75,7 @@ fn rust_sdk_account_faucet_create_fungible_asset_binding() {
     run_faucet_binding_test(
         "rust_sdk_account_faucet_create_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
-        faucet::create_fungible_asset(Felt::from_u32(10))
+        faucet::create_fungible_asset(Felt::new(10))
     }",
     );
 }
@@ -82,7 +85,7 @@ fn rust_sdk_account_faucet_create_non_fungible_asset_binding() {
     run_faucet_binding_test(
         "rust_sdk_account_faucet_create_non_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
-        let hash = Word::from([Felt::from_u32(0); 4]);
+        let hash = Word::from([Felt::new(0); 4]);
         faucet::create_non_fungible_asset(hash)
     }",
     );
@@ -93,7 +96,7 @@ fn rust_sdk_account_faucet_mint_binding() {
     run_faucet_binding_test(
         "rust_sdk_account_faucet_mint_binding",
         "pub fn binding(&self) -> Asset {
-        let asset = Asset::from([Felt::from_u32(0); 4]);
+        let asset = Asset::from([Felt::new(0); 4]);
         faucet::mint(asset)
     }",
     );
@@ -104,7 +107,7 @@ fn rust_sdk_account_faucet_burn_binding() {
     run_faucet_binding_test(
         "rust_sdk_account_faucet_burn_binding",
         "pub fn binding(&self) -> Asset {
-        let asset = Asset::from([Felt::from_u32(0); 4]);
+        let asset = Asset::from([Felt::new(0); 4]);
         faucet::burn(asset)
     }",
     );
@@ -125,11 +128,11 @@ fn rust_sdk_account_faucet_is_non_fungible_asset_issued_binding() {
     run_faucet_binding_test(
         "rust_sdk_account_faucet_is_non_fungible_asset_issued_binding",
         "pub fn binding(&self) -> Felt {
-        let asset = Asset::from([Felt::from_u32(0); 4]);
+        let asset = Asset::from([Felt::new(0); 4]);
         if faucet::is_non_fungible_asset_issued(asset) {
-            Felt::from_u32(1)
+            Felt::new(1)
         } else {
-            Felt::from_u32(0)
+            Felt::new(0)
         }
     }",
     );

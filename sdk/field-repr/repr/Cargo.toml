@@ -15,11 +15,14 @@ edition.workspace = true
 crate-type = ["rlib"]
 
 [dependencies]
-miden-field = { version = "0.10.0", path = "../../field" }
 miden-field-repr-derive = { path = "../derive", version = "0.10.0" }
+miden-field.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 miden-core.workspace = true
 
 [features]
 default = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(miden)"] }

@@ -8,6 +8,7 @@ use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
 pub const HASH_ELEMENTS: &str = "hash_elements";
 pub const HASH_WORDS: &str = "hash_words";
+pub const MERGE: &str = "merge";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -22,6 +23,15 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(HASH_WORDS),
         FunctionType::new(CallConv::Wasm, [I32, I32], [Felt, Felt, Felt, Felt]),
     );
+    // merge takes two digests (8 Felts) and returns a 4-Felt digest on the stack
+    rpo.insert(
+        Symbol::from(MERGE),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt, Felt, Felt, Felt, Felt, Felt, Felt, Felt],
+            [Felt, Felt, Felt, Felt],
+        ),
+    );
 
     let module_path = SymbolPath::from_iter([
         SymbolNameComponent::Root,
@@ -29,7 +39,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         SymbolNameComponent::Component(symbols::Core),
         SymbolNameComponent::Component(symbols::Crypto),
         SymbolNameComponent::Component(symbols::Hashes),
-        SymbolNameComponent::Component(symbols::Rpo256),
+        SymbolNameComponent::Component(symbols::Poseidon2),
     ]);
     m.insert(module_path, rpo);
     m

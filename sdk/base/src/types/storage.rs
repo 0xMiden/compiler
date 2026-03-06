@@ -37,18 +37,16 @@ pub struct StorageMap {
     pub slot: StorageSlotId,
 }
 
-impl<K: Into<Word> + AsRef<Word>, V: From<Word> + Into<Word>> StorageMapAccess<K, V>
-    for StorageMap
-{
+impl<V: From<Word> + Into<Word>> StorageMapAccess<Word, V> for StorageMap {
     /// Returns a map item value from the account storage.
     #[inline(always)]
-    fn get(&self, key: &K) -> V {
-        storage::get_map_item(self.slot, key.as_ref()).into()
+    fn get(&self, key: &Word) -> V {
+        storage::get_map_item(self.slot, key).into()
     }
 
     /// Sets a map item `value` in the account storage and returns the previous value.
     #[inline(always)]
-    fn set(&mut self, key: K, value: V) -> V {
-        storage::set_map_item(self.slot, key.into(), value.into()).into()
+    fn set(&mut self, key: Word, value: V) -> V {
+        storage::set_map_item(self.slot, key, value.into()).into()
     }
 }

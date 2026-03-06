@@ -5,16 +5,16 @@ use crate::intrinsics::{Felt, Word};
 
 #[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
-    #[link_name = "miden::core::crypto::dsa::falcon512rpo::verify"]
+    #[link_name = "miden::core::crypto::dsa::falcon512poseidon2::verify"]
     fn extern_rpo_falcon512_verify(
+        pk0: Felt,
         pk1: Felt,
         pk2: Felt,
         pk3: Felt,
-        pk4: Felt,
+        msg0: Felt,
         msg1: Felt,
         msg2: Felt,
         msg3: Felt,
-        msg4: Felt,
     );
 }
 
@@ -24,7 +24,7 @@ unsafe extern "C" {
 /// returns.
 ///
 /// Where `pk` is the hash of the public key and `msg` is the hash of the message. Both hashes are
-/// expected to be computed using RPO hash function.
+/// expected to be computed using Poseidon2.
 ///
 /// The verification expects the signature to be provided by the host via the advice stack.
 /// In the current flow, callers should first trigger a signature request event using
@@ -35,7 +35,7 @@ unsafe extern "C" {
 #[cfg(all(target_family = "wasm", miden))]
 pub fn rpo_falcon512_verify(pk: Word, msg: Word) {
     unsafe {
-        extern_rpo_falcon512_verify(pk[3], pk[2], pk[1], pk[0], msg[3], msg[2], msg[1], msg[0]);
+        extern_rpo_falcon512_verify(pk[0], pk[1], pk[2], pk[3], msg[0], msg[1], msg[2], msg[3]);
     }
 }
 

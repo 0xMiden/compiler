@@ -92,7 +92,7 @@ pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
 
     unsafe {
         let num_words_usize =
-            usize::try_from(num_words.as_u64()).expect("num_words must fit in usize");
+            usize::try_from(num_words.as_canonical_u64()).expect("num_words must fit in usize");
         let num_felts = num_words_usize.checked_mul(4).expect("num_words too large");
 
         let mut ret_area = ::core::mem::MaybeUninit::<Result>::uninit();
@@ -109,8 +109,8 @@ pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
             ret_area.as_mut_ptr() as *mut Felt,
         );
         buf.set_len(num_felts);
-        let Result { r1, .. } = ret_area.assume_init();
-        (r1.reverse(), buf)
+        let Result { r0, .. } = ret_area.assume_init();
+        (r0, buf)
     }
 }
 
@@ -134,7 +134,8 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
         write_ptr: *mut Felt,
     }
 
-    let num_words_usize = usize::try_from(num_words.as_u64()).expect("num_words must fit in usize");
+    let num_words_usize =
+        usize::try_from(num_words.as_canonical_u64()).expect("num_words must fit in usize");
     let num_felts = num_words_usize.checked_mul(4).expect("num_words too large");
 
     let mut buf: Vec<Felt> = Vec::with_capacity(num_felts);
@@ -168,8 +169,8 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
             ret_area.as_mut_ptr() as *mut Felt,
         );
         buf.set_len(num_felts);
-        let Result { r1, .. } = ret_area.assume_init();
-        (r1.reverse(), buf)
+        let Result { r0, .. } = ret_area.assume_init();
+        (r0, buf)
     }
 }
 
@@ -185,7 +186,7 @@ pub fn pipe_double_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
 #[cfg(all(target_family = "wasm", miden))]
 pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
     // Allocate a Vec with the specified capacity
-    let num_words_usize = num_words.as_u64() as usize;
+    let num_words_usize = num_words.as_canonical_u64() as usize;
     let num_felts = num_words_usize * 4;
     let mut result: Vec<Felt> = Vec::with_capacity(num_felts);
 
@@ -195,10 +196,10 @@ pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
         extern_pipe_preimage_to_memory(
             num_words,
             result_miden_ptr as *mut Felt,
-            commitment[3],
-            commitment[2],
-            commitment[1],
             commitment[0],
+            commitment[1],
+            commitment[2],
+            commitment[3],
         );
 
         // Set the length of the Vec to match what was loaded

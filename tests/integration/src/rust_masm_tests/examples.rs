@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, collections::VecDeque};
 
-use miden_core::utils::{Deserializable, Serializable};
+use miden_core::serde::{Deserializable, Serializable};
 use miden_debug::ToMidenRepr;
 use miden_mast_package::SectionId;
 use miden_protocol::account::AccountComponentMetadata;

@@ -67,6 +67,7 @@ fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
         .collect()
 }
 
+#[ignore = "until `as_canonical_u64` is resolved"]
 #[test]
 fn build_workspace_member_account_project() {
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")

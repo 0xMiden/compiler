@@ -17,7 +17,7 @@ links = "miden_stdlib_sys_stubs"
 crate-type = ["rlib"]
 
 [dependencies]
-miden-field = { version = "0.10.0", path = "../field" }
+miden-field.workspace = true
 
 [features]
 default = []

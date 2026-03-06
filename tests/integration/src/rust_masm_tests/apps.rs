@@ -9,7 +9,7 @@ use proptest::{prelude::*, test_runner::TestRunner};
 use crate::{
     CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
-    compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
+    compiler_test::{sdk_alloc_crate_path, sdk_crate_path, sdk_patch_section},
 };
 
 fn cargo_toml(name: &str) -> String {
@@ -41,9 +41,12 @@ fn cargo_toml(name: &str) -> String {
                 debug-assertions = true
                 overflow-checks = false
                 debug = false
+
+                {patch_section}
             "#,
         sdk_alloc_path = sdk_alloc_path.display(),
-        sdk_path = sdk_path.display()
+        sdk_path = sdk_path.display(),
+        patch_section = sdk_patch_section()
     )
 }
 

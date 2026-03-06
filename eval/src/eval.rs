@@ -1417,7 +1417,9 @@ macro_rules! comparison {
             (Immediate::U64(x), Immediate::U64(y)) => x.$operator(&y),
             (Immediate::I128(x), Immediate::I128(y)) => x.$operator(&y),
             (Immediate::U128(x), Immediate::U128(y)) => x.$operator(&y),
-            (Immediate::Felt(x), Immediate::Felt(y)) => x.as_int().$operator(&y.as_int()),
+            (Immediate::Felt(x), Immediate::Felt(y)) => {
+                x.as_canonical_u64().$operator(&y.as_canonical_u64())
+            }
             _ => unreachable!(),
         }
     }};
@@ -1452,7 +1454,7 @@ macro_rules! comparison_with {
             (Immediate::I128(x), Immediate::I128(y)) => Immediate::I128($comparator(x, y)),
             (Immediate::U128(x), Immediate::U128(y)) => Immediate::U128($comparator(x, y)),
             (Immediate::Felt(x), Immediate::Felt(y)) => {
-                Immediate::Felt(Felt::new($comparator(x.as_int(), y.as_int())))
+                Immediate::Felt(Felt::new($comparator(x.as_canonical_u64(), y.as_canonical_u64())))
             }
             _ => unreachable!(),
         }
@@ -1694,8 +1696,6 @@ macro_rules! unaryop {
 
 impl Eval for arith::Incr {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        use midenc_hir::FieldElement;
-
         let lhs = self.operand();
         let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
 
@@ -1740,7 +1740,7 @@ impl Eval for arith::Neg {
             Immediate::U64(x) => Immediate::U64(!x),
             Immediate::I128(x) => Immediate::I128(-x),
             Immediate::U128(x) => Immediate::U128(!x),
-            Immediate::Felt(x) => Immediate::Felt(Felt::new(!x.as_int())),
+            Immediate::Felt(x) => Immediate::Felt(Felt::new(!x.as_canonical_u64())),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1756,13 +1756,14 @@ impl Eval for arith::Neg {
 
 impl Eval for arith::Inv {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        use midenc_hir::FieldElement;
-
         let lhs = self.operand();
         let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
 
         let result = match lhs_value {
-            Immediate::Felt(x) => Immediate::Felt(x.inv()),
+            Immediate::Felt(x) => {
+                use miden_core::field::Field;
+                Immediate::Felt(x.try_inverse().expect("cannot invert zero"))
+            }
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1792,7 +1793,7 @@ impl Eval for arith::Ilog2 {
             Immediate::U64(x) => Immediate::U32(x.ilog2()),
             Immediate::I128(x) => Immediate::U32(x.ilog2()),
             Immediate::U128(x) => Immediate::U32(x.ilog2()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().ilog2()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().ilog2()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1870,7 +1871,7 @@ impl Eval for arith::IsOdd {
             Immediate::U64(x) => !x.is_multiple_of(2),
             Immediate::I128(x) => x % 2 != 0,
             Immediate::U128(x) => !x.is_multiple_of(2),
-            Immediate::Felt(x) => !x.as_int().is_multiple_of(2),
+            Immediate::Felt(x) => !x.as_canonical_u64().is_multiple_of(2),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1900,7 +1901,7 @@ impl Eval for arith::Popcnt {
             Immediate::U64(x) => Immediate::U32(x.count_ones()),
             Immediate::I128(x) => Immediate::U32(x.count_ones()),
             Immediate::U128(x) => Immediate::U32(x.count_ones()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().count_ones()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().count_ones()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1930,7 +1931,7 @@ impl Eval for arith::Clz {
             Immediate::U64(x) => Immediate::U32(x.leading_zeros()),
             Immediate::I128(x) => Immediate::U32(x.leading_zeros()),
             Immediate::U128(x) => Immediate::U32(x.leading_zeros()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().leading_zeros()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().leading_zeros()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1960,7 +1961,7 @@ impl Eval for arith::Ctz {
             Immediate::U64(x) => Immediate::U32(x.trailing_zeros()),
             Immediate::I128(x) => Immediate::U32(x.trailing_zeros()),
             Immediate::U128(x) => Immediate::U32(x.trailing_zeros()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().trailing_zeros()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().trailing_zeros()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1990,7 +1991,7 @@ impl Eval for arith::Clo {
             Immediate::U64(x) => Immediate::U32(x.leading_ones()),
             Immediate::I128(x) => Immediate::U32(x.leading_ones()),
             Immediate::U128(x) => Immediate::U32(x.leading_ones()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().leading_ones()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().leading_ones()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -2020,7 +2021,7 @@ impl Eval for arith::Cto {
             Immediate::U64(x) => Immediate::U32(x.trailing_ones()),
             Immediate::I128(x) => Immediate::U32(x.trailing_ones()),
             Immediate::U128(x) => Immediate::U32(x.trailing_ones()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().trailing_ones()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().trailing_ones()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",

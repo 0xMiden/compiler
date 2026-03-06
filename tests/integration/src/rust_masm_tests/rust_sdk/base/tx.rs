@@ -44,11 +44,14 @@ project-kind = "transaction-script"
 opt-level = "z"
 panic = "abort"
 debug = false
+
+{patch_section}
 "#,
         name = name,
         sdk_path = sdk_path.display(),
         sdk_alloc_path = sdk_alloc_path.display(),
         component_package = component_package,
+        patch_section = crate::compiler_test::sdk_patch_section(),
     );
 
     let cargo_proj = project(name)
@@ -118,7 +121,7 @@ fn rust_sdk_account_tx_get_expiration_block_delta_binding() {
 fn rust_sdk_account_tx_update_expiration_block_delta_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_update_expiration_block_delta_binding",
-        "tx::update_expiration_block_delta(Felt::from_u32(42));",
+        "tx::update_expiration_block_delta(Felt::new(42));",
     );
 }
 

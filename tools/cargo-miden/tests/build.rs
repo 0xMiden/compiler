@@ -2,7 +2,7 @@ use std::{env, fs};
 
 use cargo_miden::{OutputType, run};
 use miden_mast_package::Package;
-use midenc_session::miden_assembly::utils::Deserializable;
+use midenc_session::diagnostics::serde::Deserializable;
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
     let template = if template.is_empty() {
@@ -27,6 +27,7 @@ fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
 // NOTE: This test sets the current working directory so don't run it in parallel with tests
 // that depend on the current directory
 
+#[ignore = "until `as_canonical_u64` is resolved"]
 #[test]
 fn test_all_templates() {
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")

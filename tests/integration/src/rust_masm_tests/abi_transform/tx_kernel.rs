@@ -5,7 +5,7 @@ use miden_core::Felt;
 use miden_debug::{Executor, Felt as TestFelt};
 use miden_protocol::{
     ProtocolLib,
-    note::{NoteInputs, NoteRecipient, NoteScript},
+    note::{NoteRecipient, NoteScript, NoteStorage},
 };
 use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
@@ -83,12 +83,12 @@ fn test_get_inputs(test_name: &str, expected_inputs: Vec<u32>) -> Result<(), Rep
     assert!(expected_inputs.len() == 4, "for now only word-sized inputs are supported");
     let masm = format!(
         "
-pub proc get_inputs
+pub proc get_storage
     # Stack input: [dest_ptr]
     #
     # Write 4 inputs to memory starting at `dest_ptr`, then return `[num_inputs, dest_ptr]`.
     #
-    # This matches the Miden protocol `active_note::get_inputs` convention, where `dest_ptr` is
+    # This matches the Miden protocol `active_note::get_storage` convention, where `dest_ptr` is
     # preserved on the operand stack alongside `num_inputs`.
     dup.0 push.{expect1} swap.1 mem_store
     dup.0 push.1 u32wrapping_add push.{expect2} swap.1 mem_store
@@ -159,8 +159,8 @@ end
         miden_core::Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
     let input1 = Felt::new(5);
     let input2 = Felt::new(6);
-    let inputs = NoteInputs::new(vec![input1, input2]).expect("invalid note inputs");
-    let note_recipient = NoteRecipient::new(serial_num, note_script.clone(), inputs);
+    let storage = NoteStorage::new(vec![input1, input2]).expect("invalid note storage");
+    let note_recipient = NoteRecipient::new(serial_num, note_script.clone(), storage);
     let expected_digest = note_recipient.digest();
 
     let main_fn = r#"(serial_num: Word, script_digest: Digest, inputs: Vec<Felt>) -> Word {
@@ -185,8 +185,8 @@ end
 
     // The Rust extern "C" ABI for this entrypoint uses byval pointers for the `Word`, `Digest`,
     // and `Vec` arguments. We initialize all three arguments in a single contiguous payload and
-    // pass their byte pointers as inputs. The return value is written to an output buffer, whose
-    // pointer is passed as the final argument (see `test_adv_load_preimage` for similar patterns).
+    // pass their byte pointers as inputs. The return value is written to an output buffer whose
+    // pointer is passed as the first argument (see `test_adv_load_preimage` for similar patterns).
     let base_addr = 20u32 * 65536; // 1310720
     let serial_num_ptr = base_addr;
     let script_digest_ptr = base_addr + 16;
@@ -215,15 +215,15 @@ end
     }];
 
     let args = [
-        Felt::new(vec_ptr as u64),
-        Felt::new(script_digest_ptr as u64),
-        Felt::new(serial_num_ptr as u64),
         Felt::new(out_addr as u64),
+        Felt::new(serial_num_ptr as u64),
+        Felt::new(script_digest_ptr as u64),
+        Felt::new(vec_ptr as u64),
     ];
 
     let _ = eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
-        let actual: [TestFelt; 4] =
-            trace.read_from_rust_memory(out_addr).expect("expected output to be written");
+        let actual: [TestFelt; 4] = crate::testing::read_rust_memory(trace, out_addr)
+            .expect("expected output to be written");
         let expected: [Felt; 4] = expected_digest.into();
         assert_eq!(
             [actual[0].0, actual[1].0, actual[2].0, actual[3].0],

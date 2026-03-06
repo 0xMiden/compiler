@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::{Overflow, SourceSpan, Span};
 
 use super::{OpEmitter, P, dup_from_offset, masm, movup_from_offset};
@@ -15,6 +15,8 @@ impl OpEmitter<'_> {
         self.push_u64(P, span);
         self.lt_u64(span);
         self.emit(masm::Instruction::Assert, span);
+        // `u32unsplit` expects `[hi, lo]` on the stack; u64 values are represented as `[lo, hi]`.
+        self.emit(masm::Instruction::Swap1, span);
         self.u32unsplit(span);
     }
 
@@ -31,9 +33,14 @@ impl OpEmitter<'_> {
     ///
     /// Conversion will trap if the input value is too large to fit in an N-bit integer.
     pub fn u64_to_uint(&mut self, n: u32, span: SourceSpan) {
+        // u64 values are stored on the operand stack in little-endian limb order, i.e. `[lo, hi]`
+        // with `lo` on top. To validate truncation to <=32 bits, we must assert `hi == 0` and
+        // then range-check `lo`.
         self.emit_all(
             [
-                // Assert hi bits are zero
+                // Bring `hi` to the top of the stack and assert it is zero. This consumes `hi`,
+                // leaving only `lo` on the stack.
+                masm::Instruction::Swap1,
                 masm::Instruction::Assertz,
                 // Check that the remaining bits fit in range
                 masm::Instruction::Dup0,
@@ -121,6 +128,8 @@ impl OpEmitter<'_> {
     /// have already validated that the top of the stack holds a valid value of this type.
     #[inline(always)]
     pub fn trunc_int64_to_felt(&mut self, span: SourceSpan) {
+        // `u32unsplit` expects `[hi, lo]`; u64/i64 values are represented as `[lo, hi]`.
+        self.emit(masm::Instruction::Swap1, span);
         self.u32unsplit(span)
     }
 
@@ -133,7 +142,9 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn trunc_int64(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 32);
-        self.emit(masm::Instruction::Drop, span);
+        // u64/i64 values are represented as `[lo, hi]` (lo on top). To truncate to <= 32 bits we
+        // must drop the high limb and keep the low limb.
+        self.emit_all([masm::Instruction::Swap1, masm::Instruction::Drop], span);
         match n {
             32 => (),
             n => self.trunc_int32(n, span),
@@ -517,16 +528,67 @@ impl OpEmitter<'_> {
     pub fn mul_u64(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Checked => {
-                self.raw_exec("::miden::core::math::u64::overflowing_mul", span);
-                self.raw_exec("::miden::core::math::u64::eqz", span);
-                self.emit(masm::Instruction::Assertz, span);
+                self.raw_exec("::miden::core::math::u64::widening_mul", span);
+                // `widening_mul` returns a u128: `[c0, c1, c2, c3]` where `c0` is the low limb.
+                //
+                // To check that the result fits in u64, we must verify that the upper 64-bits
+                // (i.e. `c2` and `c3`) are zero. We compute an overflow flag and then assert it is
+                // zero, leaving only the low 64-bits (`c0`, `c1`) on the stack.
+                self.emit_all(
+                    [
+                        // overflow = (c2 != 0) || (c3 != 0)
+                        masm::Instruction::Dup2,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::Not,
+                        masm::Instruction::Dup4,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::Not,
+                        masm::Instruction::Or,
+                        // Move overflow to the bottom so we can drop the upper limbs
+                        masm::Instruction::MovDn4,
+                        // Drop c3
+                        masm::Instruction::MovUp3,
+                        masm::Instruction::Drop,
+                        // Drop c2
+                        masm::Instruction::MovUp2,
+                        masm::Instruction::Drop,
+                        // Bring overflow back to the top and assert it is zero
+                        masm::Instruction::MovUp2,
+                        masm::Instruction::Assertz,
+                    ],
+                    span,
+                );
             }
             Overflow::Unchecked | Overflow::Wrapping => {
                 self.raw_exec("::miden::core::math::u64::wrapping_mul", span);
             }
             Overflow::Overflowing => {
-                self.raw_exec("::miden::core::math::u64::overflowing_mul", span);
-                self.raw_exec("::miden::core::math::u64::eqz", span);
+                self.raw_exec("::miden::core::math::u64::widening_mul", span);
+                // Return `[overflow, c_lo, c_hi]`, where `overflow` is 1 iff the upper 64 bits are
+                // non-zero.
+                self.emit_all(
+                    [
+                        // overflow = (c2 != 0) || (c3 != 0)
+                        masm::Instruction::Dup2,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::Not,
+                        masm::Instruction::Dup4,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::Not,
+                        masm::Instruction::Or,
+                        // Move overflow to the bottom so we can drop the upper limbs
+                        masm::Instruction::MovDn4,
+                        // Drop c3
+                        masm::Instruction::MovUp3,
+                        masm::Instruction::Drop,
+                        // Drop c2
+                        masm::Instruction::MovUp2,
+                        masm::Instruction::Drop,
+                        // Bring overflow back to the top
+                        masm::Instruction::MovUp2,
+                    ],
+                    span,
+                );
             }
         }
     }
@@ -754,20 +816,23 @@ pub fn to_raw_parts(value: u64) -> (u32, u32) {
 }
 
 /// Construct a u64/i64 constant from raw parts, i.e. two 32-bit little-endian limbs
+///
+/// Pushes hi first, then lo, so the stack ends up as [lo, hi] (lo on top) matching the LE
+/// convention where the low limb is on top.
 #[inline]
 pub fn from_raw_parts(lo: u32, hi: u32, block: &mut Vec<masm::Op>, span: SourceSpan) {
     block.push(masm::Op::Inst(Span::new(
         span,
         masm::Instruction::Push(masm::Immediate::Value(Span::new(
             span,
-            Felt::new(lo as u64).into(),
+            Felt::new(hi as u64).into(),
         ))),
     )));
     block.push(masm::Op::Inst(Span::new(
         span,
         masm::Instruction::Push(masm::Immediate::Value(Span::new(
             span,
-            Felt::new(hi as u64).into(),
+            Felt::new(lo as u64).into(),
         ))),
     )));
 }

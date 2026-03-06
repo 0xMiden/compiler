@@ -46,3 +46,7 @@ project-kind = "note-script"
 
 [package.metadata.component.target.dependencies]
 "miden:cross-ctx-account-word-arg" = { path = "../cross-ctx-account-word-arg/wit/cross-ctx-account-word.wit" }
+
+[patch.crates-io]
+miden-protocol = { git = "https://github.com/0xMiden/protocol", branch = "next" }
+miden-standards = { git = "https://github.com/0xMiden/protocol", branch = "next" }

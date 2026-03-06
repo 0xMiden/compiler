@@ -93,7 +93,7 @@ pub proc memory_grow # [num_pages]
         mem_load.HEAP_INFO_BASE   # [heap_base, new_heap_size, heap_size]
         dup.1                     # [new_heap_size, heap_base, new_heap_size, heap_size]
         push.PAGE_SIZE            # [PAGE_SIZE, new_heap_size, heap_base, new_heap_size, heap_size]
-        u32overflowing_madd       # [overflowed, PAGE_SIZE * new_heap_size + heap_base, ..]
+        u32widening_madd       # [overflowed, PAGE_SIZE * new_heap_size + heap_base, ..]
         if.true  # [new_heap_top, new_heap_size, heap_size]
             # Overflow, drop the changes and return -1
             drop drop drop
@@ -512,7 +512,7 @@ pub proc memset_sw # [size, dst, count, value]
         dup.1  # [dst, i, dst, size, count, value]
         dup.1  # [i, dst, i, dst, size, count, value]
         dup.4  # [size, i, dst, i, dst, size, count, value]
-        u32overflowing_madd assertz # [size * i + dst, i, dst, size, count, value]
+        u32widening_madd assertz # [size * i + dst, i, dst, size, count, value]
 
         # copy value to top of stack, swap with pointer
         dup.5     # [value, dst', i, dst, size, count, value]
@@ -552,7 +552,7 @@ pub proc memset_dw # [size, dst, count, value_hi, value_lo]
         dup.1  # [dst, i, dst, size, count, value_hi, value_lo]
         dup.1  # [i, dst, i, dst, size, count, value_hi, value_lo]
         dup.4  # [size, i, dst, i, dst, size, count, value_hi, value_lo]
-        u32overflowing_madd assertz # [size * i + dst, i, dst, size, count, value_hi, value_lo]
+        u32widening_madd assertz # [size * i + dst, i, dst, size, count, value_hi, value_lo]
 
         # copy value to top of stack, swap with pointer
         dup.6     # [value_lo, dst', i, dst, size, count, value_hi, value_lo]

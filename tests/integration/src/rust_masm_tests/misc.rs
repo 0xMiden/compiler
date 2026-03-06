@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
@@ -33,7 +33,7 @@ fn test_func_arg_same() {
     let addr2: u32 = 11 * 65536;
 
     // Test 1: addr1 is passed as x and should be returned
-    let args1 = [Felt::from(addr2), Felt::from(addr1)]; // Arguments are pushed in reverse order on stack
+    let args1 = [Felt::from(addr1), Felt::from(addr2)];
     eval_package::<i32, _, _>(&package, [], &args1, &test.session, |trace| {
         let result: u32 = trace.parse_result().unwrap();
         assert_eq!(result, addr1);
@@ -42,7 +42,7 @@ fn test_func_arg_same() {
     .unwrap();
 
     // Test 1: addr2 is passed as x and should be returned
-    let args2 = [Felt::from(addr1), Felt::from(addr2)]; // Arguments are pushed in reverse order on stack
+    let args2 = [Felt::from(addr2), Felt::from(addr1)];
     eval_package::<i32, _, _>(&package, [], &args2, &test.session, |trace| {
         let result: u32 = trace.parse_result().unwrap();
         assert_eq!(result, addr2);
@@ -87,24 +87,23 @@ fn test_invalid_stack_index_16_issue_872() {
     let package = test.compile_package();
 
     // This should execute and return the expected value.
-    // Arguments are pushed in reverse order on stack.
     let args: [Felt; 16] = [
-        Felt::from(16u32),
-        Felt::from(15u32),
-        Felt::from(14u32),
-        Felt::from(13u32),
-        Felt::from(12u32),
-        Felt::from(11u32),
-        Felt::from(10u32),
-        Felt::from(9u32),
-        Felt::from(8u32),
-        Felt::from(7u32),
-        Felt::from(6u32),
-        Felt::from(5u32),
-        Felt::from(4u32),
-        Felt::from(3u32),
-        Felt::from(2u32),
         Felt::from(1u32),
+        Felt::from(2u32),
+        Felt::from(3u32),
+        Felt::from(4u32),
+        Felt::from(5u32),
+        Felt::from(6u32),
+        Felt::from(7u32),
+        Felt::from(8u32),
+        Felt::from(9u32),
+        Felt::from(10u32),
+        Felt::from(11u32),
+        Felt::from(12u32),
+        Felt::from(13u32),
+        Felt::from(14u32),
+        Felt::from(15u32),
+        Felt::from(16u32),
     ];
 
     let expected = (1u32..=16u32).fold(Felt::ZERO, |acc, x| acc + Felt::from(x)) + Felt::from(2u32);
@@ -177,28 +176,27 @@ fn test_invalid_stack_index_4_word_1_felt_args() {
     let package = test.compile_package();
 
     // This should execute and return the expected value.
-    // Arguments are pushed in reverse order on stack (with each Word pushed as d, c, b, a).
     let args: [Felt; 16] = [
-        // w3 (d, c, b, a)
-        Felt::from(16u32),
-        Felt::from(15u32),
-        Felt::from(14u32),
-        Felt::from(13u32),
-        // w2 (d, c, b, a)
-        Felt::from(12u32),
-        Felt::from(11u32),
-        Felt::from(10u32),
-        Felt::from(9u32),
-        // w1 (d, c, b, a)
-        Felt::from(8u32),
-        Felt::from(7u32),
-        Felt::from(6u32),
-        Felt::from(5u32),
-        // w0 (d, c, b, a)
-        Felt::from(4u32),
-        Felt::from(3u32),
-        Felt::from(2u32),
+        // w0
         Felt::from(1u32),
+        Felt::from(2u32),
+        Felt::from(3u32),
+        Felt::from(4u32),
+        // w1
+        Felt::from(5u32),
+        Felt::from(6u32),
+        Felt::from(7u32),
+        Felt::from(8u32),
+        // w2
+        Felt::from(9u32),
+        Felt::from(10u32),
+        Felt::from(11u32),
+        Felt::from(12u32),
+        // w3
+        Felt::from(13u32),
+        Felt::from(14u32),
+        Felt::from(15u32),
+        Felt::from(16u32),
     ];
 
     // Expected:
@@ -272,7 +270,7 @@ fn test_vec_realloc_copies_data_issue_811() {
     let args: [Felt; 0] = [];
 
     eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
-        let result: u64 = trace.parse_result::<Felt>().unwrap().as_int();
+        let result: u64 = trace.parse_result::<Felt>().unwrap().as_canonical_u64();
         assert_eq!(result, 166_665, "Vec reallocation failed to copy existing elements");
         Ok(())
     })

@@ -20,6 +20,22 @@ mod misc;
 mod rust_sdk;
 mod types;
 
+/// Push a value onto an argument vector in the order expected by `miden_debug::Executor`.
+///
+/// `Executor` expects stack inputs with the top at index 0. [ToMidenRepr::to_felts] returns field
+/// elements in little-endian order (least significant first), so we can append those elements
+/// directly to ensure the least-significant element is on top.
+pub trait PushToStackInputs: ToMidenRepr {
+    /// Push `self` onto `stack` in top-to-bottom order.
+    fn push_to_stack_inputs(&self, stack: &mut Vec<Felt>) {
+        for felt in self.to_felts() {
+            stack.push(Felt::new(felt.as_canonical_u64()));
+        }
+    }
+}
+
+impl<T: ToMidenRepr + ?Sized> PushToStackInputs for T {}
+
 pub fn run_masm_vs_rust<T>(
     rust_out: T,
     package: &miden_mast_package::Package,
@@ -29,13 +45,7 @@ pub fn run_masm_vs_rust<T>(
 where
     T: Clone + FromMidenRepr + PartialEq + std::fmt::Debug,
 {
-    eval_package::<Felt, _, _>(package, None, args, session, |trace| {
-        let vm_out_felt0 = trace.outputs().get_stack_item(0).unwrap();
-        let vm_out_felt1 = trace.outputs().get_stack_item(1).unwrap();
-        let vm_out: T = T::from_felts(&[vm_out_felt0, vm_out_felt1]);
-        dbg!(&vm_out);
-        prop_assert_eq!(rust_out.clone(), vm_out, "VM output mismatch");
-        Ok(())
-    })?;
+    let vm_out = eval_package::<T, _, _>(package, None, args, session, |_| Ok(()))?;
+    prop_assert_eq!(rust_out, vm_out, "VM output mismatch");
     Ok(())
 }
