@@ -1272,7 +1272,12 @@ impl HirLowering for arith::Split {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
         inst_emitter.pop().expect("operand stack is empty");
-        for limb in self.limbs().iter().rev() {
+        // `arith.split` defines results in most-significant to least-significant order, but the
+        // underlying runtime stack representation is little-endian (least-significant parts are
+        // closer to the top of the stack). Since `arith.split` does not emit runtime instructions,
+        // we must update the operand stack to match the existing raw-part order, which means
+        // leaving the least-significant limb on top.
+        for limb in self.limbs().iter() {
             inst_emitter.push(limb.borrow().as_value_ref());
         }
         Ok(())

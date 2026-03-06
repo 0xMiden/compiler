@@ -962,13 +962,12 @@ pub fn sdk_crate_path() -> PathBuf {
 /// proc-macro crate depends on `miden-protocol` which is at v0.14 (not yet published on
 /// crates.io), so we must patch it to the same git source as the compiler workspace.
 pub fn sdk_patch_section() -> String {
-    format!(
-        r#"
+    r#"
 [patch.crates-io]
-miden-protocol = {{ git = "https://github.com/0xMiden/protocol", branch = "next" }}
-miden-standards = {{ git = "https://github.com/0xMiden/protocol", branch = "next" }}
-"#,
-    )
+miden-protocol = { git = "https://github.com/0xMiden/protocol", branch = "next" }
+miden-standards = { git = "https://github.com/0xMiden/protocol", branch = "next" }
+"#
+    .to_string()
 }
 
 /// Get the directory for the top-level workspace

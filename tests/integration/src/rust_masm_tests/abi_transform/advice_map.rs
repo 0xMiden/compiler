@@ -71,17 +71,16 @@ fn test_adv_load_preimage() {
     ];
 
     let commitment = miden_core::crypto::hash::Poseidon2::hash_elements(&input);
-    dbg!(&commitment.to_hex());
     let mut advice_map = std::collections::BTreeMap::new();
     advice_map.insert(commitment, input.clone());
 
     let out_addr = 20u32 * 65536;
     let args = [
-        commitment[3],
-        commitment[2],
-        commitment[1],
-        commitment[0],
         Felt::new(out_addr as u64),
+        commitment[0],
+        commitment[1],
+        commitment[2],
+        commitment[3],
     ];
 
     let mut exec = Executor::new(args.to_vec());
@@ -102,19 +101,17 @@ fn test_adv_load_preimage() {
     let result_ptr = out_addr;
     // Read the Vec metadata from memory (capacity, ptr, len, padding)
     let vec_metadata: [TestFelt; 4] =
-        trace.read_from_rust_memory(result_ptr).expect("Failed to read vec metadata");
+        crate::testing::read_rust_memory(&trace, result_ptr).expect("Failed to read vec metadata");
 
     let capacity = vec_metadata[0].0.as_canonical_u64() as usize;
     let data_ptr = vec_metadata[1].0.as_canonical_u64() as u32;
     let vec_len = vec_metadata[2].0.as_canonical_u64() as usize;
-    dbg!(capacity, data_ptr, vec_len);
 
     // Reconstruct the Vec<Felt> by reading all words from memory
     let mut loaded: Vec<Felt> = Vec::with_capacity(capacity);
     for i in 0..(vec_len / 4) {
         let word_addr = data_ptr + (i * 4 * 4) as u32;
-        let w: [TestFelt; 4] = trace
-            .read_from_rust_memory(word_addr)
+        let w: [TestFelt; 4] = crate::testing::read_rust_memory(&trace, word_addr)
             .unwrap_or_else(|| panic!("Failed to read word at index {}", i));
         loaded.push(w[0].0);
         loaded.push(w[1].0);

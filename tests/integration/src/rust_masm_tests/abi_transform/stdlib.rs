@@ -1,7 +1,7 @@
 use core::panic;
 use std::collections::VecDeque;
 
-use miden_core::utils::group_slice_elements;
+use miden_core::{Word, advice::AdviceStackBuilder, utils::group_slice_elements};
 use miden_debug::{Executor, Felt as TestFelt, ToMidenRepr};
 use miden_processor::advice::AdviceInputs;
 use midenc_expect_test::expect_file;
@@ -209,24 +209,38 @@ fn test_pipe_words_to_memory() {
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
             let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
-            // `pipe_words_to_memory` reads words from the advice stack in LIFO order.
-            // To preserve the original order, push the words in reverse.
-            let mut advice_stack: Vec<Felt> = Vec::with_capacity(flat_felts.len());
-            for w in raw_words.iter().rev() {
-                // Push each word as `d, c, b, a` so that `a` is on top of the stack.
-                advice_stack.push(w[3]);
-                advice_stack.push(w[2]);
-                advice_stack.push(w[1]);
-                advice_stack.push(w[0]);
+            let mut advice_builder = AdviceStackBuilder::new();
+
+            // `pipe_words_to_memory` consumes words via `adv_pipe` in pairs, then (if needed)
+            // consumes a final word via `adv_loadw`.
+            let has_odd_word = (raw_words.len() % 2) == 1;
+            let pairs_len_words = if has_odd_word {
+                raw_words.len() - 1
+            } else {
+                raw_words.len()
+            };
+
+            if pairs_len_words > 0 {
+                let mut pipe_elems = Vec::with_capacity(pairs_len_words * 4);
+                for w in raw_words.iter().take(pairs_len_words) {
+                    pipe_elems.extend_from_slice(w);
+                }
+                advice_builder.push_for_adv_pipe(&pipe_elems);
             }
 
-            // `entrypoint` args are passed on the operand stack in reverse order.
+            if has_odd_word {
+                let last = raw_words.last().expect("raw_words is non-empty when has_odd_word");
+                advice_builder.push_for_adv_loadw(Word::new(*last));
+            }
+
+            let advice_stack = advice_builder.into_elements();
+
             let args = [
-                Felt::from(raw_words.len() as u32),
-                expected_digest[3],
-                expected_digest[2],
-                expected_digest[1],
                 expected_digest[0],
+                expected_digest[1],
+                expected_digest[2],
+                expected_digest[3],
+                Felt::from(raw_words.len() as u32),
             ];
 
             eval_package_with_advice_stack::<Felt, _, _, _>(
@@ -299,23 +313,16 @@ fn test_pipe_double_words_to_memory() {
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
             let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
-            // `pipe_double_words_to_memory` reads words from the advice stack in LIFO order.
-            let mut advice_stack: Vec<Felt> = Vec::with_capacity(flat_felts.len());
-            for w in raw_words.iter().rev() {
-                // Push each word as `d, c, b, a` so that `a` is on top of the stack.
-                advice_stack.push(w[3]);
-                advice_stack.push(w[2]);
-                advice_stack.push(w[1]);
-                advice_stack.push(w[0]);
-            }
+            let mut advice_builder = AdviceStackBuilder::new();
+            advice_builder.push_for_adv_pipe(&flat_felts);
+            let advice_stack = advice_builder.into_elements();
 
-            // `entrypoint` args are passed on the operand stack in reverse order.
             let args = [
-                Felt::from(raw_words.len() as u32),
-                expected_digest[3],
-                expected_digest[2],
-                expected_digest[1],
                 expected_digest[0],
+                expected_digest[1],
+                expected_digest[2],
+                expected_digest[3],
+                Felt::from(raw_words.len() as u32),
             ];
 
             eval_package_with_advice_stack::<Felt, _, _, _>(
