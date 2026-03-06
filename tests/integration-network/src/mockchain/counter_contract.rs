@@ -1,11 +1,11 @@
 //! Counter contract test module
 
 use miden_client::{
-    Word,
     account::component::{BasicWallet, InitStorageData},
     crypto::RpoRandomCoin,
     testing::{Auth, MockChain, NoteBuilder},
     transaction::OutputNote,
+    Word,
 };
 use miden_core::{Felt, FieldElement};
 use miden_protocol::account::StorageSlotName;
@@ -36,6 +36,7 @@ pub fn test_counter_contract() {
         .add_existing_account_from_components(
             Auth::BasicAuth,
             [BasicWallet.into(), contract_package.into()],
+            [],
         )
         .unwrap();
 

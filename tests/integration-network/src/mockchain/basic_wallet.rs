@@ -33,12 +33,12 @@ pub fn test_basic_wallet_p2id() {
     let faucet_id = faucet_account.id();
 
     let alice_account = builder
-        .add_existing_account_from_components(Auth::BasicAuth, [wallet_package.clone().into()])
+        .add_existing_account_from_components(Auth::BasicAuth, [wallet_package.clone().into()], [])
         .unwrap();
     let alice_id = alice_account.id();
 
     let bob_account = builder
-        .add_existing_account_from_components(Auth::BasicAuth, [wallet_package.into()])
+        .add_existing_account_from_components(Auth::BasicAuth, [wallet_package.into()], [])
         .unwrap();
     let bob_id = bob_account.id();
 
@@ -131,6 +131,7 @@ pub fn test_basic_wallet_p2ide() {
         .add_existing_account_from_components(
             Auth::BasicAuth,
             [wallet_package.clone().into(), BasicWallet.into()],
+            [],
         )
         .unwrap();
     let alice_id = alice_account.id();
@@ -139,6 +140,7 @@ pub fn test_basic_wallet_p2ide() {
         .add_existing_account_from_components(
             Auth::BasicAuth,
             [AccountComponent::from(wallet_package)],
+            [],
         )
         .unwrap();
     let bob_id = bob_account.id();
@@ -246,12 +248,13 @@ pub fn test_basic_wallet_p2ide_reclaim() {
         .add_existing_account_from_components(
             Auth::BasicAuth,
             [wallet_package.clone().into(), BasicWallet.into()],
+            [],
         )
         .unwrap();
     let alice_id = alice_account.id();
 
     let bob_account = builder
-        .add_existing_account_from_components(Auth::BasicAuth, [wallet_package.into()])
+        .add_existing_account_from_components(Auth::BasicAuth, [wallet_package.into()], [])
         .unwrap();
     let bob_id = bob_account.id();
 
