@@ -4,12 +4,13 @@ use midenc_hir::{
     BlockRef, BuilderExt, EntityMut, Op, OpBuilder, OperationName, OperationRef, Report, Rewriter,
     SourceSpan, Spanned, Symbol, ValueRef,
     adt::SmallDenseMap,
-    dialects::builtin::{Function, FunctionRef, LocalVariable},
+    dialects::builtin::{Function, FunctionRef, attributes::LocalVariable},
     pass::{Pass, PassExecutionState, PostPassStatus},
 };
 use midenc_hir_analysis::analyses::SpillAnalysis;
 use midenc_hir_transform::{self as transforms, ReloadLike, SpillLike, TransformSpillsInterface};
 
+#[derive(Default)]
 pub struct TransformSpills;
 
 impl Pass for TransformSpills {

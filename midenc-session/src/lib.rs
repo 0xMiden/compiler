@@ -29,7 +29,7 @@ mod inputs;
 mod libs;
 mod options;
 mod outputs;
-mod path;
+pub mod path;
 #[cfg(feature = "std")]
 mod statistics;
 

@@ -13,11 +13,13 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["rustc-demangle/std", "compact_str/std", "semver/std"]
+std = ["base64/std", "compact_str/std", "memchr/std", "rustc-demangle/std", "semver/std"]
 debug_refcell = []
+logging = ["dep:midenc-log", "std"]
 
 [dependencies]
 anyhow.workspace = true
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 bitvec.workspace = true
 bitflags.workspace = true
 blink-alloc.workspace = true
@@ -25,12 +27,17 @@ compact_str.workspace = true
 hashbrown.workspace = true
 intrusive-collections.workspace = true
 inventory.workspace = true
+litcheck.workspace = true
+litcheck-filecheck.workspace = true
 log.workspace = true
+memchr = { version = "2.8", default-features = false, features = ["alloc"] }
 miden-core.workspace = true
-midenc-hir-symbol.workspace = true
+midenc-log = { workspace = true, optional = true }
+midenc-hir-symbol = { workspace = true, features = ["compact_str"] }
 midenc-hir-type = "0.4"
 midenc-hir-macros.workspace = true
 midenc-session.workspace = true
+paste.workspace = true
 rustc-hash.workspace = true
 rustc-demangle = "0.1.19"
 semver.workspace = true

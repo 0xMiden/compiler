@@ -648,7 +648,7 @@ mod tests {
         let tests = [[v2, v1, v3, v4, v5, v6], [v2, v4, v3, v1, v5, v6]];
 
         for test in tests.into_iter() {
-            let mut stack = crate::OperandStack::default();
+            let mut stack = crate::OperandStack::new(context.clone());
             for value in test.into_iter().rev() {
                 stack.push(value);
             }
@@ -695,7 +695,7 @@ mod tests {
         ];
 
         for test in tests.into_iter() {
-            let mut stack = crate::OperandStack::default();
+            let mut stack = crate::OperandStack::new(context.clone());
             for value in test.into_iter().rev() {
                 stack.push(value);
             }
@@ -741,7 +741,7 @@ mod tests {
         ];
 
         for test in tests.into_iter() {
-            let mut stack = crate::OperandStack::default();
+            let mut stack = crate::OperandStack::new(context.clone());
             for value in test.into_iter().rev() {
                 stack.push(value);
             }
@@ -768,7 +768,7 @@ mod tests {
     fn operand_movement_constraint_solver_duplicate() {
         use hir::Context;
 
-        testing::logger_setup();
+        testing::enable_compiler_instrumentation();
 
         let context = Rc::new(Context::default());
 
@@ -783,7 +783,7 @@ mod tests {
         let tests = [[v32, v7, v16, v0]];
 
         for test in tests.into_iter() {
-            let mut stack = crate::OperandStack::default();
+            let mut stack = crate::OperandStack::new(context.clone());
             for value in test.into_iter().rev() {
                 stack.push(value);
             }

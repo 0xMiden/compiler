@@ -1,22 +1,24 @@
-use alloc::{collections::VecDeque, format, sync::Arc};
+use alloc::{collections::VecDeque, sync::Arc};
 use core::fmt;
 
-use midenc_hir_macros::operation;
-use midenc_session::diagnostics::{Diagnostic, miette};
-
 use crate::{
-    Alignable, Op, OpPrinter, UnsafeIntrusiveEntityRef,
-    constants::{ConstantData, ConstantId},
-    dialects::builtin::BuiltinDialect,
+    Alignable, OpPrinter, UnsafeIntrusiveEntityRef,
+    constants::ConstantData,
+    derive::{OpParser, OpPrinter, operation},
+    diagnostics::{Diagnostic, miette},
+    dialects::builtin::{
+        BuiltinDialect,
+        attributes::{BoolAttr, BytesAttr, U32Attr},
+    },
     traits::*,
 };
 
 pub type SegmentRef = UnsafeIntrusiveEntityRef<Segment>;
 
-/// Declare a data segment in the shared memory of a [Component].
+/// Declare a data segment in the shared memory of a [super::Component].
 ///
-/// This operation type is only permitted in the body of a [Module] op, it is an error to use it
-/// anywhere else. At best it will be ignored.
+/// This operation type is only permitted in the body of a [super::Module] op, it is an error to use
+/// it anywhere else. At best it will be ignored.
 ///
 /// Data segments can have a size that is larger than the initializer data it describes; in such
 /// cases, the remaining memory is either assumed to be arbitrary bytes, or if `zeroed` is set,
@@ -31,6 +33,7 @@ pub type SegmentRef = UnsafeIntrusiveEntityRef<Segment>;
 /// NOTE: It is not guaranteed that the optimizer will make any assumptions with regard to data
 /// segments. For the moment, even if `readonly` is set, the compiler assumes that segments are
 /// mutable.
+#[derive(OpPrinter, OpParser)]
 #[operation(
     dialect = BuiltinDialect,
     traits(
@@ -43,14 +46,14 @@ pub type SegmentRef = UnsafeIntrusiveEntityRef<Segment>;
 pub struct Segment {
     /// The offset from the start of linear memory where this segment starts
     #[attr]
-    offset: u32,
+    offset: U32Attr,
     /// The data to initialize this segment with, determines the size of the segment
     #[attr]
-    data: ConstantId,
+    data: BytesAttr,
     /// Whether or not this segment is intended to be read-only data
     #[attr]
     #[default]
-    readonly: bool,
+    readonly: BoolAttr,
 }
 
 impl Segment {
@@ -58,14 +61,12 @@ impl Segment {
     ///
     /// By default this will be the same size as `init`, unless explicitly given.
     pub fn size_in_bytes(&self) -> usize {
-        let id = *self.data();
-        self.as_operation().context().get_constant_size_in_bytes(id)
+        self.get_data().len()
     }
 
     /// Get the data, as bytes, to initialize this data segment with.
     pub fn initializer(&self) -> Arc<ConstantData> {
-        let id = *self.data();
-        self.as_operation().context().get_constant(id)
+        self.get_data().clone()
     }
 }
 
@@ -73,31 +74,11 @@ impl fmt::Debug for Segment {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let data = self.initializer();
         f.debug_struct("Segment")
-            .field("offset", self.offset())
+            .field("offset", &self.get_offset())
             .field("size", &data.len())
             .field("init", &format_args!("{data}"))
-            .field("readonly", self.readonly())
+            .field("readonly", &self.get_readonly())
             .finish()
-    }
-}
-
-impl OpPrinter for Segment {
-    fn print(
-        &self,
-        _flags: &crate::OpPrintingFlags,
-        _context: &crate::Context,
-    ) -> crate::formatter::Document {
-        use crate::formatter::*;
-
-        let header = display(self.op.name());
-        let header = if *self.readonly() {
-            header + const_text(" ") + const_text("readonly")
-        } else {
-            header
-        };
-        let header = header + const_text(" ") + text(format!("@{}", self.offset()));
-        let data = self.initializer();
-        header + const_text(" = ") + text(format!("0x{data};"))
     }
 }
 
@@ -176,7 +157,7 @@ impl DataSegmentLayout {
     pub fn next_available_offset(&self) -> u32 {
         if let Some(last_segment) = self.segments.back() {
             let last_segment = last_segment.borrow();
-            let next_offset = *last_segment.offset() + last_segment.size_in_bytes() as u32;
+            let next_offset = *last_segment.get_offset() + last_segment.size_in_bytes() as u32;
             // Ensure the start of the next segment is word-aligned
             next_offset.align_up(32)
         } else {
@@ -194,13 +175,13 @@ impl DataSegmentLayout {
         }
 
         let segment = segment_ref.borrow();
-        let offset = *segment.offset();
+        let offset = *segment.get_offset();
         let size = u32::try_from(segment.size_in_bytes())
             .map_err(|_| DataSegmentError::InitTooLarge(offset))?;
         let end = offset + size;
         for (index, current_segment_ref) in self.segments.iter().enumerate() {
             let current_segment = current_segment_ref.borrow();
-            let current_offset = *current_segment.offset();
+            let current_offset = *current_segment.get_offset();
             let current_size = current_segment.size_in_bytes() as u32;
             let segment_end = current_offset + current_size;
 

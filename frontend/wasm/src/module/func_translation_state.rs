@@ -6,7 +6,10 @@
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
 use midenc_dialect_hir::HirOpBuilder;
-use midenc_hir::{BlockRef, Builder, OperationRef, Signature, SourceSpan, Type, ValueRef};
+use midenc_hir::{
+    BlockRef, Builder, OperationRef, SourceSpan, Type, ValueRef,
+    dialects::builtin::attributes::Signature,
+};
 
 use super::function_builder_ext::FunctionBuilderExt;
 use crate::{error::WasmResult, module::types::BlockType};

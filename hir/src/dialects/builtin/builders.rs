@@ -4,9 +4,9 @@ mod module;
 mod world;
 
 pub use self::{component::*, function::*, module::*, world::*};
-use super::ops::*;
+use super::{attributes::Signature, ops::*};
 use crate::{
-    Builder, BuilderExt, Ident, Immediate, OpBuilder, Report, Signature, SourceSpan, Spanned, Type,
+    Builder, BuilderExt, Ident, Immediate, OpBuilder, Report, SourceSpan, Spanned, Type,
     UnsafeIntrusiveEntityRef, ValueRef, Visibility, constants::ConstantData,
 };
 
@@ -24,10 +24,11 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
     fn create_function(
         &mut self,
         name: Ident,
+        visibility: Visibility,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        let op_builder = self.builder_mut().create::<Function, (_, _)>(name.span());
-        op_builder(name, signature)
+        let op_builder = self.builder_mut().create::<Function, (_, _, _)>(name.span());
+        op_builder(name, visibility, signature)
     }
 
     fn create_global_variable(
@@ -47,7 +48,8 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
         readonly: bool,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<Segment>, Report> {
-        let data = self.builder().context().create_constant(data);
+        let id = self.builder().context().create_constant(data);
+        let data = self.builder().context().get_constant(id);
         let op_builder = self.builder_mut().create::<Segment, (_, _, _)>(span);
         op_builder(offset, data, readonly)
     }

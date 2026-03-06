@@ -1,0 +1,33 @@
+[package]
+name = "midenc-hir-opt"
+description = "A tool for parsing and rewriting HIR"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "hir-opt"
+path = "src/main.rs"
+
+[dependencies]
+midenc-compile.workspace = true
+midenc-hir.workspace = true
+midenc-dialect-arith.workspace = true
+midenc-dialect-cf.workspace = true
+midenc-dialect-hir.workspace = true
+midenc-dialect-scf.workspace = true
+midenc-dialect-ub.workspace = true
+midenc-session.workspace = true
+midenc-log.workspace = true
+log.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true

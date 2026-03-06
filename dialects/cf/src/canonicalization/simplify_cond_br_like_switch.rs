@@ -59,7 +59,7 @@ impl RewritePattern for SimplifyCondBrLikeSwitch {
 
         // Materialize comparison
         let selector = switch_op.selector().as_value_ref();
-        let expected_value = rewriter.u32(*if_true_case.key().unwrap(), switch_op.span());
+        let expected_value = rewriter.u32(*if_true_case.key(), switch_op.span());
         let is_true = rewriter.eq(selector, expected_value, switch_op.span())?;
 
         // Rewrite as cf.cond_br

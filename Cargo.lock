@@ -862,36 +862,12 @@ dependencies = [
 
 [[package]]
 name = "darling"
-version = "0.20.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee"
-dependencies = [
- "darling_core 0.20.11",
- "darling_macro 0.20.11",
-]
-
-[[package]]
-name = "darling"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25ae13da2f202d56bd7f91c25fba009e7717a1e4a1cc98a76d844b65ae912e9d"
 dependencies = [
- "darling_core 0.23.0",
- "darling_macro 0.23.0",
-]
-
-[[package]]
-name = "darling_core"
-version = "0.20.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d00b9596d185e565c2207a0b01f8bd1a135483d02d9b7b0a54b11da8d53412e"
-dependencies = [
- "fnv",
- "ident_case",
- "proc-macro2",
- "quote",
- "strsim",
- "syn 2.0.114",
+ "darling_core",
+ "darling_macro",
 ]
 
 [[package]]
@@ -909,22 +885,11 @@ dependencies = [
 
 [[package]]
 name = "darling_macro"
-version = "0.20.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
-dependencies = [
- "darling_core 0.20.11",
- "quote",
- "syn 2.0.114",
-]
-
-[[package]]
-name = "darling_macro"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac3984ec7bd6cfa798e62b4a642426a5be0e68f9401cfc2a01e3fa9ea2fcdb8d"
 dependencies = [
- "darling_core 0.23.0",
+ "darling_core",
  "quote",
  "syn 2.0.114",
 ]
@@ -1716,7 +1681,7 @@ version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "357b7205c6cd18dd2c86ed312d1e70add149aea98e7ef72b9fdf0270e555c11d"
 dependencies = [
- "darling 0.23.0",
+ "darling",
  "indoc",
  "proc-macro2",
  "quote",
@@ -2174,9 +2139,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.7.6"
+version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
+checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "memmap2"
@@ -2569,7 +2534,6 @@ dependencies = [
  "midenc-frontend-wasm",
  "midenc-hir",
  "midenc-hir-eval",
- "midenc-log",
  "midenc-session",
  "num-traits",
  "proptest",
@@ -2971,7 +2935,6 @@ dependencies = [
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
- "midenc-log",
  "midenc-session",
  "petgraph 0.8.3",
  "proptest",
@@ -3031,7 +2994,6 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-analysis",
  "midenc-hir-transform",
- "midenc-log",
 ]
 
 [[package]]
@@ -3046,7 +3008,6 @@ dependencies = [
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-transform",
- "midenc-log",
 ]
 
 [[package]]
@@ -3115,6 +3076,7 @@ name = "midenc-hir"
 version = "0.7.1"
 dependencies = [
  "anyhow",
+ "base64",
  "bitflags",
  "bitvec",
  "blink-alloc",
@@ -3122,7 +3084,10 @@ dependencies = [
  "hashbrown 0.15.5",
  "intrusive-collections",
  "inventory",
+ "litcheck-core",
+ "litcheck-filecheck",
  "log",
+ "memchr",
  "miden-core",
  "miden-thiserror",
  "midenc-hir-macros",
@@ -3130,6 +3095,7 @@ dependencies = [
  "midenc-hir-type",
  "midenc-log",
  "midenc-session",
+ "paste",
  "pretty_assertions",
  "rustc-demangle",
  "rustc-hash",
@@ -3150,7 +3116,6 @@ dependencies = [
  "midenc-dialect-scf",
  "midenc-expect-test",
  "midenc-hir",
- "midenc-log",
 ]
 
 [[package]]
@@ -3174,10 +3139,29 @@ name = "midenc-hir-macros"
 version = "0.7.1"
 dependencies = [
  "Inflector",
- "darling 0.20.11",
+ "darling",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "midenc-hir-opt"
+version = "0.7.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "log",
+ "miden-thiserror",
+ "midenc-compile",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
+ "midenc-dialect-hir",
+ "midenc-dialect-scf",
+ "midenc-dialect-ub",
+ "midenc-hir",
+ "midenc-log",
+ "midenc-session",
 ]
 
 [[package]]
@@ -3207,7 +3191,6 @@ dependencies = [
  "midenc-dialect-scf",
  "midenc-hir",
  "midenc-hir-analysis",
- "midenc-log",
  "midenc-session",
 ]
 

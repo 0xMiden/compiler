@@ -2,6 +2,7 @@
 #![feature(allocator_api)]
 #![feature(alloc_layout_extra)]
 #![feature(coerce_unsized)]
+#![feature(const_type_name)]
 #![feature(unsize)]
 #![feature(ptr_metadata)]
 #![feature(ptr_as_uninit)]
@@ -49,10 +50,9 @@ extern crate std;
 
 extern crate self as midenc_hir;
 
-pub use compact_str::{
-    CompactString as SmallStr, CompactStringExt as SmallStrExt, ToCompactString as ToSmallStr,
-};
+pub use compact_str::{CompactString, CompactStringExt, ToCompactString};
 pub use hashbrown;
+pub use inventory;
 pub use smallvec::{SmallVec, ToSmallVec, smallvec};
 
 pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
@@ -60,8 +60,8 @@ pub type FxHashSet<K> = hashbrown::HashSet<K, rustc_hash::FxBuildHasher>;
 pub use rustc_hash::{FxBuildHasher, FxHasher};
 
 pub mod adt;
-mod any;
-mod attributes;
+pub mod any;
+pub mod attributes;
 pub mod constants;
 pub mod demangle;
 pub mod derive;
@@ -77,17 +77,18 @@ pub mod matchers;
 pub mod pass;
 pub mod patterns;
 mod program_point;
-pub mod version;
+pub mod testing;
 
 pub use midenc_session::diagnostics;
 
 pub use self::{
     attributes::{
-        ArrayAttr, Attribute, AttributeSet, AttributeValue, DictAttr, Overflow, SetAttr,
-        Visibility, markers::*,
+        Attribute, AttributeName, AttributeRef, AttributeRegistration, NamedAttribute,
+        NamedAttributeList,
     },
+    dialects::builtin::attributes::{Location, Overflow, Visibility, version},
     direction::{Backward, Direction, Forward},
-    eq::DynPartialEq,
+    eq::{DynPartialEq, PartialEqable},
     folder::OperationFolder,
     hash::{DynHash, DynHasher},
     ir::*,

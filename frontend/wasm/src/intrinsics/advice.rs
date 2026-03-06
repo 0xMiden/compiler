@@ -1,6 +1,6 @@
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, FunctionType, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
+    Builder, FunctionType, Op, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
     dialects::builtin::FunctionRef,
     interner::{Symbol, symbols},
 };
@@ -79,7 +79,7 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
             assert_eq!(args.len(), 4, "{function} takes exactly four arguments (key0-3)");
 
             let func = function_ref.borrow();
-            let signature = func.signature().clone();
+            let signature = func.get_signature().clone();
             drop(func);
 
             // Call the function with all arguments
@@ -88,7 +88,7 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
 
             // Extract the return value from the exec operation
             let borrow = exec.borrow();
-            let results = borrow.as_ref().results();
+            let results = borrow.results();
             let result_vals: SmallVec<[ValueRef; 1]> =
                 results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
@@ -98,7 +98,7 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
         "emit_falcon_sig_to_stack" => {
             assert_eq!(args.len(), 8, "{function} takes exactly eight arguments");
             let func = function_ref.borrow();
-            let signature = func.signature().clone();
+            let signature = func.get_signature().clone();
             drop(func);
             let _ = builder.exec(function_ref, signature, args.iter().copied(), span)?;
             Ok(SmallVec::new())
@@ -107,7 +107,7 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
             // Lower to MASM intrinsic call: intrinsics::advice::insert_mem
             assert_eq!(args.len(), 6, "insert_mem takes exactly six arguments");
             let func = function_ref.borrow();
-            let signature = func.signature().clone();
+            let signature = func.get_signature().clone();
             drop(func);
             let _ = builder.exec(function_ref, signature, args.iter().copied(), span)?;
             Ok(SmallVec::new())

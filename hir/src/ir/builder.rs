@@ -1,8 +1,10 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{boxed::Box, format, rc::Rc, vec};
 
+use super::OperationState;
 use crate::{
     BlockArgument, BlockRef, BuildableOp, Context, OperationRef, ProgramPoint, RegionRef,
     SourceSpan, Type, Value,
+    diagnostics::{LabeledSpan, Report, Severity, miette::diagnostic},
 };
 
 /// The [Builder] trait encompasses all of the functionality needed to construct and insert blocks
@@ -82,7 +84,7 @@ pub trait Builder: Listener {
     /// Panics if `ip` is in a different region than `parent`, or if the position it refers to is no
     /// longer valid.
     fn create_block(&mut self, parent: RegionRef, ip: Option<BlockRef>, args: &[Type]) -> BlockRef {
-        let mut block = self.context().create_block_with_params(args.iter().cloned());
+        let mut block = self.context_rc().create_block_with_params(args.iter().cloned());
         if let Some(at) = ip {
             let region = at.parent().unwrap();
             assert!(
@@ -106,7 +108,7 @@ pub trait Builder: Listener {
     ///
     /// The block is inserted before `before`.
     fn create_block_before(&mut self, before: BlockRef, args: &[Type]) -> BlockRef {
-        let mut block = self.context().create_block_with_params(args.iter().cloned());
+        let mut block = self.context_rc().create_block_with_params(args.iter().cloned());
         block.borrow_mut().insert_before(before);
         self.notify_block_inserted(block, None, None);
         self.set_insertion_point_to_end(block);
@@ -150,11 +152,62 @@ pub trait Builder: Listener {
         }
         self.notify_operation_inserted(op, *self.insertion_point());
     }
+
+    /// Create an [super::Operation] from the provided [OperationState]
+    fn create_operation(&mut self, state: &mut OperationState) -> Result<OperationRef, Report> {
+        let mut op = state.name.alloc_default(self.context_rc());
+        op.borrow_mut().set_span(state.span);
+
+        let mut builder = crate::GenericOperationBuilder::new(self, op);
+
+        for prop in op.name().properties() {
+            if !state.attrs.iter().any(|p| p.name == prop.name) {
+                return Err(Report::from(diagnostic!(
+                    severity = Severity::Error,
+                    labels = vec![LabeledSpan::at(
+                        state.span,
+                        format!("missing required property '{}'", prop.name)
+                    )],
+                    "invalid operation"
+                )));
+            }
+        }
+
+        for attr in state.attrs.drain(..) {
+            if state.name.has_property(attr.name) {
+                builder.with_property_boxed(attr.name, attr.value)?;
+            } else {
+                builder.with_attr_boxed(attr.name, attr.value);
+            }
+        }
+
+        for (i, group) in state.operands.drain(..).enumerate() {
+            builder.with_operands_in_group(i, group);
+        }
+
+        for successor in state.successors.drain(..) {
+            builder.with_pending_successor(successor);
+        }
+
+        if !state.regions.is_empty() {
+            let mut op = op.borrow_mut();
+            let regions = op.regions_mut();
+            for region in state.regions.drain(..) {
+                regions.push_back(region);
+            }
+        }
+
+        if !state.results.is_empty() {
+            builder.with_results(state.results.drain(..));
+        }
+
+        builder.build()
+    }
 }
 
 pub trait BuilderExt: Builder {
-    /// Returns a specialized builder for a concrete [Op], `T`, which can be called like a closure
-    /// with the arguments required to create an instance of the specified operation.
+    /// Returns a specialized builder for a concrete [super::Op], `T`, which can be called like a
+    /// closure with the arguments required to create an instance of the specified operation.
     ///
     /// # How it works
     ///

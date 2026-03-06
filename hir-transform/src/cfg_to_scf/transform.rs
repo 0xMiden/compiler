@@ -226,7 +226,7 @@ impl<'a> TransformationContext<'a> {
 
                 return_like_op_ref.borrow_mut().erase();
 
-                log::trace!(target: "cfg-to-scf", "return-like rewritten: {}", parent_region.borrow().print(&Default::default()));
+                log::trace!(target: "cfg-to-scf", "return-like rewritten: {}", parent_region.borrow().print(self.context.clone(), &Default::default()));
             }
             Entry::Vacant(entry) => {
                 let mut return_like_op = return_like_op_ref.borrow_mut();

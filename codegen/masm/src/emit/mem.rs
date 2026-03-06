@@ -1,7 +1,7 @@
 use miden_core::{Felt, FieldElement};
 use midenc_hir::{
     AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type,
-    dialects::builtin::LocalVariable,
+    dialects::builtin::attributes::LocalVariable,
 };
 
 use super::{OpEmitter, masm};
@@ -721,7 +721,7 @@ impl OpEmitter<'_> {
 
                 // then: convert byte addresses/count to element units and delegate to core
                 let mut then_ops = Vec::default();
-                let mut then_stack = OperandStack::default();
+                let mut then_stack = OperandStack::new(self.context_rc());
                 let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
                 then_emitter.emit_all(
                     [
@@ -743,7 +743,7 @@ impl OpEmitter<'_> {
 
                 // else: fall back to the generic implementation
                 let mut else_ops = Vec::default();
-                let mut else_stack = OperandStack::default();
+                let mut else_stack = OperandStack::new(self.context_rc());
                 let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
                 else_emitter.emit_memcpy_fallback_loop(
                     src.clone(),

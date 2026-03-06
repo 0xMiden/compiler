@@ -1,42 +1,41 @@
-public builtin.function @test::spill_loop(v0: ptr<element, u64>, v1: u32, v2: u32) -> u64 {
-^block1(v0: ptr<element, u64>, v1: u32, v2: u32):
-    v3 = arith.constant 0 : u32;
-    v4 = arith.constant 0 : u32;
-    v5 = arith.constant 0 : u64;
-    cf.br ^block2(v3, v4, v5);
-^block2(v6: u32, v7: u32, v8: u64):
-    v9 = arith.eq v6, v1 : i1;
-    cf.cond_br v9 ^block3, ^block4;
+builtin.function public extern("C") @spills_loop_nest(%0: ptr<u64, element>, %1: u32, %2: u32) -> u64 {
+    %3 = arith.constant 0 : u32;
+    %4 = arith.constant 0 : u32;
+    %5 = arith.constant 0 : u64;
+    cf.br ^block2:(%3, %4, %5);
+^block2(%6: u32, %7: u32, %8: u64):
+    %9 = arith.eq %6, %1;
+    cf.cond_br %9 ^block3, ^block4 : (i1);
 ^block3:
-    builtin.ret v8;
+    builtin.ret %8 : (u64);
 ^block4:
-    cf.br ^block5(v7, v8);
-^block5(v10: u32, v11: u64):
-    v12 = arith.eq v10, v2 : i1;
-    cf.cond_br v12 ^block6(v10, v11), ^block7;
-^block6(v13: u32, v14: u64):
-    v15 = arith.constant 1 : u32;
-    v16 = arith.add v6, v15 : u32 #[overflow = unchecked];
-    cf.br ^block2(v16, v13, v14);
+    cf.br ^block5:(%7, %8);
+^block5(%10: u32, %11: u64):
+    %12 = arith.eq %10, %2;
+    cf.cond_br %12 ^block6:(%10, %11), ^block7 : (i1);
+^block6(%13: u32, %14: u64):
+    %15 = arith.constant 1 : u32;
+    %16 = arith.add %6, %15 <{ overflow = #builtin.overflow<unchecked> }>;
+    cf.br ^block2:(%16, %13, %14);
 ^block7:
-    v17 = arith.constant 1 : u32;
-    v18 = arith.sub v6, v17 : u32 #[overflow = unchecked];
-    v19 = arith.mul v18, v2 : u32 #[overflow = unchecked];
-    v20 = arith.add v10, v19 : u32 #[overflow = unchecked];
-    v21 = hir.ptr_to_int v0 : u32;
-    v22 = arith.add v21, v20 : u32 #[overflow = unchecked];
-    v23 = hir.int_to_ptr v22 : ptr<element, u64>;
-    v24 = hir.load v23 : u64;
-    v25 = arith.constant 1 : u64;
-    v26 = arith.constant 2 : u64;
-    v27 = arith.constant 3 : u64;
-    v28 = arith.constant 4 : u64;
-    v29 = arith.constant 5 : u64;
-    v30 = arith.constant 6 : u64;
-    v31 = arith.constant 7 : u64;
-    v32 = hir.exec @test/example(v23, v24, v25, v26, v27, v28, v29, v30) : u32
-    v33 = arith.add v11, v24 : u64 #[overflow = unchecked];
-    v34 = arith.constant 1 : u32;
-    v35 = arith.add v10, v34 : u32 #[overflow = unchecked];
-    cf.br ^block5(v35, v33);
+    %17 = arith.constant 1 : u32;
+    %18 = arith.sub %6, %17 <{ overflow = #builtin.overflow<unchecked> }>;
+    %19 = arith.mul %18, %2 <{ overflow = #builtin.overflow<unchecked> }>;
+    %20 = arith.add %10, %19 <{ overflow = #builtin.overflow<unchecked> }>;
+    %21 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+    %22 = arith.add %21, %20 <{ overflow = #builtin.overflow<unchecked> }>;
+    %23 = hir.int_to_ptr %22 <{ ty = #builtin.type<ptr<u64, element>> }>;
+    %24 = hir.load %23;
+    %25 = arith.constant 1 : u64;
+    %26 = arith.constant 2 : u64;
+    %27 = arith.constant 3 : u64;
+    %28 = arith.constant 4 : u64;
+    %29 = arith.constant 5 : u64;
+    %30 = arith.constant 6 : u64;
+    %31 = arith.constant 7 : u64;
+    %32 = hir.exec ::@test::@example(%23, %24, %25, %26, %27, %28, %29, %30) : extern("C") (ptr<u64, element>, u64, u64, u64, u64, u64, u64, u64) -> u32;
+    %33 = arith.add %11, %24 <{ overflow = #builtin.overflow<unchecked> }>;
+    %34 = arith.constant 1 : u32;
+    %35 = arith.add %10, %34 <{ overflow = #builtin.overflow<unchecked> }>;
+    cf.br ^block5:(%35, %33);
 };

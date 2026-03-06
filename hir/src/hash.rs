@@ -7,7 +7,7 @@ pub trait DynHash {
 
 impl<H: Hash> DynHash for H {
     #[inline]
-    fn dyn_hash(&self, hasher: &mut dyn Hasher) {
+    default fn dyn_hash(&self, hasher: &mut dyn Hasher) {
         let mut hasher = DynHasher(hasher);
         <Self as Hash>::hash(self, &mut hasher)
     }

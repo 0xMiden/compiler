@@ -1,31 +1,19 @@
-use alloc::boxed::Box;
-
 use midenc_hir::{
-    derive::operation, effects::MemoryEffectOpInterface, matchers::Matcher, traits::*, *,
+    attributes::IntegerLikeAttr,
+    derive::{EffectOpInterface, OpPrinter, operation},
+    effects::MemoryEffectOpInterface,
+    matchers::Matcher,
+    traits::*,
+    *,
 };
 
 use crate::WasmDialect;
 
-macro_rules! has_no_effects {
-    ($Op:ty) => {
-        impl ::midenc_hir::effects::EffectOpInterface<::midenc_hir::effects::MemoryEffect> for $Op {
-            fn has_no_effect(&self) -> bool {
-                true
-            }
-
-            fn effects(
-                &self,
-            ) -> ::midenc_hir::effects::EffectIterator<::midenc_hir::effects::MemoryEffect> {
-                ::midenc_hir::effects::EffectIterator::from_smallvec(::midenc_hir::smallvec![])
-            }
-        }
-    };
-}
-
+#[derive(EffectOpInterface, OpPrinter)]
 #[operation(
     dialect = WasmDialect,
     traits(UnaryOp),
-    implements(UnaryOp, InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(UnaryOp, InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct I32Extend8S {
     #[operand]
@@ -33,8 +21,6 @@ pub struct I32Extend8S {
     #[result]
     result: Int32,
 }
-
-has_no_effects!(I32Extend8S);
 
 impl InferTypeOpInterface for I32Extend8S {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
@@ -45,14 +31,15 @@ impl InferTypeOpInterface for I32Extend8S {
 
 impl Foldable for I32Extend8S {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        if let Some(mut value) =
-            matchers::foldable_operand_of::<Immediate>().matches(&self.operand().as_operand_ref())
+        if let Some(mut attr_value) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
+            .matches(&self.operand().as_operand_ref())
         {
-            let extended = value.as_i32().map(|v| Immediate::I32((v as i8) as i32));
+            let mut attr_value_mut = attr_value.borrow_mut();
+            let extended = attr_value_mut.as_immediate().as_i32();
 
             if let Some(extended) = extended {
-                *value = extended;
-                results.push(OpFoldResult::Attribute(value));
+                attr_value_mut.set_from_immediate_lossy(Immediate::I32(extended));
+                results.push(OpFoldResult::Attribute(attr_value as AttributeRef));
                 return FoldResult::Ok(());
             }
         }
@@ -62,14 +49,27 @@ impl Foldable for I32Extend8S {
 
     fn fold_with(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>()) {
-            let extended = value.as_i32().map(|v| Immediate::I32((v as i8) as i32));
-
+        if let Some(attr) = operands[0].as_ref().and_then(|o| {
+            let attr = EntityRef::map(o.borrow(), |o| o.as_attr());
+            if attr.implements::<dyn IntegerLikeAttr>() {
+                Some(EntityRef::map(attr, |attr| attr.as_trait::<dyn IntegerLikeAttr>().unwrap()))
+            } else {
+                None
+            }
+        }) {
+            let extended = attr.as_immediate().as_i32().map(|v| Immediate::I32((v as i8) as i32));
             if let Some(extended) = extended {
-                results.push(OpFoldResult::Attribute(Box::new(extended)));
+                let mut new_attr = attr.name().dyn_clone(&*attr);
+                let mut new_attr_mut = new_attr.borrow_mut();
+                new_attr_mut
+                    .as_attr_mut()
+                    .as_trait_mut::<dyn IntegerLikeAttr>()
+                    .unwrap()
+                    .set_from_immediate_lossy(extended);
+                results.push(OpFoldResult::Attribute(new_attr));
                 return FoldResult::Ok(());
             }
         }

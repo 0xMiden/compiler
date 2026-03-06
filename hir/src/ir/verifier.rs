@@ -1,24 +1,24 @@
 use super::{Context, Report};
 
-/// The `OpVerifier` trait is expected to be implemented by all [Op] impls as a prequisite.
+/// The `OpVerifier` trait is expected to be implemented by all [crate::Op] impls as a prequisite.
 ///
-/// The actual implementation is typically generated as part of deriving [Op].
+/// The actual implementation is typically generated as part of deriving [crate::Op].
 pub trait OpVerifier {
     fn verify(&self, context: &Context) -> Result<(), Report>;
 }
 
 /// The `Verify` trait represents verification logic associated with implementations of some trait.
 ///
-/// This is specifically used for automatically deriving verification checks for [Op] impls that
-/// implement traits that imply constraints on the representation or behavior of that op.
+/// This is specifically used for automatically deriving verification checks for [crate::Op] impls
+/// that implement traits that imply constraints on the representation or behavior of that op.
 ///
-/// For example, if some [Op] derives an op trait like `SingleBlock`, this information is recorded
-/// in the underlying [Operation] metadata, so that we can recover a trait object reference for the
-/// trait when needed. However, just deriving the trait is not sufficient to guarantee that the op
-/// actually adheres to the implicit constraints and behavior of that trait. For example,
-/// `SingleBlock` implies that the implementing op contains only regions that consist of a single
-/// [Block]. This cannot be checked statically. The first step to addressing this though, is to
-/// reify the implicit validation rules as explicit checks - hence this trait.
+/// For example, if some [crate::Op] derives an op trait like `SingleBlock`, this information is
+/// recorded in the underlying [crate::Operation] metadata, so that we can recover a trait object
+/// reference for the trait when needed. However, just deriving the trait is not sufficient to
+/// guarantee that the op actually adheres to the implicit constraints and behavior of that trait.
+/// For example, `SingleBlock` implies that the implementing op contains only regions that consist
+/// of a single [crate::Block]. This cannot be checked statically. The first step to addressing this
+/// though, is to reify the implicit validation rules as explicit checks - hence this trait.
 ///
 /// So we've established that some op traits, such as `SingleBlock` mentioned above, have implicit
 /// validation rules, and we can implement [Verify] to make the implicit validation rules of such
@@ -28,7 +28,7 @@ pub trait OpVerifier {
 /// The answer lies in the use of some tricky type-level code to accomplish the following goals:
 ///
 /// * Do not emit useless checks for op traits that have no verification rules
-/// * Do not require storing data in each instance of an [Op] just to verify a trait
+/// * Do not require storing data in each instance of an [crate::Op] just to verify a trait
 /// * Do not require emitting a bunch of redundant type checks for information we know statically
 /// * Be able to automatically derive all of the verification machinery along with the op traits
 ///
@@ -91,7 +91,7 @@ pub trait Verify<Trait: ?Sized> {
 ///
 /// However, we must ensure that we continue to uphold these rules moving forward.
 #[rustc_unsafe_specialization_marker]
-unsafe trait HasVerifier<Trait: ?Sized>: Verify<Trait> {}
+pub unsafe trait HasVerifier<Trait: ?Sized>: Verify<Trait> {}
 
 // While at first glance, it appears we would be using this to specialize on the fact that a type
 // _has_ a verifier, which is strictly-speaking true, the actual goal we're aiming to acheive is
@@ -109,9 +109,10 @@ unsafe impl<T, Trait: ?Sized> HasVerifier<Trait> for T where T: Verify<Trait> {}
 ///
 /// We go a step further and actually set things up so that `rustc` can eliminate all of the dead
 /// code when verification is vacuous. This is done by using const eval in the hidden type generated
-/// for an [Op] impls [OpVerifier] implementation, which will wrap verification in a const-evaluated
-/// check of the `VACUOUS` associated const. It can also be used directly, but the general idea
-/// behind all of this is that we don't need to directly touch any of this, it's all generated.
+/// for an [crate::Op] impls [OpVerifier] implementation, which will wrap verification in a
+/// const-evaluated check of the `VACUOUS` associated const. It can also be used directly, but the
+/// general idea behind all of this is that we don't need to directly touch any of this, it's all
+/// generated.
 ///
 /// NOTE: Because this trait provides a default blanket impl for all `T`, you should avoid bringing
 /// it into scope unless absolutely needed. It is virtually always preferred to explicitly invoke

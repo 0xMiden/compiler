@@ -39,7 +39,7 @@ pub(crate) fn convert_crypto_intrinsics<B: ?Sized + Builder>(
             );
 
             let func = function_ref.borrow();
-            let signature = func.signature().clone();
+            let signature = func.get_signature().clone();
             drop(func);
 
             // Call the function with both arguments

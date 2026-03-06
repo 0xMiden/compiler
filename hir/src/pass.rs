@@ -28,15 +28,14 @@ use crate::{EntityRef, Operation, OperationName, OperationRef, SmallVec, TraceTa
 /// than *how*. The display format itself depends on the `Display` implementation done by each
 /// [`Operation`].
 ///
-/// [`Print::selected_passes`] controls which passes are selected to be printable. This means that
+/// The `selected_passes` field controls which passes are selected to be printable. This means that
 /// those selected passes will run all the configured filters; which will determine whether
 /// the pass displays the IR or not. The available options are [`SelectedPasses::All`] to enable all
 /// the passes and [`SelectedPasses::Just`] to enable a select set of passes.
 ///
 /// The filters that run on the selected passes are:
-/// - [`Print::only_when_modified`] will only print the IR if said pass modified the IR.
-///
-/// - [`Print::op_filter`] will only display a specific subset of operations.
+/// - `only_when_modified` will only print the IR if said pass modified the IR.
+/// - `op_filter` will only display a specific subset of operations.
 #[derive(Default)]
 pub struct Print {
     selected_passes: Option<SelectedPasses>,
@@ -46,7 +45,7 @@ pub struct Print {
 
 /// Which passes are enabled for IR printing.
 #[derive(Debug)]
-enum SelectedPasses {
+pub enum SelectedPasses {
     /// Enable all passes for IR Printing.
     All,
     /// Just select a subset of passes for IR printing.
@@ -107,7 +106,7 @@ impl Print {
 
     /// Configure which operations are printed. This is set via the different variants present in
     /// [`OpFilter`].
-    fn with_symbol_filter(mut self, config: &IRPrintingConfig) -> Self {
+    pub fn with_symbol_filter(mut self, config: &IRPrintingConfig) -> Self {
         self.filters.extend(config.print_ir_filters.iter().cloned());
         self
     }

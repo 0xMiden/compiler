@@ -59,12 +59,12 @@ pub trait DenseBackwardDataFlowAnalysis: 'static {
 
     /// Propagate the dense lattice backward along the control flow edge represented by `from` and
     /// `to`, which is known to be the result of intra-region control flow, i.e. via
-    /// [BranchOpInterface]. This is invoked when visiting blocks, rather than the terminators of
-    /// those blocks.
+    /// [midenc_hir::traits::BranchOpInterface]. This is invoked when visiting blocks, rather than
+    /// the terminators of those blocks.
     ///
     /// The default implementation just invokes `meet` on the states, meaning that operations
-    /// implementing [BranchOpInterface] don't have any effect on the lattice that isn't already
-    /// expressed by the interface itself.
+    /// implementing [midenc_hir::traits::BranchOpInterface] don't have any effect on the lattice
+    /// that isn't already expressed by the interface itself.
     ///
     /// The lattices are as follows:
     ///

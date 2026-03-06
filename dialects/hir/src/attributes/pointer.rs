@@ -1,22 +1,31 @@
-use alloc::boxed::Box;
+use alloc::sync::Arc;
+use core::fmt;
 
-use midenc_hir::{AttributeValue, Immediate, Type, formatter};
+use midenc_hir::{
+    AttrPrinter, PointerType, Type, attributes::InferAttributeValueType, derive::DialectAttribute,
+};
+
+use crate::HirDialect;
 
 /// Represents a constant pointer value
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PointerAttr {
-    addr: Immediate,
+#[derive(DialectAttribute, Debug, Clone, PartialEq, Eq, Hash)]
+#[attribute(
+    dialect = HirDialect,
+    implements(AttrPrinter)
+)]
+pub struct Pointer {
+    addr: u32,
     /// The pointee type
     ty: Type,
 }
 
-impl PointerAttr {
-    pub fn new(addr: Immediate, ty: Type) -> Self {
+impl Pointer {
+    pub fn new(addr: u32, ty: Type) -> Self {
         Self { addr, ty }
     }
 
-    pub fn addr(&self) -> &Immediate {
-        &self.addr
+    pub fn addr(&self) -> u32 {
+        self.addr
     }
 
     pub fn pointee_type(&self) -> &Type {
@@ -28,24 +37,41 @@ impl PointerAttr {
     }
 }
 
-impl formatter::PrettyPrint for PointerAttr {
-    fn render(&self) -> formatter::Document {
-        use formatter::*;
-
-        display(self.addr)
+impl Default for Pointer {
+    fn default() -> Self {
+        Self {
+            addr: 0,
+            ty: Self::infer_type(),
+        }
     }
 }
 
-impl AttributeValue for PointerAttr {
-    fn as_any(&self) -> &dyn core::any::Any {
-        self
+impl fmt::Display for Pointer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.addr, f)
+    }
+}
+
+impl midenc_hir::formatter::PrettyPrint for PointerAttr {
+    fn render(&self) -> midenc_hir::formatter::Document {
+        use midenc_hir::formatter::*;
+
+        display(&self.value)
+    }
+}
+
+impl AttrPrinter for PointerAttr {
+    fn print(&self, printer: &mut midenc_hir::print::AsmPrinter<'_>) {
+        printer.print_decimal_integer(self.value.addr());
+    }
+}
+
+impl InferAttributeValueType for Pointer {
+    fn infer_type() -> Type {
+        Type::Ptr(Arc::new(PointerType::new(Type::U8)))
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn core::any::Any {
-        self
-    }
-
-    fn clone_value(&self) -> Box<dyn AttributeValue> {
-        Box::new(self.clone())
+    fn infer_type_from_value(&self) -> Type {
+        Type::Ptr(Arc::new(PointerType::new(self.pointee_type().clone())))
     }
 }

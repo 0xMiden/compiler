@@ -1,8 +1,6 @@
-use alloc::boxed::Box;
-
 use smallvec::SmallVec;
 
-use crate::{AttributeValue, ValueRef};
+use crate::{AttributeRef, ValueRef};
 
 /// Represents the outcome of an attempt to fold an operation.
 #[must_use]
@@ -106,48 +104,52 @@ fn unwrap_failed_fold_result(message: &'static str) -> ! {
 /// Represents a single result value of a folded operation.
 pub enum OpFoldResult {
     /// The value is constant
-    Attribute(Box<dyn AttributeValue>),
+    Attribute(AttributeRef),
     /// The value is a non-constant SSA value
     Value(ValueRef),
 }
+
 impl OpFoldResult {
     #[inline]
     pub fn is_constant(&self) -> bool {
         matches!(self, Self::Attribute(_))
     }
 }
+
 impl Eq for OpFoldResult {}
+
 impl PartialEq for OpFoldResult {
     fn eq(&self, other: &Self) -> bool {
-        use core::hash::{Hash, Hasher};
-
         match (self, other) {
-            (Self::Attribute(lhs), Self::Attribute(rhs)) => {
-                if lhs.as_any().type_id() != rhs.as_any().type_id() {
-                    return false;
-                }
-                let lhs_hash = {
-                    let mut hasher = rustc_hash::FxHasher::default();
-                    lhs.hash(&mut hasher);
-                    hasher.finish()
-                };
-                let rhs_hash = {
-                    let mut hasher = rustc_hash::FxHasher::default();
-                    rhs.hash(&mut hasher);
-                    hasher.finish()
-                };
-                lhs_hash == rhs_hash
-            }
+            (Self::Attribute(lhs), Self::Attribute(rhs)) => lhs.borrow().dyn_eq(&rhs.borrow()),
             (Self::Value(lhs), Self::Value(rhs)) => ValueRef::ptr_eq(lhs, rhs),
             _ => false,
         }
     }
 }
+
 impl core::fmt::Debug for OpFoldResult {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Attribute(attr) => core::fmt::Debug::fmt(attr, f),
             Self::Value(value) => write!(f, "{}", value.borrow().id()),
+        }
+    }
+}
+
+impl core::fmt::Display for OpFoldResult {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        use crate::{OpPrintingFlags, print::AsmPrinter};
+
+        let flags = OpPrintingFlags::default();
+        match self {
+            OpFoldResult::Attribute(attr) => {
+                let attr = attr.borrow();
+                let mut printer = AsmPrinter::new(attr.context_rc(), &flags);
+                printer.print_attribute_value(&*attr);
+                write!(f, "{}", printer.finish())
+            }
+            OpFoldResult::Value(v) => core::fmt::Display::fmt(&v, f),
         }
     }
 }
@@ -175,7 +177,7 @@ pub trait Foldable {
     /// are.
     fn fold_with(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult;
 }

@@ -1,0 +1,22 @@
+// RUN: hir-opt %s | filecheck %s
+
+builtin.module public @test {
+    builtin.function public extern("C") @entrypoint(%a: i32) -> i32 {
+        %result = hir.exec @callee(%a) : extern("C") (i32) -> (i32);
+        builtin.ret %result : (i32);
+    };
+
+    builtin.function private extern("C") @callee(%arg: i32) -> i32 {
+        builtin.ret %arg : (i32);
+    };
+};
+
+// CHECK: builtin.module public @test {
+// CHECK-NEXT:    builtin.function public extern("C") @entrypoint([[V0:%\d+]]: i32) -> i32 {
+// CHECK-NEXT:        [[V1:%\d+]] = hir.exec @callee([[V0]]) : extern("C") (i32) -> i32;
+// CHECK-NEXT:        builtin.ret [[V1]] : (i32);
+// CHECK-NEXT:    };
+// CHECK-NEXT:    builtin.function private extern("C") @callee([[V2:%\d+]]: i32) -> i32 {
+// CHECK-NEXT:        builtin.ret [[V2]] : (i32);
+// CHECK-NEXT:    };
+// CHECK-NEXT: };

@@ -8,7 +8,7 @@ use crate::*;
 pub trait UndefinedBehaviorOpBuilder<'f, B: ?Sized + Builder> {
     fn poison(&mut self, ty: Type, span: SourceSpan) -> ValueRef {
         let op_builder = self.builder_mut().create::<Poison, _>(span);
-        let op = op_builder(PoisonAttr::new(ty)).expect("invalid poison attribute");
+        let op = op_builder(ty).expect("invalid poison attribute");
         op.borrow().result().as_value_ref()
     }
 

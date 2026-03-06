@@ -9,11 +9,12 @@ use core::{
 use anyhow::anyhow;
 
 use super::{
-    SourceSpan, Spanned,
+    AttrPrinter, SourceSpan, Spanned,
     interner::{Symbol, symbols},
 };
 use crate::{
-    define_attr_type,
+    derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect,
     formatter::{self, PrettyPrint},
 };
 
@@ -24,7 +25,7 @@ pub struct FunctionIdent {
     #[span]
     pub function: Ident,
 }
-define_attr_type!(FunctionIdent);
+
 impl FunctionIdent {
     pub fn display(&self) -> impl fmt::Display + '_ {
         use crate::formatter::*;
@@ -36,6 +37,7 @@ impl FunctionIdent {
         )
     }
 }
+
 impl FromStr for FunctionIdent {
     type Err = anyhow::Error;
 
@@ -53,6 +55,7 @@ impl FromStr for FunctionIdent {
         }
     }
 }
+
 impl fmt::Debug for FunctionIdent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("FunctionIdent")
@@ -61,11 +64,13 @@ impl fmt::Debug for FunctionIdent {
             .finish()
     }
 }
+
 impl fmt::Display for FunctionIdent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }
 }
+
 impl PrettyPrint for FunctionIdent {
     fn render(&self) -> formatter::Document {
         use crate::formatter::*;
@@ -73,11 +78,13 @@ impl PrettyPrint for FunctionIdent {
         flatten(const_text("(") + display(self.module) + const_text(" ") + display(self.function))
     }
 }
+
 impl PartialOrd for FunctionIdent {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
+
 impl Ord for FunctionIdent {
     fn cmp(&self, other: &Self) -> Ordering {
         self.module.cmp(&other.module).then(self.function.cmp(&other.function))
@@ -87,13 +94,20 @@ impl Ord for FunctionIdent {
 /// Represents an identifier in the IR.
 ///
 /// An identifier is some string, along with an associated source span
-#[derive(Copy, Clone, Eq, Spanned)]
+#[derive(DialectAttribute, Copy, Clone, Eq, Spanned)]
+#[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
 pub struct Ident {
     pub name: Symbol,
     #[span]
     pub span: SourceSpan,
 }
-define_attr_type!(Ident);
+
+impl AttrPrinter for IdentAttr {
+    fn print(&self, printer: &mut super::print::AsmPrinter<'_>) {
+        printer.print_symbol_name(self.value.name);
+    }
+}
+
 impl Default for Ident {
     fn default() -> Self {
         Self {
@@ -102,6 +116,7 @@ impl Default for Ident {
         }
     }
 }
+
 impl FromStr for Ident {
     type Err = core::convert::Infallible;
 
@@ -109,23 +124,27 @@ impl FromStr for Ident {
         Ok(Self::from(name))
     }
 }
+
 impl<'a> From<&'a str> for Ident {
     fn from(name: &'a str) -> Self {
         Self::with_empty_span(Symbol::intern(name))
     }
 }
+
 impl From<Symbol> for Ident {
     #[inline]
     fn from(sym: Symbol) -> Self {
         Self::with_empty_span(sym)
     }
 }
+
 impl From<Ident> for Symbol {
     #[inline]
     fn from(id: Ident) -> Self {
         id.as_symbol()
     }
 }
+
 impl Ident {
     #[inline]
     pub const fn new(name: Symbol, span: SourceSpan) -> Ident {
@@ -158,68 +177,80 @@ impl Ident {
         })
     }
 }
+
 impl AsRef<str> for Ident {
     #[inline(always)]
     fn as_ref(&self) -> &str {
         self.as_str()
     }
 }
+
 impl alloc::borrow::Borrow<Symbol> for Ident {
     #[inline]
     fn borrow(&self) -> &Symbol {
         &self.name
     }
 }
+
 impl alloc::borrow::Borrow<str> for Ident {
     #[inline]
     fn borrow(&self) -> &str {
         self.as_str()
     }
 }
+
 impl Ord for Ident {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.as_str().cmp(other.as_str())
     }
 }
+
 impl PartialOrd for Ident {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
+
 impl PartialEq for Ident {
     #[inline]
     fn eq(&self, rhs: &Self) -> bool {
         self.name == rhs.name
     }
 }
+
 impl PartialEq<Symbol> for Ident {
     #[inline]
     fn eq(&self, rhs: &Symbol) -> bool {
         self.name.eq(rhs)
     }
 }
+
 impl PartialEq<str> for Ident {
     fn eq(&self, rhs: &str) -> bool {
         self.name.as_str() == rhs
     }
 }
+
 impl Hash for Ident {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
 }
+
 impl fmt::Debug for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }
 }
+
 impl fmt::Display for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f)
     }
 }
+
 impl PrettyPrint for Ident {
     fn render(&self) -> formatter::Document {
         use crate::formatter::*;

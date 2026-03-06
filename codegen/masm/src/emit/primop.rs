@@ -1,7 +1,7 @@
 use miden_assembly_syntax::parser::WordValue;
 use midenc_hir::{
-    self as hir, ArgumentExtension, ArgumentPurpose, Felt, FieldElement, Immediate, SourceSpan,
-    Type,
+    Felt, FieldElement, Immediate, SourceSpan, Type,
+    dialects::builtin::attributes::{ArgumentExtension, Signature},
 };
 
 use super::{OpEmitter, int64, masm};
@@ -238,7 +238,7 @@ impl OpEmitter<'_> {
     pub fn exec(
         &mut self,
         callee: masm::InvocationTarget,
-        signature: &hir::Signature,
+        signature: &Signature,
         span: SourceSpan,
     ) {
         self.process_call_signature(&callee, signature, span);
@@ -256,7 +256,7 @@ impl OpEmitter<'_> {
     pub fn call(
         &mut self,
         callee: masm::InvocationTarget,
-        signature: &hir::Signature,
+        signature: &Signature,
         span: SourceSpan,
     ) {
         self.process_call_signature(&callee, signature, span);
@@ -271,7 +271,7 @@ impl OpEmitter<'_> {
     fn process_call_signature(
         &mut self,
         callee: &masm::InvocationTarget,
-        signature: &hir::Signature,
+        signature: &Signature,
         span: SourceSpan,
     ) {
         for i in 0..signature.arity() {
@@ -279,30 +279,27 @@ impl OpEmitter<'_> {
             let arg = self.stack.pop().expect("operand stack is empty");
             let ty = arg.ty();
             // Validate the purpose matches
-            match param.purpose {
-                ArgumentPurpose::StructReturn => {
-                    assert_eq!(
-                        i, 0,
-                        "invalid function signature: sret parameters must be the first parameter, \
-                         and only one sret parameter is allowed"
-                    );
-                    assert_eq!(
-                        signature.results.len(),
-                        0,
-                        "invalid function signature: a function with sret parameters cannot also \
-                         have results"
-                    );
-                    assert!(
-                        ty.is_pointer(),
-                        "invalid exec to {callee}: invalid argument for sret parameter, expected \
-                         {}, got {ty}",
-                        &param.ty
-                    );
-                }
-                ArgumentPurpose::Default => (),
+            if param.is_sret_param() {
+                assert_eq!(
+                    i, 0,
+                    "invalid function signature: sret parameters must be the first parameter, and \
+                     only one sret parameter is allowed"
+                );
+                assert_eq!(
+                    signature.results.len(),
+                    0,
+                    "invalid function signature: a function with sret parameters cannot also have \
+                     results"
+                );
+                assert!(
+                    ty.is_pointer(),
+                    "invalid exec to {callee}: invalid argument for sret parameter, expected {}, \
+                     got {ty}",
+                    &param.ty
+                );
             }
             // Validate that the argument type is valid for the parameter ABI
-            match param.extension {
+            match param.extension() {
                 // Types must match exactly
                 ArgumentExtension::None => {
                     assert_eq!(

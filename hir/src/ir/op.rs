@@ -1,16 +1,20 @@
-use alloc::{boxed::Box, format};
+use alloc::{boxed::Box, format, rc::Rc};
 
 use super::*;
-use crate::{AttributeValue, any::AsAny, traits::TraitInfo};
+use crate::{AttributeRef, any::AsAny, interner, traits::TraitInfo};
 
 pub trait OpRegistration: Op {
+    type Dialect: DialectRegistration;
+
     /// The name of the dialect this op is declared part of
-    fn dialect_name() -> ::midenc_hir_symbol::Symbol;
+    fn dialect_name() -> interner::Symbol {
+        interner::Symbol::intern(<Self as OpRegistration>::Dialect::NAMESPACE)
+    }
     /// The name of the operation (i.e. its opcode)
-    fn name() -> ::midenc_hir_symbol::Symbol;
+    fn name() -> interner::Symbol;
     /// The fully-qualified name of the operation (i.e. `<dialect>.<opcode>`)
-    fn full_name() -> ::midenc_hir_symbol::Symbol {
-        ::midenc_hir_symbol::Symbol::intern(format!(
+    fn full_name() -> interner::Symbol {
+        interner::Symbol::intern(format!(
             "{}.{}",
             Self::dialect_name(),
             <Self as OpRegistration>::name()
@@ -18,6 +22,10 @@ pub trait OpRegistration: Op {
     }
     /// The set of statically known traits for this op
     fn traits() -> Box<[TraitInfo]>;
+    /// The set of statically known attributes for this op
+    fn attrs() -> Box<[AttrInfo]>;
+    /// Allocate a new, default-initialized instance of this op in `context`
+    fn alloc_uninit(context: Rc<Context>) -> OperationRef;
 }
 
 pub trait BuildableOp<Args: core::marker::Tuple>: Op {
@@ -39,8 +47,13 @@ pub trait Op: AsAny + OpVerifier {
     fn as_operation_mut(&mut self) -> &mut Operation;
 
     fn print(&self, flags: &OpPrintingFlags) -> crate::formatter::Document {
-        let operation = self.as_operation();
-        operation.print(flags, operation.context())
+        use print::OpPrinter;
+
+        let op = self.as_operation();
+        let context = op.context_rc();
+        let mut printer = print::AsmPrinter::new(context, flags);
+        op.print(&mut printer);
+        printer.finish()
     }
 
     #[inline]
@@ -119,18 +132,14 @@ impl Spanned for dyn Op {
 }
 
 pub trait OpExt {
-    /// Return the value associated with attribute `name` for this function
-    fn get_attribute(&self, name: impl Into<interner::Symbol>) -> Option<&dyn AttributeValue>;
+    /// Return the attribute named `name` for this operation
+    fn get_attribute(&self, name: impl Into<interner::Symbol>) -> Option<AttributeRef>;
 
-    /// Return true if this function has an attributed named `name`
+    /// Return true if this function has an attribute named `name`
     fn has_attribute(&self, name: impl Into<interner::Symbol>) -> bool;
 
-    /// Set the attribute `name` with `value` for this function.
-    fn set_attribute(
-        &mut self,
-        name: impl Into<interner::Symbol>,
-        value: Option<impl AttributeValue>,
-    );
+    /// Set the attribute `name` with `value` for this operation.
+    fn set_attribute(&mut self, name: impl Into<interner::Symbol>, value: AttributeRef);
 
     /// Remove any attribute with the given name from this function
     fn remove_attribute(&mut self, name: impl Into<interner::Symbol>);
@@ -142,7 +151,7 @@ pub trait OpExt {
 
 impl<T: ?Sized + Op> OpExt for T {
     #[inline]
-    fn get_attribute(&self, name: impl Into<interner::Symbol>) -> Option<&dyn AttributeValue> {
+    fn get_attribute(&self, name: impl Into<interner::Symbol>) -> Option<AttributeRef> {
         self.as_operation().get_attribute(name)
     }
 
@@ -152,11 +161,7 @@ impl<T: ?Sized + Op> OpExt for T {
     }
 
     #[inline]
-    fn set_attribute(
-        &mut self,
-        name: impl Into<interner::Symbol>,
-        value: Option<impl AttributeValue>,
-    ) {
+    fn set_attribute(&mut self, name: impl Into<interner::Symbol>, value: AttributeRef) {
         self.as_operation_mut().set_attribute(name, value);
     }
 

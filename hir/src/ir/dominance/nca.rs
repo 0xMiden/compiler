@@ -10,12 +10,10 @@ use crate::{
     formatter::{DisplayOptional, DisplayValues},
 };
 
-/// [SemiNCAInfo] provides functionality for constructing a dominator tree for a control-flow graph
+/// [SemiNCA] provides functionality for constructing a dominator tree for a control-flow graph
 /// based on the Semi-NCA algorithm described in the following dissertation:
 ///
-///   [1] Linear-Time Algorithms for Dominators and Related Problems
-///   Loukas Georgiadis, Princeton University, November 2005, pp. 21-23:
-///   ftp://ftp.cs.princeton.edu/reports/2005/737.pdf
+/// * [_Linear-Time Algorithms for Dominators and Related Problems_, Loukas Georgiadis, Princeton University, November 2005, pp. 21-23](ftp://ftp.cs.princeton.edu/reports/2005/737.pdf)
 ///
 /// The Semi-NCA algorithm runs in O(n^2) worst-case time but usually slightly faster than Simple
 /// Lengauer-Tarjan in practice.
@@ -28,9 +26,7 @@ use crate::{
 /// The file uses the Depth Based Search algorithm to perform incremental updates (insertion and
 /// deletions). The implemented algorithm is based on this publication:
 ///
-///   [2] An Experimental Study of Dynamic Dominators
-///   Loukas Georgiadis, et al., April 12 2016, pp. 5-7, 9-10:
-///   https://arxiv.org/pdf/1604.02711.pdf
+/// * [_An Experimental Study of Dynamic Dominators_, Loukas Georgiadis, et al., April 12 2016, pp. 5-7, 9-10](https://arxiv.org/pdf/1604.02711.pdf)
 pub struct SemiNCA<const IS_POST_DOM: bool> {
     /// Number to node mapping is 1-based.
     num_to_node: SmallVec<[Option<BlockRef>; 64]>,

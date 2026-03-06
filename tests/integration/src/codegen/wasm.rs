@@ -1,16 +1,13 @@
 use midenc_dialect_wasm::WasmOpBuilder;
-use midenc_hir::{
-    AbiParam, Felt, Signature, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder,
-};
+use midenc_hir::{Felt, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder};
 
 use crate::testing::{compile_test_module, eval_package};
 
 #[test]
 fn test_i32_extend8_s() {
     let span = SourceSpan::default();
-    let signature = Signature::new([AbiParam::new(Type::I32)], [AbiParam::new(Type::I32)]);
 
-    let (package, context) = compile_test_module(signature, |builder| {
+    let (package, context) = compile_test_module([Type::I32], [Type::I32], |builder| {
         let block = builder.current_block();
         let input = block.borrow().arguments()[0] as ValueRef;
         let result = builder.i32_extend8_s(input, span).unwrap();

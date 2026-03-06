@@ -4,16 +4,18 @@ pub use self::interface::{
     ComponentExport, ComponentId, ComponentInterface, ModuleExport, ModuleInterface,
 };
 use crate::{
-    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
-    SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    Ident, IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol,
+    SymbolManager, SymbolManagerMut, SymbolMap, SymbolRef, SymbolTable, SymbolUseList,
     UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
-    dialects::builtin::BuiltinDialect,
+    dialects::builtin::{BuiltinDialect, attributes::VisibilityAttr},
+    interner,
+    print::AsmPrinter,
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
     },
-    version::Version,
+    version::VersionAttr,
 };
 
 pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
@@ -23,16 +25,16 @@ pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
 ///
 /// Components can contain the following entities:
 ///
-/// * [Interface], used to export groups of related functionality from the component. Interfaces
-///   always have `Public` visibility.
-/// * [Function] used to export standalone component-level functions, e.g. a program entrypoint,
-///   or component initializer. These functions always have `Public` visibility, and must be
-///   representable using the Canonical ABI.
-/// * [Module], used to implement the functionality exported backing an [Interface] or a component-
-///   level [Function]. Modules may not have `Public` visibility. All modules within a [Component]
-///   are within the same shared-everything boundary, so conflicting data segment declarations are
-///   not allowed. Additionally, global variables within the same shared-everything boundary
-///   are allocated in the same linear memory address space.
+/// * [super::Interface], used to export groups of related functionality from the component.
+///   Interfaces always have `Public` visibility.
+/// * [super::Function] used to export standalone component-level functions, e.g. a program
+///   entrypoint, or component initializer. These functions always have `Public` visibility, and
+///   must be representable using the Canonical ABI.
+/// * [super::Module], used to implement the functionality exported backing an [super::Interface] or
+///   a component-level [super::Function]. Modules may not have `Public` visibility. All modules
+///   within a [Component] are within the same shared-everything boundary, so conflicting data
+///   segment declarations are not allowed. Additionally, global variables within the same
+///   shared-everything boundary are allocated in the same linear memory address space.
 ///
 /// Externally-defined functions are represented as declarations, and must be referenced using their
 /// fully-qualified name in order to resolve them.
@@ -46,13 +48,14 @@ pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
 /// * A [Component] corresponds to a Miden Assembly namespace, and a Miden package
 /// * Component-level functions are emitted to a MASM module corresponding to the root of the
 ///   namespace, i.e. as if defined in `mod.masm` at the root of a MASM source project.
-/// * Each [Interface] of a component is emitted to a MASM module of the same name
-/// * Each [Module] of a component is emitted to a MASM module of the same name
-/// * The [Segment] declarations of all modules in the component are gathered together, checked for
-///   overlap, hashed, and then added to the set of advice map entries to be initialized when the
-///   resulting package is loaded. The initialization code generated to load the data segments into
-///   the linear memory of the component, is placed in a top-level component function called `init`.
-/// * The [GlobalVariable] declarations of all modules in the component are gathered together,
+/// * Each [super::Interface] of a component is emitted to a MASM module of the same name
+/// * Each [super::Module] of a component is emitted to a MASM module of the same name
+/// * The [super::Segment] declarations of all modules in the component are gathered together,
+///   checked for overlap, hashed, and then added to the set of advice map entries to be initialized
+///   when the resulting package is loaded. The initialization code generated to load the data
+///   segments into the linear memory of the component, is placed in a top-level component function
+///   called `init`.
+/// * The [super::GlobalVariable] declarations of all modules in the component are gathered together,
 ///   de-duplicated, initializer data hashed and added to the set of advice map entries of the
 ///   package, and allocated specific offsets in the address space of the component. Loads/stores
 ///   of these variables will be lowered to use these allocated offsets. The initialization code
@@ -74,14 +77,14 @@ pub type ComponentRef = UnsafeIntrusiveEntityRef<Component>;
 )]
 pub struct Component {
     #[attr]
-    namespace: Ident,
+    namespace: IdentAttr,
     #[attr]
-    name: Ident,
+    name: IdentAttr,
     #[attr]
-    version: Version,
+    version: VersionAttr,
     #[attr]
     #[default]
-    visibility: Visibility,
+    visibility: VisibilityAttr,
     #[region]
     body: RegionRef,
     #[default]
@@ -91,16 +94,71 @@ pub struct Component {
 }
 
 impl OpPrinter for Component {
-    fn print(
-        &self,
-        flags: &crate::OpPrintingFlags,
-        _context: &crate::Context,
-    ) -> crate::formatter::Document {
-        use crate::formatter::*;
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use alloc::string::ToString;
 
-        let header = display(self.op.name()) + const_text(" ") + display(self.id());
-        let body = crate::print::render_regions(&self.op, flags);
-        header + body
+        printer.print_space();
+        printer.print_keyword(self.get_visibility().as_str());
+        printer.print_space();
+        printer.print_symbol_name(interner::Symbol::intern(self.id().to_string()));
+        printer.print_space();
+        printer.print_region(&self.body());
+    }
+}
+
+impl OpParser for Component {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use alloc::{format, string::ToString, vec};
+
+        use crate::{
+            diagnostics::{LabeledSpan, RelatedError, Report, Severity, miette::diagnostic},
+            parse::{ParserError, Token},
+        };
+
+        let context = parser.context_rc();
+        let visibility = parser
+            .parse_keyword_from(&[
+                Token::BareIdent("public"),
+                Token::BareIdent("private"),
+                Token::BareIdent("internal"),
+            ])?
+            .into_inner()
+            .parse::<Visibility>()
+            .expect("one or more of these visibilities are no longer valid");
+        state
+            .add_attribute("visibility", context.create_attribute::<VisibilityAttr, _>(visibility));
+
+        let name = parser.parse_symbol_name()?;
+        let name_span = name.span;
+        let component_id = name.as_str().parse::<ComponentId>().map_err(|err| {
+            ParserError::Report(RelatedError::new(Report::from(diagnostic!(
+                severity = Severity::Error,
+                labels = vec![LabeledSpan::at(name_span, err.to_string())],
+                "invalid component name"
+            ))))
+        })?;
+
+        state.add_attribute(
+            "namespace",
+            context.create_attribute::<IdentAttr, _>(Ident::new(component_id.namespace, name_span)),
+        );
+        state.add_attribute(
+            "name",
+            context.create_attribute::<IdentAttr, _>(Ident::new(component_id.name, name_span)),
+        );
+        state.add_attribute(
+            "version",
+            context.create_attribute::<VersionAttr, _>(component_id.version),
+        );
+
+        let region = parser.context().create_region();
+        parser.parse_region(region, &[], true)?;
+        state.add_region(region);
+
+        Ok(())
     }
 }
 
@@ -119,9 +177,11 @@ impl midenc_session::Emit for Component {
         _mode: midenc_session::OutputMode,
         _session: &midenc_session::Session,
     ) -> anyhow::Result<()> {
+        use crate::OpPrinter;
         let flags = crate::OpPrintingFlags::default();
-        let document = <Component as OpPrinter>::print(self, &flags, self.op.context());
-        writer.write_fmt(format_args!("{document}"))
+        let mut printer = AsmPrinter::new(self.as_operation().context_rc(), &flags);
+        <Self as OpPrinter>::print(self, &mut printer);
+        writer.write_fmt(format_args!("{}", printer.finish()))
     }
 }
 
@@ -157,16 +217,16 @@ impl Symbol for Component {
         &mut self.op
     }
 
-    fn name(&self) -> SymbolName {
+    fn name(&self) -> interner::Symbol {
         let id = ComponentId {
-            namespace: self.namespace().as_symbol(),
-            name: Component::name(self).as_symbol(),
-            version: self.version().clone(),
+            namespace: self.get_namespace().as_symbol(),
+            name: self.get_name().as_symbol(),
+            version: self.get_version().clone(),
         };
-        SymbolName::intern(id)
+        interner::Symbol::intern(id)
     }
 
-    fn set_name(&mut self, name: SymbolName) {
+    fn set_name(&mut self, name: interner::Symbol) {
         let ComponentId {
             name,
             namespace,
@@ -174,15 +234,15 @@ impl Symbol for Component {
         } = name.as_str().parse::<ComponentId>().expect("invalid component identifier");
         self.name_mut().name = name;
         self.namespace_mut().name = namespace;
-        *self.version_mut() = version;
+        *self.get_version_mut() = version;
     }
 
     fn visibility(&self) -> Visibility {
-        *Component::visibility(self)
+        *self.get_visibility()
     }
 
     fn set_visibility(&mut self, visibility: Visibility) {
-        *self.visibility_mut() = visibility;
+        *self.get_visibility_mut() = visibility;
     }
 }
 
@@ -206,21 +266,15 @@ impl SymbolTable for Component {
     }
 
     #[inline]
-    fn get(&self, name: SymbolName) -> Option<SymbolRef> {
+    fn get(&self, name: interner::Symbol) -> Option<SymbolRef> {
         self.symbols.get(name)
     }
 }
 
 impl Component {
+    #[inline]
     pub fn id(&self) -> ComponentId {
-        let namespace = self.namespace().as_symbol();
-        let name = self.name().as_symbol();
-        let version = self.version().clone();
-        ComponentId {
-            namespace,
-            name,
-            version,
-        }
+        ComponentId::from(self)
     }
 
     #[inline(always)]
