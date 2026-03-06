@@ -141,7 +141,8 @@ pub trait DialectRegistration: AsAny + Dialect {
     /// This is called when registering a dialect, to register operations of the dialect.
     ///
     /// This is called _before_ [DialectRegistration::init].
-    fn register_operations(info: &mut DialectInfo);
+    #[allow(unused_variables)]
+    fn register_operations(info: &mut DialectInfo) {}
 
     /// This is called when registering a dialect, to register attributes of the dialect.
     ///
