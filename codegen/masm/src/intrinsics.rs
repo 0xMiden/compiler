@@ -26,8 +26,6 @@ const I32_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i32.masm"));
 const I64_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i64.masm"));
-const I128_INTRINSICS: &str =
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i128.masm"));
 const MEM_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/mem.masm"));
 const CRYPTO_INTRINSICS: &str =
@@ -36,7 +34,7 @@ const ADVICE_INTRINSICS: &str =
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/advice.masm"));
 
 /// This is a mapping of intrinsics module name to the raw MASM source for that module
-const INTRINSICS: [(&str, &str, &str); 6] = [
+const INTRINSICS: [(&str, &str, &str); 5] = [
     (
         I32_INTRINSICS_MODULE_NAME,
         I32_INTRINSICS,
@@ -46,11 +44,6 @@ const INTRINSICS: [(&str, &str, &str); 6] = [
         I64_INTRINSICS_MODULE_NAME,
         I64_INTRINSICS,
         concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i64.masm"),
-    ),
-    (
-        I128_INTRINSICS_MODULE_NAME,
-        I128_INTRINSICS,
-        concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i128.masm"),
     ),
     (
         MEM_INTRINSICS_MODULE_NAME,
