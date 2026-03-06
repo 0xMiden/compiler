@@ -14,8 +14,8 @@ use miden_client::{
 use miden_protocol::account::StorageSlotName;
 
 use super::helpers::{
-    NoteCreationConfig, assert_counter_storage, block_on, build_counter_account_with_rust_rpo_auth,
-    build_send_notes_script, create_note_from_package,
+    assert_counter_storage, block_on, build_counter_account_with_rust_rpo_auth,
+    build_send_notes_script,
 };
 use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 
@@ -60,16 +60,12 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     );
 
     // Positive check: original client (with the key) can create a note
-    let mut rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
-    let own_note = create_note_from_package(
-        note_package.clone(),
-        counter_account.id(),
-        NoteCreationConfig {
-            tag: NoteTag::with_account_target(counter_account.id()),
-            ..Default::default()
-        },
-        &mut rng,
-    );
+    let rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let own_note = NoteBuilder::new(counter_account.id(), rng)
+        .package((*note_package).clone())
+        .tag(NoteTag::with_account_target(counter_account.id()).into())
+        .build()
+        .expect("failed to build own_note");
     let tx_script = build_send_notes_script(&counter_account, std::slice::from_ref(&own_note));
     let authenticator = BasicAuthenticator::new(std::slice::from_ref(&secret_key));
 
@@ -90,15 +86,12 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
 
     // Negative check: without the RPO-Falcon512 key, creating output notes should fail.
     let counter_account = chain.committed_account(counter_account_id).unwrap().clone();
-    let forged_note = create_note_from_package(
-        note_package,
-        counter_account.id(),
-        NoteCreationConfig {
-            tag: NoteTag::with_account_target(counter_account.id()),
-            ..Default::default()
-        },
-        &mut rng,
-    );
+    let rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let forged_note = NoteBuilder::new(counter_account.id(), rng)
+        .package((*note_package).clone())
+        .tag(NoteTag::with_account_target(counter_account.id()).into())
+        .build()
+        .expect("failed to build forged_note");
     let tx_script = build_send_notes_script(&counter_account, std::slice::from_ref(&forged_note));
 
     let tx_context_builder = chain

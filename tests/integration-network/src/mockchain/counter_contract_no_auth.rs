@@ -12,8 +12,7 @@ use miden_core::{Felt, FieldElement};
 use miden_protocol::account::{AccountBuilder, AccountStorageMode, AccountType, StorageSlotName};
 
 use super::helpers::{
-    NoteCreationConfig, assert_counter_storage,
-    build_existing_counter_account_builder_with_auth_package, create_note_from_package, execute_tx,
+    assert_counter_storage, build_existing_counter_account_builder_with_auth_package, execute_tx,
 };
 use crate::mockchain::helpers::{CustomComponentBuilder, PackageFromProject};
 

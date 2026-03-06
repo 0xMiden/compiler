@@ -79,26 +79,6 @@ impl Default for NoteCreationConfig {
     }
 }
 
-/// Creates a note from a compiled note package without requiring a `miden_client::Client`.
-pub(super) fn create_note_from_package(
-    package: Arc<Package>,
-    sender_id: AccountId,
-    config: NoteCreationConfig,
-    rng: &mut impl FeltRng,
-) -> Note {
-    let note_program = package.unwrap_program();
-    let note_script =
-        NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
-
-    let serial_num = rng.draw_word();
-    let note_inputs = NoteInputs::new(config.inputs).unwrap();
-    let recipient = NoteRecipient::new(serial_num, note_script, note_inputs);
-
-    let metadata = NoteMetadata::new(sender_id, config.note_type, config.tag);
-
-    Note::new(config.assets, metadata, recipient)
-}
-
 // ACCOUNT COMPONENT HELPERS
 // ================================================================================================
 
