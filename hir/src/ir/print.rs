@@ -259,7 +259,7 @@ pub use self::{
     type_printer::{FunctionTypePrinter, TypePrinter},
 };
 use super::{OpOperandRange, OpResultRange, Operation, Region, RegionList, ValueRange};
-use crate::{EntityWithId, Value, formatter::Document};
+use crate::{EntityWithId, Location, Value, formatter::Document};
 
 #[derive(Default, Debug)]
 pub struct OpPrintingFlags {
@@ -299,6 +299,12 @@ impl OpPrinter for Operation {
             printer.print_results(self.results().all());
             *printer += display(self.name());
             custom_printer.print(printer);
+            // Add source location if requested
+            if printer.flags().print_source_locations {
+                let loc = Location::from_span(self.span, self.context());
+                printer.print_space();
+                printer.print_trailing_location_specifier(&loc);
+            }
             *printer += const_text(";");
         } else {
             printer.print_operation_generic(self);

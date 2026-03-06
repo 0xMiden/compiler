@@ -59,22 +59,34 @@ impl AttrPrinter for LocationAttr {
 
 impl Location {
     pub fn from_span(span: SourceSpan, context: &crate::Context) -> Self {
+        use midenc_session::path::Path;
         if span.is_unknown() {
             Self::Unknown
         } else if let Some(index) = Self::is_deferred(span) {
             Self::Opaque(index)
         } else if let Ok(file) = context.session().source_manager.get(span.source_id()) {
             let loc = file.location(span);
+            let uri = context
+                .session()
+                .options
+                .trim_path_prefixes
+                .iter()
+                .filter_map(|p| {
+                    Path::new(file.uri().path()).strip_prefix(p).ok().and_then(|p| p.to_str())
+                })
+                .max_by_key(|p| p.len())
+                .map(Uri::new)
+                .unwrap_or(loc.uri.clone());
             if span.is_empty() {
                 Self::FileLineCol {
-                    uri: loc.uri,
+                    uri,
                     line: loc.line,
                     column: loc.column,
                 }
             } else {
                 let end = file.location(SourceSpan::at(span.source_id(), span.end()));
                 Self::FileLineColRange {
-                    uri: loc.uri,
+                    uri,
                     start_line: loc.line,
                     start_column: loc.column,
                     end_line: end.line,
