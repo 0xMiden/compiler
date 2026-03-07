@@ -1,7 +1,7 @@
 use std::{any::type_name, marker::PhantomData};
 
 use miden_core::{Felt, FieldElement, Word};
-use miden_debug::{FromMidenRepr, ToMidenRepr};
+use miden_debug::{FromMidenRepr, ToMidenRepr, push_wasm_ty_to_operand_stack};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::SmallVec;
@@ -309,7 +309,6 @@ fn test_overflowing_add_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_add_i8() {
     test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
@@ -351,7 +350,6 @@ fn test_overflowing_sub_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_sub_i8() {
     test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
@@ -393,7 +391,6 @@ fn test_overflowing_mul_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_mul_i8() {
     test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -453,7 +450,6 @@ fn test_overflowing_div_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
 fn test_overflowing_div_i8() {
     test_overflowing_arith(
         i8::overflowing_div,
@@ -620,6 +616,9 @@ fn test_overflowing_arith<T>(
         CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
     let package = test.compile_package();
 
+    let ty_byte_size = std::mem::size_of::<T>();
+    assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
+
     let res = TestRunner::default().run(&strategy, move |(a, b)| {
         dbg!(a, b);
         let rust_out = op(a, b);
@@ -629,13 +628,11 @@ fn test_overflowing_arith<T>(
         let out_addr = 20u32 * 65536;
 
         let mut args = Vec::<midenc_hir::Felt>::default();
-        b.push_to_operand_stack(&mut args);
-        a.push_to_operand_stack(&mut args);
+        push_wasm_ty_to_operand_stack(b, &mut args);
+        push_wasm_ty_to_operand_stack(a, &mut args);
         out_addr.push_to_operand_stack(&mut args);
 
         eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
-            let ty_byte_size = std::mem::size_of::<T>();
-            assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
             // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
             let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
             let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
