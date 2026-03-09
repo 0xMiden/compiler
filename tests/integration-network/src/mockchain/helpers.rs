@@ -60,8 +60,8 @@ pub(super) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Pac
     let output = std::process::Command::new("miden")
                 .arg("build")
                 // Midenup's "miden build" command inherits all of cargo miden's flags.
-                .arg("--manifest-path")
-                .arg(std::path::Path::new(project_path).join("Cargo.toml"))
+                .current_dir(project_path)
+                .env("MIDENUP_MANIFEST_URI", format!("file://{project_path}/channel-manifest.json"))
                 .arg(mode_flag)
                 .output()
                 // TODO: Add the cargo install command once `midenup` is published

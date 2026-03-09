@@ -323,6 +323,7 @@ jobs:
         run: |
           if ! miden help 2>/dev/null; then
             cargo install --git https://github.com/0xMiden/midenup
+            midenup init
           fi
 
       - name: Test
