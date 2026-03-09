@@ -4,8 +4,8 @@ use miden_debug::ToMidenRepr;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    AbiParam, Builder, Felt, PointerType, Signature, SourceSpan, Type, ValueRef,
-    dialects::builtin::BuiltinOpBuilder,
+    Builder, Felt, PointerType, SourceSpan, Type, ValueRef,
+    dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
 };
 use proptest::{
     prelude::any,
@@ -24,20 +24,16 @@ fn load_sw() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes `load_sw` when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::U32)))],
-        [AbiParam::new(Type::U32)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::U32))], [Type::U32], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u32>(), move |value| {
@@ -93,20 +89,16 @@ fn load_dw() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes `load_dw` when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::U64)))],
-        [AbiParam::new(Type::U64)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::U64))], [Type::U64], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u64>(), move |value| {
@@ -211,11 +203,15 @@ fn global_u64_initializer_uses_immediate_store_dw() {
     }
 
     // Entrypoint: load the global and return it.
-    let signature = Signature::new([], [AbiParam::new(Type::U64)]);
+    let signature = Signature::new(&context, [], [Type::U64]);
     let function = {
         let mut module_builder = midenc_hir::dialects::builtin::ModuleBuilder::new(module);
         module_builder
-            .define_function(midenc_hir::Ident::with_empty_span("main".into()), signature.clone())
+            .define_function(
+                midenc_hir::Ident::with_empty_span("main".into()),
+                midenc_hir::Visibility::Public,
+                signature.clone(),
+            )
             .unwrap()
     };
     {
@@ -247,20 +243,16 @@ fn load_u8() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes load for u8 when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::U8)))],
-        [AbiParam::new(Type::U8)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::U8))], [Type::U8], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u8>(), move |value| {
@@ -316,20 +308,16 @@ fn load_u16() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes load for u16 when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::U16)))],
-        [AbiParam::new(Type::U16)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::U16))], [Type::U16], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u16>(), move |value| {
@@ -385,20 +373,16 @@ fn load_bool() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes load for bool when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::I1)))],
-        [AbiParam::new(Type::I1)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::I1))], [Type::I1], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<bool>(), move |value| {
@@ -460,12 +444,8 @@ fn store_u16() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that stores two u16 values
-    let signature = Signature::new(
-        [AbiParam::new(Type::U16), AbiParam::new(Type::U16)],
-        [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
-    );
-
-    let (package, context) = compile_test_module(signature, |builder| {
+    // Return u32 to satisfy test infrastructure
+    let (package, context) = compile_test_module([Type::U16, Type::U16], [Type::U32], |builder| {
         let block = builder.current_block();
         let (value1, value2) = {
             let block_ref = block.borrow();
@@ -598,17 +578,9 @@ fn store_u8() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that stores four u8 values
-    let signature = Signature::new(
-        [
-            AbiParam::new(Type::U8),
-            AbiParam::new(Type::U8),
-            AbiParam::new(Type::U8),
-            AbiParam::new(Type::U8),
-        ],
-        [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
-    );
-
-    let (package, context) = compile_test_module(signature, |builder| {
+    // Return u32 to satisfy test infrastructure
+    let params = [Type::U8, Type::U8, Type::U8, Type::U8];
+    let (package, context) = compile_test_module(params, [Type::U32], |builder| {
         let block = builder.current_block();
         let (value0, value1, value2, value3) = {
             let block_ref = block.borrow();
@@ -818,13 +790,9 @@ fn store_unaligned_u32() {
     let write_val = 0xddccbbaa_u32; // Little-endian bytes will be [AA BB CC DD].
 
     // Generate a `test` module with `main` function that stores to a u32 offset.
-    let signature = Signature::new(
-        [AbiParam::new(Type::U32)],
-        [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
-    );
-
+    // Return u32 to satisfy test infrastructure
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
+    let (package, context) = compile_test_module([Type::U32], [Type::U32], |builder| {
         let block = builder.current_block();
         let idx_val = block.borrow().arguments()[0] as ValueRef;
 
@@ -906,10 +874,8 @@ fn load_unaligned_u64() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that loads from `write_to` + a passed offset.
-    let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U64)]);
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
+    let (package, context) = compile_test_module([Type::U32], [Type::U64], |builder| {
         let block = builder.current_block();
 
         // Get the offset, add it to the base address and load the 64bit value there.
@@ -976,13 +942,9 @@ fn store_unaligned_u64() {
     let write_val = 0xcdabffee_ddccbbaa_u64;
 
     // Generate a `test` module with `main` function that stores to a u32 offset.
-    let signature = Signature::new(
-        [AbiParam::new(Type::U32)],
-        [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
-    );
-
+    // Return u32 to satisfy test infrastructure
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
+    let (package, context) = compile_test_module([Type::U32], [Type::U32], |builder| {
         let block = builder.current_block();
         let idx_val = block.borrow().arguments()[0] as ValueRef;
 

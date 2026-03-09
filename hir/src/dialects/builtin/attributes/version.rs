@@ -1,15 +1,26 @@
+use alloc::string::ToString;
 use core::{fmt, str::FromStr};
 
 pub use semver::{self, VersionReq};
 
-use crate::{define_attr_type, formatter};
+use crate::{
+    AttrPrinter, derive::DialectAttribute, dialects::builtin::BuiltinDialect, formatter,
+    print::AsmPrinter,
+};
 
 /// Represents a Semantic Versioning version string.
 ///
 /// This is a newtype wrapper around [semver::Version], in order to make it representable as an
 /// attribute value in the IR.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(DialectAttribute, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
 pub struct Version(semver::Version);
+
+impl AttrPrinter for VersionAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_string(self.value.to_string());
+    }
+}
 
 impl Version {
     /// Create a new [Version] from the given components, with empty pre-release and build metadata.
@@ -36,7 +47,11 @@ impl Version {
     }
 }
 
-define_attr_type!(Version);
+impl Default for Version {
+    fn default() -> Self {
+        Self(semver::Version::new(0, 0, 0))
+    }
+}
 
 impl FromStr for Version {
     type Err = semver::Error;

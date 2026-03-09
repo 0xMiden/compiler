@@ -12,12 +12,17 @@ use midenc_session::diagnostics::Severity;
 /// or the maximum number of iterations/rewrites is exhausted. Canonicalization is best-effort and
 /// does not guarantee that the entire IR is in a canonical form after running this pass.
 ///
-/// See the docs for [crate::traits::Canonicalizable] for more details.
+/// See the docs for [midenc_hir::traits::Canonicalizable] for more details.
 pub struct Canonicalizer {
     config: GreedyRewriteConfig,
     rewrites: Option<Rc<FrozenRewritePatternSet>>,
     require_convergence: bool,
 }
+
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Canonicalizer>(
+    Canonicalizer::NAME,
+    "canonicalization"
+));
 
 impl Default for Canonicalizer {
     fn default() -> Self {

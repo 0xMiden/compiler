@@ -85,7 +85,7 @@ impl<T: Symbol> AsSymbolRef for UnsafeIntrusiveEntityRef<T> {
 impl AsSymbolRef for SymbolRef {
     #[inline(always)]
     fn as_symbol_ref(&self) -> SymbolRef {
-        Self::clone(self)
+        *self
     }
 }
 
@@ -318,9 +318,19 @@ impl Operation {
     where
         F: FnMut(SymbolUseRef) -> WalkResult,
     {
-        for attr in op.attrs.iter() {
-            if let Some(attr) = attr.value_as::<SymbolPathAttr>() {
-                callback(attr.user)?;
+        use crate::dialects::builtin::attributes::SymbolRefAttr;
+
+        for attr in op.properties() {
+            let attr = attr.value();
+            if let Some(attr) = attr.downcast_ref::<SymbolRefAttr>() {
+                callback(attr.user())?;
+            }
+        }
+        for attr in op.attributes() {
+            let attr = attr.as_named_attribute();
+            let attr = attr.value();
+            if let Some(attr) = attr.downcast_ref::<SymbolRefAttr>() {
+                callback(attr.user())?;
             }
         }
 

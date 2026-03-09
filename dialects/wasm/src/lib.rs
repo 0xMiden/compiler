@@ -12,28 +12,25 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
-use alloc::boxed::Box;
-
 mod builders;
 mod ops;
 
 use midenc_dialect_arith as arith;
 use midenc_hir::{
-    AttributeValue, Builder, Dialect, DialectInfo, DialectRegistration, OperationRef, SourceSpan,
-    Type,
+    AttributeRef, Builder, Dialect, DialectInfo, OperationRef, SourceSpan, Type,
+    derive::DialectRegistration,
 };
 
 pub use self::{builders::WasmOpBuilder, ops::*};
 
-#[derive(Debug)]
+#[derive(Debug, DialectRegistration)]
 pub struct WasmDialect {
     info: DialectInfo,
 }
 
-impl WasmDialect {
-    #[inline]
-    pub fn num_registered(&self) -> usize {
-        self.registered_ops().len()
+impl From<DialectInfo> for WasmDialect {
+    fn from(info: DialectInfo) -> Self {
+        Self { info }
     }
 }
 
@@ -46,7 +43,7 @@ impl Dialect for WasmDialect {
     fn materialize_constant(
         &self,
         builder: &mut dyn Builder,
-        attr: Box<dyn AttributeValue>,
+        attr: AttributeRef,
         ty: &Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
@@ -60,18 +57,5 @@ impl Dialect for WasmDialect {
         }
 
         None
-    }
-}
-
-impl DialectRegistration for WasmDialect {
-    const NAMESPACE: &'static str = "wasm";
-
-    #[inline]
-    fn init(info: DialectInfo) -> Self {
-        Self { info }
-    }
-
-    fn register_operations(info: &mut DialectInfo) {
-        info.register_operation::<ops::I32Extend8S>();
     }
 }

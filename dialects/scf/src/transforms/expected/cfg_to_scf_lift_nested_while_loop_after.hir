@@ -1,49 +1,44 @@
-public builtin.function @test(v0: ptr<byte, u32>, v1: u32, v2: u32) -> u32 {
-^block0(v0: ptr<byte, u32>, v1: u32, v2: u32):
-    v26 = ub.poison u32 : u32;
-    v25 = arith.constant 1 : u32;
-    v20 = arith.constant 0 : u32;
-    v7 = arith.constant 0 : u32;
-    v34, v35, v36 = scf.while v7, v7, v26 : u32, u32, u32 {
-    ^block1(v3: u32, v4: u32, v30: u32):
-        v8 = arith.lt v3, v1 : i1;
-        v65, v66, v67, v68 = scf.if v8 : u32, u32, u32, u32 {
-        ^block18:
-            scf.yield v26, v26, v25, v20;
+builtin.function public extern("C") @cfg_to_scf_lift_nested_while_loop(%0: ptr<u32, byte>, %1: u32, %2: u32) -> u32 {
+    %26 = ub.poison <{ value = #ub.poison<u32> }>;
+    %25 = arith.constant 1 : u32;
+    %20 = arith.constant 0 : u32;
+    %7 = arith.constant 0 : u32;
+    %34, %35, %36 = scf.while %7, %7, %26 before {
+    ^block1(%3: u32, %4: u32, %30: u32):
+        %8 = arith.lt %3, %1;
+        %65, %66, %67, %68 = scf.if %8 then {
+            scf.yield %26, %26, %25, %20 : (u32, u32, u32, u32);
         } else {
-        ^block3:
-            v9 = arith.mul v3, v2 : u32 #[overflow = unchecked];
-            v55, v56, v57 = scf.while v7, v4, v26 : u32, u32, u32 {
-            ^block2(v5: u32, v6: u32, v51: u32):
-                v10 = arith.lt v5, v2 : i1;
-                v69, v70, v71, v72 = scf.if v10 : u32, u32, u32, u32 {
-                ^block19:
-                    scf.yield v26, v26, v25, v20;
+            %9 = arith.mul %3, %2 <{ overflow = #builtin.overflow<unchecked> }>;
+            %55, %56, %57 = scf.while %7, %4, %26 before {
+            ^block2(%5: u32, %6: u32, %51: u32):
+                %10 = arith.lt %5, %2;
+                %69, %70, %71, %72 = scf.if %10 then {
+                    scf.yield %26, %26, %25, %20 : (u32, u32, u32, u32);
                 } else {
-                ^block5:
-                    v12 = arith.add v9, v5 : u32 #[overflow = unchecked];
-                    v13 = builtin.unrealized_conversion_cast v0 : u32;
-                    v14 = arith.add v13, v12 : u32 #[overflow = unchecked];
-                    v15 = builtin.unrealized_conversion_cast v14 : ptr<byte, u32>;
-                    v16 = builtin.unrealized_conversion_cast v15 : u32;
-                    v17 = arith.incr v5 : u32;
-                    v18 = arith.add v6, v16 : u32 #[overflow = unchecked];
-                    scf.yield v17, v18, v20, v25;
-                };
-                v64 = arith.trunc v72 : i1;
-                scf.condition v64, v69, v70, v6;
-            } do {
-            ^block17(v61: u32, v62: u32, v63: u32):
-                scf.yield v61, v62, v63;
-            };
-            v11 = arith.incr v3 : u32;
-            scf.yield v11, v57, v20, v25;
-        };
-        v43 = arith.trunc v68 : i1;
-        scf.condition v43, v65, v66, v4;
-    } do {
-    ^block12(v40: u32, v41: u32, v42: u32):
-        scf.yield v40, v41, v42;
-    };
-    builtin.ret v36;
+                    %12 = arith.add %9, %5 <{ overflow = #builtin.overflow<unchecked> }>;
+                    %13 = builtin.unrealized_conversion_cast %0 <{ ty = #builtin.type<u32> }>;
+                    %14 = arith.add %13, %12 <{ overflow = #builtin.overflow<unchecked> }>;
+                    %15 = builtin.unrealized_conversion_cast %14 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+                    %16 = builtin.unrealized_conversion_cast %15 <{ ty = #builtin.type<u32> }>;
+                    %17 = arith.incr %5;
+                    %18 = arith.add %6, %16 <{ overflow = #builtin.overflow<unchecked> }>;
+                    scf.yield %17, %18, %20, %25 : (u32, u32, u32, u32);
+                } : (i1) -> (u32, u32, u32, u32);
+                %64 = arith.trunc %72 <{ ty = #builtin.type<i1> }>;
+                scf.condition %64, %69, %70, %6 : (i1, u32, u32, u32);
+            } after {
+            ^block17(%61: u32, %62: u32, %63: u32):
+                scf.yield %61, %62, %63 : (u32, u32, u32);
+            } : (u32, u32, u32);
+            %11 = arith.incr %3;
+            scf.yield %11, %57, %20, %25 : (u32, u32, u32, u32);
+        } : (i1) -> (u32, u32, u32, u32);
+        %43 = arith.trunc %68 <{ ty = #builtin.type<i1> }>;
+        scf.condition %43, %65, %66, %4 : (i1, u32, u32, u32);
+    } after {
+    ^block12(%40: u32, %41: u32, %42: u32):
+        scf.yield %40, %41, %42 : (u32, u32, u32);
+    } : (u32, u32, u32);
+    builtin.ret %36 : (u32);
 };

@@ -1,4 +1,9 @@
-use midenc_hir::{derive::operation, effects::MemoryEffectOpInterface, traits::*, *};
+use midenc_hir::{
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    effects::MemoryEffectOpInterface,
+    traits::*,
+    *,
+};
 
 use crate::*;
 
@@ -26,10 +31,11 @@ macro_rules! infer_return_ty_for_unary_op {
 }
 
 /// Increment
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Incr {
     #[operand]
@@ -39,13 +45,13 @@ pub struct Incr {
 }
 
 infer_return_ty_for_unary_op!(Incr);
-has_no_effects!(Incr);
 
 /// Negation
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Neg {
     #[operand]
@@ -55,13 +61,13 @@ pub struct Neg {
 }
 
 infer_return_ty_for_unary_op!(Neg);
-has_no_effects!(Neg);
 
 /// Modular inverse
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Inv {
     #[operand]
@@ -71,13 +77,13 @@ pub struct Inv {
 }
 
 infer_return_ty_for_unary_op!(Inv);
-has_no_effects!(Inv);
 
 /// log2(operand)
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Ilog2 {
     #[operand]
@@ -87,13 +93,13 @@ pub struct Ilog2 {
 }
 
 infer_return_ty_for_unary_op!(Ilog2);
-has_no_effects!(Ilog2);
 
 /// pow2(operand)
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Pow2 {
     #[operand]
@@ -103,13 +109,13 @@ pub struct Pow2 {
 }
 
 infer_return_ty_for_unary_op!(Pow2);
-has_no_effects!(Pow2);
 
 /// Logical NOT
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 
     )]
 pub struct Not {
@@ -120,13 +126,13 @@ pub struct Not {
 }
 
 infer_return_ty_for_unary_op!(Not);
-has_no_effects!(Not);
 
 /// Bitwise NOT
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Bnot {
     #[operand]
@@ -136,13 +142,13 @@ pub struct Bnot {
 }
 
 infer_return_ty_for_unary_op!(Bnot);
-has_no_effects!(Bnot);
 
 /// is_odd(operand)
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct IsOdd {
     #[operand]
@@ -152,13 +158,13 @@ pub struct IsOdd {
 }
 
 infer_return_ty_for_unary_op!(IsOdd as Type::I1);
-has_no_effects!(IsOdd);
 
 /// Count of non-zero bits (population count)
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Popcnt {
     #[operand]
@@ -168,13 +174,13 @@ pub struct Popcnt {
 }
 
 infer_return_ty_for_unary_op!(Popcnt as Type::U32);
-has_no_effects!(Popcnt);
 
 /// Count Leading Zeros
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Clz {
     #[operand]
@@ -184,13 +190,13 @@ pub struct Clz {
 }
 
 infer_return_ty_for_unary_op!(Clz as Type::U32);
-has_no_effects!(Clz);
 
 /// Count Trailing Zeros
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Ctz {
     #[operand]
@@ -200,13 +206,13 @@ pub struct Ctz {
 }
 
 infer_return_ty_for_unary_op!(Ctz as Type::U32);
-has_no_effects!(Ctz);
 
 /// Count Leading Ones
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Clo {
     #[operand]
@@ -216,13 +222,13 @@ pub struct Clo {
 }
 
 infer_return_ty_for_unary_op!(Clo as Type::U32);
-has_no_effects!(Clo);
 
 /// Count Trailing Ones
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
 pub struct Cto {
     #[operand]
@@ -232,4 +238,3 @@ pub struct Cto {
 }
 
 infer_return_ty_for_unary_op!(Cto as Type::U32);
-has_no_effects!(Cto);

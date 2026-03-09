@@ -56,8 +56,8 @@ unsafe impl Send for DiagnosticsHandler {}
 unsafe impl Sync for DiagnosticsHandler {}
 
 impl DiagnosticsHandler {
-    /// Create a new [DiagnosticsHandler] from the given [DiagnosticsConfig],
-    /// [CodeMap], and [Emitter] implementation.
+    /// Create a new [DiagnosticsHandler] from the given [DiagnosticsConfig], [SourceManager], and
+    /// [Emitter] implementation.
     pub fn new(
         config: DiagnosticsConfig,
         source_manager: Arc<dyn SourceManager + Send + Sync>,
@@ -131,10 +131,10 @@ impl DiagnosticsHandler {
         self.emit(diagnostic);
     }
 
-    /// Starts building an [InFlightDiagnostic] for rich compiler diagnostics.
+    /// Starts building a [Diagnostic] for rich compiler diagnostics.
     ///
-    /// The caller is responsible for dropping/emitting the diagnostic using the
-    /// [InFlightDiagnostic] API.
+    /// The caller is responsible for dropping/emitting the diagnostic using the returned
+    /// [InFlightDiagnosticBuilder].
     pub fn diagnostic(&self, severity: Severity) -> InFlightDiagnosticBuilder<'_> {
         InFlightDiagnosticBuilder::new(self, severity)
     }
@@ -312,7 +312,7 @@ impl<'h> InFlightDiagnosticBuilder<'h> {
         self
     }
 
-    /// Consume this [InFlightDiagnostic] and create a [Report]
+    /// Consume this [InFlightDiagnosticBuilder] and create a [Report]
     pub fn into_report(mut self) -> Report {
         if self.diagnostic.message.is_empty() {
             self.diagnostic.message = "reported".into();
@@ -321,7 +321,7 @@ impl<'h> InFlightDiagnosticBuilder<'h> {
         Report::from(self.diagnostic)
     }
 
-    /// Emit the underlying [Diagnostic] via the [DiagnosticHandler]
+    /// Emit the underlying [Diagnostic] via the configured [DiagnosticsHandler]
     pub fn emit(self) {
         let handler = self.handler;
         handler.emit(self.into_report());
@@ -407,8 +407,8 @@ pub use self::into_diagnostic::{DiagnosticError, IntoDiagnostic};
 mod into_diagnostic {
     use alloc::boxed::Box;
 
-    /// Convenience [`Diagnostic`] that can be used as an "anonymous" wrapper for
-    /// Errors. This is intended to be paired with [`IntoDiagnostic`].
+    /// Convenience [`super::Diagnostic`] that can be used as an "anonymous" wrapper for errors.
+    /// This is intended to be paired with [`IntoDiagnostic`].
     #[derive(Debug)]
     pub struct DiagnosticError<E>(Box<E>);
     impl<E> DiagnosticError<E> {
@@ -442,20 +442,18 @@ mod into_diagnostic {
     unsafe impl<E: Send> Send for DiagnosticError<E> {}
     unsafe impl<E: Sync> Sync for DiagnosticError<E> {}
 
-    /**
-    Convenience trait that adds a [`.into_diagnostic()`](IntoDiagnostic::into_diagnostic) method that converts a type implementing
-    [`std::error::Error`] to a [`Result<T, Report>`].
-
-    ## Warning
-
-    Calling this on a type implementing [`Diagnostic`] will reduce it to the common denominator of
-    [`std::error::Error`]. Meaning all extra information provided by [`Diagnostic`] will be
-    inaccessible. If you have a type implementing [`Diagnostic`] consider simply returning it or using
-    [`Into`] or the [`Try`](std::ops::Try) operator (`?`).
-    */
+    /// Convenience trait for converting a type implementing [`core::error::Error`] into a `Report`.
+    ///
+    /// ## Warning
+    ///
+    /// Calling this on a type implementing [`super::Diagnostic`] will reduce it to the common
+    /// denominator of [`core::error::Error`]. Meaning all extra information provided by
+    /// [`super::Diagnostic`] will be inaccessible. If you have a type implementing
+    /// [`super::Diagnostic`] consider simply returning it or using [`Into`] or the
+    /// [`Try`](core::ops::Try) operator (`?`).
     pub trait IntoDiagnostic<T, E> {
-        /// Converts [`Result`] types that return regular [`std::error::Error`]s
-        /// into a [`Result`] that returns a [`Diagnostic`].
+        /// Converts [`Result`] types that return regular [`core::error::Error`]s into a [`Result`]
+        /// that returns a [`super::Diagnostic`].
         fn into_diagnostic(self) -> Result<T, super::Report>;
     }
 

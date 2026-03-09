@@ -44,7 +44,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
+    /// The caller must ensure that `analysis` is owned by the [crate::DataFlowSolver], as that is the
     /// only situation in which it is safe for us to take the address of the analysis for later use.
     pub fn subscribe<A>(guard: &Self, analysis: &A)
     where
@@ -149,7 +149,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
     /// Consume the guard and convert the underlying mutable borrow of the state into an immutable
     /// borrow, after propagating any changes made to the state while mutating it. When this
     /// function returns, the state can be safely aliased by immutable references, while the caller
-    /// retains the ability to interact with the state via the returned [crate::EntityRef].
+    /// retains the ability to interact with the state via the returned [midenc_hir::EntityRef].
     pub fn into_entity_ref(mut guard: Self) -> EntityRef<'a, T> {
         guard.notify_if_changed();
 
@@ -166,7 +166,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
     /// not be re-enqueued, and thus analyses may make incorrect assumptions.
     ///
     /// This should be used when you need a mutable reference to the state, but may not actually
-    /// end up mutating the state with it. The default [DerefMut] implementation will always
+    /// end up mutating the state with it. The default `DerefMut` implementation will always
     /// assume the underlying state was changed if invoked - this function lets you bypass that,
     /// but with the requirement that you signal changes manually.
     pub fn change<F>(&mut self, callback: F) -> ChangeResult
@@ -188,7 +188,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
+    /// The caller must ensure that `analysis` is owned by the [crate::DataFlowSolver], as that is the
     /// only situation in which it is safe for us to take the address of the analysis for later use.
     pub fn subscribe<A>(guard: &Self, analysis: &A)
     where

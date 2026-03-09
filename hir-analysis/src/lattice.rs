@@ -61,7 +61,8 @@ pub trait LatticeLike: Default + Clone + Eq + fmt::Debug + 'static {
     fn meet(&self, other: &Self) -> Self;
 }
 
-/// This type adapts a [LatticeLike] value for use as an [AnalysisState] by a [DataFlowAnalysis].
+/// This type adapts a [LatticeLike] value for use as an [AnalysisState] by a
+/// [crate::DataFlowAnalysis].
 pub struct Lattice<T> {
     anchor: LatticeAnchorRef,
     value: T,

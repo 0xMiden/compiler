@@ -1,12 +1,11 @@
-public builtin.function @test_wrapper() {
-^block4:
-    v0 = arith.constant 2 : i64;
-    v1 = arith.constant 1 : i64;
-    v2 = hir.bitcast v0 : u64;
-    v3 = hir.bitcast v1 : u64;
-    v4 = arith.div v2, v3 : u64;
-    v5 = hir.bitcast v4 : i64;
+builtin.function public extern("C") @test_wrapper() {
+    %0 = arith.constant 2 : i64;
+    %1 = arith.constant 1 : i64;
+    %2 = hir.bitcast %0 <{ ty = #builtin.type<u64> }>;
+    %3 = hir.bitcast %1 <{ ty = #builtin.type<u64> }>;
+    %4 = arith.div %2, %3;
+    %5 = hir.bitcast %4 <{ ty = #builtin.type<i64> }>;
     cf.br ^block5;
 ^block5:
-    builtin.ret ;
+    builtin.ret;
 };

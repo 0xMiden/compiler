@@ -177,15 +177,13 @@ mod tests {
     use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
     use midenc_expect_test::expect_file;
     use midenc_hir::{
-        AbiParam, BuilderExt, Context, Ident, OpBuilder, Report, Signature, SourceSpan, Type,
-        dialects::{
-            builtin::{self, BuiltinOpBuilder, FunctionBuilder},
-            test::TestOpBuilder,
-        },
+        Context, Report, SourceSpan, Type,
+        dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
         pass::{Pass, PassExecutionState},
         patterns::{
             FrozenRewritePatternSet, GreedyRewriteConfig, RewritePattern, RewritePatternSet,
         },
+        testing::Test,
     };
 
     use super::*;
@@ -255,39 +253,31 @@ mod tests {
         }
     }
 
-    fn run_single_canonicalizer(
-        context: Rc<Context>,
-        operation: OperationRef,
-        name: &'static str,
-        should_modify: bool,
-    ) -> Result<(), Report> {
+    fn run_single_canonicalizer(test: &mut Test, should_modify: bool) -> Result<(), Report> {
         // UNCOMMENT TO DUMP (SHOW DIFF OF) CF INPUT.
         // let input = format!("{}", &operation.borrow());
         // expect_file!["non-existentent"].assert_eq(&input);
 
         // Run the CF->SCF pass first, then the canonicalisation pass.  Need to register the SCF
         // dialect to make sure the patterns are registered.
-        let _scf_dialect = context.get_or_register_dialect::<ScfDialect>();
-        let mut pm =
-            pass::PassManager::on::<builtin::Function>(context.clone(), pass::Nesting::Implicit);
-        pm.add_pass(Box::new(transforms::LiftControlFlowToSCF));
-        pm.run(operation)?;
+        test.apply_pass::<transforms::LiftControlFlowToSCF>(false)?;
 
         // Confirm the CF->SCF transformed IR is correct.
-        let input = format!("{}", operation.borrow());
-        let before_file_path = format!("expected/{name}_before.hir");
+        let function = test.function().as_operation_ref();
+        let input = format!("{}", function.borrow());
+        let before_file_path = format!("expected/{}_before.hir", test.name());
         expect_file![before_file_path.as_str()].assert_eq(&input);
 
-        pm.add_pass(Box::new(SingleCanonicalizerPass::new(
-            context.clone(),
-            Box::new(FoldRedundantYields::new(context.clone())),
-            should_modify,
-        )));
-        pm.run(operation)?;
+        let context = test.context_rc();
+        let pattern = Box::new(FoldRedundantYields::new(context.clone()));
+        test.apply_boxed_pass(
+            Box::new(SingleCanonicalizerPass::new(context, pattern, should_modify)),
+            true,
+        )?;
 
         // Confirm the canonicalised IR is correct.
-        let output = format!("{}", operation.borrow());
-        let after_file_path = format!("expected/{name}_after.hir");
+        let output = format!("{}", test.function().as_operation_ref().borrow());
+        let after_file_path = format!("expected/{}_after.hir", test.name());
         expect_file![after_file_path.as_str()].assert_eq(&output);
 
         Ok(())
@@ -295,19 +285,12 @@ mod tests {
 
     #[test]
     fn fold_redundant_yields_subset_if_switch() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test =
+            Test::new("fold_redundant_yields_subset_if_switch", &[Type::U32], &[Type::U32]);
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
 
-        let mut builder = FunctionBuilder::new(function, &mut builder);
-
+        let mut builder = test.function_builder();
         let if_then = builder.create_block();
         let if_else = builder.create_block();
         let switch_on_one_block = builder.create_block();
@@ -329,17 +312,8 @@ mod tests {
         let then_non_redundant_val = builder.u32(22, span)?;
         builder.br(if_final, [redundant_val, then_non_redundant_val], span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
 
         builder.switch_to_block(if_else);
         builder.switch(
@@ -368,28 +342,16 @@ mod tests {
         let if_sum1 = builder.add(if_sum0, redundant_val, span)?;
         builder.ret(Some(if_sum1), span)?;
 
-        run_single_canonicalizer(
-            context,
-            function.as_operation_ref(),
-            "fold_redundant_yields_subset_if_switch",
-            true,
-        )
+        run_single_canonicalizer(&mut test, true)
     }
 
     #[test]
     fn fold_redundant_yields_all_if_switch() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test = Test::new("fold_redundant_yields_all_if_switch", &[Type::U32], &[Type::U32]);
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
 
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let switch_on_one_block = builder.create_block();
         let if_then_block = builder.create_block();
@@ -405,17 +367,8 @@ mod tests {
         let redundant_val0 = builder.u32(11, span)?;
         let redundant_val1 = builder.u32(22, span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
 
         builder.switch(
             input,
@@ -447,28 +400,16 @@ mod tests {
         let sum = builder.add(sum_lhs, sum_rhs, span)?;
         builder.ret(Some(sum), span)?;
 
-        run_single_canonicalizer(
-            context,
-            function.as_operation_ref(),
-            "fold_redundant_yields_all_if_switch",
-            true,
-        )
+        run_single_canonicalizer(&mut test, true)
     }
 
     #[test]
     fn fold_redundant_yields_all_switch_if() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test = Test::new("fold_redundant_yields_all_switch_if", &[Type::U32], &[Type::U32]);
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
 
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let if_then_block = builder.create_block();
         let switch_on_one_block = builder.create_block();
@@ -488,17 +429,8 @@ mod tests {
         let is_not_zero = builder.neq(input, zero, span)?;
         builder.cond_br(is_not_zero, if_then_block, [], if_else_block, [], span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
 
         builder.switch_to_block(if_then_block);
         builder.switch(
@@ -525,28 +457,16 @@ mod tests {
         let sum = builder.add(sum_lhs, sum_rhs, span)?;
         builder.ret(Some(sum), span)?;
 
-        run_single_canonicalizer(
-            context,
-            function.as_operation_ref(),
-            "fold_redundant_yields_all_switch_if",
-            true,
-        )
+        run_single_canonicalizer(&mut test, true)
     }
 
     #[test]
     fn fold_redundant_yields_many_switch() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test = Test::new("fold_redundant_yields_many_switch", &[Type::U32], &[Type::U32]);
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
 
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let switch_on_one_block = builder.create_block();
         let switch_on_two_block = builder.create_block();
@@ -569,23 +489,9 @@ mod tests {
         let redundant_val22 = builder.u32(22, span)?;
         let redundant_val33 = builder.u32(33, span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_three_case = SwitchCase {
-            value: 3,
-            successor: switch_on_three_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
+        let switch_on_three_case = SwitchCase::create(3, switch_on_three_block, Default::default());
 
         builder.switch(
             input,
@@ -666,28 +572,17 @@ mod tests {
         builder.switch_to_block(exit_block);
         builder.ret(Some(ret_val), span)?;
 
-        run_single_canonicalizer(
-            context,
-            function.as_operation_ref(),
-            "fold_redundant_yields_many_switch",
-            true,
-        )
+        run_single_canonicalizer(&mut test, true)
     }
 
     #[test]
     fn fold_redundant_yields_different_pos_switch() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test =
+            Test::new("fold_redundant_yields_different_pos_switch", &[Type::U32], &[Type::U32]);
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
 
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let switch_on_one_block = builder.create_block();
         let switch_on_two_block = builder.create_block();
@@ -702,17 +597,8 @@ mod tests {
         let redundant_val11 = builder.u32(11, span)?;
         let redundant_val22 = builder.u32(22, span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
 
         builder.switch(
             input,
@@ -738,27 +624,18 @@ mod tests {
         builder.ret(Some(sum), span)?;
 
         run_single_canonicalizer(
-            context,
-            function.as_operation_ref(),
-            "fold_redundant_yields_different_pos_switch",
-            false, // Should not modify input.
+            &mut test, false, // Should not modify input.
         )
     }
 
     #[test]
     fn fold_redundant_yields_all_but_one_switch() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test =
+            Test::new("fold_redundant_yields_all_but_one_switch", &[Type::U32], &[Type::U32]);
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
 
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let switch_on_one_block = builder.create_block();
         let switch_on_two_block = builder.create_block();
@@ -779,23 +656,9 @@ mod tests {
         let redundant_val22 = builder.u32(22, span)?;
         let redundant_val33 = builder.u32(33, span)?;
 
-        let switch_on_one_case = SwitchCase {
-            value: 1,
-            successor: switch_on_one_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_two_case = SwitchCase {
-            value: 2,
-            successor: switch_on_two_block,
-            arguments: Vec::default(),
-        };
-
-        let switch_on_three_case = SwitchCase {
-            value: 3,
-            successor: switch_on_three_block,
-            arguments: Vec::default(),
-        };
+        let switch_on_one_case = SwitchCase::create(1, switch_on_one_block, Default::default());
+        let switch_on_two_case = SwitchCase::create(2, switch_on_two_block, Default::default());
+        let switch_on_three_case = SwitchCase::create(3, switch_on_three_block, Default::default());
 
         builder.switch(
             input,
@@ -843,34 +706,20 @@ mod tests {
         builder.switch_to_block(exit_block);
         builder.ret(Some(ret_val), span)?;
 
-        run_single_canonicalizer(
-            context,
-            function.as_operation_ref(),
-            "fold_redundant_yields_all_but_one_switch",
-            true,
-        )
+        run_single_canonicalizer(&mut test, true)
     }
 
     #[test]
     fn fold_redundant_yields_effects_if() -> Result<(), Report> {
-        let context = Rc::new(Context::default());
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test = Test::new(
+            "fold_redundant_yields_effects_if",
+            &[Type::U32, Type::Ptr(Arc::new(PointerType::new(Type::U32)))],
+            &[Type::U32],
+        );
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new(
-                [
-                    AbiParam::new(Type::U32),
-                    AbiParam::new(Type::Ptr(Arc::new(PointerType::new(Type::U32)))),
-                ],
-                [AbiParam::new(Type::U32)],
-            );
-            builder(name, signature).unwrap()
-        };
 
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let if_then = builder.create_block();
         let if_else = builder.create_block();
@@ -897,12 +746,7 @@ mod tests {
         builder.switch_to_block(if_final);
         builder.ret(Some(ret_val), span)?;
 
-        run_single_canonicalizer(
-            context,
-            function.as_operation_ref(),
-            "fold_redundant_yields_effects_if",
-            true,
-        )
+        run_single_canonicalizer(&mut test, true)
     }
 
     /* A `while` test which initially showed that this rewriter probably isn't suited for them. {{{

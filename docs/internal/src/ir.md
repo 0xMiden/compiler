@@ -159,18 +159,26 @@ It should be noted, that this type is a convenience, it is entirely possible to 
 
 ### Attributes
 
-Attributes represent named metadata attached to an _operation_.
+Attributes represent properties or values attached to IR entities - primarily
+operations, but they can also be used to track properties of values.
 
-Attributes can be used in two primary ways:
+Attributes are defined and used much like operations, i.e. they are associated with a dialect, have an associated `Type`, and can have traits/interfaces attached which are then accessible at runtime via reflection. Attributes are also allocated as tracked entities via the `Context`, and can then be added to attribute lists or attribute maps where needed. Attributes are essentially wrappers around some underlying value type, e.g. `U32Attr` is a wrapper around a `u32` value.
 
-- A name without a value, i.e. a "marker" attribute. In this case, the presence of the attribute is significant, e.g. `#[inline]`.
-- A name with a value, i.e. a "key-value" attribute. This is the more common usage, e.g. `#[overflow = wrapping]`.
+Attributes are often associated with an external name, represented via the
+`NamedAttribute` type. These named attributes form a key/value system for
+metadata that provides a useful way to look up arbitrary metadata attached to
+an IR entity of interest.
 
-Any type that implements the `AttributeValue` trait can be used as the value of a key/value-style attribute. This trait is implemented by default for all integral types, as well as a handful of IR types which have been used as attributes. There are also a few generic built-in attribute types that you may be interested in:
+There is a special class of attributes called _markers_, which implement the
+`Marker` attribute trait. Such attributes have no underlying value type (more precisely, their value type is the unit type, i.e. `()`), and are significant
+simply by being present. For example, the `#[inline]` attribute in Rust would be most idiomatically represented as a marker attribute in HIR.
 
-- `ArrayAttr`, which can represent an array/vector-like collection of attribute values, e.g. `#[indices = [1, 2, 3]]`.
-- `SetAttr`, which represents a set-like collection of attribute values. The primary difference between this and `ArrayAttr` is that the values are guaranteed to be unique.
-- `DictAttr`, which represents a map-like collection of attribute values.
+A type is usable as an attribute if it implements the following traits:
+
+* `Attribute` - the core interface for all attribute types
+* `AttributeRegistration` - provides the necessary functionality to register an attribute type with a `Context`
+* `AttrPrinter` - to print instances of the attribute to HIR assembly
+* `AttrParser` - to parse instances of the attribute from HIR assembly
 
 It should be noted that there is no guarantee that attributes are preserved by transformations, i.e. if an operation is erased/replaced, attributes _may_ be lost in the process. As such, you must not assume that they will be preserved, unless made an intrinsic part of the operation definition.
 
@@ -626,10 +634,28 @@ The key thing to understand about program points has to do with the relationship
 
 ### Defining Dialects
 
-Defining a new dialect is as simple as defining a struct type which implements the `Dialect` trait. For example:
+Defining a new dialect is as simple as the following:
 
 ```rust
-use midenc_hir::{Dialect, DialectInfo};
+use midenc_hir::{derive::{Dialect, DialectRegistration}, DialectInfo};
+
+#[derive(Debug, Dialect, DialectRegistration)]
+// This would have been the default, but we're making it explicit here
+#[dialect(name = "my")]
+pub struct MyDialect {
+    #[dialect(info)]
+    info: DialectInfo,
+}
+```
+
+This generates the boilerplate for a simple dialect and registers it globally.
+
+The equivalent hand-written version is:
+
+```rust
+use midenc_hir::{
+    Dialect, DialectRegistration, DialectInfo, DialectRegistrationInfo
+};
 
 #[derive(Debug)]
 pub struct MyDialect {
@@ -637,36 +663,25 @@ pub struct MyDialect {
 }
 
 impl Dialect for MyDialect {
+    #[inline(always)]
     fn info(&self) -> &DialectInfo {
         &self.info
     }
 }
-```
 
-One last thing remains before the dialect is ready to be used, and that is [_dialect registration_](#dialect-registration).
-
-#### Dialect Registration
-
-Dialect registration is the means by which a dialect and its operations are registered with the [`Context`](#context), such that operations of that dialect can be built.
-
-First, you must define the `DialectRegistration` implementation. To extend our example from above:
-
-```rust
 impl DialectRegistration for MyDialect {
     const NAMESPACE: &'static str = "my";
 
     #[inline]
     fn init(info: DialectInfo) -> Self {
-        Self { info }
-    }
-
-    fn register_operations(info: &mut DialectInfo) {
-        info.register_operation::<FooOp>();
+        Self::from(info)
     }
 }
+
+::midenc_hir::inventory::submit!(DialectRegistrationInfo::new::<MyDialect>());
 ```
 
-This provides all of the information needed by the `Context` to register our dialect, i.e. what namespace the dialect uses, and what operations are registered with the dialect.
+This provides all of the information needed by the `Context` to find our dialect, and to be able to register operations and attributes against it.
 
 The next step is to actually register the dialect with a specific `Context`. In general, this is automatically handled for you, i.e. whenever an operation of your dialect is being built, a call to `context.get_or_register_dialect::<MyDialect>()` is made, so as to get a reference to the dialect. If the dialect has not yet been registered, a fresh instance will be constructed, all registered [_dialect hooks_](#dialect-hooks) will be invoked, and the initialized dialect registered with the context, before returning a reference to the registered instance.
 
@@ -674,7 +689,7 @@ The next step is to actually register the dialect with a specific `Context`. In 
 
 In some cases, it is necessary/desirable to extend a dialect with types/behaviors that we do not want (or cannot make) dependencies of the dialect itself. For example, extending the set of traits/interfaces implemented by operations of some dialect.
 
-The mechanism by which this is done, is in the form of _dialect hooks_, functions which are invoked when a dialect is being registered, before the main dialect registration callbacks (e.g. `register_operations`) are invoked. Hooks are provided a reference to the raw `DialectInfo`, which can be modified as if the hook is part of the `DialectRegistration` itself.
+The mechanism by which this is done, is in the form of _dialect hooks_, functions which are invoked when a dialect is being registered, before the main dialect registration callbacks. Hooks are provided a reference to the raw `DialectInfo`, which can be modified as if the hook is part of the `DialectRegistration` itself.
 
 Of particular use, is the `DialectInfo::register_operation_trait` method, which can be used to register a trait (or interface) to an operation before it is registered by the dialect. These "late-bound" traits are then added to the set of traits/interfaces defined as part of the operation itself, when the operation is registered with `DialectInfo::register_operation`.
 
@@ -683,6 +698,18 @@ We currently use dialect hooks for:
 - Attaching the `midenc_codegen_masm::Lowering` trait to all operations for which we have defined its lowering to Miden Assembly.
 - Attaching the `midenc_hir_eval::Eval` trait to all operations for which we have defined evaluation semantics, for use with the HIR evaluator.
 
+Dialect registration hooks are defined like so:
+
+```rust
+use midenc_hir::{DialectRegistrationHookInfo, DialectInfo};
+
+fn my_hook(_info: &mut DialectInfo) {
+    // ...
+}
+
+::midenc_hir::inventory::submit!(DialectRegistrationHookInfo::new::<MyDialect>(my_hook));
+```
+
 #### Defining Operations
 
 Defining operations involves a non-trivial amount of boilerplate if done by hand, so we have defined the `#[operation]` proc-macro attribute which takes care of all the boilerplate associated with defining a new operation.
@@ -690,14 +717,21 @@ Defining operations involves a non-trivial amount of boilerplate if done by hand
 As a result, defining an operation looks like this (using an example from `midenc_dialect_arith`):
 
 ```rust
-use midenc_hir::{derive::operation, effects::*, traits::*, *};
+use midenc_hir::{
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    effects::*,
+    traits::*,
+    *
+};
 
 use crate::ArithDialect;
 
 /// Two's complement sum
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
+    // MemoryEffectOpInterface is an alias for EffectOpInterface<MemoryEffect>
     implements(InferTypeOpInterface, MemoryEffectOpInterface)
 )]
 pub struct Add {
@@ -718,19 +752,6 @@ impl InferTypeOpInterface for Add {
         Ok(())
     }
 }
-
-// MemoryEffectOpInterface is an alias for EffectOpInterface<MemoryEffect>
-impl EffectOpInterface<MemoryEffect> for Add {
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(
-        &self,
-    ) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
-}
 ```
 
 To summarize:
@@ -745,6 +766,8 @@ To summarize:
   - If a field has no attributes, or only `#[default]`, it is defined as part of the concrete operation struct, and is considered an internal detail of the op.
   - All other fields are not actually stored as part of the concrete operation type, but as part of the underlying `Operation` struct, and methods will be generated in an `impl Add` block that provide access to those fields in all the ways you'd expect.
   - The `#[operand]`, `#[attr]`, and undecorated fields are all expected, in that order, as arguments to the op builder when constructing an instance of this op.
+- We're deriving default printer/parser boilerplate for the operation
+- We're also deriving an implementation of EffectOpInterface for `MemoryEffect` that says that the operation has no memory effects.
 
 There are a variety of field attributes and options for them that are not shown here. For now, the best reference for these is looking at the set of current dialects for an operation that is similar to what you want to define. You can also look at the implementation of the `#[operation]` proc-macro in `midenc_hir_macros` as the authoritative source on what is supported and how it affects the output. In the future we will provide more comprehensive documentation for it.
 

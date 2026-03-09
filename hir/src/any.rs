@@ -1,27 +1,40 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, rc::Rc};
 use core::{any::Any, marker::Unsize};
 
-pub trait AsAny: Any + Unsize<dyn Any> {
-    #[inline]
-    fn type_name(&self) -> &'static str {
-        core::any::type_name::<Self>()
+pub trait AsAny: Any + Unsize<dyn Any> + 'static {
+    fn type_name(&self) -> &'static str;
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
+    fn into_any_rc(self: Rc<Self>) -> Rc<dyn Any>;
+}
+
+impl<T: Any + 'static> AsAny for T {
+    #[inline(always)]
+    default fn type_name(&self) -> &'static str {
+        core::any::type_name::<T>()
     }
 
     #[inline(always)]
-    fn as_any(&self) -> &dyn Any {
+    default fn as_any(&self) -> &dyn Any {
         self
     }
+
     #[inline(always)]
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    default fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+
     #[inline(always)]
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+    default fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+
+    #[inline(always)]
+    default fn into_any_rc(self: Rc<Self>) -> Rc<dyn Any> {
         self
     }
 }
-
-impl<T: ?Sized + Any + Unsize<dyn Any>> AsAny for T {}
 
 /// # Safety
 ///

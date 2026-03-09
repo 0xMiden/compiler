@@ -19,7 +19,12 @@ use midenc_hir_analysis::{
 /// This implementation is based on the algorithm described by Wegman and Zadeck in
 /// [“Constant Propagation with Conditional Branches”](https://dl.acm.org/doi/10.1145/103135.103136)
 /// (1991).
+#[derive(Default)]
 pub struct SparseConditionalConstantPropagation;
+
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<
+    SparseConditionalConstantPropagation,
+>("sccp", "sparse conditional constant propagation"));
 
 impl Pass for SparseConditionalConstantPropagation {
     type Target = Operation;
@@ -29,7 +34,7 @@ impl Pass for SparseConditionalConstantPropagation {
     }
 
     fn argument(&self) -> &'static str {
-        "sparse-conditional-constant-propagation"
+        "sccp"
     }
 
     fn can_schedule_on(&self, _name: &OperationName) -> bool {

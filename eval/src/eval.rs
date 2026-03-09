@@ -1,5 +1,4 @@
 use alloc::{
-    boxed::Box,
     format,
     string::{String, ToString},
 };
@@ -11,7 +10,7 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    AttributeValue, Felt, Immediate, Op, OperationRef, Overflow, RegionBranchPoint,
+    AttributeRef, Felt, Immediate, ImmediateAttr, Op, OperationRef, Overflow, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorInfo, Type,
     Value as _, ValueRange, dialects::builtin,
 };
@@ -94,7 +93,7 @@ impl Eval for builtin::Ret {
 
 impl Eval for builtin::RetImm {
     fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        Ok(ControlFlowEffect::Return(Some((*self.value()).into())))
+        Ok(ControlFlowEffect::Return(Some((*self.get_value()).into())))
     }
 }
 
@@ -110,15 +109,18 @@ impl Eval for ub::Unreachable {
 impl Eval for ub::Poison {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         let value = match self.value().as_immediate() {
-            Ok(imm) => Value::poison(self.span(), imm),
-            Err(ty) => {
+            Some(imm) => Value::poison(self.span(), imm),
+            _ => {
                 return Err(self
                     .as_operation()
                     .context()
                     .diagnostics()
                     .diagnostic(Severity::Error)
                     .with_message("invalid poison")
-                    .with_primary_label(self.span(), format!("invalid poison type: {ty}"))
+                    .with_primary_label(
+                        self.span(),
+                        format!("invalid poison type: {}", self.get_value()),
+                    )
                     .into_report());
             }
         };
@@ -163,7 +165,7 @@ impl Eval for cf::Switch {
                 let successor = self
                     .cases()
                     .iter()
-                    .find(|succ| succ.key().is_some_and(|k| *k == selector))
+                    .find(|succ| *succ.key() == selector)
                     .map(|succ| *succ.info())
                     .unwrap_or_else(|| self.successors()[0]);
                 Ok(ControlFlowEffect::Jump(successor))
@@ -263,13 +265,14 @@ impl Eval for scf::Yield {
         // hardcoding the list of known parent operations here and how to select the successor
         // region, since that's already been done in the compiler. If this turns out to be a big
         // perf bottleneck, we can implement something more efficient.
+        let context = self.as_operation().context_rc();
         let this = self.as_operation().as_trait::<dyn RegionBranchTerminatorOpInterface>().unwrap();
         let mut operands = SmallVec::<[_; 4]>::with_capacity(self.yielded().len());
         for yielded in self.yielded().iter() {
             match evaluator.get_value(&yielded.borrow().as_value_ref())? {
-                Value::Immediate(value) | Value::Poison { value, .. } => {
-                    operands.push(Some(Box::new(value) as Box<dyn AttributeValue>))
-                }
+                Value::Immediate(value) | Value::Poison { value, .. } => operands.push(Some(
+                    context.create_attribute::<ImmediateAttr, _>(value) as AttributeRef,
+                )),
             }
         }
 
@@ -327,7 +330,7 @@ impl Eval for hir::Assert {
                 } else {
                     Ok(ControlFlowEffect::Trap {
                         span: self.span(),
-                        reason: format!("assertion failed with code {}", self.code()),
+                        reason: format!("assertion failed with code {}", *self.get_code()),
                     })
                 }
             }
@@ -348,7 +351,7 @@ impl Eval for hir::Assertz {
                 if condition {
                     Ok(ControlFlowEffect::Trap {
                         span: self.span(),
-                        reason: format!("assertion failed with code {}", self.code()),
+                        reason: format!("assertion failed with code {}", *self.get_code()),
                     })
                 } else {
                     Ok(ControlFlowEffect::None)
@@ -453,7 +456,8 @@ impl Eval for hir::Exec {
 
         let symbol_table = symbol_table.borrow();
         let symbol_table = symbol_table.as_symbol_table().unwrap();
-        let symbol_path = &self.callee().path;
+        let callee = self.callee();
+        let symbol_path = callee.path();
         let Some(symbol) = symbol_table.resolve(symbol_path) else {
             return Err(evaluator.report(
                 "evaluation failed",
@@ -507,7 +511,7 @@ impl Eval for hir::Store {
 
 impl Eval for hir::StoreLocal {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        let local = self.local();
+        let local = *self.get_local();
         let value = evaluator.get_value(&self.value().as_value_ref())?;
         let value_ty = value.ty();
         let local_ty = local.ty();
@@ -522,7 +526,7 @@ impl Eval for hir::StoreLocal {
             ));
         }
 
-        evaluator.write_local(local, value)?;
+        evaluator.write_local(&local, value)?;
 
         Ok(ControlFlowEffect::None)
     }
@@ -564,7 +568,7 @@ impl Eval for hir::Load {
 
 impl Eval for hir::LoadLocal {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        let local = self.local();
+        let local = *self.get_local();
         let result = self.result();
         let ty = result.ty();
         let local_ty = local.ty();
@@ -579,7 +583,7 @@ impl Eval for hir::LoadLocal {
             ));
         }
 
-        let loaded = evaluator.read_local(local)?;
+        let loaded = evaluator.read_local(&local)?;
 
         evaluator.set_value(result.as_value_ref(), loaded);
 
@@ -730,7 +734,7 @@ impl Eval for hir::MemCpy {
 
 impl Eval for arith::Constant {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        evaluator.set_value(self.result().as_value_ref(), *self.value());
+        evaluator.set_value(self.result().as_value_ref(), *self.get_value());
         Ok(ControlFlowEffect::None)
     }
 }
@@ -917,7 +921,7 @@ impl Eval for arith::Add {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         use core::ops::Add;
 
-        let result = match self.overflow() {
+        let result = match *self.get_overflow() {
             Overflow::Unchecked => binop!(self, evaluator, add),
             Overflow::Checked => {
                 let result = binop_checked!(self, evaluator, checked_add, add);
@@ -953,7 +957,7 @@ impl Eval for arith::Sub {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         use core::ops::Sub;
 
-        let result = match self.overflow() {
+        let result = match *self.get_overflow() {
             Overflow::Unchecked => binop!(self, evaluator, sub),
             Overflow::Checked => {
                 let result = binop_checked!(self, evaluator, checked_sub, sub);
@@ -989,7 +993,7 @@ impl Eval for arith::Mul {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         use core::ops::Mul;
 
-        let result = match self.overflow() {
+        let result = match *self.get_overflow() {
             Overflow::Unchecked => binop!(self, evaluator, mul),
             Overflow::Checked => {
                 let result = binop_checked!(self, evaluator, checked_sub, mul);

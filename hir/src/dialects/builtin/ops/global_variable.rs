@@ -1,15 +1,17 @@
-use smallvec::smallvec;
+use alloc::format;
 
 use crate::{
-    AsSymbolRef, Context, Ident, Op, OpPrinter, Operation, PointerType, Report, Spanned, Symbol,
-    SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
+    AsSymbolRef, Context, IdentAttr, OpParser, OpPrinter, Operation, PointerType, Report, Spanned,
+    Symbol, SymbolName, SymbolRef, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable, Value,
     Visibility,
-    derive::operation,
-    dialects::builtin::BuiltinDialect,
-    effects::{
-        AlwaysSpeculatable, ConditionallySpeculatable, EffectIterator, EffectOpInterface,
-        MemoryEffect, MemoryEffectOpInterface, Pure,
+    derive::{EffectOpInterface, operation},
+    dialects::builtin::{
+        BuiltinDialect,
+        attributes::{I32Attr, TypeAttr, VisibilityAttr},
     },
+    effects::{AlwaysSpeculatable, ConditionallySpeculatable, MemoryEffectOpInterface, Pure},
+    parse::{ParserError, ParserExt},
+    print::AsmPrinter,
     traits::{
         InferTypeOpInterface, IsolatedFromAbove, NoRegionArguments, PointerOf, SingleBlock,
         SingleRegion, UInt8,
@@ -39,11 +41,11 @@ pub type GlobalVariableRef = UnsafeIntrusiveEntityRef<GlobalVariable>;
 )]
 pub struct GlobalVariable {
     #[attr]
-    name: Ident,
+    name: IdentAttr,
     #[attr]
-    visibility: Visibility,
+    visibility: VisibilityAttr,
     #[attr]
-    ty: Type,
+    ty: TypeAttr,
     #[region]
     initializer: RegionRef,
     #[default]
@@ -87,16 +89,15 @@ impl Symbol for GlobalVariable {
     }
 
     fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.name = name;
+        GlobalVariable::set_name(self, name)
     }
 
     fn visibility(&self) -> Visibility {
-        *GlobalVariable::visibility(self)
+        *self.get_visibility()
     }
 
     fn set_visibility(&mut self, visibility: Visibility) {
-        *self.visibility_mut() = visibility;
+        GlobalVariable::set_visibility(self, visibility);
     }
 
     /// Returns true if this operation is a declaration, rather than a definition, of a symbol
@@ -115,22 +116,70 @@ impl AsSymbolRef for GlobalVariable {
 }
 
 impl OpPrinter for GlobalVariable {
-    fn print(
-        &self,
-        flags: &crate::OpPrintingFlags,
-        _context: &crate::Context,
-    ) -> crate::formatter::Document {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
         use crate::formatter::*;
 
-        let header = display(self.op.name())
-            + const_text(" ")
-            + display(self.visibility())
-            + const_text(" @")
-            + display(self.name())
-            + const_text(" : ")
-            + display(self.ty());
-        let body = crate::print::render_regions(&self.op, flags);
-        header + body
+        printer.print_space();
+        printer.print_keyword(self.get_visibility().as_str());
+        printer.print_space();
+        printer.print_symbol_name(self.get_name().as_symbol());
+        *printer += const_text(" : ");
+        printer.print_type(&self.get_ty());
+        if self.is_declaration() {
+            return;
+        }
+        printer.print_space();
+        printer.print_region(&self.initializer());
+
+        if self.op.has_attributes() {
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+    }
+}
+
+impl OpParser for GlobalVariable {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use crate::parse::Token;
+
+        let visibility = parser
+            .parse_keyword_from(&[
+                Token::BareIdent("public"),
+                Token::BareIdent("private"),
+                Token::BareIdent("internal"),
+            ])?
+            .into_inner()
+            .parse::<Visibility>()
+            .unwrap();
+        state.add_attribute(
+            "visibility",
+            parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility),
+        );
+
+        let name = parser.parse_symbol_name()?;
+        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+
+        let ty = parser.parse_colon_type()?;
+        state.add_attribute(
+            "ty",
+            parser.context_rc().create_attribute::<TypeAttr, _>(ty.into_inner()),
+        );
+
+        let initializer =
+            parser.parse_optional_region(&[], /*enable_name_shadowing=*/ false)?;
+        // We always add the initializer region, even if empty
+        state
+            .regions
+            .push(initializer.unwrap_or_else(|| parser.context().create_region()));
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
+
+        Ok(())
     }
 }
 
@@ -140,6 +189,7 @@ impl OpPrinter for GlobalVariable {
 /// internally.
 ///
 /// The result type is always a pointer, whose pointee type is derived from the referenced symbol.
+#[derive(EffectOpInterface)]
 #[operation(
     dialect = BuiltinDialect,
     traits(Pure, AlwaysSpeculatable),
@@ -152,49 +202,79 @@ pub struct GlobalSymbol {
     /// A constant offset, in bytes, from the address of the symbol
     #[attr]
     #[default]
-    offset: i32,
+    offset: I32Attr,
     #[result]
     addr: PointerOf<UInt8>,
 }
 
 impl OpPrinter for GlobalSymbol {
-    fn print(
-        &self,
-        _flags: &crate::OpPrintingFlags,
-        _context: &crate::Context,
-    ) -> crate::formatter::Document {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
         use crate::formatter::*;
 
-        let results = crate::print::render_operation_results(self.as_operation());
-        let prefix = results
-            + display(self.op.name())
-            + const_text(" ")
-            + const_text("@")
-            + display(&self.symbol().path);
-
-        let offset = *self.offset();
-        let doc = match *self.offset() {
-            0 => prefix,
-            n if n > 0 => prefix + const_text("+") + display(offset),
-            _ => prefix + const_text("-") + display(offset),
+        printer.print_space();
+        printer.print_symbol_path(self.get_symbol().path());
+        let offset = *self.get_offset();
+        match offset {
+            0 => (),
+            n if n > 0 => {
+                *printer += const_text("+") + display(n);
+            }
+            n => *printer += display(n),
         };
 
-        doc + const_text(" : ") + display(self.addr().ty())
+        *printer += const_text(" : ");
+        printer.print_type(self.addr().ty());
+
+        if self.op.has_attributes() {
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+    }
+}
+
+impl OpParser for GlobalSymbol {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use crate::parse::Token;
+
+        let symbol = parser.parse_symbol_ref()?.into_inner();
+        state.add_attribute("symbol", symbol);
+
+        let offset = if parser.token_stream_mut().next_if_eq(Token::Plus)? {
+            parser.parse_decimal_integer::<i32>()?.into_inner()
+        } else {
+            parser
+                .parse_optional_decimal_integer::<i32>()?
+                .map(|spanned| spanned.into_inner())
+                .unwrap_or(0)
+        };
+        let offset = parser.context_rc().create_attribute::<I32Attr, _>(offset);
+        state.add_attribute("offset", offset);
+
+        let ty = parser.parse_colon_type()?;
+
+        if !ty.is_pointer() {
+            return Err(ParserError::InvalidAttributeValue {
+                span: ty.span(),
+                reason: format!("expected pointer type, got '{ty}'"),
+            });
+        }
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
+
+        state.results.push(ty.into_inner());
+
+        Ok(())
     }
 }
 
 impl ConditionallySpeculatable for GlobalSymbol {
     fn speculatability(&self) -> crate::effects::Speculatability {
         crate::effects::Speculatability::Speculatable
-    }
-}
-impl EffectOpInterface<MemoryEffect> for GlobalSymbol {
-    fn effects(&self) -> crate::effects::EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
-
-    fn has_no_effect(&self) -> bool {
-        true
     }
 }
 

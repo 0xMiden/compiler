@@ -50,8 +50,8 @@ pub trait ControlFlowOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self
             .builder_mut()
-            .create::<crate::ops::Switch, (_, _, TFallbackArgs, TCases)>(span);
-        op_builder(selector, fallback, fallback_args, cases)
+            .create::<crate::ops::Switch, (_, TCases, _, TFallbackArgs)>(span);
+        op_builder(selector, cases, fallback, fallback_args)
     }
 
     fn select(

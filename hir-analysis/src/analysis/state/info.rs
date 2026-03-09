@@ -195,7 +195,7 @@ impl AnalysisStateSubscription {
 }
 
 pub trait AnalysisStateSubscriptionBehavior: AnalysisState {
-    /// Called when an [AnalysisState] is being queried by an analysis via [DataFlowSolver::require]
+    /// Called when an [AnalysisState] is being queried by an analysis via [crate::DataFlowSolver::require]
     ///
     /// This invokes state-specific logic for how to subscribe the dependent analysis to changes
     /// of that state. By default, one of two options behaviors is applied:

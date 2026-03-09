@@ -1,8 +1,7 @@
-public builtin.function @test_wrapper() {
-^block4:
-    v0 = arith.constant 1 : i64;
-    v1 = arith.trunc v0 : i32;
+builtin.function public extern("C") @test_wrapper() {
+    %0 = arith.constant 1 : i64;
+    %1 = arith.trunc %0 <{ ty = #builtin.type<i32> }>;
     cf.br ^block5;
 ^block5:
-    builtin.ret ;
+    builtin.ret;
 };

@@ -21,7 +21,7 @@ pub enum DomTreeError {
     EmptyRegion,
 }
 
-/// The level of verification to use with [DominatorTreeBase::verify]
+/// The level of verification to use with [DomTreeBase::verify]
 pub enum DomTreeVerificationLevel {
     /// Checks basic tree structure and compares with a freshly constructed tree
     ///

@@ -1,17 +1,24 @@
-use alloc::{boxed::Box, rc::Rc, vec::Vec};
+use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
-    derive::operation, effects::*, matchers::Matcher, patterns::RewritePatternSet, smallvec,
-    traits::*, *,
+    attributes::IntegerLikeAttr,
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    dialects::builtin::attributes::{BoolAttr, U32Attr},
+    effects::*,
+    matchers::Matcher,
+    patterns::RewritePatternSet,
+    traits::*,
+    *,
 };
 
 use crate::ControlFlowDialect;
 
 /// An unstructured control flow primitive representing an unconditional branch to `target`
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
-    implements(BranchOpInterface, MemoryEffectOpInterface)
+    implements(BranchOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Br {
     #[successor]
@@ -27,21 +34,11 @@ impl Canonicalizable for Br {
     }
 }
 
-impl EffectOpInterface<MemoryEffect> for Br {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
-
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-}
-
 impl BranchOpInterface for Br {
     #[inline]
     fn get_successor_for_operands(
         &self,
-        _operands: &[Option<Box<dyn AttributeValue>>],
+        _operands: &[Option<AttributeRef>],
     ) -> Option<SuccessorInfo> {
         Some(self.successors()[0])
     }
@@ -49,10 +46,11 @@ impl BranchOpInterface for Br {
 
 /// An unstructured control flow primitive representing a conditional branch to either `then_dest`
 /// or `else_dest` depending on the value of `condition`, a boolean value.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
-    implements(BranchOpInterface, MemoryEffectOpInterface)
+    implements(BranchOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct CondBr {
     #[operand]
@@ -74,24 +72,14 @@ impl Canonicalizable for CondBr {
     }
 }
 
-impl EffectOpInterface<MemoryEffect> for CondBr {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
-
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-}
-
 impl BranchOpInterface for CondBr {
     fn get_successor_for_operands(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> Option<SuccessorInfo> {
-        let value = operands[0].as_deref()?;
-        let cond = value.as_bool().unwrap_or_else(|| {
-            panic!("expected boolean immediate for '{}' condition, got: {:?}", self.name(), value)
+        let value = operands[0].as_ref()?.borrow();
+        let cond = value.value().downcast_ref::<bool>().copied().unwrap_or_else(|| {
+            panic!("expected boolean for '{}' condition, got: {:?}", self.name(), value)
         });
 
         Some(if cond {
@@ -110,6 +98,7 @@ impl BranchOpInterface for CondBr {
 /// then the `fallback` target is used instead.
 ///
 /// A `fallback` successor must always be provided.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
@@ -118,61 +107,10 @@ impl BranchOpInterface for CondBr {
 pub struct Switch {
     #[operand]
     selector: UInt32,
-    #[successor]
-    fallback: Successor,
     #[successors(keyed)]
     cases: SwitchCase,
-}
-
-impl OpPrinter for Switch {
-    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
-        use formatter::*;
-
-        let header =
-            display(self.op.name()) + const_text(" ") + display(self.selector().as_value_ref());
-        let cases = self.cases().iter().fold(Document::Empty, |acc, case| {
-            let key = case.key().unwrap();
-            let dest = case.block();
-            let operands = case.arguments();
-            let args = if operands.is_empty() {
-                Document::Empty
-            } else {
-                operands.iter().enumerate().fold(const_text("("), |acc, (i, o)| {
-                    if i > 0 {
-                        acc + const_text(", ") + display(o.borrow().as_value_ref())
-                    } else {
-                        acc + display(o.borrow().as_value_ref())
-                    }
-                }) + const_text(")")
-            };
-            acc + nl()
-                + const_text("case ")
-                + display(*key)
-                + const_text(" => ")
-                + display(dest)
-                + args
-        });
-        let fallback = self.fallback();
-        let fallback_dest = fallback.successor();
-        let fallback_args = if fallback.arguments.is_empty() {
-            Document::Empty
-        } else {
-            fallback.arguments.iter().enumerate().fold(const_text("("), |acc, (i, o)| {
-                if i > 0 {
-                    acc + const_text(", ") + display(o.borrow().as_value_ref())
-                } else {
-                    acc + display(o.borrow().as_value_ref())
-                }
-            }) + const_text(")")
-        };
-        let fallback = nl() + const_text("default => ") + display(fallback_dest) + fallback_args;
-        header
-            + const_text(" {")
-            + indent(4, cases + fallback)
-            + nl()
-            + const_text("}")
-            + const_text(";")
-    }
+    #[successor]
+    fallback: Successor,
 }
 
 impl Canonicalizable for Switch {
@@ -186,37 +124,26 @@ impl Canonicalizable for Switch {
     }
 }
 
-impl EffectOpInterface<MemoryEffect> for Switch {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
-
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-}
-
 impl BranchOpInterface for Switch {
     #[inline]
     fn get_successor_for_operands(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> Option<SuccessorInfo> {
-        let value = operands[0].as_deref()?;
-        let selector = if let Some(selector) = value.downcast_ref::<Immediate>() {
-            selector.as_u32().expect("invalid selector value for 'cf.switch'")
-        } else if let Some(selector) = value.downcast_ref::<u32>() {
-            *selector
-        } else if let Some(selector) = value.downcast_ref::<i32>() {
-            u32::try_from(*selector).expect("invalid selector value for 'cf.switch'")
-        } else if let Some(selector) = value.downcast_ref::<usize>() {
-            u32::try_from(*selector).expect("invalid selector value for 'cf.switch': out of range")
+        let attr = operands[0].as_ref()?.borrow();
+        let selector = if let Some(selector) = attr.downcast_ref::<U32Attr>() {
+            *selector.as_value()
+        } else if let Some(selector) = attr.as_attr().as_trait::<dyn IntegerLikeAttr>() {
+            selector
+                .as_immediate()
+                .as_u32()
+                .expect("invalid selector value for 'cf.switch'")
         } else {
-            panic!("unsupported selector value type for '{}', got: {:?}", self.name(), value)
+            panic!("unsupported selector value type for '{}', got: {:?}", self.name(), attr)
         };
 
         for switch_case in self.cases().iter() {
-            let key = *switch_case.key().unwrap();
+            let key = *switch_case.key();
             if selector == key {
                 return Some(*switch_case.info());
             }
@@ -231,40 +158,52 @@ impl BranchOpInterface for Switch {
 /// operation.
 #[derive(Debug, Clone)]
 pub struct SwitchCase {
-    pub value: u32,
+    pub value: UnsafeIntrusiveEntityRef<U32Attr>,
     pub successor: BlockRef,
     pub arguments: Vec<ValueRef>,
 }
 
+impl SwitchCase {
+    pub fn create(value: u32, successor: BlockRef, arguments: Vec<ValueRef>) -> Self {
+        let value = successor.borrow().context_rc().create_attribute::<U32Attr, _>(value);
+        Self {
+            value,
+            successor,
+            arguments,
+        }
+    }
+}
+
 #[doc(hidden)]
 pub struct SwitchCaseRef<'a> {
-    pub value: u32,
+    pub value: UnsafeIntrusiveEntityRef<U32Attr>,
     pub successor: BlockOperandRef,
     pub arguments: OpOperandRange<'a>,
 }
 
 #[doc(hidden)]
 pub struct SwitchCaseMut<'a> {
-    pub value: u32,
+    pub value: UnsafeIntrusiveEntityRef<U32Attr>,
     pub successor: BlockOperandRef,
     pub arguments: OpOperandRangeMut<'a>,
 }
 
 impl KeyedSuccessor for SwitchCase {
     type Key = u32;
+    type KeyStorage = U32Attr;
     type Repr<'a> = SwitchCaseRef<'a>;
     type ReprMut<'a> = SwitchCaseMut<'a>;
 
-    fn key(&self) -> &Self::Key {
-        &self.value
+    fn key(&self) -> u32 {
+        *self.value.borrow().as_value()
     }
 
-    fn into_parts(self) -> (Self::Key, BlockRef, Vec<ValueRef>) {
+    fn into_parts(self) -> (UnsafeIntrusiveEntityRef<Self::KeyStorage>, BlockRef, Vec<ValueRef>) {
         (self.value, self.successor, self.arguments)
     }
 
     fn into_repr(
-        key: Self::Key,
+        key: UnsafeIntrusiveEntityRef<Self::KeyStorage>,
         block: BlockOperandRef,
         operands: OpOperandRange<'_>,
     ) -> Self::Repr<'_> {
@@ -276,7 +215,7 @@ impl KeyedSuccessor for SwitchCase {
     }
 
     fn into_repr_mut(
-        key: Self::Key,
+        key: UnsafeIntrusiveEntityRef<Self::KeyStorage>,
         block: BlockOperandRef,
         operands: OpOperandRangeMut<'_>,
     ) -> Self::ReprMut<'_> {
@@ -289,9 +228,10 @@ impl KeyedSuccessor for SwitchCase {
 }
 
 /// Choose a value based on a boolean condition
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ControlFlowDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Select {
     #[operand]
@@ -302,16 +242,6 @@ pub struct Select {
     second: AnyInteger,
     #[result]
     result: AnyInteger,
-}
-
-impl EffectOpInterface<MemoryEffect> for Select {
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![])
-    }
 }
 
 impl InferTypeOpInterface for Select {
@@ -326,9 +256,9 @@ impl Foldable for Select {
     #[inline]
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         if let Some(value) =
-            matchers::foldable_operand_of::<Immediate>().matches(&self.cond().as_operand_ref())
-            && let Some(cond) = value.as_bool()
+            matchers::foldable_operand_of::<BoolAttr>().matches(&self.cond().as_operand_ref())
         {
+            let cond = *value.borrow().as_value();
             let maybe_folded = if cond {
                 matchers::foldable_operand()
                     .matches(&self.first().as_operand_ref())
@@ -353,21 +283,20 @@ impl Foldable for Select {
     #[inline(always)]
     fn fold_with(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) = operands[0].as_deref().and_then(|o| o.downcast_ref::<Immediate>())
-            && let Some(cond) = value.as_bool()
+        if let Some(cond) = operands[0]
+            .as_ref()
+            .and_then(|o| o.borrow().value().downcast_ref::<bool>().copied())
         {
             let maybe_folded = if cond {
                 operands[1]
-                    .as_deref()
-                    .map(|o| OpFoldResult::Attribute(o.clone_value()))
+                    .map(OpFoldResult::Attribute)
                     .or_else(|| Some(OpFoldResult::Value(self.first().as_value_ref())))
             } else {
                 operands[2]
-                    .as_deref()
-                    .map(|o| OpFoldResult::Attribute(o.clone_value()))
+                    .map(OpFoldResult::Attribute)
                     .or_else(|| Some(OpFoldResult::Value(self.second().as_value_ref())))
             };
 
@@ -377,5 +306,52 @@ impl Foldable for Select {
             }
         }
         FoldResult::Failed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use midenc_hir::{Type, testing::Test};
+
+    use super::*;
+    use crate::ControlFlowOpBuilder;
+
+    #[test]
+    fn switch_building() {
+        let mut test = Test::new("foo", &[Type::U32], &[]);
+        let context = test.context_rc();
+        let selector = test.function().borrow().entry_block().borrow().arguments()[0] as ValueRef;
+        let mut builder = test.function_builder();
+        let block2 = builder.create_block();
+        let block3 = builder.create_block();
+        builder.append_block_param(block3, Type::U32, SourceSpan::UNKNOWN);
+        let fallback = builder.create_block();
+        let cases = vec![
+            SwitchCase {
+                value: context.create_attribute::<U32Attr, _>(1u32),
+                successor: block2,
+                arguments: vec![],
+            },
+            SwitchCase {
+                value: context.create_attribute::<U32Attr, _>(2u32),
+                successor: block3,
+                arguments: vec![selector],
+            },
+        ];
+        let op = builder.switch(selector, cases, fallback, [], SourceSpan::UNKNOWN).unwrap();
+        let switch_op = op.borrow();
+
+        assert_eq!(switch_op.fallback().successor(), fallback);
+        let cases = switch_op.cases();
+        let block2_case = cases.get(0).unwrap();
+        assert_eq!(block2_case.block(), block2);
+        assert_eq!(*block2_case.key(), 1u32);
+        let block3_case = cases.get(1).unwrap();
+        assert_eq!(block3_case.block(), block3);
+        assert_eq!(*block3_case.key(), 2u32);
+        assert_eq!(block3_case.arguments().len(), 1);
+        assert_eq!(block3_case.arguments()[0].borrow().as_value_ref(), selector);
     }
 }

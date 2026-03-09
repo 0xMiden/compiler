@@ -358,7 +358,7 @@ impl OutputFiles {
     /// Build a file path which is either:
     ///
     /// * If `self.out_file` is set to a real path, returns it with extension set to `extension`
-    /// * Otherwise, calls [with_directory_and_extension] with `self.out_dir` and `extension`
+    /// * Otherwise, calls [Self::with_directory_and_extension] with `self.out_dir` and `extension`
     pub fn with_extension(&self, extension: &str) -> PathBuf {
         match self.out_file.as_ref() {
             Some(OutputFile::Real(path)) => path.with_extension(extension),
@@ -379,7 +379,7 @@ impl OutputFiles {
     /// Build a file path whose parent is `directory`, file stem is `self.stem`, and extension is
     /// `extension`
     #[inline]
-    fn with_directory_and_extension(&self, directory: &Path, extension: &str) -> PathBuf {
+    pub fn with_directory_and_extension(&self, directory: &Path, extension: &str) -> PathBuf {
         let stem = escape_path_component(&self.stem);
         directory.join(stem.as_ref()).with_extension(extension)
     }

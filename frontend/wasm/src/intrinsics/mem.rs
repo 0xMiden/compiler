@@ -1,8 +1,10 @@
+use alloc::rc::Rc;
+
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    AbiParam, Builder, CallConv, FunctionType, Signature, SmallVec, SourceSpan,
-    SymbolNameComponent, Type, ValueRef,
-    dialects::builtin::FunctionRef,
+    Builder, CallConv, Context, FunctionType, Op, SmallVec, SourceSpan, SymbolNameComponent, Type,
+    ValueRef,
+    dialects::builtin::{FunctionRef, attributes::Signature},
     interner::{Symbol, symbols},
 };
 
@@ -25,11 +27,9 @@ pub fn function_type(function: Symbol) -> Option<FunctionType> {
     }
 }
 
-fn signature(function: Symbol) -> Signature {
+fn signature(context: &Rc<Context>, function: Symbol) -> Signature {
     match function.as_str() {
-        HEAP_BASE => {
-            Signature::new(HEAP_BASE_FUNC.0.map(AbiParam::new), HEAP_BASE_FUNC.1.map(AbiParam::new))
-        }
+        HEAP_BASE => Signature::new(context, HEAP_BASE_FUNC.0, HEAP_BASE_FUNC.1),
         _ => panic!("No memory intrinsics Signature found for {function}"),
     }
 }
@@ -47,13 +47,13 @@ pub(crate) fn convert_mem_intrinsics<B: ?Sized + Builder>(
     match function.as_str() {
         HEAP_BASE => {
             let func = function_ref.borrow();
-            assert_eq!(args.len(), 0, "{} takes no arguments", &func.name());
+            assert_eq!(args.len(), 0, "{} takes no arguments", &func.get_name());
 
-            let signature = func.signature().clone();
+            let signature = func.get_signature().clone();
             drop(func);
             let exec = builder.exec(function_ref, signature, args.iter().copied(), span)?;
             let borrow = exec.borrow();
-            let results = borrow.as_ref().results();
+            let results = borrow.results();
             Ok(results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect())
         }
         _ => panic!("no memory intrinsics found with name '{function}'"),

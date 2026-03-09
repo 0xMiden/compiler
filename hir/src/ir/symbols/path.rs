@@ -1,11 +1,11 @@
 use alloc::{borrow::Cow, collections::VecDeque, format};
 use core::fmt;
 
-use midenc_session::diagnostics::{Diagnostic, miette};
-use smallvec::{SmallVec, smallvec};
-
-use super::SymbolUseRef;
-use crate::{FunctionIdent, SymbolName, define_attr_type, interner};
+use crate::{
+    FunctionIdent, SmallVec, SymbolName,
+    diagnostics::{Diagnostic, miette},
+    interner, smallvec,
+};
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
 pub enum InvalidSymbolPathError {
@@ -34,43 +34,7 @@ pub enum InvalidSymbolPathError {
     UnexpectedRootPlacement,
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct SymbolPathAttr {
-    pub path: SymbolPath,
-    pub user: SymbolUseRef,
-}
-
-impl fmt::Display for SymbolPathAttr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.path)
-    }
-}
-
-impl crate::formatter::PrettyPrint for SymbolPathAttr {
-    fn render(&self) -> crate::formatter::Document {
-        crate::formatter::display(self)
-    }
-}
-
-impl fmt::Debug for SymbolPathAttr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SymbolPathAttr")
-            .field("path", &self.path)
-            .field("user", &self.user.borrow())
-            .finish()
-    }
-}
-
-impl core::hash::Hash for SymbolPathAttr {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.path.hash(state);
-        self.user.hash(state);
-    }
-}
-
-define_attr_type!(SymbolPathAttr);
-
-/// This type is a custom [Attribute] for [Symbol] references.
+/// This type is a custom [crate::Attribute] for [super::Symbol] references.
 ///
 /// A [SymbolPath] is represented much like a filesystem path, i.e. as a vector of components.
 /// Each component refers to a distinct `Symbol` that must be resolvable, the details of which
@@ -695,7 +659,7 @@ impl SymbolNameComponents {
         }
     }
 
-    /// Convert this iterator into a single [Symbol] consisting of all components.
+    /// Convert this iterator into a single [super::Symbol] consisting of all components.
     ///
     /// Returns `None` if the input is empty.
     pub fn into_symbol_name(self) -> Option<SymbolName> {

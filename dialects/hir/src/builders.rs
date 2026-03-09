@@ -1,6 +1,10 @@
 use midenc_hir::{
-    AsCallableSymbolRef, Builder, Immediate, Op, OpBuilder, PointerType, Report, Signature,
-    SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef, dialects::builtin::*,
+    AsCallableSymbolRef, Builder, Immediate, Op, OpBuilder, PointerType, Report, SourceSpan, Type,
+    UnsafeIntrusiveEntityRef, ValueRef,
+    dialects::builtin::{
+        attributes::{LocalVariable, Signature},
+        *,
+    },
 };
 
 use crate::*;
@@ -50,8 +54,19 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         rhs: ValueRef,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEq>, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::AssertEq, _>(span);
+        let op_builder = self.builder_mut().create::<crate::ops::AssertEq, (_, _)>(span);
         op_builder(lhs, rhs)
+    }
+
+    fn assert_eq_with_error(
+        &mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        code: u32,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEq>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::AssertEq, (_, _, _)>(span);
+        op_builder(lhs, rhs, code)
     }
 
     fn assert_eq_imm(
@@ -63,6 +78,18 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         use midenc_dialect_arith::ArithOpBuilder;
         let rhs = self.builder_mut().imm(rhs, span);
         self.assert_eq(lhs, rhs, span)
+    }
+
+    fn assert_eq_with_error_imm(
+        &mut self,
+        lhs: ValueRef,
+        rhs: Immediate,
+        code: u32,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEq>, Report> {
+        use midenc_dialect_arith::ArithOpBuilder;
+        let rhs = self.builder_mut().imm(rhs, span);
+        self.assert_eq_with_error(lhs, rhs, code, span)
     }
 
     fn breakpoint(
@@ -201,7 +228,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         let gs_builder = GlobalSymbolBuilder::new(self.builder_mut(), span);
         let global_sym = gs_builder(base, offset)?;
         let addr = global_sym.borrow().results()[0].borrow().as_value_ref();
-        let ty = base.borrow().ty().clone();
+        let ty = base.borrow().get_ty().clone();
         let typed_addr = self.bitcast(addr, Type::from(PointerType::new(ty)), span)?;
         self.load(typed_addr, span)
     }
@@ -216,7 +243,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         let gs_builder = GlobalSymbolBuilder::new(self.builder_mut(), span);
         let global_sym = gs_builder(global_var, 0)?;
         let addr = global_sym.borrow().results()[0].borrow().as_value_ref();
-        let ty = global_var.borrow().ty().clone();
+        let ty = global_var.borrow().get_ty().clone();
         let typed_addr = self.bitcast(addr, Type::from(PointerType::new(ty)), span)?;
         self.store(typed_addr, value, span)
     }
@@ -470,7 +497,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         C: AsCallableSymbolRef,
         A: IntoIterator<Item = ValueRef>,
     {
-        let op_builder = self.builder_mut().create::<crate::ops::Exec, (C, Signature, A)>(span);
+        let op_builder = self.builder_mut().create::<crate::ops::Exec, (C, _, A)>(span);
         op_builder(callee, signature, args)
     }
 
@@ -485,7 +512,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         C: AsCallableSymbolRef,
         A: IntoIterator<Item = ValueRef>,
     {
-        let op_builder = self.builder_mut().create::<crate::ops::Call, (C, Signature, A)>(span);
+        let op_builder = self.builder_mut().create::<crate::ops::Call, (C, _, A)>(span);
         op_builder(callee, signature, args)
     }
 

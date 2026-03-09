@@ -1,6 +1,6 @@
-//! This code is an implementation of the algorithm described in _Perfect Reconstructability of
-//! Control Flow from Demand Dependence Graphs_, by Bahmann, Reismann, Jahre, and Meyer. 2015.
-//! See https://doi.org/10.1145/2693261.
+//! This code is an implementation of the algorithm described in [_Perfect Reconstructability of
+//! Control Flow from Demand Dependence Graphs_, by Bahmann, Reismann, Jahre, and Meyer. 2015.](
+//! https://doi.org/10.1145/2693261).
 //!
 //! It defines an algorithm to translate any control flow graph with a single entry and single exit
 //! block into structured control flow operations consisting of regions of do-while loops and
@@ -193,8 +193,8 @@ pub trait CFGToSCFInterface {
     /// Creates a switch-like unstructured branch operation, branching to one of `case_destinations`
     /// or `default_dest`.
     ///
-    /// This is used by [transform_cfg_to_scfg] for intermediate transformations before lifting to
-    /// structured control flow.
+    /// This is used by [transform_cfg_to_scf] for intermediate transformations before lifting
+    /// to structured control flow.
     ///
     /// The switch op branches based on `flag` which is guaranteed to be of the same type as values
     /// returned by `get_cfg_switch_value`. The insertion block of the builder is guaranteed to have
@@ -240,7 +240,7 @@ pub trait CFGToSCFInterface {
         region: RegionRef,
     ) -> Result<OperationRef, Report>;
 
-    /// Helper function to create an unconditional branch using [create_cfg_switch_op].
+    /// Helper function to create an unconditional branch using [Self::create_cfg_switch_op].
     fn create_single_destination_branch(
         &self,
         span: SourceSpan,
@@ -252,7 +252,7 @@ pub trait CFGToSCFInterface {
         self.create_cfg_switch_op(span, builder, dummy_flag, &[], &[], &[], destination, arguments)
     }
 
-    /// Helper function to create a conditional branch using [create_cfg_switch_op].
+    /// Helper function to create a conditional branch using [Self::create_cfg_switch_op].
     #[allow(clippy::too_many_arguments)]
     fn create_conditional_branch(
         &self,
@@ -288,7 +288,7 @@ pub trait CFGToSCFInterface {
 /// branching to one block per return-like operation kind remains.
 ///
 /// The transformation currently requires that all control flow graph operations have no side
-/// effects, implement the [crate::traits::BranchOpInterface], and do not have any operation-
+/// effects, implement the [midenc_hir::traits::BranchOpInterface], and do not have any operation-
 /// produced successor operands.
 ///
 /// Returns `Err` if any of the preconditions are violated or if any of the methods of `interface`
