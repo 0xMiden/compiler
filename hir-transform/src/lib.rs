@@ -8,14 +8,14 @@ extern crate std;
 
 mod canonicalization;
 mod cfg_to_scf;
-//mod dce;
 mod cse;
+mod dce;
 //mod inliner;
 mod sccp;
 mod sink;
 mod spill;
 
-//pub use self::dce::{DeadSymbolElmination, DeadValueElimination};
+pub use self::dce::DeadCodeElimination;
 //pub use self::inliner::Inliner;
 pub use self::{
     canonicalization::Canonicalizer,

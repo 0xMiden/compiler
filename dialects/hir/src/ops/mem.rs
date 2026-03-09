@@ -1,52 +1,40 @@
-use alloc::boxed::Box;
-
 use midenc_hir::{
-    derive::operation, dialects::builtin::LocalVariable, effects::*, smallvec, traits::*, *,
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    dialects::builtin::attributes::LocalVariableAttr,
+    effects::*,
+    traits::*,
+    *,
 };
 use midenc_hir_transform::SpillLike;
 
 use crate::HirDialect;
 
 /// Store `value` on the heap at `addr`
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Store {
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Write))]
     addr: AnyPointer,
     #[operand]
     value: AnyType,
 }
 
-impl EffectOpInterface<MemoryEffect> for Store {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
-            MemoryEffect::Write,
-            self.addr().as_value_ref()
-        )])
-    }
-}
-
 /// Store `value` on in procedure local memory
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface, SpillLike)
+    implements(MemoryEffectOpInterface, SpillLike, OpPrinter)
 )]
 pub struct StoreLocal {
     #[attr]
-    local: LocalVariable,
+    #[effects(MemoryEffect(MemoryEffect::Write))]
+    local: LocalVariableAttr,
     #[operand]
     value: AnyType,
-}
-
-impl EffectOpInterface<MemoryEffect> for StoreLocal {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
-            MemoryEffect::Write,
-            Box::new(*self.local()) as Box<dyn AttributeValue>
-        )])
-    }
 }
 
 impl SpillLike for StoreLocal {
@@ -64,24 +52,17 @@ impl SpillLike for StoreLocal {
 /// The type of load is determined by the pointer operand type - cast the pointer to the type you
 /// wish to load, so long as such a load is safe according to the semantics of your high-level
 /// language.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Load {
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
     addr: AnyPointer,
     #[result]
     result: AnyType,
-}
-
-impl EffectOpInterface<MemoryEffect> for Load {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
-            MemoryEffect::Read,
-            self.addr().as_value_ref()
-        )])
-    }
 }
 
 impl InferTypeOpInterface for Load {
@@ -117,29 +98,22 @@ impl InferTypeOpInterface for Load {
     }
 }
 
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct LoadLocal {
     #[attr]
-    local: LocalVariable,
+    #[effects(MemoryEffect(MemoryEffect::Read))]
+    local: LocalVariableAttr,
     #[result]
     result: AnyType,
 }
 
-impl EffectOpInterface<MemoryEffect> for LoadLocal {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
-            MemoryEffect::Read,
-            Box::new(*self.local()) as Box<dyn AttributeValue>
-        )])
-    }
-}
-
 impl InferTypeOpInterface for LoadLocal {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.local().ty();
+        let ty = self.get_local().ty();
         self.result_mut().set_type(ty);
 
         Ok(())

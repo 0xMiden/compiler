@@ -18,10 +18,10 @@ log.workspace = true
 midenc-hir.workspace = true
 
 [dev-dependencies]
-# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 midenc-dialect-hir = { path = "../dialects/hir" }
 midenc-dialect-arith = { path = "../dialects/arith" }
 midenc-dialect-cf = { path = "../dialects/cf" }
 midenc-dialect-scf = { path = "../dialects/scf" }
 midenc-expect-test = { path = "../tools/expect-test" }
-midenc-log = { path = "../midenc-log" }
+midenc-hir = { path = "../hir", features = ["logging"] }

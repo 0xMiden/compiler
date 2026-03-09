@@ -1,20 +1,20 @@
-use core::{any::Any, fmt, hash::Hash, ptr::NonNull};
+use core::{fmt, hash::Hash, ptr::NonNull};
 
 use midenc_hir::{
     Block, BlockArgument, BlockArgumentRef, BlockRef, DynHash, DynPartialEq, FxHashMap, FxHasher,
-    OpResult, OpResultRef, Operation, OperationRef, ProgramPoint, RawEntityRef, SourceSpan,
-    Spanned, Value, ValueRef,
+    OpResult, OpResultRef, Operation, OperationRef, PartialEqable, ProgramPoint, RawEntityRef,
+    SourceSpan, Spanned, Value, ValueRef, any::AsAny,
 };
 
 /// This represents a pointer to a type-erased [LatticeAnchor] value.
 ///
 /// # Safety
 ///
-/// Anchors are immutable, so dereferencing these are always safe while the [DataFlowSolver] which
-/// allocated them is still live. However, you must ensure that a reference never outlives the
-/// parent [DataFlowSolver]. In practice, this is basically enforced in terms of API - you can't
-/// do anything useful with one of these without the solver, however it is still incumbent on users
-/// of this type to uphold this guarantee.
+/// Anchors are immutable, so dereferencing these are always safe while the [crate::DataFlowSolver]
+/// which allocated them is still live. However, you must ensure that a reference never outlives the
+/// parent [crate::DataFlowSolver]. In practice, this is basically enforced in terms of API - you
+/// can't do anything useful with one of these without the solver, however it is still incumbent on
+/// users of this type to uphold this guarantee.
 #[derive(Copy, Clone)]
 pub struct LatticeAnchorRef(NonNull<dyn LatticeAnchor>);
 
@@ -109,7 +109,7 @@ impl fmt::Display for LatticeAnchorRef {
 ///
 /// [LatticeAnchor] provides the means to represent and work with any type of anchor.
 pub trait LatticeAnchor:
-    Any + Spanned + fmt::Debug + fmt::Display + DynPartialEq + DynHash
+    AsAny + Spanned + fmt::Debug + fmt::Display + PartialEqable + DynPartialEq + DynHash
 {
     fn is_value(&self) -> bool {
         false

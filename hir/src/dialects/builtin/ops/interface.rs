@@ -1,9 +1,9 @@
 use midenc_session::LibraryPath;
 
 use crate::{
-    Ident, Op, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager, SymbolManagerMut,
-    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
-    Visibility,
+    IdentAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol,
+    SymbolManager, SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
+    UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
     dialects::builtin::{self, BuiltinDialect},
     traits::{
@@ -18,23 +18,23 @@ pub type InterfaceRef = UnsafeIntrusiveEntityRef<Interface>;
 /// related functionality meant to be produced/consumed together.
 ///
 /// An [Interface] itself represents a shared-nothing boundary, i.e. the functionality it exports
-/// uses the Canonical ABI of the Wasm Component Model. However, it is possible for a [Component]
-/// to export multiple interfaces which are implemented within the same shared-everything boundary.
-/// Even when that is the case, calls to any [Interface] export from within that boundary, will
-/// still be treated as crossing a shared-nothing boundary. In this way, components can both define
-/// and re-export interfaces from other components, without callers needing to know where the
-/// actual definition is provided from.
+/// uses the Canonical ABI of the Wasm Component Model. However, it is possible for a
+/// [super::Component] to export multiple interfaces which are implemented within the same
+/// shared-everything boundary. Even when that is the case, calls to any [Interface] export from
+/// within that boundary, will still be treated as crossing a shared-nothing boundary. In this way,
+/// components can both define and re-export interfaces from other components, without callers
+/// needing to know where the actual definition is provided from.
 ///
 /// Interfaces correspond to component _instances_ exported from a component _definition_ in the
 /// Wasm Component Model. This means that they are almost identical concepts, however we distinguish
-/// between [Component] and [Interface] in the IR to better model the relationships between these
-/// concepts, as well as to draw a connection to interfaces in WIT (WebAssembly Interface Types).
+/// between [super::Component] and [Interface] in the IR to better model the relationships between
+/// these concepts, as well as to draw a connection to interfaces in WIT (WebAssembly Interface Types).
 ///
 /// ## Contents
 ///
-/// Interfaces may only contain [Function] items, and may only _export_ functions with the
+/// Interfaces may only contain [builtin::Function] items, and may only _export_ functions with the
 /// `CanonLift` calling convention. It is expected that these functions will rely on implementation
-/// details defined in a sibling [Module], though that is not strictly required.
+/// details defined in a sibling [builtin::Module], though that is not strictly required.
 #[operation(
     dialect = BuiltinDialect,
     traits(
@@ -46,17 +46,42 @@ pub type InterfaceRef = UnsafeIntrusiveEntityRef<Interface>;
         GraphRegionNoTerminator,
         IsolatedFromAbove,
     ),
-    implements(RegionKindInterface, SymbolTable, Symbol)
+    implements(RegionKindInterface, SymbolTable, Symbol, OpPrinter)
 )]
 pub struct Interface {
     #[attr]
-    name: Ident,
+    name: IdentAttr,
     #[region]
     body: RegionRef,
     #[default]
     symbols: SymbolMap,
     #[default]
     uses: SymbolUseList,
+}
+
+impl OpPrinter for Interface {
+    fn print(&self, printer: &mut crate::print::AsmPrinter<'_>) {
+        printer.print_space();
+        printer.print_symbol_name(self.get_name().as_symbol());
+        printer.print_space();
+        printer.print_region(&self.body());
+    }
+}
+
+impl OpParser for Interface {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        let name = parser.parse_symbol_name()?;
+        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+
+        let region = parser.context().create_region();
+        parser.parse_region(region, &[], true)?;
+        state.add_region(region);
+
+        Ok(())
+    }
 }
 
 impl RegionKindInterface for Interface {
@@ -96,8 +121,7 @@ impl Symbol for Interface {
     }
 
     fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.name = name;
+        Interface::set_name(self, name)
     }
 
     fn visibility(&self) -> Visibility {

@@ -1,0 +1,8 @@
+name = "hir"
+patterns = ["*.hir"]
+
+[substitutions]
+"hir-opt" = "$$MIDENC_BIN_DIR/hir-opt"
+"%target_dir" = "$$CARGO_TARGET_DIR"
+
+[format.shtest]

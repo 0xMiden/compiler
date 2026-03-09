@@ -7,7 +7,7 @@ use alloc::{format, rc::Rc, string::ToString, vec, vec::Vec};
 use midenc_hir::{
     CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint, RegionRef,
     Report, SmallVec, SourceSpan, Spanned, SymbolPath, Type, Value as _, ValueRange, ValueRef,
-    dialects::builtin::{ComponentId, LocalVariable},
+    dialects::builtin::{ComponentId, attributes::LocalVariable},
     formatter::DisplayValues,
     smallvec,
 };
@@ -377,7 +377,7 @@ impl HirEvaluator {
 
     /// Read the value of the given local variable in the current symbol, if present.
     ///
-    /// See [CallFrame::read_local] for details on correct usage.
+    /// See `CallFrame::read_local` for details on correct usage.
     ///
     /// # Panics
     ///
@@ -391,7 +391,7 @@ impl HirEvaluator {
 
     /// Write `value` to `local`.
     ///
-    /// See [CallFrame::write_local] for details on correct usage.
+    /// See `CallFrame::write_local` for details on correct usage.
     ///
     /// # Panics
     ///

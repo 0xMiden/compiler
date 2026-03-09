@@ -1,7 +1,7 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, Immediate, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
+    Builder, Immediate, Op, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
     dialects::builtin::FunctionRef, interner::symbols,
 };
 
@@ -264,13 +264,13 @@ pub fn no_transform<B: ?Sized + Builder>(
     builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
     let span = import_func_ref.borrow().name().span;
-    let signature = import_func_ref.borrow().signature().clone();
+    let signature = import_func_ref.borrow().get_signature().clone();
     let exec = builder
         .exec(import_func_ref, signature, args.to_vec(), span)
         .expect("failed to build an exec op in no_transform strategy");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
     results
@@ -283,13 +283,13 @@ pub fn list_return<B: ?Sized + Builder>(
     builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
     let span = import_func_ref.borrow().name().span;
-    let signature = import_func_ref.borrow().signature().clone();
+    let signature = import_func_ref.borrow().get_signature().clone();
     let exec = builder
         .exec(import_func_ref, signature, args.to_vec(), span)
         .expect("failed to build an exec op in list_return strategy");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
@@ -307,13 +307,13 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     let span = import_func_ref.borrow().name().span;
     // Omit the last argument (pointer)
     let args_wo_pointer = &args[0..args.len() - 1];
-    let signature = import_func_ref.borrow().signature().clone();
+    let signature = import_func_ref.borrow().get_signature().clone();
     let exec = builder
         .exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)
         .expect("failed to build an exec op in return_via_pointer strategy");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 

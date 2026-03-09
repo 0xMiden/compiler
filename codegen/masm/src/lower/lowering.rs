@@ -147,7 +147,7 @@ impl HirLowering for builtin::RetImm {
         emitter.truncate_stack(0, span);
 
         // We need to push the return value on the stack at this point.
-        emitter.literal(*self.value(), span);
+        emitter.literal(*self.get_value(), span);
 
         Ok(())
     }
@@ -432,7 +432,7 @@ impl HirLowering for scf::Condition {
 
 impl HirLowering for arith::Constant {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let value = *self.value();
+        let value = *self.get_value();
 
         emitter.inst_emitter(self.as_operation()).literal(value, self.span());
 
@@ -442,7 +442,7 @@ impl HirLowering for arith::Constant {
 
 impl HirLowering for hir::Assert {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let code = *self.code();
+        let code = *self.get_code();
 
         emitter.emitter().assert(Some(code), self.span());
 
@@ -452,7 +452,7 @@ impl HirLowering for hir::Assert {
 
 impl HirLowering for hir::Assertz {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let code = *self.code();
+        let code = *self.get_code();
 
         emitter.emitter().assertz(Some(code), self.span());
 
@@ -507,34 +507,36 @@ impl HirLowering for ub::Poison {
         op_emitter.literal(
             {
                 match self.value().as_immediate() {
-                    Ok(imm) => imm,
-                    Err(Type::U256) => {
-                        return Err(self
-                            .as_operation()
-                            .context()
-                            .diagnostics()
-                            .diagnostic(Severity::Error)
-                            .with_message("invalid operation")
-                            .with_primary_label(
-                                span,
-                                "the lowering for u256 immediates is not yet implemented",
-                            )
-                            .into_report());
-                    }
-                    Err(Type::F64) => {
-                        return Err(self
-                            .as_operation()
-                            .context()
-                            .diagnostics()
-                            .diagnostic(Severity::Error)
-                            .with_message("invalid operation")
-                            .with_primary_label(
-                                span,
-                                "the lowering for f64 immediates is not yet implemented",
-                            )
-                            .into_report());
-                    }
-                    Err(ty) => panic!("unexpected poison type: {ty}"),
+                    Some(imm) => imm,
+                    None => match self.value().as_value() {
+                        Type::U256 => {
+                            return Err(self
+                                .as_operation()
+                                .context()
+                                .diagnostics()
+                                .diagnostic(Severity::Error)
+                                .with_message("invalid operation")
+                                .with_primary_label(
+                                    span,
+                                    "the lowering for u256 immediates is not yet implemented",
+                                )
+                                .into_report());
+                        }
+                        Type::F64 => {
+                            return Err(self
+                                .as_operation()
+                                .context()
+                                .diagnostics()
+                                .diagnostic(Severity::Error)
+                                .with_message("invalid operation")
+                                .with_primary_label(
+                                    span,
+                                    "the lowering for f64 immediates is not yet implemented",
+                                )
+                                .into_report());
+                        }
+                        ty => panic!("unexpected poison type: {ty}"),
+                    },
                 }
             },
             span,
@@ -546,7 +548,7 @@ impl HirLowering for ub::Poison {
 
 impl HirLowering for arith::Add {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).add(*self.overflow(), self.span());
+        emitter.inst_emitter(self.as_operation()).add(*self.get_overflow(), self.span());
         Ok(())
     }
 }
@@ -562,7 +564,7 @@ impl HirLowering for arith::AddOverflowing {
 
 impl HirLowering for arith::Sub {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).sub(*self.overflow(), self.span());
+        emitter.inst_emitter(self.as_operation()).sub(*self.get_overflow(), self.span());
         Ok(())
     }
 }
@@ -578,7 +580,7 @@ impl HirLowering for arith::SubOverflowing {
 
 impl HirLowering for arith::Mul {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).mul(*self.overflow(), self.span());
+        emitter.inst_emitter(self.as_operation()).mul(*self.get_overflow(), self.span());
         Ok(())
     }
 }
@@ -872,7 +874,7 @@ impl HirLowering for hir::Exec {
         // Convert the symbol path to a fully-qualified procedure path
         let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
-        emitter.inst_emitter(self.as_operation()).exec(callee, signature, self.span());
+        emitter.inst_emitter(self.as_operation()).exec(callee, &signature, self.span());
 
         Ok(())
     }
@@ -922,7 +924,7 @@ impl HirLowering for hir::Call {
         // Convert the symbol path to a fully-qualified procedure path
         let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
-        emitter.inst_emitter(self.as_operation()).call(callee, signature, self.span());
+        emitter.inst_emitter(self.as_operation()).call(callee, &signature, self.span());
 
         Ok(())
     }
@@ -938,7 +940,9 @@ impl HirLowering for hir::Load {
 
 impl HirLowering for hir::LoadLocal {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).load_local(self.local(), self.span());
+        emitter
+            .inst_emitter(self.as_operation())
+            .load_local(&self.get_local(), self.span());
         Ok(())
     }
 }
@@ -952,7 +956,7 @@ impl HirLowering for hir::Store {
 
 impl HirLowering for hir::StoreLocal {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.emitter().store_local(self.local(), self.span());
+        emitter.emitter().store_local(&self.get_local(), self.span());
         Ok(())
     }
 }
@@ -1231,7 +1235,7 @@ impl HirLowering for arith::Join {
         //
         // The IR specifies limbs most-significant to least-significant, but the runtime stack
         // representation for two 64-bit limbs is (lo, hi).
-        if args.len() == 2 && matches!(self.ty(), Type::I128 | Type::U128) {
+        if args.len() == 2 && matches!(&*self.get_ty(), Type::I128 | Type::U128) {
             args.swap(0, 1);
             constraints.swap(0, 1);
         }
@@ -1287,7 +1291,7 @@ impl HirLowering for builtin::GlobalSymbol {
         let current_module = self
             .nearest_parent_op::<builtin::Module>()
             .expect("expected 'hir.global_symbol' op to have a module ancestor");
-        let symbol = current_module.borrow().resolve(&self.symbol().path).ok_or_else(|| {
+        let symbol = current_module.borrow().resolve(self.symbol().path()).ok_or_else(|| {
             context
                 .diagnostics()
                 .diagnostic(Severity::Error)
@@ -1324,7 +1328,7 @@ impl HirLowering for builtin::GlobalSymbol {
             .globals_layout()
             .get_computed_addr(global_variable)
             .expect("link error: missing global variable in computed global layout");
-        let addr = computed_addr.checked_add_signed(*self.offset()).ok_or_else(|| {
+        let addr = computed_addr.checked_add_signed(*self.get_offset()).ok_or_else(|| {
             context
                 .diagnostics()
                 .diagnostic(Severity::Error)

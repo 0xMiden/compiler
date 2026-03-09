@@ -25,6 +25,16 @@ impl Analysis for DominanceInfo {
         "dominance"
     }
 
+    #[inline(always)]
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+
+    #[inline(always)]
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn core::any::Any> {
+        self
+    }
+
     fn analyze(
         &mut self,
         op: &Self::Target,
@@ -187,6 +197,16 @@ impl Analysis for PostDominanceInfo {
 
     fn name(&self) -> &'static str {
         "post-dominance"
+    }
+
+    #[inline(always)]
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+
+    #[inline(always)]
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn core::any::Any> {
+        self
     }
 
     fn analyze(

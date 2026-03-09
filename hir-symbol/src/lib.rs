@@ -30,6 +30,7 @@ struct SymbolTable {
 
 /// A symbol is an interned string.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
 pub struct Symbol(SymbolIndex);
 
 #[cfg(feature = "serde")]
@@ -88,12 +89,12 @@ impl Symbol {
     }
 
     #[inline]
-    pub fn as_u32(self) -> u32 {
+    pub const fn as_u32(self) -> u32 {
         self.0.as_u32()
     }
 
     #[inline]
-    pub fn as_usize(self) -> usize {
+    pub const fn as_usize(self) -> usize {
         self.0.as_usize()
     }
 
@@ -178,6 +179,7 @@ impl From<compact_str::CompactString> for Symbol {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 struct SymbolIndex(u32);
 impl SymbolIndex {
     // shave off 256 indices at the end to allow space for packing these indices into enums
@@ -191,12 +193,12 @@ impl SymbolIndex {
     }
 
     #[inline]
-    pub fn as_u32(self) -> u32 {
+    pub const fn as_u32(self) -> u32 {
         self.0
     }
 
     #[inline]
-    pub fn as_usize(self) -> usize {
+    pub const fn as_usize(self) -> usize {
         self.0 as usize
     }
 }

@@ -1,14 +1,12 @@
-use alloc::{boxed::Box, format, rc::Rc, string::ToString, sync::Arc};
+use alloc::{format, string::ToString, sync::Arc};
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
-use midenc_dialect_scf::{ScfDialect, StructuredControlFlowOpBuilder};
+use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AbiParam, AddressSpace, Builder, Context, Ident, Op, OpBuilder, PointerType, ProgramPoint,
-    Report, Signature, SourceSpan, Type, ValueRef,
-    dialects::builtin::{BuiltinOpBuilder, Function, FunctionBuilder},
-    pass::{Nesting, PassManager},
+    AddressSpace, Builder, Op, PointerType, ProgramPoint, Report, SourceSpan, Type, ValueRef,
+    dialects::builtin::BuiltinOpBuilder, testing::Test,
 };
 
 use crate::{HirOpBuilder, transforms::TransformSpills};
@@ -20,46 +18,36 @@ type TestResult<T> = Result<T, Report>;
 /// materialized as `hir.store_local`/`hir.load_local`.
 #[test]
 fn materializes_spills_intra_block() -> TestResult<()> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
-
+    let mut test = Test::named("materializes_spills_intra_block").in_module("test");
     let span = SourceSpan::UNKNOWN;
-    let context = Rc::new(Context::default());
-    let mut ob = OpBuilder::new(context.clone());
 
-    let module = ob.create_module(Ident::with_empty_span("test".into()))?;
-    let module_body = module.borrow().body().as_region_ref();
-    ob.create_block(module_body, None, &[]);
-    let func = ob.create_function(
-        Ident::with_empty_span("test::spill".into()),
-        Signature::new(
-            [AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
-                Type::U8,
-                AddressSpace::Element,
-            ))))],
-            [AbiParam::new(Type::U32)],
-        ),
-    )?;
-    let callee_sig = Signature::new(
-        [
-            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+    test.with_function(
+        test.name(),
+        &[Type::Ptr(Arc::new(PointerType::new_with_address_space(
+            Type::U8,
+            AddressSpace::Element,
+        )))],
+        &[Type::U32],
+    );
+    let func = test.function();
+
+    let callee = test.define_function(
+        "example",
+        &[
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
                 Type::U128,
                 AddressSpace::Element,
-            )))),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U64),
+            ))),
+            Type::U128,
+            Type::U128,
+            Type::U128,
+            Type::U64,
         ],
-        [AbiParam::new(Type::U32)],
+        &[Type::U32],
     );
-    let callee =
-        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
 
     {
-        let mut b = FunctionBuilder::new(func, &mut ob);
+        let mut b = test.function_builder();
         let entry = b.current_block();
         let v0 = entry.borrow().arguments()[0] as ValueRef;
         let v1 = b.ptrtoint(v0, Type::U32, span)?;
@@ -86,7 +74,8 @@ fn materializes_spills_intra_block() -> TestResult<()> {
         )?;
         let v7 = b.load(v6, span)?;
         let v8 = b.u64(1, span);
-        let _ret_from_call = b.exec(callee, callee_sig.clone(), [v6, v4, v7, v7, v8], span)?;
+        let callee_sig = callee.borrow().get_signature().clone();
+        let _ret_from_call = b.exec(callee, callee_sig, [v6, v4, v7, v7, v8], span)?;
         let k72 = b.u32(72, span);
         let v9 = b.add_unchecked(v1, k72, span)?;
         b.store(v3, v9, span)?;
@@ -112,15 +101,15 @@ fn materializes_spills_intra_block() -> TestResult<()> {
     //   load_local  : <type> #[local = lvN]
     let before = func.as_operation_ref().borrow().to_string();
 
-    expect_file!["expected/materialize_spills_intra_block_before.hir"].assert_eq(&before);
+    let before_file = format!("expected/{}_before.hir", test.name());
+    expect_file![&before_file].assert_eq(&before);
 
-    let mut pm = PassManager::on::<Function>(context, Nesting::Implicit);
-    pm.add_pass(Box::new(TransformSpills));
-    pm.run(func.as_operation_ref())?;
+    test.apply_pass::<TransformSpills>(false)?;
 
     let after = func.as_operation_ref().borrow().to_string();
     // Check output IR: spills become store_local; reloads become load_local
-    expect_file!["expected/materialize_spills_intra_block_after.hir"].assert_eq(&after);
+    let after_file = format!("expected/{}_after.hir", test.name());
+    expect_file![&after_file].assert_eq(&after);
 
     // Also assert counts for materialized spills/reloads (similar to branching test style)
     let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
@@ -141,47 +130,36 @@ fn materializes_spills_intra_block() -> TestResult<()> {
 /// other are materialized as `store_local`/`load_local`, with edges split as needed.
 #[test]
 fn materializes_spills_branching_cfg() -> TestResult<()> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
-
+    let mut test = Test::named("materializes_spills_branching_cfg").in_module("test");
     let span = SourceSpan::UNKNOWN;
-    let context = Rc::new(Context::default());
-    let mut ob = OpBuilder::new(context.clone());
 
-    let module = ob.create_module(Ident::with_empty_span("test".into()))?;
-    let module_body = module.borrow().body().as_region_ref();
-    ob.create_block(module_body, None, &[]);
-    let func = ob.create_function(
-        Ident::with_empty_span("test::spill_branch".into()),
-        Signature::new(
-            [AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
-                Type::U8,
-                AddressSpace::Element,
-            ))))],
-            [AbiParam::new(Type::U32)],
-        ),
-    )?;
+    test.with_function(
+        "materializes_spills_branching_cfg",
+        &[Type::Ptr(Arc::new(PointerType::new_with_address_space(
+            Type::U8,
+            AddressSpace::Element,
+        )))],
+        &[Type::U32],
+    );
+    let func = test.function();
 
-    let callee_sig = Signature::new(
-        [
-            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+    let callee = test.define_function(
+        "example",
+        &[
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
                 Type::U128,
                 AddressSpace::Element,
-            )))),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U64),
+            ))),
+            Type::U128,
+            Type::U128,
+            Type::U128,
+            Type::U64,
         ],
-        [AbiParam::new(Type::U32)],
+        &[Type::U32],
     );
-    let callee =
-        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
 
     {
-        let mut b = FunctionBuilder::new(func, &mut ob);
+        let mut b = test.function_builder();
         let entry = b.current_block();
         let v0 = entry.borrow().arguments()[0] as ValueRef;
         let v1 = b.ptrtoint(v0, Type::U32, span)?;
@@ -216,7 +194,8 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
         // then
         b.switch_to_block(t);
         let v9 = b.u64(1, span);
-        let call = b.exec(callee, callee_sig.clone(), [v6, v4, v7, v7, v9], span)?;
+        let callee_sig = callee.borrow().get_signature().clone();
+        let call = b.exec(callee, callee_sig, [v6, v4, v7, v7, v9], span)?;
         let v10 = call.borrow().results()[0] as ValueRef;
         // Force a use of a spilled value (v1) after spills in the then-path to require a reload
         b.store(v3c, v7, span)?; // use ptr after spills
@@ -253,15 +232,14 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
     let before = func.as_operation_ref().borrow().to_string();
     assert!(before.contains("cf.cond_br") && before.contains("hir.exec"));
 
-    expect_file!["expected/materialize_spills_branch_cfg_before.hir"].assert_eq(&before);
+    let before_file = format!("expected/{}_before.hir", test.name());
+    expect_file![&before_file].assert_eq(&before);
 
-    let mut pm = PassManager::on::<Function>(context, Nesting::Implicit);
-    pm.add_pass(Box::new(TransformSpills));
-    pm.run(func.as_operation_ref())?;
+    test.apply_pass::<TransformSpills>(false)?;
 
     let after = func.as_operation_ref().borrow().to_string();
-
-    expect_file!["expected/materialize_spills_branch_cfg_after.hir"].assert_eq(&after);
+    let after_file = format!("expected/{}_after.hir", test.name());
+    expect_file![&after_file].assert_eq(&after);
 
     let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
     let loads = after
@@ -306,48 +284,37 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
 /// in that order and we pick from the end, which means we currently spill `v5`.
 #[test]
 fn materializes_spills_nested_scf_if() -> TestResult<()> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    let mut test = Test::named("materializes_spills_nested_scf_if").in_module("test");
 
     let span = SourceSpan::UNKNOWN;
-    let context = Rc::new(Context::default());
-    context.get_or_register_dialect::<ScfDialect>();
-    let mut ob = OpBuilder::new(context.clone());
 
-    let module = ob.create_module(Ident::with_empty_span("test".into()))?;
-    let module_body = module.borrow().body().as_region_ref();
-    ob.create_block(module_body, None, &[]);
-    let func = ob.create_function(
-        Ident::with_empty_span("test::spill_nested_scf_if".into()),
-        Signature::new(
-            [AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
-                Type::U8,
-                AddressSpace::Element,
-            ))))],
-            [AbiParam::new(Type::U32)],
-        ),
-    )?;
+    test.with_function(
+        "materializes_spills_nested_scf_if",
+        &[Type::Ptr(Arc::new(PointerType::new_with_address_space(
+            Type::U8,
+            AddressSpace::Element,
+        )))],
+        &[Type::U32],
+    );
+    let func = test.function();
 
-    let callee_sig = Signature::new(
-        [
-            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+    let callee = test.define_function(
+        "example",
+        &[
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
                 Type::U128,
                 AddressSpace::Element,
-            )))),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U64),
+            ))),
+            Type::U128,
+            Type::U128,
+            Type::U128,
+            Type::U64,
         ],
-        [AbiParam::new(Type::U32)],
+        &[Type::U32],
     );
-    let callee =
-        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
 
     {
-        let mut b = FunctionBuilder::new(func, &mut ob);
+        let mut b = test.function_builder();
         let entry = b.current_block();
         let exit = b.create_block();
         let exit_arg = b.append_block_param(exit, Type::U32, span);
@@ -376,7 +343,8 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
         )?;
         let v7 = b.load(v6, span)?;
         let one = b.u64(1, span);
-        let call = b.exec(callee, callee_sig.clone(), [v6, v4, v7, v7, one], span)?;
+        let callee_sig = callee.borrow().get_signature().clone();
+        let call = b.exec(callee, callee_sig, [v6, v4, v7, v7, one], span)?;
         let v8 = call.borrow().results()[0] as ValueRef;
 
         // Make the branch condition depend only on the call result, so that values defined before
@@ -385,6 +353,7 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
         let cond = b.eq(v8, zero, span)?;
 
         let mut if_op = b.r#if(cond, &[Type::U32], span)?;
+        let context = b.builder().context_rc();
         let (then_block, else_block) = (context.create_block(), context.create_block());
         {
             let mut if_op = if_op.borrow_mut();
@@ -412,28 +381,26 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
         b.ret(Some(exit_arg), span)?;
     }
 
-    let mut pm = PassManager::on::<Function>(context, Nesting::Implicit);
-    pm.add_pass(Box::new(TransformSpills));
-    pm.run(func.as_operation_ref())?;
+    test.apply_pass::<TransformSpills>(false)?;
 
     let after = func.as_operation_ref().borrow().to_string();
+    std::println!("{after}");
 
     litcheck_filecheck::filecheck!(
         &after,
         r#"
 ; COM: Spill before call
-; CHECK: hir.store_local
-; CHECK: hir.exec @test/example
-; CHECK: scf.if
+; CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<[[L0:\d+]], ptr<u128, element>> }>
+; CHECK-NEXT: hir.exec ::@test::@example
 
 ; COM: First reload in `then`
-; CHECK-LABEL: ^block3:
-; CHECK: hir.load_local
+; CHECK-LABEL: scf.if %{{\d+}} then {
+; CHECK-NEXT: hir.load_local <{ local = #builtin.local_variable<[[L0]], ptr<u128, element>> }>
 ; CHECK-NEXT: hir.store
 
 ; COM: Second reload in `else`
-; CHECK-LABEL: ^block4:
-; CHECK: hir.load_local
+; CHECK-LABEL: } else {
+; CHECK-NEXT: hir.load_local <{ local = #builtin.local_variable<[[L0]], ptr<u128, element>> }>
 ; CHECK-NEXT: hir.store
 "#
     );
@@ -450,45 +417,35 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
 /// within it still require reloads to be preserved and rewritten correctly.
 #[test]
 fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    let mut test =
+        Test::named("materializes_spills_nested_scf_while_after_region").in_module("test");
 
     let span = SourceSpan::UNKNOWN;
-    let context = Rc::new(Context::default());
-    context.get_or_register_dialect::<ScfDialect>();
-    let mut ob = OpBuilder::new(context.clone());
 
-    let module = ob.create_module(Ident::with_empty_span("test".into()))?;
-    let module_body = module.borrow().body().as_region_ref();
-    ob.create_block(module_body, None, &[]);
-    let func = ob.create_function(
-        Ident::with_empty_span("test::spill_nested_scf_while".into()),
-        Signature::new(
-            [AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
-                Type::U8,
-                AddressSpace::Element,
-            ))))],
-            [AbiParam::new(Type::U32)],
-        ),
-    )?;
+    test.with_function(
+        "materializes_spills_nested_scf_while_after_region",
+        &[Type::Ptr(Arc::new(PointerType::new_with_address_space(
+            Type::U8,
+            AddressSpace::Element,
+        )))],
+        &[Type::U32],
+    );
+    let func = test.function();
 
-    let callee_sig = Signature::new(
-        [
-            AbiParam::new(Type::Ptr(Arc::new(PointerType::new_with_address_space(
+    let callee = test.define_function(
+        "example",
+        &[
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
                 Type::U128,
                 AddressSpace::Element,
-            )))),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U128),
-            AbiParam::new(Type::U64),
+            ))),
+            Type::U128,
+            Type::U128,
+            Type::U128,
+            Type::U64,
         ],
-        [AbiParam::new(Type::U32)],
+        &[Type::U32],
     );
-    let callee =
-        ob.create_function(Ident::with_empty_span("example".into()), callee_sig.clone())?;
 
     // We construct a synthetic spill/reload pair to focus this test on the rewrite logic.
     //
@@ -498,7 +455,7 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
     // The CFG rewrite must treat those nested uses as "real" uses, otherwise the reload appears
     // unused and is removed, which then causes the spill to be removed as well.
     let (call_op, while_op, spilled_value) = {
-        let mut b = FunctionBuilder::new(func, &mut ob);
+        let mut b = test.function_builder();
         let entry = b.current_block();
         let exit = b.create_block();
         let exit_arg = b.append_block_param(exit, Type::U32, span);
@@ -528,7 +485,8 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
         )?;
         let v7 = b.load(v6, span)?;
         let one = b.u64(1, span);
-        let call = b.exec(callee, callee_sig.clone(), [v6, v4, v7, v7, one], span)?;
+        let callee_sig = callee.borrow().get_signature().clone();
+        let call = b.exec(callee, callee_sig, [v6, v4, v7, v7, one], span)?;
         let call_op = call.as_operation_ref();
         let v8 = call.borrow().results()[0] as ValueRef;
 
@@ -600,11 +558,12 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
 
     let after = func.as_operation_ref().borrow().to_string();
 
+    std::println!("{after}");
     litcheck_filecheck::filecheck!(
         &after,
         r#"
 ; CHECK: hir.store_local
-; CHECK: hir.exec @test/example
+; CHECK: hir.exec ::@test::@example
 ; CHECK: hir.load_local
 ; CHECK: scf.while
 ; CHECK: hir.store

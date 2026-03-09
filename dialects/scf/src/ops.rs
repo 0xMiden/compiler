@@ -1,6 +1,15 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::rc::Rc;
 
-use midenc_hir::{derive::operation, effects::*, patterns::RewritePatternSet, traits::*, *};
+use midenc_hir::{
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    dialects::builtin::attributes::U32ArrayAttr,
+    effects::*,
+    parse::ParserExt,
+    patterns::RewritePatternSet,
+    print::AsmPrinter,
+    traits::*,
+    *,
+};
 
 use crate::ScfDialect;
 
@@ -12,9 +21,10 @@ use crate::ScfDialect;
 ///
 /// Neither region allows any arguments, and both regions must be terminated with one of:
 ///
-/// * [Return] to return from the enclosing function directly
-/// * [Unreachable] to abort execution
+/// * [midenc_hir::dialects::builtin::Ret] to return from the enclosing function directly
+/// * `midenc_dialect_ub::Unreachable` to abort execution
 /// * [Yield] to return from the enclosing [If]
+#[derive(OpPrinter, OpParser)]
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, NoRegionArguments, HasRecursiveMemoryEffects),
@@ -23,35 +33,12 @@ use crate::ScfDialect;
 pub struct If {
     #[operand]
     condition: Bool,
-    #[region]
+    #[region(name = "then")]
     then_body: Region,
-    #[region]
+    #[region(name = "else")]
     else_body: Region,
-}
-
-impl OpPrinter for If {
-    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
-        use formatter::*;
-
-        let result_types = print::render_operation_result_types(self.as_operation());
-        let result_types = if result_types.is_empty() {
-            result_types
-        } else {
-            result_types + const_text(" ")
-        };
-        let header = print::render_operation_results(self.as_operation())
-            + display(self.op.name())
-            + const_text(" ")
-            + display(self.condition().as_value_ref())
-            + result_types;
-        let body = if self.else_body().is_empty() {
-            self.then_body().print(flags) + const_text(";")
-        } else {
-            let then_body = self.then_body().print(flags);
-            then_body + const_text(" else ") + self.else_body().print(flags) + const_text(";")
-        };
-        header + body
-    }
+    #[results]
+    returns: AnyType,
 }
 
 impl If {
@@ -87,9 +74,9 @@ impl Canonicalizable for If {
 impl RegionBranchOpInterface for If {
     fn get_entry_successor_regions(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> RegionSuccessorIter<'_> {
-        let condition = operands[0].as_deref().and_then(|v| v.as_bool());
+        let condition = operands[0].as_ref().and_then(|v| v.borrow().as_bool());
         let has_then = condition.is_none_or(|v| v);
         let else_possible = condition.is_none_or(|v| !v);
         let has_else = else_possible && !self.else_body().is_empty();
@@ -139,9 +126,9 @@ impl RegionBranchOpInterface for If {
 
     fn get_region_invocation_bounds(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> SmallVec<[InvocationBounds; 1]> {
-        let condition = operands[0].as_deref().and_then(|v| v.as_bool());
+        let condition = operands[0].as_ref().and_then(|v| v.borrow().as_bool());
 
         if let Some(condition) = condition {
             if condition {
@@ -178,6 +165,7 @@ impl RegionBranchOpInterface for If {
 /// whose operands must be of the same arity and type as the "before" region's argument list. In
 /// this way, the "after" body can feed back input to the "before" body to determine whether to
 /// continue the loop.
+#[derive(OpPrinter, OpParser)]
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, HasRecursiveMemoryEffects),
@@ -190,23 +178,6 @@ pub struct While {
     before: Region,
     #[region]
     after: Region,
-}
-
-impl OpPrinter for While {
-    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
-        use formatter::*;
-
-        let result_types = print::render_operation_result_types(self.as_operation());
-        let result_types = result_types + const_text(" ");
-        let results = print::render_operation_results(self.as_operation());
-        let operands = print::render_operation_operands(self.as_operation());
-        let header = results + display(self.op.name()) + const_text(" ") + operands + result_types;
-        let body = self.before().print(flags)
-            + const_text(" do ")
-            + self.after().print(flags)
-            + const_text(";");
-        header + body
-    }
 }
 
 impl While {
@@ -334,7 +305,7 @@ impl RegionBranchOpInterface for While {
     #[inline]
     fn get_region_invocation_bounds(
         &self,
-        _operands: &[Option<Box<dyn AttributeValue>>],
+        _operands: &[Option<AttributeRef>],
     ) -> SmallVec<[InvocationBounds; 1]> {
         smallvec![InvocationBounds::Unknown; self.num_regions()]
     }
@@ -385,39 +356,96 @@ pub struct IndexSwitch {
     #[operand]
     selector: UInt32,
     #[attr]
-    cases: ArrayAttr<u32>,
+    cases: U32ArrayAttr,
     #[region]
     default_region: Region,
 }
 
 impl OpPrinter for IndexSwitch {
-    fn print(&self, flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use alloc::borrow::Cow;
+
         use formatter::*;
 
-        let result_types = print::render_operation_result_types(self.as_operation());
-        let result_types = if result_types.is_empty() {
-            result_types
-        } else {
-            result_types + const_text(" ")
-        };
-        let results = print::render_operation_results(self.as_operation());
-        let header = results
-            + display(self.op.name())
-            + const_text(" ")
-            + display(self.selector().as_value_ref())
-            + result_types;
-        let cases = self.cases().iter().fold(Document::Empty, |acc, case| {
+        printer.print_space();
+        printer.print_value_uses(ValueRange::<1>::Operands(&[self.selector().as_operand_ref()]));
+        printer.print_space();
+
+        for case in self.cases().iter() {
             let index = self.get_case_index_for_selector(*case).unwrap();
             let region = self.get_case_region(index);
-            acc + nl()
-                + const_text("case ")
-                + display(*case)
-                + const_text(" ")
-                + region.borrow().print(flags)
-        });
-        let fallback =
-            nl() + const_text("default ") + self.default_region().print(flags) + const_text(";");
-        header + cases + fallback
+            *printer += nl() + const_text("case ") + display(*case) + const_text(" ");
+            printer.print_region(&region.borrow());
+        }
+
+        *printer += nl() + const_text("default ");
+        printer.print_region(&self.default_region());
+
+        if self.op.has_attributes() {
+            printer.print_space();
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+
+        printer.print_space();
+        printer.print_colon_type_list(
+            self.results().iter().map(|r| Cow::Owned(r.borrow().ty().clone())),
+        );
+    }
+}
+
+impl OpParser for IndexSwitch {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        use alloc::{format, vec};
+
+        use midenc_hir::{
+            diagnostics::{LabeledSpan, RelatedError, Report, Severity, miette::diagnostic},
+            dialects::builtin::attributes::Array,
+            parse::ParserError,
+        };
+
+        let selector = parser.parse_operand(/*allow_result_number=*/ true)?;
+        let selector = parser.resolve_operand(selector, Type::U32)?;
+        state.add_operand(selector);
+
+        let mut cases = Array::<u32>::default();
+        let mut regions = SmallVec::<[RegionRef; 2]>::default();
+        while parser.parse_optional_custom_keyword("case")?.is_some() {
+            let case_value = parser.parse_decimal_integer::<u32>()?;
+            if cases.contains(&case_value) {
+                return Err(ParserError::Report(RelatedError::new(Report::from(diagnostic!(
+                    severity = Severity::Error,
+                    labels = vec![LabeledSpan::at(
+                        case_value.span(),
+                        "this case selector has already been used"
+                    )],
+                    "invalid scf.index_switch operation"
+                )))));
+            }
+
+            let region = parser.context().create_region();
+            parser.parse_region(region, &[], false)?;
+
+            cases.push(case_value.into_inner());
+            regions.push(region);
+        }
+
+        parser.parse_custom_keyword("default")?;
+        let fallback_region = parser.context().create_region();
+        parser.parse_region(fallback_region, &[], false)?;
+
+        state
+            .add_attribute("cases", parser.context_rc().create_attribute::<U32ArrayAttr, _>(cases));
+        for region in regions {
+            state.add_region(region);
+        }
+        state.add_region(fallback_region);
+
+        parser.parse_optional_attribute_dict(&mut state.attrs)?;
+        parser.parse_colon_type_list(&mut state.results)?;
+
+        Ok(())
     }
 }
 
@@ -464,9 +492,9 @@ impl IndexSwitch {
 impl RegionBranchOpInterface for IndexSwitch {
     fn get_entry_successor_regions(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> RegionSuccessorIter<'_> {
-        let selector = operands[0].as_deref().and_then(|v| v.as_u32());
+        let selector = operands[0].as_ref().and_then(|v| v.borrow().as_u32());
         let selected = selector.map(|s| self.get_case_index_for_selector(s));
 
         match selected {
@@ -515,9 +543,9 @@ impl RegionBranchOpInterface for IndexSwitch {
 
     fn get_region_invocation_bounds(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> SmallVec<[InvocationBounds; 1]> {
-        let selector = operands[0].as_deref().and_then(|v| v.as_u32());
+        let selector = operands[0].as_ref().and_then(|v| v.borrow().as_u32());
 
         if let Some(selector) = selector {
             let mut bounds = smallvec![InvocationBounds::Never; self.num_cases()];
@@ -557,10 +585,11 @@ impl Canonicalizable for IndexSwitch {
 /// NOTE: Attempting to use this op in any other context than the one described above is invalid,
 /// and the implementation of various interfaces by this op will panic if that assumption is
 /// violated.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ScfDialect,
     traits(Terminator, ReturnLike),
-    implements(RegionBranchTerminatorOpInterface)
+    implements(RegionBranchTerminatorOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Condition {
     #[operand]
@@ -585,7 +614,7 @@ impl RegionBranchTerminatorOpInterface for Condition {
 
     fn get_successor_regions(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> SmallVec<[RegionSuccessorInfo; 2]> {
         // A [While] loop has two regions: `before` (containing this op), and `after`, which this
         // op branches to when the condition is true. If the condition is false, control is
@@ -594,7 +623,7 @@ impl RegionBranchTerminatorOpInterface for Condition {
         //
         // We can return a single statically-known region if we were given a constant condition
         // value, otherwise we must return both possible regions.
-        let cond = operands[0].as_deref().and_then(|v| v.as_bool());
+        let cond = operands[0].as_ref().and_then(|v| v.borrow().as_bool());
         let mut regions = SmallVec::<[RegionSuccessorInfo; 2]>::default();
 
         let parent_op = self.parent_op().unwrap();
@@ -628,7 +657,7 @@ impl RegionBranchTerminatorOpInterface for Condition {
 
 /// The [Yield] op is used in conjunction with [If] and [While] ops as a return-like terminator.
 ///
-/// * With [If], its regions must be terminated with either a [Yield] or an [Unreachable] op.
+/// * With [If], its regions must be terminated with either a [Yield] or an `Unreachable` op.
 /// * With [While], a [Yield] is only valid in the `after` region, and the yielded operands must
 ///   match the region arguments of the `before` region. Thus to return values from the body of a
 ///   loop, one must first yield them from the `after` region to the `before` region using [Yield],
@@ -639,13 +668,15 @@ impl RegionBranchTerminatorOpInterface for Condition {
 /// conjunction with [While], the arity and type of the operands must match the region arguments
 /// of the `before` region. When used in conjunction with [If], both the `if_true` and `if_false`
 /// regions must yield the same arity and types.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ScfDialect,
     traits(Terminator, ReturnLike, Pure, AlwaysSpeculatable),
     implements(
         RegionBranchTerminatorOpInterface,
         MemoryEffectOpInterface,
-        ConditionallySpeculatable
+        ConditionallySpeculatable,
+        OpPrinter,
     )
 )]
 pub struct Yield {
@@ -668,7 +699,7 @@ impl RegionBranchTerminatorOpInterface for Yield {
 
     fn get_successor_regions(
         &self,
-        _operands: &[Option<Box<dyn AttributeValue>>],
+        _operands: &[Option<AttributeRef>],
     ) -> SmallVec<[RegionSuccessorInfo; 2]> {
         // Depending on the type of operation containing this yield, the set of successor regions
         // is always known.
@@ -688,16 +719,6 @@ impl RegionBranchTerminatorOpInterface for Yield {
         } else {
             panic!("unsupported parent operation for '{}': '{}'", self.name(), parent_op.name())
         }
-    }
-}
-
-impl EffectOpInterface<MemoryEffect> for Yield {
-    fn has_no_effect(&self) -> bool {
-        true
-    }
-
-    fn effects(&self) -> EffectIterator<::midenc_hir::effects::MemoryEffect> {
-        EffectIterator::from_smallvec(::midenc_hir::smallvec![])
     }
 }
 

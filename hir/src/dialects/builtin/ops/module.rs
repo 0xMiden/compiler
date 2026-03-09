@@ -1,9 +1,13 @@
 use crate::{
-    Ident, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
+    OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface, Symbol, SymbolManager,
     SymbolManagerMut, SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList,
     UnsafeIntrusiveEntityRef, Usable, Visibility,
     derive::operation,
-    dialects::builtin::BuiltinDialect,
+    dialects::builtin::{
+        BuiltinDialect,
+        attributes::{IdentAttr, VisibilityAttr},
+    },
+    print::AsmPrinter,
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
         NoTerminator, SingleBlock, SingleRegion,
@@ -12,29 +16,29 @@ use crate::{
 
 pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 
-/// A [Module] is a namespaced container for [Function] definitions, and represents the most atomic
-/// translation unit that supports compilation to Miden Assembly.
+/// A [Module] is a namespaced container for [super::Function] definitions, and represents the most
+/// atomic translation unit that supports compilation to Miden Assembly.
 ///
-/// [Module] cannot be nested, use [Component] for such use cases.
+/// [Module] cannot be nested, use [super::Component] for such use cases.
 ///
 /// Modules can contain one of the following entities:
 ///
-/// * [Segment], describing how a specific region of memory should be initialized (i.e. what content
-///   it should be assumed to contain on program start). Segment definitions must not conflict
-///   within a shared-everything boundary. For example, multiple segments within the same module,
-///   or segments defined in sibling modules of the same [Component].
-/// * [Function], either a declaration of an externally-defined function, or a definition.
+/// * [super::Segment], describing how a specific region of memory should be initialized (i.e. what
+///   content it should be assumed to contain on program start). Segment definitions must not
+///   conflict within a shared-everything boundary. For example, multiple segments within the same
+///   module, or segments defined in sibling modules of the same [super::Component].
+/// * [super::Function], either a declaration of an externally-defined function, or a definition.
 ///   Declarations are required in order to reference functions which are not in the compilation
 ///   graph, but are expected to be provided at runtime. The difference between the two depends on
-///   whether or not the [Function] operation has a region (no region == declaration).
-/// * [GlobalVariable], either a declaration of an externally-defined global, or a definition, same
-///   as [Function].
+///   whether or not the [super::Function] operation has a region (no region == declaration).
+/// * [super::GlobalVariable], either a declaration of an externally-defined global, or a
+///   definition, same as [super::Function].
 ///
-/// Multiple modules can be grouped together into a [Component]. Doing so allows interprocedural
-/// analysis to reason across call boundaries for functions defined in different modules, in
-/// particular, dead code analysis.
+/// Multiple modules can be grouped together into a [super::Component]. Doing so allows
+/// interprocedural analysis to reason across call boundaries for functions defined in different
+/// modules, in particular, dead code analysis.
 ///
-/// Modules may also have a specified [Visibility]:
+/// Modules may also have a specified [crate::dialects::builtin::attributes::Visibility]:
 ///
 /// * `Visibility::Public` indicates that all functions exported from the module with `Public`
 ///   visibility form the public interface of the module, and thus are not permitted to be dead-
@@ -46,7 +50,7 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 ///   callsites are known statically. If the address of any of those functions is captured, they
 ///   must not be modified.
 /// * `Visibility::Private` indicates that the module and its exports are only visible to other
-///   modules in the same [Component], and otherwise adheres to the same rules as `Internal`.
+///   modules in the same [super::Component], and otherwise adheres to the same rules as `Internal`.
 #[operation(
     dialect = BuiltinDialect,
     traits(
@@ -62,10 +66,10 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 )]
 pub struct Module {
     #[attr]
-    name: Ident,
+    name: IdentAttr,
     #[attr]
     #[default]
-    visibility: Visibility,
+    visibility: VisibilityAttr,
     #[region]
     body: RegionRef,
     #[default]
@@ -82,20 +86,45 @@ impl Module {
 }
 
 impl OpPrinter for Module {
-    fn print(
-        &self,
-        flags: &crate::OpPrintingFlags,
-        _context: &crate::Context,
-    ) -> crate::formatter::Document {
-        use crate::formatter::*;
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_space();
+        printer.print_keyword(self.get_visibility().as_str());
+        printer.print_space();
+        printer.print_symbol_name(self.get_name().as_symbol());
+        printer.print_space();
+        printer.print_region(&self.body());
+    }
+}
 
-        let header = display(self.op.name())
-            + const_text(" ")
-            + display(self.visibility())
-            + const_text(" @")
-            + display(self.name().as_str());
-        let body = crate::print::render_regions(&self.op, flags);
-        header + body
+impl OpParser for Module {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use crate::parse::Token;
+
+        let visibility = parser
+            .parse_keyword_from(&[
+                Token::BareIdent("public"),
+                Token::BareIdent("private"),
+                Token::BareIdent("internal"),
+            ])?
+            .into_inner()
+            .parse::<Visibility>()
+            .expect("one or more of these visibilities are no longer valid");
+        state.add_attribute(
+            "visibility",
+            parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility),
+        );
+
+        let name = parser.parse_symbol_name()?;
+        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+
+        let region = parser.context().create_region();
+        parser.parse_region(region, &[], true)?;
+        state.add_region(region);
+
+        Ok(())
     }
 }
 
@@ -114,8 +143,11 @@ impl midenc_session::Emit for Module {
         _mode: midenc_session::OutputMode,
         _session: &midenc_session::Session,
     ) -> anyhow::Result<()> {
+        use crate::Op;
         let flags = crate::OpPrintingFlags::default();
-        let document = <Module as OpPrinter>::print(self, &flags, self.op.context());
+        let mut printer = AsmPrinter::new(self.as_operation().context_rc(), &flags);
+        <Self as OpPrinter>::print(self, &mut printer);
+        let document = printer.finish();
         writer.write_fmt(format_args!("{document}"))
     }
 }
@@ -153,20 +185,19 @@ impl Symbol for Module {
     }
 
     fn name(&self) -> SymbolName {
-        Module::name(self).as_symbol()
+        self.get_name().as_symbol()
     }
 
     fn set_name(&mut self, name: SymbolName) {
-        let id = self.name_mut();
-        id.name = name;
+        Module::set_name(self, name)
     }
 
     fn visibility(&self) -> Visibility {
-        *Module::visibility(self)
+        *Module::get_visibility(self)
     }
 
     fn set_visibility(&mut self, visibility: Visibility) {
-        *self.visibility_mut() = visibility;
+        Module::set_visibility(self, visibility)
     }
 }
 

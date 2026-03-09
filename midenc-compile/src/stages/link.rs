@@ -1,7 +1,7 @@
 use alloc::{borrow::ToOwned, collections::BTreeMap, string::ToString, sync::Arc, vec::Vec};
 
 use midenc_frontend_wasm::FrontendOutput;
-use midenc_hir::{BuilderExt, OpBuilder, SourceSpan, interner::Symbol};
+use midenc_hir::{BuilderExt, OpBuilder, SourceSpan, interner::Symbol, print::AsmPrinter};
 #[cfg(feature = "std")]
 use midenc_session::Path;
 use midenc_session::{
@@ -155,16 +155,12 @@ impl Stage for LinkStage {
         // Emit HIR if requested
         let session = context.session();
         if session.should_emit(OutputType::Hir) {
-            use midenc_hir::{Op, OpPrinter, OpPrintingFlags};
-            let flags = OpPrintingFlags {
-                print_entry_block_headers: true,
-                print_intrinsic_attributes: false,
-                print_source_locations: session.options.print_hir_source_locations,
-            };
+            use midenc_hir::OpPrintingFlags;
+            let flags = OpPrintingFlags::from(&context.session().options);
             let op = link_output.component.borrow();
-            let hir_context = op.as_operation().context();
-            let doc = op.as_operation().print(&flags, hir_context);
-            let hir_str = doc.to_string();
+            let mut printer = AsmPrinter::new(context.clone(), &flags);
+            printer.print_operation(op);
+            let hir_str = printer.finish().to_string();
             session.emit(OutputMode::Text, &hir_str).into_diagnostic()?;
         }
 

@@ -77,7 +77,7 @@ pub trait GraphDiff {
     fn get_children<const INVERSE_EDGE: bool>(&self, node: BlockRef) -> SmallVec<[BlockRef; 8]>;
 }
 
-/// GraphDiff defines a CFG snapshot: given a set of Update<NodePtr>, provides
+/// GraphDiff defines a CFG snapshot: given a set of `Update<NodePtr>`, provides
 /// a getChildren method to get a Node's children based on the additional updates
 /// in the snapshot. The current diff treats the CFG as a graph rather than a
 /// multigraph. Added edges are pruned to be unique, and deleted edges will

@@ -1,19 +1,13 @@
 use alloc::rc::Rc;
 use core::fmt;
 
+pub use midenc_hir::testing::enable_compiler_instrumentation;
 use midenc_hir::{self as hir, Type};
 use proptest::{prelude::*, test_runner::TestRunner};
 use smallvec::SmallVec;
 
 use super::*;
 use crate::Constraint;
-
-pub fn logger_setup() {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
-}
 
 // Strategy:
 //
@@ -231,7 +225,7 @@ pub fn make_problem_inputs(raw_stack: Vec<usize>, arity: usize, copies: usize) -
         .into_iter()
         .map(|index| block_args[index] as hir::ValueRef)
         .collect::<Vec<hir::ValueRef>>();
-    let mut stack = crate::OperandStack::default();
+    let mut stack = crate::OperandStack::new(context.clone());
     let mut expected = SmallVec::with_capacity(arity);
     let mut constraints = SmallVec::with_capacity(arity);
     for value in raw_stack.into_iter().rev() {
@@ -304,7 +298,8 @@ prop_compose! {
 }
 
 pub fn solve_problem(problem: ProblemInputs) -> Result<(), TestCaseError> {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE").is_test(true).try_init();
+    enable_compiler_instrumentation();
+
     let block = problem.block.borrow();
     let block_args = block.arguments();
     match OperandMovementConstraintSolver::new_with_options(

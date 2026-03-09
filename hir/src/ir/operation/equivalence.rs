@@ -58,7 +58,7 @@ pub trait ValueHasher {
 
 /// A [ValueHasher] impl that hashes a value based on its address in memory.
 ///
-/// This is generally used with [OperationEquivalence] to require operands/results between two
+/// This is generally used with [OperationHasher] to require operands/results between two
 /// operations to be exactly the same.
 #[derive(Default)]
 pub struct DefaultValueHasher;
@@ -92,14 +92,18 @@ impl Operation {
         // Hash operations based upon their:
         //
         // - Operation name
-        // - Attributes
         // - Result types
+        // - Properties
+        // - Attributes
         self.name.hash(hasher);
-        self.attrs.hash(hasher);
         for result in self.results().iter() {
             let result = result.borrow();
             result.ty().hash(hasher);
         }
+        for prop in self.properties() {
+            prop.hash(hasher);
+        }
+        self.attrs.hash(hasher);
 
         if !flags.contains(OperationEquivalenceFlags::IGNORE_LOCATIONS) {
             self.span.hash(hasher);
@@ -143,7 +147,8 @@ impl Operation {
             || self.num_successors() != rhs.num_successors()
             || self.num_operands() != rhs.num_operands()
             || self.num_results() != rhs.num_results()
-            || self.attrs != rhs.attrs
+            || !self.properties().eq(rhs.properties())
+            || self.attributes() != rhs.attributes()
         {
             return false;
         }

@@ -6,7 +6,10 @@ use core::{
 };
 
 use super::{Dialect, DialectRegistration};
-use crate::{FxHashMap, OpRegistration, OperationName, interner, traits::TraitInfo};
+use crate::{
+    AttributeRegistration, FxHashMap, OpRegistration, OperationName, attributes::AttributeName,
+    interner, traits::TraitInfo,
+};
 
 pub struct DialectInfo {
     /// The namespace of this dialect
@@ -15,12 +18,18 @@ pub struct DialectInfo {
     type_id: TypeId,
     /// The set of operations registered to this dialect
     registered_ops: Vec<OperationName>,
+    /// The set of attributes registered to this dialect
+    registered_attrs: Vec<AttributeName>,
     /// The set of dialect interfaces (traits) implemented by this dialect
     registered_interfaces: Vec<TraitInfo>,
     /// The set of trait implementations for operations of this dialect which for one reason or
     /// another could not be attached to the operation definition itself. These traits are instead
     /// late-bound at dialect registration time. This field is only used during dialect registration.
-    late_bound_traits: FxHashMap<interner::Symbol, Vec<TraitInfo>>,
+    late_bound_operation_traits: FxHashMap<interner::Symbol, Vec<TraitInfo>>,
+    /// The set of trait implementations for attributes of this dialect which for one reason or
+    /// another could not be attached to the attribute definition itself. These traits are instead
+    /// late-bound at dialect registration time. This field is only used during dialect registration.
+    late_bound_attribute_traits: FxHashMap<interner::Symbol, Vec<TraitInfo>>,
 }
 
 impl DialectInfo {
@@ -33,8 +42,10 @@ impl DialectInfo {
             name: <T as DialectRegistration>::NAMESPACE.into(),
             type_id,
             registered_ops: Default::default(),
+            registered_attrs: Default::default(),
             registered_interfaces: Default::default(),
-            late_bound_traits: Default::default(),
+            late_bound_operation_traits: Default::default(),
+            late_bound_attribute_traits: Default::default(),
         }
     }
 
@@ -50,6 +61,10 @@ impl DialectInfo {
         &self.registered_ops
     }
 
+    pub fn attributes(&self) -> &[AttributeName] {
+        &self.registered_attrs
+    }
+
     pub fn register_operation<T>(&mut self) -> OperationName
     where
         T: OpRegistration,
@@ -58,8 +73,26 @@ impl DialectInfo {
         match self.registered_ops.binary_search_by_key(&opcode, |op| op.name()) {
             Ok(index) => self.registered_ops[index].clone(),
             Err(index) => {
-                let extra_traits = self.late_bound_traits.remove(&opcode).unwrap_or_default();
+                let extra_traits =
+                    self.late_bound_operation_traits.remove(&opcode).unwrap_or_default();
                 let name = OperationName::new::<T>(self.name, extra_traits);
+                self.registered_ops.insert(index, name.clone());
+                name
+            }
+        }
+    }
+
+    pub fn get_or_register_with(
+        &mut self,
+        opcode: interner::Symbol,
+        init: fn(interner::Symbol, Vec<TraitInfo>) -> OperationName,
+    ) -> OperationName {
+        match self.registered_ops.binary_search_by_key(&opcode, |op| op.name()) {
+            Ok(index) => self.registered_ops[index].clone(),
+            Err(index) => {
+                let extra_traits =
+                    self.late_bound_operation_traits.remove(&opcode).unwrap_or_default();
+                let name = init(self.name, extra_traits);
                 self.registered_ops.insert(index, name.clone());
                 name
             }
@@ -72,7 +105,54 @@ impl DialectInfo {
         Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
     {
         let opcode = <T as OpRegistration>::name();
-        let traits = self.late_bound_traits.entry(opcode).or_default();
+        let traits = self.late_bound_operation_traits.entry(opcode).or_default();
+        let trait_type_id = TypeId::of::<Trait>();
+        if let Err(index) = traits.binary_search_by(|ti| ti.type_id().cmp(&trait_type_id)) {
+            traits.insert(index, TraitInfo::new::<T, Trait>());
+        }
+    }
+
+    pub fn register_attribute<T>(&mut self) -> AttributeName
+    where
+        T: AttributeRegistration,
+    {
+        let name = <T as AttributeRegistration>::name();
+        match self.registered_attrs.binary_search_by_key(&name, |attr| attr.name()) {
+            Ok(index) => self.registered_attrs[index].clone(),
+            Err(index) => {
+                let extra_traits =
+                    self.late_bound_attribute_traits.remove(&name).unwrap_or_default();
+                let name = AttributeName::new::<T>(self.name, extra_traits);
+                self.registered_attrs.insert(index, name.clone());
+                name
+            }
+        }
+    }
+
+    pub fn get_or_register_attribute_with(
+        &mut self,
+        name: interner::Symbol,
+        init: fn(interner::Symbol, Vec<TraitInfo>) -> AttributeName,
+    ) -> AttributeName {
+        match self.registered_attrs.binary_search_by_key(&name, |attr| attr.name()) {
+            Ok(index) => self.registered_attrs[index].clone(),
+            Err(index) => {
+                let extra_traits =
+                    self.late_bound_attribute_traits.remove(&name).unwrap_or_default();
+                let name = init(self.name, extra_traits);
+                self.registered_attrs.insert(index, name.clone());
+                name
+            }
+        }
+    }
+
+    pub fn register_attribute_trait<T, Trait>(&mut self)
+    where
+        T: AttributeRegistration + Unsize<Trait> + 'static,
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+    {
+        let name = <T as AttributeRegistration>::name();
+        let traits = self.late_bound_attribute_traits.entry(name).or_default();
         let trait_type_id = TypeId::of::<Trait>();
         if let Err(index) = traits.binary_search_by(|ti| ti.type_id().cmp(&trait_type_id)) {
             traits.insert(index, TraitInfo::new::<T, Trait>());
@@ -99,7 +179,7 @@ impl DialectInfo {
         }
     }
 
-    /// Returns true if this operation implements `Trait`
+    /// Returns true if this dialect implements `Trait`
     pub fn implements<Trait>(&self) -> bool
     where
         Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,

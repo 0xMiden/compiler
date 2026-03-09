@@ -1,23 +1,21 @@
 mod builders;
 mod ops;
 
-use alloc::boxed::Box;
-
 pub use self::{builders::TestOpBuilder, ops::*};
 use crate::{
-    AttributeValue, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, Immediate,
-    OperationRef, SourceSpan, Type,
+    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, Immediate, OperationRef, SourceSpan,
+    Type, attributes::IntegerLikeAttr, derive::DialectRegistration,
 };
 
-#[derive(Debug)]
+#[derive(DialectRegistration, Debug)]
 pub struct TestDialect {
+    #[dialect(info)]
     info: DialectInfo,
 }
 
-impl TestDialect {
-    #[inline]
-    pub fn num_registered(&self) -> usize {
-        self.registered_ops().len()
+impl From<DialectInfo> for TestDialect {
+    fn from(info: DialectInfo) -> Self {
+        Self { info }
     }
 }
 
@@ -30,7 +28,7 @@ impl Dialect for TestDialect {
     fn materialize_constant(
         &self,
         builder: &mut dyn Builder,
-        attr: Box<dyn AttributeValue>,
+        attr: AttributeRef,
         ty: &Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
@@ -44,11 +42,15 @@ impl Dialect for TestDialect {
             return None;
         }
 
-        // Currently, we expect folds to produce `Immediate`-valued attributes
-        if let Some(&imm) = attr.downcast_ref::<Immediate>() {
+        // Currently, we expect folds to produce integer-valued attributes
+        let imm = attr
+            .borrow()
+            .as_attr()
+            .as_trait::<dyn IntegerLikeAttr>()
+            .map(|attr| (attr.as_immediate(), attr.ty().clone()));
+        if let Some((imm, imm_ty)) = imm {
             // If the immediate value is of the same type as the expected result type, we're ready
             // to materialize the constant
-            let imm_ty = imm.ty();
             if &imm_ty == ty {
                 let op_builder = builder.create::<Constant, _>(span);
                 return op_builder(imm)
@@ -102,25 +104,5 @@ impl Dialect for TestDialect {
         }
 
         None
-    }
-}
-
-impl DialectRegistration for TestDialect {
-    const NAMESPACE: &'static str = "test";
-
-    #[inline]
-    fn init(info: DialectInfo) -> Self {
-        Self { info }
-    }
-
-    fn register_operations(info: &mut DialectInfo) {
-        info.register_operation::<ops::Add>();
-        info.register_operation::<ops::Mul>();
-        info.register_operation::<ops::Shl>();
-        info.register_operation::<ops::Ret>();
-        info.register_operation::<ops::Constant>();
-        info.register_operation::<ops::Eq>();
-        info.register_operation::<ops::Neq>();
-        info.register_operation::<ops::Store>();
     }
 }

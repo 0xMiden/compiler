@@ -1,6 +1,6 @@
 use super::{
-    EntityCursor, EntityCursorMut, EntityList, EntityListItem, UnsafeIntrusiveEntityRef,
-    entity::EntityIter,
+    EntityList, EntityListCursor, EntityListCursorMut, EntityListItem, UnsafeIntrusiveEntityRef,
+    entity::EntityListIter,
 };
 
 /// The [Usable] trait is implemented for IR entities which are _defined_ and _used_, and as a
@@ -38,17 +38,17 @@ pub trait Usable {
     }
     /// Get an iterator over the uses of this definition
     #[inline]
-    fn iter_uses(&self) -> EntityIter<'_, Self::Use> {
+    fn iter_uses(&self) -> EntityListIter<'_, Self::Use> {
         self.uses().iter()
     }
     /// Get a cursor positioned on the first use of this definition, or the null cursor if unused.
-    fn first_use(&self) -> EntityCursor<'_, Self::Use> {
+    fn first_use(&self) -> EntityListCursor<'_, Self::Use> {
         self.uses().front()
     }
     /// Get a mutable cursor positioned on the first use of this definition, or the null cursor if
     /// unused.
     #[inline]
-    fn first_use_mut(&mut self) -> EntityCursorMut<'_, Self::Use> {
+    fn first_use_mut(&mut self) -> EntityListCursorMut<'_, Self::Use> {
         self.uses_mut().front_mut()
     }
     /// Add `user` to the set of uses of this definition

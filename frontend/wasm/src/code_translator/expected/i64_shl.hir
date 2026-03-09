@@ -1,10 +1,9 @@
-public builtin.function @test_wrapper() {
-^block4:
-    v0 = arith.constant 2 : i64;
-    v1 = arith.constant 1 : i64;
-    v2 = hir.cast v1 : u32;
-    v3 = arith.shl v0, v2 : i64;
+builtin.function public extern("C") @test_wrapper() {
+    %0 = arith.constant 2 : i64;
+    %1 = arith.constant 1 : i64;
+    %2 = hir.cast %1 <{ ty = #builtin.type<u32> }>;
+    %3 = arith.shl %0, %2;
     cf.br ^block5;
 ^block5:
-    builtin.ret ;
+    builtin.ret;
 };

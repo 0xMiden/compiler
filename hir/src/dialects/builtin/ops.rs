@@ -13,9 +13,7 @@ pub use self::{
         Component, ComponentBuilder as PrimComponentBuilder, ComponentExport, ComponentId,
         ComponentInterface, ComponentRef, ModuleExport, ModuleInterface,
     },
-    function::{
-        Function, FunctionBuilder as PrimFunctionBuilder, FunctionRef, LocalVariable, Ret, RetImm,
-    },
+    function::{Function, FunctionBuilder as PrimFunctionBuilder, FunctionRef, Ret, RetImm},
     global_variable::*,
     interface::{Interface, InterfaceBuilder as PrimInterfaceBuilder, InterfaceRef},
     module::{Module, ModuleBuilder as PrimModuleBuilder, ModuleRef},

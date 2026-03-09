@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use core::{
     any::Any,
     cell::{Cell, RefCell},
@@ -7,7 +6,7 @@ use core::{
 };
 
 use midenc_hir::{
-    AttributeValue, Block, BlockRef, CallOpInterface, CallableOpInterface, EntityWithId, Forward,
+    AttributeRef, Block, BlockRef, CallOpInterface, CallableOpInterface, EntityWithId, Forward,
     Operation, OperationRef, ProgramPoint, RegionBranchOpInterface, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, RegionSuccessorIter, Report, SmallVec, SourceSpan, Spanned,
     Symbol, SymbolManager, SymbolMap, SymbolTable, ValueRef,
@@ -506,7 +505,7 @@ impl DataFlowAnalysis for DeadCodeAnalysis {
     }
 }
 
-type MaybeConstOperands = SmallVec<[Option<Box<dyn AttributeValue>>; 2]>;
+type MaybeConstOperands = SmallVec<[Option<AttributeRef>; 2]>;
 
 impl DeadCodeAnalysis {
     /// Find and mark callable symbols with potentially unknown callsites as having overdefined
@@ -579,7 +578,9 @@ impl DeadCodeAnalysis {
                     target: self.debug_name(), "found symbol use whose user does not implement CallOpInterface - marking \
                      symbol as having unknown predecessors"
                 );
-                if let Some(symbol) = top_symbol_table.lookup_symbol_ref(&symbol_attr.path) {
+                if let Some(symbol) =
+                    top_symbol_table.lookup_symbol_ref(symbol_attr.borrow().path())
+                {
                     let mut state = solver
                         .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(symbol));
                     state.set_has_unknown_predecessors();
@@ -955,8 +956,7 @@ fn get_operand_values<F>(op: &Operation, mut get_lattice: F) -> Option<MaybeCons
 where
     F: FnMut(&ValueRef) -> AnalysisStateGuardMut<'_, Lattice<ConstantValue>>,
 {
-    let mut operands =
-        SmallVec::<[Option<Box<dyn AttributeValue>>; 2]>::with_capacity(op.num_operands());
+    let mut operands = SmallVec::<[Option<AttributeRef>; 2]>::with_capacity(op.num_operands());
     for operand in op.operands().all() {
         let operand = operand.borrow();
         let value = operand.as_value_ref();

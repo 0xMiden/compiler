@@ -92,10 +92,7 @@ fn fibonacci() {
 
 #[test]
 fn collatz() {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    crate::testing::setup::enable_compiler_instrumentation();
 
     fn expected(mut n: u32) -> u32 {
         let mut steps = 0;
@@ -134,10 +131,7 @@ fn collatz() {
 
 #[test]
 fn is_prime() {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    crate::testing::setup::enable_compiler_instrumentation();
 
     fn expected(n: u32) -> bool {
         if n <= 1 {

@@ -19,3 +19,7 @@ std = ["midenc-hir/std"]
 log.workspace = true
 midenc-dialect-arith.workspace = true
 midenc-hir.workspace = true
+
+[dev-dependencies]
+# Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+midenc-hir = { path = "../../hir", features = ["logging"] }

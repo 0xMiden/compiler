@@ -284,11 +284,11 @@ where
     type Target = <P as Pass>::Target;
 
     fn as_any(&self) -> &dyn Any {
-        (**self).as_any()
+        <P as Pass>::as_any(self)
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
-        (**self).as_any_mut()
+        <P as Pass>::as_any_mut(self)
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn Any> {
@@ -298,7 +298,7 @@ where
 
     #[inline]
     fn name(&self) -> &'static str {
-        (**self).name()
+        <P as Pass>::name(self)
     }
 
     #[inline]

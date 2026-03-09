@@ -4,9 +4,9 @@ use core::cell::RefCell;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    CallConv, FunctionType, Ident, Op, Signature, SmallVec, SourceSpan, SymbolPath, ValueRange,
-    ValueRef, Visibility,
-    dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, ModuleBuilder},
+    CallConv, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolPath, ValueRange, ValueRef,
+    Visibility,
+    dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, attributes::Signature},
 };
 use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
 
@@ -28,8 +28,9 @@ pub fn generate_export_lifting_function(
     core_export_func_path: SymbolPath,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
-    let cross_ctx_export_sig_flat = flatten_function_type(&export_func_ty, CallConv::CanonLift)
-        .map_err(|e| {
+    let context = { component_builder.component.borrow().as_operation().context_rc() };
+    let cross_ctx_export_sig_flat =
+        flatten_function_type(&context, &export_func_ty, CallConv::CanonLift).map_err(|e| {
             let message = format!(
                 "Component export lifting generation. Signature for exported function \
                  {core_export_func_path} requires flattening. Error: {e}"
@@ -69,7 +70,7 @@ pub fn generate_export_lifting_function(
     // wrapper generated here.
     core_module_builder
         .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Private);
-    let core_export_func_sig = core_export_func_ref.borrow().signature().clone();
+    let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();
 
     if needs_transformation(&cross_ctx_export_sig_flat) {
         generate_lifting_with_transformation(
@@ -142,13 +143,14 @@ fn generate_lifting_with_transformation(
          have only one result",
     );
     assert!(
-        cross_ctx_export_sig_flat.results()[0].purpose == midenc_hir::ArgumentPurpose::StructReturn,
+        cross_ctx_export_sig_flat.results()[0].is_sret_param(),
         "The flattened signature for {export_func_ident} component export function is expected to \
          have a pointer in the result",
     );
 
     // Extract flattened result types from the exported component-level function type
-    let flattened_results = flatten_types(&export_func_ty.results).map_err(|e| {
+    let context = { core_export_func_ref.borrow().as_operation().context_rc() };
+    let flattened_results = flatten_types(&context, &export_func_ty.results).map_err(|e| {
         let message = format!(
             "Failed to flatten result types for exported function {core_export_func_path}: {e}"
         );
@@ -167,9 +169,9 @@ fn generate_lifting_with_transformation(
         params: cross_ctx_export_sig_flat.params,
         results: flattened_results.clone(),
         cc: cross_ctx_export_sig_flat.cc,
-        visibility: cross_ctx_export_sig_flat.visibility,
     };
-    let export_func_ref = component_builder.define_function(export_func_ident, new_func_sig)?;
+    let export_func_ref =
+        component_builder.define_function(export_func_ident, Visibility::Public, new_func_sig)?;
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -270,8 +272,11 @@ fn generate_direct_lifting(
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
 ) -> WasmResult<()> {
-    let export_func_ref =
-        component_builder.define_function(export_func_ident, cross_ctx_export_sig_flat.clone())?;
+    let export_func_ref = component_builder.define_function(
+        export_func_ident,
+        Visibility::Public,
+        cross_ctx_export_sig_flat.clone(),
+    )?;
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();

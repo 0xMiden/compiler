@@ -1,8 +1,6 @@
 use alloc::{collections::BTreeMap, sync::Arc, vec, vec::Vec};
 use core::{fmt, str::FromStr};
 
-use crate::define_attr_type;
-
 pub trait IntoBytes {
     fn into_bytes(self) -> Vec<u8>;
 }
@@ -47,19 +45,6 @@ impl fmt::Debug for ConstantId {
 impl fmt::Display for ConstantId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "const{}", &self.0)
-    }
-}
-
-define_attr_type!(ConstantId);
-
-impl crate::AttrPrinter for ConstantId {
-    fn print(
-        &self,
-        _flags: &crate::OpPrintingFlags,
-        context: &crate::Context,
-    ) -> crate::formatter::Document {
-        let data = context.get_constant(*self);
-        crate::formatter::display(data)
     }
 }
 

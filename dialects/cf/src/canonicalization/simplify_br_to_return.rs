@@ -132,7 +132,7 @@ impl RewritePattern for SimplifyBrToReturn {
 
         // Create the new `builtin.(return|return_imm)`
         let new_op = if let Some(ret_imm) = terminator_ret_imm {
-            rewriter.ret_imm(*ret_imm.value(), ret_imm.span())?.as_operation_ref()
+            rewriter.ret_imm(*ret_imm.get_value(), ret_imm.span())?.as_operation_ref()
         } else {
             rewriter.ret(new_returned, terminator_op.span())?.as_operation_ref()
         };

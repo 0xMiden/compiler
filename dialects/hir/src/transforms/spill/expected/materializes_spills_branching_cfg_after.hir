@@ -1,0 +1,39 @@
+builtin.function public extern("C") @materializes_spills_branching_cfg(%0: ptr<u8, element>) -> u32 {
+    %1 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+    %2 = arith.constant 32 : u32;
+    %3 = arith.add %1, %2 <{ overflow = #builtin.overflow<unchecked> }>;
+    %4 = hir.int_to_ptr %3 <{ ty = #builtin.type<ptr<u128, element>> }>;
+    %5 = hir.load %4;
+    %6 = arith.constant 64 : u32;
+    %7 = arith.add %1, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+    %8 = hir.int_to_ptr %7 <{ ty = #builtin.type<ptr<u128, element>> }>;
+    %9 = hir.load %8;
+    %10 = arith.constant 0 : u32;
+    %11 = arith.eq %1, %10;
+    cf.cond_br %11 ^block2, ^block3 : (i1);
+^block2:
+    %12 = arith.constant 1 : u64;
+    hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+    %13 = hir.exec ::@test::@example(%8, %5, %9, %9, %12) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+    hir.store %4, %9 : (ptr<u128, element>, u128);
+    %14 = arith.constant 5 : u32;
+    %26 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+    %15 = arith.add %26, %14 <{ overflow = #builtin.overflow<unchecked> }>;
+    cf.br ^block5;
+^block5:
+    cf.br ^block4:(%13);
+^block3:
+    %16 = arith.constant 8 : u32;
+    %17 = arith.add %1, %16 <{ overflow = #builtin.overflow<unchecked> }>;
+    cf.br ^block6;
+^block6:
+    cf.br ^block4:(%17);
+^block4(%18: u32):
+    %19 = arith.constant 72 : u32;
+    %20 = arith.add %1, %19 <{ overflow = #builtin.overflow<unchecked> }>;
+    %21 = arith.add %20, %18 <{ overflow = #builtin.overflow<unchecked> }>;
+    %22 = hir.int_to_ptr %21 <{ ty = #builtin.type<ptr<u64, element>> }>;
+    hir.store %4, %9 : (ptr<u128, element>, u128);
+    %23 = hir.load %22;
+    builtin.ret %3 : (u32);
+};

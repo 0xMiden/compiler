@@ -1,15 +1,15 @@
 use super::BuiltinOpBuilder;
 use crate::{
-    Builder, Ident, Op, OpBuilder, Report, Signature, SourceSpan, Spanned, SymbolName, SymbolTable,
-    Type, UnsafeIntrusiveEntityRef, Visibility,
+    Builder, Ident, Op, OpBuilder, Report, SourceSpan, Spanned, SymbolName, SymbolTable, Type,
+    UnsafeIntrusiveEntityRef, Visibility,
     constants::ConstantData,
     dialects::builtin::{
         Function, FunctionRef, GlobalVariable, GlobalVariableRef, Module, ModuleRef,
-        PrimModuleBuilder, Segment,
+        PrimModuleBuilder, Segment, attributes::Signature,
     },
 };
 
-/// A specialized builder for constructing/modifying [crate::dialects::hir::Module]
+/// A specialized builder for constructing/modifying [crate::dialects::builtin::Module]
 pub struct ModuleBuilder {
     pub module: ModuleRef,
     builder: OpBuilder,
@@ -41,24 +41,24 @@ impl ModuleBuilder {
         &mut self.builder
     }
 
-    /// Declare a new [crate::dialects::hir::Function] in this module with the given name and
+    /// Declare a new [crate::dialects::builtin::Function] in this module with the given name and
     /// signature.
     ///
-    /// The returned [FunctionRef] can be used to construct a [FunctionBuilder] to define the body
-    /// of the function.
+    /// The returned [FunctionRef] can be used to construct a [super::FunctionBuilder] to define the
+    /// body of the function.
     pub fn define_function(
         &mut self,
         name: Ident,
+        visibility: Visibility,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        let function_ref = self.builder.create_function(name, signature)?;
-        Ok(function_ref)
+        self.builder.create_function(name, visibility, signature)
     }
 
     /// Declare a new [GlobalVariable] in this module with the given name, visibility, and type.
     ///
-    /// The returned [UnsafeIntrusiveEntityRef] can be used to construct a [InitializerBuilder]
-    /// over the body of the global variable initializer region.
+    /// The returned [UnsafeIntrusiveEntityRef] can be used to construct a builder over the body
+    /// of the global variable initializer region.
     pub fn define_global_variable(
         &mut self,
         name: Ident,
@@ -100,13 +100,16 @@ impl ModuleBuilder {
                 let mut op = symbol_ref.borrow_mut();
                 match op.as_symbol_operation_mut().downcast_mut::<Function>() {
                     Some(function) => {
-                        function.signature_mut().visibility = visibility;
+                        *function.get_linkage_mut() = visibility;
                     }
                     None => panic!("expected {name} to be a function"),
                 }
             }
             None => {
-                panic!("failed to find function {name} in module {}", self.module.borrow().name())
+                panic!(
+                    "failed to find function {name} in module {}",
+                    self.module.borrow().get_name()
+                )
             }
         }
     }

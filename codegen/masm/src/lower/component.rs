@@ -14,7 +14,7 @@ use midenc_session::{
 use smallvec::SmallVec;
 
 use crate::{
-    TraceEvent,
+    OperandStack, TraceEvent,
     artifact::MasmComponent,
     emitter::BlockEmitter,
     linker::{LinkInfo, Linker},
@@ -152,9 +152,9 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
     for sref in link_info.segment_layout().iter() {
         let s = sref.borrow();
         resolved.push(ResolvedDataSegment {
-            offset: *s.offset(),
+            offset: *s.get_offset(),
             data: s.initializer().as_slice().to_vec(),
-            readonly: *s.readonly(),
+            readonly: *s.get_readonly(),
         });
     }
     Ok(match merge_data_segments(resolved).map_err(Report::msg)? {
@@ -478,7 +478,7 @@ impl MasmModuleBuilder<'_> {
             link_info: self.link_info,
             invoked: self.invoked_from_init,
             target: Default::default(),
-            stack: Default::default(),
+            stack: OperandStack::new(gv.as_operation().context_rc()),
             trace_target: TraceTarget::category("codegen")
                 .with_relevant_symbol(gv.name().as_symbol()),
         };
@@ -489,7 +489,7 @@ impl MasmModuleBuilder<'_> {
         let return_ty = block_emitter.stack.peek().unwrap().ty();
         assert_eq!(
             &return_ty,
-            gv.ty(),
+            &*gv.get_ty(),
             "expected initializer to return value of same type as declaration"
         );
 
@@ -521,7 +521,7 @@ impl MasmFunctionBuilder {
     pub fn new(function: &builtin::Function) -> Result<Self, Report> {
         use midenc_hir::{Symbol, Visibility};
 
-        let name = function.name();
+        let name = *function.get_name();
         let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(Span::new(
             name.span,
             name.as_ref().into(),
@@ -575,7 +575,7 @@ impl MasmFunctionBuilder {
 
         use midenc_hir_analysis::analyses::LivenessAnalysis;
 
-        let demangled_symbol_name = midenc_hir::demangle::demangle(function.name());
+        let demangled_symbol_name = midenc_hir::demangle::demangle(function.get_name().as_str());
         let trace_target = TraceTarget::category("codegen")
             .with_relevant_symbol(midenc_hir::SymbolName::intern(demangled_symbol_name));
 
@@ -585,7 +585,7 @@ impl MasmFunctionBuilder {
 
         let mut invoked = BTreeSet::default();
         let entry = function.entry_block();
-        let mut stack = crate::OperandStack::default();
+        let mut stack = crate::OperandStack::new(function.as_operation().context_rc());
         {
             let entry_block = entry.borrow();
             for arg in entry_block.arguments().iter().rev().copied() {
