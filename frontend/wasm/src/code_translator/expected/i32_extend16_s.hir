@@ -1,8 +1,7 @@
-public builtin.function @test_wrapper() {
-^block4:
-    v0 = arith.constant 1 : i32;
-    v1 = wasm.i32_extend_s v0 : i32 #[logical_ty = I16];
+builtin.function public extern("C") @test_wrapper() {
+    %0 = arith.constant 1 : i32;
+    %1 = wasm.i32_extend_s %0 <{ logical_ty = #wasm.logical_ty_i32<i16> }>;
     cf.br ^block5;
 ^block5:
-    builtin.ret ;
+    builtin.ret;
 };
