@@ -5,7 +5,7 @@ use miden_stdlib_sys::{Digest, Felt, Word};
 ///
 /// Storage slots and map items store a single [`Word`]. Implementations must define a reversible
 /// conversion between the Rust type and a [`Word`].
-pub trait WordValue: Into<Word> + From<Word> {}
+pub trait WordValue: TryInto<Word> + TryFrom<Word> {}
 
 impl WordValue for Word {}
 impl WordValue for Felt {}
@@ -21,7 +21,7 @@ impl WordValue for miden_base_sys::bindings::NoteType {}
 ///
 /// Map keys are passed by value for lookups to avoid requiring `Clone` just to materialize a
 /// [`Word`] for the host call.
-pub trait WordKey: Copy + Into<Word> {}
+pub trait WordKey: Copy + TryInto<Word> {}
 
 impl WordKey for Word {}
 impl WordKey for Felt {}
@@ -59,13 +59,20 @@ impl<T: WordValue> Storage<T> {
     /// Reads the current value from account storage.
     #[inline(always)]
     pub fn get(&self) -> T {
-        storage::get_item(self.slot).into()
+        storage::get_item(self.slot)
+            .try_into()
+            .unwrap_or_else(|_| panic!("storage slot {:?} contained an invalid word", self.slot))
     }
 
     /// Sets an item `value` in the account storage and returns the previous value.
     #[inline(always)]
     pub fn set(&mut self, value: T) -> T {
-        storage::set_item(self.slot, value.into()).into()
+        let value = value
+            .try_into()
+            .unwrap_or_else(|_| panic!("failed to convert value for storage slot {:?}", self.slot));
+        storage::set_item(self.slot, value)
+            .try_into()
+            .unwrap_or_else(|_| panic!("storage slot {:?} contained an invalid word", self.slot))
     }
 }
 
@@ -100,8 +107,12 @@ impl<K: WordKey, V: WordValue> StorageMap<K, V> {
     /// At the protocol layer, absent keys read as the default word value.
     #[inline(always)]
     pub fn get(&self, key: K) -> V {
-        let key: Word = key.into();
-        storage::get_map_item(self.slot, &key).into()
+        let key: Word = key.try_into().unwrap_or_else(|_| {
+            panic!("failed to convert key for storage map slot {:?}", self.slot)
+        });
+        storage::get_map_item(self.slot, &key).try_into().unwrap_or_else(|_| {
+            panic!("storage map slot {:?} contained an invalid word", self.slot)
+        })
     }
 
     /// Sets `value` for `key` in the account storage map and returns the previous value.
@@ -110,6 +121,14 @@ impl<K: WordKey, V: WordValue> StorageMap<K, V> {
     /// not distinguish "missing" from "default").
     #[inline(always)]
     pub fn set(&mut self, key: K, value: V) -> V {
-        storage::set_map_item(self.slot, key.into(), value.into()).into()
+        let key = key.try_into().unwrap_or_else(|_| {
+            panic!("failed to convert key for storage map slot {:?}", self.slot)
+        });
+        let value = value.try_into().unwrap_or_else(|_| {
+            panic!("failed to convert value for storage map slot {:?}", self.slot)
+        });
+        storage::set_map_item(self.slot, key, value).try_into().unwrap_or_else(|_| {
+            panic!("storage map slot {:?} contained an invalid word", self.slot)
+        })
     }
 }

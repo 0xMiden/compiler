@@ -1,6 +1,9 @@
+#![allow(clippy::infallible_try_from)]
+
 extern crate alloc;
 
 use alloc::vec::Vec;
+use core::convert::Infallible;
 
 use miden_field_repr::FromFeltRepr;
 use miden_stdlib_sys::{Digest, Felt, Word, hash_elements, intrinsics::crypto::merge};
@@ -31,13 +34,19 @@ impl From<AccountId> for Word {
     }
 }
 
-impl From<Word> for AccountId {
+impl TryFrom<Word> for AccountId {
+    type Error = &'static str;
+
     #[inline]
-    fn from(value: Word) -> Self {
-        Self {
+    fn try_from(value: Word) -> Result<Self, Self::Error> {
+        if value[0] != Felt::from(0u32) || value[1] != Felt::from(0u32) {
+            return Err("expected zero padding in the upper two felts");
+        }
+
+        Ok(Self {
             prefix: value[3],
             suffix: value[2],
-        }
+        })
     }
 }
 
@@ -92,9 +101,11 @@ impl Asset {
     }
 }
 
-impl From<Word> for Asset {
-    fn from(value: Word) -> Self {
-        Self::new(value)
+impl TryFrom<Word> for Asset {
+    type Error = Infallible;
+
+    fn try_from(value: Word) -> Result<Self, Self::Error> {
+        Ok(Self::new(value))
     }
 }
 
@@ -176,9 +187,11 @@ impl From<[Felt; 4]> for Recipient {
     }
 }
 
-impl From<Word> for Recipient {
-    fn from(value: Word) -> Self {
-        Recipient { inner: value }
+impl TryFrom<Word> for Recipient {
+    type Error = Infallible;
+
+    fn try_from(value: Word) -> Result<Self, Self::Error> {
+        Ok(Recipient { inner: value })
     }
 }
 
@@ -214,12 +227,14 @@ impl From<Tag> for Word {
     }
 }
 
-impl From<Word> for Tag {
+impl TryFrom<Word> for Tag {
+    type Error = &'static str;
+
     #[inline]
-    fn from(value: Word) -> Self {
-        Tag {
-            inner: Felt::from(value),
-        }
+    fn try_from(value: Word) -> Result<Self, Self::Error> {
+        Ok(Tag {
+            inner: value.try_into()?,
+        })
     }
 }
 
@@ -236,12 +251,14 @@ impl From<NoteIdx> for Word {
     }
 }
 
-impl From<Word> for NoteIdx {
+impl TryFrom<Word> for NoteIdx {
+    type Error = &'static str;
+
     #[inline]
-    fn from(value: Word) -> Self {
-        NoteIdx {
-            inner: Felt::from(value),
-        }
+    fn try_from(value: Word) -> Result<Self, Self::Error> {
+        Ok(NoteIdx {
+            inner: value.try_into()?,
+        })
     }
 }
 
@@ -264,12 +281,14 @@ impl From<NoteType> for Word {
     }
 }
 
-impl From<Word> for NoteType {
+impl TryFrom<Word> for NoteType {
+    type Error = &'static str;
+
     #[inline]
-    fn from(value: Word) -> Self {
-        NoteType {
-            inner: Felt::from(value),
-        }
+    fn try_from(value: Word) -> Result<Self, Self::Error> {
+        Ok(NoteType {
+            inner: value.try_into()?,
+        })
     }
 }
 
@@ -314,5 +333,28 @@ impl StorageSlotId {
     /// Returns the prefix of the [`StorageSlotId`].
     pub fn prefix(&self) -> Felt {
         self.prefix
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AccountId, Felt, NoteIdx, NoteType, Tag, Word};
+
+    #[test]
+    fn account_id_try_from_word_rejects_non_zero_padding() {
+        let word =
+            Word::from([Felt::from(1u32), Felt::from(0u32), Felt::from(2u32), Felt::from(3u32)]);
+
+        assert_eq!(AccountId::try_from(word), Err("expected zero padding in the upper two felts"));
+    }
+
+    #[test]
+    fn single_felt_wrappers_reject_non_zero_padding() {
+        let word =
+            Word::from([Felt::from(0u32), Felt::from(1u32), Felt::from(0u32), Felt::from(9u32)]);
+
+        assert_eq!(Tag::try_from(word), Err("expected zero padding in the upper three felts"));
+        assert_eq!(NoteIdx::try_from(word), Err("expected zero padding in the upper three felts"));
+        assert_eq!(NoteType::try_from(word), Err("expected zero padding in the upper three felts"));
     }
 }
