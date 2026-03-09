@@ -4,7 +4,7 @@ use miden_protocol::account::{
     AccountType, StorageSlotName,
     component::{
         AccountComponentMetadata, MapSlotSchema, StorageSchema, StorageSlotSchema, ValueSlotSchema,
-        WordSchema, storage::SchemaTypeId,
+        WordSchema, storage::SchemaType,
     },
 };
 use semver::Version;
@@ -51,39 +51,37 @@ impl AccountComponentMetadataBuilder {
         description: Option<String>,
         field: &syn::Field,
         field_type_attr: Option<String>,
-    ) -> Result<(), syn::Error> {
-        match typecheck_storage_field(field)? {
-            StorageFieldType::StorageMap => {
-                let args = extract_storage_type_args(field)?;
-                let key_schema = args
-                    .first()
-                    .map(word_schema_from_storage_type_arg)
-                    .unwrap_or_else(|| WordSchema::new_simple(SchemaTypeId::native_word()));
-                let value_schema = args
-                    .get(1)
-                    .map(word_schema_from_storage_type_arg)
-                    .unwrap_or_else(|| WordSchema::new_simple(SchemaTypeId::native_word()));
-                let slot_schema = StorageSlotSchema::Map(MapSlotSchema::new(
-                    description,
-                    None,
-                    key_schema,
-                    value_schema,
-                ));
-                self.storage.push((slot_name, slot_schema));
-            }
-            StorageFieldType::Storage => {
-                let r#type = if let Some(field_type) = field_type_attr.as_deref() {
-                    SchemaTypeId::new(field_type).map_err(|err| {
-                        syn::Error::new(
-                            field.span(),
-                            format!("invalid storage schema type identifier '{field_type}': {err}"),
-                        )
-                    })?
+    ) {
+        match typecheck_storage_field(field) {
+            Ok(StorageFieldType::StorageMap) => {
+                if let Some(description) = description {
+                    let key_schema = WordSchema::new_simple(SchemaType::native_word());
+                    let value_schema = WordSchema::new_simple(SchemaType::native_word());
+                    let slot_schema = StorageSlotSchema::Map(MapSlotSchema::new(
+                        Some(description),
+                        None,
+                        key_schema,
+                        value_schema,
+                    ));
+                    self.storage.push((slot_name, slot_schema));
                 } else {
-                    let args = extract_storage_type_args(field)?;
-                    args.first()
-                        .map(schema_type_id_from_storage_type_arg)
-                        .unwrap_or_else(SchemaTypeId::native_word)
+                    let key_schema = WordSchema::new_simple(SchemaType::native_word());
+                    let value_schema = WordSchema::new_simple(SchemaType::native_word());
+                    let slot_schema = StorageSlotSchema::Map(MapSlotSchema::new(
+                        None,
+                        None,
+                        key_schema,
+                        value_schema,
+                    ));
+                    self.storage.push((slot_name, slot_schema));
+                }
+            }
+            Ok(StorageFieldType::Value) => {
+                let r#type = if let Some(field_type) = field_type_attr.as_deref() {
+                    SchemaType::new(field_type)
+                        .unwrap_or_else(|_| panic!("well formed attribute type {field_type}"))
+                } else {
+                    SchemaType::native_word()
                 };
 
                 let word_schema = WordSchema::new_simple(r#type);

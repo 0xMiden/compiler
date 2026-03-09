@@ -80,12 +80,14 @@ log = { version = "0.4", features = ["kv"] }
 # Miden Dependencies
 miden-assembly = { version = "0.21", default-features = false }
 miden-core = { version = "0.21", default-features = false }
-miden-debug = { version = "0.4" }
+miden-debug = { version = "0.5" }
 miden-debug-types = { version = "0.21", default-features = false }
 miden-assembly-syntax = { version = "0.21", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
-miden-protocol = { version = "0.14.0-alpha.1", default-features = false }
-miden-standards = { version = "0.14.0-alpha.1", default-features = false }
+# miden-protocol = { version = "0.14.0-alpha.1", default-features = false }
+# miden-standards = { version = "0.14.0-alpha.1", default-features = false }
+miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b", version = "0.14.0-alpha.1", default-features = false }
+miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b", version = "0.14.0-alpha.1", default-features = false }
 miden-processor = { version = "0.21", default-features = false }
 miden-core-lib = { version = "0.21", default-features = false }
 miden-mast-package = { version = "0.21", default-features = false }
@@ -175,9 +177,10 @@ miden-field = { git = "https://github.com/0xMiden/crypto", rev = "7e5a2cbc1de2c0
 #miden-processor = { path = "../miden-vm/processor" }
 #miden-mast-package = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-mast-package = { path = "../miden-vm/package" }
-miden-protocol = { git = "https://github.com/0xMiden/protocol", branch = "next" }
-miden-standards = { git = "https://github.com/0xMiden/protocol", branch = "next" }
-miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "pr/migrate-to-vm-v0.21" }
+# miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
+# miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
+# miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "pr/migrate-to-vm-v0.21" }
+miden-debug = { path = "../../debug" }
 
 
 [profile.dev]

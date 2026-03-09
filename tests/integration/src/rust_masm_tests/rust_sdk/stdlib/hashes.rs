@@ -45,10 +45,12 @@ where
         // The generated `entrypoint` uses the `(out_ptr, in_ptr)` convention.
         let args = [Felt::new(out_addr as u64), Felt::new(in_addr as u64)];
         eval_package::<Felt, _, _>(&package, initializers, &args, &session, |trace| {
-            let vm_in: [u8; 32] = crate::testing::read_rust_memory(trace, in_addr)
+            let vm_in: [u8; 32] = trace
+                .read_from_rust_memory(in_addr)
                 .expect("expected memory to have been written");
             prop_assert_eq!(&ibytes, &vm_in, "VM input mismatch");
-            let vm_out: [u8; 32] = crate::testing::read_rust_memory(trace, out_addr)
+            let vm_out: [u8; 32] = trace
+                .read_from_rust_memory(out_addr)
                 .expect("expected memory to have been written");
             prop_assert_eq!(&rs_out, &vm_out, "VM output mismatch");
             Ok(())
@@ -94,10 +96,12 @@ where
 
         let args = [Felt::new(out_addr as u64), Felt::new(in_addr as u64)];
         eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
-            let vm_in: [u8; 64] = crate::testing::read_rust_memory(trace, in_addr)
+            let vm_in: [u8; 64] = trace
+                .read_from_rust_memory(in_addr)
                 .expect("expected memory to have been written");
             prop_assert_eq!(&ibytes, &vm_in, "VM input mismatch");
-            let vm_out: [u8; 32] = crate::testing::read_rust_memory(trace, out_addr)
+            let vm_out: [u8; 32] = trace
+                .read_from_rust_memory(out_addr)
                 .expect("expected memory to have been written");
             prop_assert_eq!(&rs_out, &vm_out, "VM output mismatch");
             Ok(())

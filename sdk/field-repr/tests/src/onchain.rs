@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use miden_debug::{ExecutionTrace, Felt as TestFelt, FromMidenRepr};
 use miden_field::Felt;
 use miden_field_repr::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
-use miden_integration_tests::testing::{Initializer, eval_package, read_rust_memory};
+use miden_integration_tests::testing::{Initializer, eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::build_felt_repr_test;
@@ -28,9 +28,11 @@ fn read_vec_felts(
     expected_len: usize,
 ) -> Vec<ReprFelt> {
     // Vec metadata layout is: [capacity, ptr, len, ?]
-    let data_ptr: u32 = read_rust_memory(trace, vec_meta_addr + 4)
+    let data_ptr: u32 = trace
+        .read_from_rust_memory(vec_meta_addr + 4)
         .expect("Failed to read Vec metadata[1] from memory");
-    let len = read_rust_memory(trace, vec_meta_addr + 8)
+    let len = trace
+        .read_from_rust_memory(vec_meta_addr + 8)
         .expect("Failed to read Vec metadata[2] from memory");
 
     assert_eq!(len, expected_len as u32, "Unexpected Vec length");
@@ -39,7 +41,8 @@ fn read_vec_felts(
     let felt_size_bytes = (<TestFelt as FromMidenRepr>::size_in_felts() as u32) * 4;
     for i in 0..len {
         let byte_addr = data_ptr + (i * felt_size_bytes);
-        let elem: TestFelt = read_rust_memory(trace, byte_addr)
+        let elem: TestFelt = trace
+            .read_from_rust_memory(byte_addr)
             .unwrap_or_else(|| panic!("Failed to read element {i}"));
         result.push(ReprFelt::new(elem.0.as_canonical_u64()));
     }
@@ -105,8 +108,9 @@ fn test_felt_reader() {
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
-        let result_word: [TestFelt; 4] =
-            read_rust_memory(trace, out_byte_addr).expect("Failed to read result from memory");
+        let result_word: [TestFelt; 4] = trace
+            .read_from_rust_memory(out_byte_addr)
+            .expect("Failed to read result from memory");
 
         let result_felts = [
             ReprFelt::new(result_word[0].0.as_int()),

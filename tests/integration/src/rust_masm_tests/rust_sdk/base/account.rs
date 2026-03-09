@@ -48,12 +48,10 @@ opt-level = "z"
 panic = "abort"
 debug = false
 
-{patch_section}
 "#,
         name = name,
         sdk_path = sdk_path.display(),
         component_package = component_package,
-        patch_section = crate::compiler_test::sdk_patch_section(),
     );
 
     let cargo_proj = project(name)

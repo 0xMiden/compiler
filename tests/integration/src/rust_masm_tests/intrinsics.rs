@@ -9,10 +9,7 @@ use proptest::{
     test_runner::{TestError, TestRunner},
 };
 
-use crate::{
-    CompilerTest,
-    rust_masm_tests::{PushToStackInputs, run_masm_vs_rust},
-};
+use crate::{CompilerTest, rust_masm_tests::run_masm_vs_rust};
 
 /// Compiles, runs VM vs. Rust fuzzing the inputs via proptest
 macro_rules! test_bin_op {
@@ -36,8 +33,8 @@ macro_rules! test_bin_op {
                         let b_felt: Felt = b.0;
                         let rs_out = a_felt $op b_felt;
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        a.push_to_stack_inputs(&mut args);
-                        b.push_to_stack_inputs(&mut args);
+                        a.push_to_operand_stack(&mut args);
+                        b.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
                 match res {
@@ -73,8 +70,8 @@ macro_rules! test_bin_op_via_u64 {
                         let b_felt: Felt = b.0;
                         let rs_out = a_felt.as_canonical_u64() $op b_felt.as_canonical_u64();
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        a.push_to_stack_inputs(&mut args);
-                        b.push_to_stack_inputs(&mut args);
+                        a.push_to_operand_stack(&mut args);
+                        b.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
                 match res {

@@ -11,25 +11,11 @@ use proptest::{
     test_runner::{TestError, TestRunner},
 };
 
-use super::{PushToStackInputs, run_masm_vs_rust};
+use super::run_masm_vs_rust;
 use crate::{
     CompilerTest,
     testing::{Initializer, eval_package},
 };
-
-fn push_i128_abi_parts(value: u128, args: &mut Vec<Felt>) {
-    // Under `-Z wasm_c_abi=spec`, rustc lowers i128/u128 parameters as two i64 parameters.
-    //
-    // The resulting Wasm function signature uses `i64` parameters. The wasm-c-abi `spec` lowering
-    // passes the low 64 bits first, followed by the high 64 bits.
-    //
-    // We split into (lo, hi) u64 halves and rely on the existing `u64` lowering in the test
-    // harness.
-    let lo = value as u64;
-    let hi = (value >> 64) as u64;
-    lo.push_to_stack_inputs(args);
-    hi.push_to_stack_inputs(args);
-}
 
 macro_rules! test_bin_op {
     ($name:ident, $op:tt, $op_ty:ty, $res_ty:ty, $a_range:expr, $b_range:expr) => {
@@ -53,8 +39,8 @@ macro_rules! test_bin_op {
                     .run(&($a_range, $b_range), move |(a, b)| {
                         let rs_out = a $op b;
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        a.push_to_stack_inputs(&mut args);
-                        b.push_to_stack_inputs(&mut args);
+                        a.push_to_operand_stack(&mut args);
+                        b.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
                 match res {
@@ -96,13 +82,13 @@ macro_rules! test_wide_bin_op {
                     let out_addr = 20u32 * 65536;
 
                     let mut args = Vec::<midenc_hir::Felt>::default();
-                    out_addr.push_to_stack_inputs(&mut args);
-                    push_i128_abi_parts(a as u128, &mut args);
-                    push_i128_abi_parts(b as u128, &mut args);
+                    out_addr.push_to_operand_stack(&mut args);
+                    a.push_to_operand_stack(&mut args);
+                    b.push_to_operand_stack(&mut args);
 
                     eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
                         let vm_out_bytes: [u8; 16] =
-                            crate::testing::read_rust_memory(trace, out_addr)
+                            trace.read_from_rust_memory(out_addr)
                                 .expect("output was not written");
 
                         let rs_out_bytes = rs_out.to_le_bytes();
@@ -146,7 +132,7 @@ macro_rules! test_unary_op {
                     .run(&($range), move |a| {
                         let rs_out = $op a;
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        a.push_to_stack_inputs(&mut args);
+                        a.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
                 match res {
@@ -179,8 +165,8 @@ macro_rules! test_func_two_arg {
                     .run(&(0..$a_ty::MAX/2, any::<$b_ty>()), move |(a, b)| {
                         let rust_out = $func(a, b);
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        a.push_to_stack_inputs(&mut args);
-                        b.push_to_stack_inputs(&mut args);
+                        a.push_to_operand_stack(&mut args);
+                        b.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rust_out, &package, &args, &test.session)
                     });
                 match res {
@@ -638,16 +624,15 @@ fn test_overflowing_arith<T>(
         let out_addr = 20u32 * 65536;
 
         let mut args = Vec::<midenc_hir::Felt>::default();
-        out_addr.push_to_stack_inputs(&mut args);
-        a.push_to_stack_inputs(&mut args);
-        b.push_to_stack_inputs(&mut args);
+        out_addr.push_to_operand_stack(&mut args);
+        a.push_to_operand_stack(&mut args);
+        b.push_to_operand_stack(&mut args);
 
         eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
             let ty_byte_size = std::mem::size_of::<T>();
             assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
             // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
-            let x: [u8; 9] =
-                crate::testing::read_rust_memory(trace, out_addr).expect("output was not written");
+            let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
             let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
 
             let rs_out_bytes =

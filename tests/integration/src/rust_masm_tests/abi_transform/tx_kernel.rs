@@ -222,8 +222,8 @@ end
     ];
 
     let _ = eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
-        let actual: [TestFelt; 4] = crate::testing::read_rust_memory(trace, out_addr)
-            .expect("expected output to be written");
+        let actual: [TestFelt; 4] =
+            trace.read_from_rust_memory(out_addr).expect("expected output to be written");
         let expected: [Felt; 4] = expected_digest.into();
         assert_eq!(
             [actual[0].0, actual[1].0, actual[2].0, actual[3].0],

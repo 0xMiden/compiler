@@ -101,7 +101,7 @@ fn test_adv_load_preimage() {
     let result_ptr = out_addr;
     // Read the Vec metadata from memory (capacity, ptr, len, padding)
     let vec_metadata: [TestFelt; 4] =
-        crate::testing::read_rust_memory(&trace, result_ptr).expect("Failed to read vec metadata");
+        trace.read_from_rust_memory(result_ptr).expect("Failed to read vec metadata");
 
     let capacity = vec_metadata[0].0.as_canonical_u64() as usize;
     let data_ptr = vec_metadata[1].0.as_canonical_u64() as u32;
@@ -111,7 +111,8 @@ fn test_adv_load_preimage() {
     let mut loaded: Vec<Felt> = Vec::with_capacity(capacity);
     for i in 0..(vec_len / 4) {
         let word_addr = data_ptr + (i * 4 * 4) as u32;
-        let w: [TestFelt; 4] = crate::testing::read_rust_memory(&trace, word_addr)
+        let w: [TestFelt; 4] = trace
+            .read_from_rust_memory(word_addr)
             .unwrap_or_else(|| panic!("Failed to read word at index {}", i));
         loaded.push(w[0].0);
         loaded.push(w[1].0);
