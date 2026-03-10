@@ -166,7 +166,7 @@ impl OpEmitter<'_> {
         let dst_bits = dst.size_in_bits() as u32;
         assert!(
             src_bits <= dst_bits,
-            "invalid zero-extension from {src} to {dst}: cannot zero-extend to a smaller type"
+            "invalid sign-extension from {src} to {dst}: cannot sign-extend to a smaller type"
         );
         match (&src, dst) {
             // If the types are equivalent, it's a no-op
