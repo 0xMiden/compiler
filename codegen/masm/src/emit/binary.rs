@@ -659,7 +659,7 @@ impl OpEmitter<'_> {
             ty if !ty.is_integer() => {
                 panic!("invalid binary operand: mod expects integer operands, got {ty}")
             }
-            ty => unimplemented!("mod for {ty} is not supported"),
+            ty => unimplemented!("checked_mod for {ty} is not supported"),
         }
         self.push(ty);
     }

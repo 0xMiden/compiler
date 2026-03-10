@@ -20,6 +20,7 @@ log.workspace = true
 miden-assembly.workspace = true
 midenc-expect-test.workspace = true
 miden-core = { workspace = true, features = ["testing"] }
+miden-core-lib.workspace = true
 miden-mast-package.workspace = true
 miden-protocol = { workspace = true, features = ["std"] }
 miden-standards = { workspace = true, features = ["std"] }

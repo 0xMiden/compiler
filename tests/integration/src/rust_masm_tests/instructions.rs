@@ -407,7 +407,6 @@ fn test_overflowing_mul_i32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/962"]
 fn test_overflowing_mul_i64() {
     test_overflowing_arith(i64::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -440,7 +439,6 @@ fn test_overflowing_div_u32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/967"]
 fn test_overflowing_div_u64() {
     test_overflowing_arith(
         u64::overflowing_div,
@@ -479,7 +477,6 @@ fn test_overflowing_div_i32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/967"]
 fn test_overflowing_div_i64() {
     test_overflowing_arith(
         i64::overflowing_div,
@@ -516,7 +513,6 @@ fn test_overflowing_rem_u32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
 fn test_overflowing_rem_u64() {
     test_overflowing_arith(
         u64::overflowing_rem,
@@ -556,7 +552,7 @@ fn test_overflowing_rem_i32() {
 }
 
 #[test]
-#[ignore = "Mod is not supported for signed int"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
 fn test_overflowing_rem_i64() {
     test_overflowing_arith(
         i64::overflowing_rem,

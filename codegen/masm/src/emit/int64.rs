@@ -154,22 +154,41 @@ impl OpEmitter<'_> {
     /// Sign-extend a 64-bit value to an signed N-bit integer, where N >= 128
     pub fn sext_int64(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 128, 256);
-        self.is_signed_int64(span);
-        // Select the extension bits
+        let additional_limbs = (n / 32) - 2;
+
+        // Move the most-significant limb to the top so the sign check inspects the actual i64
+        // sign bit, rather than the low limb.
+        self.emit(masm::Instruction::Swap1, span);
+        self.is_signed_int32(span);
         self.select_int32(u32::MAX, 0, span);
-        // Pad out the missing bits
-        //
-        // Deduct 32 bits to account for the difference between u32 and u64
-        self.pad_int32(n - 32, span);
+
+        // `select_int32` leaves `[pad, hi, lo]` on the stack. Duplicate the sign-extension limb
+        // as many times as needed, then rotate the original 64-bit value back to the top so the
+        // final limb order remains little-endian: `[lo, hi, pad, pad, ...]`.
+        self.emit_n(additional_limbs.saturating_sub(1) as usize, masm::Instruction::Dup0, span);
+        self.emit(movup_from_offset((additional_limbs + 1) as usize), span);
+        self.emit(movup_from_offset((additional_limbs + 1) as usize), span);
+        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Zero-extend a 64-bit value to N-bits, where N >= 64
     pub fn zext_int64(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 128, 256);
-        // Pad out the missing bits
-        //
-        // Deduct 32 bits to account for the difference between u32 and u64
-        self.zext_int32(n - 32, span);
+        let additional_limbs = (n / 32) - 2;
+
+        // Push the new most-significant limbs, then move the original 64-bit value back to the
+        // top so the result stays in little-endian limb order: `[lo, hi, 0, 0, ...]`.
+        self.emit_n(
+            additional_limbs as usize,
+            masm::Instruction::Push(masm::Immediate::Value(masm::Span::new(
+                span,
+                Felt::ZERO.into(),
+            ))),
+            span,
+        );
+        self.emit(movup_from_offset(additional_limbs as usize), span);
+        self.emit(movup_from_offset((additional_limbs + 1) as usize), span);
+        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Assert that there is a valid 64-bit integer value on the operand stack
@@ -178,16 +197,18 @@ impl OpEmitter<'_> {
     }
 
     /// Checks if the 64-bit value on the stack has its sign bit set.
-    #[inline(always)]
     pub fn is_signed_int64(&mut self, span: SourceSpan) {
-        self.is_signed_int32(span)
+        self.emit(masm::Instruction::Swap1, span);
+        self.is_signed_int32(span);
+        self.emit_all([masm::Instruction::Swap1, masm::Instruction::MovDn2], span);
     }
 
     /// Assert that the 64-bit value on the stack does not have its sign bit set.
-    #[inline(always)]
     pub fn assert_unsigned_int64(&mut self, span: SourceSpan) {
         // Assert that the sign bit is unset
-        self.assert_unsigned_int32(span)
+        self.emit(masm::Instruction::Swap1, span);
+        self.assert_unsigned_int32(span);
+        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Assert that the 64-bit value on the stack is a valid i64 value

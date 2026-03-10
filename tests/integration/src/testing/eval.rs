@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use miden_core::Felt;
+use miden_core_lib::CoreLibrary;
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
@@ -129,6 +130,13 @@ where
     advice_stack.extend(user_advice_stack);
 
     let mut exec = Executor::new(args.to_vec());
+    let core_library = CoreLibrary::default();
+    // The debug executor path does not automatically install core-library event handlers, but
+    // integration tests execute core helpers such as `u64::div` through the VM.
+    for (event, handler) in core_library.handlers() {
+        exec.register_event_handler(event, handler)
+            .expect("failed to register core library event handler");
+    }
 
     // Register the standard library so dependencies can be resolved at runtime.
     let std_library = (*STDLIB).clone();
