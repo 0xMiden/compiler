@@ -113,8 +113,8 @@ fn test_felt_reader() {
             .expect("Failed to read result from memory");
 
         let result_felts = [
-            ReprFelt::new(result_word[0].0.as_int()),
-            ReprFelt::new(result_word[1].0.as_int()),
+            ReprFelt::new(result_word[0].0.as_canonical_u64()),
+            ReprFelt::new(result_word[1].0.as_canonical_u64()),
         ];
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = TwoFelts::from_felt_repr(&mut reader).unwrap();

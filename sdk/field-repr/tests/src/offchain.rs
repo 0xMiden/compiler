@@ -3,7 +3,7 @@
 //! These tests verify the correctness of `ToFeltRepr` and `FromFeltRepr` implementations without
 //! involving on-chain execution.
 
-use miden_field::{Felt, PrimeField64};
+use miden_field::Felt;
 use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
 /// Serializes `value` off-chain and deserializes it back, asserting equality.
@@ -64,8 +64,8 @@ fn test_try_from_slice_roundtrip() {
     use core::convert::TryFrom;
 
     let original = TwoFelts {
-        a: Felt::from_u64_unchecked(12345),
-        b: Felt::from_u64_unchecked(67890),
+        a: Felt::new(12345),
+        b: Felt::new(67890),
     };
     let felts = original.to_felt_repr();
 
@@ -78,11 +78,11 @@ fn test_try_from_slice_rejects_trailing_data() {
     use core::convert::TryFrom;
 
     let original = TwoFelts {
-        a: Felt::from_u64_unchecked(12345),
-        b: Felt::from_u64_unchecked(67890),
+        a: Felt::new(12345),
+        b: Felt::new(67890),
     };
     let mut felts = original.to_felt_repr();
-    felts.push(Felt::from_u64_unchecked(0));
+    felts.push(Felt::new(0));
 
     let err = TwoFelts::try_from(felts.as_slice()).unwrap_err();
     assert_eq!(err, miden_field_repr::FeltReprError::TrailingData { pos: 2, len: 3 });
@@ -90,7 +90,7 @@ fn test_try_from_slice_rejects_trailing_data() {
 
 #[test]
 fn test_value_out_of_range_includes_position() {
-    let felts = [Felt::from_u64_unchecked(256)];
+    let felts = [Felt::new(256)];
     let mut reader = FeltReader::new(&felts);
 
     let err = <u8 as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
@@ -108,7 +108,7 @@ fn test_value_out_of_range_includes_position() {
 
 #[test]
 fn test_invalid_bool_includes_position() {
-    let felts = [Felt::from_u64_unchecked(2)];
+    let felts = [Felt::new(2)];
     let mut reader = FeltReader::new(&felts);
 
     let err = <bool as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
@@ -124,7 +124,7 @@ fn test_invalid_bool_includes_position() {
 
 #[test]
 fn test_invalid_option_tag_includes_position() {
-    let felts = [Felt::from_u64_unchecked(2)];
+    let felts = [Felt::new(2)];
     let mut reader = FeltReader::new(&felts);
 
     let err = <Option<u8> as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
@@ -146,7 +146,7 @@ fn test_unknown_enum_tag_includes_position() {
         B,
     }
 
-    let felts = [Felt::from_u64_unchecked(2)];
+    let felts = [Felt::new(2)];
     let mut reader = FeltReader::new(&felts);
 
     let err = TestEnum::from_felt_repr(&mut reader).unwrap_err();

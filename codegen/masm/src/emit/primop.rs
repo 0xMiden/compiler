@@ -1,6 +1,6 @@
 use miden_assembly_syntax::parser::WordValue;
 use midenc_hir::{
-    Felt, FieldElement, Immediate, SourceSpan, Type,
+    Felt, Immediate, SourceSpan, Type,
     dialects::builtin::attributes::{ArgumentExtension, Signature},
 };
 

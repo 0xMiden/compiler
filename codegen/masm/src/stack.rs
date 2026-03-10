@@ -4,7 +4,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::{Attribute, AttributeRef, Context, Immediate, ImmediateAttr, Type, ValueRef};
 use smallvec::{SmallVec, smallvec};
 

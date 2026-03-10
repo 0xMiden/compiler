@@ -36,9 +36,8 @@ impl FromStrRadix for Felt {
     type Error = FeltOutOfRangeError;
 
     fn try_from_str_radix(source: &str, radix: u32) -> Result<Self, Self::Error> {
-        use miden_core::{FieldElement, StarkField};
         let value = u64::try_from_str_radix(source, radix).map_err(FeltOutOfRangeError::Parse)?;
-        if value > Felt::MODULUS {
+        if value > Felt::ORDER {
             return Err(FeltOutOfRangeError::OutOfRange(value));
         }
         Ok(Felt::new(value))

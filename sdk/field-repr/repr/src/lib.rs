@@ -11,8 +11,6 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub use miden_field::Felt;
-#[cfg(not(all(target_family = "wasm", miden)))]
-use miden_field::PrimeField64;
 /// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
 pub use miden_field_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
 /// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
@@ -186,7 +184,7 @@ impl<'a> FeltReader<'a> {
     pub fn read_u32(&mut self) -> FeltReprResult<u32> {
         let pos = self.pos;
         let len = self.data.len();
-        let value = self.read()?.as_u64();
+        let value = self.read()?.as_canonical_u64();
         if value > u32::MAX as u64 {
             return Err(FeltReprError::ValueOutOfRange {
                 pos,
@@ -204,7 +202,7 @@ impl<'a> FeltReader<'a> {
     pub fn read_u8(&mut self) -> FeltReprResult<u8> {
         let pos = self.pos;
         let len = self.data.len();
-        let value = self.read()?.as_u64();
+        let value = self.read()?.as_canonical_u64();
         if value > u8::MAX as u64 {
             return Err(FeltReprError::ValueOutOfRange {
                 pos,
@@ -224,7 +222,7 @@ impl<'a> FeltReader<'a> {
     pub fn read_bool(&mut self) -> FeltReprResult<bool> {
         let pos = self.pos;
         let len = self.data.len();
-        match self.read()?.as_u64() {
+        match self.read()?.as_canonical_u64() {
             0 => Ok(false),
             1 => Ok(true),
             value => Err(FeltReprError::InvalidBool { pos, len, value }),
@@ -269,14 +267,6 @@ impl FromFeltRepr for Felt {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         reader.read()
-    }
-}
-
-#[cfg(not(target_family = "wasm"))]
-impl FromFeltRepr for miden_core::Felt {
-    #[inline(always)]
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
-        Self::new(reader.read().as_canonical_u64())
     }
 }
 
@@ -372,14 +362,6 @@ impl ToFeltRepr for Felt {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         writer.write(*self);
-    }
-}
-
-#[cfg(not(target_family = "wasm"))]
-impl ToFeltRepr for miden_core::Felt {
-    #[inline(always)]
-    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::new(self.as_int()));
     }
 }
 

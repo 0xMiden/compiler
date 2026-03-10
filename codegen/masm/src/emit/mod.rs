@@ -733,7 +733,7 @@ mod tests {
     use alloc::rc::Rc;
 
     use midenc_hir::{
-        ArrayType, Context, Felt, FieldElement, Overflow, PointerType, ValueRef,
+        ArrayType, Context, Felt, Overflow, PointerType, ValueRef,
         dialects::builtin::attributes::Signature,
     };
 
