@@ -202,39 +202,15 @@ opt-level = 3
 # Speed up the test profile (proving times)
 # ============================================================
 # The test package itself needs optimization
-[profile.test.package.midenc-integration-network-tests]
-opt-level = 3
-
 # Core Miden packages
 [profile.test.package.miden-processor]
-opt-level = 3
-
-[profile.test.package.miden-prover]
-opt-level = 3
-
-[profile.test.package.winter-prover]
-opt-level = 3
-
-[profile.test.package.miden-client]
 opt-level = 3
 
 [profile.test.package.miden-protocol]
 opt-level = 3
 
-[profile.test.package.miden-tx]
-opt-level = 3
-
 # Additional crypto and math-heavy dependencies
 [profile.test.package.miden-crypto]
-opt-level = 3
-
-[profile.test.package.winter-crypto]
-opt-level = 3
-
-[profile.test.package.winter-air]
-opt-level = 3
-
-[profile.test.package.winter-math]
 opt-level = 3
 
 [profile.test.package.miden-standards]
@@ -277,18 +253,6 @@ opt-level = 3
 [profile.dev.package.miden-processor]
 opt-level = 3
 
-[profile.dev.package.miden-prover]
-opt-level = 3
-
-[profile.dev.package.winter-prover]
-opt-level = 3
-
-[profile.dev.package.miden-client]
-opt-level = 3
-
 [profile.dev.package.miden-protocol]
-opt-level = 3
-
-[profile.dev.package.miden-tx]
 opt-level = 3
 # ============================================================
