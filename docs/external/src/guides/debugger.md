@@ -90,7 +90,7 @@ digest = '0x3cff5b58a573dc9d25fd3c57130cc57e5b1b381dc58b5ae3594b390c59835e63'
 values = [1, 2, 3, 4]
 
 [[inputs.advice.map]]
-digest = '0x20234ee941e53a15886e733cc8e041198c6e90d2a16ea18ce1030e8c3596dd38''
+digest = '0x20234ee941e53a15886e733cc8e041198c6e90d2a16ea18ce1030e8c3596dd38'
 values = [5, 6, 7, 8]
 ```
 
