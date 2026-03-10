@@ -177,8 +177,8 @@ miden-field = { version = "0.22" }
 #miden-mast-package = { path = "../miden-vm/package" }
 # miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
 # miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
-# miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "pr/migrate-to-vm-v0.21" }
-miden-debug = { path = "../../debug" }
+miden-debug = { git = "https://github.com/0xMiden/miden-debug", rev = "07f4ee12fb790bd0b0e2183414cecea44e580950" }
+# miden-debug = { path = "../../debug" }
 
 
 [profile.dev]
