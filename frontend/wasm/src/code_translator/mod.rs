@@ -17,7 +17,6 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
 use midenc_dialect_hir::{HirOpBuilder, assertions};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
-use midenc_dialect_wasm as wasm;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
     BlockRef, Builder, Felt, FieldElement, Immediate, Op, PointerType,
@@ -320,11 +319,11 @@ pub fn translate_operator<B: ?Sized + Builder>(
         }
         Operator::I32Extend8S => {
             let val = state.pop1();
-            state.push1(builder.i32_extend_s(val, wasm::LogicalTyI32::I8, span)?);
+            state.push1(builder.i32_extend_s(val, Type::I8, span)?);
         }
         Operator::I32Extend16S => {
             let val = state.pop1();
-            state.push1(builder.i32_extend_s(val, wasm::LogicalTyI32::I16, span)?);
+            state.push1(builder.i32_extend_s(val, Type::I16, span)?);
         }
         Operator::I64ExtendI32S => {
             let val = state.pop1();

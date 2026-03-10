@@ -1357,8 +1357,8 @@ impl HirLowering for wasm::I32ExtendS {
         // not specify the contents of the excess bits. However the `sext` instruction requires them
         // to be zero, so we truncate to meet that requirement.
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        let logical_ty = self.logical_ty().ty();
-        inst_emitter.trunc(&logical_ty, self.span());
+        let src_ty = self.get_src_ty();
+        inst_emitter.trunc(&src_ty, self.span());
         inst_emitter.sext(&Type::I32, self.span());
 
         Ok(())

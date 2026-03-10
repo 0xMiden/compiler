@@ -12,7 +12,6 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
-mod attributes;
 mod builders;
 mod ops;
 
@@ -22,7 +21,7 @@ use midenc_hir::{
     derive::DialectRegistration,
 };
 
-pub use self::{attributes::LogicalTyI32, builders::WasmOpBuilder, ops::*};
+pub use self::{builders::WasmOpBuilder, ops::*};
 
 #[derive(Debug, DialectRegistration)]
 pub struct WasmDialect {

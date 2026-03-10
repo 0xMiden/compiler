@@ -1,19 +1,17 @@
 use midenc_hir::{
-    Builder, BuilderExt, OpBuilder, Report, SourceSpan, ValueRef,
+    Builder, BuilderExt, OpBuilder, Report, SourceSpan, Type, ValueRef,
     dialects::builtin::FunctionBuilder,
 };
-
-use crate::attributes::LogicalTyI32;
 
 pub trait WasmOpBuilder<'f, B: ?Sized + Builder> {
     fn i32_extend_s(
         &mut self,
         arg: ValueRef,
-        logical_ty: LogicalTyI32,
+        src_ty: Type,
         span: SourceSpan,
     ) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::I32ExtendS, _>(span);
-        let op = op_builder(arg, logical_ty)?;
+        let op = op_builder(arg, src_ty)?;
         Ok(op.borrow().result().as_value_ref())
     }
 
