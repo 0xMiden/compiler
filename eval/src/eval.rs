@@ -2051,14 +2051,7 @@ impl Eval for wasm::I32ExtendS {
             ));
         };
 
-        let Some(extended) = self.sext_from_src(x) else {
-            return Err(evaluator.report(
-                "evaluation failed",
-                self.span(),
-                format!("i32.extend*_s is not supported for value type: {}", lhs.ty()),
-            ));
-        };
-        let result = Immediate::I32(extended);
+        let result = Immediate::I32(self.sext_from_src(x));
         evaluator.set_value(self.result().as_value_ref(), result);
         Ok(ControlFlowEffect::None)
     }
