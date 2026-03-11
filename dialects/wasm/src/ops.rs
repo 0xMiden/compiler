@@ -12,7 +12,7 @@ use midenc_hir::{
 
 use crate::WasmDialect;
 
-/// Interprets the operand as value its logical type and sign-extends it to `I32`.
+/// Interprets an `i32` operand as a value of the given source type and sign-extends it to `I32`.
 ///
 /// Handles the following Wasm instructions:
 ///
@@ -27,7 +27,8 @@ use crate::WasmDialect;
 pub struct I32ExtendS {
     #[operand]
     operand: Int32,
-    /// Valide source types are `Type::I8` and `Type::I16`.
+    /// Valid source types are `Type::I8` and `Type::I16`. This is verified by
+    /// `InferTypeOpInterface`.
     #[attr]
     src_ty: TypeAttr,
     #[result]
