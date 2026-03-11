@@ -147,5 +147,5 @@ fn eval_hir_dialect(info: &mut ::midenc_hir::DialectInfo) {
 }
 
 fn eval_wasm_dialect(info: &mut ::midenc_hir::DialectInfo) {
-    info.register_operation_trait::<wasm::I32ExtendS, dyn Eval>();
+    info.register_operation_trait::<wasm::ExtendS, dyn Eval>();
 }

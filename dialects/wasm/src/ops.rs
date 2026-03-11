@@ -24,7 +24,7 @@ use crate::WasmDialect;
     traits(UnaryOp),
     implements(UnaryOp, InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
-pub struct I32ExtendS {
+pub struct ExtendS {
     #[operand]
     operand: Int32,
     /// Valid source types are `Type::I8` and `Type::I16`. This is verified by
@@ -35,7 +35,7 @@ pub struct I32ExtendS {
     result: Int32,
 }
 
-impl I32ExtendS {
+impl ExtendS {
     /// Interprets `x` as a value of the source type and sign-extends it to `i32`.
     pub fn sext_from_src(&self, x: i32) -> i32 {
         match &*self.get_src_ty() {
@@ -46,7 +46,7 @@ impl I32ExtendS {
     }
 }
 
-impl InferTypeOpInterface for I32ExtendS {
+impl InferTypeOpInterface for ExtendS {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         let is_valid = matches!(*self.get_src_ty(), Type::I8 | Type::I16);
         if !is_valid {
@@ -60,7 +60,7 @@ impl InferTypeOpInterface for I32ExtendS {
     }
 }
 
-impl Foldable for I32ExtendS {
+impl Foldable for ExtendS {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         if let Some(mut attr_value) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
             .matches(&self.operand().as_operand_ref())

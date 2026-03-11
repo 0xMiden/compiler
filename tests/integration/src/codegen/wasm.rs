@@ -10,7 +10,7 @@ fn test_i32_extend8_s() {
     let (package, context) = compile_test_module([Type::I32], [Type::I32], |builder| {
         let block = builder.current_block();
         let input = block.borrow().arguments()[0] as ValueRef;
-        let result = builder.i32_extend_s(input, Type::I8, span).unwrap();
+        let result = builder.extend_s(input, Type::I8, span).unwrap();
         builder.ret(Some(result), span).unwrap();
     });
 
@@ -84,7 +84,7 @@ fn test_i32_extend16_s() {
     let (package, context) = compile_test_module([Type::I32], [Type::I32], |builder| {
         let block = builder.current_block();
         let input = block.borrow().arguments()[0] as ValueRef;
-        let result = builder.i32_extend_s(input, Type::I16, span).unwrap();
+        let result = builder.extend_s(input, Type::I16, span).unwrap();
         builder.ret(Some(result), span).unwrap();
     });
 

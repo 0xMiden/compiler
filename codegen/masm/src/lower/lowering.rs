@@ -1351,7 +1351,7 @@ impl HirLowering for builtin::GlobalSymbol {
     }
 }
 
-impl HirLowering for wasm::I32ExtendS {
+impl HirLowering for wasm::ExtendS {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // We're sign-extending a value of the logical type contained in an I32 operand. Wasm does
         // not specify the contents of the excess bits. However the `sext` instruction requires them

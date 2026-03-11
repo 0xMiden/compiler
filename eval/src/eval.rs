@@ -2038,7 +2038,7 @@ impl Eval for arith::Cto {
     }
 }
 
-impl Eval for wasm::I32ExtendS {
+impl Eval for wasm::ExtendS {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         let lhs = self.operand();
         let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
