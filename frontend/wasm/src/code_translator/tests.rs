@@ -391,6 +391,18 @@ fn i32_extend8_s() {
 }
 
 #[test]
+fn i32_extend16_s() {
+    check_op(
+        r#"
+            i32.const 1
+            i32.extend16_s
+            drop
+        "#,
+        expect_file!["./expected/i32_extend16_s.hir"],
+    )
+}
+
+#[test]
 fn i64_extend_i32_s() {
     check_op(
         r#"

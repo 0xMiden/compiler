@@ -1,6 +1,9 @@
+use alloc::format;
+
 use midenc_hir::{
     attributes::IntegerLikeAttr,
-    derive::{EffectOpInterface, OpPrinter, operation},
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    dialects::builtin::attributes::TypeAttr,
     effects::MemoryEffectOpInterface,
     matchers::Matcher,
     traits::*,
@@ -9,36 +12,65 @@ use midenc_hir::{
 
 use crate::WasmDialect;
 
-#[derive(EffectOpInterface, OpPrinter)]
+/// Interprets an `i32` operand as a value of the given source type and sign-extends it to `i32`.
+///
+/// Handles the following Wasm instructions:
+///
+/// - `i32.extend8_s`
+/// - `i32.extend16_s`
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
     traits(UnaryOp),
     implements(UnaryOp, InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
-pub struct I32Extend8S {
+pub struct I32ExtendS {
     #[operand]
     operand: Int32,
+    /// Valid source types are `Type::I8` and `Type::I16`. This is verified by
+    /// `InferTypeOpInterface`.
+    #[attr]
+    src_ty: TypeAttr,
     #[result]
     result: Int32,
 }
 
-impl InferTypeOpInterface for I32Extend8S {
+impl I32ExtendS {
+    /// Interprets `x` as a value of the source type and sign-extends it to `i32`.
+    pub fn sext_from_src(&self, x: i32) -> i32 {
+        match &*self.get_src_ty() {
+            Type::I8 => (x as i8) as i32,
+            Type::I16 => (x as i16) as i32,
+            ty => panic!("invalid operation i32.extend*_s: source cannot be {ty}"),
+        }
+    }
+}
+
+impl InferTypeOpInterface for I32ExtendS {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let is_valid = matches!(*self.get_src_ty(), Type::I8 | Type::I16);
+        if !is_valid {
+            return Err(Report::msg(format!(
+                "invalid operation i32.extend*_s: source cannot be {}",
+                *self.get_src_ty()
+            )));
+        }
         self.result_mut().set_type(Type::I32);
         Ok(())
     }
 }
 
-impl Foldable for I32Extend8S {
+impl Foldable for I32ExtendS {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         if let Some(mut attr_value) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
             .matches(&self.operand().as_operand_ref())
         {
             let mut attr_value_mut = attr_value.borrow_mut();
-            let extended = attr_value_mut.as_immediate().as_i32();
+            let value = attr_value_mut.as_immediate().as_i32();
+            let extended = value.map(|v| Immediate::I32(self.sext_from_src(v)));
 
             if let Some(extended) = extended {
-                attr_value_mut.set_from_immediate_lossy(Immediate::I32(extended));
+                attr_value_mut.set_from_immediate_lossy(extended);
                 results.push(OpFoldResult::Attribute(attr_value as AttributeRef));
                 return FoldResult::Ok(());
             }
@@ -60,7 +92,8 @@ impl Foldable for I32Extend8S {
                 None
             }
         }) {
-            let extended = attr.as_immediate().as_i32().map(|v| Immediate::I32((v as i8) as i32));
+            let value = attr.as_immediate().as_i32();
+            let extended = value.map(|v| Immediate::I32(self.sext_from_src(v)));
             if let Some(extended) = extended {
                 let mut new_attr = attr.name().dyn_clone(&*attr);
                 let mut new_attr_mut = new_attr.borrow_mut();
