@@ -14,7 +14,7 @@ use proptest::{
 use super::run_masm_vs_rust;
 use crate::{
     CompilerTest,
-    testing::{Initializer, eval_package},
+    testing::{Initializer, eval_package, setup},
 };
 
 macro_rules! test_bin_op {
@@ -833,4 +833,156 @@ fn test_hmerge() {
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
     }
+}
+
+#[test]
+fn test_memory_copy_unaligned() {
+    let main_fn = r#"() -> Felt {
+        #[inline(never)]
+        fn do_copy(dst: &mut [u8; 48], src: &[u8; 64]) {
+            unsafe {
+                let src_ptr = src.as_ptr().add(3);
+                let dst_ptr = dst.as_mut_ptr();
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, 48);
+            }
+        }
+
+        let mut src = [0u8; 64];
+        let mut i = 0usize;
+        while i < 64 {
+            src[i] = i as u8;
+            i += 1;
+        }
+
+        let mut dst = [0u8; 48];
+        do_copy(&mut dst, &src);
+
+        let mut mismatches = 0u32;
+        let mut i = 0usize;
+        while i < 48 {
+            if dst[i] != (i as u8).wrapping_add(3) {
+                mismatches += 1;
+            }
+            i += 1;
+        }
+
+        Felt::from_u32(mismatches)
+    }"#;
+
+    setup::enable_compiler_instrumentation();
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "memory_copy_unaligned_src_len_48_u8s",
+        main_fn,
+        config,
+        [],
+    );
+
+    let package = test.compile_package();
+    let args: [Felt; 0] = [];
+
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let res: Felt = trace.parse_result().unwrap();
+        assert_eq!(res, Felt::ZERO);
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn test_memory_copy_unaligned_dst() {
+    let main_fn = r#"() -> Felt {
+        #[inline(never)]
+        fn do_copy(dst: &mut [u8; 53], src: &[u8; 64]) {
+            unsafe {
+                let src_ptr = src.as_ptr().add(3);
+                let dst_ptr = dst.as_mut_ptr().add(5);
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, 48);
+            }
+        }
+
+        let mut src = [0u8; 64];
+        let mut i = 0usize;
+        while i < 64 {
+            src[i] = i as u8;
+            i += 1;
+        }
+
+        let mut dst = [0xffu8; 53];
+        do_copy(&mut dst, &src);
+
+        let mut mismatches = 0u32;
+        let mut i = 0usize;
+        while i < 53 {
+            let expected = if i < 5 { 0xff } else { (i as u8).wrapping_sub(2) };
+            if dst[i] != expected {
+                mismatches += 1;
+            }
+            i += 1;
+        }
+
+        Felt::from_u32(mismatches)
+    }"#;
+
+    setup::enable_compiler_instrumentation();
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "memory_copy_unaligned_dst_len_48_u8s",
+        main_fn,
+        config,
+        [],
+    );
+
+    let package = test.compile_package();
+    let args: [Felt; 0] = [];
+
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let res: Felt = trace.parse_result().unwrap();
+        assert_eq!(res, Felt::ZERO);
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn test_memory_set_unaligned() {
+    let main_fn = r#"() -> Felt {
+        #[inline(never)]
+        fn do_set(dst: &mut [u8; 11]) {
+            unsafe {
+                let dst_ptr = dst.as_mut_ptr().add(3);
+                core::ptr::write_bytes(dst_ptr, 0x5a, 5);
+            }
+        }
+
+        let mut dst = [0xffu8; 11];
+        do_set(&mut dst);
+
+        let expected = [0xffu8, 0xff, 0xff, 0x5a, 0x5a, 0x5a, 0x5a, 0x5a, 0xff, 0xff, 0xff];
+        let mut mismatches = 0u32;
+        let mut i = 0usize;
+        while i < 11 {
+            if dst[i] != expected[i] {
+                mismatches += 1;
+            }
+            i += 1;
+        }
+
+        Felt::from_u32(mismatches)
+    }"#;
+
+    setup::enable_compiler_instrumentation();
+    let config = WasmTranslationConfig::default();
+    let mut test =
+        CompilerTest::rust_fn_body_with_stdlib_sys("memory_set_unaligned_u8s", main_fn, config, []);
+
+    let package = test.compile_package();
+    let args: [Felt; 0] = [];
+
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let res: Felt = trace.parse_result().unwrap();
+        assert_eq!(res, Felt::ZERO);
+        Ok(())
+    })
+    .unwrap();
 }

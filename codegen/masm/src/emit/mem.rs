@@ -633,9 +633,9 @@ impl OpEmitter<'_> {
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WrappingAddImm(1.into()),
-                masm::Instruction::Dup0,   // [i++, i++, dst, count, value]
-                masm::Instruction::Dup3,   // [count, i++, i++, dst, count, value]
-                masm::Instruction::U32Gte, // [i++ >= count, i++, dst, count, value]
+                masm::Instruction::Dup0,  // [i++, i++, dst, count, value]
+                masm::Instruction::Dup3,  // [count, i++, i++, dst, count, value]
+                masm::Instruction::U32Lt, // [i++ < count, i++, dst, count, value]
             ],
             span,
         );
@@ -879,9 +879,9 @@ impl OpEmitter<'_> {
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WrappingAddImm(1.into()),
-                masm::Instruction::Dup0,   // [i++, i++, src, dst, count]
-                masm::Instruction::Dup4,   // [count, i++, i++, src, dst, count]
-                masm::Instruction::U32Gte, // [i++ >= count, i++, src, dst, count]
+                masm::Instruction::Dup0,  // [i++, i++, src, dst, count]
+                masm::Instruction::Dup4,  // [count, i++, i++, src, dst, count]
+                masm::Instruction::U32Lt, // [i++ < count, i++, src, dst, count]
             ],
             span,
         );
