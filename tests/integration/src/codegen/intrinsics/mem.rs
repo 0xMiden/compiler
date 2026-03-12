@@ -365,6 +365,55 @@ fn load_u16() {
     }
 }
 
+/// Tests that loading a u16 from byte offset 3 correctly reconstructs the value across the next
+/// element boundary.
+#[test]
+fn load_unaligned_u16() {
+    setup::enable_compiler_instrumentation();
+
+    let write_to = 17 * 2u32.pow(16);
+    let read_from = write_to + 3;
+
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::U16))], [Type::U16], |builder| {
+            let block = builder.current_block();
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
+
+    let config = proptest::test_runner::Config::with_cases(10);
+    let res = TestRunner::new(config).run(&any::<u16>(), move |value| {
+        let expected = value.to_ne_bytes();
+        let initial_bytes = [0xff, 0xee, 0xdd, expected[0], expected[1], 0xbb, 0xaa, 0x99];
+        let initializers = [Initializer::MemoryBytes {
+            addr: write_to,
+            bytes: &initial_bytes,
+        }];
+
+        let args = [Felt::new(read_from as u64)];
+        let output = eval_package::<u16, _, _>(
+            &package,
+            initializers,
+            &args,
+            context.session(),
+            |_| Ok(()),
+        )?;
+
+        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
+
+        Ok(())
+    });
+
+    match res {
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {res:?}"),
+    }
+}
+
 /// Tests the memory load intrinsic for loads of boolean (i.e. 1-bit) values
 #[test]
 fn load_bool() {
@@ -560,6 +609,83 @@ fn store_u16() {
             Ok(())
         },
     );
+
+    match res {
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {res:?}"),
+    }
+}
+
+/// Tests that storing a u16 at byte offset 3 updates only the target bytes across the element
+/// boundary.
+#[test]
+fn store_unaligned_u16() {
+    setup::enable_compiler_instrumentation();
+
+    let write_to = 17 * 2u32.pow(16);
+    let store_to = write_to + 3;
+
+    let (package, context) = compile_test_module([Type::U16], [Type::U32], |builder| {
+        let block = builder.current_block();
+        let value = block.borrow().arguments()[0] as ValueRef;
+
+        let addr = builder.u32(store_to, SourceSpan::default());
+        let ptr = builder
+            .inttoptr(addr, Type::from(PointerType::new(Type::U16)), SourceSpan::default())
+            .unwrap();
+
+        builder.store(ptr, value, SourceSpan::default()).unwrap();
+
+        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+        builder.assert_eq(loaded, value, SourceSpan::default()).unwrap();
+
+        let result = builder.u32(1, SourceSpan::default());
+        builder.ret(Some(result), SourceSpan::default()).unwrap();
+    });
+
+    let config = proptest::test_runner::Config::with_cases(32);
+    let res = TestRunner::new(config).run(&any::<u16>(), move |store_value| {
+        let initial_bytes = [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa];
+        let initializers = [Initializer::MemoryBytes {
+            addr: write_to,
+            bytes: &initial_bytes,
+        }];
+
+        let args = [Felt::new(store_value as u64)];
+        let output =
+            eval_package::<u32, _, _>(&package, initializers, &args, context.session(), |trace| {
+                let expected = store_value.to_ne_bytes();
+                let word0 = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
+                    TestCaseError::fail(format!("failed to read from byte address {write_to}"))
+                })?;
+                let word1 = trace.read_from_rust_memory::<u32>(write_to + 4).ok_or_else(|| {
+                    TestCaseError::fail(format!(
+                        "failed to read from byte address {}",
+                        write_to + 4
+                    ))
+                })?;
+                let stored0 = (word0 & 0xff) as u8;
+                let stored1 = ((word0 >> 8) & 0xff) as u8;
+                let stored2 = ((word0 >> 16) & 0xff) as u8;
+                let stored3 = ((word0 >> 24) & 0xff) as u8;
+                let stored4 = (word1 & 0xff) as u8;
+                let stored5 = ((word1 >> 8) & 0xff) as u8;
+
+                prop_assert_eq!(stored0, 0xff);
+                prop_assert_eq!(stored1, 0xee);
+                prop_assert_eq!(stored2, 0xdd);
+                prop_assert_eq!(stored3, expected[0]);
+                prop_assert_eq!(stored4, expected[1]);
+                prop_assert_eq!(stored5, 0xaa);
+                Ok(())
+            })?;
+
+        prop_assert_eq!(output, 1u32);
+        Ok(())
+    });
 
     match res {
         Err(TestError::Fail(reason, value)) => {

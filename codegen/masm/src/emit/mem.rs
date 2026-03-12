@@ -214,9 +214,28 @@ impl OpEmitter<'_> {
                 self.emit(masm::Instruction::U32And, span);
                 return;
             } else {
+                if ty.size_in_bits() == 16 {
+                    // A 16-bit value can start at byte offset 3, so it may span two adjacent
+                    // elements. Load the full 32-bit unaligned window first, then keep the low
+                    // 16 bits corresponding to the requested value.
+                    self.push_native_ptr(imm, span);
+                    self.raw_exec("::intrinsics::mem::load_sw", span);
+                    self.emit_push(0xffffu32, span);
+                    self.emit(masm::Instruction::U32And, span);
+                    return;
+                }
                 self.emit_push(imm.addr, span);
                 self.emit_push(imm.offset, span);
             }
+        }
+
+        if ty.size_in_bits() == 16 {
+            // The dynamic case has the same boundary issue as the immediate case: offset 3 reaches
+            // into the next element. Reuse the unaligned 32-bit load to assemble the window.
+            self.raw_exec("::intrinsics::mem::load_sw", span);
+            self.emit_push(0xffffu32, span);
+            self.emit(masm::Instruction::U32And, span);
+            return;
         }
 
         // Stack: [element_addr, byte_offset]
@@ -1052,6 +1071,35 @@ impl OpEmitter<'_> {
             return;
         }
 
+        if type_size == 16 {
+            // A 16-bit store at byte offset 3 updates one byte in the current element and one in
+            // the next. Merge the new 16-bit payload into the 32-bit unaligned window and let the
+            // existing unaligned word store split it back across both elements.
+            self.emit_all(
+                [
+                    masm::Instruction::Dup1, // [offset, addr, offset, value]
+                    masm::Instruction::Dup1, // [addr, offset, addr, offset, value]
+                ],
+                span,
+            );
+            self.raw_exec("::intrinsics::mem::load_sw", span); // [window, addr, offset, value]
+            self.emit_push(0xffff0000u32, span);
+            self.emit(masm::Instruction::U32And, span); // [masked_window, addr, offset, value]
+            self.emit(masm::Instruction::MovUp3, span); // [value, masked_window, addr, offset]
+            self.emit_push(0xffffu32, span);
+            self.emit(masm::Instruction::U32And, span); // [value16, masked_window, addr, offset]
+            self.emit(masm::Instruction::U32Or, span); // [combined, addr, offset]
+            self.emit_all(
+                [
+                    masm::Instruction::Swap2, // [offset, addr, combined]
+                    masm::Instruction::Swap1, // [addr, offset, combined]
+                ],
+                span,
+            );
+            self.raw_exec("::intrinsics::mem::store_sw", span);
+            return;
+        }
+
         // Stack: [addr, offset, value]
         // Load the current aligned value
         self.emit_all(
@@ -1113,6 +1161,14 @@ impl OpEmitter<'_> {
     /// - Before: [value] (where value is already truncated to the correct size)
     /// - After: []
     fn store_small_imm(&mut self, ty: &Type, imm: NativePtr, span: SourceSpan) {
+        if ty.size_in_bits() == 16 && !imm.is_element_aligned() {
+            // Route unaligned 16-bit immediates through the dynamic path so they share the same
+            // cross-element windowing logic as byte-pointer stores.
+            self.push_native_ptr(imm, span);
+            self.store_small(ty, None, span);
+            return;
+        }
+
         assert!(imm.alignment() as usize >= ty.min_alignment());
 
         // For immediate pointers, we always load from the element-aligned address
