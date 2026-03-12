@@ -4,6 +4,8 @@ use cargo_miden::{OutputType, run};
 use miden_mast_package::Package;
 use midenc_session::miden_assembly::utils::Deserializable;
 
+use crate::utils::current_dir_lock;
+
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
     let template = if template.is_empty() {
         if let Ok(project_template_path) = std::env::var("TEST_LOCAL_PROJECT_TEMPLATE_PATH") {
@@ -29,6 +31,7 @@ fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
 
 #[test]
 fn test_all_templates() {
+    let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
@@ -69,7 +72,17 @@ fn test_all_templates() {
 /// Handles special cases like note templates that require a contract dependency
 fn build_new_project_from_template(template: &str) -> Package {
     let restore_dir = env::current_dir().unwrap();
-    let temp_dir = env::temp_dir();
+    let temp_dir = env::temp_dir().join(format!(
+        "cargo_miden_build_template_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_micros()
+    ));
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+    fs::create_dir_all(&temp_dir).unwrap();
     env::set_current_dir(&temp_dir).unwrap();
 
     if template == "--note" || template == "--tx-script" {
@@ -146,12 +159,13 @@ fn build_new_project_from_template(template: &str) -> Package {
     let package = Package::read_from_bytes(&package_bytes).unwrap();
 
     env::set_current_dir(restore_dir).unwrap();
-    fs::remove_dir_all(new_project_path).unwrap();
+    fs::remove_dir_all(&temp_dir).unwrap();
     package
 }
 
 #[test]
 fn new_project_integration_tests_pass() {
+    let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)

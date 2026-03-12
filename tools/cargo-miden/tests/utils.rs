@@ -1,4 +1,8 @@
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::PathBuf,
+    sync::{Mutex, MutexGuard, OnceLock},
+};
 
 #[allow(dead_code)]
 pub(crate) fn get_test_path(test_dir_name: &str) -> PathBuf {
@@ -8,4 +12,10 @@ pub(crate) fn get_test_path(test_dir_name: &str) -> PathBuf {
     test_dir.push("data");
     test_dir.push(test_dir_name);
     test_dir
+}
+
+/// Serializes tests that mutate the process working directory.
+pub(crate) fn current_dir_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
 }
