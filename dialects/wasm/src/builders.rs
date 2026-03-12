@@ -8,10 +8,11 @@ pub trait WasmOpBuilder<'f, B: ?Sized + Builder> {
         &mut self,
         arg: ValueRef,
         src_ty: Type,
+        dst_ty: Type,
         span: SourceSpan,
     ) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::ExtendS, _>(span);
-        let op = op_builder(arg, src_ty)?;
+        let op = op_builder(arg, src_ty, dst_ty)?;
         Ok(op.borrow().result().as_value_ref())
     }
 

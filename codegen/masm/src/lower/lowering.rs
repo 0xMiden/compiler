@@ -1353,13 +1353,13 @@ impl HirLowering for builtin::GlobalSymbol {
 
 impl HirLowering for wasm::ExtendS {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        // We're sign-extending a value of the logical type contained in an I32 operand. Wasm does
-        // not specify the contents of the excess bits. However the `sext` instruction requires them
-        // to be zero, so we truncate to meet that requirement.
+        // We're sign-extending a value of the source type contained in an I32/I64 operand, where
+        // the destination type is wider than the source type. Wasm does not specify the contents of
+        // the excess bits. However the `sext` instruction requires them to be zero, so we truncate
+        // to meet that requirement.
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
-        let src_ty = self.get_src_ty();
-        inst_emitter.trunc(&src_ty, self.span());
-        inst_emitter.sext(&Type::I32, self.span());
+        inst_emitter.trunc(&self.get_src_ty(), self.span());
+        inst_emitter.sext(&self.get_dst_ty(), self.span());
 
         Ok(())
     }
