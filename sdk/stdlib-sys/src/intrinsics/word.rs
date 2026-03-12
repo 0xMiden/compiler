@@ -76,9 +76,15 @@ impl From<Felt> for Word {
         }
     }
 }
-impl From<Word> for Felt {
-    fn from(value: Word) -> Self {
-        value.inner.3
+impl TryFrom<Word> for Felt {
+    type Error = &'static str;
+
+    fn try_from(value: Word) -> Result<Self, Self::Error> {
+        if value.inner.0 != felt!(0) || value.inner.1 != felt!(0) || value.inner.2 != felt!(0) {
+            return Err("expected zero padding in the upper three felts");
+        }
+
+        Ok(value.inner.3)
     }
 }
 impl Index<usize> for Word {
@@ -111,5 +117,18 @@ impl IndexMut<usize> for Word {
 impl AsRef<Word> for Word {
     fn as_ref(&self) -> &Word {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Felt, Word};
+
+    #[test]
+    fn felt_try_from_word_rejects_non_zero_padding() {
+        let word =
+            Word::from([Felt::from(1u32), Felt::from(0u32), Felt::from(0u32), Felt::from(7u32)]);
+
+        assert_eq!(Felt::try_from(word), Err("expected zero padding in the upper three felts"));
     }
 }

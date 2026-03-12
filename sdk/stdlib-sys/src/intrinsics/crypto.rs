@@ -1,7 +1,9 @@
 //! Cryptographic intrinsics for the Miden VM.
 //!
 //! This module provides Rust bindings for cryptographic operations available in the Miden VM.
-#![allow(warnings)]
+#![allow(warnings, clippy::infallible_try_from)]
+
+use core::convert::Infallible;
 
 use crate::intrinsics::{Felt, Word};
 
@@ -30,10 +32,12 @@ impl Digest {
     }
 }
 
-impl From<Word> for Digest {
+impl TryFrom<Word> for Digest {
+    type Error = Infallible;
+
     #[inline]
-    fn from(word: Word) -> Self {
-        Self::from_word(word)
+    fn try_from(word: Word) -> Result<Self, Self::Error> {
+        Ok(Self::from_word(word))
     }
 }
 
@@ -54,7 +58,7 @@ impl From<[Felt; 4]> for Digest {
 impl From<Digest> for [Felt; 4] {
     #[inline]
     fn from(digest: Digest) -> Self {
-        digest.inner.into()
+        (&digest.inner).into()
     }
 }
 

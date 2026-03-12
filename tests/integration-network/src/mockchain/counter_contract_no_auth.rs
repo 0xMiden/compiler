@@ -104,7 +104,7 @@ pub fn test_counter_contract_no_auth() {
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, tx_context_builder);
     expect!["2264"].assert_eq(auth_procedure_cycles(&tx_measurements));
-    expect!["11916"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
+    expect!["17535"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(

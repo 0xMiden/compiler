@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING
+- `StorageMap` became `StorageMap<K,V>` and `Value` became `Storage<T>` where `K`, `V` and `T` have to be convertible to and from `Word` #987
+
 ## [0.10.0]
 
 ### BREAKING
