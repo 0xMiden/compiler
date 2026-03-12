@@ -260,6 +260,11 @@ fn render_template(
 
         let target_path = destination.join(relative);
 
+        if entry.file_type().is_symlink() {
+            recreate_symlink(entry.path(), &target_path)?;
+            continue;
+        }
+
         if entry.file_type().is_dir() {
             fs::create_dir_all(&target_path).with_context(|| {
                 format!("Failed to create directory '{}'", target_path.display())
@@ -271,6 +276,28 @@ fn render_template(
     }
 
     Ok(())
+}
+
+/// Recreates a symlink entry in the generated project without rendering its contents.
+fn recreate_symlink(source: &Path, destination: &Path) -> Result<()> {
+    let target = fs::read_link(source)
+        .with_context(|| format!("Failed to read symlink '{}'", source.display()))?;
+    create_symlink(source, &target, destination)
+}
+
+/// Creates a symlink at `destination` that points to `target`.
+#[cfg(unix)]
+fn create_symlink(_source: &Path, target: &Path, destination: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(target, destination).with_context(|| {
+        format!("Failed to create symlink '{}' -> '{}'", destination.display(), target.display())
+    })?;
+    Ok(())
+}
+
+/// Creates a symlink at `destination` that points to `target`.
+#[cfg(not(unix))]
+fn create_symlink(_source: &Path, _target: &Path, _destination: &Path) -> Result<()> {
+    bail!("Template symlink recreation is only supported on Unix platforms")
 }
 
 fn render_file(
@@ -394,7 +421,7 @@ fn sanitize_crate_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, path::PathBuf};
 
     use anyhow::Result;
     use tempfile::tempdir;
@@ -534,6 +561,45 @@ ignore = ["skip-me"]
 
         let err = generate(args).expect_err("expected failure without --force");
         assert!(err.to_string().contains("Use --force to overwrite"));
+
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn generate_recreates_symlinks() -> Result<()> {
+        let template_dir = tempdir()?;
+        let template_root = template_dir.path().join("template");
+        let shared_dir = template_root.join("shared-dir");
+        fs::create_dir_all(&shared_dir)?;
+        fs::write(template_root.join("shared.txt"), "shared")?;
+        fs::write(shared_dir.join("nested.txt"), "nested")?;
+        std::os::unix::fs::symlink("shared.txt", template_root.join("linked.txt"))?;
+        std::os::unix::fs::symlink("shared-dir", template_root.join("linked-dir"))?;
+
+        let destination_dir = tempdir()?;
+        let args = GenerateArgs {
+            template_path: TemplatePath {
+                path: Some(template_dir.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+            destination: Some(destination_dir.path().to_path_buf()),
+            name: Some("symlink-check".into()),
+            force: true,
+            ..Default::default()
+        };
+
+        let project_dir = generate(args)?;
+
+        let linked_file = project_dir.join("linked.txt");
+        let linked_dir = project_dir.join("linked-dir");
+
+        assert!(fs::symlink_metadata(&linked_file)?.file_type().is_symlink());
+        assert!(fs::symlink_metadata(&linked_dir)?.file_type().is_symlink());
+        assert_eq!(fs::read_link(&linked_file)?, PathBuf::from("shared.txt"));
+        assert_eq!(fs::read_link(&linked_dir)?, PathBuf::from("shared-dir"));
+        assert_eq!(fs::read_to_string(&linked_file)?, "shared");
+        assert_eq!(fs::read_to_string(linked_dir.join("nested.txt"))?, "nested");
 
         Ok(())
     }
