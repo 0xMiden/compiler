@@ -16,7 +16,7 @@ use miden_client::{
     transaction::RawOutputNote,
     Deserializable, Word,
 };
-use miden_core::Felt;
+use miden_core::{crypto::hash::Rpo256, Felt, FieldElement};
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_protocol::{
@@ -56,36 +56,15 @@ pub(super) fn block_on<F: Future>(future: F) -> F::Output {
 // ================================================================================================
 
 pub(super) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Package> {
-    let mode_flag = if release { "--release" } else { "--dev" };
-    let output = std::process::Command::new("miden")
-                .arg("build")
-                // Midenup's "miden build" command inherits all of cargo miden's flags.
-                .current_dir(project_path)
-                .env("MIDENUP_MANIFEST_URI", format!("file://{project_path}/channel-manifest.json"))
-                .arg(mode_flag)
-                .output()
-                // TODO: Add the cargo install command once `midenup` is published
-                // in crates.io.
-                .expect("failed to execute `miden build`. Is midenup installed?.
-    If not, follow the installation instructions in: https://github.com/0xMiden/midenup");
+    let config = WasmTranslationConfig::default();
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
 
-    if !output.status.success() {
-        panic!("miden build failed:\n{}", String::from_utf8_lossy(&output.stderr))
+    if release {
+        builder.with_release(true);
     }
 
-    // Read the .masp artifact from the project's target directory
-    let masp_path = std::path::Path::new(project_path)
-        .join("target/miden/release")
-        .read_dir()
-        .expect("failed to read target/miden/release")
-        .filter_map(|e| e.ok())
-        .find(|e| e.path().extension().is_some_and(|ext| ext == "masp"))
-        .map(|entry| entry.path())
-        .expect("no .masp file found in target/miden/release");
-
-    let masp_bytes = std::fs::read(&masp_path).expect("failed to read .masp artifact");
-
-    Arc::new(Package::read_from_bytes(&masp_bytes).expect("failed to parse .masp package"))
+    let mut test = builder.build();
+    test.compile_package()
 }
 
 // ================================================================================================
