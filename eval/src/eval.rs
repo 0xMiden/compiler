@@ -2038,20 +2038,20 @@ impl Eval for arith::Cto {
     }
 }
 
-impl Eval for wasm::I32ExtendS {
+impl Eval for wasm::SignExtend {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         let lhs = self.operand();
         let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
 
-        let Immediate::I32(x) = lhs_value else {
+        if !self.is_valid_immediate(lhs_value) {
             return Err(evaluator.report(
                 "evaluation failed",
                 self.span(),
-                format!("expected i32 operand, got {}", lhs_value.ty()),
+                format!("expected {} operand, got {}", self.get_dst_ty(), lhs_value.ty()),
             ));
-        };
+        }
 
-        let result = Immediate::I32(self.sext_from_src(x));
+        let result = self.sext_from_src(lhs_value);
         evaluator.set_value(self.result().as_value_ref(), result);
         Ok(ControlFlowEffect::None)
     }

@@ -12,64 +12,119 @@ use midenc_hir::{
 
 use crate::WasmDialect;
 
-/// Interprets an `i32` operand as a value of the given source type and sign-extends it to `i32`.
+/// Interprets the operand as a value of the source type and sign-extends it to the destination
+/// type.
 ///
-/// Handles the following Wasm instructions:
+/// # Allowed types
 ///
-/// - `i32.extend8_s`
-/// - `i32.extend16_s`
+/// The source type must be narrower than the destination type. The allowed source types per
+/// destination type are:
+///
+/// | Destination | Source Types |
+/// |-------------|--------------|
+/// | `Type::I32` | `Type::I8`, `Type::I16` |
+/// | `Type::I64` | `Type::I8`, `Type::I16`, `Type::I32` |
+///
+/// This is verified by `InferTypeOpInterface`.
+///
+/// # Mapping to wasm instructions
+///
+/// The corresponding Wasm instruction is `<dst_ty>.extend<src_ty>_s`, for example `i32.extend8_s`.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
     traits(UnaryOp),
     implements(UnaryOp, InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
-pub struct I32ExtendS {
+pub struct SignExtend {
     #[operand]
-    operand: Int32,
-    /// Valid source types are `Type::I8` and `Type::I16`. This is verified by
-    /// `InferTypeOpInterface`.
+    operand: Or<Int32, Int64>,
+    /// Source type to sign-extend from.
     #[attr]
     src_ty: TypeAttr,
+    /// Destination type to sign-extend to.
+    #[attr]
+    dst_ty: TypeAttr,
     #[result]
-    result: Int32,
+    result: Or<Int32, Int64>,
 }
 
-impl I32ExtendS {
-    /// Interprets `x` as a value of the source type and sign-extends it to `i32`.
-    pub fn sext_from_src(&self, x: i32) -> i32 {
-        match &*self.get_src_ty() {
-            Type::I8 => (x as i8) as i32,
-            Type::I16 => (x as i16) as i32,
-            ty => panic!("invalid operation i32.extend*_s: source cannot be {ty}"),
+impl SignExtend {
+    /// Interprets `x` as a value of the source type and sign-extends it to the destination type.
+    pub fn sext_from_src(&self, x: Immediate) -> Immediate {
+        match &*self.get_dst_ty() {
+            Type::I32 => {
+                // Handles `i32.extend<src_ty>_s`
+                let value = x.as_i32().expect("operand should be i32");
+                match &*self.get_src_ty() {
+                    Type::I8 => Immediate::I32((value as i8) as i32),
+                    Type::I16 => Immediate::I32((value as i16) as i32),
+                    ty => panic!("invalid operation i32.extend<src_ty>_s: source cannot be {ty}"),
+                }
+            }
+            Type::I64 => {
+                // Handles `i64.extend<src_ty>_s`
+                let value = x.as_i64().expect("operand should be i64");
+                match &*self.get_src_ty() {
+                    Type::I8 => Immediate::I64((value as i8) as i64),
+                    Type::I16 => Immediate::I64((value as i16) as i64),
+                    Type::I32 => Immediate::I64((value as i32) as i64),
+                    ty => panic!("invalid operation i64.extend<src_ty>_s: source cannot be {ty}"),
+                }
+            }
+            ty => panic!("invalid operation <dst_ty>.extend<src_ty>_s: destination cannot be {ty}"),
         }
+    }
+
+    /// Checks whether `x` is a valid operand.
+    ///
+    /// Note that the destination type determines the operand type. For example in `i32.extend8_s`,
+    /// `i32` is the destination and operand type.
+    pub fn is_valid_immediate(&self, x: Immediate) -> bool {
+        matches!(
+            (&*self.get_dst_ty(), x),
+            (&Type::I32, Immediate::I32(_)) | (&Type::I64, Immediate::I64(_))
+        )
     }
 }
 
-impl InferTypeOpInterface for I32ExtendS {
+impl InferTypeOpInterface for SignExtend {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let is_valid = matches!(*self.get_src_ty(), Type::I8 | Type::I16);
-        if !is_valid {
+        let operand_ty = self.operand().ty();
+        let dst_ty = self.get_dst_ty().clone();
+        let src_ty = self.get_src_ty().clone();
+
+        if operand_ty != dst_ty {
             return Err(Report::msg(format!(
-                "invalid operation i32.extend*_s: source cannot be {}",
-                *self.get_src_ty()
+                "invalid operation <dst_ty>.extend*_<src_ty>: operand type {operand_ty} does not \
+                 match destination type {dst_ty}",
             )));
         }
-        self.result_mut().set_type(Type::I32);
+
+        match (&dst_ty, &src_ty) {
+            (&Type::I32, &Type::I8 | &Type::I16) => {}
+            (&Type::I64, &Type::I8 | &Type::I16 | &Type::I32) => {}
+            (dst_ty, src_ty) => {
+                return Err(Report::msg(format!(
+                    "invalid operation <dst_ty>.extend*_<src_ty>: invalid (dst_ty, src_ty) \
+                     combination: ({dst_ty}, {src_ty})"
+                )));
+            }
+        };
+        self.result_mut().set_type(dst_ty);
         Ok(())
     }
 }
 
-impl Foldable for I32ExtendS {
+impl Foldable for SignExtend {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         if let Some(mut attr_value) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
             .matches(&self.operand().as_operand_ref())
         {
             let mut attr_value_mut = attr_value.borrow_mut();
-            let value = attr_value_mut.as_immediate().as_i32();
-            let extended = value.map(|v| Immediate::I32(self.sext_from_src(v)));
-
-            if let Some(extended) = extended {
+            let value = attr_value_mut.as_immediate();
+            if self.is_valid_immediate(value) {
+                let extended = self.sext_from_src(value);
                 attr_value_mut.set_from_immediate_lossy(extended);
                 results.push(OpFoldResult::Attribute(attr_value as AttributeRef));
                 return FoldResult::Ok(());
@@ -92,9 +147,9 @@ impl Foldable for I32ExtendS {
                 None
             }
         }) {
-            let value = attr.as_immediate().as_i32();
-            let extended = value.map(|v| Immediate::I32(self.sext_from_src(v)));
-            if let Some(extended) = extended {
+            let value = attr.as_immediate();
+            if self.is_valid_immediate(value) {
+                let extended = self.sext_from_src(value);
                 let mut new_attr = attr.name().dyn_clone(&*attr);
                 let mut new_attr_mut = new_attr.borrow_mut();
                 new_attr_mut

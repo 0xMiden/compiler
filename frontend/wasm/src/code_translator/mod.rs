@@ -319,11 +319,23 @@ pub fn translate_operator<B: ?Sized + Builder>(
         }
         Operator::I32Extend8S => {
             let val = state.pop1();
-            state.push1(builder.i32_extend_s(val, Type::I8, span)?);
+            state.push1(builder.sign_extend(val, Type::I8, Type::I32, span)?);
         }
         Operator::I32Extend16S => {
             let val = state.pop1();
-            state.push1(builder.i32_extend_s(val, Type::I16, span)?);
+            state.push1(builder.sign_extend(val, Type::I16, Type::I32, span)?);
+        }
+        Operator::I64Extend8S => {
+            let val = state.pop1();
+            state.push1(builder.sign_extend(val, Type::I8, Type::I64, span)?);
+        }
+        Operator::I64Extend16S => {
+            let val = state.pop1();
+            state.push1(builder.sign_extend(val, Type::I16, Type::I64, span)?);
+        }
+        Operator::I64Extend32S => {
+            let val = state.pop1();
+            state.push1(builder.sign_extend(val, Type::I32, Type::I64, span)?);
         }
         Operator::I64ExtendI32S => {
             let val = state.pop1();

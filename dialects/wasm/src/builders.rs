@@ -4,14 +4,15 @@ use midenc_hir::{
 };
 
 pub trait WasmOpBuilder<'f, B: ?Sized + Builder> {
-    fn i32_extend_s(
+    fn sign_extend(
         &mut self,
         arg: ValueRef,
         src_ty: Type,
+        dst_ty: Type,
         span: SourceSpan,
     ) -> Result<ValueRef, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::I32ExtendS, _>(span);
-        let op = op_builder(arg, src_ty)?;
+        let op_builder = self.builder_mut().create::<crate::ops::SignExtend, _>(span);
+        let op = op_builder(arg, src_ty, dst_ty)?;
         Ok(op.borrow().result().as_value_ref())
     }
 
