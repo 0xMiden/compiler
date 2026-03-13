@@ -1351,7 +1351,7 @@ impl HirLowering for builtin::GlobalSymbol {
     }
 }
 
-impl HirLowering for wasm::ExtendS {
+impl HirLowering for wasm::SignExtend {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // We're sign-extending a value of the source type contained in an I32/I64 operand, where
         // the destination type is wider than the source type. Wasm does not specify the contents of

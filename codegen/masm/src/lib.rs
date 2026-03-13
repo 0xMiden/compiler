@@ -166,5 +166,5 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
 }
 
 fn lower_wasm_ops(info: &mut midenc_hir::DialectInfo) {
-    info.register_operation_trait::<wasm::ExtendS, dyn HirLowering>();
+    info.register_operation_trait::<wasm::SignExtend, dyn HirLowering>();
 }

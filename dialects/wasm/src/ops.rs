@@ -36,7 +36,7 @@ use crate::WasmDialect;
     traits(UnaryOp),
     implements(UnaryOp, InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
-pub struct ExtendS {
+pub struct SignExtend {
     #[operand]
     operand: Or<Int32, Int64>,
     /// Source type to sign-extend from.
@@ -49,7 +49,7 @@ pub struct ExtendS {
     result: Or<Int32, Int64>,
 }
 
-impl ExtendS {
+impl SignExtend {
     /// Interprets `x` as a value of the source type and sign-extends it to the destination type.
     pub fn sext_from_src(&self, x: Immediate) -> Immediate {
         match &*self.get_dst_ty() {
@@ -88,7 +88,7 @@ impl ExtendS {
     }
 }
 
-impl InferTypeOpInterface for ExtendS {
+impl InferTypeOpInterface for SignExtend {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         let operand_ty = self.operand().ty();
         let dst_ty = self.get_dst_ty().clone();
@@ -116,7 +116,7 @@ impl InferTypeOpInterface for ExtendS {
     }
 }
 
-impl Foldable for ExtendS {
+impl Foldable for SignExtend {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
         if let Some(mut attr_value) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
             .matches(&self.operand().as_operand_ref())
