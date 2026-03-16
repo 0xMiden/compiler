@@ -665,9 +665,9 @@ impl OpEmitter<'_> {
         // [dst, count, value..]
         self.emit_push(0u32, span); // [i, dst, count, value..]
         self.emit(masm::Instruction::Dup2, span); // [count, i, dst, count, value..]
-        self.emit_push(Felt::ZERO, span);
+        self.emit_push(0u32, span);
         self.emit(
-            masm::Instruction::Gte, // [count > 0, i, dst, count, value..]
+            masm::Instruction::U32Gt, // [count > 0, i, dst, count, value..]
             span,
         );
         self.current_block.push(masm::Op::While {
@@ -912,9 +912,9 @@ impl OpEmitter<'_> {
         // [src, dst, count]
         self.emit_push(0u32, span); // [i, src, dst, count]
         self.emit(masm::Instruction::Dup3, span); // [count, i, src, dst, count]
-        self.emit_push(Felt::ZERO, span);
+        self.emit_push(0u32, span);
         self.emit(
-            masm::Instruction::Gte, // [count > 0, i, src, dst, count]
+            masm::Instruction::U32Gt, // [count > 0, i, src, dst, count]
             span,
         );
         self.current_block.push(masm::Op::While {
