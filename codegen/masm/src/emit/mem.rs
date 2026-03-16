@@ -9,6 +9,53 @@ use crate::{OperandStack, lower::NativePtr};
 
 /// Allocation
 impl OpEmitter<'_> {
+    /// Emit the loop header for a counted `while.true` loop.
+    ///
+    /// The caller provides the `dup` instruction needed to bring `count` to the top of the stack
+    /// after the loop index has been seeded with zero.
+    ///
+    /// Stack transition:
+    ///
+    /// - Before: `[loop_state..]`
+    /// - After: `[count > 0, i = 0, loop_state..]`
+    ///
+    /// For example:
+    ///
+    /// - `memset`: `[dst, count, value..] -> [count > 0, i = 0, dst, count, value..]`
+    /// - `memcpy`: `[src, dst, count] -> [count > 0, i = 0, src, dst, count]`
+    fn emit_counted_loop_header(&mut self, count_dup: masm::Instruction, span: SourceSpan) {
+        self.emit_push(0u32, span);
+        self.emit(count_dup, span);
+        self.emit_push(0u32, span);
+        self.emit(masm::Instruction::U32Gt, span);
+    }
+
+    /// Emit the loop back-edge condition for a counted `while.true` loop.
+    ///
+    /// The caller provides the `dup` instruction needed to bring `count` to the top of the stack
+    /// after incrementing the loop index.
+    ///
+    /// Stack transition:
+    ///
+    /// - Before: `[i, loop_state..]`
+    /// - After: `[i + 1 < count, i + 1, loop_state..]`
+    ///
+    /// For example:
+    ///
+    /// - `memset`: `[i, dst, count, value..] -> [i + 1 < count, i + 1, dst, count, value..]`
+    /// - `memcpy`: `[i, src, dst, count] -> [i + 1 < count, i + 1, src, dst, count]`
+    fn emit_counted_loop_next_condition(&mut self, count_dup: masm::Instruction, span: SourceSpan) {
+        self.emit_all(
+            [
+                masm::Instruction::U32WrappingAddImm(1.into()),
+                masm::Instruction::Dup0,
+                count_dup,
+                masm::Instruction::U32Lt,
+            ],
+            span,
+        );
+    }
+
     /// Grow the heap (from the perspective of Wasm programs) by N pages, returning the previous
     /// size of the heap (in pages) if successful, or -1 if the heap could not be grown.
     pub fn mem_grow(&mut self, span: SourceSpan) {
@@ -649,27 +696,15 @@ impl OpEmitter<'_> {
         body_emitter.store(span); // [i, dst, count, value]
 
         // Loop body - increment iteration count, determine whether to continue loop
-        body_emitter.emit_all(
-            [
-                masm::Instruction::U32WrappingAddImm(1.into()),
-                masm::Instruction::Dup0,  // [i++, i++, dst, count, value]
-                masm::Instruction::Dup3,  // [count, i++, i++, dst, count, value]
-                masm::Instruction::U32Lt, // [i++ < count, i++, dst, count, value]
-            ],
-            span,
-        );
+        body_emitter.emit_counted_loop_next_condition(masm::Instruction::Dup3, span);
+        // [i++ < count, i++, dst, count, value]
 
         // Switch back to original block and emit loop header and 'while.true' instruction
         //
         // Loop header - prepare to loop until `count` iterations have been performed
         // [dst, count, value..]
-        self.emit_push(0u32, span); // [i, dst, count, value..]
-        self.emit(masm::Instruction::Dup2, span); // [count, i, dst, count, value..]
-        self.emit_push(0u32, span);
-        self.emit(
-            masm::Instruction::U32Gt, // [count > 0, i, dst, count, value..]
-            span,
-        );
+        self.emit_counted_loop_header(masm::Instruction::Dup2, span);
+        // [count > 0, i, dst, count, value..]
         self.current_block.push(masm::Op::While {
             span,
             body: masm::Block::new(span, body),
@@ -895,28 +930,16 @@ impl OpEmitter<'_> {
         body_emitter.store(span); // [i, src, dst, count]
 
         // Increment iteration count, determine whether to continue loop
-        body_emitter.emit_all(
-            [
-                masm::Instruction::U32WrappingAddImm(1.into()),
-                masm::Instruction::Dup0,  // [i++, i++, src, dst, count]
-                masm::Instruction::Dup4,  // [count, i++, i++, src, dst, count]
-                masm::Instruction::U32Lt, // [i++ < count, i++, src, dst, count]
-            ],
-            span,
-        );
+        body_emitter.emit_counted_loop_next_condition(masm::Instruction::Dup4, span);
+        // [i++ < count, i++, src, dst, count]
 
         // Switch back to original block and emit loop header and 'while.true' instruction
         //
         // Loop header - prepare to loop until `count` iterations have been performed
 
         // [src, dst, count]
-        self.emit_push(0u32, span); // [i, src, dst, count]
-        self.emit(masm::Instruction::Dup3, span); // [count, i, src, dst, count]
-        self.emit_push(0u32, span);
-        self.emit(
-            masm::Instruction::U32Gt, // [count > 0, i, src, dst, count]
-            span,
-        );
+        self.emit_counted_loop_header(masm::Instruction::Dup3, span);
+        // [count > 0, i, src, dst, count]
         self.current_block.push(masm::Op::While {
             span,
             body: masm::Block::new(span, body),
