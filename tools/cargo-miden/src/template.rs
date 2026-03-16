@@ -294,10 +294,123 @@ fn create_symlink(_source: &Path, target: &Path, destination: &Path) -> Result<(
     Ok(())
 }
 
-/// Creates a symlink at `destination` that points to `target`.
+/// Materializes the symlink target in the destination on Windows.
+#[cfg(windows)]
+fn create_symlink(source: &Path, target: &Path, destination: &Path) -> Result<()> {
+    materialize_symlink_target(source, target, destination)
+}
+
+/// Materializes the symlink target in the destination on non-Unix platforms.
+#[cfg(all(not(unix), not(windows)))]
+fn create_symlink(source: &Path, target: &Path, destination: &Path) -> Result<()> {
+    materialize_symlink_target(source, target, destination)
+}
+
+/// Resolves a symlink target relative to the symlink's parent directory when needed.
 #[cfg(not(unix))]
-fn create_symlink(_source: &Path, _target: &Path, _destination: &Path) -> Result<()> {
-    bail!("Template symlink recreation is only supported on Unix platforms")
+fn resolve_symlink_target(source: &Path, target: &Path) -> PathBuf {
+    if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        source.parent().unwrap_or_else(|| Path::new(".")).join(target)
+    }
+}
+
+/// Materializes a symlink target by copying or linking its underlying contents.
+#[cfg(not(unix))]
+fn materialize_symlink_target(source: &Path, target: &Path, destination: &Path) -> Result<()> {
+    let resolved_target = resolve_symlink_target(source, target);
+    let metadata = fs::metadata(&resolved_target).with_context(|| {
+        format!(
+            "Failed to inspect symlink target '{}' for '{}'",
+            resolved_target.display(),
+            source.display()
+        )
+    })?;
+
+    if metadata.is_dir() {
+        copy_directory(&resolved_target, destination)
+    } else {
+        copy_file_target(&resolved_target, destination)
+    }
+}
+
+/// Recursively copies a directory tree into the generated project.
+#[cfg(not(unix))]
+fn copy_directory(source: &Path, destination: &Path) -> Result<()> {
+    fs::create_dir_all(destination)
+        .with_context(|| format!("Failed to create directory '{}'", destination.display()))?;
+
+    let metadata = fs::metadata(source)
+        .with_context(|| format!("Failed to inspect directory '{}'", source.display()))?;
+    fs::set_permissions(destination, metadata.permissions())
+        .with_context(|| format!("Failed to set permissions on '{}'", destination.display()))?;
+
+    for entry in fs::read_dir(source)
+        .with_context(|| format!("Failed to read directory '{}'", source.display()))?
+    {
+        let entry =
+            entry.with_context(|| format!("Failed to read entry in '{}'", source.display()))?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type().with_context(|| {
+            format!("Failed to inspect directory entry '{}'", source_path.display())
+        })?;
+
+        if file_type.is_dir() {
+            copy_directory(&source_path, &destination_path)?;
+            continue;
+        }
+
+        if file_type.is_symlink() {
+            let target = fs::read_link(&source_path)
+                .with_context(|| format!("Failed to read symlink '{}'", source_path.display()))?;
+            materialize_symlink_target(&source_path, &target, &destination_path)?;
+            continue;
+        }
+
+        copy_file_target(&source_path, &destination_path)?;
+    }
+
+    Ok(())
+}
+
+/// Copies or links a file target into the generated project.
+#[cfg(not(unix))]
+fn copy_file_target(source: &Path, destination: &Path) -> Result<()> {
+    link_or_copy_file(source, destination)?;
+
+    let metadata = fs::metadata(source)
+        .with_context(|| format!("Failed to inspect file '{}'", source.display()))?;
+    fs::set_permissions(destination, metadata.permissions())
+        .with_context(|| format!("Failed to set permissions on '{}'", destination.display()))?;
+
+    Ok(())
+}
+
+/// Creates a hardlink for a file target, falling back to a copy if needed.
+#[cfg(windows)]
+fn link_or_copy_file(source: &Path, destination: &Path) -> Result<()> {
+    if let Err(hard_link_error) = fs::hard_link(source, destination) {
+        fs::copy(source, destination).map(|_| ()).with_context(|| {
+            format!(
+                "Failed to hardlink or copy file '{}' into '{}': {hard_link_error}",
+                source.display(),
+                destination.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+/// Copies a file target into the generated project.
+#[cfg(all(not(unix), not(windows)))]
+fn link_or_copy_file(source: &Path, destination: &Path) -> Result<()> {
+    fs::copy(source, destination).map(|_| ()).with_context(|| {
+        format!("Failed to copy file '{}' into '{}'", source.display(), destination.display())
+    })?;
+    Ok(())
 }
 
 fn render_file(
