@@ -384,7 +384,7 @@ fn load_unaligned_u16() {
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u16>(), move |value| {
-        let expected = value.to_ne_bytes();
+        let expected = value.to_le_bytes();
         let initial_bytes = [0xff, 0xee, 0xdd, expected[0], expected[1], 0xbb, 0xaa, 0x99];
         let initializers = [Initializer::MemoryBytes {
             addr: write_to,
@@ -657,7 +657,7 @@ fn store_unaligned_u16() {
         let args = [Felt::new(store_value as u64)];
         let output =
             eval_package::<u32, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let expected = store_value.to_ne_bytes();
+                let expected = store_value.to_le_bytes();
                 let word0 = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
                     TestCaseError::fail(format!("failed to read from byte address {write_to}"))
                 })?;
