@@ -78,6 +78,21 @@ impl OpEmitter<'_> {
         });
     }
 
+    /// Convert the byte pointer on top of the stack to a word-aligned element address.
+    ///
+    /// This traps unless the input byte address is aligned to a 16-byte Miden word boundary.
+    fn emit_word_aligned_element_addr_from_byte_ptr(&mut self, span: SourceSpan) {
+        self.emit_all(
+            [
+                masm::Instruction::U32DivModImm(16.into()),
+                masm::Instruction::Assertz,
+                masm::Instruction::U32OverflowingMulImm(4.into()),
+                masm::Instruction::Assertz,
+            ],
+            span,
+        );
+    }
+
     /// Grow the heap (from the perspective of Wasm programs) by N pages, returning the previous
     /// size of the heap (in pages) if successful, or -1 if the heap could not be grown.
     pub fn mem_grow(&mut self, span: SourceSpan) {
@@ -859,17 +874,21 @@ impl OpEmitter<'_> {
                 // We have to convert byte addresses to element addresses
                 self.emit_all(
                     [
-                        // Convert `src` to element address, and assert aligned to an element address
-                        //
-                        // TODO: We should probably also assert that the address is word-aligned, but
-                        // that is going to happen anyway. That said, the closer to the source the
-                        // better for debugging.
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
+                        // Convert `src` to a word-aligned element address
+                    ],
+                    span,
+                );
+                self.emit_word_aligned_element_addr_from_byte_ptr(span);
+                self.emit_all(
+                    [
                         // Convert `dst` to an element address the same way
                         masm::Instruction::Swap1,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
+                    ],
+                    span,
+                );
+                self.emit_word_aligned_element_addr_from_byte_ptr(span);
+                self.emit_all(
+                    [
                         // Swap with `count` to get us into the correct ordering: [count, src, dst]
                         masm::Instruction::Swap2,
                     ],
@@ -885,17 +904,21 @@ impl OpEmitter<'_> {
                 let factor = size / 16;
                 self.emit_all(
                     [
-                        // Convert `src` to element address, and assert aligned to an element address
-                        //
-                        // TODO: We should probably also assert that the address is word-aligned, but
-                        // that is going to happen anyway. That said, the closer to the source the
-                        // better for debugging.
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
+                        // Convert `src` to a word-aligned element address
+                    ],
+                    span,
+                );
+                self.emit_word_aligned_element_addr_from_byte_ptr(span);
+                self.emit_all(
+                    [
                         // Convert `dst` to an element address the same way
                         masm::Instruction::Swap1,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
+                    ],
+                    span,
+                );
+                self.emit_word_aligned_element_addr_from_byte_ptr(span);
+                self.emit_all(
+                    [
                         // Swap with `count` to get us into the correct ordering: [count, src, dst]
                         masm::Instruction::Swap2,
                         // Compute the corrected count
