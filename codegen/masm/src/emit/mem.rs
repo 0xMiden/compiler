@@ -261,30 +261,23 @@ impl OpEmitter<'_> {
                 self.emit(masm::Instruction::U32And, span);
                 return;
             } else {
-                if ty.size_in_bits() == 16 {
-                    // A 16-bit value can start at byte offset 3, so it may span two adjacent
-                    // elements. Load the full 32-bit unaligned window first, then keep the low
-                    // 16 bits corresponding to the requested value.
-                    self.push_native_ptr(imm, span);
-                    self.raw_exec("::intrinsics::mem::load_sw", span);
-                    self.emit_push(0xffffu32, span);
-                    self.emit(masm::Instruction::U32And, span);
-                    return;
-                }
                 self.emit_push(imm.addr, span);
                 self.emit_push(imm.offset, span);
             }
         }
 
         if ty.size_in_bits() == 16 {
-            // The dynamic case has the same boundary issue as the immediate case: offset 3 reaches
-            // into the next element. Reuse the unaligned 32-bit load to assemble the window.
-            self.raw_exec("::intrinsics::mem::load_sw", span);
-            self.emit_push(0xffffu32, span);
-            self.emit(masm::Instruction::U32And, span);
+            self.load_u16_dynamic(span);
             return;
         }
 
+        self.load_small_from_current_element(ty, span);
+    }
+
+    /// Load a sub-word value which is fully contained in the current 32-bit element.
+    ///
+    /// Stack transition: `[addr, offset] -> [value]`.
+    fn load_small_from_current_element(&mut self, ty: &Type, span: SourceSpan) {
         // Stack: [element_addr, byte_offset]
 
         // First, load the aligned word containing our value
@@ -321,6 +314,37 @@ impl OpEmitter<'_> {
 
         self.emit_push(mask as u32, span);
         self.emit(masm::Instruction::U32And, span);
+    }
+
+    /// Load a `u16` value from a dynamic native pointer tuple.
+    ///
+    /// Offsets `0..=2` fit within the current element and can use the regular shift/mask path.
+    /// Offset `3` spans the next element, so it must assemble a 32-bit unaligned window first.
+    ///
+    /// Stack transition: `[addr, offset] -> [value]`.
+    fn load_u16_dynamic(&mut self, span: SourceSpan) {
+        self.emit_all(
+            [masm::Instruction::Dup1, masm::Instruction::EqImm(Felt::new(3).into())],
+            span,
+        );
+
+        let mut then_ops = Vec::default();
+        let mut then_stack = OperandStack::new(self.context_rc());
+        let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
+        then_emitter.raw_exec("::intrinsics::mem::load_sw", span);
+        then_emitter.emit_push(0xffffu32, span);
+        then_emitter.emit(masm::Instruction::U32And, span);
+
+        let mut else_ops = Vec::default();
+        let mut else_stack = OperandStack::new(self.context_rc());
+        let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
+        else_emitter.load_small_from_current_element(&Type::U16, span);
+
+        self.current_block.push(masm::Op::If {
+            span,
+            then_blk: masm::Block::new(span, then_ops),
+            else_blk: masm::Block::new(span, else_ops),
+        });
     }
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -1095,34 +1119,20 @@ impl OpEmitter<'_> {
         }
 
         if type_size == 16 {
-            // A 16-bit store at byte offset 3 updates one byte in the current element and one in
-            // the next. Merge the new 16-bit payload into the 32-bit unaligned window and let the
-            // existing unaligned word store split it back across both elements.
-            self.emit_all(
-                [
-                    masm::Instruction::Dup1, // [offset, addr, offset, value]
-                    masm::Instruction::Dup1, // [addr, offset, addr, offset, value]
-                ],
-                span,
-            );
-            self.raw_exec("::intrinsics::mem::load_sw", span); // [window, addr, offset, value]
-            self.emit_push(0xffff0000u32, span);
-            self.emit(masm::Instruction::U32And, span); // [masked_window, addr, offset, value]
-            self.emit(masm::Instruction::MovUp3, span); // [value, masked_window, addr, offset]
-            self.emit_push(0xffffu32, span);
-            self.emit(masm::Instruction::U32And, span); // [value16, masked_window, addr, offset]
-            self.emit(masm::Instruction::U32Or, span); // [combined, addr, offset]
-            self.emit_all(
-                [
-                    masm::Instruction::Swap2, // [offset, addr, combined]
-                    masm::Instruction::Swap1, // [addr, offset, combined]
-                ],
-                span,
-            );
-            self.raw_exec("::intrinsics::mem::store_sw", span);
+            self.store_u16_dynamic(span);
             return;
         }
 
+        self.store_small_within_element(
+            u32::try_from(type_size).expect("invalid sub-word type size"),
+            span,
+        );
+    }
+
+    /// Store a sub-word value which is fully contained in the current 32-bit element.
+    ///
+    /// Stack transition: `[addr, offset, value] -> []`.
+    fn store_small_within_element(&mut self, type_size: u32, span: SourceSpan) {
         // Stack: [addr, offset, value]
         // Load the current aligned value
         self.emit_all(
@@ -1169,6 +1179,56 @@ impl OpEmitter<'_> {
             ],
             span,
         );
+    }
+
+    /// Store a `u16` to a dynamic native pointer tuple.
+    ///
+    /// Offsets `0..=2` fit within the current element and can update that element in place.
+    /// Offset `3` spans into the next element and must use the unaligned 32-bit store intrinsic.
+    ///
+    /// Stack transition: `[addr, offset, value] -> []`.
+    fn store_u16_dynamic(&mut self, span: SourceSpan) {
+        self.emit_all(
+            [masm::Instruction::Dup1, masm::Instruction::EqImm(Felt::new(3).into())],
+            span,
+        );
+
+        let mut then_ops = Vec::default();
+        let mut then_stack = OperandStack::new(self.context_rc());
+        let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
+        then_emitter.emit_all(
+            [
+                masm::Instruction::Dup1, // [offset, addr, offset, value]
+                masm::Instruction::Dup1, // [addr, offset, addr, offset, value]
+            ],
+            span,
+        );
+        then_emitter.raw_exec("::intrinsics::mem::load_sw", span); // [window, addr, offset, value]
+        then_emitter.emit_push(0xffff0000u32, span);
+        then_emitter.emit(masm::Instruction::U32And, span); // [masked_window, addr, offset, value]
+        then_emitter.emit(masm::Instruction::MovUp3, span); // [value, masked_window, addr, offset]
+        then_emitter.emit_push(0xffffu32, span);
+        then_emitter.emit(masm::Instruction::U32And, span); // [value16, masked_window, addr, offset]
+        then_emitter.emit(masm::Instruction::U32Or, span); // [combined, addr, offset]
+        then_emitter.emit_all(
+            [
+                masm::Instruction::Swap2, // [offset, addr, combined]
+                masm::Instruction::Swap1, // [addr, offset, combined]
+            ],
+            span,
+        );
+        then_emitter.raw_exec("::intrinsics::mem::store_sw", span);
+
+        let mut else_ops = Vec::default();
+        let mut else_stack = OperandStack::new(self.context_rc());
+        let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
+        else_emitter.store_small_within_element(16, span);
+
+        self.current_block.push(masm::Op::If {
+            span,
+            then_blk: masm::Block::new(span, then_ops),
+            else_blk: masm::Block::new(span, else_ops),
+        });
     }
 
     /// Store a sub-word value using an immediate pointer
