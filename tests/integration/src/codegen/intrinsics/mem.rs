@@ -433,6 +433,74 @@ fn load_unaligned_u16() {
     run_load_unaligned_u16(3);
 }
 
+/// Runs an `i16` load test from the specified unaligned byte offset.
+fn run_load_unaligned_i16(offset: u32) {
+    setup::enable_compiler_instrumentation();
+
+    let write_to = 17 * 2u32.pow(16);
+    let read_from = write_to + offset;
+
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::I16))], [Type::I16], |builder| {
+            let block = builder.current_block();
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
+
+    let config = proptest::test_runner::Config::with_cases(10);
+    let res = TestRunner::new(config).run(&any::<i16>(), move |value| {
+        let expected = value.to_le_bytes();
+        let mut initial_bytes = [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88];
+        initial_bytes[offset as usize] = expected[0];
+        initial_bytes[offset as usize + 1] = expected[1];
+        let initializers = [Initializer::MemoryBytes {
+            addr: write_to,
+            bytes: &initial_bytes,
+        }];
+
+        let args = [Felt::new(read_from as u64)];
+        let output = eval_package::<i16, _, _>(
+            &package,
+            initializers,
+            &args,
+            context.session(),
+            |_| Ok(()),
+        )?;
+
+        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
+
+        Ok(())
+    });
+
+    match res {
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {res:?}"),
+    }
+}
+
+/// Tests that loading an `i16` from byte offset 1 stays within the current element.
+#[test]
+fn load_unaligned_i16_offset_1() {
+    run_load_unaligned_i16(1);
+}
+
+/// Tests that loading an `i16` from byte offset 2 stays within the current element.
+#[test]
+fn load_unaligned_i16_offset_2() {
+    run_load_unaligned_i16(2);
+}
+
+/// Tests that loading an `i16` from byte offset 3 correctly reconstructs the value across the next
+/// element boundary.
+#[test]
+fn load_unaligned_i16() {
+    run_load_unaligned_i16(3);
+}
+
 /// Tests the memory load intrinsic for loads of boolean (i.e. 1-bit) values
 #[test]
 fn load_bool() {
@@ -739,6 +807,109 @@ fn store_unaligned_u16_offset_2() {
 #[test]
 fn store_unaligned_u16() {
     run_store_unaligned_u16(3);
+}
+
+/// Runs an `i16` store test at the specified unaligned byte offset.
+fn run_store_unaligned_i16(offset: u32) {
+    setup::enable_compiler_instrumentation();
+
+    let write_to = 17 * 2u32.pow(16);
+    let store_to = write_to + offset;
+
+    let (package, context) = compile_test_module([Type::I16], [Type::U32], |builder| {
+        let block = builder.current_block();
+        let value = block.borrow().arguments()[0] as ValueRef;
+
+        let addr = builder.u32(store_to, SourceSpan::default());
+        let ptr = builder
+            .inttoptr(addr, Type::from(PointerType::new(Type::I16)), SourceSpan::default())
+            .unwrap();
+
+        builder.store(ptr, value, SourceSpan::default()).unwrap();
+
+        let result = builder.u32(1, SourceSpan::default());
+        builder.ret(Some(result), SourceSpan::default()).unwrap();
+    });
+
+    let config = proptest::test_runner::Config::with_cases(32);
+    let res = TestRunner::new(config).run(&any::<i16>(), move |store_value| {
+        let initial_bytes = [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88];
+        let initializers = [Initializer::MemoryBytes {
+            addr: write_to,
+            bytes: &initial_bytes,
+        }];
+
+        let args = [Felt::new(store_value as u16 as u64)];
+        let output =
+            eval_package::<u32, _, _>(&package, initializers, &args, context.session(), |trace| {
+                let expected = store_value.to_le_bytes();
+                let mut expected_bytes = initial_bytes;
+                expected_bytes[offset as usize] = expected[0];
+                expected_bytes[offset as usize + 1] = expected[1];
+
+                let word0 = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
+                    TestCaseError::fail(format!("failed to read from byte address {write_to}"))
+                })?;
+                let word1 = trace.read_from_rust_memory::<u32>(write_to + 4).ok_or_else(|| {
+                    TestCaseError::fail(format!(
+                        "failed to read from byte address {}",
+                        write_to + 4
+                    ))
+                })?;
+                let observed_bytes = [
+                    (word0 & 0xff) as u8,
+                    ((word0 >> 8) & 0xff) as u8,
+                    ((word0 >> 16) & 0xff) as u8,
+                    ((word0 >> 24) & 0xff) as u8,
+                    (word1 & 0xff) as u8,
+                    ((word1 >> 8) & 0xff) as u8,
+                    ((word1 >> 16) & 0xff) as u8,
+                    ((word1 >> 24) & 0xff) as u8,
+                ];
+
+                for (index, (stored, expected_byte)) in
+                    observed_bytes.into_iter().zip(expected_bytes).enumerate()
+                {
+                    prop_assert_eq!(
+                        stored,
+                        expected_byte,
+                        "unexpected byte at address {}",
+                        write_to + index as u32
+                    );
+                }
+                Ok(())
+            })?;
+
+        prop_assert_eq!(output, 1u32);
+        Ok(())
+    });
+
+    match res {
+        Err(TestError::Fail(reason, value)) => {
+            panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {res:?}"),
+    }
+}
+
+/// Tests that storing an `i16` at byte offset 1 updates only the target bytes.
+#[test]
+fn store_unaligned_i16_offset_1() {
+    run_store_unaligned_i16(1);
+}
+
+/// Tests that storing an `i16` at byte offset 2 updates only the target bytes.
+#[test]
+fn store_unaligned_i16_offset_2() {
+    run_store_unaligned_i16(2);
+}
+
+/// Tests that storing an `i16` at byte offset 3 updates only the target bytes across the element
+/// boundary.
+#[test]
+fn store_unaligned_i16() {
+    run_store_unaligned_i16(3);
 }
 
 /// Tests that u8 stores only affect the targeted byte and don't corrupt surrounding memory
