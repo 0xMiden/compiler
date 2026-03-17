@@ -761,7 +761,11 @@ impl OpEmitter<'_> {
     ///
     /// The semantics of this instruction are as follows:
     ///
-    /// * The ``
+    /// * `count` is expressed in units of the pointee type, not bytes
+    /// * the effective byte length is `count * size_of(*src)`
+    /// * `count == 0` leaves memory unchanged and performs no copy
+    /// * source and destination pointers are interpreted in the address space described by their
+    ///   pointer type
     pub fn memcpy(&mut self, span: SourceSpan) {
         let src = self.stack.pop().expect("operand stack is empty");
         let dst = self.stack.pop().expect("operand stack is empty");
