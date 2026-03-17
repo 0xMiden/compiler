@@ -56,6 +56,28 @@ impl OpEmitter<'_> {
         );
     }
 
+    /// Emit the branch used by dynamic `u16` accesses to detect the cross-element case.
+    ///
+    /// The current stack must contain a native pointer tuple where the byte offset is one element
+    /// below the top of the stack, e.g. `[addr, offset]` for loads or `[addr, offset, value]` for
+    /// stores.
+    fn emit_u16_split_offset_branch(
+        &mut self,
+        then_ops: Vec<masm::Op>,
+        else_ops: Vec<masm::Op>,
+        span: SourceSpan,
+    ) {
+        self.emit_all(
+            [masm::Instruction::Dup1, masm::Instruction::EqImm(Felt::new(3).into())],
+            span,
+        );
+        self.current_block.push(masm::Op::If {
+            span,
+            then_blk: masm::Block::new(span, then_ops),
+            else_blk: masm::Block::new(span, else_ops),
+        });
+    }
+
     /// Grow the heap (from the perspective of Wasm programs) by N pages, returning the previous
     /// size of the heap (in pages) if successful, or -1 if the heap could not be grown.
     pub fn mem_grow(&mut self, span: SourceSpan) {
@@ -323,11 +345,6 @@ impl OpEmitter<'_> {
     ///
     /// Stack transition: `[addr, offset] -> [value]`.
     fn load_u16_dynamic(&mut self, span: SourceSpan) {
-        self.emit_all(
-            [masm::Instruction::Dup1, masm::Instruction::EqImm(Felt::new(3).into())],
-            span,
-        );
-
         let mut then_ops = Vec::default();
         let mut then_stack = OperandStack::new(self.context_rc());
         let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
@@ -340,11 +357,7 @@ impl OpEmitter<'_> {
         let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
         else_emitter.load_small_from_current_element(&Type::U16, span);
 
-        self.current_block.push(masm::Op::If {
-            span,
-            then_blk: masm::Block::new(span, then_ops),
-            else_blk: masm::Block::new(span, else_ops),
-        });
+        self.emit_u16_split_offset_branch(then_ops, else_ops, span);
     }
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -1188,11 +1201,6 @@ impl OpEmitter<'_> {
     ///
     /// Stack transition: `[addr, offset, value] -> []`.
     fn store_u16_dynamic(&mut self, span: SourceSpan) {
-        self.emit_all(
-            [masm::Instruction::Dup1, masm::Instruction::EqImm(Felt::new(3).into())],
-            span,
-        );
-
         let mut then_ops = Vec::default();
         let mut then_stack = OperandStack::new(self.context_rc());
         let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
@@ -1224,11 +1232,7 @@ impl OpEmitter<'_> {
         let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
         else_emitter.store_small_within_element(16, span);
 
-        self.current_block.push(masm::Op::If {
-            span,
-            then_blk: masm::Block::new(span, then_ops),
-            else_blk: masm::Block::new(span, else_ops),
-        });
+        self.emit_u16_split_offset_branch(then_ops, else_ops, span);
     }
 
     /// Store a sub-word value using an immediate pointer
