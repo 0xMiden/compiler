@@ -2138,6 +2138,42 @@ mod tests {
     }
 
     #[test]
+    fn op_emitter_unaligned_u16_load_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.load_imm(130, Type::U16, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::U16);
+        assert!(
+            block.iter().any(|op| matches!(op, Op::If { .. })),
+            "expected unaligned `u16` immediate load to emit the dynamic offset split"
+        );
+    }
+
+    #[test]
+    fn op_emitter_unaligned_u16_store_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.push(Type::U16);
+        emitter.store_imm(130, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 0);
+        assert!(
+            block.iter().any(|op| matches!(op, Op::If { .. })),
+            "expected unaligned `u16` immediate store to emit the dynamic offset split"
+        );
+    }
+
+    #[test]
     fn op_emitter_truncate_stack_drops_all_with_remainder() {
         let mut block = Vec::default();
         let context = Rc::new(Context::default());

@@ -365,14 +365,12 @@ fn load_u16() {
     }
 }
 
-/// Tests that loading a u16 from byte offset 3 correctly reconstructs the value across the next
-/// element boundary.
-#[test]
-fn load_unaligned_u16() {
+/// Runs a `u16` load test from the specified unaligned byte offset.
+fn run_load_unaligned_u16(offset: u32) {
     setup::enable_compiler_instrumentation();
 
     let write_to = 17 * 2u32.pow(16);
-    let read_from = write_to + 3;
+    let read_from = write_to + offset;
 
     let (package, context) =
         compile_test_module([Type::from(PointerType::new(Type::U16))], [Type::U16], |builder| {
@@ -385,7 +383,9 @@ fn load_unaligned_u16() {
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u16>(), move |value| {
         let expected = value.to_le_bytes();
-        let initial_bytes = [0xff, 0xee, 0xdd, expected[0], expected[1], 0xbb, 0xaa, 0x99];
+        let mut initial_bytes = [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88];
+        initial_bytes[offset as usize] = expected[0];
+        initial_bytes[offset as usize + 1] = expected[1];
         let initializers = [Initializer::MemoryBytes {
             addr: write_to,
             bytes: &initial_bytes,
@@ -412,6 +412,25 @@ fn load_unaligned_u16() {
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
     }
+}
+
+/// Tests that loading a `u16` from byte offset 1 stays within the current element.
+#[test]
+fn load_unaligned_u16_offset_1() {
+    run_load_unaligned_u16(1);
+}
+
+/// Tests that loading a `u16` from byte offset 2 stays within the current element.
+#[test]
+fn load_unaligned_u16_offset_2() {
+    run_load_unaligned_u16(2);
+}
+
+/// Tests that loading a `u16` from byte offset 3 correctly reconstructs the value across the next
+/// element boundary.
+#[test]
+fn load_unaligned_u16() {
+    run_load_unaligned_u16(3);
 }
 
 /// Tests the memory load intrinsic for loads of boolean (i.e. 1-bit) values
@@ -619,14 +638,12 @@ fn store_u16() {
     }
 }
 
-/// Tests that storing a u16 at byte offset 3 updates only the target bytes across the element
-/// boundary.
-#[test]
-fn store_unaligned_u16() {
+/// Runs a `u16` store test at the specified unaligned byte offset.
+fn run_store_unaligned_u16(offset: u32) {
     setup::enable_compiler_instrumentation();
 
     let write_to = 17 * 2u32.pow(16);
-    let store_to = write_to + 3;
+    let store_to = write_to + offset;
 
     let (package, context) = compile_test_module([Type::U16], [Type::U32], |builder| {
         let block = builder.current_block();
@@ -639,16 +656,13 @@ fn store_unaligned_u16() {
 
         builder.store(ptr, value, SourceSpan::default()).unwrap();
 
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        builder.assert_eq(loaded, value, SourceSpan::default()).unwrap();
-
         let result = builder.u32(1, SourceSpan::default());
         builder.ret(Some(result), SourceSpan::default()).unwrap();
     });
 
     let config = proptest::test_runner::Config::with_cases(32);
     let res = TestRunner::new(config).run(&any::<u16>(), move |store_value| {
-        let initial_bytes = [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa];
+        let initial_bytes = [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88];
         let initializers = [Initializer::MemoryBytes {
             addr: write_to,
             bytes: &initial_bytes,
@@ -658,6 +672,10 @@ fn store_unaligned_u16() {
         let output =
             eval_package::<u32, _, _>(&package, initializers, &args, context.session(), |trace| {
                 let expected = store_value.to_le_bytes();
+                let mut expected_bytes = initial_bytes;
+                expected_bytes[offset as usize] = expected[0];
+                expected_bytes[offset as usize + 1] = expected[1];
+
                 let word0 = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
                     TestCaseError::fail(format!("failed to read from byte address {write_to}"))
                 })?;
@@ -667,19 +685,27 @@ fn store_unaligned_u16() {
                         write_to + 4
                     ))
                 })?;
-                let stored0 = (word0 & 0xff) as u8;
-                let stored1 = ((word0 >> 8) & 0xff) as u8;
-                let stored2 = ((word0 >> 16) & 0xff) as u8;
-                let stored3 = ((word0 >> 24) & 0xff) as u8;
-                let stored4 = (word1 & 0xff) as u8;
-                let stored5 = ((word1 >> 8) & 0xff) as u8;
+                let observed_bytes = [
+                    (word0 & 0xff) as u8,
+                    ((word0 >> 8) & 0xff) as u8,
+                    ((word0 >> 16) & 0xff) as u8,
+                    ((word0 >> 24) & 0xff) as u8,
+                    (word1 & 0xff) as u8,
+                    ((word1 >> 8) & 0xff) as u8,
+                    ((word1 >> 16) & 0xff) as u8,
+                    ((word1 >> 24) & 0xff) as u8,
+                ];
 
-                prop_assert_eq!(stored0, 0xff);
-                prop_assert_eq!(stored1, 0xee);
-                prop_assert_eq!(stored2, 0xdd);
-                prop_assert_eq!(stored3, expected[0]);
-                prop_assert_eq!(stored4, expected[1]);
-                prop_assert_eq!(stored5, 0xaa);
+                for (index, (stored, expected_byte)) in
+                    observed_bytes.into_iter().zip(expected_bytes).enumerate()
+                {
+                    prop_assert_eq!(
+                        stored,
+                        expected_byte,
+                        "unexpected byte at address {}",
+                        write_to + index as u32
+                    );
+                }
                 Ok(())
             })?;
 
@@ -694,6 +720,25 @@ fn store_unaligned_u16() {
         Ok(_) => (),
         _ => panic!("Unexpected test result: {res:?}"),
     }
+}
+
+/// Tests that storing a `u16` at byte offset 1 updates only the target bytes.
+#[test]
+fn store_unaligned_u16_offset_1() {
+    run_store_unaligned_u16(1);
+}
+
+/// Tests that storing a `u16` at byte offset 2 updates only the target bytes.
+#[test]
+fn store_unaligned_u16_offset_2() {
+    run_store_unaligned_u16(2);
+}
+
+/// Tests that storing a `u16` at byte offset 3 updates only the target bytes across the element
+/// boundary.
+#[test]
+fn store_unaligned_u16() {
+    run_store_unaligned_u16(3);
 }
 
 /// Tests that u8 stores only affect the targeted byte and don't corrupt surrounding memory
