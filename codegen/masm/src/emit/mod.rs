@@ -748,6 +748,40 @@ mod tests {
         };
     }
 
+    fn assert_unaligned_u16_split(block: &[Op], intrinsic: &str) {
+        assert!(
+            matches!(
+                block.get(block.len().saturating_sub(2)),
+                Some(Op::Inst(inst))
+                    if matches!(inst.inner(), masm::Instruction::EqImm(imm) if *imm == Felt::new(3))
+            ),
+            "expected the `offset == 3` guard before the unaligned `u16` split"
+        );
+
+        let Some(Op::If {
+            then_blk, else_blk, ..
+        }) = block.last()
+        else {
+            panic!("expected the unaligned `u16` path to end in a split `if`");
+        };
+
+        let execs = then_blk
+            .iter()
+            .filter_map(|op| match op {
+                Op::Inst(inst) => match inst.inner() {
+                    masm::Instruction::Exec(target) => Some(target.to_string()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            execs.iter().any(|target| target == intrinsic),
+            "expected then-branch to delegate to `{intrinsic}`, found execs: {execs:?}"
+        );
+        assert!(!else_blk.is_empty(), "expected else-branch to preserve the within-element path");
+    }
+
     #[test]
     fn op_emitter_stack_manipulation_test() {
         let mut block = Vec::default();
@@ -2149,10 +2183,7 @@ mod tests {
 
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], Type::U16);
-        assert!(
-            block.iter().any(|op| matches!(op, Op::If { .. })),
-            "expected unaligned `u16` immediate load to emit the dynamic offset split"
-        );
+        assert_unaligned_u16_split(&block, "::intrinsics::mem::load_sw");
     }
 
     #[test]
@@ -2167,10 +2198,7 @@ mod tests {
         emitter.store_imm(130, SourceSpan::default());
 
         assert_eq!(emitter.stack_len(), 0);
-        assert!(
-            block.iter().any(|op| matches!(op, Op::If { .. })),
-            "expected unaligned `u16` immediate store to emit the dynamic offset split"
-        );
+        assert_unaligned_u16_split(&block, "::intrinsics::mem::store_sw");
     }
 
     #[test]
