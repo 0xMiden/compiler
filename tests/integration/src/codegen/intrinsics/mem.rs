@@ -480,6 +480,118 @@ define_unaligned_16bit_load_tests!(
     load_unaligned_i16
 );
 
+macro_rules! define_constant_address_16bit_load_tests {
+    (
+        $run_fn:ident,
+        $rust_ty:ty,
+        $hir_ty:expr,
+        $offset_1_test:ident,
+        $offset_2_test:ident,
+        $offset_3_test:ident
+    ) => {
+        #[doc = concat!(
+                    "Runs a `",
+                    stringify!($rust_ty),
+                    "` load test from a constant byte address at the specified offset."
+                )]
+        fn $run_fn(offset: u32) {
+            setup::enable_compiler_instrumentation();
+
+            let write_to = 17 * 2u32.pow(16);
+            let read_from = write_to + offset;
+
+            let (package, context) = compile_test_module([], [$hir_ty], |builder| {
+                let addr = builder.u32(read_from, SourceSpan::default());
+                let ptr = builder
+                    .inttoptr(addr, Type::from(PointerType::new($hir_ty)), SourceSpan::default())
+                    .unwrap();
+                let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+                builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+            });
+
+            let config = proptest::test_runner::Config::with_cases(10);
+            let res = TestRunner::new(config).run(&any::<$rust_ty>(), move |value| {
+                let expected = value.to_le_bytes();
+                let mut initial_bytes = [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88];
+                initial_bytes[offset as usize] = expected[0];
+                initial_bytes[offset as usize + 1] = expected[1];
+                let initializers = [Initializer::MemoryBytes {
+                    addr: write_to,
+                    bytes: &initial_bytes,
+                }];
+
+                let output = eval_package::<$rust_ty, _, _>(
+                    &package,
+                    initializers,
+                    &[],
+                    context.session(),
+                    |_| Ok(()),
+                )?;
+
+                prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
+
+                Ok(())
+            });
+
+            match res {
+                Err(TestError::Fail(reason, value)) => {
+                    panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
+                }
+                Ok(_) => (),
+                _ => panic!("Unexpected test result: {res:?}"),
+            }
+        }
+
+        #[doc = concat!(
+                    "Tests that loading a `",
+                    stringify!($rust_ty),
+                    "` from a constant byte address at offset 1 stays within the current element."
+                )]
+        #[test]
+        fn $offset_1_test() {
+            $run_fn(1);
+        }
+
+        #[doc = concat!(
+                    "Tests that loading a `",
+                    stringify!($rust_ty),
+                    "` from a constant byte address at offset 2 stays within the current element."
+                )]
+        #[test]
+        fn $offset_2_test() {
+            $run_fn(2);
+        }
+
+        #[doc = concat!(
+                    "Tests that loading a `",
+                    stringify!($rust_ty),
+                    "` from a constant byte address at offset 3 reconstructs the value across the \
+                     next element boundary."
+                )]
+        #[test]
+        fn $offset_3_test() {
+            $run_fn(3);
+        }
+    };
+}
+
+define_constant_address_16bit_load_tests!(
+    run_load_const_addr_u16,
+    u16,
+    Type::U16,
+    load_const_addr_u16_offset_1,
+    load_const_addr_u16_offset_2,
+    load_const_addr_u16_offset_3
+);
+define_constant_address_16bit_load_tests!(
+    run_load_const_addr_i16,
+    i16,
+    Type::I16,
+    load_const_addr_i16_offset_1,
+    load_const_addr_i16_offset_2,
+    load_const_addr_i16_offset_3
+);
+
 /// Tests the memory load intrinsic for loads of boolean (i.e. 1-bit) values
 #[test]
 fn load_bool() {
