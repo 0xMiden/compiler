@@ -748,21 +748,21 @@ mod tests {
         };
     }
 
-    fn assert_unaligned_u16_split(block: &[Op], intrinsic: &str) {
+    fn assert_unaligned_16bit_split(block: &[Op], intrinsic: &str) {
         assert!(
             matches!(
                 block.get(block.len().saturating_sub(2)),
                 Some(Op::Inst(inst))
                     if matches!(inst.inner(), masm::Instruction::EqImm(imm) if *imm == Felt::new(3))
             ),
-            "expected the `offset == 3` guard before the unaligned `u16` split"
+            "expected the `offset == 3` guard before the unaligned 16-bit split"
         );
 
         let Some(Op::If {
             then_blk, else_blk, ..
         }) = block.last()
         else {
-            panic!("expected the unaligned `u16` path to end in a split `if`");
+            panic!("expected the unaligned 16-bit path to end in a split `if`");
         };
 
         let execs = then_blk
@@ -2183,7 +2183,22 @@ mod tests {
 
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], Type::U16);
-        assert_unaligned_u16_split(&block, "::intrinsics::mem::load_sw");
+        assert_unaligned_16bit_split(&block, "::intrinsics::mem::load_sw");
+    }
+
+    #[test]
+    fn op_emitter_unaligned_i16_load_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.load_imm(130, Type::I16, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::I16);
+        assert_unaligned_16bit_split(&block, "::intrinsics::mem::load_sw");
     }
 
     #[test]
@@ -2198,7 +2213,22 @@ mod tests {
         emitter.store_imm(130, SourceSpan::default());
 
         assert_eq!(emitter.stack_len(), 0);
-        assert_unaligned_u16_split(&block, "::intrinsics::mem::store_sw");
+        assert_unaligned_16bit_split(&block, "::intrinsics::mem::store_sw");
+    }
+
+    #[test]
+    fn op_emitter_unaligned_i16_store_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.push(Type::I16);
+        emitter.store_imm(130, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 0);
+        assert_unaligned_16bit_split(&block, "::intrinsics::mem::store_sw");
     }
 
     #[test]
