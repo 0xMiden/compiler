@@ -56,12 +56,12 @@ impl OpEmitter<'_> {
         );
     }
 
-    /// Emit the branch used by dynamic `u16` accesses to detect the cross-element case.
+    /// Emit the branch used by dynamic 16-bit accesses to detect the cross-element case.
     ///
     /// The current stack must contain a native pointer tuple where the byte offset is one element
     /// below the top of the stack, e.g. `[addr, offset]` for loads or `[addr, offset, value]` for
     /// stores.
-    fn emit_u16_split_offset_branch(
+    fn emit_16bit_split_offset_branch(
         &mut self,
         then_ops: Vec<masm::Op>,
         else_ops: Vec<masm::Op>,
@@ -304,7 +304,7 @@ impl OpEmitter<'_> {
         }
 
         if ty.size_in_bits() == 16 {
-            self.load_u16_dynamic(span);
+            self.load_16bit_dynamic(span);
             return;
         }
 
@@ -353,13 +353,16 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::U32And, span);
     }
 
-    /// Load a `u16` value from a dynamic native pointer tuple.
+    /// Load a 16-bit value from a dynamic native pointer tuple.
     ///
     /// Offsets `0..=2` fit within the current element and can use the regular shift/mask path.
     /// Offset `3` spans the next element, so it must assemble a 32-bit unaligned window first.
     ///
+    /// This helper moves raw 16-bit payloads only. Signedness is preserved by the caller's typed
+    /// result rather than by the load sequence itself.
+    ///
     /// Stack transition: `[addr, offset] -> [value]`.
-    fn load_u16_dynamic(&mut self, span: SourceSpan) {
+    fn load_16bit_dynamic(&mut self, span: SourceSpan) {
         let mut then_ops = Vec::default();
         let mut then_stack = OperandStack::new(self.context_rc());
         let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
@@ -372,7 +375,7 @@ impl OpEmitter<'_> {
         let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
         else_emitter.load_small_from_current_element(&Type::U16, span);
 
-        self.emit_u16_split_offset_branch(then_ops, else_ops, span);
+        self.emit_16bit_split_offset_branch(then_ops, else_ops, span);
     }
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -1159,7 +1162,7 @@ impl OpEmitter<'_> {
         }
 
         if type_size == 16 {
-            self.store_u16_dynamic(span);
+            self.store_16bit_dynamic(span);
             return;
         }
 
@@ -1221,13 +1224,16 @@ impl OpEmitter<'_> {
         );
     }
 
-    /// Store a `u16` to a dynamic native pointer tuple.
+    /// Store a 16-bit value to a dynamic native pointer tuple.
     ///
     /// Offsets `0..=2` fit within the current element and can update that element in place.
     /// Offset `3` spans into the next element and must use the unaligned 32-bit store intrinsic.
     ///
+    /// This helper moves raw 16-bit payloads only. Signedness is preserved by the caller's typed
+    /// value rather than by the store sequence itself.
+    ///
     /// Stack transition: `[addr, offset, value] -> []`.
-    fn store_u16_dynamic(&mut self, span: SourceSpan) {
+    fn store_16bit_dynamic(&mut self, span: SourceSpan) {
         let mut then_ops = Vec::default();
         let mut then_stack = OperandStack::new(self.context_rc());
         let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
@@ -1259,7 +1265,7 @@ impl OpEmitter<'_> {
         let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
         else_emitter.store_small_within_element(16, span);
 
-        self.emit_u16_split_offset_branch(then_ops, else_ops, span);
+        self.emit_16bit_split_offset_branch(then_ops, else_ops, span);
     }
 
     /// Store a sub-word value using an immediate pointer
