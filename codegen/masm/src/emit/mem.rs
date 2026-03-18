@@ -874,29 +874,13 @@ impl OpEmitter<'_> {
             }
             // Word-sized values have an optimized intrinsic we can lean on
             16 => {
-                // We have to convert byte addresses to element addresses
-                self.emit_all(
-                    [
-                        // Convert `src` to a word-aligned element address
-                    ],
-                    span,
-                );
+                // Convert `src` to a word-aligned element address.
                 self.emit_word_aligned_element_addr_from_byte_ptr(span);
-                self.emit_all(
-                    [
-                        // Convert `dst` to an element address the same way
-                        masm::Instruction::Swap1,
-                    ],
-                    span,
-                );
+                // Convert `dst` to an element address the same way.
+                self.emit(masm::Instruction::Swap1, span);
                 self.emit_word_aligned_element_addr_from_byte_ptr(span);
-                self.emit_all(
-                    [
-                        // Swap with `count` to get us into the correct ordering: [count, src, dst]
-                        masm::Instruction::Swap2,
-                    ],
-                    span,
-                );
+                // Swap with `count` to get us into the correct ordering: [count, src, dst].
+                self.emit(masm::Instruction::Swap2, span);
                 self.raw_exec("::miden::core::mem::memcopy_words", span);
                 return;
             }
@@ -905,20 +889,10 @@ impl OpEmitter<'_> {
             // multiplying `count` by the number of words in each value
             size if size > 16 && size.is_multiple_of(16) => {
                 let factor = size / 16;
-                self.emit_all(
-                    [
-                        // Convert `src` to a word-aligned element address
-                    ],
-                    span,
-                );
+                // Convert `src` to a word-aligned element address.
                 self.emit_word_aligned_element_addr_from_byte_ptr(span);
-                self.emit_all(
-                    [
-                        // Convert `dst` to an element address the same way
-                        masm::Instruction::Swap1,
-                    ],
-                    span,
-                );
+                // Convert `dst` to an element address the same way.
+                self.emit(masm::Instruction::Swap1, span);
                 self.emit_word_aligned_element_addr_from_byte_ptr(span);
                 self.emit_all(
                     [
