@@ -3497,6 +3497,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objsize"
+version = "0.7.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "miden-core",
+ "miden-mast-package",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
