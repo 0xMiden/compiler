@@ -348,3 +348,232 @@ fn test_func_arg_order() {
     eval_package::<Felt, _, _>(&test.compile_package(), [], &args, &test.session, |trace| Ok(()))
         .unwrap();
 }
+
+/// Minimized regression test for the `resolve_turn` reproduction.
+///
+/// This keeps the relevant shape:
+/// - `TurnAction { champion_id: u8, ability_index: u8 }`
+/// - `Champion { abilities: [Ability; 2] }` with `abilities[action.ability_index]`
+/// - A large `TurnResult` return-by-value
+/// - A helper `execute_action` called from `resolve_turn`
+#[test]
+fn test_resolve_turn_minimal_large_return() {
+    let main_fn = r#"() -> Felt {
+        /// Player-selected action for a turn.
+        #[derive(Clone, Copy)]
+        struct TurnAction {
+            champion_id: u8,
+            ability_index: u8,
+        }
+
+        /// Ability category used to determine the emitted event.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        enum AbilityType {
+            Damage = 0,
+            Heal = 1,
+            StatMod = 2,
+        }
+
+        /// Champion ability definition.
+        #[derive(Clone, Copy)]
+        struct Ability {
+            ability_type: AbilityType,
+        }
+
+        /// Base champion definition.
+        #[derive(Clone, Copy)]
+        struct Champion {
+            id: u8,
+            abilities: [Ability; 2],
+        }
+
+        const MAX_EVENTS: usize = 16;
+
+        /// Event stream emitted during turn resolution.
+        #[derive(Clone, Copy)]
+        enum TurnEvent {
+            Attack {
+                attacker_id: u8,
+                ability_index: u8,
+            },
+            Heal {
+                champion_id: u8,
+                ability_index: u8,
+            },
+            Debuff {
+                target_id: u8,
+                ability_index: u8,
+            },
+            None,
+        }
+
+        /// Return value of `resolve_turn`.
+        #[derive(Clone, Copy)]
+        struct TurnResult {
+            events: [TurnEvent; MAX_EVENTS],
+            event_count: u8,
+        }
+
+        /// Append an event to the fixed-size event buffer.
+        fn push_event(events: &mut [TurnEvent; MAX_EVENTS], count: &mut u8, event: TurnEvent) {
+            if (*count as usize) < MAX_EVENTS {
+                events[*count as usize] = event;
+                *count += 1;
+            } else {
+                core::arch::wasm32::unreachable();
+            }
+        }
+
+        /// Execute a single action by indexing into `abilities` via `action.ability_index`.
+        #[inline(never)]
+        fn execute_action(
+            actor_champ: &Champion,
+            action: &TurnAction,
+            events: &mut [TurnEvent; MAX_EVENTS],
+            event_count: &mut u8,
+        ) {
+            let ability = &actor_champ.abilities[action.ability_index as usize];
+            match ability.ability_type {
+                AbilityType::Damage => {
+                    push_event(
+                        events,
+                        event_count,
+                        TurnEvent::Attack {
+                            attacker_id: actor_champ.id,
+                            ability_index: action.ability_index,
+                        },
+                    );
+                }
+                AbilityType::Heal => {
+                    push_event(
+                        events,
+                        event_count,
+                        TurnEvent::Heal {
+                            champion_id: actor_champ.id,
+                            ability_index: action.ability_index,
+                        },
+                    );
+                }
+                AbilityType::StatMod => {
+                    push_event(
+                        events,
+                        event_count,
+                        TurnEvent::Debuff {
+                            target_id: actor_champ.id,
+                            ability_index: action.ability_index,
+                        },
+                    );
+                }
+            }
+        }
+
+        /// Resolve a single combat round between two champions.
+        #[inline(never)]
+        fn resolve_turn(
+            action_a: &TurnAction,
+            action_b: &TurnAction,
+        ) -> TurnResult {
+            let champ_a = Champion {
+                id: 1,
+                abilities: [
+                    Ability {
+                        ability_type: AbilityType::Damage,
+                    },
+                    Ability {
+                        ability_type: AbilityType::Heal,
+                    },
+                ],
+            };
+            let champ_b = Champion {
+                id: 2,
+                abilities: [
+                    Ability {
+                        ability_type: AbilityType::Damage,
+                    },
+                    Ability {
+                        ability_type: AbilityType::StatMod,
+                    },
+                ],
+            };
+
+            let mut events = [TurnEvent::None; MAX_EVENTS];
+            let mut event_count: u8 = 0;
+
+            execute_action(&champ_a, action_a, &mut events, &mut event_count);
+            execute_action(&champ_b, action_b, &mut events, &mut event_count);
+
+            TurnResult {
+                events,
+                event_count,
+            }
+        }
+
+        let actions = [
+            TurnAction {
+                champion_id: 1,
+                ability_index: 0,
+            },
+            TurnAction {
+                champion_id: 0,
+                ability_index: 1,
+            },
+        ];
+
+        let result = resolve_turn(&actions[0], &actions[1]);
+
+        fn tag(ev: TurnEvent) -> u8 {
+            match ev {
+                TurnEvent::None => 0,
+                TurnEvent::Attack { .. } => 1,
+                TurnEvent::Heal { .. } => 2,
+                TurnEvent::Debuff { .. } => 3,
+            }
+        }
+
+        let mut ok: u32 = 0;
+        if result.event_count == 2 { ok |= 1 << 0; }
+        if tag(result.events[0]) == 1 { ok |= 1 << 1; }
+        if tag(result.events[1]) == 3 { ok |= 1 << 2; }
+
+        // Pack diagnostics into the return value:
+        // - low 8 bits: ok-bitmask
+        // - bits 8..=15: `event_count`
+        // - bits 16..=23: tag(events[0])
+        // - bits 24..=31: tag(events[1])
+        let diag = (ok & 0xff)
+            | ((result.event_count as u32) << 8)
+            | ((tag(result.events[0]) as u32) << 16)
+            | ((tag(result.events[1]) as u32) << 24);
+        Felt::from_u32(diag)
+    }"#;
+
+    setup::enable_compiler_instrumentation();
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "resolve_turn_minimal_large_return",
+        main_fn,
+        config,
+        [],
+    );
+
+    let package = test.compile_package();
+    let args: [Felt; 0] = [];
+
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let res: Felt = trace.parse_result().unwrap();
+        let diag: u32 = res.as_int() as u32;
+        let ok = diag & 0xff;
+        let event_count = (diag >> 8) & 0xff;
+        let tag0 = (diag >> 16) & 0xff;
+        let tag1 = (diag >> 24) & 0xff;
+        if ok != 0b111 {
+            panic!(
+                "resolve_turn_minimal_large_return unexpected result: ok=0b{ok:08b} \
+                 (event_count={event_count}, tag0={tag0}, tag1={tag1})"
+            );
+        }
+        Ok(())
+    })
+    .unwrap();
+}
