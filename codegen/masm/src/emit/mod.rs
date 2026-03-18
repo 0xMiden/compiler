@@ -748,24 +748,9 @@ mod tests {
         };
     }
 
-    fn assert_unaligned_16bit_split(block: &[Op], intrinsic: &str) {
-        assert!(
-            matches!(
-                block.get(block.len().saturating_sub(2)),
-                Some(Op::Inst(inst))
-                    if matches!(inst.inner(), masm::Instruction::EqImm(imm) if *imm == Felt::new(3))
-            ),
-            "expected the `offset == 3` guard before the unaligned 16-bit split"
-        );
-
-        let Some(Op::If {
-            then_blk, else_blk, ..
-        }) = block.last()
-        else {
-            panic!("expected the unaligned 16-bit path to end in a split `if`");
-        };
-
-        let execs = then_blk
+    /// Assert that the emitted block ends by delegating to the dedicated 16-bit memory intrinsic.
+    fn assert_unaligned_16bit_intrinsic(block: &[Op], intrinsic: &str) {
+        let execs = block
             .iter()
             .filter_map(|op| match op {
                 Op::Inst(inst) => match inst.inner() {
@@ -777,9 +762,8 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(
             execs.iter().any(|target| target == intrinsic),
-            "expected then-branch to delegate to `{intrinsic}`, found execs: {execs:?}"
+            "expected block to delegate to `{intrinsic}`, found execs: {execs:?}"
         );
-        assert!(!else_blk.is_empty(), "expected else-branch to preserve the within-element path");
     }
 
     #[test]
@@ -2183,7 +2167,7 @@ mod tests {
 
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], Type::U16);
-        assert_unaligned_16bit_split(&block, "::intrinsics::mem::load_sw");
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::load_u16");
     }
 
     #[test]
@@ -2198,7 +2182,7 @@ mod tests {
 
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], Type::I16);
-        assert_unaligned_16bit_split(&block, "::intrinsics::mem::load_sw");
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::load_u16");
     }
 
     #[test]
@@ -2213,7 +2197,7 @@ mod tests {
         emitter.store_imm(130, SourceSpan::default());
 
         assert_eq!(emitter.stack_len(), 0);
-        assert_unaligned_16bit_split(&block, "::intrinsics::mem::store_sw");
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::store_u16");
     }
 
     #[test]
@@ -2228,7 +2212,7 @@ mod tests {
         emitter.store_imm(130, SourceSpan::default());
 
         assert_eq!(emitter.stack_len(), 0);
-        assert_unaligned_16bit_split(&block, "::intrinsics::mem::store_sw");
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::store_u16");
     }
 
     #[test]

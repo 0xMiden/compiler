@@ -193,6 +193,18 @@ pub proc load_sw # [addr, offset]
     end
 end
 
+# Load a 16-bit integer from the given native pointer tuple.
+#
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
+#
+# Stack transition: [addr, offset] -> [value]
+pub proc load_u16
+    exec.load_sw
+    push.65535
+    u32and
+end
+
 # This handles emitting code that handles aligning an unaligned 64-bit value which is split across
 # three elements.
 #
@@ -440,6 +452,26 @@ pub proc store_sw # [addr, offset, value]
         dup.2 add.1 mem_store  # [e0', addr]
         swap.1 mem_store       # []
     end
+end
+
+# Store a 16-bit integer to the given native pointer tuple.
+#
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
+#
+# Stack transition: [addr, offset, value] -> []
+pub proc store_u16
+    # Load the current 32-bit window at the destination, keep its upper half, then overwrite the
+    # target two bytes before delegating the write-back to `store_sw`.
+    dup.1 dup.1 exec.load_sw     # [window, addr, offset, value]
+    push.4294901760              # 0xffff0000
+    u32and                       # [masked_window, addr, offset, value]
+    movup.3                      # [value, masked_window, addr, offset]
+    push.65535
+    u32and                       # [value16, masked_window, addr, offset]
+    u32or                        # [combined, addr, offset]
+    swap.2 swap.1                # [addr, offset, combined]
+    exec.store_sw
 end
 
 # Store two 32-bit words to the given native pointer tuple.

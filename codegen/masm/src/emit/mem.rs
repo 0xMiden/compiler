@@ -56,28 +56,6 @@ impl OpEmitter<'_> {
         );
     }
 
-    /// Emit the branch used by dynamic 16-bit accesses to detect the cross-element case.
-    ///
-    /// The current stack must contain a native pointer tuple where the byte offset is one element
-    /// below the top of the stack, e.g. `[addr, offset]` for loads or `[addr, offset, value]` for
-    /// stores.
-    fn emit_16bit_split_offset_branch(
-        &mut self,
-        then_blk: masm::Block,
-        else_blk: masm::Block,
-        span: SourceSpan,
-    ) {
-        self.emit_all(
-            [masm::Instruction::Dup1, masm::Instruction::EqImm(Felt::new(3).into())],
-            span,
-        );
-        self.current_block.push(masm::Op::If {
-            span,
-            then_blk,
-            else_blk,
-        });
-    }
-
     /// Convert the byte pointer on top of the stack to a word-aligned element address.
     ///
     /// This traps unless the input byte address is aligned to a 16-byte Miden word boundary.
@@ -371,25 +349,12 @@ impl OpEmitter<'_> {
 
     /// Load a 16-bit value from a dynamic native pointer tuple.
     ///
-    /// Offsets `0..=2` fit within the current element and can use the regular shift/mask path.
-    /// Offset `3` spans the next element, so it must assemble a 32-bit unaligned window first.
-    ///
-    /// This helper moves raw 16-bit payloads only. Signedness is preserved by the caller's typed
-    /// result rather than by the load sequence itself.
+    /// This delegates to a dedicated intrinsic which owns the complete stack protocol for both the
+    /// within-element and cross-element cases.
     ///
     /// Stack transition: `[addr, offset] -> [value]`.
     fn load_16bit_dynamic(&mut self, span: SourceSpan) {
-        let then_blk = self.build_raw_block(span, |then_emitter| {
-            then_emitter.raw_exec("::intrinsics::mem::load_sw", span);
-            then_emitter.emit_push(0xffffu32, span);
-            then_emitter.emit(masm::Instruction::U32And, span);
-        });
-
-        let else_blk = self.build_raw_block(span, |else_emitter| {
-            else_emitter.load_small_from_current_element(&Type::U16, span);
-        });
-
-        self.emit_16bit_split_offset_branch(then_blk, else_blk, span);
+        self.raw_exec("::intrinsics::mem::load_u16", span);
     }
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -1217,46 +1182,12 @@ impl OpEmitter<'_> {
 
     /// Store a 16-bit value to a dynamic native pointer tuple.
     ///
-    /// Offsets `0..=2` fit within the current element and can update that element in place.
-    /// Offset `3` spans into the next element and must use the unaligned 32-bit store intrinsic.
-    ///
-    /// This helper moves raw 16-bit payloads only. Signedness is preserved by the caller's typed
-    /// value rather than by the store sequence itself.
+    /// This delegates to a dedicated intrinsic which owns the complete stack protocol for both the
+    /// within-element and cross-element cases.
     ///
     /// Stack transition: `[addr, offset, value] -> []`.
     fn store_16bit_dynamic(&mut self, span: SourceSpan) {
-        let then_blk = self.build_raw_block(span, |then_emitter| {
-            then_emitter.emit_all(
-                [
-                    masm::Instruction::Dup1, // [offset, addr, offset, value]
-                    masm::Instruction::Dup1, // [addr, offset, addr, offset, value]
-                ],
-                span,
-            );
-            then_emitter.raw_exec("::intrinsics::mem::load_sw", span); // [window, addr, offset, value]
-            // Preserve the upper half of the unaligned 32-bit window so only the two addressed
-            // bytes are replaced before delegating the write-back to `store_sw`.
-            then_emitter.emit_push(0xffff0000u32, span);
-            then_emitter.emit(masm::Instruction::U32And, span); // [masked_window, addr, offset, value]
-            then_emitter.emit(masm::Instruction::MovUp3, span); // [value, masked_window, addr, offset]
-            then_emitter.emit_push(0xffffu32, span);
-            then_emitter.emit(masm::Instruction::U32And, span); // [value16, masked_window, addr, offset]
-            then_emitter.emit(masm::Instruction::U32Or, span); // [combined, addr, offset]
-            then_emitter.emit_all(
-                [
-                    masm::Instruction::Swap2, // [offset, addr, combined]
-                    masm::Instruction::Swap1, // [addr, offset, combined]
-                ],
-                span,
-            );
-            then_emitter.raw_exec("::intrinsics::mem::store_sw", span);
-        });
-
-        let else_blk = self.build_raw_block(span, |else_emitter| {
-            else_emitter.store_small_within_element(16, span);
-        });
-
-        self.emit_16bit_split_offset_branch(then_blk, else_blk, span);
+        self.raw_exec("::intrinsics::mem::store_u16", span);
     }
 
     /// Store a sub-word value using an immediate pointer
