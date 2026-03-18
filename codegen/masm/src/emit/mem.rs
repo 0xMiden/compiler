@@ -784,6 +784,8 @@ impl OpEmitter<'_> {
     /// * `count == 0` leaves memory unchanged and performs no copy
     /// * source and destination pointers are interpreted in the address space described by their
     ///   pointer type
+    /// * optimized word-copy fast paths are only used for byte-addressable pointers; native
+    ///   pointers fall back to the generic loop
     pub fn memcpy(&mut self, span: SourceSpan) {
         let src = self.stack.pop().expect("operand stack is empty");
         let dst = self.stack.pop().expect("operand stack is empty");
@@ -794,6 +796,10 @@ impl OpEmitter<'_> {
         assert_eq!(ty, dst.ty(), "expected src and dst operands to have the same type");
         let value_ty = ty.pointee().unwrap().clone();
         let value_size = u32::try_from(value_ty.size_in_bytes()).expect("invalid value size");
+        let is_byte_pointer = match &ty {
+            Type::Ptr(ptr_ty) => ptr_ty.is_byte_pointer(),
+            _ => unreachable!("memcpy expects pointer operands"),
+        };
 
         // Use optimized intrinsics when available
         match value_size {
@@ -873,7 +879,7 @@ impl OpEmitter<'_> {
                 return;
             }
             // Word-sized values have an optimized intrinsic we can lean on
-            16 => {
+            16 if is_byte_pointer => {
                 // Convert `src` to a word-aligned element address.
                 self.emit_word_aligned_element_addr_from_byte_ptr(span);
                 // Convert `dst` to an element address the same way.
@@ -887,7 +893,7 @@ impl OpEmitter<'_> {
             // Values which can be broken up into word-sized chunks can piggy-back on the
             // intrinsic for word-sized values, but we have to compute a new `count` by
             // multiplying `count` by the number of words in each value
-            size if size > 16 && size.is_multiple_of(16) => {
+            size if is_byte_pointer && size > 16 && size.is_multiple_of(16) => {
                 let factor = size / 16;
                 // Convert `src` to a word-aligned element address.
                 self.emit_word_aligned_element_addr_from_byte_ptr(span);
