@@ -893,6 +893,120 @@ fn test_memory_copy_aligned_fast_path() {
 }
 
 #[test]
+fn test_memory_copy_u128_fast_path() {
+    let main_fn = r#"() -> Felt {
+        #[inline(never)]
+        fn do_copy(dst: &mut [u128; 2], src: &[u128; 3]) {
+            unsafe {
+                let src_ptr = src.as_ptr().add(1);
+                let dst_ptr = dst.as_mut_ptr();
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, 2);
+            }
+        }
+
+        let src = [
+            0x00112233445566778899aabbccddeeff_u128,
+            0x102132435465768798a9bacbdcedfe0f_u128,
+            0xfedcba98765432100123456789abcdef_u128,
+        ];
+        let mut dst = [0u128; 2];
+        do_copy(&mut dst, &src);
+
+        let expected = [src[1], src[2]];
+        let mut mismatches = 0u32;
+        let mut i = 0usize;
+        while i < 2 {
+            if dst[i] != expected[i] {
+                mismatches += 1;
+            }
+            i += 1;
+        }
+
+        Felt::from_u32(mismatches)
+    }"#;
+
+    setup::enable_compiler_instrumentation();
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "memory_copy_u128_fast_path",
+        main_fn,
+        config,
+        [],
+    );
+
+    let package = test.compile_package();
+    let args: [Felt; 0] = [];
+
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let res: Felt = trace.parse_result().unwrap();
+        assert_eq!(res, Felt::ZERO);
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn test_memory_copy_multiword_fast_path() {
+    let main_fn = r#"() -> Felt {
+        struct Chunk([u128; 2]);
+
+        #[inline(never)]
+        fn do_copy(dst: &mut [Chunk; 1], src: &[Chunk; 2]) {
+            unsafe {
+                let src_ptr = src.as_ptr().add(1);
+                let dst_ptr = dst.as_mut_ptr();
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, 1);
+            }
+        }
+
+        let src = [
+            Chunk([
+                0x00112233445566778899aabbccddeeff_u128,
+                0x112233445566778899aabbccddeeff00_u128,
+            ]),
+            Chunk([
+                0xaabbccddeeff00112233445566778899_u128,
+                0xffeeddccbbaa99887766554433221100_u128,
+            ]),
+        ];
+        let mut dst = [Chunk([0u128; 2])];
+        do_copy(&mut dst, &src);
+
+        let expected = &src[1].0;
+        let observed = &dst[0].0;
+        let mut mismatches = 0u32;
+        let mut i = 0usize;
+        while i < 2 {
+            if observed[i] != expected[i] {
+                mismatches += 1;
+            }
+            i += 1;
+        }
+
+        Felt::from_u32(mismatches)
+    }"#;
+
+    setup::enable_compiler_instrumentation();
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "memory_copy_multiword_fast_path",
+        main_fn,
+        config,
+        [],
+    );
+
+    let package = test.compile_package();
+    let args: [Felt; 0] = [];
+
+    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        let res: Felt = trace.parse_result().unwrap();
+        assert_eq!(res, Felt::ZERO);
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
 fn test_memory_copy_aligned_addresses_misaligned_count() {
     let main_fn = r#"() -> Felt {
         #[inline(never)]
