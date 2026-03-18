@@ -63,8 +63,8 @@ impl OpEmitter<'_> {
     /// stores.
     fn emit_16bit_split_offset_branch(
         &mut self,
-        then_ops: Vec<masm::Op>,
-        else_ops: Vec<masm::Op>,
+        then_blk: masm::Block,
+        else_blk: masm::Block,
         span: SourceSpan,
     ) {
         self.emit_all(
@@ -73,8 +73,8 @@ impl OpEmitter<'_> {
         );
         self.current_block.push(masm::Op::If {
             span,
-            then_blk: masm::Block::new(span, then_ops),
-            else_blk: masm::Block::new(span, else_ops),
+            then_blk,
+            else_blk,
         });
     }
 
@@ -91,6 +91,22 @@ impl OpEmitter<'_> {
             ],
             span,
         );
+    }
+
+    /// Build a raw MASM block whose stack protocol is managed by the caller.
+    ///
+    /// This is used for branch bodies which operate on a known stack shape from the enclosing
+    /// emitter, but which do not need to synchronize typed operand-stack state back to it.
+    fn build_raw_block(
+        &mut self,
+        span: SourceSpan,
+        emit: impl FnOnce(&mut OpEmitter<'_>),
+    ) -> masm::Block {
+        let mut ops = Vec::default();
+        let mut stack = OperandStack::new(self.context_rc());
+        let mut emitter = OpEmitter::new(self.invoked, &mut ops, &mut stack);
+        emit(&mut emitter);
+        masm::Block::new(span, ops)
     }
 
     /// Grow the heap (from the perspective of Wasm programs) by N pages, returning the previous
@@ -363,19 +379,17 @@ impl OpEmitter<'_> {
     ///
     /// Stack transition: `[addr, offset] -> [value]`.
     fn load_16bit_dynamic(&mut self, span: SourceSpan) {
-        let mut then_ops = Vec::default();
-        let mut then_stack = OperandStack::new(self.context_rc());
-        let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
-        then_emitter.raw_exec("::intrinsics::mem::load_sw", span);
-        then_emitter.emit_push(0xffffu32, span);
-        then_emitter.emit(masm::Instruction::U32And, span);
+        let then_blk = self.build_raw_block(span, |then_emitter| {
+            then_emitter.raw_exec("::intrinsics::mem::load_sw", span);
+            then_emitter.emit_push(0xffffu32, span);
+            then_emitter.emit(masm::Instruction::U32And, span);
+        });
 
-        let mut else_ops = Vec::default();
-        let mut else_stack = OperandStack::new(self.context_rc());
-        let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
-        else_emitter.load_small_from_current_element(&Type::U16, span);
+        let else_blk = self.build_raw_block(span, |else_emitter| {
+            else_emitter.load_small_from_current_element(&Type::U16, span);
+        });
 
-        self.emit_16bit_split_offset_branch(then_ops, else_ops, span);
+        self.emit_16bit_split_offset_branch(then_blk, else_blk, span);
     }
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -837,44 +851,41 @@ impl OpEmitter<'_> {
                 );
 
                 // then: convert byte addresses/count to element units and delegate to core
-                let mut then_ops = Vec::default();
-                let mut then_stack = OperandStack::new(self.context_rc());
-                let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
-                then_emitter.emit_all(
-                    [
-                        // Convert `src` to element address
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
-                        // Convert `dst` to an element address
-                        masm::Instruction::Swap1,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
-                        // Bring `count` to top to convert to element count
-                        masm::Instruction::Swap2,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
-                    ],
-                    span,
-                );
-                then_emitter.raw_exec("::miden::core::mem::memcopy_elements", span);
+                let then_blk = self.build_raw_block(span, |then_emitter| {
+                    then_emitter.emit_all(
+                        [
+                            // Convert `src` to element address
+                            masm::Instruction::U32DivModImm(4.into()),
+                            masm::Instruction::Assertz,
+                            // Convert `dst` to an element address
+                            masm::Instruction::Swap1,
+                            masm::Instruction::U32DivModImm(4.into()),
+                            masm::Instruction::Assertz,
+                            // Bring `count` to top to convert to element count
+                            masm::Instruction::Swap2,
+                            masm::Instruction::U32DivModImm(4.into()),
+                            masm::Instruction::Assertz,
+                        ],
+                        span,
+                    );
+                    then_emitter.raw_exec("::miden::core::mem::memcopy_elements", span);
+                });
 
-                // else: fall back to the generic implementation
-                let mut else_ops = Vec::default();
-                let mut else_stack = OperandStack::new(self.context_rc());
-                let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
-                else_emitter.emit_memcpy_fallback_loop(
-                    src.clone(),
-                    dst.clone(),
-                    count.clone(),
-                    value_ty.clone(),
-                    value_size,
-                    span,
-                );
+                let else_blk = self.build_raw_block(span, |else_emitter| {
+                    else_emitter.emit_memcpy_fallback_loop(
+                        src.clone(),
+                        dst.clone(),
+                        count.clone(),
+                        value_ty.clone(),
+                        value_size,
+                        span,
+                    );
+                });
 
                 self.current_block.push(masm::Op::If {
                     span,
-                    then_blk: masm::Block::new(span, then_ops),
-                    else_blk: masm::Block::new(span, else_ops),
+                    then_blk,
+                    else_blk,
                 });
                 return;
             }
@@ -1214,40 +1225,38 @@ impl OpEmitter<'_> {
     ///
     /// Stack transition: `[addr, offset, value] -> []`.
     fn store_16bit_dynamic(&mut self, span: SourceSpan) {
-        let mut then_ops = Vec::default();
-        let mut then_stack = OperandStack::new(self.context_rc());
-        let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
-        then_emitter.emit_all(
-            [
-                masm::Instruction::Dup1, // [offset, addr, offset, value]
-                masm::Instruction::Dup1, // [addr, offset, addr, offset, value]
-            ],
-            span,
-        );
-        then_emitter.raw_exec("::intrinsics::mem::load_sw", span); // [window, addr, offset, value]
-        // Preserve the upper half of the unaligned 32-bit window so only the two addressed bytes
-        // are replaced before delegating the write-back to `store_sw`.
-        then_emitter.emit_push(0xffff0000u32, span);
-        then_emitter.emit(masm::Instruction::U32And, span); // [masked_window, addr, offset, value]
-        then_emitter.emit(masm::Instruction::MovUp3, span); // [value, masked_window, addr, offset]
-        then_emitter.emit_push(0xffffu32, span);
-        then_emitter.emit(masm::Instruction::U32And, span); // [value16, masked_window, addr, offset]
-        then_emitter.emit(masm::Instruction::U32Or, span); // [combined, addr, offset]
-        then_emitter.emit_all(
-            [
-                masm::Instruction::Swap2, // [offset, addr, combined]
-                masm::Instruction::Swap1, // [addr, offset, combined]
-            ],
-            span,
-        );
-        then_emitter.raw_exec("::intrinsics::mem::store_sw", span);
+        let then_blk = self.build_raw_block(span, |then_emitter| {
+            then_emitter.emit_all(
+                [
+                    masm::Instruction::Dup1, // [offset, addr, offset, value]
+                    masm::Instruction::Dup1, // [addr, offset, addr, offset, value]
+                ],
+                span,
+            );
+            then_emitter.raw_exec("::intrinsics::mem::load_sw", span); // [window, addr, offset, value]
+            // Preserve the upper half of the unaligned 32-bit window so only the two addressed
+            // bytes are replaced before delegating the write-back to `store_sw`.
+            then_emitter.emit_push(0xffff0000u32, span);
+            then_emitter.emit(masm::Instruction::U32And, span); // [masked_window, addr, offset, value]
+            then_emitter.emit(masm::Instruction::MovUp3, span); // [value, masked_window, addr, offset]
+            then_emitter.emit_push(0xffffu32, span);
+            then_emitter.emit(masm::Instruction::U32And, span); // [value16, masked_window, addr, offset]
+            then_emitter.emit(masm::Instruction::U32Or, span); // [combined, addr, offset]
+            then_emitter.emit_all(
+                [
+                    masm::Instruction::Swap2, // [offset, addr, combined]
+                    masm::Instruction::Swap1, // [addr, offset, combined]
+                ],
+                span,
+            );
+            then_emitter.raw_exec("::intrinsics::mem::store_sw", span);
+        });
 
-        let mut else_ops = Vec::default();
-        let mut else_stack = OperandStack::new(self.context_rc());
-        let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
-        else_emitter.store_small_within_element(16, span);
+        let else_blk = self.build_raw_block(span, |else_emitter| {
+            else_emitter.store_small_within_element(16, span);
+        });
 
-        self.emit_16bit_split_offset_branch(then_ops, else_ops, span);
+        self.emit_16bit_split_offset_branch(then_blk, else_blk, span);
     }
 
     /// Store a sub-word value using an immediate pointer
