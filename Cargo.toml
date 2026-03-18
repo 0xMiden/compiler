@@ -27,7 +27,7 @@ members = [
     "tests/integration",
 	# TODO: restore
     # "test-harness/*",
-    # "tests/integration-network",  # temporarily excluded: miden-client not yet migrated
+    "tests/integration-network",
 ]
 exclude = [
     "sdk/.cargo",
@@ -86,8 +86,10 @@ miden-assembly-syntax = { version = "0.21", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
 # miden-protocol = { version = "0.14.0-alpha.1", default-features = false }
 # miden-standards = { version = "0.14.0-alpha.1", default-features = false }
-miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b", version = "0.14.0-alpha.1", default-features = false }
-miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b", version = "0.14.0-alpha.1", default-features = false }
+
+miden-protocol  = { tag = "v0.14.0-beta.2", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-standards = { tag = "v0.14.0-beta.2", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+
 miden-processor = { version = "0.21", default-features = false }
 miden-core-lib = { version = "0.21", default-features = false }
 miden-mast-package = { version = "0.21", default-features = false }
@@ -179,6 +181,9 @@ miden-field = { version = "0.22" }
 # miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
 miden-debug = { git = "https://github.com/0xMiden/miden-debug", rev = "07f4ee12fb790bd0b0e2183414cecea44e580950" }
 # miden-debug = { path = "../../debug" }
+miden-protocol  = { tag = "v0.14.0-beta.2", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-standards = { tag = "v0.14.0-beta.2", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-tx        = { tag = "v0.14.0-beta.2", git = "https://github.com/0xMiden/miden-base" }
 
 
 [profile.dev]
