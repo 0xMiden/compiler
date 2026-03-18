@@ -836,7 +836,7 @@ fn test_hmerge() {
 }
 
 #[test]
-fn test_memory_copy_aligned_fast_path() {
+fn test_memory_copy_aligned_bytes() {
     let main_fn = r#"() -> Felt {
         #[inline(never)]
         fn do_copy(dst: &mut [u32; 12], src: &[u32; 16]) {
@@ -875,7 +875,7 @@ fn test_memory_copy_aligned_fast_path() {
     setup::enable_compiler_instrumentation();
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
-        "memory_copy_aligned_fast_path_u8s",
+        "memory_copy_aligned_bytes_u8s",
         main_fn,
         config,
         [],
