@@ -1219,6 +1219,8 @@ impl OpEmitter<'_> {
             span,
         );
         then_emitter.raw_exec("::intrinsics::mem::load_sw", span); // [window, addr, offset, value]
+        // Preserve the upper half of the unaligned 32-bit window so only the two addressed bytes
+        // are replaced before delegating the write-back to `store_sw`.
         then_emitter.emit_push(0xffff0000u32, span);
         then_emitter.emit(masm::Instruction::U32And, span); // [masked_window, addr, offset, value]
         then_emitter.emit(masm::Instruction::MovUp3, span); // [value, masked_window, addr, offset]
