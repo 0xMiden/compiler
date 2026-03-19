@@ -4,8 +4,7 @@
 extern crate alloc;
 
 use miden::{
-    Felt, Storage, Word, component, felt, hash_words, intrinsics::advice::adv_insert,
-    native_account, tx,
+    Value, ValueAccess, Word, component, felt, hash_words, intrinsics::advice::adv_insert, tx,
 };
 
 /// Authentication component storage/layout.
@@ -19,7 +18,7 @@ struct AuthComponent {
         description = "owner public key",
         type = "miden::standards::auth::pub_key"
     )]
-    owner_public_key: Storage<Word>,
+    owner_public_key: Value,
 }
 
 #[component]
@@ -37,12 +36,10 @@ impl AuthComponent {
 
         let mut tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
         let msg: Word = hash_words(&tx_summary).into();
-        // On the advice stack the words are expected to be in the reverse order
-        tx_summary.reverse();
         // Insert tx summary into advice map under key `msg`
         adv_insert(msg, &tx_summary);
 
-        let pub_key: Word = self.owner_public_key.get();
+        let pub_key: Word = self.owner_public_key.read();
 
         // Emit signature request event to advice stack,
         miden::emit_falcon_sig_to_stack(msg, pub_key);
