@@ -5,10 +5,10 @@
 //! contract account that uses the Rust-compiled auth component.
 
 use miden_client::{
-    auth::BasicAuthenticator, crypto::RpoRandomCoin, note::NoteTag, testing::MockChain,
-    transaction::OutputNote,
+    auth::BasicAuthenticator, crypto::RpoRandomCoin, note::NoteTag, transaction::RawOutputNote,
 };
 use miden_protocol::account::StorageSlotName;
+use miden_testing::MockChain;
 use midenc_expect_test::expect;
 
 use super::{
@@ -74,7 +74,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
         .build_tx_context(counter_account.clone(), &[], &[])
         .unwrap()
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(own_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(own_note.clone())])
         .authenticator(Some(authenticator));
     let tx_context = tx_context_builder.build().unwrap();
     let executed_tx =
@@ -103,7 +103,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
         .build_tx_context(counter_account, &[], &[])
         .unwrap()
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(forged_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(forged_note)])
         .authenticator(None);
     let tx_context = tx_context_builder.build().unwrap();
 

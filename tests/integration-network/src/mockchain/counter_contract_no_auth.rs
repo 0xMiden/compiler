@@ -1,17 +1,15 @@
 //! Counter contract test with no-auth authentication component
 
 use miden_client::{
-    Word,
-    account::component::BasicWallet,
-    crypto::RpoRandomCoin,
-    note::NoteTag,
-    testing::{AccountState, Auth, MockChain},
-    transaction::OutputNote,
+    Word, account::component::BasicWallet, crypto::RpoRandomCoin, note::NoteTag,
+    transaction::RawOutputNote,
 };
 use miden_core::Felt;
 use miden_protocol::account::{
-    AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageSlot, StorageSlotName,
+    AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageMapKey, StorageSlot,
+    StorageSlotName, auth::AuthScheme,
 };
+use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
 
 use super::{
@@ -44,7 +42,8 @@ pub fn test_counter_contract_no_auth() {
         StorageSlotName::new("miden::component::miden_counter_contract::count_map").unwrap();
     let counter_storage_slots = vec![StorageSlot::with_map(
         counter_storage_slot.clone(),
-        StorageMap::with_entries([(COUNTER_CONTRACT_STORAGE_KEY, value)]).unwrap(),
+        StorageMap::with_entries([(StorageMapKey::new(COUNTER_CONTRACT_STORAGE_KEY), value)])
+            .unwrap(),
     )];
 
     let mut builder = MockChain::builder();
@@ -70,7 +69,13 @@ pub fn test_counter_contract_no_auth() {
         .storage_mode(AccountStorageMode::Public)
         .with_component(BasicWallet);
     let sender_account = builder
-        .add_account_from_builder(Auth::BasicAuth, sender_builder, AccountState::Exists)
+        .add_account_from_builder(
+            Auth::BasicAuth {
+                auth_scheme: AuthScheme::Falcon512Poseidon2,
+            },
+            sender_builder,
+            AccountState::Exists,
+        )
         .expect("failed to add sender account to mock chain builder");
     eprintln!("Sender account ID: {:?}", sender_account.id().to_hex());
 
@@ -86,7 +91,7 @@ pub fn test_counter_contract_no_auth() {
         &mut rng,
     );
     eprintln!("Counter note hash: {:?}", counter_note.id().to_hex());
-    builder.add_output_note(OutputNote::Full(counter_note.clone()));
+    builder.add_output_note(RawOutputNote::Full(counter_note.clone()));
 
     let mut chain = builder.build().expect("failed to build mock chain");
     chain.prove_next_block().unwrap();
