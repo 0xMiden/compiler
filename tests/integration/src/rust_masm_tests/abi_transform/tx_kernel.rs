@@ -37,8 +37,12 @@ pub proc get_metadata
     # - the ABI adapter consumes all 8 felts (not just 4)
     # - the words are grouped/ordered correctly
     # - both words are written to the return area
-    push.21 push.22 push.23 push.24   # METADATA_HEADER
-    push.11 push.12 push.13 push.14   # NOTE_ATTACHMENT
+    #
+    # The adapter writes the current top of stack to the lowest memory address first, so push the
+    # words in reverse felt order here to materialize `[11, 12, 13, 14]` and `[21, 22, 23, 24]`
+    # in memory.
+    push.24 push.23 push.22 push.21   # METADATA_HEADER
+    push.14 push.13 push.12 push.11   # NOTE_ATTACHMENT
 end
 "#
     .to_string();
@@ -104,7 +108,7 @@ end
     );
     let main_fn = format!(
         r#"() -> () {{
-        let v = miden::active_note::get_inputs();
+        let v = miden::active_note::get_storage();
         assert_eq(v.len().into(), felt!(4));
         assert_eq(v[0], felt!({expect1}));
         assert_eq(v[1], felt!({expect2}));

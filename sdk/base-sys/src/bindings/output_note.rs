@@ -19,10 +19,14 @@ unsafe extern "C" {
 
     #[link_name = "miden::protocol::output_note::add_asset"]
     pub fn extern_output_note_add_asset(
-        asset_f0: Felt,
-        asset_f1: Felt,
-        asset_f2: Felt,
-        asset_f3: Felt,
+        asset_key_f0: Felt,
+        asset_key_f1: Felt,
+        asset_key_f2: Felt,
+        asset_key_f3: Felt,
+        asset_value_f0: Felt,
+        asset_value_f1: Felt,
+        asset_value_f2: Felt,
+        asset_value_f3: Felt,
         note_idx: NoteIdx,
     );
 
@@ -94,17 +98,23 @@ unsafe extern "C" {
 /// let note_type = NoteType::from(felt!(1)); // public note type (0b01)
 ///
 /// let note_idx = output_note::create(tag, note_type, recipient);
-/// output_note::add_asset(Asset::new([felt!(0), felt!(0), felt!(0), felt!(1)]), note_idx);
+/// output_note::add_asset(
+///     Asset::new(
+///         [felt!(0), felt!(0), felt!(0), felt!(1)],
+///         [felt!(1), felt!(0), felt!(0), felt!(0)],
+///     ),
+///     note_idx,
+/// );
 /// ```
 pub fn create(tag: Tag, note_type: NoteType, recipient: Recipient) -> NoteIdx {
     unsafe {
         extern_output_note_create(
             tag,
             note_type,
-            recipient.inner[3],
-            recipient.inner[2],
-            recipient.inner[1],
             recipient.inner[0],
+            recipient.inner[1],
+            recipient.inner[2],
+            recipient.inner[3],
         )
     }
 }
@@ -121,10 +131,10 @@ pub fn set_attachment(
             note_idx,
             attachment_scheme,
             attachment_kind,
-            attachment[3],
-            attachment[2],
-            attachment[1],
             attachment[0],
+            attachment[1],
+            attachment[2],
+            attachment[3],
         );
     }
 }
@@ -135,10 +145,10 @@ pub fn set_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachmen
         extern_output_note_set_word_attachment(
             note_idx,
             attachment_scheme,
-            attachment[3],
-            attachment[2],
-            attachment[1],
             attachment[0],
+            attachment[1],
+            attachment[2],
+            attachment[3],
         );
     }
 }
@@ -151,10 +161,10 @@ pub fn set_array_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachme
         extern_output_note_set_array_attachment(
             note_idx,
             attachment_scheme,
-            attachment[3],
-            attachment[2],
-            attachment[1],
             attachment[0],
+            attachment[1],
+            attachment[2],
+            attachment[3],
         );
     }
 }
@@ -169,16 +179,23 @@ pub fn set_array_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachme
 /// // `note_idx` is returned by `output_note::create(...)`.
 /// let note_idx: NoteIdx = /* ... */
 ///
-/// let asset = Asset::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+/// let asset = Asset::new(
+///     [felt!(0), felt!(0), felt!(0), felt!(1)],
+///     [felt!(1), felt!(0), felt!(0), felt!(0)],
+/// );
 /// output_note::add_asset(asset, note_idx);
 /// ```
 pub fn add_asset(asset: Asset, note_idx: NoteIdx) {
     unsafe {
         extern_output_note_add_asset(
-            asset.inner[3],
-            asset.inner[2],
-            asset.inner[1],
-            asset.inner[0],
+            asset.key[0],
+            asset.key[1],
+            asset.key[2],
+            asset.key[3],
+            asset.value[0],
+            asset.value[1],
+            asset.value[2],
+            asset.value[3],
             note_idx,
         );
     }
@@ -197,7 +214,7 @@ pub fn get_assets_info(note_index: NoteIdx) -> OutputNoteAssetsInfo {
         extern_output_note_get_assets_info(note_index.inner, ret_area.as_mut_ptr());
         let (commitment, num_assets) = ret_area.assume_init();
         OutputNoteAssetsInfo {
-            commitment: commitment.reversed(),
+            commitment,
             num_assets,
         }
     }
@@ -222,10 +239,7 @@ pub fn get_recipient(note_index: NoteIdx) -> Recipient {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
         extern_output_note_get_recipient(note_index.inner, ret_area.as_mut_ptr());
-        let recipient = ret_area.assume_init();
-        Recipient {
-            inner: recipient.inner.reversed(),
-        }
+        ret_area.assume_init()
     }
 }
 
@@ -234,6 +248,6 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_output_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init().reversed()
+        ret_area.assume_init()
     }
 }

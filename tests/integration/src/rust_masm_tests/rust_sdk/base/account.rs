@@ -140,7 +140,7 @@ fn rust_sdk_account_has_non_fungible_asset_binding() {
     run_account_binding_test(
         "rust_sdk_account_has_non_fungible_asset_binding",
         "pub fn binding(&self) -> Felt {
-        let asset = Asset::from([Felt::new(0); 4]);
+        let asset = Asset::new(Word::from([Felt::new(0); 4]), Word::from([Felt::new(0); 4]));
         if self.has_non_fungible_asset(asset) {
             Felt::new(1)
         } else {

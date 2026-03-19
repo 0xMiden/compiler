@@ -24,21 +24,21 @@ unsafe extern "C" {
     pub fn extern_note_get_metadata(ptr: *mut NoteMetadata);
 }
 
-/// Get the inputs of the currently executing note.
+/// Returns the storage of the currently executing note.
 ///
 /// # Examples
 ///
-/// Parse a note input layout into domain types:
+/// Parse a note storage layout into domain types:
 ///
 /// ```rust,ignore
 /// use miden::{active_note, AccountId, Asset};
 ///
-/// let inputs = active_note::get_inputs();
+/// let storage = active_note::get_storage();
 ///
-/// // Example layout: first two inputs store a target `AccountId`.
-/// let target = AccountId::from(inputs[0], inputs[1]);
+/// // Example layout: first two values store a target `AccountId`.
+/// let target = AccountId::from(storage[0], storage[1]);
 /// ```
-pub fn get_inputs() -> Vec<Felt> {
+pub fn get_storage() -> Vec<Felt> {
     const MAX_INPUTS: usize = 1024;
     let mut inputs: Vec<Felt> = Vec::with_capacity(MAX_INPUTS);
     let num_inputs = unsafe {
@@ -95,9 +95,7 @@ pub fn get_recipient() -> Recipient {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
         extern_note_get_recipient(ret_area.as_mut_ptr());
-        let mut recipient = ret_area.assume_init();
-        recipient.inner = recipient.inner.reversed();
-        recipient
+        ret_area.assume_init()
     }
 }
 
@@ -106,7 +104,7 @@ pub fn get_script_root() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_note_get_script_root(ret_area.as_mut_ptr());
-        ret_area.assume_init().reversed()
+        ret_area.assume_init()
     }
 }
 
@@ -115,7 +113,7 @@ pub fn get_serial_number() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_note_get_serial_number(ret_area.as_mut_ptr());
-        ret_area.assume_init().reversed()
+        ret_area.assume_init()
     }
 }
 
@@ -124,6 +122,6 @@ pub fn get_metadata() -> NoteMetadata {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_note_get_metadata(ret_area.as_mut_ptr());
-        ret_area.assume_init().reversed()
+        ret_area.assume_init()
     }
 }

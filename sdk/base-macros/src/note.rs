@@ -268,8 +268,8 @@ struct AccountParam {
 }
 
 fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
-    // NOTE: Avoid calling `active_note::get_inputs()` for zero-sized note types so that "no input"
-    // notes can execute without requiring a full active-note runtime context.
+    // NOTE: Avoid calling `active_note::get_storage()` for zero-sized note types so that "no
+    // storage" notes can execute without requiring a full active-note runtime context.
     quote! {
         let __miden_note: #note_ty = if ::core::mem::size_of::<#note_ty>() == 0 {
             match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(&[]) {
@@ -277,7 +277,7 @@ fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
                 Err(err) => ::core::panic!("failed to decode note inputs: {err:?}"),
             }
         } else {
-            let inputs = ::miden::active_note::get_inputs();
+            let inputs = ::miden::active_note::get_storage();
             match <#note_ty as ::core::convert::TryFrom<&[::miden::Felt]>>::try_from(inputs.as_slice()) {
                 Ok(note) => note,
                 Err(err) => ::core::panic!("failed to decode note inputs: {err:?}"),

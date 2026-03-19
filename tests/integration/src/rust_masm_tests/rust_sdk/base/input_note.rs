@@ -123,12 +123,12 @@ fn rust_sdk_input_note_get_sender_binding() {
 }
 
 #[test]
-fn rust_sdk_input_note_get_inputs_info_binding() {
+fn rust_sdk_input_note_get_storage_info_binding() {
     run_input_note_binding_test(
-        "rust_sdk_input_note_get_inputs_info_binding",
+        "rust_sdk_input_note_get_storage_info_binding",
         "pub fn binding(&self) -> Felt {
-        let info = input_note::get_inputs_info(NoteIdx { inner: Felt::new(0) });
-        info.num_inputs
+        let info = input_note::get_storage_info(NoteIdx { inner: Felt::new(0) });
+        info.num_storage_items
     }",
     );
 }

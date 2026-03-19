@@ -71,7 +71,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         _ => None,
                     },
                     symbols::Dsa => match components.next()?.as_symbol_name() {
-                        symbols::Falcon512Rpo => {
+                        symbols::Falcon512Poseidon2 => {
                             match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                                 stdlib::crypto::dsa::rpo_falcon512::RPO_FALCON512_VERIFY => {
                                     Some(TransformStrategy::NoTransform)
@@ -145,8 +145,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 }
                 symbols::Asset => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::asset::BUILD_FUNGIBLE_ASSET
-                        | tx_kernel::asset::BUILD_NON_FUNGIBLE_ASSET => {
+                        tx_kernel::asset::CREATE_FUNGIBLE_ASSET
+                        | tx_kernel::asset::CREATE_NON_FUNGIBLE_ASSET => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -186,7 +186,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::input_note::GET_RECIPIENT
                         | tx_kernel::input_note::GET_METADATA
                         | tx_kernel::input_note::GET_SENDER
-                        | tx_kernel::input_note::GET_INPUTS_INFO
+                        | tx_kernel::input_note::GET_STORAGE_INFO
                         | tx_kernel::input_note::GET_SCRIPT_ROOT
                         | tx_kernel::input_note::GET_SERIAL_NUMBER => {
                             Some(TransformStrategy::ReturnViaPointer)

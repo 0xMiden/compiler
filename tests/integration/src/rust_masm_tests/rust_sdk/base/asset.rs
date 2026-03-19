@@ -68,24 +68,24 @@ debug = false
 }
 
 #[test]
-fn rust_sdk_account_asset_build_fungible_asset_binding() {
+fn rust_sdk_account_asset_create_fungible_asset_binding() {
     run_asset_binding_test(
-        "rust_sdk_account_asset_build_fungible_asset_binding",
+        "rust_sdk_account_asset_create_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
         let faucet = AccountId { prefix: Felt::new(1), suffix: Felt::new(0) };
-        asset::build_fungible_asset(faucet, Felt::new(10))
+        asset::create_fungible_asset(faucet, Felt::new(10))
     }",
     );
 }
 
 #[test]
-fn rust_sdk_account_asset_build_non_fungible_asset_binding() {
+fn rust_sdk_account_asset_create_non_fungible_asset_binding() {
     run_asset_binding_test(
-        "rust_sdk_account_asset_build_non_fungible_asset_binding",
+        "rust_sdk_account_asset_create_non_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
         let faucet = AccountId { prefix: Felt::new(1), suffix: Felt::new(0) };
         let hash = Word::from([Felt::new(0); 4]);
-        asset::build_non_fungible_asset(faucet, hash)
+        asset::create_non_fungible_asset(faucet, hash)
     }",
     );
 }

@@ -1,6 +1,8 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
+extern crate alloc;
+
 use miden::*;
 
 use crate::bindings::miden::component_macros_account::component_macros_account::{
@@ -15,7 +17,10 @@ impl MyNote {
     #[note_script]
     pub fn execute(self, _arg: Word) {
         let foo_val = Word::new([felt!(11), felt!(22), felt!(33), felt!(44)]);
-        let asset = Asset::new([felt!(99), felt!(88), felt!(77), felt!(66)]);
+        let asset = Asset::new(
+            Word::new([felt!(99), felt!(88), felt!(77), felt!(66)]),
+            Word::new([felt!(55), felt!(44), felt!(33), felt!(22)]),
+        );
         let value = StructA {
             foo: foo_val,
             asset,
@@ -23,7 +28,7 @@ impl MyNote {
         let result = test_custom_types(value, asset);
         let expected = StructB {
             bar: foo_val.a,
-            baz: asset.inner.a,
+            baz: asset.key.a,
         };
 
         assert_eq!(result.bar, expected.bar);

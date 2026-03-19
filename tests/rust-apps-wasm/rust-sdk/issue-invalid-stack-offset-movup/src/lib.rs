@@ -18,7 +18,8 @@ struct InvalidStackOffsetMovupNote;
 impl InvalidStackOffsetMovupNote {
     /// Note-script entrypoint used to reproduce issue #831.
     ///
-    /// The `create_swapp_note` call uses a flattened argument size of 15 felts.
+    /// The `create_swapp_note` call uses a flattened argument size of 23 felts after the v0.14
+    /// two-word `Asset` migration.
     #[note_script]
     pub fn run(self, arg: Word) {
         // NOTE: Guard the reproduction logic behind a runtime condition so that once #831 is fixed,
@@ -27,10 +28,10 @@ impl InvalidStackOffsetMovupNote {
             return;
         }
 
-        let inputs = active_note::get_inputs();
+        let inputs = active_note::get_storage();
 
         let executing_account_id = active_account::get_id();
-        let swapp_note_creator_id = AccountId::new(inputs[8], inputs[9]);
+        let swapp_note_creator_id = AccountId::new(inputs[16], inputs[17]);
 
         if swapp_note_creator_id == executing_account_id {
             // active_note::add_assets_to_account();
@@ -41,8 +42,14 @@ impl InvalidStackOffsetMovupNote {
         let input_amount = arg[1];
         let _inflight = inflight_val != felt!(0);
 
-        let _requested_asset_word = Asset::from([inputs[0], inputs[1], inputs[2], inputs[3]]);
-        let offered_asset_word = Asset::from([inputs[4], inputs[5], inputs[6], inputs[7]]);
+        let requested_asset = Asset::new(
+            Word::from([inputs[0], inputs[1], inputs[2], inputs[3]]),
+            Word::from([inputs[4], inputs[5], inputs[6], inputs[7]]),
+        );
+        let offered_asset_word = Asset::new(
+            Word::from([inputs[8], inputs[9], inputs[10], inputs[11]]),
+            Word::from([inputs[12], inputs[13], inputs[14], inputs[15]]),
+        );
 
         let note_assets = active_note::get_assets();
         let num_assets = note_assets.len();
@@ -56,8 +63,8 @@ impl InvalidStackOffsetMovupNote {
         };
         assert_eq(assets_match, felt!(1));
 
-        let requested_asset_total = inputs[3];
-        let offered_asset_total = inputs[7];
+        let requested_asset_total = requested_asset.value[0];
+        let offered_asset_total = offered_asset_word.value[0];
 
         let current_note_serial = active_note::get_serial_number();
 
@@ -80,17 +87,29 @@ impl InvalidStackOffsetMovupNote {
         );
 
         let aux_value = offered_out;
-        let input_asset = Asset::new(Word::from([inputs[0], inputs[1], inputs[2], input_amount]));
+        let input_asset = Asset::new(
+            requested_asset.key,
+            Word::from([input_amount, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        );
 
         create_p2id_note(routing_serial, input_asset, swapp_note_creator_id, aux_value);
 
         if offered_out < offered_asset_total {
             let remainder_serial = hash_words(&[current_note_serial]).inner;
             let remainder_aux = offered_out;
-            let remainder_requested_asset =
-                Asset::from([inputs[0], inputs[1], inputs[2], inputs[3] - input_amount]);
-            let remainder_offered_asset =
-                Asset::from([inputs[4], inputs[5], inputs[6], inputs[7] - offered_out]);
+            let remainder_requested_asset = Asset::new(
+                requested_asset.key,
+                Word::from([
+                    requested_asset_total - input_amount,
+                    Felt::ZERO,
+                    Felt::ZERO,
+                    Felt::ZERO,
+                ]),
+            );
+            let remainder_offered_asset = Asset::new(
+                offered_asset_word.key,
+                Word::from([offered_asset_total - offered_out, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            );
 
             create_swapp_note(
                 remainder_serial,
@@ -167,14 +186,22 @@ fn create_swapp_note(
         serial_num,
         Digest::from_word(active_note::get_script_root()),
         vec![
-            offered_asset.inner[0],
-            offered_asset.inner[1],
-            offered_asset.inner[2],
-            offered_asset.inner[3],
-            requested_asset.inner[0],
-            requested_asset.inner[1],
-            requested_asset.inner[2],
-            requested_asset.inner[3],
+            offered_asset.key[0],
+            offered_asset.key[1],
+            offered_asset.key[2],
+            offered_asset.key[3],
+            offered_asset.value[0],
+            offered_asset.value[1],
+            offered_asset.value[2],
+            offered_asset.value[3],
+            requested_asset.key[0],
+            requested_asset.key[1],
+            requested_asset.key[2],
+            requested_asset.key[3],
+            requested_asset.value[0],
+            requested_asset.value[1],
+            requested_asset.value[2],
+            requested_asset.value[3],
             note_creator_id.prefix,
             note_creator_id.suffix,
             felt!(0),

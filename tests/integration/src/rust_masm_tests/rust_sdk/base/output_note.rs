@@ -133,7 +133,7 @@ fn rust_sdk_output_note_add_asset_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_add_asset_binding",
         "pub fn binding(&self) -> Felt {
-        let asset = Asset::from([Felt::new(0); 4]);
+        let asset = Asset::new(Word::from([Felt::new(0); 4]), Word::from([Felt::new(0); 4]));
         let idx = NoteIdx { inner: Felt::new(0) };
         output_note::add_asset(asset, idx);
         Felt::new(0)

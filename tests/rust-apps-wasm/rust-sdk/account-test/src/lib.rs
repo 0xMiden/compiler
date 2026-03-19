@@ -60,7 +60,7 @@ impl Note {
     #[unsafe(no_mangle)]
     pub fn note_script() -> Felt {
         let mut sum = Felt::new(0);
-        for input in miden::active_note::get_inputs() {
+        for input in miden::active_note::get_storage() {
             sum = sum + input;
         }
         sum

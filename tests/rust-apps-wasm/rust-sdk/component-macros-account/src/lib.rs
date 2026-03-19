@@ -24,6 +24,7 @@ pub mod my_types {
 #[export_type]
 pub struct StructA {
     pub foo: Word,
+    pub asset: Asset,
 }
 
 #[export_type]
@@ -57,7 +58,10 @@ impl MyAccount {
     pub fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB {
         let foo_val = Word::from([a.foo.a, asset.key.a, a.foo.b, a.foo.c]);
 
-        let val_a = StructA { foo: foo_val };
+        let val_a = StructA {
+            foo: foo_val,
+            asset,
+        };
         let c = self.test_custom_types2(val_a, asset);
         StructB {
             bar: c.inner1,

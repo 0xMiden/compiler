@@ -22,8 +22,8 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::input_note::get_sender"]
     pub fn extern_input_note_get_sender(note_index: Felt, ptr: *mut AccountId);
 
-    #[link_name = "miden::protocol::input_note::get_inputs_info"]
-    pub fn extern_input_note_get_inputs_info(note_index: Felt, ptr: *mut (Word, Felt));
+    #[link_name = "miden::protocol::input_note::get_storage_info"]
+    pub fn extern_input_note_get_storage_info(note_index: Felt, ptr: *mut (Word, Felt));
 
     #[link_name = "miden::protocol::input_note::get_script_root"]
     pub fn extern_input_note_get_script_root(note_index: Felt, ptr: *mut Word);
@@ -38,10 +38,10 @@ pub struct InputNoteAssetsInfo {
     pub num_assets: Felt,
 }
 
-/// Contains summary information about the inputs stored in an input note.
-pub struct InputNoteInputsInfo {
+/// Contains summary information about the storage stored in an input note.
+pub struct InputNoteStorageInfo {
     pub commitment: Word,
-    pub num_inputs: Felt,
+    pub num_storage_items: Felt,
 }
 
 /// Returns the assets commitment and asset count for the input note at `note_index`.
@@ -51,7 +51,7 @@ pub fn get_assets_info(note_index: NoteIdx) -> InputNoteAssetsInfo {
         extern_input_note_get_assets_info(note_index.inner, ret_area.as_mut_ptr());
         let (commitment, num_assets) = ret_area.assume_init();
         InputNoteAssetsInfo {
-            commitment: commitment.reversed(),
+            commitment,
             num_assets,
         }
     }
@@ -76,9 +76,7 @@ pub fn get_recipient(note_index: NoteIdx) -> Recipient {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
         extern_input_note_get_recipient(note_index.inner, ret_area.as_mut_ptr());
-        let mut recipient = ret_area.assume_init();
-        recipient.inner = recipient.inner.reversed();
-        recipient
+        ret_area.assume_init()
     }
 }
 
@@ -87,7 +85,7 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_input_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init().reversed()
+        ret_area.assume_init()
     }
 }
 
@@ -100,15 +98,15 @@ pub fn get_sender(note_index: NoteIdx) -> AccountId {
     }
 }
 
-/// Returns the inputs commitment and input count for the input note at `note_index`.
-pub fn get_inputs_info(note_index: NoteIdx) -> InputNoteInputsInfo {
+/// Returns the storage commitment and storage item count for the input note at `note_index`.
+pub fn get_storage_info(note_index: NoteIdx) -> InputNoteStorageInfo {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<(Word, Felt)>::uninit();
-        extern_input_note_get_inputs_info(note_index.inner, ret_area.as_mut_ptr());
-        let (commitment, num_inputs) = ret_area.assume_init();
-        InputNoteInputsInfo {
-            commitment: commitment.reversed(),
-            num_inputs,
+        extern_input_note_get_storage_info(note_index.inner, ret_area.as_mut_ptr());
+        let (commitment, num_storage_items) = ret_area.assume_init();
+        InputNoteStorageInfo {
+            commitment,
+            num_storage_items,
         }
     }
 }
@@ -118,7 +116,7 @@ pub fn get_script_root(note_index: NoteIdx) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_input_note_get_script_root(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init().reversed()
+        ret_area.assume_init()
     }
 }
 
@@ -127,6 +125,6 @@ pub fn get_serial_number(note_index: NoteIdx) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_input_note_get_serial_number(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init().reversed()
+        ret_area.assume_init()
     }
 }

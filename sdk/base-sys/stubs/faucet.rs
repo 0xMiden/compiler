@@ -17,26 +17,31 @@ pub extern "C" fn faucet_create_non_fungible_asset_plain(
 }
 
 #[unsafe(export_name = "miden::protocol::faucet::mint")]
-pub extern "C" fn faucet_mint_plain(_a0: f32, _a1: f32, _a2: f32, _a3: f32, _out: *mut c_void) {
+pub extern "C" fn faucet_mint_plain(
+    _k0: f32,
+    _k1: f32,
+    _k2: f32,
+    _k3: f32,
+    _v0: f32,
+    _v1: f32,
+    _v2: f32,
+    _v3: f32,
+    _out: *mut c_void,
+) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[unsafe(export_name = "miden::protocol::faucet::burn")]
-pub extern "C" fn faucet_burn_plain(_a0: f32, _a1: f32, _a2: f32, _a3: f32, _out: *mut c_void) {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
-#[unsafe(export_name = "miden::protocol::faucet::get_total_issuance")]
-pub extern "C" fn faucet_get_total_issuance_plain() -> f32 {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
-#[unsafe(export_name = "miden::protocol::faucet::is_non_fungible_asset_issued")]
-pub extern "C" fn faucet_is_non_fungible_asset_issued_plain(
-    _a0: f32,
-    _a1: f32,
-    _a2: f32,
-    _a3: f32,
-) -> f32 {
+pub extern "C" fn faucet_burn_plain(
+    _k0: f32,
+    _k1: f32,
+    _k2: f32,
+    _k3: f32,
+    _v0: f32,
+    _v1: f32,
+    _v2: f32,
+    _v3: f32,
+    _out: *mut c_void,
+) {
     unsafe { core::hint::unreachable_unchecked() }
 }

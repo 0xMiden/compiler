@@ -83,9 +83,9 @@ impl From<[Felt; 4]> for Asset {
     }
 }
 
-impl From<Asset> for Word {
+impl From<Asset> for (Word, Word) {
     fn from(val: Asset) -> Self {
-        val.inner
+        (val.key, val.value)
     }
 }
 
