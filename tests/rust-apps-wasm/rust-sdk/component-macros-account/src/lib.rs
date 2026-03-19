@@ -1,6 +1,8 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
+extern crate alloc;
+
 use miden::{Asset, Felt, Word, component, export_type};
 
 pub mod my_types {
@@ -22,7 +24,6 @@ pub mod my_types {
 #[export_type]
 pub struct StructA {
     pub foo: Word,
-    pub asset: Asset,
 }
 
 #[export_type]
@@ -54,12 +55,9 @@ struct MyAccount;
 impl MyAccount {
     /// Exercises exported user-defined type and SDK type in signatures and return value.
     pub fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB {
-        let foo_val = Word::from([a.foo.a, asset.a, a.foo.b, a.foo.c]);
+        let foo_val = Word::from([a.foo.a, asset.key.a, a.foo.b, a.foo.c]);
 
-        let val_a = StructA {
-            foo: foo_val,
-            asset,
-        };
+        let val_a = StructA { foo: foo_val };
         let c = self.test_custom_types2(val_a, asset);
         StructB {
             bar: c.inner1,

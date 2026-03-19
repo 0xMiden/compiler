@@ -21,7 +21,7 @@ struct MyAccount {
     #[storage(description = "owner public key")]
     owner_public_key: Value,
 
-    /// A map from asset identifier to quantity held by the account.
+    /// A map from asset vault key to quantity held by the account.
     #[storage(description = "asset quantity map")]
     asset_qty_map: StorageMap,
 }
@@ -33,14 +33,14 @@ impl foo::Guest for MyAccount {
         let owner_key: Word = my_account.owner_public_key.read();
         if pub_key == owner_key {
             let new_value_word = Word::new([qty, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
-            my_account.asset_qty_map.set(asset.into(), new_value_word);
+            my_account.asset_qty_map.set(asset.key, new_value_word);
         }
     }
 
     /// Returns the stored quantity for `asset`, or 0 if not present.
     fn get_asset_qty(asset: Asset) -> Felt {
         let my_account = MyAccount::default();
-        let word: Word = my_account.asset_qty_map.get(&asset);
-        word[3]
+        let word: Word = my_account.asset_qty_map.get(&asset.key);
+        word[0]
     }
 }

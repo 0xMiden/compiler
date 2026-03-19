@@ -18,6 +18,7 @@ package = "miden:auth-component-rpo-falcon512"
 
 [package.metadata.miden]
 project-kind = "authentication-component"
+supported-types = ["RegularAccountUpdatableCode"]
 
 [profile.release]
 trim-paths = ["diagnostics", "object"]

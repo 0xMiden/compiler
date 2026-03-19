@@ -1,9 +1,9 @@
 use alloc::{collections::BTreeSet, sync::Arc};
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
-use miden_assembly_syntax::parser::WordValue;
+use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use midenc_hir::{
-    CallConv, FunctionIdent, Op, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
+    CallConv, FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
     diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
@@ -648,6 +648,11 @@ impl MasmFunctionBuilder {
 
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
+        if function.has_attribute("auth_script") {
+            procedure
+                .attributes_mut()
+                .insert(Attribute::Marker(masm::Ident::new("auth_script").unwrap()));
+        }
         procedure.extend_invoked(invoked);
 
         Ok(procedure)

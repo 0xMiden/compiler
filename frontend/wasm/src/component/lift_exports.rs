@@ -4,9 +4,12 @@ use core::cell::RefCell;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    CallConv, FunctionType, Ident, Op, SmallVec, SourceSpan, SymbolPath, ValueRange, ValueRef,
-    Visibility,
-    dialects::builtin::{BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, attributes::Signature},
+    CallConv, FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolPath, ValueRange,
+    ValueRef, Visibility,
+    dialects::builtin::{
+        BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
+        attributes::{Signature, UnitAttr},
+    },
 };
 use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
 
@@ -49,7 +52,8 @@ pub fn generate_export_lifting_function(
     // IMPORTANT: Restrict this rename to the authentication interface only.
     // We do this by matching the exact WIT name `auth-procedure` instead of
     // rewriting arbitrary names that merely start with `auth-`.
-    let export_func_ident = if export_func_name == "auth-procedure" {
+    let is_auth_procedure = export_func_name == "auth-procedure";
+    let export_func_ident = if is_auth_procedure {
         Ident::new("auth__procedure".into(), SourceSpan::default())
     } else {
         Ident::new(export_func_name.to_string().into(), SourceSpan::default())
@@ -81,6 +85,7 @@ pub fn generate_export_lifting_function(
             core_export_func_ref,
             core_export_func_sig,
             &core_export_func_path,
+            is_auth_procedure,
             diagnostics,
         )?;
     } else {
@@ -90,6 +95,7 @@ pub fn generate_export_lifting_function(
             core_export_func_ref,
             core_export_func_sig,
             cross_ctx_export_sig_flat,
+            is_auth_procedure,
         )?;
     }
 
@@ -134,6 +140,7 @@ fn generate_lifting_with_transformation(
     core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     core_export_func_sig: Signature,
     core_export_func_path: &SymbolPath,
+    is_auth_procedure: bool,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     assert_eq!(
@@ -172,6 +179,9 @@ fn generate_lifting_with_transformation(
     };
     let export_func_ref =
         component_builder.define_function(export_func_ident, Visibility::Public, new_func_sig)?;
+    if is_auth_procedure {
+        annotate_auth_script(export_func_ref);
+    }
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -271,12 +281,16 @@ fn generate_direct_lifting(
     core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
+    is_auth_procedure: bool,
 ) -> WasmResult<()> {
     let export_func_ref = component_builder.define_function(
         export_func_ident,
         Visibility::Public,
         cross_ctx_export_sig_flat.clone(),
     )?;
+    if is_auth_procedure {
+        annotate_auth_script(export_func_ref);
+    }
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -317,4 +331,11 @@ fn generate_direct_lifting(
     fb.ret(returning_onty_first, span).expect("failed ret");
 
     Ok(())
+}
+
+/// Marks the lifted authentication export with the protocol's `@auth_script` attribute.
+fn annotate_auth_script(mut export_func_ref: midenc_hir::dialects::builtin::FunctionRef) {
+    let context = export_func_ref.borrow().as_operation().context_rc();
+    let auth_attr = context.create_attribute::<UnitAttr, _>(());
+    export_func_ref.borrow_mut().set_attribute("auth_script", auth_attr);
 }

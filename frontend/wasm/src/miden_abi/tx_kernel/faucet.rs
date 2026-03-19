@@ -27,19 +27,47 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut funcs: FunctionTypeMap = Default::default();
     funcs.insert(
         Symbol::from(CREATE_FUNGIBLE_ASSET),
-        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt],
+            [
+                Felt, Felt, Felt, Felt, // ASSET_KEY
+                Felt, Felt, Felt, Felt, // ASSET_VALUE
+            ],
+        ),
     );
     funcs.insert(
         Symbol::from(CREATE_NON_FUNGIBLE_ASSET),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt, Felt, Felt, Felt],
+            [
+                Felt, Felt, Felt, Felt, // ASSET_KEY
+                Felt, Felt, Felt, Felt, // ASSET_VALUE
+            ],
+        ),
     );
     funcs.insert(
         Symbol::from(MINT),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [
+                Felt, Felt, Felt, Felt, // ASSET_KEY
+                Felt, Felt, Felt, Felt, // ASSET_VALUE
+            ],
+            [Felt, Felt, Felt, Felt],
+        ),
     );
     funcs.insert(
         Symbol::from(BURN),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [
+                Felt, Felt, Felt, Felt, // ASSET_KEY
+                Felt, Felt, Felt, Felt, // ASSET_VALUE
+            ],
+            [Felt, Felt, Felt, Felt],
+        ),
     );
     funcs.insert(Symbol::from(GET_TOTAL_ISSUANCE), FunctionType::new(CallConv::Wasm, [], [Felt]));
     funcs.insert(

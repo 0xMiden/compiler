@@ -18,12 +18,28 @@ unsafe extern "C" {
     fn extern_active_account_get_initial_storage_commitment(ptr: *mut Word);
     #[link_name = "miden::protocol::active_account::compute_storage_commitment"]
     fn extern_active_account_compute_storage_commitment(ptr: *mut Word);
+    #[link_name = "miden::protocol::active_account::get_asset"]
+    fn extern_active_account_get_asset(
+        asset_key_3: Felt,
+        asset_key_2: Felt,
+        asset_key_1: Felt,
+        asset_key_0: Felt,
+        ptr: *mut Word,
+    );
+    #[link_name = "miden::protocol::active_account::get_initial_asset"]
+    fn extern_active_account_get_initial_asset(
+        asset_key_3: Felt,
+        asset_key_2: Felt,
+        asset_key_1: Felt,
+        asset_key_0: Felt,
+        ptr: *mut Word,
+    );
     #[link_name = "miden::protocol::active_account::get_balance"]
-    fn extern_active_account_get_balance(faucet_id_prefix: Felt, faucet_id_suffix: Felt) -> Felt;
+    fn extern_active_account_get_balance(faucet_id_suffix: Felt, faucet_id_prefix: Felt) -> Felt;
     #[link_name = "miden::protocol::active_account::get_initial_balance"]
     fn extern_active_account_get_initial_balance(
-        faucet_id_prefix: Felt,
         faucet_id_suffix: Felt,
+        faucet_id_prefix: Felt,
     ) -> Felt;
     #[link_name = "miden::protocol::active_account::has_non_fungible_asset"]
     fn extern_active_account_has_non_fungible_asset(
@@ -114,6 +130,36 @@ pub fn compute_storage_commitment() -> Word {
     }
 }
 
+/// Returns the current value stored under the specified `asset_key` in the active account vault.
+pub fn get_asset(asset_key: Word) -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_active_account_get_asset(
+            asset_key[3],
+            asset_key[2],
+            asset_key[1],
+            asset_key[0],
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.assume_init().reversed()
+    }
+}
+
+/// Returns the initial value stored under the specified `asset_key` in the active account vault.
+pub fn get_initial_asset(asset_key: Word) -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_active_account_get_initial_asset(
+            asset_key[3],
+            asset_key[2],
+            asset_key[1],
+            asset_key[0],
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.assume_init().reversed()
+    }
+}
+
 /// Returns the balance of the fungible asset identified by `faucet_id`.
 ///
 /// # Panics
@@ -121,13 +167,13 @@ pub fn compute_storage_commitment() -> Word {
 /// Propagates kernel errors if the referenced asset is non-fungible or the
 /// account vault invariants are violated.
 pub fn get_balance(faucet_id: AccountId) -> Felt {
-    unsafe { extern_active_account_get_balance(faucet_id.prefix, faucet_id.suffix) }
+    unsafe { extern_active_account_get_balance(faucet_id.suffix, faucet_id.prefix) }
 }
 
 /// Returns the initial balance of the fungible asset identified by `faucet_id`.
 #[inline]
 pub fn get_initial_balance(faucet_id: AccountId) -> Felt {
-    unsafe { extern_active_account_get_initial_balance(faucet_id.prefix, faucet_id.suffix) }
+    unsafe { extern_active_account_get_initial_balance(faucet_id.suffix, faucet_id.prefix) }
 }
 
 /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
@@ -135,10 +181,10 @@ pub fn get_initial_balance(faucet_id: AccountId) -> Felt {
 pub fn has_non_fungible_asset(asset: Asset) -> bool {
     unsafe {
         extern_active_account_has_non_fungible_asset(
-            asset.inner[3],
-            asset.inner[2],
-            asset.inner[1],
-            asset.inner[0],
+            asset.key[3],
+            asset.key[2],
+            asset.key[1],
+            asset.key[0],
         ) != Felt::new(0)
     }
 }
@@ -232,6 +278,20 @@ pub trait ActiveAccount {
     #[inline]
     fn compute_storage_commitment(&self) -> Word {
         compute_storage_commitment()
+    }
+
+    /// Returns the current value stored under the specified `asset_key` in the active account
+    /// vault.
+    #[inline]
+    fn get_asset(&self, asset_key: Word) -> Word {
+        get_asset(asset_key)
+    }
+
+    /// Returns the initial value stored under the specified `asset_key` in the active account
+    /// vault.
+    #[inline]
+    fn get_initial_asset(&self, asset_key: Word) -> Word {
+        get_initial_asset(asset_key)
     }
 
     /// Returns the balance of the fungible asset identified by `faucet_id`.

@@ -20,6 +20,7 @@ package = "miden:auth-component-no-auth"
 
 [package.metadata.miden]
 project-kind = "authentication-component"
+supported-types = ["RegularAccountUpdatableCode"]
 
 [profile.release]
 trim-paths = ["diagnostics", "object"]
