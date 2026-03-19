@@ -19,11 +19,11 @@ const NOTE_TYPE_INDEX: usize = 1;
 const RECIPIENT_START: usize = 2;
 const RECIPIENT_END: usize = 6;
 const ASSET_START: usize = 6;
-const ASSET_END: usize = 10;
+const ASSET_END: usize = 14;
 
 #[tx_script]
 fn run(arg: Word, account: &mut Account) {
-    let num_felts = adv_push_mapvaln(arg.clone());
+    let num_felts = adv_push_mapvaln(arg);
     let num_felts_u64 = num_felts.as_canonical_u64();
     assert_eq(Felt::from_u32((num_felts_u64 % 4) as u32), felt!(0));
     let num_words = Felt::new(num_felts_u64 / 4);
@@ -33,6 +33,9 @@ fn run(arg: Word, account: &mut Account) {
     let note_type = input[NOTE_TYPE_INDEX];
     let recipient: [Felt; 4] = input[RECIPIENT_START..RECIPIENT_END].try_into().unwrap();
     let note_idx = output_note::create(tag.into(), note_type.into(), recipient.into());
-    let asset: [Felt; 4] = input[ASSET_START..ASSET_END].try_into().unwrap();
-    account.move_asset_to_note(asset.into(), note_idx);
+    let asset: [Felt; 8] = input[ASSET_START..ASSET_END].try_into().unwrap();
+    let asset_key: [Felt; 4] = asset[..4].try_into().unwrap();
+    let asset_value: [Felt; 4] = asset[4..].try_into().unwrap();
+    let asset = Asset::new(asset_key, asset_value);
+    account.move_asset_to_note(asset, note_idx);
 }

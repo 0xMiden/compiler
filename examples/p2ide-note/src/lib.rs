@@ -36,7 +36,7 @@ struct P2ideNote;
 impl P2ideNote {
     #[note_script]
     pub fn run(self, _arg: Word, account: &mut Account) {
-        let inputs = active_note::get_inputs();
+        let inputs = active_note::get_storage();
 
         // make sure the number of inputs is 4
         assert_eq((inputs.len() as u32).into(), felt!(4));
