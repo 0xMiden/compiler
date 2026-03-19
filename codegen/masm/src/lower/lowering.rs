@@ -1364,3 +1364,16 @@ impl HirLowering for wasm::SignExtend {
         Ok(())
     }
 }
+
+impl HirLowering for wasm::I32Load8S {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let result = self.result();
+        let pointer_ty = self.addr().ty();
+        let pointee_ty = pointer_ty.pointee().expect("pointer should have been verified").clone();
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        inst_emitter.load(pointee_ty, self.span());
+        inst_emitter.sext(result.ty(), self.span());
+
+        Ok(())
+    }
+}

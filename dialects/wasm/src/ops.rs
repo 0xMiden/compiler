@@ -4,7 +4,7 @@ use midenc_hir::{
     attributes::IntegerLikeAttr,
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::attributes::TypeAttr,
-    effects::MemoryEffectOpInterface,
+    effects::{MemoryEffect, MemoryEffectOpInterface},
     matchers::Matcher,
     traits::*,
     *,
@@ -163,5 +163,28 @@ impl Foldable for SignExtend {
         }
 
         FoldResult::Failed
+    }
+}
+
+/// Load `result` from the heap at `addr` and sign-extend it to `i32`.
+///
+/// This corresponds to Wasm's `i32.load8_s`.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = WasmDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct I32Load8S {
+    #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
+    addr: PointerOf<Int8>,
+    #[result]
+    result: Int32,
+}
+
+impl InferTypeOpInterface for I32Load8S {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I32);
+        Ok(())
     }
 }

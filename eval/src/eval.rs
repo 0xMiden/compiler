@@ -2056,3 +2056,45 @@ impl Eval for wasm::SignExtend {
         Ok(ControlFlowEffect::None)
     }
 }
+
+impl Eval for wasm::I32Load8S {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let addr = self.addr();
+        let addr_value = evaluator.use_value(&addr.as_value_ref())?;
+        let Immediate::U32(addr_value) = addr_value else {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("expected pointer to be a u32 immediate, got {}", addr_value.ty()),
+            ));
+        };
+
+        let pointer_ty = addr.ty();
+        let pointee_ty = pointer_ty
+            .pointee()
+            .expect("expected pointer type to have been verified already");
+        let loaded = evaluator.read_memory(addr_value, pointee_ty)?;
+        let sign_extended = match loaded {
+            Value::Immediate(Immediate::I8(x)) => Value::Immediate(Immediate::I32(x as i32)),
+            Value::Poison {
+                origin,
+                used,
+                value: Immediate::I8(x),
+            } => Value::Poison {
+                origin,
+                used,
+                value: Immediate::I32(x as i32),
+            },
+            other => {
+                return Err(evaluator.report(
+                    "evaluation failed",
+                    self.span(),
+                    format!("expected i8 load, got {}", other.ty()),
+                ));
+            }
+        };
+
+        evaluator.set_value(self.result().as_value_ref(), sign_extended);
+        Ok(ControlFlowEffect::None)
+    }
+}

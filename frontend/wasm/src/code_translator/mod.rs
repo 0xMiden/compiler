@@ -257,7 +257,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
             translate_load_zext(U16, U32, memarg, state, builder, span)?;
         }
         Operator::I32Load8S { memarg } => {
-            translate_load_sext(I8, I32, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let addr = prepare_addr(addr_int, &I8, Some(memarg), builder, span)?;
+            let val = builder.i32_load8_s(addr, span)?;
+            state.push1(val);
         }
         Operator::I32Load16S { memarg } => {
             translate_load_sext(I16, I32, memarg, state, builder, span)?;
