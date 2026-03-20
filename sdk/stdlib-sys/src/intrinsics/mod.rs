@@ -1,10 +1,10 @@
 use core::ops::{Deref, DerefMut};
 
-pub use miden_field::{Felt, Word};
+pub use miden_field::Word;
 
 pub use self::{
     crypto::Digest,
-    felt::{assert, assert_eq, assertz},
+    felt::{Felt, assert, assert_eq, assertz},
 };
 
 pub mod advice;

@@ -3,9 +3,7 @@
 
 extern crate alloc;
 
-use miden::{
-    Value, ValueAccess, Word, component, felt, hash_words, intrinsics::advice::adv_insert, tx,
-};
+use miden::{Storage, Word, component, felt, hash_words, intrinsics::advice::adv_insert, tx};
 
 /// Authentication component storage/layout.
 ///
@@ -18,7 +16,7 @@ struct AuthComponent {
         description = "owner public key",
         type = "miden::standards::auth::pub_key"
     )]
-    owner_public_key: Value,
+    owner_public_key: Storage<Word>,
 }
 
 #[component]
@@ -34,12 +32,12 @@ impl AuthComponent {
 
         let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
 
-        let mut tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
+        let tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
         let msg: Word = hash_words(&tx_summary).into();
         // Insert tx summary into advice map under key `msg`
         adv_insert(msg, &tx_summary);
 
-        let pub_key: Word = self.owner_public_key.read();
+        let pub_key: Word = self.owner_public_key.get();
 
         // Emit signature request event to advice stack,
         miden::emit_falcon_sig_to_stack(msg, pub_key);

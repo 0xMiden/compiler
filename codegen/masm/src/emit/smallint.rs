@@ -10,7 +10,7 @@
 //! those primitives.
 use midenc_hir::{Overflow, SourceSpan};
 
-use super::{OpEmitter, masm};
+use super::{OpEmitter, masm, movup_from_offset};
 
 #[allow(unused)]
 impl OpEmitter<'_> {
@@ -133,6 +133,15 @@ impl OpEmitter<'_> {
             self.select_int32(u32::MAX, 0, span);
             // Pad out to M bits
             self.pad_int32(m, span);
+            // Multi-limb integers are represented in little-endian limb order on the operand
+            // stack, i.e. the least-significant limb is on top. After selecting the padding limb
+            // and extending to i32, the sign-extended payload limb sits below the padding limbs, so
+            // move it back to the top.
+            let num_elements = m / 32;
+            match num_elements {
+                2 => self.emit(masm::Instruction::Swap1, span),
+                n => self.emit(movup_from_offset((n - 1) as usize), span),
+            }
         } else {
             self.select_int32(sign_bits, 0, span);
             // Sign-extend to i32

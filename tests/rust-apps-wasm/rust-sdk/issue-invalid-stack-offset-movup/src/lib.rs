@@ -9,7 +9,7 @@
 #[macro_use]
 extern crate alloc;
 
-use miden::{miden_field::word, *};
+use miden::*;
 
 #[note]
 struct InvalidStackOffsetMovupNote;
@@ -83,13 +83,13 @@ impl InvalidStackOffsetMovupNote {
 
         let routing_serial = add_word(
             current_note_serial,
-            Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, felt!(1)]),
+            Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]),
         );
 
         let aux_value = offered_out;
         let input_asset = Asset::new(
             requested_asset.key,
-            Word::from([input_amount, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+            Word::from([input_amount, felt!(0), felt!(0), felt!(0)]),
         );
 
         create_p2id_note(routing_serial, input_asset, swapp_note_creator_id, aux_value);
@@ -101,14 +101,14 @@ impl InvalidStackOffsetMovupNote {
                 requested_asset.key,
                 Word::from([
                     requested_asset_total - input_amount,
-                    Felt::ZERO,
-                    Felt::ZERO,
-                    Felt::ZERO,
+                    felt!(0),
+                    felt!(0),
+                    felt!(0),
                 ]),
             );
             let remainder_offered_asset = Asset::new(
                 offered_asset_word.key,
-                Word::from([offered_asset_total - offered_out, Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+                Word::from([offered_asset_total - offered_out, felt!(0), felt!(0), felt!(0)]),
             );
 
             create_swapp_note(

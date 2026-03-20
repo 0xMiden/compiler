@@ -7,32 +7,30 @@
 //
 // extern crate alloc;
 
-use miden::{Felt, StorageMap, StorageMapAccess, Word, component, felt};
+use miden::{Felt, StorageMap, Word, component, felt};
 
 /// Main contract structure for the counter example.
 #[component]
 struct CounterContract {
     /// Storage map holding the counter value.
     #[storage(description = "counter contract storage map")]
-    count_map: StorageMap,
+    count_map: StorageMap<Word, Felt>,
 }
 
 #[component]
 impl CounterContract {
     /// Returns the current counter value stored in the contract's storage map.
     pub fn get_count(&self) -> Felt {
-        let key = Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, felt!(1)]);
-        let word: Word = self.count_map.get(&key);
-        word[3]
+        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+        self.count_map.get(key)
     }
 
     /// Increments the counter value stored in the contract's storage map by one.
     pub fn increment_count(&mut self) -> Felt {
-        let key = Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, felt!(1)]);
-        let current_value_word: Word = self.count_map.get(&key);
-        let new_value = current_value_word[3] + felt!(1);
-        let new_value_word = Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, new_value]);
-        self.count_map.set(key, new_value_word);
+        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+        let current_value: Felt = self.count_map.get(key);
+        let new_value = current_value + felt!(1);
+        self.count_map.set(key, new_value);
         new_value
     }
 }
