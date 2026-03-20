@@ -368,7 +368,9 @@ impl HirLowering for scf::IndexSwitch {
         //         }
         //      }
         //
-        // 3. If we have N non-default contiguous cases, use binary search to reduce search space:
+        // 3. If we have N non-default cases, use binary search to reduce search space. The
+        //    lowering tracks the explicit selector interval for each partition, so values in
+        //    holes between partitions still fall back to the default region:
         //
         //      if selector < case3 {
         //         if selector == case1 {
@@ -388,27 +390,12 @@ impl HirLowering for scf::IndexSwitch {
         //         }
         //      }
         //
-        // We do not try to use the binary search approach with non-contiguous cases, as we would
-        // be forced to emit duplicate copies of the fallback branch, and it isn't clear the size
-        // tradeoff would be worth it without branch hints.
-
         assert!(!cases.is_empty());
-        if cases.len() == 1 {
-            return utils::emit_binary_search(self, emitter, &[], &cases, 0, 1);
+        if cases.len() < 3 {
+            return utils::emit_linear_search(self, emitter, &cases);
         }
 
-        // Emit binary-search-optimized 'hir.if' sequence
-        //
-        // Partition such that the condition for the `then` branch guarantees that no fallback
-        // branch is needed, i.e. an even number of cases must be in the first partition
-        let num_cases = cases.len();
-        let midpoint = cases[0].midpoint(cases[cases.len() - 1]);
-        let partition_point = core::cmp::min(
-            cases.len(),
-            cases.partition_point(|item| *item < midpoint).next_multiple_of(2),
-        );
-        let (a, b) = cases.split_at(partition_point);
-        utils::emit_binary_search(self, emitter, a, b, midpoint, num_cases)
+        utils::emit_binary_search(self, emitter, &cases)
     }
 
     fn required_operands(&self) -> ValueRange<'_, 4> {

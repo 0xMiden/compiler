@@ -2,7 +2,7 @@ use midenc_dialect_scf as scf;
 use midenc_hir::{Op, Operation, Region, Report, Spanned, ValueRef};
 use smallvec::SmallVec;
 
-use crate::{Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
+use crate::{Constraint, OperandStack, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
 
 /// Emit a conditonal branch-like region, e.g. `scf.if`.
 ///
@@ -87,360 +87,347 @@ stack on exit from 'else': {else_stack:#?}
     Ok(())
 }
 
-/// Emit a sequence of nested branches that perform a binary search for a case which matches some
-/// selector value on top of the operand stack.
+/// The explicit selector interval spanned by a sorted `scf.index_switch` case slice.
+#[derive(Clone, Copy, Debug)]
+struct SwitchCaseInterval {
+    lower: u32,
+    upper: u32,
+}
+
+impl SwitchCaseInterval {
+    /// Derive the explicit selector interval represented by `cases`.
+    fn from_cases(cases: &[u32]) -> Self {
+        let lower = *cases.first().expect("switch case interval requires at least one case");
+        let upper = *cases.last().expect("switch case interval requires at least one case");
+        Self { lower, upper }
+    }
+}
+
+/// Emit nested equality checks for a sorted set of explicit switch cases.
 ///
-/// For now, this has the following requirements:
-///
-/// * The selector value is on top of the stack when called, and the emitter is still aware of it
-/// * The cases which have been partitioned into `a` and `b` are contiguous, e.g. `[1, 2]` and
-///   `[3, 4]`.
-/// * If `a` is empty, then `b` is processed such that the fallback case will be emitted once only
-///   a single case in `b` remains (as a branch between that case and the fallback case). If there
-///   are two cases, then the search will partition them into the "then" branch, with the fallback
-///   in the "else" branch.
-/// * If `a` is non-empty, and `b` is empty, then `num_cases` dictates whether we handle `a` as
-///   described in the previous bullet point, i.e. if the total number of cases is 2, and `a` has
-///   two cases, then we will partition them into the "then" branch, and emit the fallback in the
-///   "else" branch. Otherwise, if the number of cases is greater than 2, and `a` has <= 2 cases,
-///   then they will be emitted into the "then" branch without emitting the fallback case.
-///   Otherwise, `a` will be partitioned such that we can recursively call this function and rely
-///   on only emitting the fallback case once, in the final "else" branch.
-///
-/// # Parameters
-///
-/// * `midpoint` is the case value (real or otherwise) representing the approximate middle of the
-///   range of cases. It is used to derive the actual partition point that produced `a` and `b`
-/// * `a` is the set of cases which are < the partition point derived from `midpoint`
-/// * `b` is the set of cases which are >= the partition point derived from `midpoint`
-/// * `num_cases` is the total number of cases that were partitioned into `a` and `b`. This is used
-///   to inform us whether or not there are additional cases to be emitted, or if we should emit
-///   the fallback case once the search is exhausted.
-pub fn emit_binary_search(
+/// Unlike the binary-search lowering, this path makes no assumptions about the density of the
+/// case set, so it is used for small case counts where duplicating the search chain is cheaper
+/// than setting up interval guards.
+pub fn emit_linear_search(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
-    a: &[u32],
-    b: &[u32],
-    midpoint: u32,
-    num_cases: usize,
+    cases: &[u32],
 ) -> Result<(), Report> {
     let span = op.span();
     let selector = op.selector().as_value_ref();
+    let [case, rest @ ..] = cases else {
+        return emit_switch_region(op, emitter, &op.default_region());
+    };
 
-    match a {
-        [] => {
-            match b {
-                [then_case] => {
-                    // There is only a single case to emit, so we can emit an 'hir.if' with fallback
-                    //
-                    // Emit `selector == then_case`
-                    //
-                    // NOTE: We duplicate the selector if it is live in either the case region or
-                    // the fallback region
-                    let then_index = op.get_case_index_for_selector(*then_case).unwrap();
-                    let then_body = op.get_case_region(then_index);
-                    let else_body = op.default_region();
-                    let is_live_after = emitter
-                        .liveness
-                        .is_live_at_start(selector, then_body.borrow().entry_block_ref().unwrap())
-                        || emitter
-                            .liveness
-                            .is_live_at_start(selector, else_body.entry_block_ref().unwrap());
-                    if is_live_after {
-                        emitter.emitter().dup(0, span);
-                    }
-                    emitter.emitter().eq_imm(b[0].into(), span);
+    let case_index = op.get_case_index_for_selector(*case).unwrap();
+    let case_region = op.get_case_region(case_index);
+    let case_is_live_after = {
+        let case_region = case_region.borrow();
+        emitter
+            .liveness
+            .is_live_at_start(selector, case_region.entry_block_ref().unwrap())
+    };
+    let else_needs_selector = if rest.is_empty() {
+        let default_region = op.default_region();
+        emitter
+            .liveness
+            .is_live_at_start(selector, default_region.entry_block_ref().unwrap())
+    } else {
+        true
+    };
+    if case_is_live_after || else_needs_selector {
+        emitter.emitter().dup(0, span);
+    }
+    emitter.emitter().eq_imm((*case).into(), span);
 
-                    // Remove the condition for the if from the emitter's view of the stack
-                    emitter.stack.drop();
+    // Remove the branch condition from the emitter's view of the stack.
+    emitter.stack.drop();
 
-                    // Emit as 'hir.if'
-                    emit_if(emitter, op.as_operation(), &then_body.borrow(), &else_body)
-                }
-                [_then_case, else_case] => {
-                    // This is similar to the case of a = [_, _], b is non-empty
-                    //
-                    // We must emit an `hir.if` for then/else cases in the first branch, and place
-                    // the fallback in the second branch.
-                    //
-                    // Emit `selector <= else_case ? (selector == then_case : then_case ? else_case) ? fallback`
-                    {
-                        let mut emitter = emitter.emitter();
-                        emitter.dup(0, span);
-                        emitter.lte_imm((*else_case).into(), span);
-                    }
+    let (then_blk, then_stack) = emit_nested_block(op, emitter, None, |then_emitter| {
+        let case_region = case_region.borrow();
+        emit_switch_region(op, then_emitter, &case_region)
+    })?;
 
-                    // Remove the condition for the branch selection from the emitter's view of the
-                    // stack
-                    emitter.stack.drop();
+    let (else_blk, else_stack) = if rest.is_empty() {
+        emit_default_block(op, emitter, Some(&then_stack))?
+    } else {
+        emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
+            emit_linear_search(op, else_emitter, rest)
+        })?
+    };
 
-                    let (then_blk, then_stack) = {
-                        let mut then_emitter = emitter.nest();
-                        emit_binary_search(op, &mut then_emitter, b, &[], midpoint, usize::MAX)?;
-                        let then_stack = then_emitter.stack.clone();
-                        (then_emitter.into_emitted_block(span), then_stack)
-                    };
+    debug_assert_eq!(then_stack, else_stack);
 
-                    let else_blk = {
-                        let default_region = op.default_region();
-                        let is_live_after = emitter
-                            .liveness
-                            .is_live_at_start(selector, default_region.entry_block_ref().unwrap());
-                        let mut else_emitter = emitter.nest();
-                        if !is_live_after {
-                            // Consume the original selector
-                            else_emitter.emitter().drop(span);
-                        }
-                        else_emitter.emit_inline(&default_region.entry());
-                        // Rename the yielded values on the stack for us to check against
-                        let mut else_stack = else_emitter.stack.clone();
-                        for (index, result) in op.results().all().into_iter().enumerate() {
-                            else_stack.rename(index, *result as ValueRef);
-                        }
+    emitter.emit_op(masm::Op::If {
+        span,
+        then_blk,
+        else_blk,
+    });
+    emitter.stack = then_stack;
 
-                        // Schedule realignment of the stack if needed
-                        if then_stack != else_stack {
-                            schedule_stack_realignment(&then_stack, &else_stack, &mut else_emitter);
-                        }
+    Ok(())
+}
 
-                        if cfg!(debug_assertions) {
-                            let mut else_stack = else_emitter.stack.clone();
-                            for (index, result) in op.results().all().into_iter().enumerate() {
-                                else_stack.rename(index, *result as ValueRef);
-                            }
-                            if then_stack != else_stack {
-                                panic!(
-                                    "unexpected observable stack effect leaked from regions of {}
+/// Emit a binary search for a sorted set of explicit switch cases.
+///
+/// The helper makes the explicit selector interval part of the lowering state instead of assuming
+/// an implicit lower bound of `0`. Values outside the explicit interval are routed to the default
+/// region up front, and recursive search only runs once the selector is known to be inside the
+/// interval represented by `cases`. If the explicit case set is sparse, recursive partitioning
+/// emits an additional default check for holes between the left and right case intervals.
+pub fn emit_binary_search(
+    op: &scf::IndexSwitch,
+    emitter: &mut BlockEmitter<'_>,
+    cases: &[u32],
+) -> Result<(), Report> {
+    debug_assert!(!cases.is_empty());
 
-stack on exit from 'then': {then_stack:#?}
-stack on exit from 'else': {else_stack:#?}
+    let interval = SwitchCaseInterval::from_cases(cases);
+    emit_binary_search_with_interval_guards(op, emitter, cases, interval)
+}
+
+/// Rename the yielded switch results on `stack` to the result values of `op`.
+fn rename_switch_results(op: &scf::IndexSwitch, stack: &mut OperandStack) {
+    for (index, result) in op.results().all().into_iter().enumerate() {
+        stack.rename(index, *result as ValueRef);
+    }
+}
+
+/// Realign `emitter` to `expected_stack`, panicking if the stack effects remain observably
+/// different after scheduling.
+fn align_switch_branch_stack(
+    op: &scf::IndexSwitch,
+    expected_stack: &OperandStack,
+    emitter: &mut BlockEmitter<'_>,
+) {
+    let actual_stack = emitter.stack.clone();
+    if expected_stack != &actual_stack {
+        schedule_stack_realignment(expected_stack, &actual_stack, emitter);
+    }
+
+    if cfg!(debug_assertions) {
+        let actual_stack = emitter.stack.clone();
+        if expected_stack != &actual_stack {
+            panic!(
+                "unexpected observable stack effect leaked from regions of {}
+
+stack on exit from expected branch: {expected_stack:#?}
+stack on exit from actual branch: {actual_stack:#?}
 ",
-                                    op.as_operation()
-                                );
-                            }
-                        }
+                op.as_operation()
+            );
+        }
+    }
+}
 
-                        else_emitter.into_emitted_block(span)
-                    };
+/// Emit `region` inline, consuming the selector if it is not live in the region entry.
+fn emit_switch_region(
+    op: &scf::IndexSwitch,
+    emitter: &mut BlockEmitter<'_>,
+    region: &Region,
+) -> Result<(), Report> {
+    let selector = op.selector().as_value_ref();
+    let span = op.span();
+    let is_live_after =
+        emitter.liveness.is_live_at_start(selector, region.entry_block_ref().unwrap());
+    if !is_live_after && emitter.stack.peek().is_some_and(|operand| operand == &selector) {
+        emitter.emitter().drop(span);
+    }
+    emitter.emit_inline(&region.entry());
+    rename_switch_results(op, &mut emitter.stack);
 
-                    emitter.emit_op(masm::Op::If {
+    Ok(())
+}
+
+/// Emit a nested block and optionally realign its observable stack effect to `expected_stack`.
+fn emit_nested_block<F>(
+    op: &scf::IndexSwitch,
+    emitter: &mut BlockEmitter<'_>,
+    expected_stack: Option<&OperandStack>,
+    build: F,
+) -> Result<(masm::Block, OperandStack), Report>
+where
+    F: FnOnce(&mut BlockEmitter<'_>) -> Result<(), Report>,
+{
+    let mut nested_emitter = emitter.nest();
+    build(&mut nested_emitter)?;
+    if let Some(expected_stack) = expected_stack {
+        align_switch_branch_stack(op, expected_stack, &mut nested_emitter);
+    }
+    let branch_stack = nested_emitter.stack.clone();
+    let branch_block = nested_emitter.into_emitted_block(op.span());
+    Ok((branch_block, branch_stack))
+}
+
+/// Emit the default region as a nested block.
+fn emit_default_block(
+    op: &scf::IndexSwitch,
+    emitter: &mut BlockEmitter<'_>,
+    expected_stack: Option<&OperandStack>,
+) -> Result<(masm::Block, OperandStack), Report> {
+    let default_region = op.default_region();
+    emit_nested_block(op, emitter, expected_stack, |nested_emitter| {
+        emit_switch_region(op, nested_emitter, &default_region)
+    })
+}
+
+/// Emit lower/upper interval guards for `cases`, then enter the in-bounds binary search.
+fn emit_binary_search_with_interval_guards(
+    op: &scf::IndexSwitch,
+    emitter: &mut BlockEmitter<'_>,
+    cases: &[u32],
+    interval: SwitchCaseInterval,
+) -> Result<(), Report> {
+    let span = op.span();
+
+    if interval.lower > 0 {
+        {
+            let mut op_emitter = emitter.emitter();
+            op_emitter.dup(0, span);
+            op_emitter.lt_imm(interval.lower.into(), span);
+        }
+        emitter.stack.drop();
+
+        let (then_blk, then_stack) = emit_default_block(op, emitter, None)?;
+        let (else_blk, else_stack) =
+            emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
+                emit_binary_search_with_upper_guard(op, else_emitter, cases, interval)
+            })?;
+
+        debug_assert_eq!(then_stack, else_stack);
+
+        emitter.emit_op(masm::Op::If {
+            span,
+            then_blk,
+            else_blk,
+        });
+        emitter.stack = then_stack;
+        return Ok(());
+    }
+
+    emit_binary_search_with_upper_guard(op, emitter, cases, interval)
+}
+
+/// Emit an upper-bound guard for `cases`, then enter the in-bounds binary search.
+fn emit_binary_search_with_upper_guard(
+    op: &scf::IndexSwitch,
+    emitter: &mut BlockEmitter<'_>,
+    cases: &[u32],
+    interval: SwitchCaseInterval,
+) -> Result<(), Report> {
+    let span = op.span();
+
+    if interval.upper < u32::MAX {
+        {
+            let mut op_emitter = emitter.emitter();
+            op_emitter.dup(0, span);
+            op_emitter.gt_imm(interval.upper.into(), span);
+        }
+        emitter.stack.drop();
+
+        let (then_blk, then_stack) = emit_default_block(op, emitter, None)?;
+        let (else_blk, else_stack) =
+            emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
+                emit_binary_search_in_bounds(op, else_emitter, cases, interval)
+            })?;
+
+        debug_assert_eq!(then_stack, else_stack);
+
+        emitter.emit_op(masm::Op::If {
+            span,
+            then_blk,
+            else_blk,
+        });
+        emitter.stack = then_stack;
+        return Ok(());
+    }
+
+    emit_binary_search_in_bounds(op, emitter, cases, interval)
+}
+
+/// Emit binary search over `cases`, assuming the selector is already inside `interval`.
+fn emit_binary_search_in_bounds(
+    op: &scf::IndexSwitch,
+    emitter: &mut BlockEmitter<'_>,
+    cases: &[u32],
+    interval: SwitchCaseInterval,
+) -> Result<(), Report> {
+    let span = op.span();
+
+    match cases {
+        [case] => {
+            debug_assert_eq!(interval.lower, *case);
+            debug_assert_eq!(interval.upper, *case);
+            let case_index = op.get_case_index_for_selector(*case).unwrap();
+            let case_region = op.get_case_region(case_index);
+            let case_region = case_region.borrow();
+            emit_switch_region(op, emitter, &case_region)
+        }
+        _ => {
+            let split = cases.len() / 2;
+            let (left_cases, right_cases) = cases.split_at(split);
+            let left_interval = SwitchCaseInterval::from_cases(left_cases);
+            let right_interval = SwitchCaseInterval::from_cases(right_cases);
+
+            debug_assert_eq!(interval.lower, left_interval.lower);
+            debug_assert_eq!(interval.upper, right_interval.upper);
+
+            {
+                let mut op_emitter = emitter.emitter();
+                op_emitter.dup(0, span);
+                op_emitter.lte_imm(left_interval.upper.into(), span);
+            }
+            emitter.stack.drop();
+
+            let (then_blk, then_stack) = emit_nested_block(op, emitter, None, |then_emitter| {
+                emit_binary_search_in_bounds(op, then_emitter, left_cases, left_interval)
+            })?;
+            let (else_blk, else_stack) = if left_interval.upper.checked_add(1)
+                == Some(right_interval.lower)
+            {
+                emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
+                    emit_binary_search_in_bounds(op, else_emitter, right_cases, right_interval)
+                })?
+            } else {
+                emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
+                    {
+                        let mut op_emitter = else_emitter.emitter();
+                        op_emitter.dup(0, span);
+                        op_emitter.lt_imm(right_interval.lower.into(), span);
+                    }
+                    else_emitter.stack.drop();
+
+                    let (gap_blk, gap_stack) = emit_default_block(op, else_emitter, None)?;
+                    let (right_blk, right_stack) =
+                        emit_nested_block(op, else_emitter, Some(&gap_stack), |right_emitter| {
+                            emit_binary_search_in_bounds(
+                                op,
+                                right_emitter,
+                                right_cases,
+                                right_interval,
+                            )
+                        })?;
+
+                    debug_assert_eq!(gap_stack, right_stack);
+
+                    else_emitter.emit_op(masm::Op::If {
                         span,
-                        then_blk,
-                        else_blk,
+                        then_blk: gap_blk,
+                        else_blk: right_blk,
                     });
-
-                    emitter.stack = then_stack;
+                    else_emitter.stack = gap_stack;
 
                     Ok(())
-                }
-                _ => panic!(
-                    "unexpected partitioning of switch cases: a = empty, b = {b:#?}, midpoint = \
-                     {midpoint}"
-                ),
-            }
-        }
-        [_then_case, else_case] if b.is_empty() && num_cases == 2 => {
-            // There were exactly two cases and we are handling them here, but we must also emit
-            // a fallback branch in the case where an out of range selector value is given
-            //
-            // We must emit an `hir.if` for then/else cases in the first branch, and place
-            // the fallback in the second branch.
-            //
-            // Emit `selector <= else_case ? (selector == then_case : then_case ? else_case) ? fallback`
-            {
-                let mut emitter = emitter.emitter();
-                emitter.dup(0, span);
-                emitter.lte_imm((*else_case).into(), span);
-            }
-
-            // Remove the condition for the branch selection from the emitter's view of the
-            // stack
-            emitter.stack.drop();
-
-            let (then_blk, then_stack) = {
-                let mut then_emitter = emitter.nest();
-                emit_binary_search(op, &mut then_emitter, a, &[], midpoint, usize::MAX)?;
-                let then_stack = then_emitter.stack.clone();
-                (then_emitter.into_emitted_block(span), then_stack)
+                })?
             };
 
-            let (else_blk, else_stack) = {
-                let default_region = op.default_region();
-                let is_live_after = emitter
-                    .liveness
-                    .is_live_at_start(selector, default_region.entry_block_ref().unwrap());
-                let mut else_emitter = emitter.nest();
-                if !is_live_after {
-                    // Consume the original selector
-                    else_emitter.emitter().drop(span);
-                }
-                else_emitter.emit_inline(&default_region.entry());
-                // Rename the yielded values on the stack for us to check against
-                let mut else_stack = else_emitter.stack.clone();
-                for (index, result) in op.results().all().into_iter().enumerate() {
-                    else_stack.rename(index, *result as ValueRef);
-                }
-                (else_emitter.into_emitted_block(span), else_stack)
-            };
-
-            if then_stack != else_stack {
-                panic!(
-                    "unexpected observable stack effect leaked from regions of {}
-
-            stack on exit from 'then': {then_stack:#?}
-            stack on exit from 'else': {else_stack:#?}
-                                    ",
-                    op.as_operation()
-                );
-            }
+            debug_assert_eq!(then_stack, else_stack);
 
             emitter.emit_op(masm::Op::If {
                 span,
                 then_blk,
                 else_blk,
             });
-
-            emitter.stack = then_stack;
-
-            Ok(())
-        }
-        [then_case, else_case] if b.is_empty() && num_cases > 2 => {
-            // We can emit 'a' as an 'hir.if' with no fallback, as this is a subset of the total
-            // cases and we were given enough to populate a single `hir.if`.
-            //
-            // Emit `selector == then_case`
-            let then_index = op.get_case_index_for_selector(*then_case).unwrap();
-            let then_body = op.get_case_region(then_index);
-            let else_index = op.get_case_index_for_selector(*else_case).unwrap();
-            let else_body = op.get_case_region(else_index);
-            let is_live_after = emitter
-                .liveness
-                .is_live_at_start(selector, then_body.borrow().entry_block_ref().unwrap())
-                || emitter
-                    .liveness
-                    .is_live_at_start(selector, else_body.borrow().entry_block_ref().unwrap());
-            if is_live_after {
-                emitter.emitter().dup(0, span);
-            }
-            emitter.emitter().eq_imm((*then_case).into(), span);
-
-            // Remove the selector from the emitter's view of the stack
-            emitter.stack.drop();
-
-            // Emit as 'hir.if'
-            emit_if(emitter, op.as_operation(), &then_body.borrow(), &else_body.borrow())
-        }
-        [_then_case, else_case] => {
-            // We need to emit an 'hir.if' to split the search at the midpoint, and emit 'a' in
-            // the then region, and then recurse with 'b' on the else region
-            //
-            // Emit `selector < partition_point`
-            {
-                let mut emitter = emitter.emitter();
-                emitter.dup(0, span);
-                emitter.lte_imm((*else_case).into(), span);
-            }
-
-            // Remove the selector used for this branch selection from the emitter's view of the
-            // stack
-            emitter.stack.drop();
-
-            let (then_blk, then_stack) = {
-                let mut then_emitter = emitter.nest();
-                emit_binary_search(op, &mut then_emitter, a, &[], midpoint, usize::MAX)?;
-                let then_stack = then_emitter.stack.clone();
-                (then_emitter.into_emitted_block(span), then_stack)
-            };
-
-            // If we have exactly
-            let (else_blk, else_stack) = {
-                let mut else_emitter = emitter.nest();
-                let midpoint = b[0].midpoint(b[b.len() - 1]);
-                let partition_point = core::cmp::min(
-                    b.len(),
-                    b.partition_point(|item| *item < midpoint).next_multiple_of(2),
-                );
-                let (b_then, b_else) = b.split_at(partition_point);
-                emit_binary_search(op, &mut else_emitter, b_then, b_else, midpoint, b.len())?;
-                let else_stack = else_emitter.stack.clone();
-                (else_emitter.into_emitted_block(span), else_stack)
-            };
-
-            if then_stack != else_stack {
-                panic!(
-                    "unexpected observable stack effect leaked from regions of {}
-
-stack on exit from 'then': {then_stack:#?}
-stack on exit from 'else': {else_stack:#?}
-                ",
-                    op.as_operation()
-                );
-            }
-
-            emitter.emit_op(masm::Op::If {
-                span,
-                then_blk,
-                else_blk,
-            });
-
-            emitter.stack = then_stack;
-
-            Ok(())
-        }
-        a => {
-            {
-                let mut emitter = emitter.emitter();
-                emitter.dup(0, span);
-                emitter.lte_imm(midpoint.into(), span);
-            }
-
-            // Remove the selector used for this branch selection from the emitter's view of the
-            // stack
-            emitter.stack.drop();
-
-            let (then_blk, then_stack) = {
-                let mut then_emitter = emitter.nest();
-                let midpoint = a[0].midpoint(a[a.len() - 1]);
-                let partition_point = core::cmp::min(
-                    a.len(),
-                    a.partition_point(|item| *item < midpoint).next_multiple_of(2),
-                );
-                let (a_then, a_else) = a.split_at(partition_point);
-                emit_binary_search(op, &mut then_emitter, a_then, a_else, midpoint, a.len())?;
-                let then_stack = then_emitter.stack.clone();
-                (then_emitter.into_emitted_block(span), then_stack)
-            };
-
-            let (else_blk, else_stack) = {
-                let mut else_emitter = emitter.nest();
-                let midpoint = b[0].midpoint(b[b.len() - 1]);
-                let partition_point = core::cmp::min(
-                    b.len(),
-                    b.partition_point(|item| *item < midpoint).next_multiple_of(2),
-                );
-                let (b_then, b_else) = b.split_at(partition_point);
-                emit_binary_search(op, &mut else_emitter, b_then, b_else, midpoint, b.len())?;
-                let else_stack = else_emitter.stack.clone();
-                (else_emitter.into_emitted_block(span), else_stack)
-            };
-
-            if then_stack != else_stack {
-                panic!(
-                    "unexpected observable stack effect leaked from regions of {}
-
-stack on exit from 'then': {then_stack:#?}
-stack on exit from 'else': {else_stack:#?}
-                ",
-                    op.as_operation()
-                );
-            }
-
-            emitter.emit_op(masm::Op::If {
-                span,
-                then_blk,
-                else_blk,
-            });
-
             emitter.stack = then_stack;
 
             Ok(())
@@ -804,9 +791,51 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn util_emit_binary_search_two_nonzero_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_emit_binary_search_two_nonzero_cases_test");
+
+        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[1, 2])?;
+
+        let test_file_hir = format!("expected/{}.hir", test.name());
+        let input = format!("{}", function.borrow().as_operation());
+        expect_file![&test_file_hir].assert_eq(&input);
+
+        let test_file_masm = format!("expected/{}.masm", test.name());
+        let output = block.to_pretty_string();
+        expect_file![&test_file_masm].assert_eq(&output);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_emit_binary_search_sparse_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_emit_binary_search_sparse_cases_test");
+
+        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[1, 3, 5])?;
+
+        let test_file_hir = format!("expected/{}.hir", test.name());
+        let input = format!("{}", function.borrow().as_operation());
+        expect_file![&test_file_hir].assert_eq(&input);
+
+        let test_file_masm = format!("expected/{}.masm", test.name());
+        let output = block.to_pretty_string();
+        expect_file![&test_file_masm].assert_eq(&output);
+
+        Ok(())
+    }
+
     fn generate_emit_binary_search_test(
         test: &mut Test,
         num_cases: usize,
+    ) -> Result<(FunctionRef, masm::Block), Report> {
+        let cases = SmallVec::<[_; 4]>::from_iter(0u32..(num_cases as u32));
+        generate_emit_binary_search_test_with_cases(test, &cases)
+    }
+
+    fn generate_emit_binary_search_test_with_cases(
+        test: &mut Test,
+        cases: &[u32],
     ) -> Result<(FunctionRef, masm::Block), Report> {
         let name = test.name();
         test.with_function(name, &[Type::U32, Type::U32], &[Type::U32]);
@@ -819,16 +848,16 @@ mod tests {
             let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
             let b = builder.entry_block().borrow().arguments()[1] as ValueRef;
 
-            let cases = SmallVec::<[_; 4]>::from_iter(0u32..(num_cases as u32));
-            let switch = builder.index_switch(a, cases, &[Type::U32], span)?;
+            let switch = builder.index_switch(a, cases.iter().copied(), &[Type::U32], span)?;
 
             let fallback_region = switch.borrow().default_region().as_region_ref();
-            let case_regions = (0..num_cases).map(|index| switch.borrow().get_case_region(index));
+            let case_regions = (0..cases.len())
+                .map(|index| (cases[index], switch.borrow().get_case_region(index)));
 
-            for (case, case_region) in case_regions.enumerate() {
+            for (case, case_region) in case_regions {
                 let case_block = builder.create_block_in_region(case_region);
                 builder.switch_to_block(case_block);
-                let case_result = builder.u32(case as u32, span);
+                let case_result = builder.u32(case, span);
                 builder.r#yield([case_result], span)?;
             }
 
