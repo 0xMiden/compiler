@@ -262,7 +262,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         // Create expression from the scheduled location
         let expression = {
             let ops = vec![entry.storage.to_expression_op()];
-            Some(midenc_hir::DIExpressionAttr::with_ops(ops))
+            Some(midenc_hir::DIExpression::with_ops(ops))
         };
 
         let Some(info) = self.debug_info.as_ref() else {

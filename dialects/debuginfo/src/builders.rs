@@ -1,5 +1,5 @@
 use midenc_hir::{
-    Builder, BuilderExt, DIExpressionAttr, DILocalVariableAttr, Report, SourceSpan, ValueRef,
+    Builder, BuilderExt, DIExpression, DILocalVariable, Report, SourceSpan, ValueRef,
 };
 
 use super::ops::*;
@@ -31,7 +31,7 @@ pub trait DebugInfoOpBuilder<'f, B: ?Sized + Builder> {
     fn debug_value(
         &mut self,
         value: ValueRef,
-        variable: DILocalVariableAttr,
+        variable: DILocalVariable,
         span: SourceSpan,
     ) -> Result<DebugValueRef, Report> {
         self.debug_value_with_expr(value, variable, None, span)
@@ -47,8 +47,8 @@ pub trait DebugInfoOpBuilder<'f, B: ?Sized + Builder> {
     fn debug_value_with_expr(
         &mut self,
         value: ValueRef,
-        variable: DILocalVariableAttr,
-        expression: Option<DIExpressionAttr>,
+        variable: DILocalVariable,
+        expression: Option<DIExpression>,
         span: SourceSpan,
     ) -> Result<DebugValueRef, Report> {
         let expr = expression.unwrap_or_default();
@@ -61,7 +61,7 @@ pub trait DebugInfoOpBuilder<'f, B: ?Sized + Builder> {
     fn debug_declare(
         &mut self,
         address: ValueRef,
-        variable: DILocalVariableAttr,
+        variable: DILocalVariable,
         span: SourceSpan,
     ) -> Result<DebugDeclareRef, Report> {
         let op_builder = self.builder_mut().create::<DebugDeclare, (_, _)>(span);
@@ -74,7 +74,7 @@ pub trait DebugInfoOpBuilder<'f, B: ?Sized + Builder> {
     /// until the next `debug_value` or `debug_declare` for the same variable.
     fn debug_kill(
         &mut self,
-        variable: DILocalVariableAttr,
+        variable: DILocalVariable,
         span: SourceSpan,
     ) -> Result<DebugKillRef, Report> {
         let op_builder = self.builder_mut().create::<DebugKill, (_,)>(span);

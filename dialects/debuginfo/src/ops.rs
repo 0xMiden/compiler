@@ -2,6 +2,8 @@ use midenc_hir::{
     DIExpressionAttr, DILocalVariableAttr, UnsafeIntrusiveEntityRef, derive::operation,
     traits::AnyType,
 };
+// Note: DILocalVariableAttr and DIExpressionAttr are now the generated wrapper
+// types from #[derive(DialectAttribute)] on DILocalVariable and DIExpression.
 
 use crate::DebugInfoDialect;
 
@@ -80,18 +82,15 @@ pub struct DebugKill {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{rc::Rc, string::ToString};
+    use alloc::rc::Rc;
 
-    use midenc_hir::{
-        Builder, Context, DILocalVariableAttr, OpPrinter, OpPrintingFlags, SourceSpan, Type,
-        interner::Symbol,
-    };
+    use midenc_hir::{Builder, Context, DILocalVariable, SourceSpan, Type, interner::Symbol};
 
     use crate::{DebugInfoDialect, DebugInfoOpBuilder};
 
-    fn make_variable() -> DILocalVariableAttr {
+    fn make_variable() -> DILocalVariable {
         let mut variable =
-            DILocalVariableAttr::new(Symbol::intern("x"), Symbol::intern("main.rs"), 12, Some(7));
+            DILocalVariable::new(Symbol::intern("x"), Symbol::intern("main.rs"), 12, Some(7));
         variable.arg_index = Some(0);
         variable.ty = Some(Type::I32);
         variable
@@ -114,11 +113,11 @@ mod tests {
             .debug_value(value, variable.clone(), SourceSpan::UNKNOWN)
             .expect("failed to create debuginfo.value op");
 
-        assert_eq!(debug_value.borrow().variable(), &variable);
+        assert_eq!(debug_value.borrow().variable().as_value(), &variable);
         assert_eq!(block.borrow().back(), Some(debug_value.as_operation_ref()));
 
         let op = debug_value.as_operation_ref();
-        let printed = op.borrow().print(&OpPrintingFlags::default(), context.as_ref()).to_string();
+        let printed = alloc::string::ToString::to_string(&*op.borrow());
         assert!(printed.contains("di.local_variable"));
     }
 
@@ -137,6 +136,6 @@ mod tests {
             .debug_kill(variable.clone(), SourceSpan::UNKNOWN)
             .expect("failed to create debuginfo.kill op");
 
-        assert_eq!(debug_kill.borrow().variable(), &variable);
+        assert_eq!(debug_kill.borrow().variable().as_value(), &variable);
     }
 }
