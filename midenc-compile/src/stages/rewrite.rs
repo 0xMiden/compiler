@@ -8,7 +8,7 @@ use midenc_hir::{
     patterns::{GreedyRewriteConfig, RegionSimplificationLevel},
 };
 use midenc_hir_transform::{
-    Canonicalizer, CommonSubexpressionElimination, RemoveDeadDebugOps, SinkOperandDefs,
+    Canonicalizer, CommonSubexpressionElimination, SinkOperandDefs,
     SparseConditionalConstantPropagation,
 };
 
@@ -79,8 +79,6 @@ impl Stage for ApplyRewritesStage {
                 func_pm.add_pass(Box::new(TransformSpills));
                 //func_pm.add_pass(Box::new(ControlFlowSink));
                 //func_pm.add_pass(Box::new(DeadCodeElimination));
-                // Remove debug ops whose operands are dead to prevent codegen issues
-                func_pm.add_pass(Box::new(RemoveDeadDebugOps));
             }
             // Function passes for component-level functions
             {
@@ -99,8 +97,6 @@ impl Stage for ApplyRewritesStage {
                 func_pm.add_pass(Box::new(TransformSpills));
                 //func_pm.add_pass(Box::new(ControlFlowSink));
                 //func_pm.add_pass(Box::new(DeadCodeElimination));
-                // Remove debug ops whose operands are dead to prevent codegen issues
-                func_pm.add_pass(Box::new(RemoveDeadDebugOps));
             }
         }
 

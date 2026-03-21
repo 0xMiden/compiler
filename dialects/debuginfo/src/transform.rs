@@ -151,7 +151,7 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             let (variable, mut expr) = {
                 let op = debug_op.borrow();
                 let dv = op.downcast_ref::<DebugValue>().unwrap();
-                (dv.variable().clone(), dv.expression().clone())
+                (dv.variable().as_value().clone(), dv.expression().as_value().clone())
             };
             expr.operations.insert(0, DIExpressionOp::Deref);
 
@@ -164,7 +164,7 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             let (variable, mut expr) = {
                 let op = debug_op.borrow();
                 let dv = op.downcast_ref::<DebugValue>().unwrap();
-                (dv.variable().clone(), dv.expression().clone())
+                (dv.variable().as_value().clone(), dv.expression().as_value().clone())
             };
             // To recover: subtract the offset that was added
             expr.operations.push(DIExpressionOp::ConstU64(*offset));
@@ -178,7 +178,7 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             let (variable, mut expr) = {
                 let op = debug_op.borrow();
                 let dv = op.downcast_ref::<DebugValue>().unwrap();
-                (dv.variable().clone(), dv.expression().clone())
+                (dv.variable().as_value().clone(), dv.expression().as_value().clone())
             };
             expr.operations.extend(ops.iter().cloned());
 
@@ -190,7 +190,7 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             let variable = {
                 let op = debug_op.borrow();
                 let dv = op.downcast_ref::<DebugValue>().unwrap();
-                dv.variable().clone()
+                dv.variable().as_value().clone()
             };
 
             debug_op.borrow_mut().erase();
@@ -206,7 +206,7 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             let variable = {
                 let op = debug_op.borrow();
                 let dv = op.downcast_ref::<DebugValue>().unwrap();
-                dv.variable().clone()
+                dv.variable().as_value().clone()
             };
 
             debug_op.borrow_mut().erase();

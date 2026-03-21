@@ -7,7 +7,7 @@ use cranelift_entity::EntityRef;
 use gimli::{self, AttributeValue, read::Operation};
 use log::debug;
 use midenc_hir::{
-    DICompileUnitAttr, DIExpressionAttr, DIExpressionOp, DILocalVariableAttr, DISubprogramAttr,
+    DICompileUnit, DIExpression, DIExpressionOp, DILocalVariable, DISubprogram,
     FxHashMap, SourceSpan, interner::Symbol,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic};
@@ -60,15 +60,15 @@ impl VariableStorage {
 
 #[derive(Clone)]
 pub struct LocalDebugInfo {
-    pub attr: DILocalVariableAttr,
+    pub attr: DILocalVariable,
     pub locations: Vec<LocationDescriptor>,
-    pub expression: Option<DIExpressionAttr>,
+    pub expression: Option<DIExpression>,
 }
 
 #[derive(Clone)]
 pub struct FunctionDebugInfo {
-    pub compile_unit: DICompileUnitAttr,
-    pub subprogram: DISubprogramAttr,
+    pub compile_unit: DICompileUnit,
+    pub subprogram: DISubprogram,
     pub locals: Vec<Option<LocalDebugInfo>>,
     pub function_span: Option<SourceSpan>,
     pub location_schedule: Vec<LocationScheduleEntry>,
@@ -91,7 +91,7 @@ pub struct LocationScheduleEntry {
 }
 
 impl FunctionDebugInfo {
-    pub fn local_attr(&self, index: usize) -> Option<&DILocalVariableAttr> {
+    pub fn local_attr(&self, index: usize) -> Option<&DILocalVariable> {
         self.locals.get(index).and_then(|info| info.as_ref().map(|data| &data.attr))
     }
 }
@@ -156,11 +156,11 @@ fn build_function_debug_info(
     let (file_symbol, directory_symbol) = determine_file_symbols(parsed_module, addr2line, body);
     let (line, column) = determine_location(addr2line, body.body_offset);
 
-    let mut compile_unit = DICompileUnitAttr::new(Symbol::intern("wasm"), file_symbol);
+    let mut compile_unit = DICompileUnit::new(Symbol::intern("wasm"), file_symbol);
     compile_unit.directory = directory_symbol;
     compile_unit.producer = Some(Symbol::intern("midenc-frontend-wasm"));
 
-    let mut subprogram = DISubprogramAttr::new(func_name, compile_unit.file, line, column);
+    let mut subprogram = DISubprogram::new(func_name, compile_unit.file, line, column);
     subprogram.is_definition = true;
 
     let wasm_signature = module_types[module.functions[func_index].signature].clone();
@@ -225,7 +225,7 @@ fn build_local_debug_info(
     func_index: FuncIndex,
     wasm_signature: &WasmFuncType,
     body: &FunctionBodyData,
-    subprogram: &DISubprogramAttr,
+    subprogram: &DISubprogram,
     diagnostics: &DiagnosticsHandler,
     dwarf_locals: Option<&FxHashMap<u32, DwarfLocalData>>,
 ) -> Vec<Option<LocalDebugInfo>> {
@@ -255,7 +255,7 @@ fn build_local_debug_info(
         {
             name_symbol = symbol;
         }
-        let mut attr = DILocalVariableAttr::new(
+        let mut attr = DILocalVariable::new(
             name_symbol,
             subprogram.file,
             subprogram.line,
@@ -281,7 +281,7 @@ fn build_local_debug_info(
         // Create expression from the first location if available
         let expression = if !locations.is_empty() {
             let ops = vec![locations[0].storage.to_expression_op()];
-            Some(DIExpressionAttr::with_ops(ops))
+            Some(DIExpression::with_ops(ops))
         } else {
             None
         };
@@ -306,7 +306,7 @@ fn build_local_debug_info(
             {
                 name_symbol = symbol;
             }
-            let mut attr = DILocalVariableAttr::new(
+            let mut attr = DILocalVariable::new(
                 name_symbol,
                 subprogram.file,
                 subprogram.line,
@@ -333,7 +333,7 @@ fn build_local_debug_info(
             // Create expression from the first location if available
             let expression = if !locations.is_empty() {
                 let ops = vec![locations[0].storage.to_expression_op()];
-                Some(DIExpressionAttr::with_ops(ops))
+                Some(DIExpression::with_ops(ops))
             } else {
                 None
             };

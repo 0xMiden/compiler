@@ -845,6 +845,7 @@ mod tests {
     #[test]
     fn cfg_to_scf_debug_value_preservation() -> Result<(), Report> {
         use midenc_dialect_debuginfo::{DebugInfoDialect, DebugInfoOpBuilder};
+        use midenc_hir::DILocalVariable;
 
         let context = Rc::new(Context::default());
         context.get_or_register_dialect::<DebugInfoDialect>();
@@ -869,13 +870,13 @@ mod tests {
         let block = builder.current_block();
         let input = block.borrow().arguments()[0].upcast();
 
-        let input_var = DILocalVariableAttr::new(
+        let input_var = DILocalVariable::new(
             Symbol::intern("input"),
             Symbol::intern("test.rs"),
             1,
             Some(1),
         );
-        let result_var = DILocalVariableAttr::new(
+        let result_var = DILocalVariable::new(
             Symbol::intern("result"),
             Symbol::intern("test.rs"),
             2,
