@@ -12,7 +12,7 @@ use miden_mast_package::debug_info::{
     DebugVariableInfo,
 };
 use midenc_dialect_debuginfo as debuginfo;
-use midenc_hir::{DILocalVariableAttr, DISubprogramAttr, OpExt, Type, dialects::builtin};
+use midenc_hir::{DILocalVariable, DISubprogram, OpExt, Type, dialects::builtin};
 
 /// Builder for constructing a `DebugInfoSection` from HIR components.
 pub struct DebugInfoBuilder {
@@ -149,10 +149,10 @@ impl DebugInfoBuilder {
 
     fn collect_from_function(&mut self, function: &builtin::Function) {
         // Get function debug info from attributes
-        // Try to get DISubprogramAttr from the function's attributes
-        let subprogram: Option<DISubprogramAttr> = function
+        // Try to get DISubprogram from the function's attributes
+        let subprogram: Option<DISubprogram> = function
             .get_attribute(midenc_hir::interner::Symbol::intern("di.subprogram"))
-            .and_then(|attr| attr.downcast_ref::<DISubprogramAttr>().cloned());
+            .and_then(|attr| attr.downcast_ref::<DISubprogram>().cloned());
 
         let Some(subprogram) = subprogram else {
             // No debug info for this function, just collect from body
@@ -218,7 +218,7 @@ impl DebugInfoBuilder {
         }
     }
 
-    fn extract_variable_info(&mut self, var: &DILocalVariableAttr) -> Option<DebugVariableInfo> {
+    fn extract_variable_info(&mut self, var: &DILocalVariable) -> Option<DebugVariableInfo> {
         let name_idx = self.add_string(var.name.as_str());
 
         // Add type if available

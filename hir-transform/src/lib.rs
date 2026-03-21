@@ -9,7 +9,6 @@ mod canonicalization;
 mod cfg_to_scf;
 mod cse;
 mod dce;
-mod dead_debug_ops;
 //mod inliner;
 mod sccp;
 mod sink;
@@ -21,7 +20,6 @@ pub use self::{
     canonicalization::Canonicalizer,
     cfg_to_scf::{CFGToSCFInterface, transform_cfg_to_scf},
     cse::CommonSubexpressionElimination,
-    dead_debug_ops::RemoveDeadDebugOps,
     sccp::SparseConditionalConstantPropagation,
     sink::{ControlFlowSink, SinkOperandDefs},
     spill::{ReloadLike, SpillLike, TransformSpillsInterface, transform_spills},

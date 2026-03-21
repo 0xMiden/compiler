@@ -1,17 +1,21 @@
 use alloc::{format, vec::Vec};
 
 use crate::{
-    Type, define_attr_type,
+    AttrPrinter, Type,
+    derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect,
     formatter::{Document, PrettyPrint, const_text, text},
     interner::Symbol,
+    print::AsmPrinter,
 };
 
 /// Represents the compilation unit associated with debug information.
 ///
 /// The fields in this struct are intentionally aligned with the subset of
 /// DWARF metadata we currently care about when tracking variable locations.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct DICompileUnitAttr {
+#[derive(DialectAttribute, Clone, Debug, PartialEq, Eq, Hash)]
+#[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
+pub struct DICompileUnit {
     pub language: Symbol,
     pub file: Symbol,
     pub directory: Option<Symbol>,
@@ -19,9 +23,19 @@ pub struct DICompileUnitAttr {
     pub optimized: bool,
 }
 
-define_attr_type!(DICompileUnitAttr);
+impl Default for DICompileUnit {
+    fn default() -> Self {
+        Self {
+            language: crate::interner::symbols::Empty,
+            file: crate::interner::symbols::Empty,
+            directory: None,
+            producer: None,
+            optimized: false,
+        }
+    }
+}
 
-impl DICompileUnitAttr {
+impl DICompileUnit {
     pub fn new(language: Symbol, file: Symbol) -> Self {
         Self {
             language,
@@ -33,7 +47,13 @@ impl DICompileUnitAttr {
     }
 }
 
-impl PrettyPrint for DICompileUnitAttr {
+impl AttrPrinter for DICompileUnitAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        *printer += self.value.render();
+    }
+}
+
+impl PrettyPrint for DICompileUnit {
     fn render(&self) -> Document {
         let mut doc = const_text("di.compile_unit(")
             + text(format!("language = {}", self.language.as_str()))
@@ -56,8 +76,9 @@ impl PrettyPrint for DICompileUnitAttr {
 
 /// Represents a subprogram (function) scope for debug information.
 /// The compile unit is not embedded but typically stored separately on the module.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct DISubprogramAttr {
+#[derive(DialectAttribute, Clone, Debug, PartialEq, Eq, Hash)]
+#[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
+pub struct DISubprogram {
     pub name: Symbol,
     pub linkage_name: Option<Symbol>,
     pub file: Symbol,
@@ -67,9 +88,21 @@ pub struct DISubprogramAttr {
     pub is_local: bool,
 }
 
-define_attr_type!(DISubprogramAttr);
+impl Default for DISubprogram {
+    fn default() -> Self {
+        Self {
+            name: crate::interner::symbols::Empty,
+            linkage_name: None,
+            file: crate::interner::symbols::Empty,
+            line: 0,
+            column: None,
+            is_definition: false,
+            is_local: false,
+        }
+    }
+}
 
-impl DISubprogramAttr {
+impl DISubprogram {
     pub fn new(name: Symbol, file: Symbol, line: u32, column: Option<u32>) -> Self {
         Self {
             name,
@@ -83,7 +116,13 @@ impl DISubprogramAttr {
     }
 }
 
-impl PrettyPrint for DISubprogramAttr {
+impl AttrPrinter for DISubprogramAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        *printer += self.value.render();
+    }
+}
+
+impl PrettyPrint for DISubprogram {
     fn render(&self) -> Document {
         let mut doc = const_text("di.subprogram(")
             + text(format!("name = {}", self.name.as_str()))
@@ -110,9 +149,10 @@ impl PrettyPrint for DISubprogramAttr {
 }
 
 /// Represents a local variable debug record.
-/// The scope (DISubprogramAttr) is not embedded but instead stored on the containing function.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct DILocalVariableAttr {
+/// The scope (DISubprogram) is not embedded but instead stored on the containing function.
+#[derive(DialectAttribute, Clone, Debug, PartialEq, Eq, Hash)]
+#[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
+pub struct DILocalVariable {
     pub name: Symbol,
     pub arg_index: Option<u32>,
     pub file: Symbol,
@@ -121,9 +161,20 @@ pub struct DILocalVariableAttr {
     pub ty: Option<Type>,
 }
 
-define_attr_type!(DILocalVariableAttr);
+impl Default for DILocalVariable {
+    fn default() -> Self {
+        Self {
+            name: crate::interner::symbols::Empty,
+            arg_index: None,
+            file: crate::interner::symbols::Empty,
+            line: 0,
+            column: None,
+            ty: None,
+        }
+    }
+}
 
-impl DILocalVariableAttr {
+impl DILocalVariable {
     pub fn new(name: Symbol, file: Symbol, line: u32, column: Option<u32>) -> Self {
         Self {
             name,
@@ -136,7 +187,13 @@ impl DILocalVariableAttr {
     }
 }
 
-impl PrettyPrint for DILocalVariableAttr {
+impl AttrPrinter for DILocalVariableAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        *printer += self.value.render();
+    }
+}
+
+impl PrettyPrint for DILocalVariable {
     fn render(&self) -> Document {
         let mut doc = const_text("di.local_variable(")
             + text(format!("name = {}", self.name.as_str()))
@@ -191,14 +248,13 @@ pub enum DIExpressionOp {
 }
 
 /// Represents a DWARF expression that describes how to compute or locate a variable's value
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct DIExpressionAttr {
+#[derive(DialectAttribute, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
+pub struct DIExpression {
     pub operations: Vec<DIExpressionOp>,
 }
 
-define_attr_type!(DIExpressionAttr);
-
-impl DIExpressionAttr {
+impl DIExpression {
     pub fn new() -> Self {
         Self {
             operations: Vec::new(),
@@ -214,13 +270,13 @@ impl DIExpressionAttr {
     }
 }
 
-impl Default for DIExpressionAttr {
-    fn default() -> Self {
-        Self::new()
+impl AttrPrinter for DIExpressionAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        *printer += self.value.render();
     }
 }
 
-impl PrettyPrint for DIExpressionAttr {
+impl PrettyPrint for DIExpression {
     fn render(&self) -> Document {
         if self.operations.is_empty() {
             return const_text("di.expression()");

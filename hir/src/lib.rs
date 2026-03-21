@@ -82,7 +82,9 @@ pub use midenc_session::diagnostics;
 
 pub use self::{
     attributes::{
-        Attribute, AttributeName, AttributeRef, AttributeRegistration, NamedAttribute,
+        Attribute, AttributeName, AttributeRef, AttributeRegistration, AttributeValue,
+        DICompileUnit, DICompileUnitAttr, DIExpression, DIExpressionAttr, DIExpressionOp,
+        DILocalVariable, DILocalVariableAttr, DISubprogram, DISubprogramAttr, NamedAttribute,
         NamedAttributeList,
     },
     dialects::builtin::attributes::{Location, Overflow, Visibility, version},
