@@ -15,6 +15,7 @@ edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+cargo_metadata = "0.19"
 clap.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true

@@ -1,3 +1,4 @@
+mod cmp_debug;
 mod decorators;
 
 use anyhow::Result;
@@ -19,6 +20,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Compare `.masp` sizes for `cargo miden build --debug` modes, cleaning build outputs
+    CmpDebug(cmp_debug::CmpDebugCommand),
     /// Compare serialized MAST forest sizes after stripping decorators.
     Decorators(decorators::DecoratorsCommand),
 }
@@ -27,6 +30,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::CmpDebug(command) => cmp_debug::run(command),
         Commands::Decorators(command) => decorators::run(command),
     }
 }
