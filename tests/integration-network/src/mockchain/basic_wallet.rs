@@ -18,8 +18,6 @@ use super::{
 };
 
 /// Tests the basic-wallet contract deployment and p2id note consumption workflow on a mock chain.
-// TODO: fix
-#[ignore = "note script size"]
 #[test]
 pub fn test_basic_wallet_p2id() {
     // Compile the contracts first (before creating any runtime)
@@ -140,8 +138,6 @@ pub fn test_basic_wallet_p2id() {
 /// - Create fungible faucet and mint tokens to Alice
 /// - Alice creates a p2ide note for Bob (with timelock=0, reclaim=0)
 /// - Bob consumes the p2ide note and receives the assets
-// TODO: fix
-#[ignore = "note script size"]
 #[test]
 pub fn test_basic_wallet_p2ide() {
     // Compile the contracts first (before creating any runtime)
@@ -276,8 +272,6 @@ pub fn test_basic_wallet_p2ide() {
 /// - Alice creates a p2ide note intended for Bob (with reclaim enabled)
 /// - Alice reclaims the note herself (exercises the reclaim branch)
 /// - Verify Alice has her original balance back
-// TODO: fix
-#[ignore = "note script size"]
 #[test]
 pub fn test_basic_wallet_p2ide_reclaim() {
     // Compile the contracts first (before creating any runtime)
