@@ -16,6 +16,16 @@ pub trait WasmOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    // fn i32_load8_s(
+    //     &mut self,
+    //     addr_int: ValueRef,
+    //     memarg: Option<&MemArg>,
+    //     span: SourceSpan,
+    // ) -> Result<ValueRef, Report> {
+    //     let
+    //     // let addr = prepare_addr(addr_int, &Type::I8, memarg, &mut self, span);
+    // }
+
     fn i32_load8_s(&mut self, addr: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::I32Load8S, _>(span);
         let op = op_builder(addr)?;

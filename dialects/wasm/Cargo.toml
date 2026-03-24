@@ -17,4 +17,6 @@ std = ["midenc-hir/std"]
 
 [dependencies]
 midenc-dialect-arith.workspace = true
+midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true
+wasmparser.workspace = true

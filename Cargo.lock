@@ -3205,7 +3205,9 @@ name = "midenc-dialect-wasm"
 version = "0.7.1"
 dependencies = [
  "midenc-dialect-arith",
+ "midenc-dialect-hir",
  "midenc-hir",
+ "wasmparser 0.227.1",
 ]
 
 [[package]]

@@ -15,11 +15,11 @@
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
-use midenc_dialect_hir::{HirOpBuilder, assertions};
+use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
-use midenc_dialect_wasm::WasmOpBuilder;
+use midenc_dialect_wasm::{WasmOpBuilder, prepare_addr};
 use midenc_hir::{
-    BlockRef, Builder, Felt, Immediate, Op, PointerType,
+    BlockRef, Builder, Felt, Immediate, Op,
     Type::{self, *},
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,
@@ -751,41 +751,6 @@ fn translate_store<B: ?Sized + Builder>(
     let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
     builder.store(addr, arg, span)?;
     Ok(())
-}
-
-fn prepare_addr<B: ?Sized + Builder>(
-    addr_int: ValueRef,
-    ptr_ty: &Type,
-    memarg: Option<&MemArg>,
-    builder: &mut FunctionBuilderExt<'_, B>,
-    span: SourceSpan,
-) -> WasmResult<ValueRef> {
-    let addr_int_ty = addr_int.borrow().ty().clone();
-    let addr_u32 = if addr_int_ty == U32 {
-        addr_int
-    } else if addr_int_ty == I32 {
-        builder.bitcast(addr_int, U32, span)?
-    } else if matches!(addr_int_ty, Ptr(_)) {
-        builder.ptrtoint(addr_int, U32, span)?
-    } else {
-        panic!("unexpected type used as pointer value: {addr_int_ty}");
-    };
-    let mut full_addr_int = addr_u32;
-    if let Some(memarg) = memarg {
-        if memarg.offset != 0 {
-            let imm = builder.imm(Immediate::U32(memarg.offset as u32), span);
-            full_addr_int = builder.add(addr_u32, imm, span)?;
-        }
-        // TODO(pauls): For now, asserting alignment helps us catch mistakes/bugs, but we should
-        // probably make this something that can be disabled to avoid the overhead in release builds
-        if memarg.align > 0 {
-            // Generate alignment assertion - aligned addresses should always produce 0 here
-            let imm = builder.imm(Immediate::U32(2u32.pow(memarg.align as u32)), span);
-            let align_offset = builder.r#mod(full_addr_int, imm, span)?;
-            builder.assertz_with_error(align_offset, assertions::ASSERT_FAILED_ALIGNMENT, span)?;
-        }
-    };
-    builder.inttoptr(full_addr_int, Type::from(PointerType::new(ptr_ty.clone())), span)
 }
 
 fn translate_call<B: ?Sized + Builder>(
