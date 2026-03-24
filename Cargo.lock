@@ -3497,7 +3497,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "objsize"
+name = "objtool"
 version = "0.7.1"
 dependencies = [
  "anyhow",
