@@ -41,6 +41,14 @@ pub fn generate_export_lifting_function(
             diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
         })?;
 
+    if cross_ctx_export_sig_flat.params().iter().any(|param| param.ty.is_pointer()) {
+        let message = format!(
+            "component export lifting for '{core_export_func_path}' is not yet implemented for \
+             indirect pointer parameters (using the advice provider);"
+        );
+        return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
+    }
+
     // Miden Base expects the authentication component to export a single
     // procedure whose name matches `auth_*` (underscore). The base WIT
     // defines this function as `auth-procedure` (kebab-case). Until
