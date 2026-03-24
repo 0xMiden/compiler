@@ -357,7 +357,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let transfer_amount = 10_000u64;
     let transfer_asset = FungibleAsset::new(faucet_id, transfer_amount).unwrap();
     let timelock_height = Felt::new(0);
-    let reclaim_height = Felt::new(1000);
+    let reclaim_height = Felt::new(1);
 
     let mut p2ide_rng = RpoRandomCoin::new(p2ide_note_package.unwrap_program().hash());
     let p2ide_note = create_note_from_package(

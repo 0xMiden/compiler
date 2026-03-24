@@ -41,11 +41,12 @@ impl P2ideNote {
         // make sure the number of inputs is 4
         assert_eq((inputs.len() as u32).into(), felt!(4));
 
-        let target_account_id_prefix = inputs[0];
-        let target_account_id_suffix = inputs[1];
-
-        let timelock_height = inputs[2];
-        let reclaim_height = inputs[3];
+        // P2IDE storage follows the protocol layout:
+        // [target_account_id_suffix, target_account_id_prefix, reclaim_height, timelock_height]
+        let target_account_id_suffix = inputs[0];
+        let target_account_id_prefix = inputs[1];
+        let reclaim_height = inputs[2];
+        let timelock_height = inputs[3];
 
         // get block number
         let block_number = tx::get_block_number();
@@ -61,7 +62,8 @@ impl P2ideNote {
         if is_target {
             consume_assets(account);
         } else {
-            assert!(reclaim_height >= block_number);
+            assert!(reclaim_height != felt!(0));
+            assert!(block_number >= reclaim_height);
             reclaim_assets(account, consuming_account_id);
         }
     }
