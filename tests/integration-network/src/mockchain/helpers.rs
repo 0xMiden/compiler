@@ -140,12 +140,13 @@ pub(super) fn build_existing_basic_wallet_account_builder(
 
     let mut builder = AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
-        .with_component(wallet_component);
+        .storage_mode(AccountStorageMode::Public);
 
     if with_std_basic_wallet {
         builder = builder.with_component(BasicWallet);
     }
+
+    builder = builder.with_component(wallet_component);
 
     builder
 }
@@ -250,8 +251,8 @@ pub(super) fn build_asset_transfer_tx(
     let recipient_digest: [Felt; 4] = note_recipient.digest().into();
     commitment_input.extend(recipient_digest);
 
-    let asset_arr = asset.to_value_word();
-    commitment_input.extend(asset_arr);
+    let asset_elements = miden_protocol::asset::Asset::from(asset).as_elements();
+    commitment_input.extend(asset_elements);
     // Ensure word alignment for `adv_load_preimage` in the tx script.
     commitment_input.extend([Felt::ZERO, Felt::ZERO]);
 
@@ -259,15 +260,11 @@ pub(super) fn build_asset_transfer_tx(
         miden_core::crypto::hash::Poseidon2::hash_elements(&commitment_input);
     assert_eq!(commitment_input.len() % 4, 0, "commitment input needs to be word-aligned");
 
-    // NOTE: passed on the stack reversed
-    let mut commitment_arg = commitment_key;
-    commitment_arg.reverse();
-
     let tx_context_builder = chain
         .build_tx_context(sender_id, &[], &[])
         .unwrap()
         .tx_script(tx_script)
-        .tx_script_args(commitment_arg)
+        .tx_script_args(commitment_key)
         .extend_advice_map([(commitment_key, commitment_input)])
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())]);
 

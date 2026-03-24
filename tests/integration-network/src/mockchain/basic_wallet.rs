@@ -4,7 +4,7 @@ use miden_client::{
     asset::FungibleAsset, crypto::RpoRandomCoin, note::NoteAssets, transaction::RawOutputNote,
 };
 use miden_core::Felt;
-use miden_protocol::account::auth::AuthScheme;
+use miden_protocol::account::{AccountId, auth::AuthScheme};
 use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
 
@@ -16,6 +16,15 @@ use super::{
         create_note_from_package, execute_tx, to_core_felts,
     },
 };
+
+/// Converts the P2IDE note payload into protocol storage order for the basic-wallet tests.
+fn to_p2ide_storage_felts(
+    target: &AccountId,
+    reclaim_height: Felt,
+    timelock_height: Felt,
+) -> Vec<Felt> {
+    vec![target.suffix(), target.prefix().as_felt(), reclaim_height, timelock_height]
+}
 
 /// Tests the basic-wallet contract deployment and p2id note consumption workflow on a mock chain.
 #[test]
@@ -95,8 +104,8 @@ pub fn test_basic_wallet_p2id() {
     let consume_tx_context_builder =
         chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["2983"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["23965"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
+    expect!["3177"].assert_eq(prologue_cycles(&tx_measurements));
+    expect!["26451"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -116,12 +125,12 @@ pub fn test_basic_wallet_p2id() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx(&mut chain, alice_tx_context_builder);
-    expect!["17250"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["29005"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let consume_tx_context_builder = chain.build_tx_context(bob_id, &[bob_note.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["23965"].assert_eq(note_cycles(&tx_measurements, bob_note.id()));
+    expect!["26451"].assert_eq(note_cycles(&tx_measurements, bob_note.id()));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -231,11 +240,7 @@ pub fn test_basic_wallet_p2ide() {
         alice_id,
         NoteCreationConfig {
             assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
-            inputs: {
-                let mut inputs = to_core_felts(&bob_id);
-                inputs.extend([timelock_height, reclaim_height]);
-                inputs
-            },
+            inputs: to_p2ide_storage_felts(&bob_id, reclaim_height, timelock_height),
             ..Default::default()
         },
         &mut p2ide_rng,
@@ -255,7 +260,7 @@ pub fn test_basic_wallet_p2ide() {
     let consume_tx_context_builder =
         chain.build_tx_context(bob_id, &[p2ide_note.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["25266"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
+    expect!["27768"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
 
     // Step 5: verify balances
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -365,11 +370,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
         alice_id,
         NoteCreationConfig {
             assets: NoteAssets::new(vec![transfer_asset.into()]).unwrap(),
-            inputs: {
-                let mut inputs = to_core_felts(&bob_id);
-                inputs.extend([timelock_height, reclaim_height]);
-                inputs
-            },
+            inputs: to_p2ide_storage_felts(&bob_id, reclaim_height, timelock_height),
             ..Default::default()
         },
         &mut p2ide_rng,
@@ -389,7 +390,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let reclaim_tx_context_builder =
         chain.build_tx_context(alice_id, &[p2ide_note.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, reclaim_tx_context_builder);
-    expect!["26718"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
+    expect!["29268"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();

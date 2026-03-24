@@ -135,6 +135,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::active_account::GET_INITIAL_STORAGE_ITEM
                         | tx_kernel::active_account::GET_STORAGE_MAP_ITEM
                         | tx_kernel::active_account::GET_INITIAL_STORAGE_MAP_ITEM
+                        | tx_kernel::active_account::GET_ASSET
+                        | tx_kernel::active_account::GET_INITIAL_ASSET
                         | tx_kernel::active_account::GET_INITIAL_VAULT_ROOT
                         | tx_kernel::active_account::GET_VAULT_ROOT
                         | tx_kernel::active_account::GET_PROCEDURE_ROOT => {
@@ -158,10 +160,6 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::faucet::CREATE_NON_FUNGIBLE_ASSET
                         | tx_kernel::faucet::MINT
                         | tx_kernel::faucet::BURN => Some(TransformStrategy::ReturnViaPointer),
-                        tx_kernel::faucet::GET_TOTAL_ISSUANCE
-                        | tx_kernel::faucet::IS_NON_FUNGIBLE_ASSET_ISSUED => {
-                            Some(TransformStrategy::NoTransform)
-                        }
                         _ => None,
                     }
                 }

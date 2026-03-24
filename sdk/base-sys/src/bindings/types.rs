@@ -33,6 +33,22 @@ impl AccountId {
     }
 }
 
+/// Raw protocol return layout for account identifiers.
+/// The protocol MASM procedures are returning [suffix, prefix]
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(crate) struct RawAccountId {
+    pub suffix: Felt,
+    pub prefix: Felt,
+}
+
+impl RawAccountId {
+    /// Converts the protocol return layout into the Rust [`AccountId`] layout.
+    pub(crate) fn into_account_id(self) -> AccountId {
+        AccountId::new(self.prefix, self.suffix)
+    }
+}
+
 impl From<AccountId> for Word {
     #[inline]
     fn from(value: AccountId) -> Self {

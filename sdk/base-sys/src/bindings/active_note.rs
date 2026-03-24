@@ -3,25 +3,25 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::{AccountId, Asset, NoteMetadata, Recipient};
+use super::{AccountId, Asset, NoteMetadata, RawAccountId, Recipient};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
     // NOTE: In protocol v0.14, note "inputs" are exposed via `active_note::get_storage`.
     #[link_name = "miden::protocol::active_note::get_storage"]
-    pub fn extern_note_get_storage(ptr: *mut Felt) -> usize;
+    fn extern_note_get_storage(ptr: *mut Felt) -> usize;
     #[link_name = "miden::protocol::active_note::get_assets"]
-    pub fn extern_note_get_assets(ptr: *mut Felt) -> usize;
+    fn extern_note_get_assets(ptr: *mut Felt) -> usize;
     #[link_name = "miden::protocol::active_note::get_sender"]
-    pub fn extern_note_get_sender(ptr: *mut AccountId);
+    fn extern_note_get_sender(ptr: *mut RawAccountId);
     #[link_name = "miden::protocol::active_note::get_recipient"]
-    pub fn extern_note_get_recipient(ptr: *mut Recipient);
+    fn extern_note_get_recipient(ptr: *mut Recipient);
     #[link_name = "miden::protocol::active_note::get_script_root"]
-    pub fn extern_note_get_script_root(ptr: *mut Word);
+    fn extern_note_get_script_root(ptr: *mut Word);
     #[link_name = "miden::protocol::active_note::get_serial_number"]
-    pub fn extern_note_get_serial_number(ptr: *mut Word);
+    fn extern_note_get_serial_number(ptr: *mut Word);
     #[link_name = "miden::protocol::active_note::get_metadata"]
-    pub fn extern_note_get_metadata(ptr: *mut NoteMetadata);
+    fn extern_note_get_metadata(ptr: *mut NoteMetadata);
 }
 
 /// Returns the storage of the currently executing note.
@@ -84,9 +84,9 @@ pub fn get_assets() -> Vec<Asset> {
 /// Returns the sender [`AccountId`] of the note that is currently executing.
 pub fn get_sender() -> AccountId {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<AccountId>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<RawAccountId>::uninit();
         extern_note_get_sender(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.assume_init().into_account_id()
     }
 }
 

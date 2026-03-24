@@ -6,16 +6,16 @@ use super::types::{AccountId, Asset};
 unsafe extern "C" {
     #[link_name = "miden::protocol::asset::create_fungible_asset"]
     pub fn extern_asset_create_fungible_asset(
-        faucet_id_prefix: Felt,
         faucet_id_suffix: Felt,
+        faucet_id_prefix: Felt,
         amount: Felt,
         ptr: *mut Asset,
     );
 
     #[link_name = "miden::protocol::asset::create_non_fungible_asset"]
     pub fn extern_asset_create_non_fungible_asset(
-        faucet_id_prefix: Felt,
         faucet_id_suffix: Felt,
+        faucet_id_prefix: Felt,
         data_hash_0: Felt,
         data_hash_1: Felt,
         data_hash_2: Felt,
@@ -29,8 +29,8 @@ pub fn create_fungible_asset(faucet_id: AccountId, amount: Felt) -> Asset {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
         extern_asset_create_fungible_asset(
-            faucet_id.prefix,
             faucet_id.suffix,
+            faucet_id.prefix,
             amount,
             ret_area.as_mut_ptr(),
         );
@@ -44,8 +44,8 @@ pub fn create_non_fungible_asset(faucet_id: AccountId, data_hash: Word) -> Asset
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
         extern_asset_create_non_fungible_asset(
-            faucet_id.prefix,
             faucet_id.suffix,
+            faucet_id.prefix,
             data_hash[0],
             data_hash[1],
             data_hash[2],

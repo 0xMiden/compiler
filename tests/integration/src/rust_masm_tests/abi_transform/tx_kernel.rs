@@ -35,12 +35,11 @@ pub proc get_metadata
     #
     # Return two word-sized values with distinct elements so we can validate that:
     # - the ABI adapter consumes all 8 felts (not just 4)
-    # - the words are grouped/ordered correctly
-    # - both words are written to the return area
+    # - the words are grouped correctly
+    # - the returned metadata words preserve the kernel order at the Rust call site
     #
-    # The adapter writes the current top of stack to the lowest memory address first, so push the
-    # words in reverse felt order here to materialize `[11, 12, 13, 14]` and `[21, 22, 23, 24]`
-    # in memory.
+    # The ABI adapter writes the current top of stack to the lowest memory address first, so the
+    # values are pushed in reverse order within each returned word.
     push.24 push.23 push.22 push.21   # METADATA_HEADER
     push.14 push.13 push.12 push.11   # NOTE_ATTACHMENT
 end

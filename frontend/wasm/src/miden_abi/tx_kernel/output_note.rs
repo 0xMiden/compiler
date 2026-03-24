@@ -43,7 +43,8 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         FunctionType::new(
             CallConv::Wasm,
             [
-                Felt, Felt, Felt, Felt, // asset components
+                Felt, Felt, Felt, Felt, // asset key
+                Felt, Felt, Felt, Felt, // asset value
                 Felt, // note_idx
             ],
             [],

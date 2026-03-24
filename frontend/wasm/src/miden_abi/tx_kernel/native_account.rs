@@ -30,10 +30,10 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         FunctionType::new(
             CallConv::Wasm,
             [
-                Felt, Felt, Felt, Felt, // ASSET_KEY
-                Felt, Felt, Felt, Felt, // ASSET_VALUE
+                Felt, Felt, Felt, Felt, // asset key
+                Felt, Felt, Felt, Felt, // asset value
             ],
-            [Felt, Felt, Felt, Felt],
+            [Felt, Felt, Felt, Felt], // asset value
         ),
     );
     native_account.insert(

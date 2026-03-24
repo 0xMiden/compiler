@@ -24,6 +24,8 @@ pub const GET_STORAGE_ITEM: &str = "get_item";
 pub const GET_INITIAL_STORAGE_ITEM: &str = "get_initial_item";
 pub const GET_STORAGE_MAP_ITEM: &str = "get_map_item";
 pub const GET_INITIAL_STORAGE_MAP_ITEM: &str = "get_initial_map_item";
+pub const GET_ASSET: &str = "get_asset";
+pub const GET_INITIAL_ASSET: &str = "get_initial_asset";
 pub const GET_BALANCE: &str = "get_balance";
 pub const GET_INITIAL_BALANCE: &str = "get_initial_balance";
 pub const HAS_NON_FUNGIBLE_ASSET: &str = "has_non_fungible_asset";
@@ -83,6 +85,14 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
             [Felt, Felt, Felt, Felt, Felt, Felt],
             [Felt, Felt, Felt, Felt],
         ),
+    );
+    active_account.insert(
+        Symbol::from(GET_ASSET),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+    );
+    active_account.insert(
+        Symbol::from(GET_INITIAL_ASSET),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
     );
     active_account.insert(
         Symbol::from(GET_BALANCE),
