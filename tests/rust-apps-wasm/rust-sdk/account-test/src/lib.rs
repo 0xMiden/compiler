@@ -24,8 +24,8 @@ impl Account {
             Word::new([felt!(1), felt!(2), felt!(3), felt!(4)]),
             Word::new([felt!(5), felt!(0), felt!(0), felt!(0)]),
         );
-        let asset_out = miden::native_account::add_asset(asset_in);
-        asset_out.value[0]
+        let asset_value = miden::native_account::add_asset(asset_in);
+        asset_value[0]
     }
 
     #[unsafe(no_mangle)]
@@ -94,8 +94,8 @@ pub fn test_pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
 
 #[unsafe(no_mangle)]
 pub fn test_remove_asset(asset: Asset) -> Felt {
-    let asset_out = miden::native_account::remove_asset(asset);
-    asset_out.value[0]
+    let asset_value = miden::native_account::remove_asset(asset);
+    asset_value[0]
 }
 
 #[unsafe(no_mangle)]

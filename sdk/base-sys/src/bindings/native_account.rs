@@ -41,12 +41,8 @@ unsafe extern "C" {
     ) -> Felt;
 }
 
-/// Add the specified asset to the vault.
-///
-/// Returns the final asset in the account vault defined as follows: If `asset` is
-/// a non-fungible asset, then returns the same as `asset`. If `asset` is a
-/// fungible asset, then returns the total fungible asset in the account
-/// vault after `asset` was added to it.
+/// Adds the specified asset to the vault and returns the resulting asset value word stored under
+/// that asset key.
 ///
 /// Panics:
 /// - If the asset is not valid.
@@ -88,8 +84,7 @@ pub fn add_asset(asset: Asset) -> Word {
     }
 }
 
-/// Remove the specified asset from the vault.
-/// Returns the asset value part
+/// Removes the specified asset from the vault and returns the resulting asset value word.
 ///
 /// Panics:
 /// - The fungible asset is not found in the vault.
@@ -146,12 +141,8 @@ pub fn was_procedure_called(proc_root: Word) -> bool {
 ///
 /// This trait is automatically implemented for types marked with the `#[component]` macro.
 pub trait NativeAccount {
-    /// Add the specified asset to the vault.
-    ///
-    /// Returns the final asset in the account vault defined as follows: If `asset` is
-    /// a non-fungible asset, then returns the same as `asset`. If `asset` is a
-    /// fungible asset, then returns the total fungible asset in the account
-    /// vault after `asset` was added to it.
+    /// Adds the specified asset to the vault and returns the resulting asset value word stored
+    /// under that asset key.
     ///
     /// # Panics
     ///
@@ -181,8 +172,7 @@ pub trait NativeAccount {
         add_asset(asset)
     }
 
-    /// Remove the specified asset from the vault.
-    /// Returns the value part of the asset.
+    /// Removes the specified asset from the vault and returns the resulting asset value word.
     ///
     /// # Panics
     ///
