@@ -63,6 +63,7 @@ clap = { version = "4.5", default-features = false, features = [
     "std",
     "env",
     "help",
+    "usage",
     "suggestions",
     "error-context",
 ] }
