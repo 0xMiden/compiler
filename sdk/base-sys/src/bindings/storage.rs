@@ -4,6 +4,8 @@ use super::StorageSlotId;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    // The public SDK models storage slots as `(prefix, suffix)`, but the host ABI expects the slot
+    // coordinates in storage order: `(suffix, prefix)`.
     #[link_name = "miden::protocol::active_account::get_item"]
     pub fn extern_get_storage_item(index_suffix: Felt, index_prefix: Felt, ptr: *mut Word);
 
@@ -65,7 +67,7 @@ unsafe extern "C" {
 /// Outputs: value
 ///
 /// Where:
-/// - slot_id identifies the storage slot to access.
+/// - slot_id identifies the storage slot to access using the public `(prefix, suffix)` shape.
 /// - value is the value of the item.
 ///
 /// Panics if:
@@ -97,7 +99,7 @@ pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
 /// Outputs: old_value
 ///
 /// Where:
-/// - slot_id identifies the storage slot to update.
+/// - slot_id identifies the storage slot to update using the public `(prefix, suffix)` shape.
 /// - value is the value to set.
 /// - old_value is the previous value of the item.
 ///
@@ -177,7 +179,8 @@ pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
 /// Outputs: old_value
 ///
 /// Where:
-/// - slot_id identifies the map slot where the key should be set.
+/// - slot_id identifies the map slot where the key should be set using the public `(prefix,
+///   suffix)` shape.
 /// - key is the key to set.
 /// - value is the value to set.
 /// - old_value is the old value at key.
