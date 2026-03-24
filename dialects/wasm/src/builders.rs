@@ -3,7 +3,9 @@ use midenc_hir::{
     dialects::builtin::FunctionBuilder,
 };
 
-pub trait WasmOpBuilder<'f, B: ?Sized + Builder> {
+use crate::{WasmMemArg, mem::WasmMemOpBuilder, prepare_addr};
+
+pub trait WasmOpBuilder<'f, B: ?Sized + Builder>: WasmMemOpBuilder<'f, B> {
     fn sign_extend(
         &mut self,
         arg: ValueRef,
@@ -11,23 +13,19 @@ pub trait WasmOpBuilder<'f, B: ?Sized + Builder> {
         dst_ty: Type,
         span: SourceSpan,
     ) -> Result<ValueRef, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::SignExtend, _>(span);
+        let op_builder = WasmOpBuilder::builder_mut(self).create::<crate::ops::SignExtend, _>(span);
         let op = op_builder(arg, src_ty, dst_ty)?;
         Ok(op.borrow().result().as_value_ref())
     }
 
-    // fn i32_load8_s(
-    //     &mut self,
-    //     addr_int: ValueRef,
-    //     memarg: Option<&MemArg>,
-    //     span: SourceSpan,
-    // ) -> Result<ValueRef, Report> {
-    //     let
-    //     // let addr = prepare_addr(addr_int, &Type::I8, memarg, &mut self, span);
-    // }
-
-    fn i32_load8_s(&mut self, addr: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::I32Load8S, _>(span);
+    fn i32_load8_s(
+        &mut self,
+        addr: ValueRef,
+        memarg: Option<WasmMemArg>,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let addr = prepare_addr(addr, &Type::I8, memarg, self, span)?;
+        let op_builder = WasmOpBuilder::builder_mut(self).create::<crate::ops::I32Load8S, _>(span);
         let op = op_builder(addr)?;
         Ok(op.borrow().result().as_value_ref())
     }

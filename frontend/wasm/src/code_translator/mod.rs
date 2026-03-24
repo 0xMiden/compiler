@@ -17,7 +17,7 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
-use midenc_dialect_wasm::{WasmOpBuilder, prepare_addr};
+use midenc_dialect_wasm::{WasmMemArg, WasmOpBuilder, prepare_addr};
 use midenc_hir::{
     BlockRef, Builder, Felt, Immediate, Op,
     Type::{self, *},
@@ -258,8 +258,11 @@ pub fn translate_operator<B: ?Sized + Builder>(
         }
         Operator::I32Load8S { memarg } => {
             let addr_int = state.pop1();
-            let addr = prepare_addr(addr_int, &I8, Some(memarg), builder, span)?;
-            let val = builder.i32_load8_s(addr, span)?;
+            let val = builder.i32_load8_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
             state.push1(val);
         }
         Operator::I32Load16S { memarg } => {
@@ -683,7 +686,13 @@ fn translate_load<B: ?Sized + Builder>(
     span: SourceSpan,
 ) -> WasmResult<()> {
     let addr_int = state.pop1();
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
+    let addr = prepare_addr(
+        addr_int,
+        &ptr_ty,
+        Some(WasmMemArg::new(memarg.offset, memarg.align)),
+        builder,
+        span,
+    )?;
     state.push1(builder.load(addr, span)?);
     Ok(())
 }
@@ -697,7 +706,13 @@ fn translate_load_sext<B: ?Sized + Builder>(
     span: SourceSpan,
 ) -> WasmResult<()> {
     let addr_int = state.pop1();
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
+    let addr = prepare_addr(
+        addr_int,
+        &ptr_ty,
+        Some(WasmMemArg::new(memarg.offset, memarg.align)),
+        builder,
+        span,
+    )?;
     let val = builder.load(addr, span)?;
     let sext_val = builder.sext(val, sext_ty, span)?;
     state.push1(sext_val);
@@ -714,7 +729,13 @@ fn translate_load_zext<B: ?Sized + Builder>(
 ) -> WasmResult<()> {
     assert!(ptr_ty.is_unsigned_integer());
     let addr_int = state.pop1();
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
+    let addr = prepare_addr(
+        addr_int,
+        &ptr_ty,
+        Some(WasmMemArg::new(memarg.offset, memarg.align)),
+        builder,
+        span,
+    )?;
     let val = builder.load(addr, span)?;
     let zext_val = builder.zext(val, zext_ty.clone(), span)?;
     let bitcast_val = match zext_ty {
@@ -748,7 +769,13 @@ fn translate_store<B: ?Sized + Builder>(
     } else {
         val
     };
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
+    let addr = prepare_addr(
+        addr_int,
+        &ptr_ty,
+        Some(WasmMemArg::new(memarg.offset, memarg.align)),
+        builder,
+        span,
+    )?;
     builder.store(addr, arg, span)?;
     Ok(())
 }

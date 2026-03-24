@@ -3207,7 +3207,6 @@ dependencies = [
  "midenc-dialect-arith",
  "midenc-dialect-hir",
  "midenc-hir",
- "wasmparser 0.227.1",
 ]
 
 [[package]]

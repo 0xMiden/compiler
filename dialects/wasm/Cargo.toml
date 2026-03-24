@@ -19,4 +19,3 @@ std = ["midenc-hir/std"]
 midenc-dialect-arith.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true
-wasmparser.workspace = true

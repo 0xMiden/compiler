@@ -22,7 +22,11 @@ use midenc_hir::{
     derive::DialectRegistration,
 };
 
-pub use self::{builders::WasmOpBuilder, mem::prepare_addr, ops::*};
+pub use self::{
+    builders::WasmOpBuilder,
+    mem::{WasmMemArg, prepare_addr},
+    ops::*,
+};
 
 #[derive(Debug, DialectRegistration)]
 pub struct WasmDialect {
