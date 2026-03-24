@@ -10,10 +10,8 @@ use cargo_metadata::MetadataCommand;
 use clap::Args;
 
 #[derive(Debug, Clone, Args)]
-#[command(override_usage = "objsize cmp-debug [OPTIONS] <DIR>")]
 pub struct CmpDebugCommand {
     /// Path to the project directory to be built with `cargo miden build`
-    #[arg(value_name = "DIR")]
     pub path: PathBuf,
     /// Whether to build with release profile (default: false)
     #[arg(long)]
