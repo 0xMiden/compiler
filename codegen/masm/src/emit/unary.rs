@@ -345,7 +345,16 @@ impl OpEmitter<'_> {
                 // bit being set will make the i8 larger than 0 or 1
                 self.emit(masm::Instruction::Dup0, span);
                 self.emit_push(2u32, span);
-                self.emit_all([masm::Instruction::Lt, masm::Instruction::Assert], span);
+                self.emit_all(
+                    [
+                        masm::Instruction::Lt,
+                        Self::assert_with_message_inst(
+                            "expected i8 value to be 0 or 1 when casting to i1",
+                            span,
+                        ),
+                    ],
+                    span,
+                );
             }
             // i1
             (Type::I1, _) => self.zext_smallint(src_bits, dst_bits, span),
@@ -436,7 +445,7 @@ impl OpEmitter<'_> {
                         masm::Instruction::Swap1,
                         masm::Instruction::Sub,
                         masm::Instruction::U32OverflowingSubImm(1.into()),
-                        masm::Instruction::Assertz,
+                        Self::assertz_with_message_inst("ilog2 is undefined for zero", span),
                     ],
                     span,
                 );
@@ -935,7 +944,10 @@ impl OpEmitter<'_> {
                 self.emit_all(
                     [
                         // Assert that the high bits are zero
-                        masm::Instruction::Assertz,
+                        Self::assertz_with_message_inst(
+                            "u64 exponent for pow2 must fit in u32",
+                            span,
+                        ),
                         // This asserts if value > 63, thus result is guaranteed to fit in u64
                         masm::Instruction::Pow2,
                         // Obtain the u64 representation by splitting the felt result

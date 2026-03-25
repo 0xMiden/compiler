@@ -13,7 +13,9 @@ use midenc_session::diagnostics::{Report, Severity, Spanned};
 use smallvec::{SmallVec, smallvec};
 
 use super::*;
-use crate::{Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
+use crate::{
+    Constraint, emit::OpEmitter, emitter::BlockEmitter, masm, opt::operands::SolverOptions,
+};
 
 /// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
 fn invocation_target_from_symbol_path(
@@ -462,7 +464,9 @@ impl HirLowering for hir::Assertz {
 
 impl HirLowering for hir::AssertEq {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.emitter().assert_eq(self.span());
+        let code = *self.get_code();
+
+        emitter.emitter().assert_eq(Some(code), self.span());
 
         Ok(())
     }
@@ -475,7 +479,8 @@ impl HirLowering for ub::Unreachable {
         let span = self.span();
         let mut op_emitter = emitter.emitter();
         op_emitter.emit_push(0u32, span);
-        op_emitter.emit(masm::Instruction::Assert, span);
+        op_emitter
+            .emit(OpEmitter::assert_with_message_inst("entered unreachable code", span), span);
 
         Ok(())
     }

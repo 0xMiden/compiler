@@ -1,4 +1,4 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, sync::Arc};
 
 use midenc_session::diagnostics::Span;
 
@@ -155,6 +155,48 @@ pub struct OpEmitter<'a> {
     current_block: &'a mut Vec<masm::Op>,
 }
 impl<'a> OpEmitter<'a> {
+    /// Build a MASM `assert` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assert_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertWithError(masm::Immediate::Value(Span::new(span, message.into())))
+    }
+
+    /// Build a MASM `assert_eq` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assert_eq_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertEqWithError(masm::Immediate::Value(Span::new(
+            span,
+            message.into(),
+        )))
+    }
+
+    /// Build a MASM `assert_eqw` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assert_eqw_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertEqwWithError(masm::Immediate::Value(Span::new(
+            span,
+            message.into(),
+        )))
+    }
+
+    /// Build a MASM `assertz` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assertz_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertzWithError(masm::Immediate::Value(Span::new(span, message.into())))
+    }
+
     #[inline(always)]
     pub fn new(
         invoked: &'a mut BTreeSet<masm::Invoke>,
@@ -2077,7 +2119,7 @@ mod tests {
         emitter.assert_eq_imm(ten, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
 
-        emitter.assert_eq(SourceSpan::default());
+        emitter.assert_eq(None, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 0);
     }
 

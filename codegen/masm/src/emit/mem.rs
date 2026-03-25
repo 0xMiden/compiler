@@ -9,14 +9,6 @@ use crate::{OperandStack, lower::NativePtr};
 
 /// Allocation
 impl OpEmitter<'_> {
-    /// Build a MASM `assertz` instruction with an inline diagnostic.
-    fn assertz_with_message(message: &'static str, span: SourceSpan) -> masm::Instruction {
-        masm::Instruction::AssertzWithError(masm::Immediate::Value(masm::Span::new(
-            span,
-            message.into(),
-        )))
-    }
-
     /// Emit the loop header for a counted `while.true` loop.
     ///
     /// The caller provides the concrete `dup` instruction needed to bring `count` to the top of
@@ -73,12 +65,12 @@ impl OpEmitter<'_> {
         self.emit_all(
             [
                 masm::Instruction::U32DivModImm(16.into()),
-                Self::assertz_with_message(
+                Self::assertz_with_message_inst(
                     "expected a 16-byte-aligned byte pointer for the word-copy fast path",
                     span,
                 ),
                 masm::Instruction::U32OverflowingMulImm(4.into()),
-                Self::assertz_with_message(
+                Self::assertz_with_message_inst(
                     "word-copy fast path element address conversion overflowed",
                     span,
                 ),
@@ -728,7 +720,10 @@ impl OpEmitter<'_> {
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WideningMadd, // [value_size * i + dst, i, dst, count, value]
-                masm::Instruction::Assertz,         // [aligned_dst, i, dst, count, value..]
+                Self::assertz_with_message_inst(
+                    "memset destination address computation overflowed",
+                    span,
+                ), // [aligned_dst, i, dst, count, value..]
             ],
             span,
         );
@@ -837,7 +832,7 @@ impl OpEmitter<'_> {
                         [
                             // Convert `src` to element address
                             masm::Instruction::U32DivModImm(4.into()),
-                            Self::assertz_with_message(
+                            Self::assertz_with_message_inst(
                                 "memcpy byte-copy fast path expected the source pointer to be \
                                  4-byte aligned",
                                 span,
@@ -845,7 +840,7 @@ impl OpEmitter<'_> {
                             // Convert `dst` to an element address
                             masm::Instruction::Swap1,
                             masm::Instruction::U32DivModImm(4.into()),
-                            Self::assertz_with_message(
+                            Self::assertz_with_message_inst(
                                 "memcpy byte-copy fast path expected the destination pointer to \
                                  be 4-byte aligned",
                                 span,
@@ -853,7 +848,7 @@ impl OpEmitter<'_> {
                             // Bring `count` to top to convert to element count
                             masm::Instruction::Swap2,
                             masm::Instruction::U32DivModImm(4.into()),
-                            Self::assertz_with_message(
+                            Self::assertz_with_message_inst(
                                 "memcpy byte-copy fast path expected the byte count to be \
                                  divisible by 4",
                                 span,
@@ -910,7 +905,10 @@ impl OpEmitter<'_> {
                         masm::Instruction::Swap2,
                         // Compute the corrected count
                         masm::Instruction::U32WideningMulImm(factor.into()),
-                        masm::Instruction::Assertz, // [count * (size / 16), src, dst]
+                        Self::assertz_with_message_inst(
+                            "memcpy word-copy fast path element count overflowed",
+                            span,
+                        ), // [count * (size / 16), src, dst]
                     ],
                     span,
                 );
@@ -952,9 +950,12 @@ impl OpEmitter<'_> {
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WideningMadd,
-                masm::Instruction::Assertz, // [new_dst := i * offset + dst, i, src, dst, count]
-                masm::Instruction::Dup2,    // [src, new_dst, i, src, dst, count]
-                masm::Instruction::Dup2,    // [i, src, new_dst, i, src, dst, count]
+                Self::assertz_with_message_inst(
+                    "memcpy destination address computation overflowed",
+                    span,
+                ), // [new_dst := i * offset + dst, i, src, dst, count]
+                masm::Instruction::Dup2, // [src, new_dst, i, src, dst, count]
+                masm::Instruction::Dup2, // [i, src, new_dst, i, src, dst, count]
             ],
             span,
         );
@@ -962,7 +963,10 @@ impl OpEmitter<'_> {
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WideningMadd,
-                masm::Instruction::Assertz, // [new_src := i * offset + src, new_dst, i, src, dst, count]
+                Self::assertz_with_message_inst(
+                    "memcpy source address computation overflowed",
+                    span,
+                ), // [new_src := i * offset + src, new_dst, i, src, dst, count]
             ],
             span,
         );
