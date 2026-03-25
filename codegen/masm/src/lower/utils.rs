@@ -689,14 +689,7 @@ mod tests {
 
         let (function, block) = generate_emit_binary_search_test(&mut test, 1)?;
 
-        // Verify emitted block contents
-        let test_file_hir = format!("expected/{}.hir", test.name());
-        let input = format!("{}", function.borrow().as_operation());
-        expect_file![&test_file_hir].assert_eq(&input);
-
-        let test_file_masm = format!("expected/{}.masm", test.name());
-        let output = block.to_pretty_string();
-        expect_file![&test_file_masm].assert_eq(&output);
+        assert_switch_lowering_output(test.name(), &function, &block);
 
         Ok(())
     }
@@ -707,14 +700,7 @@ mod tests {
 
         let (function, block) = generate_emit_binary_search_test(&mut test, 2)?;
 
-        // Verify emitted block contents
-        let test_file_hir = format!("expected/{}.hir", test.name());
-        let input = format!("{}", function.borrow().as_operation());
-        expect_file![&test_file_hir].assert_eq(&input);
-
-        let test_file_masm = format!("expected/{}.masm", test.name());
-        let output = block.to_pretty_string();
-        expect_file![&test_file_masm].assert_eq(&output);
+        assert_switch_lowering_output(test.name(), &function, &block);
 
         Ok(())
     }
@@ -725,14 +711,7 @@ mod tests {
 
         let (function, block) = generate_emit_binary_search_test(&mut test, 3)?;
 
-        // Verify emitted block contents
-        let test_file_hir = format!("expected/{}.hir", test.name());
-        let input = format!("{}", function.borrow().as_operation());
-        expect_file![&test_file_hir].assert_eq(&input);
-
-        let test_file_masm = format!("expected/{}.masm", test.name());
-        let output = block.to_pretty_string();
-        expect_file![&test_file_masm].assert_eq(&output);
+        assert_switch_lowering_output(test.name(), &function, &block);
 
         Ok(())
     }
@@ -743,14 +722,7 @@ mod tests {
 
         let (function, block) = generate_emit_binary_search_test(&mut test, 4)?;
 
-        // Verify emitted block contents
-        let test_file_hir = format!("expected/{}.hir", test.name());
-        let input = format!("{}", function.borrow().as_operation());
-        expect_file![&test_file_hir].assert_eq(&input);
-
-        let test_file_masm = format!("expected/{}.masm", test.name());
-        let output = block.to_pretty_string();
-        expect_file![&test_file_masm].assert_eq(&output);
+        assert_switch_lowering_output(test.name(), &function, &block);
 
         Ok(())
     }
@@ -761,14 +733,7 @@ mod tests {
 
         let (function, block) = generate_emit_binary_search_test(&mut test, 5)?;
 
-        // Verify emitted block contents
-        let test_file_hir = format!("expected/{}.hir", test.name());
-        let input = format!("{}", function.borrow().as_operation());
-        expect_file![&test_file_hir].assert_eq(&input);
-
-        let test_file_masm = format!("expected/{}.masm", test.name());
-        let output = block.to_pretty_string();
-        expect_file![&test_file_masm].assert_eq(&output);
+        assert_switch_lowering_output(test.name(), &function, &block);
 
         Ok(())
     }
@@ -779,14 +744,7 @@ mod tests {
 
         let (function, block) = generate_emit_binary_search_test(&mut test, 7)?;
 
-        // Verify emitted block contents
-        let test_file_hir = format!("expected/{}.hir", test.name());
-        let input = format!("{}", function.borrow().as_operation());
-        expect_file![&test_file_hir].assert_eq(&input);
-
-        let test_file_masm = format!("expected/{}.masm", test.name());
-        let output = block.to_pretty_string();
-        expect_file![&test_file_masm].assert_eq(&output);
+        assert_switch_lowering_output(test.name(), &function, &block);
 
         Ok(())
     }
@@ -797,13 +755,7 @@ mod tests {
 
         let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[1, 2])?;
 
-        let test_file_hir = format!("expected/{}.hir", test.name());
-        let input = format!("{}", function.borrow().as_operation());
-        expect_file![&test_file_hir].assert_eq(&input);
-
-        let test_file_masm = format!("expected/{}.masm", test.name());
-        let output = block.to_pretty_string();
-        expect_file![&test_file_masm].assert_eq(&output);
+        assert_switch_lowering_output(test.name(), &function, &block);
 
         Ok(())
     }
@@ -814,15 +766,20 @@ mod tests {
 
         let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[1, 3, 5])?;
 
-        let test_file_hir = format!("expected/{}.hir", test.name());
+        assert_switch_lowering_output(test.name(), &function, &block);
+
+        Ok(())
+    }
+
+    /// Verify the HIR and MASM snapshots emitted for lowered switch code.
+    fn assert_switch_lowering_output(test_name: &str, function: &FunctionRef, block: &masm::Block) {
+        let test_file_hir = format!("expected/{test_name}.hir");
         let input = format!("{}", function.borrow().as_operation());
         expect_file![&test_file_hir].assert_eq(&input);
 
-        let test_file_masm = format!("expected/{}.masm", test.name());
+        let test_file_masm = format!("expected/{test_name}.masm");
         let output = block.to_pretty_string();
         expect_file![&test_file_masm].assert_eq(&output);
-
-        Ok(())
     }
 
     fn generate_emit_binary_search_test(
