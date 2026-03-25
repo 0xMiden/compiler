@@ -317,14 +317,6 @@ jobs:
           if ! cargo make --version 2>/dev/null; then
             cargo install cargo-make --force
           fi
-      # Some integration tests use midenup to compile the example projects
-      - name: Install midenup
-        run: |
-          if ! miden help 2>/dev/null; then
-            cargo install --git https://github.com/0xMiden/midenup
-            midenup init
-          fi
-
       - name: Test
         run: |
           cargo make test -E 'package(midenc-integration-network-tests)'
