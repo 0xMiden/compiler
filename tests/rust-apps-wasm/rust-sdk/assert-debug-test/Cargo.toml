@@ -24,7 +24,3 @@ debug-assertions = true
 overflow-checks = false
 debug = true
 trim-paths = ["diagnostics", "object"]
-
-[patch.crates-io]
-miden-protocol = { git = "https://github.com/0xMiden/protocol", branch = "next" }
-miden-standards = { git = "https://github.com/0xMiden/protocol", branch = "next" }
