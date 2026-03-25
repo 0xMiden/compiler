@@ -1766,7 +1766,14 @@ impl Eval for arith::Inv {
         let result = match lhs_value {
             Immediate::Felt(x) => {
                 use miden_core::field::Field;
-                Immediate::Felt(x.try_inverse().expect("cannot invert zero"))
+                let Some(inverse) = x.try_inverse() else {
+                    return Err(evaluator.report(
+                        "evaluation failed",
+                        self.span(),
+                        "cannot invert zero in the field",
+                    ));
+                };
+                Immediate::Felt(inverse)
             }
             _ => {
                 return Err(evaluator.report(

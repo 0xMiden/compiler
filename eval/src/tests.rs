@@ -194,3 +194,24 @@ fn call_handling_test() -> Result<(), Report> {
 
     Ok(())
 }
+
+#[test]
+fn inv_zero_reports_error() -> Result<(), Report> {
+    let mut test = EvalTest::named("inv_zero");
+    test.with_function(&[], &[Type::Felt]);
+
+    {
+        let mut builder = test.function_builder();
+        let zero = builder.felt(midenc_hir::Felt::ZERO, SourceSpan::default());
+        let inverse = builder.inv(zero, SourceSpan::default())?;
+        builder.ret(Some(inverse), SourceSpan::default())?;
+    }
+
+    let callable = test.function().borrow();
+    let _err = test
+        .evaluator
+        .eval_callable(&*callable, [])
+        .expect_err("zero inverse should produce an evaluation error");
+
+    Ok(())
+}
