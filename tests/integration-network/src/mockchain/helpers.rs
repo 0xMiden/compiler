@@ -3,33 +3,31 @@
 use std::{future::Future, sync::Arc};
 
 use miden_client::{
-    account::{
-        component::{BasicWallet, InitStorageData},
-        AccountStorage, StorageSlotName,
-    },
+    account::component::{BasicWallet, InitStorageData},
     asset::FungibleAsset,
     auth::AuthSecretKey,
     crypto::FeltRng,
-    note::{
-        Note, NoteAssets, NoteMetadata, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType,
-    },
+    note::{Note, NoteType},
     transaction::RawOutputNote,
-    Deserializable, Word,
+    Word,
 };
-use miden_core::{crypto::hash::Rpo256, Felt, FieldElement};
+use miden_core::Felt;
 use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
-        AccountStorage, AccountStorageMode, AccountType, StorageMap, StorageMapKey, StorageSlot,
-        StorageSlotNamefeat,
+        AccountStorage, AccountStorageMode, AccountType, StorageSlot,
+        StorageSlotName,
     },
     asset::Asset,
     note::PartialNote,
     transaction::{TransactionMeasurements, TransactionScript},
 };
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+use miden_standards::{
+    account::interface::{AccountInterface, AccountInterfaceExt},
+    testing::note::NoteBuilder,
+};
 use miden_testing::{MockChain, TransactionContextBuilder};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{rngs::StdRng, SeedableRng};
@@ -156,7 +154,7 @@ pub(super) fn build_asset_transfer_tx(
     let output_note = NoteBuilder::new(sender_id, rng)
         .serial_number(serial_num)
         .package((*p2id_note_package).clone())
-        .note_inputs(to_core_felts(&recipient_id))
+        .note_storage(to_core_felts(&recipient_id))
         .unwrap()
         .add_assets([asset])
         .tag(0)
@@ -174,7 +172,7 @@ pub(super) fn build_asset_transfer_tx(
     let recipient_digest: [Felt; 4] = output_note.recipient().digest().into();
     commitment_input.extend(recipient_digest);
 
-    let asset_elements = miden_protocol::asset::Asset::from(asset).as_elements();
+    let asset_elements = asset.as_elements();
     commitment_input.extend(asset_elements);
     // Ensure word alignment for `adv_load_preimage` in the tx script.
     commitment_input.extend([Felt::ZERO, Felt::ZERO]);
@@ -240,13 +238,14 @@ pub(super) fn build_existing_counter_account_builder_with_auth_package(
     auth_storage_slots: Vec<StorageSlot>,
     seed: [u8; 32],
 ) -> AccountBuilder {
-    let supported_types = BTreeSet::from_iter([AccountType::RegularAccountUpdatableCode]);
+    let metadata =
+        AccountComponentMetadata::new("auth", [AccountType::RegularAccountUpdatableCode]);
     let auth_component = AccountComponent::new(
         auth_component_package.unwrap_library().as_ref().clone(),
         auth_storage_slots,
+        metadata,
     )
-    .unwrap()
-    .with_supported_types(supported_types);
+    .unwrap();
 
     AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
