@@ -9,10 +9,19 @@ use crate::{OperandStack, lower::NativePtr};
 
 /// Allocation
 impl OpEmitter<'_> {
+    /// Build a MASM `assertz` instruction with an inline diagnostic.
+    fn assertz_with_message(message: &'static str, span: SourceSpan) -> masm::Instruction {
+        masm::Instruction::AssertzWithError(masm::Immediate::Value(masm::Span::new(
+            span,
+            message.into(),
+        )))
+    }
+
     /// Emit the loop header for a counted `while.true` loop.
     ///
-    /// The caller provides the `dup` instruction needed to bring `count` to the top of the stack
-    /// after the loop index has been seeded with zero.
+    /// The caller provides the concrete `dup` instruction needed to bring `count` to the top of
+    /// the stack after the loop index has been seeded with zero, because each caller carries
+    /// `count` at a different depth in its loop state.
     ///
     /// Stack transition:
     ///
@@ -32,8 +41,9 @@ impl OpEmitter<'_> {
 
     /// Emit the loop back-edge condition for a counted `while.true` loop.
     ///
-    /// The caller provides the `dup` instruction needed to bring `count` to the top of the stack
-    /// after incrementing the loop index.
+    /// The caller provides the concrete `dup` instruction needed to bring `count` to the top of
+    /// the stack after incrementing the loop index, because each caller carries `count` at a
+    /// different depth in its loop state.
     ///
     /// Stack transition:
     ///
@@ -63,19 +73,25 @@ impl OpEmitter<'_> {
         self.emit_all(
             [
                 masm::Instruction::U32DivModImm(16.into()),
-                masm::Instruction::Assertz,
+                Self::assertz_with_message(
+                    "expected a 16-byte-aligned byte pointer for the word-copy fast path",
+                    span,
+                ),
                 masm::Instruction::U32OverflowingMulImm(4.into()),
-                masm::Instruction::Assertz,
+                Self::assertz_with_message(
+                    "word-copy fast path element address conversion overflowed",
+                    span,
+                ),
             ],
             span,
         );
     }
 
-    /// Build a raw MASM block whose stack protocol is managed by the caller.
+    /// Build a MASM block whose stack protocol is managed by the caller.
     ///
     /// This is used for branch bodies which operate on a known stack shape from the enclosing
     /// emitter, but which do not need to synchronize typed operand-stack state back to it.
-    fn build_raw_block(
+    fn build_masm_block(
         &mut self,
         span: SourceSpan,
         emit: impl FnOnce(&mut OpEmitter<'_>),
@@ -816,27 +832,39 @@ impl OpEmitter<'_> {
                 );
 
                 // then: convert byte addresses/count to element units and delegate to core
-                let then_blk = self.build_raw_block(span, |then_emitter| {
+                let then_blk = self.build_masm_block(span, |then_emitter| {
                     then_emitter.emit_all(
                         [
                             // Convert `src` to element address
                             masm::Instruction::U32DivModImm(4.into()),
-                            masm::Instruction::Assertz,
+                            Self::assertz_with_message(
+                                "memcpy byte-copy fast path expected the source pointer to be \
+                                 4-byte aligned",
+                                span,
+                            ),
                             // Convert `dst` to an element address
                             masm::Instruction::Swap1,
                             masm::Instruction::U32DivModImm(4.into()),
-                            masm::Instruction::Assertz,
+                            Self::assertz_with_message(
+                                "memcpy byte-copy fast path expected the destination pointer to \
+                                 be 4-byte aligned",
+                                span,
+                            ),
                             // Bring `count` to top to convert to element count
                             masm::Instruction::Swap2,
                             masm::Instruction::U32DivModImm(4.into()),
-                            masm::Instruction::Assertz,
+                            Self::assertz_with_message(
+                                "memcpy byte-copy fast path expected the byte count to be \
+                                 divisible by 4",
+                                span,
+                            ),
                         ],
                         span,
                     );
                     then_emitter.raw_exec("::miden::core::mem::memcopy_elements", span);
                 });
 
-                let else_blk = self.build_raw_block(span, |else_emitter| {
+                let else_blk = self.build_masm_block(span, |else_emitter| {
                     else_emitter.emit_memcpy_fallback_loop(
                         src.clone(),
                         dst.clone(),

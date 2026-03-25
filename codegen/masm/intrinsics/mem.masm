@@ -199,7 +199,7 @@ end
 # which is the offset of the first byte, in the 32-bit representation of that element.
 #
 # Stack transition: [addr, offset] -> [value]
-pub proc load_u16
+pub proc load_u16(addr: ptr<felt, addrspace(felt)>, offset: u8) -> u16
     exec.load_sw
     push.65535
     u32and
@@ -460,7 +460,7 @@ end
 # which is the offset of the first byte, in the 32-bit representation of that element.
 #
 # Stack transition: [addr, offset, value] -> []
-pub proc store_u16
+pub proc store_u16(addr: ptr<felt, addrspace(felt)>, offset: u8, value: u16)
     # Load the current 32-bit window at the destination, keep its upper half, then overwrite the
     # target two bytes before delegating the write-back to `store_sw`.
     dup.1 dup.1 exec.load_sw     # [window, addr, offset, value]
