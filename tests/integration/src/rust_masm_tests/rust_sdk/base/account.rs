@@ -136,6 +136,28 @@ fn rust_sdk_account_get_initial_balance_binding() {
 }
 
 #[test]
+fn rust_sdk_account_get_asset_binding() {
+    run_account_binding_test(
+        "rust_sdk_account_get_asset_binding",
+        "pub fn binding(&self) -> Word {
+        let asset_key = Word::from([Felt::new(0); 4]);
+        self.get_asset(asset_key)
+    }",
+    );
+}
+
+#[test]
+fn rust_sdk_account_get_initial_asset_binding() {
+    run_account_binding_test(
+        "rust_sdk_account_get_initial_asset_binding",
+        "pub fn binding(&self) -> Word {
+        let asset_key = Word::from([Felt::new(0); 4]);
+        self.get_initial_asset(asset_key)
+    }",
+    );
+}
+
+#[test]
 fn rust_sdk_account_has_non_fungible_asset_binding() {
     run_account_binding_test(
         "rust_sdk_account_has_non_fungible_asset_binding",
