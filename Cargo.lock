@@ -2432,6 +2432,7 @@ dependencies = [
  "miden-protocol",
  "miden-remote-prover-client",
  "miden-standards",
+ "miden-testing",
  "miden-tx",
  "miette",
  "prost",
@@ -2447,6 +2448,7 @@ dependencies = [
  "tonic-prost-build",
  "tonic-web-wasm-client",
  "tracing",
+ "uuid",
  "web-sys",
 ]
 
@@ -6283,6 +6285,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a68d3c8f01c0cfa54a75291d83601161799e4a89a39e0929f4b0354d88757a37"
 dependencies = [
  "getrandom 0.4.2",
+ "js-sys",
+ "serde_core",
+ "wasm-bindgen",
 ]
 
 [[package]]

@@ -4,14 +4,9 @@
 //! RPO-Falcon512 secret key cannot create notes on behalf of the counter
 //! contract account that uses the Rust-compiled auth component.
 
-use miden_client::{
-    auth::BasicAuthenticator,
-    crypto::RpoRandomCoin,
-    note::NoteTag,
-    testing::{MockChain, NoteBuilder},
-    transaction::{OutputNote, RawOutputNote},
-};
-use miden_protocol::account::StorageSlotName;
+use miden_client::{auth::BasicAuthenticator, note::NoteTag, transaction::RawOutputNote};
+use miden_protocol::{account::StorageSlotName, crypto::rand::RandomCoin};
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::MockChain;
 use midenc_expect_test::expect;
 
@@ -19,11 +14,9 @@ use super::{
     cycle_helpers::auth_procedure_cycles,
     helpers::{
         assert_counter_storage, block_on, build_counter_account_with_rust_rpo_auth,
-        build_send_notes_script, compile_rust_package, create_note_from_package,
-        NoteCreationConfig,
+        build_send_notes_script, compile_rust_package,
     },
 };
-use crate::mockchain::helpers::compile_rust_package;
 
 /// Verify that another client (without the RPO-Falcon512 key) cannot create notes for
 /// the counter account which uses the Rust-compiled RPO-Falcon512 authentication component.
@@ -62,7 +55,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     );
 
     // Positive check: original client (with the key) can create a note
-    let rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let rng = RandomCoin::new(note_package.unwrap_program().hash());
     let own_note = NoteBuilder::new(counter_account.id(), rng)
         .package((*note_package).clone())
         .tag(NoteTag::with_account_target(counter_account.id()).into())
@@ -89,7 +82,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
 
     // Negative check: without the RPO-Falcon512 key, creating output notes should fail.
     let counter_account = chain.committed_account(counter_account_id).unwrap().clone();
-    let rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let rng = RandomCoin::new(note_package.unwrap_program().hash());
     let forged_note = NoteBuilder::new(counter_account.id(), rng)
         .package((*note_package).clone())
         .tag(NoteTag::with_account_target(counter_account.id()).into())
