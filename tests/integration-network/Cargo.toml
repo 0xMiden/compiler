@@ -17,7 +17,7 @@ miden-client = { git = "https://github.com/0xMiden/miden-client", branch = "rele
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std"] }
-miden-testing = { git = "https://github.com/0xMiden/miden-base", tag = "v0.14.0-beta.4", features = ["std"] }
+miden-testing = { version = "0.14", features = ["std"] }
 miden-field-repr = { version = "0.10.0", path = "../../sdk/field-repr/repr" }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true

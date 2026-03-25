@@ -5,7 +5,7 @@
 //! contract account that uses the Rust-compiled auth component.
 
 use miden_client::{
-    auth::BasicAuthenticator, crypto::RpoRandomCoin, note::NoteTag, transaction::RawOutputNote,
+    auth::BasicAuthenticator, crypto::RandomCoin, note::NoteTag, transaction::RawOutputNote,
 };
 use miden_protocol::account::StorageSlotName;
 use miden_testing::MockChain;
@@ -57,7 +57,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     );
 
     // Positive check: original client (with the key) can create a note
-    let mut rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let mut rng = RandomCoin::new(note_package.unwrap_program().hash());
     let own_note = create_note_from_package(
         note_package.clone(),
         counter_account.id(),

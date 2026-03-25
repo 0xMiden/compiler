@@ -25,8 +25,7 @@ members = [
     "sdk/stdlib-sys",
     "tools/*",
     "tests/integration",
-	# TODO: restore after the miden-client PR is updated https://github.com/0xMiden/miden-client/pull/1891
-    # "tests/integration-network",
+    "tests/integration-network",
 ]
 exclude = [
     "sdk/.cargo",

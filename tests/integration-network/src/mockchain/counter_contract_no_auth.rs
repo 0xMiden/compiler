@@ -1,7 +1,7 @@
 //! Counter contract test with no-auth authentication component
 
 use miden_client::{
-    Word, account::component::BasicWallet, crypto::RpoRandomCoin, note::NoteTag,
+    Word, account::component::BasicWallet, crypto::RandomCoin, note::NoteTag,
     transaction::RawOutputNote,
 };
 use miden_core::Felt;
@@ -80,7 +80,7 @@ pub fn test_counter_contract_no_auth() {
     eprintln!("Sender account ID: {:?}", sender_account.id().to_hex());
 
     // Sender creates the counter note (note script increments counter's storage on consumption)
-    let mut rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let mut rng = RandomCoin::new(note_package.unwrap_program().hash());
     let counter_note = create_note_from_package(
         note_package.clone(),
         sender_account.id(),
@@ -109,7 +109,7 @@ pub fn test_counter_contract_no_auth() {
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, tx_context_builder);
     expect!["1823"].assert_eq(auth_procedure_cycles(&tx_measurements));
-    expect!["28773"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
+    expect!["28731"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(

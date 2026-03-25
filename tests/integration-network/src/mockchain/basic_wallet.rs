@@ -1,7 +1,7 @@
 //! Basic wallet test module
 
 use miden_client::{
-    asset::FungibleAsset, crypto::RpoRandomCoin, note::NoteAssets, transaction::RawOutputNote,
+    asset::FungibleAsset, crypto::RandomCoin, note::NoteAssets, transaction::RawOutputNote,
 };
 use miden_core::Felt;
 use miden_protocol::account::{AccountId, auth::AuthScheme};
@@ -78,7 +78,7 @@ pub fn test_basic_wallet_p2id() {
     let mint_amount = 100_000u64; // 100,000 tokens
     let mint_asset = FungibleAsset::new(faucet_id, mint_amount).unwrap();
 
-    let mut note_rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let mut note_rng = RandomCoin::new(note_package.unwrap_program().hash());
     let p2id_note_mint = create_note_from_package(
         note_package.clone(),
         faucet_id,
@@ -104,8 +104,8 @@ pub fn test_basic_wallet_p2id() {
     let consume_tx_context_builder =
         chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["3167"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["26451"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
+    expect!["3216"].assert_eq(prologue_cycles(&tx_measurements));
+    expect!["26446"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -125,12 +125,12 @@ pub fn test_basic_wallet_p2id() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx(&mut chain, alice_tx_context_builder);
-    expect!["29005"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["29010"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let consume_tx_context_builder = chain.build_tx_context(bob_id, &[bob_note.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["26451"].assert_eq(note_cycles(&tx_measurements, bob_note.id()));
+    expect!["26446"].assert_eq(note_cycles(&tx_measurements, bob_note.id()));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -198,7 +198,7 @@ pub fn test_basic_wallet_p2ide() {
     let mint_amount = 100_000u64;
     let mint_asset = FungibleAsset::new(faucet_id, mint_amount).unwrap();
 
-    let mut p2id_rng = RpoRandomCoin::new(p2id_note_package.unwrap_program().hash());
+    let mut p2id_rng = RandomCoin::new(p2id_note_package.unwrap_program().hash());
     let p2id_note_mint = create_note_from_package(
         p2id_note_package.clone(),
         faucet_id,
@@ -234,7 +234,7 @@ pub fn test_basic_wallet_p2ide() {
     let timelock_height = Felt::new(0);
     let reclaim_height = Felt::new(0);
 
-    let mut p2ide_rng = RpoRandomCoin::new(p2ide_note_package.unwrap_program().hash());
+    let mut p2ide_rng = RandomCoin::new(p2ide_note_package.unwrap_program().hash());
     let p2ide_note = create_note_from_package(
         p2ide_note_package,
         alice_id,
@@ -260,7 +260,7 @@ pub fn test_basic_wallet_p2ide() {
     let consume_tx_context_builder =
         chain.build_tx_context(bob_id, &[p2ide_note.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["27768"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
+    expect!["27763"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
 
     // Step 5: verify balances
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -328,7 +328,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let mint_amount = 100_000u64;
     let mint_asset = FungibleAsset::new(faucet_id, mint_amount).unwrap();
 
-    let mut p2id_rng = RpoRandomCoin::new(p2id_note_package.unwrap_program().hash());
+    let mut p2id_rng = RandomCoin::new(p2id_note_package.unwrap_program().hash());
     let p2id_note_mint = create_note_from_package(
         p2id_note_package.clone(),
         faucet_id,
@@ -364,7 +364,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let timelock_height = Felt::new(0);
     let reclaim_height = Felt::new(1);
 
-    let mut p2ide_rng = RpoRandomCoin::new(p2ide_note_package.unwrap_program().hash());
+    let mut p2ide_rng = RandomCoin::new(p2ide_note_package.unwrap_program().hash());
     let p2ide_note = create_note_from_package(
         p2ide_note_package,
         alice_id,
@@ -390,7 +390,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let reclaim_tx_context_builder =
         chain.build_tx_context(alice_id, &[p2ide_note.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, reclaim_tx_context_builder);
-    expect!["29268"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
+    expect!["29263"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();
