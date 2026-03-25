@@ -25,7 +25,8 @@ members = [
     "sdk/stdlib-sys",
     "tools/*",
     "tests/integration",
-    "tests/integration-network",
+	# TODO: restore after the miden-client PR is updated https://github.com/0xMiden/miden-client/pull/1891
+    # "tests/integration-network",
 ]
 exclude = [
     "sdk/.cargo",
@@ -76,21 +77,18 @@ litcheck-filecheck = "0.4"
 log = { version = "0.4", features = ["kv"] }
 
 # Miden Dependencies
-miden-assembly = { version = "0.21", default-features = false }
-miden-core = { version = "0.21", default-features = false }
+miden-assembly = { version = "0.22", default-features = false }
+miden-core = { version = "0.22", default-features = false }
 miden-debug = { version = "0.5" }
-miden-debug-types = { version = "0.21", default-features = false }
-miden-assembly-syntax = { version = "0.21", default-features = false }
+miden-debug-types = { version = "0.22", default-features = false }
+miden-assembly-syntax = { version = "0.22", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
-# miden-protocol = { version = "0.14.0-alpha.1", default-features = false }
-# miden-standards = { version = "0.14.0-alpha.1", default-features = false }
+miden-protocol = { version = "0.14.0", default-features = false }
+miden-standards = { version = "0.14.0", default-features = false }
 
-miden-protocol  = { tag = "v0.14.0-beta.4", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-standards = { tag = "v0.14.0-beta.4", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-
-miden-processor = { version = "0.21", default-features = false }
-miden-core-lib = { version = "0.21", default-features = false }
-miden-mast-package = { version = "0.21", default-features = false }
+miden-processor = { version = "0.22", default-features = false }
+miden-core-lib = { version = "0.22", default-features = false }
+miden-mast-package = { version = "0.22", default-features = false }
 miette = { package = "miden-miette", version = "8.0" }
 paste = "1.0"
 parking_lot = "0.12"
@@ -175,11 +173,11 @@ miden-field = { version = "0.22" }
 #miden-mast-package = { path = "../miden-vm/package" }
 # miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
 # miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
-miden-debug = { git = "https://github.com/0xMiden/miden-debug", rev = "07f4ee12fb790bd0b0e2183414cecea44e580950" }
-# miden-debug = { path = "../../debug" }
-miden-protocol  = { tag = "v0.14.0-beta.4", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-standards = { tag = "v0.14.0-beta.4", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-tx        = { tag = "v0.14.0-beta.4", git = "https://github.com/0xMiden/miden-base" }
+miden-debug = { git = "https://github.com/0xMiden/miden-debug", rev = "b1bbfef59a08674d1803f5b7b7f2ce5c98490dfd" }
+# miden-protocol  = { tag = "v0.14.0-beta.4", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+# miden-standards = { tag = "v0.14.0-beta.4", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+# miden-tx        = { tag = "v0.14.0-beta.4", git = "https://github.com/0xMiden/miden-base" }
+
 
 
 [profile.dev]

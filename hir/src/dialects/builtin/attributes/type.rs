@@ -54,5 +54,5 @@ const fn default_type() -> crate::Type {
 }
 
 fn default_function_type() -> crate::FunctionType {
-    crate::FunctionType::new(crate::CallConv::SystemV, [], [])
+    crate::FunctionType::new(crate::CallConv::C, [], [])
 }

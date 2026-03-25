@@ -4,8 +4,8 @@ use core::cell::RefCell;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    CallConv, FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolPath, ValueRange,
-    ValueRef, Visibility,
+    FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolPath, ValueRange, ValueRef,
+    Visibility,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
         attributes::{Signature, UnitAttr},
@@ -15,7 +15,7 @@ use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
 
 use super::{
     canon_abi_utils::load,
-    flat::{flatten_function_type, flatten_types, needs_transformation},
+    flat::{CanonicalAbiMode, flatten_function_type, flatten_types, needs_transformation},
 };
 use crate::{
     error::WasmResult,
@@ -33,7 +33,7 @@ pub fn generate_export_lifting_function(
 ) -> WasmResult<()> {
     let context = { component_builder.component.borrow().as_operation().context_rc() };
     let cross_ctx_export_sig_flat =
-        flatten_function_type(&context, &export_func_ty, CallConv::CanonLift).map_err(|e| {
+        flatten_function_type(&context, &export_func_ty, CanonicalAbiMode::Lift).map_err(|e| {
             let message = format!(
                 "Component export lifting generation. Signature for exported function \
                  {core_export_func_path} requires flattening. Error: {e}"

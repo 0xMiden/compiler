@@ -1,7 +1,5 @@
 use alloc::{format, rc::Rc, vec::Vec};
-use core::fmt;
-
-use compact_str::ToCompactString;
+use core::{fmt, str::FromStr};
 
 use crate::{
     AttrPrinter, CallConv, Context, NamedAttribute, OpPrintingFlags, Type,
@@ -439,7 +437,7 @@ impl AttrPrinter for SignatureAttr {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         printer.print_keyword("extern");
         printer.print_lparen();
-        printer.print_string(self.cc.to_compact_string());
+        printer.print_string(self.cc.as_str());
         printer.print_rparen();
         printer.print_space();
         printer.print_function_type_parts(
@@ -461,20 +459,12 @@ impl AttrParser for SignatureAttr {
         parser.parse_rparen()?;
         let ty = parser.parse_function_type()?.into_inner();
 
-        let cc = match cc_string.as_str() {
-            "fast" => CallConv::Fast,
-            "C" => CallConv::SystemV,
-            "canon-lift" => CallConv::CanonLift,
-            "canon-lower" => CallConv::CanonLower,
-            "wasm" => CallConv::Wasm,
-            "kernel" => CallConv::Kernel,
-            other => {
-                return Err(ParserError::InvalidAttributeValue {
-                    span: cc_string.span(),
-                    reason: format!("calling convention '{other}' is unrecognized"),
-                });
+        let cc = CallConv::from_str(cc_string.as_str()).map_err(|_| {
+            ParserError::InvalidAttributeValue {
+                span: cc_string.span(),
+                reason: format!("calling convention '{}' is unrecognized", cc_string.as_str()),
             }
-        };
+        })?;
 
         let context = parser.context_rc();
         let signature = Signature::with_convention(&context, cc, ty.params, ty.results);

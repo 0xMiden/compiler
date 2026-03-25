@@ -3,7 +3,7 @@ use alloc::{collections::BTreeSet, sync::Arc};
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use midenc_hir::{
-    CallConv, FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
+    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
     diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
@@ -603,7 +603,7 @@ impl MasmFunctionBuilder {
 
         // For component export functions, invoke the `init` procedure first if needed.
         // It loads the data segments and global vars into memory.
-        if function.signature().cc == CallConv::CanonLift
+        if function.signature().cc.is_wasm_canonical_abi()
             && (link_info.has_globals() || link_info.has_data_segments())
         {
             let component_path = link_info.component().to_library_path();
@@ -621,7 +621,7 @@ impl MasmFunctionBuilder {
 
         let mut body = emitter.emit(&entry.borrow());
 
-        if function.signature().cc == CallConv::CanonLift {
+        if function.signature().cc.is_wasm_canonical_abi() {
             // Truncate the stack to 16 elements on exit in the component export function
             // since it is expected to be `call`ed so it has a requirement to have
             // no more than 16 elements on the stack when it returns.

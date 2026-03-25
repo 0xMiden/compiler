@@ -121,6 +121,7 @@ pub fn emit_zero<B: ?Sized + Builder>(
         Type::U64 => builder.u64(0, SourceSpan::default()),
         Type::F64 => builder.f64(0.0, SourceSpan::default()),
         Type::Felt => builder.felt(Felt::ZERO, SourceSpan::default()),
+        Type::Enum(enum_ty) => emit_zero(enum_ty.discriminant(), builder, diagnostics)?,
         Type::I128
         | Type::U128
         | Type::U256
