@@ -78,7 +78,7 @@ log = { version = "0.4", features = ["kv"] }
 # Miden Dependencies
 miden-assembly = { version = "0.22", default-features = false }
 miden-core = { version = "0.22", default-features = false }
-miden-debug = { version = "0.5" }
+miden-debug = { version = "0.6" }
 miden-debug-types = { version = "0.22", default-features = false }
 miden-assembly-syntax = { version = "0.22", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
@@ -172,9 +172,6 @@ miden-field = { version = "0.22" }
 #miden-mast-package = { path = "../miden-vm/package" }
 # miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
 # miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
-miden-debug = { git = "https://github.com/0xMiden/miden-debug", rev = "b1bbfef59a08674d1803f5b7b7f2ce5c98490dfd" }
-# miden-protocol  = { tag = "v0.14.0-beta.4", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-# miden-standards = { tag = "v0.14.0-beta.4", default-features = false, git = "https://github.com/0xMiden/miden-base" }
 # miden-tx        = { tag = "v0.14.0-beta.4", git = "https://github.com/0xMiden/miden-base" }
 
 

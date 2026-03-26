@@ -2562,8 +2562,9 @@ dependencies = [
 
 [[package]]
 name = "miden-debug"
-version = "0.5.0"
-source = "git+https://github.com/0xMiden/miden-debug?rev=b1bbfef59a08674d1803f5b7b7f2ce5c98490dfd#b1bbfef59a08674d1803f5b7b7f2ce5c98490dfd"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6011b81a6f5807f645df4feb71549015fda27433251d1b20c8d8d4247d4edc2b"
 dependencies = [
  "clap",
  "crossterm",
