@@ -89,6 +89,59 @@ fn run_index_switch_test(
     }
 }
 
+/// Compile and execute a switch where some arms consume the selector and others do not.
+fn run_index_switch_selector_liveness_test(cases: &[u32], expectations: &[SwitchExpectation]) {
+    let span = SourceSpan::default();
+
+    let (package, context) = compile_test_module([Type::U32], [Type::U32], |builder| {
+        let entry = builder.entry_block();
+        let selector = entry.borrow().arguments()[0] as ValueRef;
+
+        let switch = builder
+            .index_switch(selector, cases.iter().copied(), &[Type::U32], span)
+            .unwrap();
+
+        for (index, case_selector) in cases.iter().copied().enumerate() {
+            let case_region = switch.borrow().get_case_region(index);
+            let case_block = builder.create_block_in_region(case_region);
+            builder.switch_to_block(case_block);
+
+            if case_selector % 2 == 0 {
+                let result = builder.u32(case_selector * 11, span);
+                builder.r#yield([result], span).unwrap();
+            } else {
+                builder.r#yield([selector], span).unwrap();
+            }
+        }
+
+        let default_region = switch.borrow().default_region().as_region_ref();
+        let default_block = builder.create_block_in_region(default_region);
+        builder.switch_to_block(default_block);
+        let result = builder.u32(99, span);
+        builder.r#yield([result], span).unwrap();
+
+        builder.switch_to_block(entry);
+        builder.ret(Some(switch.borrow().results()[0] as ValueRef), span).unwrap();
+    });
+
+    for expectation in expectations {
+        let selector = expectation.selector;
+        let output = eval_package::<u32, _, _>(
+            &package,
+            None,
+            &[Felt::from(selector)],
+            context.session(),
+            |_| Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            output, expectation.result,
+            "unexpected result for selector {selector} with liveness-sensitive cases {cases:?}"
+        );
+    }
+}
+
 #[test]
 fn index_switch_contiguous_cases() {
     run_index_switch_test(
@@ -176,6 +229,35 @@ fn index_switch_max_upper_bound_cases() {
             SwitchExpectation::new(u32::MAX - 2, 22),
             SwitchExpectation::new(u32::MAX - 1, 33),
             SwitchExpectation::new(u32::MAX, 44),
+        ],
+    );
+}
+
+#[test]
+fn index_switch_contiguous_cases_with_selector_liveness() {
+    run_index_switch_selector_liveness_test(
+        &[1, 2, 3],
+        &[
+            SwitchExpectation::new(0, 99),
+            SwitchExpectation::new(1, 1),
+            SwitchExpectation::new(2, 22),
+            SwitchExpectation::new(3, 3),
+            SwitchExpectation::new(4, 99),
+        ],
+    );
+}
+
+#[test]
+fn index_switch_sparse_cases_with_selector_liveness() {
+    run_index_switch_selector_liveness_test(
+        &[1, 2, 5],
+        &[
+            SwitchExpectation::new(0, 99),
+            SwitchExpectation::new(1, 1),
+            SwitchExpectation::new(2, 22),
+            SwitchExpectation::new(4, 99),
+            SwitchExpectation::new(5, 5),
+            SwitchExpectation::new(6, 99),
         ],
     );
 }

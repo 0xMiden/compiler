@@ -230,11 +230,16 @@ fn emit_switch_region(
     let span = op.span();
     let is_live_after =
         emitter.liveness.is_live_at_start(selector, region.entry_block_ref().unwrap());
-    if !is_live_after && emitter.stack.peek().is_some_and(|operand| operand == &selector) {
-        emitter.emitter().drop(span);
+    if !is_live_after && let Some(selector_index) = emitter.stack.find(&selector) {
+        emitter.emitter().drop_operand_at_position(selector_index, span);
     }
     emitter.emit_inline(&region.entry());
     rename_switch_results(op, &mut emitter.stack);
+    if !emitter.liveness.is_live_after(selector, op.as_operation())
+        && let Some(selector_index) = emitter.stack.find(&selector)
+    {
+        emitter.emitter().drop_operand_at_position(selector_index, span);
+    }
 
     Ok(())
 }
