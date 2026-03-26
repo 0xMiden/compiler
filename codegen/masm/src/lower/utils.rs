@@ -1,5 +1,5 @@
 use midenc_dialect_scf as scf;
-use midenc_hir::{Op, Operation, Region, RegionRef, Report, Spanned, ValueRef};
+use midenc_hir::{Op, Operation, Region, RegionRef, Report, SourceSpan, Spanned, ValueRef};
 use smallvec::SmallVec;
 
 use crate::{Constraint, OperandStack, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
@@ -18,11 +18,12 @@ pub fn emit_if(
     let then_dest = then_body.entry();
     let else_dest = else_body.entry_block_ref();
 
-    let (then_blk, then_stack) = emit_branch_block(op, emitter, None, |then_emitter| {
-        then_emitter.emit_inline(&then_dest);
-        rename_region_results(op, &mut then_emitter.stack);
-        Ok(())
-    })?;
+    let (then_blk, then_stack) =
+        emit_branch_block(op, emitter, then_dest.span(), None, |then_emitter| {
+            then_emitter.emit_inline(&then_dest);
+            rename_region_results(op, &mut then_emitter.stack);
+            Ok(())
+        })?;
 
     let else_blk = match else_dest {
         None => {
@@ -37,7 +38,7 @@ pub fn emit_if(
         Some(dest) => {
             let dest = dest.borrow();
             let (else_blk, else_stack) =
-                emit_branch_block(op, emitter, Some(&then_stack), |else_emitter| {
+                emit_branch_block(op, emitter, dest.span(), Some(&then_stack), |else_emitter| {
                     else_emitter.emit_inline(&dest);
                     rename_region_results(op, &mut else_emitter.stack);
                     Ok(())
@@ -145,8 +146,9 @@ pub(super) fn emit_linear_search(
     // Remove the branch condition from the emitter's view of the stack.
     emitter.stack.drop();
 
+    let case_span = case.region.borrow().entry().span();
     let (then_blk, then_stack) =
-        emit_branch_block(op.as_operation(), emitter, None, |then_emitter| {
+        emit_branch_block(op.as_operation(), emitter, case_span, None, |then_emitter| {
             let case_region = case.region.borrow();
             emit_switch_region(op, then_emitter, &case_region)
         })?;
@@ -154,9 +156,13 @@ pub(super) fn emit_linear_search(
     let (else_blk, else_stack) = if rest.is_empty() {
         emit_default_block(op, emitter, Some(&then_stack))?
     } else {
-        emit_branch_block(op.as_operation(), emitter, Some(&then_stack), |else_emitter| {
-            emit_linear_search(op, else_emitter, rest)
-        })?
+        emit_branch_block(
+            op.as_operation(),
+            emitter,
+            op.span(),
+            Some(&then_stack),
+            |else_emitter| emit_linear_search(op, else_emitter, rest),
+        )?
     };
 
     debug_assert_eq!(then_stack, else_stack);
@@ -260,6 +266,7 @@ fn emit_switch_region(
 fn emit_branch_block<F>(
     op: &Operation,
     emitter: &mut BlockEmitter<'_>,
+    span: SourceSpan,
     expected_stack: Option<&OperandStack>,
     build: F,
 ) -> Result<(masm::Block, OperandStack), Report>
@@ -272,7 +279,7 @@ where
         align_branch_stack(op, expected_stack, &mut nested_emitter);
     }
     let branch_stack = nested_emitter.stack.clone();
-    let branch_block = nested_emitter.into_emitted_block(op.span());
+    let branch_block = nested_emitter.into_emitted_block(span);
     Ok((branch_block, branch_stack))
 }
 
@@ -283,7 +290,8 @@ fn emit_default_block(
     expected_stack: Option<&OperandStack>,
 ) -> Result<(masm::Block, OperandStack), Report> {
     let default_region = op.default_region();
-    emit_branch_block(op.as_operation(), emitter, expected_stack, |nested_emitter| {
+    let default_span = default_region.entry().span();
+    emit_branch_block(op.as_operation(), emitter, default_span, expected_stack, |nested_emitter| {
         emit_switch_region(op, nested_emitter, &default_region)
     })
 }
@@ -321,10 +329,13 @@ fn emit_binary_search_with_interval_guard(
     emitter.stack.drop();
 
     let (then_blk, then_stack) = emit_default_block(op, emitter, None)?;
-    let (else_blk, else_stack) =
-        emit_branch_block(op.as_operation(), emitter, Some(&then_stack), |else_emitter| {
-            emit_binary_search_in_bounds(op, else_emitter, cases, interval)
-        })?;
+    let (else_blk, else_stack) = emit_branch_block(
+        op.as_operation(),
+        emitter,
+        op.span(),
+        Some(&then_stack),
+        |else_emitter| emit_binary_search_in_bounds(op, else_emitter, cases, interval),
+    )?;
 
     debug_assert_eq!(then_stack, else_stack);
 
@@ -371,15 +382,20 @@ fn emit_binary_search_in_bounds(
             emitter.stack.drop();
 
             let (then_blk, then_stack) =
-                emit_branch_block(op.as_operation(), emitter, None, |then_emitter| {
+                emit_branch_block(op.as_operation(), emitter, op.span(), None, |then_emitter| {
                     emit_binary_search_in_bounds(op, then_emitter, left_cases, left_interval)
                 })?;
             debug_assert_eq!(left_interval.upper.checked_add(1), Some(right_interval.lower));
 
-            let (else_blk, else_stack) =
-                emit_branch_block(op.as_operation(), emitter, Some(&then_stack), |else_emitter| {
+            let (else_blk, else_stack) = emit_branch_block(
+                op.as_operation(),
+                emitter,
+                op.span(),
+                Some(&then_stack),
+                |else_emitter| {
                     emit_binary_search_in_bounds(op, else_emitter, right_cases, right_interval)
-                })?;
+                },
+            )?;
 
             debug_assert_eq!(then_stack, else_stack);
 
