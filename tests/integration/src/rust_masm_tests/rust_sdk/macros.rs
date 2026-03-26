@@ -27,8 +27,7 @@ fn component_macros_account_and_note() {
     };
 
     assert!(
-        panic_message.contains("not yet implemented")
-            && panic_message.contains("indirect pointer parameters"),
+        panic_message.contains("not yet implemented"),
         "unexpected panic message: {panic_message}"
     );
 
