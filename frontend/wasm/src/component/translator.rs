@@ -462,7 +462,7 @@ impl<'a> ComponentTranslator<'a> {
 
         let component_types = types.resources_mut_and_types().1;
         let func_ty =
-            convert_lifted_func_ty(CanonicalAbiMode::Lift, &type_func_idx, component_types);
+            convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
         generate_export_lifting_function(
             &mut self.result,
@@ -720,7 +720,7 @@ fn canon_lower_func(
 
             let component_types = types.resources_mut_and_types().1;
             let func_ty =
-                convert_lifted_func_ty(CanonicalAbiMode::Lower, &type_func_idx, component_types);
+                convert_lifted_func_ty(CanonicalAbiMode::Import, &type_func_idx, component_types);
 
             let mut path = module_path.clone();
             path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));
@@ -803,7 +803,7 @@ fn canon_lower_from_alias_export(
             // We found the type information, use it to create the correct signature
             let component_types = types.resources_mut_and_types().1;
             let func_ty =
-                convert_lifted_func_ty(CanonicalAbiMode::Lower, &type_func_idx, component_types);
+                convert_lifted_func_ty(CanonicalAbiMode::Import, &type_func_idx, component_types);
 
             let mut path = module_path.clone();
             path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));

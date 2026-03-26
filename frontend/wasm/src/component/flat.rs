@@ -12,14 +12,15 @@ use midenc_hir::{
     dialects::builtin::attributes::{AbiParam, Signature},
 };
 
-/// Identifies whether canonical ABI flattening is being performed for an exported component
-/// function or for a lowered import wrapper.
+/// Identifies which kind of component wrapper is being flattened for the canonical ABI.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CanonicalAbiMode {
-    /// Flatten the signature for a component export wrapper.
-    Lift,
-    /// Flatten the signature for a component import wrapper.
-    Lower,
+    /// Flatten the signature for a component export wrapper, i.e. the wrapper synthesized for
+    /// WAT `(canon lift)`.
+    Export,
+    /// Flatten the signature for a component import wrapper, i.e. the wrapper synthesized for
+    /// WAT `(canon lower)`.
+    Import,
 }
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -135,10 +136,10 @@ pub fn flatten_function_type(
         assert_eq!(func_ty.results.len(), 1, "expected a single result");
         let result = func_ty.results.first().expect("unexpected empty results").clone();
         match mode {
-            CanonicalAbiMode::Lift => {
+            CanonicalAbiMode::Export => {
                 flat_results = vec![AbiParam::sret(Type::from(PointerType::new(result)), context)];
             }
-            CanonicalAbiMode::Lower => {
+            CanonicalAbiMode::Import => {
                 flat_params.push(AbiParam::sret(Type::from(PointerType::new(result)), context));
                 flat_results = vec![];
             }
@@ -412,7 +413,7 @@ mod tests {
         let mut func_ty =
             FunctionType::new(CallConv::Fast, vec![Type::I32, Type::Felt], vec![Type::I32]);
         func_ty.abi = CallConv::ComponentModel;
-        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Lift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 2);
         assert_eq!(sig.params()[0].ty, Type::I32);
@@ -432,7 +433,7 @@ mod tests {
         let params = vec![Type::I32; 16];
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
         func_ty.abi = CallConv::ComponentModel;
-        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Lift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 16);
         assert!(sig.params().iter().all(|p| p.ty == Type::I32));
@@ -441,7 +442,7 @@ mod tests {
         let params = vec![Type::I32; 17];
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
         func_ty.abi = CallConv::ComponentModel;
-        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Lift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 1);
         assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
@@ -455,7 +456,7 @@ mod tests {
         // Single result - should not be transformed
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![Type::Felt]);
         func_ty.abi = CallConv::ComponentModel;
-        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Lift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.results().len(), 1);
         assert_eq!(sig.results()[0].ty, Type::Felt);
@@ -464,7 +465,7 @@ mod tests {
         let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![struct_ty]);
         func_ty.abi = CallConv::ComponentModel;
-        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Lift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 1);
         assert_eq!(sig.params()[0].ty, Type::I32);
@@ -482,7 +483,7 @@ mod tests {
         let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![struct_ty]);
         func_ty.abi = CallConv::ComponentModel;
-        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Lower).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Import).unwrap();
 
         assert_eq!(sig.params().len(), 2); // original param + return pointer
         assert_eq!(sig.params()[0].ty, Type::I32);
@@ -499,7 +500,7 @@ mod tests {
         // Empty function
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![], vec![]);
         func_ty.abi = CallConv::ComponentModel;
-        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Lift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
         assert_eq!(sig.params().len(), 0);
         assert_eq!(sig.results().len(), 0);
 
@@ -508,7 +509,7 @@ mod tests {
         let params = vec![struct_ty.clone(), struct_ty]; // 20 total params when flattened
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![]);
         func_ty.abi = CallConv::ComponentModel;
-        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Lift).unwrap();
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 1); // transformed to pointer
         assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));

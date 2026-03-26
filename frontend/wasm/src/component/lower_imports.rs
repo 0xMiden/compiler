@@ -37,7 +37,7 @@ pub fn generate_import_lowering_function(
 ) -> WasmResult<CallableFunction> {
     let context = module_builder.builder().context_rc();
     let import_lowered_sig =
-        flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Lower).wrap_err_with(
+        flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Import).wrap_err_with(
             || {
                 format!(
                     "failed to generate component import lowering: signature of \
@@ -173,7 +173,7 @@ fn generate_lowering_with_transformation(
     // The import function should have the lifted signature (returns tuple)
     // not the lowered signature with pointer parameter
     let context = world_builder.context_rc();
-    let import_func_sig = flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Lower)
+    let import_func_sig = flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Import)
         .wrap_err_with(|| {
             format!("failed to flatten import function signature for '{import_func_path}'")
         })?;
@@ -299,10 +299,10 @@ fn generate_direct_lowering(
     let mut component_builder = ComponentBuilder::new(component_ref);
 
     let context = world_builder.context_rc();
-    let import_func_sig = flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Lift)
+    let import_func_sig = flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Import)
         .wrap_err_with(|| {
-        format!("failed to flatten import function signature for '{import_func_path}'")
-    })?;
+            format!("failed to flatten import function signature for '{import_func_path}'")
+        })?;
     let import_func_ref = component_builder
         .define_function(
             import_func_path.name().into(),

@@ -33,13 +33,15 @@ pub fn generate_export_lifting_function(
 ) -> WasmResult<()> {
     let context = { component_builder.component.borrow().as_operation().context_rc() };
     let cross_ctx_export_sig_flat =
-        flatten_function_type(&context, &export_func_ty, CanonicalAbiMode::Lift).map_err(|e| {
-            let message = format!(
-                "Component export lifting generation. Signature for exported function \
-                 {core_export_func_path} requires flattening. Error: {e}"
-            );
-            diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
-        })?;
+        flatten_function_type(&context, &export_func_ty, CanonicalAbiMode::Export).map_err(
+            |e| {
+                let message = format!(
+                    "Component export lifting generation. Signature for exported function \
+                     {core_export_func_path} requires flattening. Error: {e}"
+                );
+                diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
+            },
+        )?;
 
     if cross_ctx_export_sig_flat.params().iter().any(|param| param.ty.is_pointer()) {
         let message = format!(
