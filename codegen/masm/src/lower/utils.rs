@@ -644,21 +644,10 @@ mod tests {
     }
 
     #[test]
-    fn util_emit_binary_search_single_case_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_single_case_test");
+    fn util_switch_lowering_single_case_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_single_case_test");
 
-        let (function, block) = generate_emit_binary_search_test(&mut test, 1)?;
-
-        assert_switch_lowering_output(test.name(), &function, &block);
-
-        Ok(())
-    }
-
-    #[test]
-    fn util_emit_binary_search_two_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_two_cases_test");
-
-        let (function, block) = generate_emit_binary_search_test(&mut test, 2)?;
+        let (function, block) = generate_switch_lowering_test(&mut test, 1)?;
 
         assert_switch_lowering_output(test.name(), &function, &block);
 
@@ -666,21 +655,10 @@ mod tests {
     }
 
     #[test]
-    fn util_emit_binary_search_three_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_three_cases_test");
+    fn util_switch_lowering_two_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_two_cases_test");
 
-        let (function, block) = generate_emit_binary_search_test(&mut test, 3)?;
-
-        assert_switch_lowering_output(test.name(), &function, &block);
-
-        Ok(())
-    }
-
-    #[test]
-    fn util_emit_binary_search_four_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_four_cases_test");
-
-        let (function, block) = generate_emit_binary_search_test(&mut test, 4)?;
+        let (function, block) = generate_switch_lowering_test(&mut test, 2)?;
 
         assert_switch_lowering_output(test.name(), &function, &block);
 
@@ -688,21 +666,10 @@ mod tests {
     }
 
     #[test]
-    fn util_emit_binary_search_five_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_five_cases_test");
+    fn util_switch_lowering_three_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_three_cases_test");
 
-        let (function, block) = generate_emit_binary_search_test(&mut test, 5)?;
-
-        assert_switch_lowering_output(test.name(), &function, &block);
-
-        Ok(())
-    }
-
-    #[test]
-    fn util_emit_binary_search_seven_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_seven_cases_test");
-
-        let (function, block) = generate_emit_binary_search_test(&mut test, 7)?;
+        let (function, block) = generate_switch_lowering_test(&mut test, 3)?;
 
         assert_switch_lowering_output(test.name(), &function, &block);
 
@@ -710,21 +677,10 @@ mod tests {
     }
 
     #[test]
-    fn util_emit_binary_search_two_nonzero_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_two_nonzero_cases_test");
+    fn util_switch_lowering_four_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_four_cases_test");
 
-        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[1, 2])?;
-
-        assert_switch_lowering_output(test.name(), &function, &block);
-
-        Ok(())
-    }
-
-    #[test]
-    fn util_emit_binary_search_sparse_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_sparse_cases_test");
-
-        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[1, 3, 5])?;
+        let (function, block) = generate_switch_lowering_test(&mut test, 4)?;
 
         assert_switch_lowering_output(test.name(), &function, &block);
 
@@ -732,21 +688,10 @@ mod tests {
     }
 
     #[test]
-    fn util_emit_binary_search_nonzero_contiguous_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_nonzero_contiguous_cases_test");
+    fn util_switch_lowering_five_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_five_cases_test");
 
-        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[1, 2, 3])?;
-
-        assert_switch_lowering_output(test.name(), &function, &block);
-
-        Ok(())
-    }
-
-    #[test]
-    fn util_emit_binary_search_unsorted_contiguous_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_unsorted_contiguous_cases_test");
-
-        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[3, 1, 2])?;
+        let (function, block) = generate_switch_lowering_test(&mut test, 5)?;
 
         assert_switch_lowering_output(test.name(), &function, &block);
 
@@ -754,10 +699,65 @@ mod tests {
     }
 
     #[test]
-    fn util_emit_binary_search_unsorted_sparse_cases_test() -> Result<(), Report> {
-        let mut test = Test::named("util_emit_binary_search_unsorted_sparse_cases_test");
+    fn util_switch_lowering_seven_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_seven_cases_test");
 
-        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[5, 1, 3])?;
+        let (function, block) = generate_switch_lowering_test(&mut test, 7)?;
+
+        assert_switch_lowering_output(test.name(), &function, &block);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_switch_lowering_two_nonzero_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_two_nonzero_cases_test");
+
+        let (function, block) = generate_switch_lowering_test_with_cases(&mut test, &[1, 2])?;
+
+        assert_switch_lowering_output(test.name(), &function, &block);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_switch_lowering_sparse_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_sparse_cases_test");
+
+        let (function, block) = generate_switch_lowering_test_with_cases(&mut test, &[1, 3, 5])?;
+
+        assert_switch_lowering_output(test.name(), &function, &block);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_switch_lowering_nonzero_contiguous_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_nonzero_contiguous_cases_test");
+
+        let (function, block) = generate_switch_lowering_test_with_cases(&mut test, &[1, 2, 3])?;
+
+        assert_switch_lowering_output(test.name(), &function, &block);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_switch_lowering_unsorted_contiguous_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_unsorted_contiguous_cases_test");
+
+        let (function, block) = generate_switch_lowering_test_with_cases(&mut test, &[3, 1, 2])?;
+
+        assert_switch_lowering_output(test.name(), &function, &block);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_switch_lowering_unsorted_sparse_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_switch_lowering_unsorted_sparse_cases_test");
+
+        let (function, block) = generate_switch_lowering_test_with_cases(&mut test, &[5, 1, 3])?;
 
         assert_switch_lowering_output(test.name(), &function, &block);
 
@@ -776,16 +776,16 @@ mod tests {
     }
 
     /// Generate a switch-lowering fixture whose explicit cases are `0..num_cases`.
-    fn generate_emit_binary_search_test(
+    fn generate_switch_lowering_test(
         test: &mut Test,
         num_cases: usize,
     ) -> Result<(FunctionRef, masm::Block), Report> {
         let cases = SmallVec::<[_; 4]>::from_iter(0u32..(num_cases as u32));
-        generate_emit_binary_search_test_with_cases(test, &cases)
+        generate_switch_lowering_test_with_cases(test, &cases)
     }
 
     /// Generate a switch-lowering fixture whose explicit case selectors are taken from `cases`.
-    fn generate_emit_binary_search_test_with_cases(
+    fn generate_switch_lowering_test_with_cases(
         test: &mut Test,
         cases: &[u32],
     ) -> Result<(FunctionRef, masm::Block), Report> {
