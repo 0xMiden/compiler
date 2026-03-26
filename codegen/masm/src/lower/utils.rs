@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 
 use crate::{Constraint, OperandStack, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
 
-/// Emit a conditonal branch-like region, e.g. `scf.if`.
+/// Emit a conditional branch-like region, e.g. `scf.if`.
 ///
 /// This assumes that the conditional value on top of the stack has been removed from the emitter's
 /// view of the stack, but has not yet been consumed by the caller.
@@ -18,17 +18,11 @@ pub fn emit_if(
     let then_dest = then_body.entry();
     let else_dest = else_body.entry_block_ref();
 
-    let (then_stack, then_blk) = {
-        let mut then_emitter = emitter.nest();
+    let (then_blk, then_stack) = emit_branch_block(op, emitter, None, |then_emitter| {
         then_emitter.emit_inline(&then_dest);
-        // Rename the yielded values on the stack for us to check against
-        let mut then_stack = then_emitter.stack.clone();
-        for (index, result) in op.results().all().into_iter().enumerate() {
-            then_stack.rename(index, *result as ValueRef);
-        }
-        let then_block = then_emitter.into_emitted_block(then_dest.span());
-        (then_stack, then_block)
-    };
+        rename_region_results(op, &mut then_emitter.stack);
+        Ok(())
+    })?;
 
     let else_blk = match else_dest {
         None => {
@@ -42,37 +36,14 @@ pub fn emit_if(
         }
         Some(dest) => {
             let dest = dest.borrow();
-            let mut else_emitter = emitter.nest();
-            else_emitter.emit_inline(&dest);
-
-            // Rename the yielded values on the stack for us to check against
-            let mut else_stack = else_emitter.stack.clone();
-            for (index, result) in op.results().all().into_iter().enumerate() {
-                else_stack.rename(index, *result as ValueRef);
-            }
-
-            // Schedule realignment of the stack if needed
-            if then_stack != else_stack {
-                schedule_stack_realignment(&then_stack, &else_stack, &mut else_emitter);
-            }
-
-            if cfg!(debug_assertions) {
-                let mut else_stack = else_emitter.stack.clone();
-                for (index, result) in op.results().all().into_iter().enumerate() {
-                    else_stack.rename(index, *result as ValueRef);
-                }
-                if then_stack != else_stack {
-                    panic!(
-                        "unexpected observable stack effect leaked from regions of {op}
-
-stack on exit from 'then': {then_stack:#?}
-stack on exit from 'else': {else_stack:#?}
-",
-                    );
-                }
-            }
-
-            else_emitter.into_emitted_block(dest.span())
+            let (else_blk, else_stack) =
+                emit_branch_block(op, emitter, Some(&then_stack), |else_emitter| {
+                    else_emitter.emit_inline(&dest);
+                    rename_region_results(op, &mut else_emitter.stack);
+                    Ok(())
+                })?;
+            debug_assert_eq!(then_stack, else_stack);
+            else_blk
         }
     };
 
@@ -89,7 +60,7 @@ stack on exit from 'else': {else_stack:#?}
 
 /// A sorted explicit `scf.index_switch` case paired with its region.
 #[derive(Clone, Copy, Debug)]
-pub struct SwitchCase {
+pub(super) struct SwitchCase {
     selector: u32,
     region: RegionRef,
 }
@@ -101,13 +72,13 @@ impl SwitchCase {
     }
 
     /// Get the selector handled by this case.
-    pub const fn selector(&self) -> u32 {
+    pub(super) const fn selector(&self) -> u32 {
         self.selector
     }
 }
 
 /// Collect and sort the explicit cases of `op`, preserving their regions.
-pub fn sorted_switch_cases(op: &scf::IndexSwitch) -> SmallVec<[SwitchCase; 4]> {
+pub(super) fn sorted_switch_cases(op: &scf::IndexSwitch) -> SmallVec<[SwitchCase; 4]> {
     let mut cases = op
         .cases()
         .iter()
@@ -141,7 +112,7 @@ impl SwitchCaseInterval {
 /// Unlike the binary-search lowering, this path makes no assumptions about the density of the
 /// case set, so it is used for small case counts where duplicating the search chain is cheaper
 /// than setting up interval guards.
-pub fn emit_linear_search(
+pub(super) fn emit_linear_search(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
     cases: &[SwitchCase],
@@ -174,15 +145,16 @@ pub fn emit_linear_search(
     // Remove the branch condition from the emitter's view of the stack.
     emitter.stack.drop();
 
-    let (then_blk, then_stack) = emit_nested_block(op, emitter, None, |then_emitter| {
-        let case_region = case.region.borrow();
-        emit_switch_region(op, then_emitter, &case_region)
-    })?;
+    let (then_blk, then_stack) =
+        emit_branch_block(op.as_operation(), emitter, None, |then_emitter| {
+            let case_region = case.region.borrow();
+            emit_switch_region(op, then_emitter, &case_region)
+        })?;
 
     let (else_blk, else_stack) = if rest.is_empty() {
         emit_default_block(op, emitter, Some(&then_stack))?
     } else {
-        emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
+        emit_branch_block(op.as_operation(), emitter, Some(&then_stack), |else_emitter| {
             emit_linear_search(op, else_emitter, rest)
         })?
     };
@@ -205,7 +177,7 @@ pub fn emit_linear_search(
 /// an implicit lower bound of `0`. Values outside the explicit interval are routed to the default
 /// region up front, and recursive search only runs once the selector is known to be inside the
 /// contiguous interval represented by `cases`.
-pub fn emit_binary_search(
+pub(super) fn emit_binary_search(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
     cases: &[SwitchCase],
@@ -222,17 +194,17 @@ pub fn emit_binary_search(
     emit_binary_search_with_interval_guard(op, emitter, cases, interval)
 }
 
-/// Rename the yielded switch results on `stack` to the result values of `op`.
-fn rename_switch_results(op: &scf::IndexSwitch, stack: &mut OperandStack) {
+/// Rename the yielded region results on `stack` to the result values of `op`.
+fn rename_region_results(op: &Operation, stack: &mut OperandStack) {
     for (index, result) in op.results().all().into_iter().enumerate() {
         stack.rename(index, *result as ValueRef);
     }
 }
 
-/// Realign `emitter` to `expected_stack`, panicking if the stack effects remain observably
+/// Realign `emitter` to `expected_stack`, panicking if the branch effects remain observably
 /// different after scheduling.
-fn align_switch_branch_stack(
-    op: &scf::IndexSwitch,
+fn align_branch_stack(
+    op: &Operation,
     expected_stack: &OperandStack,
     emitter: &mut BlockEmitter<'_>,
 ) {
@@ -250,7 +222,7 @@ fn align_switch_branch_stack(
 stack on exit from expected branch: {expected_stack:#?}
 stack on exit from actual branch: {actual_stack:#?}
 ",
-                op.as_operation()
+                op
             );
         }
     }
@@ -275,7 +247,7 @@ fn emit_switch_region(
         emitter.emitter().drop_operand_at_position(selector_index, span);
     }
     emitter.emit_inline(&region.entry());
-    rename_switch_results(op, &mut emitter.stack);
+    rename_region_results(op.as_operation(), &mut emitter.stack);
     if !is_live_after_switch && let Some(selector_index) = emitter.stack.find(&selector) {
         emitter.emitter().drop_operand_at_position(selector_index, span);
     }
@@ -283,9 +255,10 @@ fn emit_switch_region(
     Ok(())
 }
 
-/// Emit a nested block and optionally realign its observable stack effect to `expected_stack`.
-fn emit_nested_block<F>(
-    op: &scf::IndexSwitch,
+/// Emit a nested branch block and optionally realign its observable stack effect to
+/// `expected_stack`.
+fn emit_branch_block<F>(
+    op: &Operation,
     emitter: &mut BlockEmitter<'_>,
     expected_stack: Option<&OperandStack>,
     build: F,
@@ -296,7 +269,7 @@ where
     let mut nested_emitter = emitter.nest();
     build(&mut nested_emitter)?;
     if let Some(expected_stack) = expected_stack {
-        align_switch_branch_stack(op, expected_stack, &mut nested_emitter);
+        align_branch_stack(op, expected_stack, &mut nested_emitter);
     }
     let branch_stack = nested_emitter.stack.clone();
     let branch_block = nested_emitter.into_emitted_block(op.span());
@@ -310,7 +283,7 @@ fn emit_default_block(
     expected_stack: Option<&OperandStack>,
 ) -> Result<(masm::Block, OperandStack), Report> {
     let default_region = op.default_region();
-    emit_nested_block(op, emitter, expected_stack, |nested_emitter| {
+    emit_branch_block(op.as_operation(), emitter, expected_stack, |nested_emitter| {
         emit_switch_region(op, nested_emitter, &default_region)
     })
 }
@@ -349,7 +322,7 @@ fn emit_binary_search_with_interval_guard(
 
     let (then_blk, then_stack) = emit_default_block(op, emitter, None)?;
     let (else_blk, else_stack) =
-        emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
+        emit_branch_block(op.as_operation(), emitter, Some(&then_stack), |else_emitter| {
             emit_binary_search_in_bounds(op, else_emitter, cases, interval)
         })?;
 
@@ -397,13 +370,14 @@ fn emit_binary_search_in_bounds(
             }
             emitter.stack.drop();
 
-            let (then_blk, then_stack) = emit_nested_block(op, emitter, None, |then_emitter| {
-                emit_binary_search_in_bounds(op, then_emitter, left_cases, left_interval)
-            })?;
+            let (then_blk, then_stack) =
+                emit_branch_block(op.as_operation(), emitter, None, |then_emitter| {
+                    emit_binary_search_in_bounds(op, then_emitter, left_cases, left_interval)
+                })?;
             debug_assert_eq!(left_interval.upper.checked_add(1), Some(right_interval.lower));
 
             let (else_blk, else_stack) =
-                emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
+                emit_branch_block(op.as_operation(), emitter, Some(&then_stack), |else_emitter| {
                     emit_binary_search_in_bounds(op, else_emitter, right_cases, right_interval)
                 })?;
 
@@ -768,6 +742,28 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn util_emit_binary_search_unsorted_contiguous_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_emit_binary_search_unsorted_contiguous_cases_test");
+
+        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[3, 1, 2])?;
+
+        assert_switch_lowering_output(test.name(), &function, &block);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_emit_binary_search_unsorted_sparse_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_emit_binary_search_unsorted_sparse_cases_test");
+
+        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[5, 1, 3])?;
+
+        assert_switch_lowering_output(test.name(), &function, &block);
+
+        Ok(())
+    }
+
     /// Verify the HIR and MASM snapshots emitted for lowered switch code.
     fn assert_switch_lowering_output(test_name: &str, function: &FunctionRef, block: &masm::Block) {
         let test_file_hir = format!("expected/{test_name}.hir");
@@ -779,6 +775,7 @@ mod tests {
         expect_file![&test_file_masm].assert_eq(&output);
     }
 
+    /// Generate a switch-lowering fixture whose explicit cases are `0..num_cases`.
     fn generate_emit_binary_search_test(
         test: &mut Test,
         num_cases: usize,
@@ -787,6 +784,7 @@ mod tests {
         generate_emit_binary_search_test_with_cases(test, &cases)
     }
 
+    /// Generate a switch-lowering fixture whose explicit case selectors are taken from `cases`.
     fn generate_emit_binary_search_test_with_cases(
         test: &mut Test,
         cases: &[u32],
