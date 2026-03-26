@@ -7,7 +7,6 @@
 use miden_client::{
     auth::BasicAuthenticator, crypto::RandomCoin, note::NoteTag, transaction::RawOutputNote,
 };
-use miden_protocol::account::StorageSlotName;
 use miden_testing::MockChain;
 use midenc_expect_test::expect;
 
@@ -16,7 +15,7 @@ use super::{
     helpers::{
         NoteCreationConfig, assert_counter_storage, block_on,
         build_counter_account_with_rust_rpo_auth, build_send_notes_script, compile_rust_package,
-        create_note_from_package,
+        counter_storage_slot_name, create_note_from_package,
     },
 };
 
@@ -48,8 +47,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
         counter_account.id().to_hex()
     );
 
-    let counter_storage_slot =
-        StorageSlotName::new("miden_counter_contract::counter_contract::count_map").unwrap();
+    let counter_storage_slot = counter_storage_slot_name();
     assert_counter_storage(
         chain.committed_account(counter_account.id()).unwrap().storage(),
         &counter_storage_slot,

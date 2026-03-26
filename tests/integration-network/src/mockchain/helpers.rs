@@ -274,7 +274,8 @@ pub(super) fn build_asset_transfer_tx(
 // COUNTER CONTRACT HELPERS
 // ================================================================================================
 
-fn counter_storage_slot_name() -> StorageSlotName {
+/// Returns the storage slot name used by the counter contract's storage map.
+pub(super) fn counter_storage_slot_name() -> StorageSlotName {
     StorageSlotName::new("miden_counter_contract::counter_contract::count_map")
         .expect("counter storage slot name should be valid")
 }

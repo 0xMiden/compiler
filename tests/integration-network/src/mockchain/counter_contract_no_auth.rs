@@ -7,7 +7,7 @@ use miden_client::{
 use miden_core::Felt;
 use miden_protocol::account::{
     AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageMapKey, StorageSlot,
-    StorageSlotName, auth::AuthScheme,
+    auth::AuthScheme,
 };
 use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
@@ -17,7 +17,7 @@ use super::{
     helpers::{
         NoteCreationConfig, assert_counter_storage,
         build_existing_counter_account_builder_with_auth_package, compile_rust_package,
-        create_note_from_package, execute_tx,
+        counter_storage_slot_name, create_note_from_package, execute_tx,
     },
 };
 use crate::mockchain::helpers::COUNTER_CONTRACT_STORAGE_KEY;
@@ -38,8 +38,7 @@ pub fn test_counter_contract_no_auth() {
         compile_rust_package("../../examples/auth-component-no-auth", true);
 
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-    let counter_storage_slot =
-        StorageSlotName::new("miden_counter_contract::counter_contract::count_map").unwrap();
+    let counter_storage_slot = counter_storage_slot_name();
     let counter_storage_slots = vec![StorageSlot::with_map(
         counter_storage_slot.clone(),
         StorageMap::with_entries([(StorageMapKey::new(COUNTER_CONTRACT_STORAGE_KEY), value)])

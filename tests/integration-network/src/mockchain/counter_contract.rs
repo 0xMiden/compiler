@@ -7,7 +7,7 @@ use miden_client::{
 use miden_core::Felt;
 use miden_protocol::account::{
     AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageMapKey, StorageSlot,
-    StorageSlotName, auth::AuthScheme,
+    auth::AuthScheme,
 };
 use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
@@ -16,7 +16,7 @@ use super::{
     cycle_helpers::note_cycles,
     helpers::{
         NoteCreationConfig, account_component_from_package, assert_counter_storage,
-        compile_rust_package, create_note_from_package, execute_tx,
+        compile_rust_package, counter_storage_slot_name, create_note_from_package, execute_tx,
     },
 };
 use crate::mockchain::helpers::COUNTER_CONTRACT_STORAGE_KEY;
@@ -29,8 +29,7 @@ pub fn test_counter_contract() {
     let note_package = compile_rust_package("../../examples/counter-note", true);
 
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-    let counter_storage_slot =
-        StorageSlotName::new("miden_counter_contract::counter_contract::count_map").unwrap();
+    let counter_storage_slot = counter_storage_slot_name();
     let storage_slots = vec![StorageSlot::with_map(
         counter_storage_slot.clone(),
         StorageMap::with_entries([(StorageMapKey::new(COUNTER_CONTRACT_STORAGE_KEY), value)])
