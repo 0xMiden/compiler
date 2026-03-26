@@ -44,7 +44,7 @@ pub fn generate_export_lifting_function(
     if cross_ctx_export_sig_flat.params().iter().any(|param| param.ty.is_pointer()) {
         let message = format!(
             "component export lifting for '{core_export_func_path}' is not yet implemented for \
-             indirect pointer parameters (using the advice provider);"
+             passing the parameters using the advice provider in the cross-context `call`;"
         );
         return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
     }
