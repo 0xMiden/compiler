@@ -39,7 +39,7 @@ pub fn test_counter_contract_no_auth() {
 
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let counter_storage_slot =
-        StorageSlotName::new("miden::component::miden_counter_contract::count_map").unwrap();
+        StorageSlotName::new("miden_counter_contract::counter_contract::count_map").unwrap();
     let counter_storage_slots = vec![StorageSlot::with_map(
         counter_storage_slot.clone(),
         StorageMap::with_entries([(StorageMapKey::new(COUNTER_CONTRACT_STORAGE_KEY), value)])

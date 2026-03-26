@@ -275,12 +275,12 @@ pub(super) fn build_asset_transfer_tx(
 // ================================================================================================
 
 fn counter_storage_slot_name() -> StorageSlotName {
-    StorageSlotName::new("miden::component::miden_counter_contract::count_map")
+    StorageSlotName::new("miden_counter_contract::counter_contract::count_map")
         .expect("counter storage slot name should be valid")
 }
 
 fn auth_public_key_slot_name() -> StorageSlotName {
-    StorageSlotName::new("miden::component::miden_auth_component_rpo_falcon512::owner_public_key")
+    StorageSlotName::new("miden_auth_component_rpo_falcon512::auth_component::owner_public_key")
         .expect("auth component storage slot name should be valid")
 }
 

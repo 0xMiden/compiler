@@ -49,7 +49,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     );
 
     let counter_storage_slot =
-        StorageSlotName::new("miden::component::miden_counter_contract::count_map").unwrap();
+        StorageSlotName::new("miden_counter_contract::counter_contract::count_map").unwrap();
     assert_counter_storage(
         chain.committed_account(counter_account.id()).unwrap().storage(),
         &counter_storage_slot,

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use heck::ToSnakeCase;
 use quote::quote;
 use syn::{Field, Type, spanned::Spanned};
 
@@ -30,6 +31,24 @@ fn sanitize_slot_name_component(component: &str) -> String {
     }
 
     out
+}
+
+/// Derives the full storage slot name for a component field.
+///
+/// Slot names are part of the on-chain storage ABI, so this intentionally ignores any optional
+/// version suffix in `storage_namespace` and keeps the format stable as
+/// `component_package_or_name::component_struct::field_name`.
+fn derive_storage_slot_name(
+    storage_namespace: &str,
+    component_struct_name: &str,
+    field_name: &str,
+) -> String {
+    let storage_namespace = storage_namespace.split('@').next().unwrap_or(storage_namespace);
+    let namespace = sanitize_slot_name_component(storage_namespace);
+    let struct_component = sanitize_slot_name_component(&component_struct_name.to_snake_case());
+    let field_component = sanitize_slot_name_component(field_name);
+
+    format!("{namespace}::{struct_component}::{field_component}")
 }
 
 /// Parsed arguments collected from a `#[storage(...)]` attribute.
@@ -99,6 +118,7 @@ pub fn process_storage_fields(
     fields: &mut syn::FieldsNamed,
     builder: &mut AccountComponentMetadataBuilder,
     storage_namespace: &str,
+    component_struct_name: &str,
 ) -> Result<Vec<proc_macro2::TokenStream>, syn::Error> {
     let mut field_infos = Vec::new();
     let mut errors = Vec::new();
@@ -134,11 +154,9 @@ pub fn process_storage_fields(
         }
 
         if let Some(args) = storage_args {
-            // Slot names are part of the on-chain storage ABI: `StorageSlotId` values are derived
-            // from the slot name. Keep this format stable.
-            let namespace = sanitize_slot_name_component(storage_namespace);
-            let field_component = sanitize_slot_name_component(&field_name_str);
-            let slot_name_str = format!("miden::component::{namespace}::{field_component}");
+            // `StorageSlotId` values are derived from slot names, so keep this format stable.
+            let slot_name_str =
+                derive_storage_slot_name(storage_namespace, component_struct_name, &field_name_str);
             if let Some(existing_field) = slot_names.get(&slot_name_str) {
                 errors.push(syn::Error::new(
                     field.span(),
@@ -245,5 +263,30 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
                  `{BASE_CRATE}` crate"
             ),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::derive_storage_slot_name;
+
+    #[test]
+    fn derives_slot_name_from_component_package_struct_and_field() {
+        assert_eq!(
+            derive_storage_slot_name("miden:counter-contract", "CounterContract", "count_map"),
+            "miden_counter_contract::counter_contract::count_map"
+        );
+    }
+
+    #[test]
+    fn ignores_component_package_version_when_deriving_slot_name() {
+        assert_eq!(
+            derive_storage_slot_name(
+                "miden:counter-contract@1.2.3",
+                "CounterContract",
+                "count_map"
+            ),
+            "miden_counter_contract::counter_contract::count_map"
+        );
     }
 }
