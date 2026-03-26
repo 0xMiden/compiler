@@ -34,7 +34,7 @@ use crate::WasmDialect;
 #[operation(
     dialect = WasmDialect,
     traits(UnaryOp),
-    implements(UnaryOp, InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct SignExtend {
     #[operand]
@@ -166,12 +166,13 @@ impl Foldable for SignExtend {
     }
 }
 
-/// Load `result` from the heap at `addr` and sign-extend it to `i32`.
+/// Load an `i8` from the heap at `addr` and sign-extend it to `i32`.
 ///
 /// This corresponds to Wasm's `i32.load8_s`.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct I32Load8S {
@@ -185,6 +186,102 @@ pub struct I32Load8S {
 impl InferTypeOpInterface for I32Load8S {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         self.result_mut().set_type(Type::I32);
+        Ok(())
+    }
+}
+
+/// Load an `i16` from the heap at `addr` and sign-extend it to `i32`.
+///
+/// This corresponds to Wasm's `i32.load16_s`.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = WasmDialect,
+    traits(UnaryOp),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct I32Load16S {
+    #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
+    addr: PointerOf<Int16>,
+    #[result]
+    result: Int32,
+}
+
+impl InferTypeOpInterface for I32Load16S {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I32);
+        Ok(())
+    }
+}
+
+/// Load an `i8` from the heap at `addr` and sign-extend it to `i64`.
+///
+/// This corresponds to Wasm's `i64.load8_s`.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = WasmDialect,
+    traits(UnaryOp),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct I64Load8S {
+    #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
+    addr: PointerOf<Int8>,
+    #[result]
+    result: Int64,
+}
+
+impl InferTypeOpInterface for I64Load8S {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I64);
+        Ok(())
+    }
+}
+
+/// Load an `i16` from the heap at `addr` and sign-extend it to `i64`.
+///
+/// This corresponds to Wasm's `i64.load16_s`.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = WasmDialect,
+    traits(UnaryOp),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct I64Load16S {
+    #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
+    addr: PointerOf<Int16>,
+    #[result]
+    result: Int64,
+}
+
+impl InferTypeOpInterface for I64Load16S {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I64);
+        Ok(())
+    }
+}
+
+/// Load an `i32` from the heap at `addr` and sign-extend it to `i64`.
+///
+/// This corresponds to Wasm's `i64.load32_s`.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = WasmDialect,
+    traits(UnaryOp),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct I64Load32S {
+    #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
+    addr: PointerOf<Int32>,
+    #[result]
+    result: Int64,
+}
+
+impl InferTypeOpInterface for I64Load32S {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I64);
         Ok(())
     }
 }

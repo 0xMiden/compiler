@@ -266,7 +266,13 @@ pub fn translate_operator<B: ?Sized + Builder>(
             state.push1(val);
         }
         Operator::I32Load16S { memarg } => {
-            translate_load_sext(I16, I32, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let val = builder.i32_load16_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
+            state.push1(val);
         }
         Operator::I64Load8U { memarg } => {
             translate_load_zext(U8, U64, memarg, state, builder, span)?;
@@ -275,13 +281,31 @@ pub fn translate_operator<B: ?Sized + Builder>(
             translate_load_zext(U16, U64, memarg, state, builder, span)?;
         }
         Operator::I64Load8S { memarg } => {
-            translate_load_sext(I8, I64, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let val = builder.i64_load8_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
+            state.push1(val);
         }
         Operator::I64Load16S { memarg } => {
-            translate_load_sext(I16, I64, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let val = builder.i64_load16_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
+            state.push1(val);
         }
         Operator::I64Load32S { memarg } => {
-            translate_load_sext(I32, I64, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let val = builder.i64_load32_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
+            state.push1(val);
         }
         Operator::I64Load32U { memarg } => {
             translate_load_zext(U32, U64, memarg, state, builder, span)?;
@@ -694,28 +718,6 @@ fn translate_load<B: ?Sized + Builder>(
         span,
     )?;
     state.push1(builder.load(addr, span)?);
-    Ok(())
-}
-
-fn translate_load_sext<B: ?Sized + Builder>(
-    ptr_ty: Type,
-    sext_ty: Type,
-    memarg: &MemArg,
-    state: &mut FuncTranslationState,
-    builder: &mut FunctionBuilderExt<'_, B>,
-    span: SourceSpan,
-) -> WasmResult<()> {
-    let addr_int = state.pop1();
-    let addr = prepare_addr(
-        addr_int,
-        &ptr_ty,
-        Some(WasmMemArg::new(memarg.offset, memarg.align)),
-        builder,
-        span,
-    )?;
-    let val = builder.load(addr, span)?;
-    let sext_val = builder.sext(val, sext_ty, span)?;
-    state.push1(sext_val);
     Ok(())
 }
 
