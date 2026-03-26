@@ -1,5 +1,5 @@
 use midenc_dialect_scf as scf;
-use midenc_hir::{Op, Operation, Region, Report, Spanned, ValueRef};
+use midenc_hir::{Op, Operation, Region, RegionRef, Report, Spanned, ValueRef};
 use smallvec::SmallVec;
 
 use crate::{Constraint, OperandStack, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
@@ -87,6 +87,38 @@ stack on exit from 'else': {else_stack:#?}
     Ok(())
 }
 
+/// A sorted explicit `scf.index_switch` case paired with its region.
+#[derive(Clone, Copy, Debug)]
+pub struct SwitchCase {
+    selector: u32,
+    region: RegionRef,
+}
+
+impl SwitchCase {
+    /// Create a case descriptor that keeps the selector and region paired while lowering.
+    const fn new(selector: u32, region: RegionRef) -> Self {
+        Self { selector, region }
+    }
+
+    /// Get the selector handled by this case.
+    pub const fn selector(&self) -> u32 {
+        self.selector
+    }
+}
+
+/// Collect and sort the explicit cases of `op`, preserving their regions.
+pub fn sorted_switch_cases(op: &scf::IndexSwitch) -> SmallVec<[SwitchCase; 4]> {
+    let mut cases = op
+        .cases()
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, selector)| SwitchCase::new(selector, op.get_case_region(index)))
+        .collect::<SmallVec<[SwitchCase; 4]>>();
+    cases.sort_by_key(SwitchCase::selector);
+    cases
+}
+
 /// The explicit selector interval spanned by a sorted `scf.index_switch` case slice.
 #[derive(Clone, Copy, Debug)]
 struct SwitchCaseInterval {
@@ -96,9 +128,10 @@ struct SwitchCaseInterval {
 
 impl SwitchCaseInterval {
     /// Derive the explicit selector interval represented by `cases`.
-    fn from_cases(cases: &[u32]) -> Self {
-        let lower = *cases.first().expect("switch case interval requires at least one case");
-        let upper = *cases.last().expect("switch case interval requires at least one case");
+    fn from_cases(cases: &[SwitchCase]) -> Self {
+        let lower =
+            cases.first().expect("switch case interval requires at least one case").selector;
+        let upper = cases.last().expect("switch case interval requires at least one case").selector;
         Self { lower, upper }
     }
 }
@@ -111,7 +144,7 @@ impl SwitchCaseInterval {
 pub fn emit_linear_search(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
-    cases: &[u32],
+    cases: &[SwitchCase],
 ) -> Result<(), Report> {
     let span = op.span();
     let selector = op.selector().as_value_ref();
@@ -119,10 +152,8 @@ pub fn emit_linear_search(
         return emit_switch_region(op, emitter, &op.default_region());
     };
 
-    let case_index = op.get_case_index_for_selector(*case).unwrap();
-    let case_region = op.get_case_region(case_index);
     let case_is_live_after = {
-        let case_region = case_region.borrow();
+        let case_region = case.region.borrow();
         emitter
             .liveness
             .is_live_at_start(selector, case_region.entry_block_ref().unwrap())
@@ -138,13 +169,13 @@ pub fn emit_linear_search(
     if case_is_live_after || else_needs_selector {
         emitter.emitter().dup(0, span);
     }
-    emitter.emitter().eq_imm((*case).into(), span);
+    emitter.emitter().eq_imm(case.selector.into(), span);
 
     // Remove the branch condition from the emitter's view of the stack.
     emitter.stack.drop();
 
     let (then_blk, then_stack) = emit_nested_block(op, emitter, None, |then_emitter| {
-        let case_region = case_region.borrow();
+        let case_region = case.region.borrow();
         emit_switch_region(op, then_emitter, &case_region)
     })?;
 
@@ -178,7 +209,7 @@ pub fn emit_linear_search(
 pub fn emit_binary_search(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
-    cases: &[u32],
+    cases: &[SwitchCase],
 ) -> Result<(), Report> {
     debug_assert!(!cases.is_empty());
 
@@ -283,7 +314,7 @@ fn emit_default_block(
 fn emit_binary_search_with_interval_guard(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
-    cases: &[u32],
+    cases: &[SwitchCase],
     interval: SwitchCaseInterval,
 ) -> Result<(), Report> {
     let span = op.span();
@@ -333,18 +364,16 @@ fn emit_binary_search_with_interval_guard(
 fn emit_binary_search_in_bounds(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
-    cases: &[u32],
+    cases: &[SwitchCase],
     interval: SwitchCaseInterval,
 ) -> Result<(), Report> {
     let span = op.span();
 
     match cases {
         [case] => {
-            debug_assert_eq!(interval.lower, *case);
-            debug_assert_eq!(interval.upper, *case);
-            let case_index = op.get_case_index_for_selector(*case).unwrap();
-            let case_region = op.get_case_region(case_index);
-            let case_region = case_region.borrow();
+            debug_assert_eq!(interval.lower, case.selector);
+            debug_assert_eq!(interval.upper, case.selector);
+            let case_region = case.region.borrow();
             emit_switch_region(op, emitter, &case_region)
         }
         _ => {

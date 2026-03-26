@@ -10,7 +10,7 @@ use midenc_hir::{
     traits::{BinaryOp, Commutative},
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
-use smallvec::{SmallVec, smallvec};
+use smallvec::smallvec;
 
 use super::*;
 use crate::{
@@ -327,9 +327,10 @@ impl HirLowering for scf::IndexSwitch {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Lowering `hir.index_switch` is done with nested `if.true`/`else` regions that either
         // compare the selector to each explicit case or partition a contiguous selector range.
-        let mut cases = self.cases().iter().copied().collect::<SmallVec<[_; 4]>>();
-        cases.sort();
-        let is_contiguous = cases.windows(2).all(|pair| pair[0].checked_add(1) == Some(pair[1]));
+        let cases = utils::sorted_switch_cases(self);
+        let is_contiguous = cases
+            .windows(2)
+            .all(|pair| pair[0].selector().checked_add(1) == Some(pair[1].selector()));
 
         // We have N cases, plus a default case
         //
