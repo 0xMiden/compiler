@@ -220,7 +220,8 @@ stack on exit from actual branch: {actual_stack:#?}
     }
 }
 
-/// Emit `region` inline, consuming the selector if it is not live in the region entry.
+/// Emit `region` inline, consuming the selector only when it is dead in both the region and the
+/// enclosing switch.
 fn emit_switch_region(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
@@ -228,16 +229,18 @@ fn emit_switch_region(
 ) -> Result<(), Report> {
     let selector = op.selector().as_value_ref();
     let span = op.span();
-    let is_live_after =
+    let is_live_in_region =
         emitter.liveness.is_live_at_start(selector, region.entry_block_ref().unwrap());
-    if !is_live_after && let Some(selector_index) = emitter.stack.find(&selector) {
+    let is_live_after_switch = emitter.liveness.is_live_after(selector, op.as_operation());
+    if !is_live_in_region
+        && !is_live_after_switch
+        && let Some(selector_index) = emitter.stack.find(&selector)
+    {
         emitter.emitter().drop_operand_at_position(selector_index, span);
     }
     emitter.emit_inline(&region.entry());
     rename_switch_results(op, &mut emitter.stack);
-    if !emitter.liveness.is_live_after(selector, op.as_operation())
-        && let Some(selector_index) = emitter.stack.find(&selector)
-    {
+    if !is_live_after_switch && let Some(selector_index) = emitter.stack.find(&selector) {
         emitter.emitter().drop_operand_at_position(selector_index, span);
     }
 

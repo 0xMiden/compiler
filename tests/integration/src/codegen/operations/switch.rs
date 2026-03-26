@@ -142,6 +142,64 @@ fn run_index_switch_selector_liveness_test(cases: &[u32], expectations: &[Switch
     }
 }
 
+/// Compile and execute a switch that keeps `selector` live after the switch result is produced.
+fn run_index_switch_selector_live_after_switch_test(
+    cases: &[u32],
+    expectations: &[SwitchExpectation],
+) {
+    let span = SourceSpan::default();
+
+    let (package, context) = compile_test_module([Type::U32], [Type::U32], |builder| {
+        let entry = builder.entry_block();
+        let selector = entry.borrow().arguments()[0] as ValueRef;
+
+        let switch = builder
+            .index_switch(selector, cases.iter().copied(), &[Type::U32], span)
+            .unwrap();
+
+        for (index, case_selector) in cases.iter().copied().enumerate() {
+            let case_region = switch.borrow().get_case_region(index);
+            let case_block = builder.create_block_in_region(case_region);
+            builder.switch_to_block(case_block);
+
+            if case_selector % 2 == 0 {
+                let result = builder.u32(case_selector * 11, span);
+                builder.r#yield([result], span).unwrap();
+            } else {
+                builder.r#yield([selector], span).unwrap();
+            }
+        }
+
+        let default_region = switch.borrow().default_region().as_region_ref();
+        let default_block = builder.create_block_in_region(default_region);
+        builder.switch_to_block(default_block);
+        let result = builder.u32(99, span);
+        builder.r#yield([result], span).unwrap();
+
+        builder.switch_to_block(entry);
+        let switch_result = switch.borrow().results()[0] as ValueRef;
+        let output = builder.add(switch_result, selector, span).unwrap();
+        builder.ret(Some(output), span).unwrap();
+    });
+
+    for expectation in expectations {
+        let selector = expectation.selector;
+        let output = eval_package::<u32, _, _>(
+            &package,
+            None,
+            &[Felt::from(selector)],
+            context.session(),
+            |_| Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            output, expectation.result,
+            "unexpected result for selector {selector} with post-switch-live cases {cases:?}"
+        );
+    }
+}
+
 #[test]
 fn index_switch_contiguous_cases() {
     run_index_switch_test(
@@ -258,6 +316,35 @@ fn index_switch_sparse_cases_with_selector_liveness() {
             SwitchExpectation::new(4, 99),
             SwitchExpectation::new(5, 5),
             SwitchExpectation::new(6, 99),
+        ],
+    );
+}
+
+#[test]
+fn index_switch_contiguous_cases_with_selector_live_after_switch() {
+    run_index_switch_selector_live_after_switch_test(
+        &[1, 2, 3],
+        &[
+            SwitchExpectation::new(0, 99),
+            SwitchExpectation::new(1, 2),
+            SwitchExpectation::new(2, 24),
+            SwitchExpectation::new(3, 6),
+            SwitchExpectation::new(4, 103),
+        ],
+    );
+}
+
+#[test]
+fn index_switch_sparse_cases_with_selector_live_after_switch() {
+    run_index_switch_selector_live_after_switch_test(
+        &[1, 2, 5],
+        &[
+            SwitchExpectation::new(0, 99),
+            SwitchExpectation::new(1, 2),
+            SwitchExpectation::new(2, 24),
+            SwitchExpectation::new(4, 103),
+            SwitchExpectation::new(5, 10),
+            SwitchExpectation::new(6, 105),
         ],
     );
 }
