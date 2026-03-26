@@ -204,14 +204,19 @@ pub fn emit_linear_search(
 /// The helper makes the explicit selector interval part of the lowering state instead of assuming
 /// an implicit lower bound of `0`. Values outside the explicit interval are routed to the default
 /// region up front, and recursive search only runs once the selector is known to be inside the
-/// interval represented by `cases`. If the explicit case set is sparse, recursive partitioning
-/// emits an additional default check for holes between the left and right case intervals.
+/// contiguous interval represented by `cases`.
 pub fn emit_binary_search(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
     cases: &[SwitchCase],
 ) -> Result<(), Report> {
     debug_assert!(!cases.is_empty());
+    debug_assert!(
+        cases
+            .windows(2)
+            .all(|pair| pair[0].selector.checked_add(1) == Some(pair[1].selector)),
+        "binary search lowering requires contiguous switch cases"
+    );
 
     let interval = SwitchCaseInterval::from_cases(cases);
     emit_binary_search_with_interval_guard(op, emitter, cases, interval)
@@ -395,44 +400,12 @@ fn emit_binary_search_in_bounds(
             let (then_blk, then_stack) = emit_nested_block(op, emitter, None, |then_emitter| {
                 emit_binary_search_in_bounds(op, then_emitter, left_cases, left_interval)
             })?;
-            let (else_blk, else_stack) = if left_interval.upper.checked_add(1)
-                == Some(right_interval.lower)
-            {
+            debug_assert_eq!(left_interval.upper.checked_add(1), Some(right_interval.lower));
+
+            let (else_blk, else_stack) =
                 emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
                     emit_binary_search_in_bounds(op, else_emitter, right_cases, right_interval)
-                })?
-            } else {
-                emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
-                    {
-                        let mut op_emitter = else_emitter.emitter();
-                        op_emitter.dup(0, span);
-                        op_emitter.lt_imm(right_interval.lower.into(), span);
-                    }
-                    else_emitter.stack.drop();
-
-                    let (gap_blk, gap_stack) = emit_default_block(op, else_emitter, None)?;
-                    let (right_blk, right_stack) =
-                        emit_nested_block(op, else_emitter, Some(&gap_stack), |right_emitter| {
-                            emit_binary_search_in_bounds(
-                                op,
-                                right_emitter,
-                                right_cases,
-                                right_interval,
-                            )
-                        })?;
-
-                    debug_assert_eq!(gap_stack, right_stack);
-
-                    else_emitter.emit_op(masm::Op::If {
-                        span,
-                        then_blk: gap_blk,
-                        else_blk: right_blk,
-                    });
-                    else_emitter.stack = gap_stack;
-
-                    Ok(())
-                })?
-            };
+                })?;
 
             debug_assert_eq!(then_stack, else_stack);
 
