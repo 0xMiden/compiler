@@ -330,6 +330,7 @@ impl HirLowering for scf::IndexSwitch {
         // that block. The final else contains the default case.
         let mut cases = self.cases().iter().copied().collect::<SmallVec<[_; 4]>>();
         cases.sort();
+        let is_contiguous = cases.windows(2).all(|pair| pair[0].checked_add(1) == Some(pair[1]));
 
         // We have N cases, plus a default case
         //
@@ -391,7 +392,7 @@ impl HirLowering for scf::IndexSwitch {
         //      }
         //
         assert!(!cases.is_empty());
-        if cases.len() < 3 {
+        if cases.len() < 3 || !is_contiguous {
             return utils::emit_linear_search(self, emitter, &cases);
         }
 

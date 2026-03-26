@@ -1,63 +1,34 @@
 
     dup.0
     dup.0
-    push.1
-    u32lt
-    dup.1
-    push.5
-    u32gt
-    or
+    eq.1
     if.true
-        movup.2
-        mul
-        u32assert
-        swap.1
         drop
+        drop
+        drop
+        push.1
     else
         dup.0
-        push.1
-        u32lte
+        eq.3
         if.true
             drop
             drop
             drop
-            push.1
+            push.3
         else
             dup.0
-            push.3
-            u32lt
+            eq.5
             if.true
+                drop
+                drop
+                drop
+                push.5
+            else
                 movup.2
                 mul
                 u32assert
                 swap.1
                 drop
-            else
-                dup.0
-                push.3
-                u32lte
-                if.true
-                    drop
-                    drop
-                    drop
-                    push.3
-                else
-                    dup.0
-                    push.5
-                    u32lt
-                    if.true
-                        movup.2
-                        mul
-                        u32assert
-                        swap.1
-                        drop
-                    else
-                        drop
-                        drop
-                        drop
-                        push.5
-                    end
-                end
             end
         end
     end
