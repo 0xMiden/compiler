@@ -3,6 +3,10 @@
     dup.0
     push.1
     u32lt
+    dup.1
+    push.5
+    u32gt
+    or
     if.true
         movup.2
         mul
@@ -11,58 +15,47 @@
         drop
     else
         dup.0
-        push.5
-        u32gt
+        push.1
+        u32lte
         if.true
-            movup.2
-            mul
-            u32assert
-            swap.1
             drop
+            drop
+            drop
+            push.1
         else
             dup.0
-            push.1
-            u32lte
+            push.3
+            u32lt
             if.true
+                movup.2
+                mul
+                u32assert
+                swap.1
                 drop
-                drop
-                drop
-                push.1
             else
                 dup.0
                 push.3
-                u32lt
+                u32lte
                 if.true
-                    movup.2
-                    mul
-                    u32assert
-                    swap.1
                     drop
+                    drop
+                    drop
+                    push.3
                 else
                     dup.0
-                    push.3
-                    u32lte
+                    push.5
+                    u32lt
                     if.true
+                        movup.2
+                        mul
+                        u32assert
+                        swap.1
                         drop
-                        drop
-                        drop
-                        push.3
                     else
-                        dup.0
+                        drop
+                        drop
+                        drop
                         push.5
-                        u32lt
-                        if.true
-                            movup.2
-                            mul
-                            u32assert
-                            swap.1
-                            drop
-                        else
-                            drop
-                            drop
-                            drop
-                            push.5
-                        end
                     end
                 end
             end

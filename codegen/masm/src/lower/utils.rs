@@ -183,7 +183,7 @@ pub fn emit_binary_search(
     debug_assert!(!cases.is_empty());
 
     let interval = SwitchCaseInterval::from_cases(cases);
-    emit_binary_search_with_interval_guards(op, emitter, cases, interval)
+    emit_binary_search_with_interval_guard(op, emitter, cases, interval)
 }
 
 /// Rename the yielded switch results on `stack` to the result values of `op`.
@@ -271,8 +271,8 @@ fn emit_default_block(
     })
 }
 
-/// Emit lower/upper interval guards for `cases`, then enter the in-bounds binary search.
-fn emit_binary_search_with_interval_guards(
+/// Emit a single out-of-range guard for `cases`, then enter the in-bounds binary search.
+fn emit_binary_search_with_interval_guard(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
     cases: &[u32],
@@ -280,69 +280,45 @@ fn emit_binary_search_with_interval_guards(
 ) -> Result<(), Report> {
     let span = op.span();
 
-    if interval.lower > 0 {
-        {
+    match (interval.lower > 0, interval.upper < u32::MAX) {
+        (false, false) => return emit_binary_search_in_bounds(op, emitter, cases, interval),
+        (true, false) => {
             let mut op_emitter = emitter.emitter();
             op_emitter.dup(0, span);
             op_emitter.lt_imm(interval.lower.into(), span);
         }
-        emitter.stack.drop();
-
-        let (then_blk, then_stack) = emit_default_block(op, emitter, None)?;
-        let (else_blk, else_stack) =
-            emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
-                emit_binary_search_with_upper_guard(op, else_emitter, cases, interval)
-            })?;
-
-        debug_assert_eq!(then_stack, else_stack);
-
-        emitter.emit_op(masm::Op::If {
-            span,
-            then_blk,
-            else_blk,
-        });
-        emitter.stack = then_stack;
-        return Ok(());
-    }
-
-    emit_binary_search_with_upper_guard(op, emitter, cases, interval)
-}
-
-/// Emit an upper-bound guard for `cases`, then enter the in-bounds binary search.
-fn emit_binary_search_with_upper_guard(
-    op: &scf::IndexSwitch,
-    emitter: &mut BlockEmitter<'_>,
-    cases: &[u32],
-    interval: SwitchCaseInterval,
-) -> Result<(), Report> {
-    let span = op.span();
-
-    if interval.upper < u32::MAX {
-        {
+        (false, true) => {
             let mut op_emitter = emitter.emitter();
             op_emitter.dup(0, span);
             op_emitter.gt_imm(interval.upper.into(), span);
         }
-        emitter.stack.drop();
-
-        let (then_blk, then_stack) = emit_default_block(op, emitter, None)?;
-        let (else_blk, else_stack) =
-            emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
-                emit_binary_search_in_bounds(op, else_emitter, cases, interval)
-            })?;
-
-        debug_assert_eq!(then_stack, else_stack);
-
-        emitter.emit_op(masm::Op::If {
-            span,
-            then_blk,
-            else_blk,
-        });
-        emitter.stack = then_stack;
-        return Ok(());
+        (true, true) => {
+            let mut op_emitter = emitter.emitter();
+            op_emitter.dup(0, span);
+            op_emitter.lt_imm(interval.lower.into(), span);
+            op_emitter.dup(1, span);
+            op_emitter.gt_imm(interval.upper.into(), span);
+            op_emitter.or(span);
+        }
     }
+    emitter.stack.drop();
 
-    emit_binary_search_in_bounds(op, emitter, cases, interval)
+    let (then_blk, then_stack) = emit_default_block(op, emitter, None)?;
+    let (else_blk, else_stack) =
+        emit_nested_block(op, emitter, Some(&then_stack), |else_emitter| {
+            emit_binary_search_in_bounds(op, else_emitter, cases, interval)
+        })?;
+
+    debug_assert_eq!(then_stack, else_stack);
+
+    emitter.emit_op(masm::Op::If {
+        span,
+        then_blk,
+        else_blk,
+    });
+    emitter.stack = then_stack;
+
+    Ok(())
 }
 
 /// Emit binary search over `cases`, assuming the selector is already inside `interval`.
@@ -765,6 +741,17 @@ mod tests {
         let mut test = Test::named("util_emit_binary_search_sparse_cases_test");
 
         let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[1, 3, 5])?;
+
+        assert_switch_lowering_output(test.name(), &function, &block);
+
+        Ok(())
+    }
+
+    #[test]
+    fn util_emit_binary_search_nonzero_contiguous_cases_test() -> Result<(), Report> {
+        let mut test = Test::named("util_emit_binary_search_nonzero_contiguous_cases_test");
+
+        let (function, block) = generate_emit_binary_search_test_with_cases(&mut test, &[1, 2, 3])?;
 
         assert_switch_lowering_output(test.name(), &function, &block);
 
