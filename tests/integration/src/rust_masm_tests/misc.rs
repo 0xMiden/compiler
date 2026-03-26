@@ -353,7 +353,7 @@ fn test_func_arg_order() {
 ///
 /// This keeps only the enum dispatch shape that triggered the `IndexSwitch` bug.
 #[test]
-fn test_resolve_turn_minimal_large_return() {
+fn test_resolve_turn_index_switch_enum_dispatch() {
     let main_fn = r#"(which: u8) -> Felt {
         /// Ability category used to determine the emitted event.
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -402,7 +402,7 @@ fn test_resolve_turn_minimal_large_return() {
     setup::enable_compiler_instrumentation();
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
-        "resolve_turn_minimal_large_return",
+        "resolve_turn_index_switch_enum_dispatch",
         main_fn,
         config,
         [],
