@@ -106,8 +106,10 @@ impl OpEmitter<'_> {
         match (&src, dst) {
             // If the types are equivalent, it's a no-op, but only if they are integers
             (src, dst) if src == dst => (),
-            // Zero-extending a u64 to u128/i128 requires adding an extra 0u64 *above* the
-            // existing u64 in significance, i.e. below it on the operand stack (LE limb order).
+            // Zero-extending a u64 to u128/i128 requires us to provide the most-significant bits
+            // of the resulting 128-bit value. This is achieved by pushing a `0u64` value below
+            // the current u64 on the operand stack, as the limb order of multi-limb integer
+            // values is little-endian.
             //
             // u64 is represented as two u32 limbs; u128/i128 as four u32 limbs. With the least-
             // significant limb on top, we want to transform:
