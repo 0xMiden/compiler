@@ -409,12 +409,15 @@ fn test_resolve_turn_minimal_large_return() {
     );
 
     let package = test.compile_package();
-    let args = [Felt::from(0u32)];
 
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
-        let res: Felt = trace.parse_result().unwrap();
-        assert_eq!(res, Felt::from(11u32));
-        Ok(())
-    })
-    .unwrap();
+    for (which, expected) in [(0u32, 11u32), (1, 22), (2, 33)] {
+        let args = [Felt::from(which)];
+
+        eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+            let res: Felt = trace.parse_result().unwrap();
+            assert_eq!(res, Felt::from(expected));
+            Ok(())
+        })
+        .unwrap();
+    }
 }
