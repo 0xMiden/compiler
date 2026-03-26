@@ -10,6 +10,7 @@ fn module_path() -> SymbolPath {
     let parts = [
         SymbolNameComponent::Root,
         SymbolNameComponent::Component(symbols::Miden),
+        SymbolNameComponent::Component(symbols::Protocol),
         SymbolNameComponent::Component(symbols::InputNote),
     ];
     SymbolPath::from_iter(parts)
@@ -20,7 +21,7 @@ pub const GET_ASSETS: &str = "get_assets";
 pub const GET_RECIPIENT: &str = "get_recipient";
 pub const GET_METADATA: &str = "get_metadata";
 pub const GET_SENDER: &str = "get_sender";
-pub const GET_INPUTS_INFO: &str = "get_inputs_info";
+pub const GET_STORAGE_INFO: &str = "get_storage_info";
 pub const GET_SCRIPT_ROOT: &str = "get_script_root";
 pub const GET_SERIAL_NUMBER: &str = "get_serial_number";
 
@@ -55,7 +56,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt]),
     );
     funcs.insert(
-        Symbol::from(GET_INPUTS_INFO),
+        Symbol::from(GET_STORAGE_INFO),
         FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt, Felt]),
     );
     funcs.insert(

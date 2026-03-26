@@ -26,8 +26,8 @@ pub extern "C" fn input_note_get_sender_plain(_note_index: f32, _out: *mut c_voi
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::protocol::input_note::get_inputs_info")]
-pub extern "C" fn input_note_get_inputs_info_plain(_note_index: f32, _out: *mut c_void) {
+#[unsafe(export_name = "miden::protocol::input_note::get_storage_info")]
+pub extern "C" fn input_note_get_storage_info_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 

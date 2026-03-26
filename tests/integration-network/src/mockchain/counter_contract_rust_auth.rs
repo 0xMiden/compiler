@@ -5,10 +5,10 @@
 //! contract account that uses the Rust-compiled auth component.
 
 use miden_client::{
-    auth::BasicAuthenticator, crypto::RpoRandomCoin, note::NoteTag, testing::MockChain,
-    transaction::OutputNote,
+    auth::BasicAuthenticator, crypto::RandomCoin, note::NoteTag, transaction::RawOutputNote,
 };
 use miden_protocol::account::StorageSlotName;
+use miden_testing::MockChain;
 use midenc_expect_test::expect;
 
 use super::{
@@ -57,7 +57,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     );
 
     // Positive check: original client (with the key) can create a note
-    let mut rng = RpoRandomCoin::new(note_package.unwrap_program().hash());
+    let mut rng = RandomCoin::new(note_package.unwrap_program().hash());
     let own_note = create_note_from_package(
         note_package.clone(),
         counter_account.id(),
@@ -74,12 +74,12 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
         .build_tx_context(counter_account.clone(), &[], &[])
         .unwrap()
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(own_note.clone())])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(own_note.clone())])
         .authenticator(Some(authenticator));
     let tx_context = tx_context_builder.build().unwrap();
     let executed_tx =
         block_on(tx_context.execute()).expect("authorized client should be able to create a note");
-    expect!["73666"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
+    expect!["83037"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
     assert_eq!(executed_tx.output_notes().get_note(0).id(), own_note.id());
 
@@ -103,7 +103,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
         .build_tx_context(counter_account, &[], &[])
         .unwrap()
         .tx_script(tx_script)
-        .extend_expected_output_notes(vec![OutputNote::Full(forged_note)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(forged_note)])
         .authenticator(None);
     let tx_context = tx_context_builder.build().unwrap();
 

@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
+use miden_core_lib::CoreLibrary;
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
-use miden_processor::AdviceInputs;
+use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
 use midenc_compile::LinkOutput;
@@ -47,8 +48,8 @@ where
 /// * `initializers` is an optional set of [Initializer] to run at program start by the compiler-
 ///   emitted test harness, to set up memory or other global state.
 /// * `advice_stack` contains additional values to place on the advice stack before program start.
-///   The last element is treated as the top of the stack. Initializer-related values are pushed
-///   on top of these.
+///   The first element is treated as the top of the stack. Initializer-related values are pushed
+///   on top of these (i.e. they are consumed before user-supplied advice inputs).
 /// * `args` are the set of arguments that will be placed on the operand stack, in order of
 ///   appearance
 /// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
@@ -67,81 +68,75 @@ where
     A: IntoIterator<Item = Felt>,
     F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
 {
-    // Provide input bytes/felts/words via the advice stack
+    // Provide initializer data and any user-supplied advice inputs via the advice stack.
     //
-    // NOTE: This relies on MasmComponent to emit a test harness via `emit_test_harness` during
-    // assembly of the package.
-    //
-    // First, convert the input to words, zero-padding as needed; and push on to the
-    // advice stack in reverse.
-    let mut advice_stack: Vec<Felt> = advice_stack.into_iter().collect();
+    // NOTE: This relies on MasmComponent emitting a test harness via `emit_test_harness` during
+    // assembly of the package. The test harness consumes initializer inputs in FIFO order from the
+    // advice stack (top = index 0).
+    let user_advice_stack: Vec<Felt> = advice_stack.into_iter().collect();
+    let mut advice_stack = Vec::new();
     let mut num_initializers = 0u64;
+
     for initializer in initializers {
         num_initializers += 1;
-        let num_words = match &initializer {
+
+        // The harness uses `adv_push.2` to place `[num_words, dest_ptr]` on the operand stack, so
+        // we provide `[dest_ptr, num_words]` on the advice stack.
+        let dest_ptr = initializer.element_addr();
+
+        let reverse_word_elements =
+            matches!(&initializer, Initializer::Value { .. } | Initializer::MemoryBytes { .. });
+
+        let words: Vec<miden_core::Word> = match initializer {
             Initializer::Value { value, .. } => {
-                value.push_words_to_advice_stack(&mut advice_stack) as u32
+                miden_debug::bytes_to_words(value.to_bytes().as_slice())
+                    .into_iter()
+                    .map(miden_core::Word::from)
+                    .collect()
             }
-            Initializer::MemoryBytes { bytes, .. } => {
-                let words = miden_debug::bytes_to_words(bytes);
-                let num_words = words.len() as u32;
-                for word in words.into_iter().rev() {
-                    for felt in word.into_iter() {
-                        advice_stack.push(felt);
-                    }
-                }
-                num_words
-            }
+            Initializer::MemoryBytes { bytes, .. } => miden_debug::bytes_to_words(bytes)
+                .into_iter()
+                .map(miden_core::Word::from)
+                .collect(),
             Initializer::MemoryFelts { felts, .. } => {
-                let num_felts = felts.len().next_multiple_of(4);
-                let num_words = num_felts / 4;
-                let mut buf = Vec::with_capacity(num_words);
-                let mut words = felts.iter().copied().array_chunks::<4>();
-                for mut word in words.by_ref() {
-                    word.reverse();
-                    buf.push(word);
-                }
-                let remainder = words.into_remainder();
-                if remainder.len() > 0 {
-                    let mut word = [Felt::ZERO; 4];
-                    for (i, felt) in remainder.enumerate() {
-                        word[i] = felt;
-                    }
-                    word.reverse();
-                    buf.push(word);
-                }
-                for word in buf.into_iter().rev() {
-                    for felt in word.into_iter() {
-                        advice_stack.push(felt);
-                    }
-                }
-                num_words as u32
+                let padded = felts.len().next_multiple_of(4);
+                let mut felts = felts.into_owned();
+                felts.resize(padded, Felt::ZERO);
+                felts
+                    .chunks_exact(4)
+                    .map(|chunk| miden_core::Word::new([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                    .collect()
             }
-            Initializer::MemoryWords { words, .. } => {
-                for word in words.iter().rev() {
-                    for elem in word.iter() {
-                        advice_stack.push(*elem);
-                    }
-                }
-                words.len() as u32
-            }
+            Initializer::MemoryWords { words, .. } => words.into_owned(),
         };
 
-        // The test harness invokes std::mem::pipe_words_to_memory, which expects the operand stack
-        // to look like: `[num_words, write_ptr]`.
-        //
-        // Since we're feeding this data in via the advice stack, the test harness code will expect
-        // these values on the advice stack in the opposite order, as the `adv_push` instruction
-        // will pop each element off the advice stack, and push on to the operand stack, after which
-        // these two values will be in the expected order.
-        advice_stack.push(Felt::new(num_words as u64)); // num_words
-        advice_stack.push(Felt::new(initializer.element_addr() as u64)); // dest_ptr
+        advice_stack.push(Felt::new(dest_ptr as u64));
+        advice_stack.push(Felt::new(words.len() as u64));
+
+        for word in words {
+            if reverse_word_elements {
+                for felt in word.iter().rev() {
+                    advice_stack.push(*felt);
+                }
+            } else {
+                for felt in word.iter() {
+                    advice_stack.push(*felt);
+                }
+            }
+        }
     }
 
-    // Push the number of initializers on the advice stack
-    advice_stack.push(Felt::new(num_initializers));
+    advice_stack.insert(0, Felt::new(num_initializers));
+    advice_stack.extend(user_advice_stack);
 
     let mut exec = Executor::new(args.to_vec());
+    let core_library = CoreLibrary::default();
+    // The debug executor path does not automatically install core-library event handlers, but
+    // integration tests execute core helpers such as `u64::div` through the VM.
+    for (event, handler) in core_library.handlers() {
+        exec.register_event_handler(event, handler)
+            .expect("failed to register core library event handler");
+    }
 
     // Register the standard library so dependencies can be resolved at runtime.
     let std_library = (*STDLIB).clone();
@@ -157,21 +152,11 @@ where
     exec.with_dependencies(package.manifest.dependencies())
         .map_err(|err| TestCaseError::fail(format_report(err)))?;
 
-    // Reverse the stack contents, so that the correct order is preserved after MemAdviceProvider
-    // does its own reverse
-    advice_stack.reverse();
-
     exec.with_advice_inputs(AdviceInputs::default().with_stack(advice_stack));
 
     let trace = exec.execute(&package.unwrap_program(), session.source_manager.clone());
     verify_trace(&trace)?;
-
-    dbg!(trace.outputs());
-
-    let output = trace.parse_result::<T>().expect("expected output was not returned");
-    dbg!(&output);
-
-    Ok(output)
+    Ok(trace.parse_result::<T>().expect("expected output was not returned"))
 }
 
 /// Helper function to compile a test module with the given signature and build function

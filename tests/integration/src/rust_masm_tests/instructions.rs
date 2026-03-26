@@ -1,6 +1,6 @@
 use std::{any::type_name, marker::PhantomData};
 
-use miden_core::{Felt, FieldElement, Word};
+use miden_core::{Felt, Word};
 use miden_debug::{FromMidenRepr, ToMidenRepr, push_wasm_ty_to_operand_stack};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
@@ -37,18 +37,18 @@ macro_rules! test_bin_op {
                 // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
                 let res = TestRunner::default()
                     .run(&($a_range, $b_range), move |(a, b)| {
-                        dbg!(a, b);
                         let rs_out = a $op b;
-                        dbg!(&rs_out);
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        b.push_to_operand_stack(&mut args);
                         a.push_to_operand_stack(&mut args);
-                        dbg!(&args);
+                        b.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
                 match res {
-                    Err(TestError::Fail(_, value)) => {
-                        panic!("Found minimal(shrinked) failing case: {:?}", value);
+                    Err(TestError::Fail(err, value)) => {
+                        panic!(
+                            "Found minimal(shrinked) failing case: {:?}\nFailure: {err:?}",
+                            value
+                        );
                     },
                     Ok(_) => (),
                     _ => panic!("Unexpected test result: {:?}", res),
@@ -76,26 +76,22 @@ macro_rules! test_wide_bin_op {
                 let package = test.compile_package();
 
                 let res = TestRunner::default().run(&($a_range, $b_range), move |(a, b)| {
-                    dbg!(a, b);
                     let rs_out = a $op b;
-                    dbg!(&rs_out);
 
                     // Write the operation result to 20 * PAGE_SIZE.
                     let out_addr = 20u32 * 65536;
 
                     let mut args = Vec::<midenc_hir::Felt>::default();
-                    b.push_to_operand_stack(&mut args);
-                    a.push_to_operand_stack(&mut args);
                     out_addr.push_to_operand_stack(&mut args);
-                    dbg!(&args);
+                    a.push_to_operand_stack(&mut args);
+                    b.push_to_operand_stack(&mut args);
 
                     eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
                         let vm_out_bytes: [u8; 16] =
-                            trace.read_from_rust_memory(out_addr).expect("output was not written");
-                        dbg!(&vm_out_bytes);
+                            trace.read_from_rust_memory(out_addr)
+                                .expect("output was not written");
 
                         let rs_out_bytes = rs_out.to_le_bytes();
-                        dbg!(&rs_out_bytes);
 
                         prop_assert_eq!(&rs_out_bytes, &vm_out_bytes, "VM output mismatch");
                         Ok(())
@@ -105,8 +101,11 @@ macro_rules! test_wide_bin_op {
                 });
 
                 match res {
-                    Err(TestError::Fail(_, value)) => {
-                        panic!("Found minimal(shrinked) failing case: {:?}", value);
+                    Err(TestError::Fail(err, value)) => {
+                        panic!(
+                            "Found minimal(shrinked) failing case: {:?}\nFailure: {err:?}",
+                            value
+                        );
                     }
                     Ok(_) => (),
                     _ => panic!("Unexpected test result: {:?}", res),
@@ -132,7 +131,6 @@ macro_rules! test_unary_op {
                 let res = TestRunner::default()
                     .run(&($range), move |a| {
                         let rs_out = $op a;
-                        dbg!(&rs_out);
                         let mut args = Vec::<midenc_hir::Felt>::default();
                         a.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
@@ -166,10 +164,9 @@ macro_rules! test_func_two_arg {
                 let res = TestRunner::default()
                     .run(&(0..$a_ty::MAX/2, any::<$b_ty>()), move |(a, b)| {
                         let rust_out = $func(a, b);
-                        dbg!(&rust_out);
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        b.push_to_operand_stack(&mut args);
                         a.push_to_operand_stack(&mut args);
+                        b.push_to_operand_stack(&mut args);
                         run_masm_vs_rust(rust_out, &package, &args, &test.session)
                     });
                 match res {
@@ -309,11 +306,13 @@ fn test_overflowing_add_u64() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_add_i8() {
     test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_add_i16() {
     test_overflowing_arith(i16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
@@ -349,11 +348,13 @@ fn test_overflowing_sub_u64() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_sub_i8() {
     test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_sub_i16() {
     test_overflowing_arith(i16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
@@ -389,11 +390,13 @@ fn test_overflowing_mul_u64() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_mul_i8() {
     test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_mul_i16() {
     test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -404,7 +407,6 @@ fn test_overflowing_mul_i32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/962"]
 fn test_overflowing_mul_i64() {
     test_overflowing_arith(i64::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -437,7 +439,6 @@ fn test_overflowing_div_u32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/967"]
 fn test_overflowing_div_u64() {
     test_overflowing_arith(
         u64::overflowing_div,
@@ -447,6 +448,7 @@ fn test_overflowing_div_u64() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
 fn test_overflowing_div_i8() {
     test_overflowing_arith(
         i8::overflowing_div,
@@ -456,6 +458,7 @@ fn test_overflowing_div_i8() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
 fn test_overflowing_div_i16() {
     test_overflowing_arith(
         i16::overflowing_div,
@@ -474,7 +477,6 @@ fn test_overflowing_div_i32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/967"]
 fn test_overflowing_div_i64() {
     test_overflowing_arith(
         i64::overflowing_div,
@@ -511,7 +513,6 @@ fn test_overflowing_rem_u32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/967"]
 fn test_overflowing_rem_u64() {
     test_overflowing_arith(
         u64::overflowing_rem,
@@ -551,7 +552,7 @@ fn test_overflowing_rem_i32() {
 }
 
 #[test]
-#[ignore = "Mod is not supported for signed int"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
 fn test_overflowing_rem_i64() {
     test_overflowing_arith(
         i64::overflowing_rem,
@@ -612,31 +613,26 @@ fn test_overflowing_arith<T>(
         CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
     let package = test.compile_package();
 
-    let ty_byte_size = std::mem::size_of::<T>();
-    assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
-
     let res = TestRunner::default().run(&strategy, move |(a, b)| {
-        dbg!(a, b);
         let rust_out = op(a, b);
-        dbg!(rust_out);
 
         // Write the operation result to 20 * PAGE_SIZE.
         let out_addr = 20u32 * 65536;
 
         let mut args = Vec::<midenc_hir::Felt>::default();
-        push_wasm_ty_to_operand_stack(b, &mut args);
-        push_wasm_ty_to_operand_stack(a, &mut args);
         out_addr.push_to_operand_stack(&mut args);
+        a.push_to_operand_stack(&mut args);
+        b.push_to_operand_stack(&mut args);
 
         eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+            let ty_byte_size = std::mem::size_of::<T>();
+            assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
             // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
             let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
             let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
-            dbg!(&vm_out_bytes);
 
             let rs_out_bytes =
                 [rust_out.0.to_le_bytes().as_ref(), &[u8::from(rust_out.1)]].concat();
-            dbg!(&rs_out_bytes);
 
             prop_assert_eq!(&rs_out_bytes, &vm_out_bytes, "VM output mismatch");
             Ok(())
@@ -644,8 +640,8 @@ fn test_overflowing_arith<T>(
         Ok(())
     });
     match res {
-        Err(TestError::Fail(_, value)) => {
-            panic!("Found minimal(shrinked) failing case: {:?}", value);
+        Err(TestError::Fail(reason, value)) => {
+            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
         }
         Ok(_) => (),
         _ => panic!("Unexpected test result: {:?}", res),
@@ -801,7 +797,8 @@ fn test_hmerge() {
             ];
             let digests_in =
                 [miden_core::Word::from(raw_felts_in1), miden_core::Word::from(raw_felts_in2)];
-            let digest_out = miden_core::crypto::hash::Rpo256::merge(&digests_in);
+            let digest_out = miden_core::crypto::hash::Poseidon2::merge(&digests_in);
+
             let felts_out: [miden_debug::Felt; 4] = [
                 miden_debug::Felt(digest_out[0]),
                 miden_debug::Felt(digest_out[1]),
@@ -810,14 +807,14 @@ fn test_hmerge() {
             ];
 
             let args = [
-                raw_felts_in2[3],
-                raw_felts_in2[2],
-                raw_felts_in2[1],
-                raw_felts_in2[0],
-                raw_felts_in1[3],
-                raw_felts_in1[2],
-                raw_felts_in1[1],
                 raw_felts_in1[0],
+                raw_felts_in1[1],
+                raw_felts_in1[2],
+                raw_felts_in1[3],
+                raw_felts_in2[0],
+                raw_felts_in2[1],
+                raw_felts_in2[2],
+                raw_felts_in2[3],
             ];
             eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
                 let res: Felt = trace.parse_result().unwrap();

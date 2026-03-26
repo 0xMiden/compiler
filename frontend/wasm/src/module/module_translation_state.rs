@@ -55,7 +55,7 @@ impl<'a> ModuleTranslationState<'a> {
             } else {
                 Visibility::Private
             };
-            let sig = sig_from_func_type(&ir_func_type, CallConv::SystemV);
+            let sig = sig_from_func_type(&ir_func_type, CallConv::C);
             if module.is_imported_function(index) {
                 assert!((index.as_u32() as usize) < module.num_imported_funcs);
                 let import = &module.imports[index.as_u32() as usize];

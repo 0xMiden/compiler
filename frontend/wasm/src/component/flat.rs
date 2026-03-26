@@ -12,6 +12,17 @@ use midenc_hir::{
     dialects::builtin::attributes::{AbiParam, Signature},
 };
 
+/// Identifies which kind of component wrapper is being flattened for the canonical ABI.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum CanonicalAbiMode {
+    /// Flatten the signature for a component export wrapper, i.e. the wrapper synthesized for
+    /// WAT `(canon lift)`.
+    Export,
+    /// Flatten the signature for a component import wrapper, i.e. the wrapper synthesized for
+    /// WAT `(canon lower)`.
+    Import,
+}
+
 #[derive(Debug, thiserror::Error, Diagnostic)]
 pub enum CanonicalTypeError {
     #[error("unexpected use of reserved canonical abi type: {0}")]
@@ -40,6 +51,13 @@ pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, C
         }
         Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
         Type::Felt => vec![AbiParam::new(Type::Felt)],
+        Type::Enum(enum_ty) => {
+            assert!(
+                enum_ty.is_c_like(),
+                "non-C-like enums are not yet supported in canonical ABI flattening: {enum_ty}"
+            );
+            flatten_type(context, enum_ty.discriminant())?
+        }
         Type::Struct(struct_ty) => struct_ty
             .fields()
             .iter()
@@ -81,7 +99,7 @@ pub fn flatten_types(
 pub fn flatten_function_type(
     context: &Rc<Context>,
     func_ty: &FunctionType,
-    cc: CallConv,
+    mode: CanonicalAbiMode,
 ) -> Result<Signature, CanonicalTypeError> {
     // from https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
     //
@@ -117,21 +135,20 @@ pub fn flatten_function_type(
         // returning an `i32` as a return value.
         assert_eq!(func_ty.results.len(), 1, "expected a single result");
         let result = func_ty.results.first().expect("unexpected empty results").clone();
-        match cc {
-            CallConv::CanonLift => {
+        match mode {
+            CanonicalAbiMode::Export => {
                 flat_results = vec![AbiParam::sret(Type::from(PointerType::new(result)), context)];
             }
-            CallConv::CanonLower => {
+            CanonicalAbiMode::Import => {
                 flat_params.push(AbiParam::sret(Type::from(PointerType::new(result)), context));
                 flat_results = vec![];
             }
-            _ => panic!("unexpected call convention, only CanonLift and CanonLower are supported"),
         }
     }
     Ok(Signature {
         params: flat_params,
         results: flat_results,
-        cc,
+        cc: CallConv::ComponentModel,
     })
 }
 
@@ -176,7 +193,9 @@ pub fn assert_core_wasm_signature_equivalence(
 mod tests {
     use std::sync::Arc;
 
-    use midenc_hir::{ArrayType, dialects::builtin::attributes::ArgumentExtension};
+    use midenc_hir::{
+        ArrayType, EnumType, Variant, dialects::builtin::attributes::ArgumentExtension,
+    };
 
     use super::*;
 
@@ -250,11 +269,48 @@ mod tests {
     }
 
     #[test]
+    fn test_flatten_type_c_like_enum() {
+        let context = Rc::new(Context::default());
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "status".into(),
+                Type::U8,
+                [Variant::c_like("ok".into(), Some(0)), Variant::c_like("err".into(), Some(1))],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension(), ArgumentExtension::Zext);
+    }
+
+    #[test]
+    #[should_panic = "non-C-like enums are not yet supported in canonical ABI flattening"]
+    fn test_flatten_type_non_c_like_enum_panics() {
+        let context = Rc::new(Context::default());
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "result".into(),
+                Type::U8,
+                [
+                    Variant::c_like("ok".into(), Some(0)),
+                    Variant::new("err".into(), Type::I32, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let _ = flatten_type(&context, &enum_ty);
+    }
+
+    #[test]
     fn test_flatten_type_struct() {
         let context = Rc::new(Context::default());
 
         // Empty struct
-        let empty_struct = Type::from(StructType::new(vec![]));
+        let empty_struct = Type::from(StructType::new(core::iter::empty::<Type>()));
         let result = flatten_type(&context, &empty_struct).unwrap();
         assert_eq!(result.len(), 0);
 
@@ -356,8 +412,8 @@ mod tests {
 
         let mut func_ty =
             FunctionType::new(CallConv::Fast, vec![Type::I32, Type::Felt], vec![Type::I32]);
-        func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 2);
         assert_eq!(sig.params()[0].ty, Type::I32);
@@ -366,7 +422,7 @@ mod tests {
         assert_eq!(sig.results().len(), 1);
         assert_eq!(sig.results()[0].ty, Type::I32);
 
-        assert_eq!(sig.cc, CallConv::CanonLift);
+        assert_eq!(sig.cc, CallConv::ComponentModel);
     }
 
     #[test]
@@ -376,8 +432,8 @@ mod tests {
         // Exactly 16 params - should not be transformed
         let params = vec![Type::I32; 16];
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
-        func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 16);
         assert!(sig.params().iter().all(|p| p.ty == Type::I32));
@@ -385,8 +441,8 @@ mod tests {
         // 17 params - should be transformed to pointer
         let params = vec![Type::I32; 17];
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
-        func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 1);
         assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
@@ -399,17 +455,17 @@ mod tests {
 
         // Single result - should not be transformed
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![Type::Felt]);
-        func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.results().len(), 1);
         assert_eq!(sig.results()[0].ty, Type::Felt);
 
-        // Multiple results with struct - should be transformed for CanonLift
+        // Multiple results with struct - should be transformed for lifted wrappers
         let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![struct_ty]);
-        func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 1);
         assert_eq!(sig.params()[0].ty, Type::I32);
@@ -423,18 +479,18 @@ mod tests {
     fn test_flatten_function_type_max_results_canon_lower() {
         let context = Rc::new(Context::default());
 
-        // Multiple results with struct - should be transformed differently for CanonLower
+        // Multiple results with struct - should be transformed differently for lowered imports
         let struct_ty = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![Type::I32], vec![struct_ty]);
-        func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLower).unwrap();
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Import).unwrap();
 
         assert_eq!(sig.params().len(), 2); // original param + return pointer
         assert_eq!(sig.params()[0].ty, Type::I32);
         assert!(matches!(sig.params()[1].ty, Type::Ptr(_)));
         assert!(sig.params()[1].is_sret_param());
 
-        assert_eq!(sig.results().len(), 0); // no results for CanonLower
+        assert_eq!(sig.results().len(), 0); // no results for lowered imports
     }
 
     #[test]
@@ -443,8 +499,8 @@ mod tests {
 
         // Empty function
         let mut func_ty = FunctionType::new(CallConv::Fast, vec![], vec![]);
-        func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
         assert_eq!(sig.params().len(), 0);
         assert_eq!(sig.results().len(), 0);
 
@@ -452,8 +508,8 @@ mod tests {
         let struct_ty = Type::from(StructType::new(vec![Type::I32; 10]));
         let params = vec![struct_ty.clone(), struct_ty]; // 20 total params when flattened
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![]);
-        func_ty.abi = CallConv::CanonLift;
-        let sig = flatten_function_type(&context, &func_ty, CallConv::CanonLift).unwrap();
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
 
         assert_eq!(sig.params().len(), 1); // transformed to pointer
         assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
@@ -467,7 +523,7 @@ mod tests {
         let sig = Signature {
             params: vec![AbiParam::new(Type::I32), AbiParam::new(Type::Felt)],
             results: vec![AbiParam::new(Type::I32)],
-            cc: CallConv::CanonLift,
+            cc: CallConv::ComponentModel,
         };
         assert!(!needs_transformation(&sig));
 
@@ -480,7 +536,7 @@ mod tests {
         let sig = Signature {
             params: vec![AbiParam::new(Type::I32)],
             results: vec![AbiParam::sret(Type::from(PointerType::new(Type::I32)), &context)],
-            cc: CallConv::CanonLift,
+            cc: CallConv::ComponentModel,
         };
         assert!(needs_transformation(&sig));
 
@@ -489,7 +545,7 @@ mod tests {
         let sig = Signature {
             params,
             results: vec![],
-            cc: CallConv::CanonLift,
+            cc: CallConv::ComponentModel,
         };
         assert!(needs_transformation(&sig));
 
@@ -498,7 +554,7 @@ mod tests {
         let sig = Signature {
             params,
             results: vec![],
-            cc: CallConv::CanonLift,
+            cc: CallConv::ComponentModel,
         };
         assert!(!needs_transformation(&sig));
     }

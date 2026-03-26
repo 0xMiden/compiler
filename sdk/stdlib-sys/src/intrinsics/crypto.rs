@@ -62,23 +62,26 @@ impl From<Digest> for [Felt; 4] {
     }
 }
 
-// Remove WIT import module and resolve via a linker stub instead. The stub will export
-// the MASM symbol `intrinsics::crypto::hmerge`, and the frontend will lower its
-// unreachable body to a MASM exec.
 #[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
-    /// Computes the hash of two digests using the Rescue Prime Optimized (RPO)
-    /// permutation in 2-to-1 mode.
+    /// Merges two words (256-bit digests) via Poseidon2.
     ///
-    /// This is the `hmerge` instruction in the Miden VM.
+    /// This maps to `miden::core::crypto::hashes::poseidon2::merge`.
     ///
-    /// Input: Pointer to an array of two digests (8 field elements total)
-    /// Output: One digest (4 field elements) written to the result pointer
-    #[link_name = "intrinsics::crypto::hmerge"]
-    fn extern_hmerge(
-        // Pointer to array of two digests
-        digests_ptr: *const Felt,
-        // Result pointer
+    /// Inputs:  `[A, B, ...]`
+    /// Outputs: `[C, ...]` where `C = Poseidon2(A || B)`
+    ///
+    /// The digest output is returned to the caller via `result_ptr`.
+    #[link_name = "miden::core::crypto::hashes::poseidon2::merge"]
+    fn extern_poseidon2_merge(
+        a0: Felt,
+        a1: Felt,
+        a2: Felt,
+        a3: Felt,
+        b0: Felt,
+        b1: Felt,
+        b2: Felt,
+        b3: Felt,
         result_ptr: *mut Felt,
     );
 }
@@ -96,10 +99,19 @@ unsafe extern "C" {
 pub fn merge(digests: [Digest; 2]) -> Digest {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        let result_ptr = ret_area.as_mut_ptr().addr() as u32;
+        let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
 
-        let digests_ptr = digests.as_ptr().addr() as u32;
-        extern_hmerge(digests_ptr as *const Felt, result_ptr as *mut Felt);
+        extern_poseidon2_merge(
+            digests[0].inner.a,
+            digests[0].inner.b,
+            digests[0].inner.c,
+            digests[0].inner.d,
+            digests[1].inner.a,
+            digests[1].inner.b,
+            digests[1].inner.c,
+            digests[1].inner.d,
+            result_ptr,
+        );
 
         Digest::from_word(ret_area.assume_init())
     }

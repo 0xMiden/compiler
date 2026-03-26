@@ -19,7 +19,7 @@ use midenc_dialect_hir::{HirOpBuilder, assertions};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
-    BlockRef, Builder, Felt, FieldElement, Immediate, Op, PointerType,
+    BlockRef, Builder, Felt, Immediate, Op, PointerType,
     Type::{self, *},
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,
@@ -375,17 +375,16 @@ pub fn translate_operator<B: ?Sized + Builder>(
             state.push1(builder.add_wrapping(arg1, arg2, span)?);
         }
         Operator::I64Add128 => {
-            let (rhs_hi, rhs_lo) = state.pop2();
-            let (lhs_hi, lhs_lo) = state.pop2();
+            let (rhs_lo, rhs_hi) = state.pop2();
+            let (lhs_lo, lhs_hi) = state.pop2();
 
             let lhs = builder.join2(lhs_hi, lhs_lo, Type::I128, span)?;
             let rhs = builder.join2(rhs_hi, rhs_lo, Type::I128, span)?;
 
             let res = builder.add_wrapping(lhs, rhs, span)?;
 
-            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_lo, res_hi]);
+            state.pushn(&[res_hi, res_lo]);
         }
         Operator::I32And | Operator::I64And => {
             let (arg1, arg2) = state.pop2();
@@ -470,17 +469,16 @@ pub fn translate_operator<B: ?Sized + Builder>(
             state.push1(builder.sub_wrapping(arg1, arg2, span)?);
         }
         Operator::I64Sub128 => {
-            let (rhs_hi, rhs_lo) = state.pop2();
-            let (lhs_hi, lhs_lo) = state.pop2();
+            let (rhs_lo, rhs_hi) = state.pop2();
+            let (lhs_lo, lhs_hi) = state.pop2();
 
             let lhs = builder.join2(lhs_hi, lhs_lo, Type::I128, span)?;
             let rhs = builder.join2(rhs_hi, rhs_lo, Type::I128, span)?;
 
             let res = builder.sub_wrapping(lhs, rhs, span)?;
 
-            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_lo, res_hi]);
+            state.pushn(&[res_hi, res_lo]);
         }
         Operator::I32Mul | Operator::I64Mul => {
             let (arg1, arg2) = state.pop2();
@@ -499,9 +497,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
-            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split2(res, Type::U64, span)?;
-            state.pushn(&[res_lo, res_hi]);
+            state.pushn(&[res_hi, res_lo]);
         }
         Operator::I64MulWideS => {
             let (arg1, arg2) = state.pop2();
@@ -511,9 +508,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
-            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_lo, res_hi]);
+            state.pushn(&[res_hi, res_lo]);
         }
         Operator::I32DivS | Operator::I64DivS => {
             let (arg1, arg2) = state.pop2();

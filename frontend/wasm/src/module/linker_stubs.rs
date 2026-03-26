@@ -13,6 +13,7 @@ use midenc_hir::{
     diagnostics::WrapErr,
     dialects::builtin::{BuiltinOpBuilder, FunctionRef, ModuleBuilder, attributes::Signature},
 };
+use midenc_hir_symbol::symbols;
 use wasmparser::{FunctionBody, Operator};
 
 use crate::{
@@ -78,6 +79,14 @@ pub fn maybe_lower_linker_stub(
     // Ensure the stub targets a known Miden ABI module or a recognized intrinsic.
     let is_intrinsic = Intrinsic::try_from(&import_path).is_ok();
     if !is_miden_abi_module(&import_path) && !is_intrinsic {
+        if import_path.namespace() == Some(symbols::Miden) {
+            panic!(
+                "Failed to recognize miden stub: {}, check that symbols.toml (used to \
+                 generate`symbols::<Symbol>` values) has all the parts right and it's signature \
+                 is defined in the frontend/wasm/src/miden_abi/",
+                import_path.to_library_path()
+            );
+        }
         return Ok(false);
     }
 

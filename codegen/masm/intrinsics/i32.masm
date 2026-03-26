@@ -174,7 +174,7 @@ pub proc overflowing_mul # [b, a]
         movup.2 cdrop                     # [-a or a, is_b_signed, b, negate_result]
         swap.2 dup.0 exec.unchecked_neg   # [-b, b, is_b_signed, -a or a, negate_result]
         movup.2 cdrop                     # [-b or b, -a or a, negate_result]
-        u32overflowing_mul                # [overflowed, result, negate_result]
+        u32widening_mul swap.1         # [overflowed, result, negate_result]
 
         # if the unsigned op overflowed, we definitely overflowed, but overflow
         # also occurred if the supposedly unsigned result has its sign bit set,

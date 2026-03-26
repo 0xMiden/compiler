@@ -52,7 +52,7 @@ pub use self::{
         UnsafeIntrusiveMapEntityRef,
     },
     ident::{FunctionIdent, Ident, IdentAttr},
-    immediates::{Felt, FieldElement, Immediate, ImmediateAttr, StarkField},
+    immediates::{Felt, Immediate, ImmediateAttr},
     op::{BuildableOp, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,

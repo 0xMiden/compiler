@@ -17,7 +17,7 @@ unsafe extern "C" {
 #[inline]
 #[cfg(all(target_family = "wasm", miden))]
 pub fn adv_push_mapvaln(key: Word) -> Felt {
-    unsafe { extern_adv_push_mapvaln(key[3], key[2], key[1], key[0]) }
+    unsafe { extern_adv_push_mapvaln(key[0], key[1], key[2], key[3]) }
 }
 
 #[inline]
@@ -51,7 +51,7 @@ unsafe extern "C" {
 pub fn emit_falcon_sig_to_stack(msg: Word, pub_key: Word) {
     unsafe {
         extern_emit_falcon_sig_to_stack(
-            msg[3], msg[2], msg[1], msg[0], pub_key[3], pub_key[2], pub_key[1], pub_key[0],
+            msg[0], msg[1], msg[2], msg[3], pub_key[0], pub_key[1], pub_key[2], pub_key[3],
         );
     }
 }
@@ -82,7 +82,7 @@ unsafe extern "C" {
 #[inline]
 #[cfg(all(target_family = "wasm", miden))]
 pub fn adv_insert_mem(key: Word, start_addr: u32, end_addr: u32) {
-    unsafe { extern_adv_insert_mem(key[3], key[2], key[1], key[0], start_addr, end_addr) }
+    unsafe { extern_adv_insert_mem(key[0], key[1], key[2], key[3], start_addr, end_addr) }
 }
 
 /// Insert memory region [start, end) into advice map under the given key.

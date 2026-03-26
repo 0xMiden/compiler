@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::Overflow;
 
 use super::*;
@@ -106,8 +106,25 @@ impl OpEmitter<'_> {
         match (&src, dst) {
             // If the types are equivalent, it's a no-op, but only if they are integers
             (src, dst) if src == dst => (),
-            // Zero-extending a u64 to i128 simply requires pushing a 0u64 on the stack
-            (Type::U64, Type::U128 | Type::I128) => self.push_u64(0, span),
+            // Zero-extending a u64 to u128/i128 requires us to provide the most-significant bits
+            // of the resulting 128-bit value. This is achieved by pushing a `0u64` value below
+            // the current u64 on the operand stack, as the limb order of multi-limb integer
+            // values is little-endian.
+            //
+            // u64 is represented as two u32 limbs; u128/i128 as four u32 limbs. With the least-
+            // significant limb on top, we want to transform:
+            //
+            // - before: [lo, hi]
+            // - after : [lo, hi, 0, 0]
+            //
+            // where the additional 0 limbs are the most-significant u32 limbs.
+            (Type::U64, Type::U128 | Type::I128) => {
+                // Push 0u64 (two u32 limbs) then rotate the original limbs back to the top.
+                self.push_u64(0, span);
+                self.emit(movup_from_offset(2), span);
+                self.emit(movup_from_offset(3), span);
+                self.emit(masm::Instruction::Swap1, span);
+            }
             (Type::Felt, Type::U64 | Type::U128 | Type::I128) => self.zext_felt(dst_bits, span),
             (Type::U32, Type::U64 | Type::I64 | Type::U128 | Type::I128) => {
                 self.zext_int32(dst_bits, span)

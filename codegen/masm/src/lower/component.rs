@@ -1,9 +1,9 @@
 use alloc::{collections::BTreeSet, sync::Arc};
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
-use miden_assembly_syntax::parser::WordValue;
+use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use midenc_hir::{
-    CallConv, FunctionIdent, Op, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
+    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
     diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
@@ -162,7 +162,7 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
         Some(merged) => {
             let data = alloc::sync::Arc::new(ConstantData::from(merged.data));
             let felts = crate::Rodata::bytes_to_elements(data.as_slice());
-            let digest = miden_core::crypto::hash::Rpo256::hash_elements(&felts);
+            let digest = miden_core::crypto::hash::Poseidon2::hash_elements(&felts);
             alloc::vec![crate::Rodata {
                 component: link_info.component().clone(),
                 digest,
@@ -603,7 +603,7 @@ impl MasmFunctionBuilder {
 
         // For component export functions, invoke the `init` procedure first if needed.
         // It loads the data segments and global vars into memory.
-        if function.signature().cc == CallConv::CanonLift
+        if function.signature().cc.is_wasm_canonical_abi()
             && (link_info.has_globals() || link_info.has_data_segments())
         {
             let component_path = link_info.component().to_library_path();
@@ -621,7 +621,7 @@ impl MasmFunctionBuilder {
 
         let mut body = emitter.emit(&entry.borrow());
 
-        if function.signature().cc == CallConv::CanonLift {
+        if function.signature().cc.is_wasm_canonical_abi() {
             // Truncate the stack to 16 elements on exit in the component export function
             // since it is expected to be `call`ed so it has a requirement to have
             // no more than 16 elements on the stack when it returns.
@@ -648,6 +648,11 @@ impl MasmFunctionBuilder {
 
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
+        if function.has_attribute("auth_script") {
+            procedure
+                .attributes_mut()
+                .insert(Attribute::Marker(masm::Ident::new("auth_script").unwrap()));
+        }
         procedure.extend_invoked(invoked);
 
         Ok(procedure)

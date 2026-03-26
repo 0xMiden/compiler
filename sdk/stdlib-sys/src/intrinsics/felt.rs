@@ -1,6 +1,6 @@
 //! Felt-related intrinsics and helpers.
 
-pub use miden_field::{Felt, FeltError};
+pub use miden_field::Felt;
 
 #[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
@@ -39,7 +39,7 @@ pub fn assert_eq(a: Felt, b: Felt) {
 #[cfg(not(all(target_family = "wasm", miden)))]
 #[inline(always)]
 pub fn assert(a: Felt) {
-    if a != Felt::from_u64_unchecked(1) {
+    if a != Felt::new(1) {
         panic!("assert: expected 1");
     }
 }
@@ -48,7 +48,7 @@ pub fn assert(a: Felt) {
 #[cfg(not(all(target_family = "wasm", miden)))]
 #[inline(always)]
 pub fn assertz(a: Felt) {
-    if a != Felt::from_u64_unchecked(0) {
+    if a != Felt::new(0) {
         panic!("assertz: expected 0");
     }
 }
@@ -70,10 +70,6 @@ macro_rules! felt {
     ($value:literal) => {{
         const VALUE: u64 = $value as u64;
         // assert!(VALUE <= Felt::M, "Invalid Felt value, must be >= 0 and <= 2^64 - 2^32 + 1");
-        // Temporarily switch to `from_u32` to use `bitcast` and avoid checks.
-        // see https://github.com/0xMiden/compiler/issues/361
-        assert!(VALUE <= u32::MAX as u64, "Invalid value, must be >= 0 and <= 2^32");
-        const VALUE_U32: u32 = $value as u32;
-        $crate::Felt::from_u32(VALUE_U32)
+        $crate::Felt::new(VALUE)
     }};
 }

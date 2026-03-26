@@ -434,9 +434,7 @@ impl HirEvaluator {
     }
 
     /// Construct a [Report] from an error diagnostic consisting of a simple message and label.
-    pub fn report(&self, message: impl ToString, _at: SourceSpan, label: impl ToString) -> Report {
-        panic!("{}: {}", message.to_string(), label.to_string())
-        /*
+    pub fn report(&self, message: impl ToString, at: SourceSpan, label: impl ToString) -> Report {
         self.context
             .session()
             .diagnostics
@@ -444,7 +442,6 @@ impl HirEvaluator {
             .with_message(message)
             .with_primary_label(at, label)
             .into_report()
-             */
     }
 
     pub fn current_span(&self) -> SourceSpan {

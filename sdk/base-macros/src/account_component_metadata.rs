@@ -4,7 +4,7 @@ use miden_protocol::account::{
     AccountType, StorageSlotName,
     component::{
         AccountComponentMetadata, MapSlotSchema, StorageSchema, StorageSlotSchema, ValueSlotSchema,
-        WordSchema, storage::SchemaTypeId,
+        WordSchema, storage::SchemaType,
     },
 };
 use proc_macro2::Span;
@@ -13,16 +13,11 @@ use syn::spanned::Spanned;
 
 use crate::{component_macro::typecheck_storage_field, types::StorageFieldType};
 
-/// Extracts the type arguments for a storage field of the form `Storage<T>` or `StorageMap<K, V>`.
-///
-/// Proc macros cannot perform type resolution; this helper only inspects the syntactic type path
-/// written in the component's struct field.
+/// Extracts the generic type arguments from a storage field declaration.
 fn extract_storage_type_args(field: &syn::Field) -> Result<Vec<syn::Type>, syn::Error> {
     let type_path = match &field.ty {
         syn::Type::Path(type_path) => type_path,
-        _ => {
-            return Err(syn::Error::new(field.span(), "storage field type must be a path"));
-        }
+        _ => return Err(syn::Error::new(field.span(), "storage field type must be a path")),
     };
 
     let last_segment = type_path
@@ -35,46 +30,42 @@ fn extract_storage_type_args(field: &syn::Field) -> Result<Vec<syn::Type>, syn::
         return Ok(Vec::new());
     };
 
-    let mut out = Vec::new();
-    for arg in args.args.iter() {
-        if let syn::GenericArgument::Type(ty) = arg {
-            out.push(ty.clone());
-        }
-    }
-
-    Ok(out)
+    Ok(args
+        .args
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::GenericArgument::Type(ty) => Some(ty.clone()),
+            _ => None,
+        })
+        .collect())
 }
 
-/// Derives a [`SchemaTypeId`] from a storage field's type argument.
-///
-/// Storage items and map keys/values are stored as a single protocol `Word`. The schema type is
-/// used for init-time parsing/validation and for downstream introspection. When the type argument
-/// corresponds to a known protocol schema type (e.g. `Felt`), we return the matching identifier.
-/// Otherwise, we conservatively fall back to `word`.
-fn schema_type_id_from_storage_type_arg(ty: &syn::Type) -> SchemaTypeId {
+/// Derives the protocol storage schema type from a storage type argument.
+fn schema_type_from_storage_type_arg(ty: &syn::Type) -> SchemaType {
     let syn::Type::Path(type_path) = ty else {
-        return SchemaTypeId::native_word();
+        return SchemaType::native_word();
     };
 
     let Some(last_segment) = type_path.path.segments.last() else {
-        return SchemaTypeId::native_word();
+        return SchemaType::native_word();
     };
 
     match last_segment.ident.to_string().as_str() {
-        "Word" => SchemaTypeId::native_word(),
-        "Felt" => SchemaTypeId::native_felt(),
-        "u8" => SchemaTypeId::u8(),
-        "u16" => SchemaTypeId::u16(),
-        "u32" => SchemaTypeId::u32(),
-        _ => SchemaTypeId::native_word(),
+        "Word" => SchemaType::native_word(),
+        "Felt" => SchemaType::native_felt(),
+        "u8" => SchemaType::u8(),
+        "u16" => SchemaType::u16(),
+        "u32" => SchemaType::u32(),
+        _ => SchemaType::native_word(),
     }
 }
 
-/// Builds a simple [`WordSchema`] for a storage field's type argument.
+/// Builds a simple word schema from a storage type argument.
 fn word_schema_from_storage_type_arg(ty: &syn::Type) -> WordSchema {
-    WordSchema::new_simple(schema_type_id_from_storage_type_arg(ty))
+    WordSchema::new_simple(schema_type_from_storage_type_arg(ty))
 }
 
+/// Builds protocol metadata for an account component during macro expansion.
 pub struct AccountComponentMetadataBuilder {
     /// The human-readable name of the component.
     name: String,
@@ -83,7 +74,6 @@ pub struct AccountComponentMetadataBuilder {
     description: String,
 
     /// The version of the component using semantic versioning.
-    /// This can be used to track and manage component upgrades.
     version: Version,
 
     /// A set of supported target account types for this component.
@@ -94,14 +84,9 @@ pub struct AccountComponentMetadataBuilder {
 }
 
 impl AccountComponentMetadataBuilder {
-    /// Adds a supported account type to this component metadata.
-    pub fn add_supported_type(&mut self, account_type: AccountType) {
-        self.supported_types.insert(account_type);
-    }
-
-    /// Creates a new [`AccountComponentMetadataBuilder`].
+    /// Creates a new metadata builder.
     pub fn new(name: String, version: Version, description: String) -> Self {
-        AccountComponentMetadataBuilder {
+        Self {
             name,
             description,
             version,
@@ -110,7 +95,12 @@ impl AccountComponentMetadataBuilder {
         }
     }
 
-    /// Adds a storage slot schema entry for `field`.
+    /// Adds a supported account type to this component metadata.
+    pub fn add_supported_type(&mut self, account_type: AccountType) {
+        self.supported_types.insert(account_type);
+    }
+
+    /// Adds a storage-schema entry derived from a component field.
     pub fn add_storage_entry(
         &mut self,
         slot_name: StorageSlotName,
@@ -124,11 +114,11 @@ impl AccountComponentMetadataBuilder {
                 let key_schema = args
                     .first()
                     .map(word_schema_from_storage_type_arg)
-                    .unwrap_or_else(|| WordSchema::new_simple(SchemaTypeId::native_word()));
+                    .unwrap_or_else(|| WordSchema::new_simple(SchemaType::native_word()));
                 let value_schema = args
                     .get(1)
                     .map(word_schema_from_storage_type_arg)
-                    .unwrap_or_else(|| WordSchema::new_simple(SchemaTypeId::native_word()));
+                    .unwrap_or_else(|| WordSchema::new_simple(SchemaType::native_word()));
                 let slot_schema = StorageSlotSchema::Map(MapSlotSchema::new(
                     description,
                     None,
@@ -138,21 +128,21 @@ impl AccountComponentMetadataBuilder {
                 self.storage.push((slot_name, slot_schema));
             }
             StorageFieldType::Storage => {
-                let r#type = if let Some(field_type) = field_type_attr.as_deref() {
-                    SchemaTypeId::new(field_type).map_err(|err| {
+                let schema_type = if let Some(field_type) = field_type_attr.as_deref() {
+                    SchemaType::new(field_type).map_err(|err| {
                         syn::Error::new(
                             field.span(),
-                            format!("invalid storage schema type identifier '{field_type}': {err}"),
+                            format!("invalid storage field type attribute `{field_type}`: {err}"),
                         )
                     })?
                 } else {
                     let args = extract_storage_type_args(field)?;
                     args.first()
-                        .map(schema_type_id_from_storage_type_arg)
-                        .unwrap_or_else(SchemaTypeId::native_word)
+                        .map(schema_type_from_storage_type_arg)
+                        .unwrap_or_else(SchemaType::native_word)
                 };
 
-                let word_schema = WordSchema::new_simple(r#type);
+                let word_schema = WordSchema::new_simple(schema_type);
                 let slot_schema =
                     StorageSlotSchema::Value(ValueSlotSchema::new(description, word_schema));
                 self.storage.push((slot_name, slot_schema));
@@ -162,18 +152,15 @@ impl AccountComponentMetadataBuilder {
         Ok(())
     }
 
-    /// Builds a new [`AccountComponentMetadata`].
+    /// Builds the final [`AccountComponentMetadata`].
     pub fn build(self, span: Span) -> Result<AccountComponentMetadata, syn::Error> {
         let storage_schema = StorageSchema::new(self.storage).map_err(|err| {
             syn::Error::new(span, format!("failed to build component storage schema: {err}"))
         })?;
 
-        Ok(AccountComponentMetadata::new(
-            self.name,
-            self.description,
-            self.version,
-            self.supported_types,
-            storage_schema,
-        ))
+        Ok(AccountComponentMetadata::new(self.name, self.supported_types)
+            .with_description(self.description)
+            .with_version(self.version)
+            .with_storage_schema(storage_schema))
     }
 }

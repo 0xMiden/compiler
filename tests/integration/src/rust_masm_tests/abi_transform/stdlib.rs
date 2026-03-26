@@ -1,9 +1,9 @@
 use core::panic;
 use std::collections::VecDeque;
 
-use miden_core::{FieldElement, utils::group_slice_elements};
-use miden_debug::{Executor, Felt as TestFelt, ToMidenRepr};
-use miden_processor::AdviceInputs;
+use miden_core::{Word, advice::AdviceStackBuilder, utils::group_slice_elements};
+use miden_debug::{Executor, ToMidenRepr};
+use miden_processor::advice::AdviceInputs;
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
@@ -40,18 +40,10 @@ fn test_hash_elements() {
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
     let config = proptest::test_runner::Config::with_cases(32);
-    // let res = TestRunner::new(config).run(&any::<[miden_debug::Felt; 8]>(), move |test_felts| {
     let res = TestRunner::new(config).run(&any::<Vec<miden_debug::Felt>>(), move |test_felts| {
         let raw_felts: Vec<Felt> = test_felts.into_iter().map(From::from).collect();
 
-        dbg!(raw_felts.len());
-        let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&raw_felts);
-        let expected_felts: [TestFelt; 4] = [
-            TestFelt(expected_digest[0]),
-            TestFelt(expected_digest[1]),
-            TestFelt(expected_digest[2]),
-            TestFelt(expected_digest[3]),
-        ];
+        let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&raw_felts);
         let wide_ptr_addr = 20u32 * 65536; // 1310720
 
         // The order below is exactly the order Rust compiled code is expected to have the data
@@ -63,24 +55,15 @@ fn test_hash_elements() {
             Felt::ZERO,
         ];
         wide_ptr.extend_from_slice(&raw_felts);
-        let initializers = [
-            Initializer::MemoryFelts {
-                addr: wide_ptr_addr / 4,
-                felts: (&wide_ptr).into(),
-            },
-            // TODO: multiple initializers do not work
-            // Initializer::MemoryFelts {
-            //     addr: in_addr / 4,
-            //     felts: raw_felts.into(),
-            // },
-        ];
+        let initializers = [Initializer::MemoryFelts {
+            addr: wide_ptr_addr / 4,
+            felts: (&wide_ptr).into(),
+        }];
 
         let args = [Felt::new(wide_ptr_addr as u64)];
 
         eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
             let res: Felt = trace.parse_result().unwrap();
-            dbg!(res);
-            dbg!(expected_digest[0]);
             prop_assert_eq!(res, expected_digest[0]);
             Ok(())
         })?;
@@ -130,7 +113,7 @@ fn test_hash_words() {
                 flat_felts.extend_from_slice(w);
             }
 
-            let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&flat_felts);
+            let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
             let wide_ptr_addr = 20u32 * 65536;
 
@@ -207,26 +190,40 @@ fn test_pipe_words_to_memory() {
                 flat_felts.extend_from_slice(w);
             }
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
-            let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&flat_felts);
+            let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
-            // `pipe_words_to_memory` reads words from the advice stack in LIFO order.
-            // To preserve the original order, push the words in reverse.
-            let mut advice_stack: Vec<Felt> = Vec::with_capacity(flat_felts.len());
-            for w in raw_words.iter().rev() {
-                // Push each word as `d, c, b, a` so that `a` is on top of the stack.
-                advice_stack.push(w[3]);
-                advice_stack.push(w[2]);
-                advice_stack.push(w[1]);
-                advice_stack.push(w[0]);
+            let mut advice_builder = AdviceStackBuilder::new();
+
+            // `pipe_words_to_memory` consumes words via `adv_pipe` in pairs, then (if needed)
+            // consumes a final word via `adv_loadw`.
+            let has_odd_word = (raw_words.len() % 2) == 1;
+            let pairs_len_words = if has_odd_word {
+                raw_words.len() - 1
+            } else {
+                raw_words.len()
+            };
+
+            if pairs_len_words > 0 {
+                let mut pipe_elems = Vec::with_capacity(pairs_len_words * 4);
+                for w in raw_words.iter().take(pairs_len_words) {
+                    pipe_elems.extend_from_slice(w);
+                }
+                advice_builder.push_for_adv_pipe(&pipe_elems);
             }
 
-            // `entrypoint` args are passed on the operand stack in reverse order.
+            if has_odd_word {
+                let last = raw_words.last().expect("raw_words is non-empty when has_odd_word");
+                advice_builder.push_for_adv_loadw(Word::new(*last));
+            }
+
+            let advice_stack = advice_builder.into_elements();
+
             let args = [
-                Felt::from(raw_words.len() as u32),
-                expected_digest[3],
-                expected_digest[2],
-                expected_digest[1],
                 expected_digest[0],
+                expected_digest[1],
+                expected_digest[2],
+                expected_digest[3],
+                Felt::from(raw_words.len() as u32),
             ];
 
             eval_package_with_advice_stack::<Felt, _, _, _>(
@@ -297,25 +294,18 @@ fn test_pipe_double_words_to_memory() {
                 flat_felts.extend_from_slice(w);
             }
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
-            let expected_digest = miden_core::crypto::hash::Rpo256::hash_elements(&flat_felts);
+            let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
-            // `pipe_double_words_to_memory` reads words from the advice stack in LIFO order.
-            let mut advice_stack: Vec<Felt> = Vec::with_capacity(flat_felts.len());
-            for w in raw_words.iter().rev() {
-                // Push each word as `d, c, b, a` so that `a` is on top of the stack.
-                advice_stack.push(w[3]);
-                advice_stack.push(w[2]);
-                advice_stack.push(w[1]);
-                advice_stack.push(w[0]);
-            }
+            let mut advice_builder = AdviceStackBuilder::new();
+            advice_builder.push_for_adv_pipe(&flat_felts);
+            let advice_stack = advice_builder.into_elements();
 
-            // `entrypoint` args are passed on the operand stack in reverse order.
             let args = [
-                Felt::from(raw_words.len() as u32),
-                expected_digest[3],
-                expected_digest[2],
-                expected_digest[1],
                 expected_digest[0],
+                expected_digest[1],
+                expected_digest[2],
+                expected_digest[3],
+                Felt::from(raw_words.len() as u32),
             ];
 
             eval_package_with_advice_stack::<Felt, _, _, _>(

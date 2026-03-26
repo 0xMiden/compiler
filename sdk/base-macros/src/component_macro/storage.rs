@@ -83,12 +83,12 @@ fn parse_storage_attribute(
 /// Converts a [`miden_protocol::account::StorageSlotId`] into tokens that reconstruct it as a
 /// constant expression.
 fn slot_id_tokens(id: miden_protocol::account::StorageSlotId) -> proc_macro2::TokenStream {
-    let suffix = id.suffix().as_int();
-    let prefix = id.prefix().as_int();
+    let suffix = id.suffix().as_canonical_u64();
+    let prefix = id.prefix().as_canonical_u64();
     quote! {
         ::miden::StorageSlotId::new(
-            ::miden::Felt::from_u64_unchecked(#suffix),
-            ::miden::Felt::from_u64_unchecked(#prefix),
+            ::miden::Felt::new(#suffix),
+            ::miden::Felt::new(#prefix),
         )
     }
 }
@@ -158,7 +158,8 @@ pub fn process_storage_fields(
                     )
                 })?;
             let slot_id = slot_name.id();
-            let slot_id_key = (slot_id.suffix().as_int(), slot_id.prefix().as_int());
+            let slot_id_key =
+                (slot_id.suffix().as_canonical_u64(), slot_id.prefix().as_canonical_u64());
             if let Some(existing_field) = slot_ids.get(&slot_id_key) {
                 errors.push(syn::Error::new(
                     field.span(),

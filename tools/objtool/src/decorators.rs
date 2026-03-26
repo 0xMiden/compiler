@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 use miden_core::{
     mast::MastForest,
-    utils::{Deserializable, Serializable},
+    serde::{Deserializable, Serializable},
 };
 use miden_mast_package::{MastArtifact, Package, PackageKind};
 
@@ -50,11 +50,9 @@ pub fn run(command: DecoratorsCommand) -> Result<()> {
     let original_forest_size = forest_size(&original_forest);
 
     let mut stripped_forest = original_forest.clone();
-    stripped_forest.strip_decorators();
+    stripped_forest.clear_debug_info();
 
-    let mut compacted_forest = original_forest.clone();
-    compacted_forest.strip_decorators();
-    compacted_forest.compact();
+    let (compacted_forest, _) = stripped_forest.clone().compact();
 
     let report = Report {
         input: command.path.display().to_string(),

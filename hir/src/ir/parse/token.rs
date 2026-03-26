@@ -1,10 +1,7 @@
 use alloc::string::String;
 use core::fmt;
 
-use miden_core::{
-    Felt, FieldElement, StarkField,
-    utils::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable},
-};
+use miden_core::Felt;
 
 use crate::{CompactString, Type};
 

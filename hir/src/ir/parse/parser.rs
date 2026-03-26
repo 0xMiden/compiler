@@ -1,7 +1,9 @@
+use core::str::FromStr;
+
 use super::*;
 use crate::{
-    ArrayType, AttributeRef, AttributeRegistration, FunctionType, ImmediateAttr, PointerType,
-    StructType, SymbolNameComponent, SymbolPath, SymbolUse,
+    ArrayType, AttributeRef, AttributeRegistration, CallConv, FunctionType, ImmediateAttr,
+    PointerType, StructType, SymbolNameComponent, SymbolPath, SymbolUse,
     diagnostics::{LabeledSpan, RelatedError, Report, Severity, miette::diagnostic},
     dialects::builtin::{
         self,
@@ -990,23 +992,16 @@ pub trait Parser<'input> {
             let cc = self.parse_string()?;
             self.parse_rparen()?;
             let cc_span = cc.span();
-            Some(match cc.as_str() {
-                "C" => crate::CallConv::SystemV,
-                "canon-lift" => crate::CallConv::CanonLift,
-                "canon-lower" => crate::CallConv::CanonLower,
-                "fast" => crate::CallConv::Fast,
-                "wasm" => crate::CallConv::Wasm,
-                other => {
-                    return Err(ParserError::Report(RelatedError::new(Report::from(diagnostic!(
-                        severity = Severity::Error,
-                        labels = vec![LabeledSpan::at(
-                            cc_span,
-                            format!("unrecognized calling convention '{other}'")
-                        )],
-                        "invalid calling convention string"
-                    )))));
-                }
-            })
+            Some(CallConv::from_str(cc.as_str()).map_err(|_| {
+                ParserError::Report(RelatedError::new(Report::from(diagnostic!(
+                    severity = Severity::Error,
+                    labels = vec![LabeledSpan::at(
+                        cc_span,
+                        format!("unrecognized calling convention '{}'", cc.as_str())
+                    )],
+                    "invalid calling convention string"
+                ))))
+            })?)
         } else {
             None
         };

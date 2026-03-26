@@ -71,7 +71,6 @@ fn test_i32_extend8_s() {
             &[Felt::from(input)],
             context.session(),
             |trace| {
-                dbg!(format!("{:b}", input));
                 let outputs = trace.outputs().as_int_vec();
                 assert_single_output(expected_out as u64, outputs);
                 Ok(())
@@ -145,7 +144,6 @@ fn test_i32_extend16_s() {
             &[Felt::from(input)],
             context.session(),
             |trace| {
-                dbg!(format!("{:b}", input));
                 let outputs = trace.outputs().as_int_vec();
                 assert_single_output(expected_out as u64, outputs);
                 Ok(())
@@ -227,7 +225,6 @@ fn test_i64_extend8_s() {
         input.push_to_operand_stack(&mut args);
 
         eval_package::<u64, _, _>(&package, None, &args, context.session(), |trace| {
-            dbg!(format!("{:b}", input));
             let out = trace.parse_result::<u64>().unwrap();
             assert_eq!(out, expected_out);
             Ok(())
@@ -298,7 +295,6 @@ fn test_i64_extend16_s() {
         input.push_to_operand_stack(&mut args);
 
         eval_package::<u64, _, _>(&package, None, &args, context.session(), |trace| {
-            dbg!(format!("{:b}", input));
             let out = trace.parse_result::<u64>().unwrap();
             assert_eq!(out, expected_out);
             Ok(())
@@ -369,7 +365,6 @@ fn test_i64_extend32_s() {
         input.push_to_operand_stack(&mut args);
 
         eval_package::<u64, _, _>(&package, None, &args, context.session(), |trace| {
-            dbg!(format!("{:b}", input));
             let out = trace.parse_result::<u64>().unwrap();
             assert_eq!(out, expected_out);
             Ok(())

@@ -1,10 +1,11 @@
 use alloc::format;
+use core::str::FromStr;
 
 use crate::{
     AsValueRange, BlockRef, CallConv, CallableOpInterface, CallableSymbol, EntityRef, IdentAttr,
     Immediate, ImmediateAttr, Op, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface,
-    RegionRef, SmallVec, Symbol, SymbolUse, SymbolUseList, ToCompactString, Type,
-    UnsafeIntrusiveEntityRef, Usable, Visibility,
+    RegionRef, SmallVec, Symbol, SymbolUse, SymbolUseList, Type, UnsafeIntrusiveEntityRef, Usable,
+    Visibility,
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
@@ -90,22 +91,14 @@ impl OpParser for Function {
 
         parser.parse_lparen()?;
         let cc_string = parser.parse_string()?;
-        let cc = match cc_string.as_str() {
-            "fast" => CallConv::Fast,
-            "C" => CallConv::SystemV,
-            "wasm" => CallConv::Wasm,
-            "canon-lift" => CallConv::CanonLift,
-            "canon-lower" => CallConv::CanonLower,
-            "kernel" => CallConv::Kernel,
-            _ => {
-                let (span, cc_string) = cc_string.into_parts();
-                return Err(ParserError::UnexpectedToken {
-                    span,
-                    token: cc_string.into_string(),
-                    expected: Some("calling convention string".to_string()),
-                });
+        let cc = CallConv::from_str(cc_string.as_str()).map_err(|_| {
+            let (span, cc_string) = cc_string.into_parts();
+            ParserError::UnexpectedToken {
+                span,
+                token: cc_string.into_string(),
+                expected: Some("calling convention string".to_string()),
             }
-        };
+        })?;
         parser.parse_rparen()?;
 
         let name = parser.parse_symbol_name()?;
@@ -152,7 +145,7 @@ impl OpPrinter for Function {
         printer.print_space();
         printer.print_keyword("extern");
         printer.print_lparen();
-        printer.print_string(sig.calling_convention().to_compact_string());
+        printer.print_string(sig.calling_convention().as_str());
         printer.print_rparen();
         printer.print_space();
 

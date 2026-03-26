@@ -76,11 +76,3 @@ pub struct MemCpy {
     #[operand]
     count: UInt32,
 }
-
-#[derive(EffectOpInterface, OpPrinter, OpParser)]
-#[operation(
-    dialect = HirDialect,
-    implements(MemoryEffectOpInterface, OpPrinter)
-)]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
-pub struct Breakpoint {}

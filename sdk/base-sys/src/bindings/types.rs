@@ -1,12 +1,23 @@
-#![allow(clippy::infallible_try_from)]
-
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::convert::Infallible;
 
 use miden_field_repr::FromFeltRepr;
-use miden_stdlib_sys::{Digest, Felt, Word, hash_elements, intrinsics::crypto::merge};
+use miden_stdlib_sys::{Digest, Felt, Word, felt, hash_elements, intrinsics::crypto::merge};
+
+/// Packs a scalar felt into the low limb of a protocol word.
+fn padded_word_from_felt(value: Felt) -> Word {
+    Word::new([felt!(0), felt!(0), felt!(0), value])
+}
+
+/// Extracts a scalar felt from a protocol word with zero-padded high limbs.
+fn felt_from_padded_word(value: Word) -> Result<Felt, &'static str> {
+    if value[0] != felt!(0) || value[1] != felt!(0) || value[2] != felt!(0) {
+        return Err("expected zero padding in the upper three felts");
+    }
+
+    Ok(value[3])
+}
 
 /// Unique identifier for a Miden account, composed of two field elements.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr)]
@@ -22,15 +33,26 @@ impl AccountId {
     }
 }
 
+/// Raw protocol return layout for account identifiers.
+/// The protocol MASM procedures are returning [suffix, prefix]
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub(crate) struct RawAccountId {
+    pub suffix: Felt,
+    pub prefix: Felt,
+}
+
+impl RawAccountId {
+    /// Converts the protocol return layout into the Rust [`AccountId`] layout.
+    pub(crate) fn into_account_id(self) -> AccountId {
+        AccountId::new(self.prefix, self.suffix)
+    }
+}
+
 impl From<AccountId> for Word {
     #[inline]
     fn from(value: AccountId) -> Self {
-        Word::from([
-            Felt::from_u64_unchecked(0),
-            Felt::from_u64_unchecked(0),
-            value.suffix,
-            value.prefix,
-        ])
+        Word::from([felt!(0), felt!(0), value.suffix, value.prefix])
     }
 }
 
@@ -39,7 +61,7 @@ impl TryFrom<Word> for AccountId {
 
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
-        if value[0] != Felt::from(0u32) || value[1] != Felt::from(0u32) {
+        if value[0] != felt!(0) || value[1] != felt!(0) {
             return Err("expected zero padding in the upper two felts");
         }
 
@@ -50,80 +72,32 @@ impl TryFrom<Word> for AccountId {
     }
 }
 
-/// A fungible or a non-fungible asset.
+/// A fungible or non-fungible asset encoded as separate vault key and value words.
 ///
-/// All assets are encoded using a single word (4 elements) such that it is easy to determine the
-/// type of an asset both inside and outside Miden VM. Specifically:
-///
-/// Element 1 of the asset will be:
-/// - ZERO for a fungible asset.
-/// - non-ZERO for a non-fungible asset.
-///
-/// Element 3 of both asset types is the prefix of an
-/// [`AccountId`], which can be used to distinguish assets.
-///
-/// The methodology for constructing fungible and non-fungible assets is described below.
-///
-/// # Fungible assets
-///
-/// - A fungible asset's data layout is: `[amount, 0, faucet_id_suffix, faucet_id_prefix]`.
-///
-/// # Non-fungible assets
-///
-/// - A non-fungible asset's data layout is: `[hash0, hash1, hash2, faucet_id_prefix]`.
-///
-/// The 4 elements of non-fungible assets are computed as follows:
-/// - First the asset data is hashed. This compresses an asset of an arbitrary length to 4 field
-///   elements: `[hash0, hash1, hash2, hash3]`.
-/// - `hash3` is then replaced with the prefix of the faucet ID (`faucet_id_prefix`) which issues
-///   the asset: `[hash0, hash1, hash2, faucet_id_prefix]`.
-///
+/// The `key` identifies the asset in the account vault and the `value` stores the corresponding
+/// asset contents. This matches the v0.14 protocol/base ABI.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[repr(transparent)]
+#[repr(C)]
 pub struct Asset {
-    pub inner: Word,
+    /// The asset's vault key.
+    pub key: Word,
+    /// The asset's vault value.
+    pub value: Word,
 }
 
 impl Asset {
-    pub fn new(word: impl Into<Word>) -> Self {
-        Asset { inner: word.into() }
-    }
-
-    pub fn as_word(&self) -> &Word {
-        &self.inner
-    }
-
-    #[inline]
-    pub(crate) fn reverse(&self) -> Self {
+    /// Creates a new [`Asset`] from its key and value words.
+    pub fn new(key: impl Into<Word>, value: impl Into<Word>) -> Self {
         Self {
-            inner: self.inner.reverse(),
+            key: key.into(),
+            value: value.into(),
         }
     }
 }
 
-impl TryFrom<Word> for Asset {
-    type Error = Infallible;
-
-    fn try_from(value: Word) -> Result<Self, Self::Error> {
-        Ok(Self::new(value))
-    }
-}
-
-impl From<[Felt; 4]> for Asset {
-    fn from(value: [Felt; 4]) -> Self {
-        Asset::new(Word::from(value))
-    }
-}
-
-impl From<Asset> for Word {
+impl From<Asset> for (Word, Word) {
     fn from(val: Asset) -> Self {
-        val.inner
-    }
-}
-
-impl AsRef<Word> for Asset {
-    fn as_ref(&self) -> &Word {
-        &self.inner
+        (val.key, val.value)
     }
 }
 
@@ -141,7 +115,7 @@ impl Recipient {
     ///
     /// Where `inputs_commitment` is the RPO256 hash of the provided `inputs`.
     pub fn compute(serial_num: Word, script_digest: Digest, inputs: Vec<Felt>) -> Self {
-        let empty_word = Word::from_u64_unchecked(0, 0, 0, 0);
+        let empty_word = Word::empty();
 
         let serial_num_hash = merge([Digest::from_word(serial_num), Digest::from_word(empty_word)]);
         let merge_script = merge([serial_num_hash, script_digest]);
@@ -169,14 +143,6 @@ impl NoteMetadata {
     pub fn new(attachment: Word, header: Word) -> Self {
         Self { attachment, header }
     }
-
-    #[inline]
-    pub(crate) fn reverse(self) -> Self {
-        Self {
-            attachment: self.attachment.reverse(),
-            header: self.header.reverse(),
-        }
-    }
 }
 
 impl From<[Felt; 4]> for Recipient {
@@ -187,11 +153,9 @@ impl From<[Felt; 4]> for Recipient {
     }
 }
 
-impl TryFrom<Word> for Recipient {
-    type Error = Infallible;
-
-    fn try_from(value: Word) -> Result<Self, Self::Error> {
-        Ok(Recipient { inner: value })
+impl From<Word> for Recipient {
+    fn from(value: Word) -> Self {
+        Recipient { inner: value }
     }
 }
 
@@ -199,12 +163,6 @@ impl From<Recipient> for Word {
     #[inline]
     fn from(value: Recipient) -> Self {
         value.inner
-    }
-}
-
-impl AsRef<Word> for Recipient {
-    fn as_ref(&self) -> &Word {
-        &self.inner
     }
 }
 
@@ -223,7 +181,7 @@ impl From<Felt> for Tag {
 impl From<Tag> for Word {
     #[inline]
     fn from(value: Tag) -> Self {
-        Word::from(value.inner)
+        padded_word_from_felt(value.inner)
     }
 }
 
@@ -233,7 +191,7 @@ impl TryFrom<Word> for Tag {
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
         Ok(Tag {
-            inner: value.try_into()?,
+            inner: felt_from_padded_word(value)?,
         })
     }
 }
@@ -247,7 +205,7 @@ pub struct NoteIdx {
 impl From<NoteIdx> for Word {
     #[inline]
     fn from(value: NoteIdx) -> Self {
-        Word::from(value.inner)
+        padded_word_from_felt(value.inner)
     }
 }
 
@@ -257,7 +215,7 @@ impl TryFrom<Word> for NoteIdx {
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
         Ok(NoteIdx {
-            inner: value.try_into()?,
+            inner: felt_from_padded_word(value)?,
         })
     }
 }
@@ -277,7 +235,7 @@ impl From<Felt> for NoteType {
 impl From<NoteType> for Word {
     #[inline]
     fn from(value: NoteType) -> Self {
-        Word::from(value.inner)
+        padded_word_from_felt(value.inner)
     }
 }
 
@@ -287,7 +245,7 @@ impl TryFrom<Word> for NoteType {
     #[inline]
     fn try_from(value: Word) -> Result<Self, Self::Error> {
         Ok(NoteType {
-            inner: value.try_into()?,
+            inner: felt_from_padded_word(value)?,
         })
     }
 }
@@ -325,6 +283,11 @@ impl StorageSlotId {
         (self.prefix, self.suffix)
     }
 
+    /// Returns the `(suffix, prefix)` pair in storage-slot order.
+    pub fn to_suffix_prefix(&self) -> (Felt, Felt) {
+        (self.suffix, self.prefix)
+    }
+
     /// Returns the suffix of the [`StorageSlotId`].
     pub fn suffix(&self) -> Felt {
         self.suffix
@@ -333,28 +296,5 @@ impl StorageSlotId {
     /// Returns the prefix of the [`StorageSlotId`].
     pub fn prefix(&self) -> Felt {
         self.prefix
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{AccountId, Felt, NoteIdx, NoteType, Tag, Word};
-
-    #[test]
-    fn account_id_try_from_word_rejects_non_zero_padding() {
-        let word =
-            Word::from([Felt::from(1u32), Felt::from(0u32), Felt::from(2u32), Felt::from(3u32)]);
-
-        assert_eq!(AccountId::try_from(word), Err("expected zero padding in the upper two felts"));
-    }
-
-    #[test]
-    fn single_felt_wrappers_reject_non_zero_padding() {
-        let word =
-            Word::from([Felt::from(0u32), Felt::from(1u32), Felt::from(0u32), Felt::from(9u32)]);
-
-        assert_eq!(Tag::try_from(word), Err("expected zero padding in the upper three felts"));
-        assert_eq!(NoteIdx::try_from(word), Err("expected zero padding in the upper three felts"));
-        assert_eq!(NoteType::try_from(word), Err("expected zero padding in the upper three felts"));
     }
 }

@@ -659,6 +659,7 @@ impl CompilerTestBuilder {
     opt-level = "z"
     debug = true
     trim-paths = ["diagnostics", "object"]
+
 "#,
                     sdk_path = sdk_path.display(),
                     sdk_alloc_path = sdk_alloc_path.display(),

@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, env, path::PathBuf};
 
 use miden_core::{
-    Felt, FieldElement, Word,
-    utils::{Deserializable, Serializable},
+    Felt, Word,
+    serde::{Deserializable, Serializable},
 };
 use miden_protocol::account::{AccountComponentMetadata, component::InitStorageData};
 use midenc_expect_test::expect_file;

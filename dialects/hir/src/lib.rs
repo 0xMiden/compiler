@@ -124,7 +124,6 @@ impl DialectRegistration for HirDialect {
         info.register_operation::<ops::MemCpy>();
         info.register_operation::<ops::Spill>();
         info.register_operation::<ops::Reload>();
-        info.register_operation::<ops::Breakpoint>();
     }
 
     fn register_attributes(info: &mut DialectInfo) {

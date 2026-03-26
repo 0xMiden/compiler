@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::{
     AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type,
     dialects::builtin::attributes::LocalVariable,
@@ -173,16 +173,14 @@ impl OpEmitter<'_> {
     }
 
     /// Load a 64-bit word from the given address.
+    ///
+    /// After execution, the stack contains `[lo, hi]` (lo on top, LE limb order).
     fn load_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             self.load_double_word_imm(imm, span);
         } else {
             self.raw_exec("::intrinsics::mem::load_dw", span);
         }
-
-        // The mem::intrinsic loads two 32-bit words with the first at the top of the stack.  Swap
-        // them to make a big-endian-limbed stack value.
-        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Load a sub-word value (u8, u16, etc.) from memory
@@ -613,8 +611,8 @@ impl OpEmitter<'_> {
         body_emitter.emit_push(value_size, span); // [value_size, i, * dst, ..]
         body_emitter.emit_all(
             [
-                masm::Instruction::U32OverflowingMadd, // [value_size * i + dst, i, dst, count, value]
-                masm::Instruction::Assertz,            // [aligned_dst, i, dst, count, value..]
+                masm::Instruction::U32WideningMadd, // [value_size * i + dst, i, dst, count, value]
+                masm::Instruction::Assertz,         // [aligned_dst, i, dst, count, value..]
             ],
             span,
         );
@@ -806,7 +804,7 @@ impl OpEmitter<'_> {
                         // Swap with `count` to get us into the correct ordering: [count, src, dst]
                         masm::Instruction::Swap2,
                         // Compute the corrected count
-                        masm::Instruction::U32OverflowingMulImm(factor.into()),
+                        masm::Instruction::U32WideningMulImm(factor.into()),
                         masm::Instruction::Assertz, // [count * (size / 16), src, dst]
                     ],
                     span,
@@ -848,7 +846,7 @@ impl OpEmitter<'_> {
         body_emitter.emit_push(value_size, span); // [offset, i, dst, i, src, dst, count]
         body_emitter.emit_all(
             [
-                masm::Instruction::U32OverflowingMadd,
+                masm::Instruction::U32WideningMadd,
                 masm::Instruction::Assertz, // [new_dst := i * offset + dst, i, src, dst, count]
                 masm::Instruction::Dup2,    // [src, new_dst, i, src, dst, count]
                 masm::Instruction::Dup2,    // [i, src, new_dst, i, src, dst, count]
@@ -858,7 +856,7 @@ impl OpEmitter<'_> {
         body_emitter.emit_push(value_size, span); // [offset, i, src, new_dst, i, src, dst, count]
         body_emitter.emit_all(
             [
-                masm::Instruction::U32OverflowingMadd,
+                masm::Instruction::U32WideningMadd,
                 masm::Instruction::Assertz, // [new_src := i * offset + src, new_dst, i, src, dst, count]
             ],
             span,
@@ -949,17 +947,16 @@ impl OpEmitter<'_> {
 
     /// Store a 64-bit integer in linear memory.
     ///
-    /// Values are represented as two 32-bit limbs on the operand stack in big-endian order
-    /// (`[hi, lo]`).
+    /// Values are represented as two 32-bit limbs on the operand stack in LE limb order
+    /// (`[lo, hi]`, lo on top).
     fn store_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         match ptr {
             // When storing to an immediate address, the operand stack only contains the value
-            // limbs. We must swap them so that the low limb is stored at the lower address.
+            // limbs. In LE order, lo is on top, so MemStoreImm stores lo at lower addr first.
             Some(ptr) if ptr.is_element_aligned() => {
-                // Stack: [value_hi, value_lo]
+                // Stack: [value_lo, value_hi]
                 self.emit_all(
                     [
-                        masm::Instruction::Swap1,
                         masm::Instruction::U32Assert2,
                         masm::Instruction::MemStoreImm(ptr.addr.into()),
                         masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
@@ -970,19 +967,14 @@ impl OpEmitter<'_> {
             // When storing to a dynamic address, or an unaligned immediate address, the operand
             // stack contains (or must contain) the native pointer pair `(element_addr, byte_offset)`
             // above the value limbs. This is derived from the 32-bit byte pointer via `divmod 4`.
-            // Swap the limbs underneath the pointer pair before delegating to the mem intrinsic.
             Some(ptr) => {
-                // Stack: [value_hi, value_lo]
+                // Stack: [value_lo, value_hi]
                 self.push_native_ptr(ptr, span);
-                // Stack: [addr, offset, value_hi, value_lo]
-                self.emit(masm::Instruction::MovUp2, span);
-                self.emit(masm::Instruction::MovDn3, span);
+                // Stack: [addr, offset, value_lo, value_hi]
                 self.raw_exec("::intrinsics::mem::store_dw", span);
             }
             None => {
-                // Stack: [addr, offset, value_hi, value_lo]
-                self.emit(masm::Instruction::MovUp2, span);
-                self.emit(masm::Instruction::MovDn3, span);
+                // Stack: [addr, offset, value_lo, value_hi]
                 self.raw_exec("::intrinsics::mem::store_dw", span);
             }
         }

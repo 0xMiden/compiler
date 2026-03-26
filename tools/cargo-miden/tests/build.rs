@@ -2,7 +2,7 @@ use std::{env, fs};
 
 use cargo_miden::{OutputType, run};
 use miden_mast_package::Package;
-use midenc_session::miden_assembly::utils::Deserializable;
+use midenc_session::diagnostics::serde::Deserializable;
 
 use crate::utils::current_dir_lock;
 

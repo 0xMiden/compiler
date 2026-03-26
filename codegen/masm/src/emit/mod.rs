@@ -733,7 +733,7 @@ mod tests {
     use alloc::rc::Rc;
 
     use midenc_hir::{
-        ArrayType, Context, Felt, FieldElement, Overflow, PointerType, ValueRef,
+        ArrayType, Context, Felt, Overflow, PointerType, ValueRef,
         dialects::builtin::attributes::Signature,
     };
 
@@ -776,10 +776,12 @@ mod tests {
             assert_eq!(&ops[0], &push!(1u32));
             assert_eq!(&ops[1], &push!(2u32));
             assert_eq!(&ops[2], &push!(3u8));
-            assert_eq!(&ops[3], &push!(Felt::ZERO));
-            assert_eq!(&ops[4], &push!(Felt::ONE));
-            assert_eq!(&ops[5], &push!(Felt::new(u32::MAX as u64)));
-            assert_eq!(&ops[6], &push!(Felt::new(3)));
+            // `u64` immediates are pushed as two `u32` limbs in LE stack order (`lo` on top),
+            // which means the hi limb is pushed first, followed by the lo limb.
+            assert_eq!(&ops[3], &push!(Felt::ONE));
+            assert_eq!(&ops[4], &push!(Felt::ZERO));
+            assert_eq!(&ops[5], &push!(Felt::new(3)));
+            assert_eq!(&ops[6], &push!(Felt::new(u32::MAX as u64)));
         }
 
         assert_eq!(emitter.stack()[0], five);
