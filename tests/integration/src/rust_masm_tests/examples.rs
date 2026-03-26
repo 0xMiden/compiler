@@ -44,17 +44,17 @@ fn storage_example() {
         supported-types = ["RegularAccountUpdatableCode"]
 
         [[storage.slots]]
-        name = "miden::component::miden_storage_example::asset_qty_map"
+        name = "miden_storage_example::my_account::owner_public_key"
+        description = "owner public key"
+        type = "word"
+
+        [[storage.slots]]
+        name = "miden_storage_example::my_account::asset_qty_map"
         description = "asset quantity map"
 
         [storage.slots.type]
         key = "word"
         value = "felt"
-
-        [[storage.slots]]
-        name = "miden::component::miden_storage_example::owner_public_key"
-        description = "owner public key"
-        type = "word"
     "#]]
     .assert_eq(&toml);
 }
@@ -237,7 +237,7 @@ fn counter_contract() {
         supported-types = ["RegularAccountUpdatableCode"]
 
         [[storage.slots]]
-        name = "miden::component::miden_counter_contract::count_map"
+        name = "miden_counter_contract::counter_contract::count_map"
         description = "counter contract storage map"
 
         [storage.slots.type]
