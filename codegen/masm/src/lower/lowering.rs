@@ -325,9 +325,8 @@ stack on exit from 'after': {:#?}
 
 impl HirLowering for scf::IndexSwitch {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        // Lowering 'hir.index_switch' is done by lowering to a sequence of if/else ops, comparing
-        // the selector against each non-default case to determine whether control should enter
-        // that block. The final else contains the default case.
+        // Lowering `hir.index_switch` is done with nested `if.true`/`else` regions that either
+        // compare the selector to each explicit case or partition a contiguous selector range.
         let mut cases = self.cases().iter().copied().collect::<SmallVec<[_; 4]>>();
         cases.sort();
         let is_contiguous = cases.windows(2).all(|pair| pair[0].checked_add(1) == Some(pair[1]));
@@ -335,7 +334,8 @@ impl HirLowering for scf::IndexSwitch {
         // We have N cases, plus a default case
         //
         // 1. If we have exactly 1 non-default case, we can lower to an `hir.if`
-        // 2. If we have N non-default non-contiguous (or N < 3 contiguous) cases, lower to:
+        // 2. If the explicit cases are sparse, or if there are fewer than 3 contiguous cases,
+        //    lower to a linear search:
         //
         //      if selector == case1 {
         //          <case1 body>
@@ -351,27 +351,9 @@ impl HirLowering for scf::IndexSwitch {
         //          }
         //      }
         //
-        //      if selector < case3 {
-        //         if selector == case1 {
-        //             <case1 body>
-        //         } else {
-        //             <case2 body>
-        //         }
-        //      } else {
-        //         if selector < case4 {
-        //            <case3 body>
-        //         } else {
-        //            if selector == case4 {
-        //               <case4 body>
-        //            } else {
-        //               <default>
-        //            }
-        //         }
-        //      }
-        //
-        // 3. If we have N non-default cases, use binary search to reduce search space. The
-        //    lowering tracks the explicit selector interval for each partition, so values in
-        //    holes between partitions still fall back to the default region:
+        // 3. If we have at least 3 contiguous non-default cases, use binary search to reduce the
+        //    search space. The lowering emits a single out-of-range guard up front, then
+        //    partitions the remaining interval recursively:
         //
         //      if selector < case3 {
         //         if selector == case1 {
