@@ -162,7 +162,6 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::MemSize, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSet, dyn HirLowering>();
     info.register_operation_trait::<hir::MemCpy, dyn HirLowering>();
-    info.register_operation_trait::<hir::Breakpoint, dyn HirLowering>();
 }
 
 fn lower_wasm_ops(info: &mut midenc_hir::DialectInfo) {
