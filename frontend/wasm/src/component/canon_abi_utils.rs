@@ -33,6 +33,14 @@ pub fn load<B: ?Sized + Builder>(
             values.push(value);
         }
 
+        Type::Enum(enum_ty) => {
+            assert!(
+                enum_ty.is_c_like(),
+                "non-C-like enums are not yet supported in canonical ABI loading: {enum_ty}"
+            );
+            load(fb, ptr, enum_ty.discriminant(), values, span)?;
+        }
+
         // Struct types are loaded field by field
         Type::Struct(struct_ty) => {
             // For each field in the struct, use the pre-calculated field offset
@@ -91,6 +99,14 @@ pub fn store<B: ?Sized + Builder>(
                 value_to_store
             };
             fb.store(src_ptr, value, span)?;
+        }
+
+        Type::Enum(enum_ty) => {
+            assert!(
+                enum_ty.is_c_like(),
+                "non-C-like enums are not yet supported in canonical ABI storing: {enum_ty}"
+            );
+            store(fb, ptr, enum_ty.discriminant(), values, span)?;
         }
 
         // Struct types are stored field by field

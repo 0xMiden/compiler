@@ -50,7 +50,13 @@ pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, C
         }
         Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
         Type::Felt => vec![AbiParam::new(Type::Felt)],
-        Type::Enum(enum_ty) => flatten_type(context, enum_ty.discriminant())?,
+        Type::Enum(enum_ty) => {
+            assert!(
+                enum_ty.is_c_like(),
+                "non-C-like enums are not yet supported in canonical ABI flattening: {enum_ty}"
+            );
+            flatten_type(context, enum_ty.discriminant())?
+        }
         Type::Struct(struct_ty) => struct_ty
             .fields()
             .iter()
@@ -186,7 +192,9 @@ pub fn assert_core_wasm_signature_equivalence(
 mod tests {
     use std::sync::Arc;
 
-    use midenc_hir::{ArrayType, dialects::builtin::attributes::ArgumentExtension};
+    use midenc_hir::{
+        ArrayType, EnumType, Variant, dialects::builtin::attributes::ArgumentExtension,
+    };
 
     use super::*;
 
@@ -257,6 +265,43 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::Felt);
         assert_eq!(result[0].extension(), ArgumentExtension::None);
+    }
+
+    #[test]
+    fn test_flatten_type_c_like_enum() {
+        let context = Rc::new(Context::default());
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "status".into(),
+                Type::U8,
+                [Variant::c_like("ok".into(), Some(0)), Variant::c_like("err".into(), Some(1))],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension(), ArgumentExtension::Zext);
+    }
+
+    #[test]
+    #[should_panic = "non-C-like enums are not yet supported in canonical ABI flattening"]
+    fn test_flatten_type_non_c_like_enum_panics() {
+        let context = Rc::new(Context::default());
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "result".into(),
+                Type::U8,
+                [
+                    Variant::c_like("ok".into(), Some(0)),
+                    Variant::new("err".into(), Type::I32, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let _ = flatten_type(&context, &enum_ty);
     }
 
     #[test]
