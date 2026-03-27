@@ -201,6 +201,24 @@ fn run_index_switch_selector_live_after_switch_test(
     );
 }
 
+/// Compile and execute a constant-result switch while keeping `selector` live after the switch.
+fn run_index_switch_constant_results_with_selector_live_after_switch_test(
+    cases: &[SwitchCase],
+    default_result: u32,
+    expectations: &[SwitchExpectation],
+) {
+    let case_selectors = cases.iter().map(|case| case.selector).collect::<Vec<_>>();
+    run_index_switch_execution_test(
+        &case_selectors,
+        expectations,
+        |builder, _selector, case_index, _case_selector, span| {
+            Ok(builder.u32(cases[case_index].result, span))
+        },
+        |builder, _selector, span| Ok(builder.u32(default_result, span)),
+        add_selector_to_switch_result,
+    );
+}
+
 #[test]
 fn index_switch_contiguous_cases() {
     run_index_switch_test(
@@ -238,6 +256,33 @@ fn index_switch_two_nonzero_cases() {
             SwitchExpectation::new(1, 22),
             SwitchExpectation::new(2, 33),
             SwitchExpectation::new(3, 11),
+        ],
+    );
+}
+
+#[test]
+fn index_switch_single_nonzero_case_with_selector_live_after_switch() {
+    run_index_switch_constant_results_with_selector_live_after_switch_test(
+        &[SwitchCase::new(1, 22)],
+        11,
+        &[
+            SwitchExpectation::new(0, 11),
+            SwitchExpectation::new(1, 23),
+            SwitchExpectation::new(2, 13),
+        ],
+    );
+}
+
+#[test]
+fn index_switch_two_nonzero_cases_with_selector_live_after_switch() {
+    run_index_switch_constant_results_with_selector_live_after_switch_test(
+        &[SwitchCase::new(1, 22), SwitchCase::new(2, 33)],
+        11,
+        &[
+            SwitchExpectation::new(0, 11),
+            SwitchExpectation::new(1, 23),
+            SwitchExpectation::new(2, 35),
+            SwitchExpectation::new(3, 14),
         ],
     );
 }

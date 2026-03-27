@@ -138,7 +138,8 @@ pub(super) fn emit_linear_search(
     } else {
         true
     };
-    if case_is_live_after || else_needs_selector {
+    let is_live_after_switch = emitter.liveness.is_live_after(selector, op.as_operation());
+    if case_is_live_after || else_needs_selector || is_live_after_switch {
         emitter.emitter().dup(0, span);
     }
     emitter.emitter().eq_imm(case.selector.into(), span);
