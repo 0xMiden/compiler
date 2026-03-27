@@ -69,7 +69,7 @@ impl OpEmitter<'_> {
                     "expected a 16-byte-aligned byte pointer for the word-copy fast path",
                     span,
                 ),
-                masm::Instruction::U32OverflowingMulImm(4.into()),
+                masm::Instruction::U32WrappingMulImm(4.into()),
                 Self::assertz_with_message_inst(
                     "word-copy fast path element address conversion overflowed",
                     span,
