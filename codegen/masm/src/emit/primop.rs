@@ -1,4 +1,5 @@
 use miden_assembly_syntax::parser::WordValue;
+use midenc_dialect_hir::assertions;
 use midenc_hir::{
     Felt, Immediate, SourceSpan, Type,
     dialects::builtin::attributes::{ArgumentExtension, Signature},
@@ -8,12 +9,26 @@ use super::{OpEmitter, int64, masm};
 use crate::TraceEvent;
 
 impl OpEmitter<'_> {
+    /// Format a diagnostic message for a HIR assertion code when one is available.
+    fn assertion_message(code: Option<u32>, default: impl Into<String>) -> String {
+        let default = default.into();
+        match code.filter(|code| *code != 0) {
+            Some(assertions::ASSERT_FAILED_ALIGNMENT) => {
+                "pointer address does not meet minimum alignment for the type".into()
+            }
+            Some(code) => format!("{default} (assertion code 0x{code:08x})"),
+            None => default,
+        }
+    }
+
     /// Assert that an integer value on the stack has the value 1
     ///
     /// This operation consumes the input value.
-    pub fn assert(&mut self, _code: Option<u32>, span: SourceSpan) {
+    pub fn assert(&mut self, code: Option<u32>, span: SourceSpan) {
         let arg = self.stack.pop().expect("operand stack is empty");
-        match arg.ty() {
+        let ty = arg.ty().clone();
+        let message = Self::assertion_message(code, format!("expected {ty} value to equal 1"));
+        match ty {
             Type::Felt
             | Type::U32
             | Type::I32
@@ -22,7 +37,7 @@ impl OpEmitter<'_> {
             | Type::U8
             | Type::I8
             | Type::I1 => {
-                self.emit(masm::Instruction::Assert, span);
+                self.emit(Self::assert_with_message_inst(message, span), span);
             }
             Type::I128 | Type::U128 => {
                 self.emit_all(
@@ -31,13 +46,19 @@ impl OpEmitter<'_> {
                             span,
                             WordValue([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]).into(),
                         ))),
-                        masm::Instruction::AssertEqw,
+                        Self::assert_eqw_with_message_inst(message, span),
                     ],
                     span,
                 );
             }
             Type::U64 | Type::I64 => {
-                self.emit_all([masm::Instruction::Assertz, masm::Instruction::Assert], span);
+                self.emit_all(
+                    [
+                        Self::assertz_with_message_inst(message.clone(), span),
+                        Self::assert_with_message_inst(message, span),
+                    ],
+                    span,
+                );
             }
             ty if !ty.is_integer() => {
                 panic!("invalid argument to assert: expected integer, got {ty}")
@@ -49,9 +70,11 @@ impl OpEmitter<'_> {
     /// Assert that an integer value on the stack has the value 0
     ///
     /// This operation consumes the input value.
-    pub fn assertz(&mut self, _code: Option<u32>, span: SourceSpan) {
+    pub fn assertz(&mut self, code: Option<u32>, span: SourceSpan) {
         let arg = self.stack.pop().expect("operand stack is empty");
-        match arg.ty() {
+        let ty = arg.ty().clone();
+        let message = Self::assertion_message(code, format!("expected {ty} value to equal 0"));
+        match ty {
             Type::Felt
             | Type::U32
             | Type::I32
@@ -60,10 +83,16 @@ impl OpEmitter<'_> {
             | Type::U8
             | Type::I8
             | Type::I1 => {
-                self.emit(masm::Instruction::Assertz, span);
+                self.emit(Self::assertz_with_message_inst(message, span), span);
             }
             Type::U64 | Type::I64 => {
-                self.emit_all([masm::Instruction::Assertz, masm::Instruction::Assertz], span);
+                self.emit_all(
+                    [
+                        Self::assertz_with_message_inst(message.clone(), span),
+                        Self::assertz_with_message_inst(message, span),
+                    ],
+                    span,
+                );
             }
             Type::U128 | Type::I128 => {
                 self.emit_all(
@@ -72,7 +101,7 @@ impl OpEmitter<'_> {
                             span,
                             WordValue([Felt::ZERO; 4]).into(),
                         ))),
-                        masm::Instruction::AssertEqw,
+                        Self::assert_eqw_with_message_inst(message, span),
                     ],
                     span,
                 );
@@ -87,11 +116,12 @@ impl OpEmitter<'_> {
     /// Assert that the top two integer values on the stack have the same value
     ///
     /// This operation consumes the input values.
-    pub fn assert_eq(&mut self, span: SourceSpan) {
+    pub fn assert_eq(&mut self, code: Option<u32>, span: SourceSpan) {
         let rhs = self.pop().expect("operand stack is empty");
         let lhs = self.pop().expect("operand stack is empty");
-        let ty = lhs.ty();
+        let ty = lhs.ty().clone();
         assert_eq!(ty, rhs.ty(), "expected assert_eq operands to have the same type");
+        let message = Self::assertion_message(code, format!("expected {ty} values to be equal"));
         match ty {
             Type::Felt
             | Type::U32
@@ -101,17 +131,19 @@ impl OpEmitter<'_> {
             | Type::U8
             | Type::I8
             | Type::I1 => {
-                self.emit(masm::Instruction::AssertEq, span);
+                self.emit(Self::assert_eq_with_message_inst(message, span), span);
             }
-            Type::U128 | Type::I128 => self.emit(masm::Instruction::AssertEqw, span),
+            Type::U128 | Type::I128 => {
+                self.emit(Self::assert_eqw_with_message_inst(message, span), span)
+            }
             Type::U64 | Type::I64 => {
                 self.emit_all(
                     [
                         // compare the hi bits
                         masm::Instruction::MovUp2,
-                        masm::Instruction::AssertEq,
+                        Self::assert_eq_with_message_inst(message.clone(), span),
                         // compare the low bits
-                        masm::Instruction::AssertEq,
+                        Self::assert_eq_with_message_inst(message, span),
                     ],
                     span,
                 );
@@ -130,7 +162,8 @@ impl OpEmitter<'_> {
     #[allow(unused)]
     pub fn assert_eq_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
-        let ty = lhs.ty();
+        let ty = lhs.ty().clone();
+        let message = format!("expected {ty} value to equal {imm}");
         assert_eq!(ty, imm.ty(), "expected assert_eq_imm operands to have the same type");
         match ty {
             Type::Felt
@@ -144,14 +177,14 @@ impl OpEmitter<'_> {
                 self.emit_all(
                     [
                         masm::Instruction::EqImm(imm.as_felt().unwrap().into()),
-                        masm::Instruction::Assert,
+                        Self::assert_with_message_inst(message, span),
                     ],
                     span,
                 );
             }
             Type::I128 | Type::U128 => {
                 self.push_immediate(imm, span);
-                self.emit(masm::Instruction::AssertEqw, span)
+                self.emit(Self::assert_eqw_with_message_inst(message, span), span)
             }
             Type::I64 | Type::U64 => {
                 let imm = match imm {
@@ -163,9 +196,9 @@ impl OpEmitter<'_> {
                 self.emit_all(
                     [
                         masm::Instruction::EqImm(Felt::new(hi as u64).into()),
-                        masm::Instruction::Assert,
+                        Self::assert_with_message_inst(message.clone(), span),
                         masm::Instruction::EqImm(Felt::new(lo as u64).into()),
-                        masm::Instruction::Assert,
+                        Self::assert_with_message_inst(message, span),
                     ],
                     span,
                 )

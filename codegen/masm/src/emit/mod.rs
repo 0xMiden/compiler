@@ -1,4 +1,4 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, sync::Arc};
 
 use midenc_session::diagnostics::Span;
 
@@ -155,6 +155,48 @@ pub struct OpEmitter<'a> {
     current_block: &'a mut Vec<masm::Op>,
 }
 impl<'a> OpEmitter<'a> {
+    /// Build a MASM `assert` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assert_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertWithError(masm::Immediate::Value(Span::new(span, message.into())))
+    }
+
+    /// Build a MASM `assert_eq` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assert_eq_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertEqWithError(masm::Immediate::Value(Span::new(
+            span,
+            message.into(),
+        )))
+    }
+
+    /// Build a MASM `assert_eqw` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assert_eqw_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertEqwWithError(masm::Immediate::Value(Span::new(
+            span,
+            message.into(),
+        )))
+    }
+
+    /// Build a MASM `assertz` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assertz_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertzWithError(masm::Immediate::Value(Span::new(span, message.into())))
+    }
+
     #[inline(always)]
     pub fn new(
         invoked: &'a mut BTreeSet<masm::Invoke>,
@@ -746,6 +788,24 @@ mod tests {
                 miden_assembly_syntax::parser::PushValue::from($x),
             )))))
         };
+    }
+
+    /// Assert that the emitted block ends by delegating to the dedicated 16-bit memory intrinsic.
+    fn assert_unaligned_16bit_intrinsic(block: &[Op], intrinsic: &str) {
+        let execs = block
+            .iter()
+            .filter_map(|op| match op {
+                Op::Inst(inst) => match inst.inner() {
+                    masm::Instruction::Exec(target) => Some(target.to_string()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            execs.iter().any(|target| target == intrinsic),
+            "expected block to delegate to `{intrinsic}`, found execs: {execs:?}"
+        );
     }
 
     #[test]
@@ -2059,7 +2119,7 @@ mod tests {
         emitter.assert_eq_imm(ten, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
 
-        emitter.assert_eq(SourceSpan::default());
+        emitter.assert_eq(None, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 0);
     }
 
@@ -2135,6 +2195,66 @@ mod tests {
         assert_eq!(emitter.stack_len(), 2);
         assert_eq!(emitter.stack()[0], Type::I32);
         assert_eq!(emitter.stack()[1], Type::U32);
+    }
+
+    #[test]
+    fn op_emitter_unaligned_u16_load_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.load_imm(130, Type::U16, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::U16);
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::load_u16");
+    }
+
+    #[test]
+    fn op_emitter_unaligned_i16_load_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.load_imm(130, Type::I16, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::I16);
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::load_u16");
+    }
+
+    #[test]
+    fn op_emitter_unaligned_u16_store_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.push(Type::U16);
+        emitter.store_imm(130, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 0);
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::store_u16");
+    }
+
+    #[test]
+    fn op_emitter_unaligned_i16_store_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.push(Type::I16);
+        emitter.store_imm(130, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 0);
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::store_u16");
     }
 
     #[test]

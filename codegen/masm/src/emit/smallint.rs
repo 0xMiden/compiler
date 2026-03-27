@@ -46,7 +46,13 @@ impl OpEmitter<'_> {
             1 => (),
             n => {
                 self.is_signed_smallint(n, span);
-                self.emit(masm::Instruction::Assert, span);
+                self.emit(
+                    Self::assert_with_message_inst(
+                        format!("{n}-bit integer signedness check failed"),
+                        span,
+                    ),
+                    span,
+                );
             }
         }
     }

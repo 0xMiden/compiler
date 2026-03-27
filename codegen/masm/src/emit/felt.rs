@@ -32,7 +32,13 @@ impl OpEmitter<'_> {
     /// `[a, ..] => [a, ..]`
     #[inline(always)]
     pub fn assert_felt_is_zero(&mut self, span: SourceSpan) {
-        self.emit_all([masm::Instruction::Dup0, masm::Instruction::Assertz], span);
+        self.emit_all(
+            [
+                masm::Instruction::Dup0,
+                Self::assertz_with_message_inst("expected felt value to be zero", span),
+            ],
+            span,
+        );
     }
 
     /// Convert a field element to i128 by zero-extension.
@@ -85,7 +91,7 @@ impl OpEmitter<'_> {
                 // Split into u32 limbs
                 masm::Instruction::U32Split,
                 // Assert most significant 32 bits are unused
-                masm::Instruction::Assertz,
+                Self::assertz_with_message_inst("felt value does not fit in 32 bits", span),
             ],
             span,
         );
@@ -105,7 +111,7 @@ impl OpEmitter<'_> {
                 // Split into u32 limbs
                 masm::Instruction::U32Split,
                 // Assert most significant 32 bits are unused
-                masm::Instruction::Assertz,
+                Self::assertz_with_message_inst("felt value does not fit in 32 bits", span),
             ],
             span,
         );

@@ -107,7 +107,7 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn assert_signed_int32(&mut self, span: SourceSpan) {
         self.is_signed_int32(span);
-        self.emit(masm::Instruction::Assert, span);
+        self.emit(Self::assert_with_message_inst("expected a signed i32 value", span), span);
     }
 
     /// Emits code to assert that a 32-bit value on the operand stack does not have the i32 sign bit
@@ -119,7 +119,7 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn assert_unsigned_int32(&mut self, span: SourceSpan) {
         self.is_signed_int32(span);
-        self.emit(masm::Instruction::Assertz, span);
+        self.emit(Self::assertz_with_message_inst("expected a non-negative i32 value", span), span);
     }
 
     /// Assert that the 32-bit value on the stack is a valid i32 value
@@ -131,7 +131,7 @@ impl OpEmitter<'_> {
         // the value is <= i32::MIN, which is 1 more than i32::MAX.
         self.push_i32(i32::MIN, span);
         self.emit(masm::Instruction::U32Lte, span);
-        self.emit(masm::Instruction::Assert, span);
+        self.emit(Self::assert_with_message_inst("value does not fit in i32", span), span);
     }
 
     /// Emits code to assert that a 32-bit value on the operand stack is equal to the given constant
@@ -148,7 +148,10 @@ impl OpEmitter<'_> {
             [
                 masm::Instruction::Dup0,
                 masm::Instruction::EqImm(Felt::new(value as u64).into()),
-                masm::Instruction::Assert,
+                Self::assert_with_message_inst(
+                    format!("expected u32 value to equal {value}"),
+                    span,
+                ),
             ],
             span,
         );
@@ -164,7 +167,13 @@ impl OpEmitter<'_> {
     /// `[expected, input, ..] => [input, ..]`
     #[inline]
     pub fn assert_eq_u32(&mut self, span: SourceSpan) {
-        self.emit_all([masm::Instruction::Dup1, masm::Instruction::AssertEq], span);
+        self.emit_all(
+            [
+                masm::Instruction::Dup1,
+                Self::assert_eq_with_message_inst("expected u32 values to be equal", span),
+            ],
+            span,
+        );
     }
 
     /// Emits code to select a constant u32 value, using the `n`th value on the operand
@@ -244,7 +253,10 @@ impl OpEmitter<'_> {
                 // Apply the mask
                 masm::Instruction::U32And,
                 // Assert that the masked bits and the mask are equal
-                masm::Instruction::AssertEq,
+                Self::assert_eq_with_message_inst(
+                    format!("value does not fit in signed {n}-bit range"),
+                    span,
+                ),
             ],
             span,
         );
@@ -293,7 +305,13 @@ impl OpEmitter<'_> {
         self.emit_push(mask, span);
         self.emit(masm::Instruction::U32And, span);
         // Assert the masked value is all 0s
-        self.emit(masm::Instruction::Assertz, span);
+        self.emit(
+            Self::assertz_with_message_inst(
+                format!("value does not fit in unsigned {n}-bit range"),
+                span,
+            ),
+            span,
+        );
     }
 
     /// Convert an i32/u32 value on the stack to an unsigned N-bit integer value

@@ -14,7 +14,7 @@ impl OpEmitter<'_> {
         // Assert that value is <= P, then unsplit the limbs to get a felt
         self.push_u64(P, span);
         self.lt_u64(span);
-        self.emit(masm::Instruction::Assert, span);
+        self.emit(Self::assert_with_message_inst("u64 value does not fit in felt", span), span);
         // `u32unsplit` expects `[hi, lo]` on the stack; u64 values are represented as `[lo, hi]`.
         self.emit(masm::Instruction::Swap1, span);
         self.u32unsplit(span);
@@ -41,14 +41,27 @@ impl OpEmitter<'_> {
                 // Bring `hi` to the top of the stack and assert it is zero. This consumes `hi`,
                 // leaving only `lo` on the stack.
                 masm::Instruction::Swap1,
-                masm::Instruction::Assertz,
+                // Assert hi bits are zero
+                Self::assertz_with_message_inst(
+                    format!("u64 value does not fit in unsigned {n}-bit range"),
+                    span,
+                ),
                 // Check that the remaining bits fit in range
                 masm::Instruction::Dup0,
             ],
             span,
         );
         self.emit_push(Felt::new(2u64.pow(n) - 1), span);
-        self.emit_all([masm::Instruction::U32Lte, masm::Instruction::Assert], span);
+        self.emit_all(
+            [
+                masm::Instruction::U32Lte,
+                Self::assert_with_message_inst(
+                    format!("u64 value does not fit in unsigned {n}-bit range"),
+                    span,
+                ),
+            ],
+            span,
+        );
     }
 
     /// Convert an i64 value to a signed N-bit integer, where N <= 32
@@ -75,7 +88,10 @@ impl OpEmitter<'_> {
         self.emit_all(
             [
                 // [is_unsigned, x_lo]
-                masm::Instruction::AssertEq,
+                Self::assert_eq_with_message_inst(
+                    format!("i64 value does not fit in signed {n}-bit range"),
+                    span,
+                ),
                 // [x_lo, is_unsigned, x_lo]
                 masm::Instruction::Dup1,
             ],
@@ -104,7 +120,10 @@ impl OpEmitter<'_> {
                 // [expected_sign_bits, sign_bits, x_lo]
                 masm::Instruction::CDrop,
                 // [x_lo]
-                masm::Instruction::AssertEq,
+                Self::assert_eq_with_message_inst(
+                    format!("i64 value does not fit in signed {n}-bit range"),
+                    span,
+                ),
             ],
             span,
         );
@@ -220,7 +239,7 @@ impl OpEmitter<'_> {
         // the value is <= i64::MIN, which is 1 more than i64::MAX.
         self.push_i64(i64::MIN, span);
         self.lte_u64(span);
-        self.emit(masm::Instruction::Assert, span);
+        self.emit(Self::assert_with_message_inst("value does not fit in i64", span), span);
     }
 
     /// Duplicate the i64/u64 value on top of the stack
@@ -428,7 +447,7 @@ impl OpEmitter<'_> {
         match overflow {
             Overflow::Checked => {
                 self.raw_exec("::miden::core::math::u64::overflowing_add", span);
-                self.emit(masm::Instruction::Assertz, span);
+                self.emit(Self::assertz_with_message_inst("u64 addition overflowed", span), span);
             }
             Overflow::Unchecked | Overflow::Wrapping => {
                 self.raw_exec("::miden::core::math::u64::wrapping_add", span);
@@ -493,7 +512,10 @@ impl OpEmitter<'_> {
         match overflow {
             Overflow::Checked => {
                 self.raw_exec("::miden::core::math::u64::overflowing_sub", span);
-                self.emit(masm::Instruction::Assertz, span);
+                self.emit(
+                    Self::assertz_with_message_inst("u64 subtraction overflowed", span),
+                    span,
+                );
             }
             Overflow::Unchecked | Overflow::Wrapping => {
                 self.raw_exec("::miden::core::math::u64::wrapping_sub", span);
@@ -575,7 +597,7 @@ impl OpEmitter<'_> {
                         masm::Instruction::Drop,
                         // Bring overflow back to the top and assert it is zero
                         masm::Instruction::MovUp2,
-                        masm::Instruction::Assertz,
+                        Self::assertz_with_message_inst("u64 multiplication overflowed", span),
                     ],
                     span,
                 );
