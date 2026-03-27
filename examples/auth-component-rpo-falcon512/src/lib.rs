@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use miden::{Storage, Word, component, felt, hash_words, intrinsics::advice::adv_insert, tx};
+use miden::{StorageValue, Word, component, felt, hash_words, intrinsics::advice::adv_insert, tx};
 
 /// Authentication component storage/layout.
 ///
@@ -16,7 +16,7 @@ struct AuthComponent {
         description = "owner public key",
         type = "miden::standards::auth::pub_key"
     )]
-    owner_public_key: Storage<Word>,
+    owner_public_key: StorageValue<Word>,
 }
 
 #[component]
