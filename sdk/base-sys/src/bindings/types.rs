@@ -1,9 +1,7 @@
 extern crate alloc;
 
-use alloc::vec::Vec;
-
 use miden_field_repr::FromFeltRepr;
-use miden_stdlib_sys::{Digest, Felt, Word, felt, hash_elements, intrinsics::crypto::merge};
+use miden_stdlib_sys::{Felt, Word, felt};
 
 /// Packs a scalar felt into the low limb of a protocol word.
 fn padded_word_from_felt(value: Felt) -> Word {
@@ -101,28 +99,11 @@ impl From<Asset> for (Word, Word) {
     }
 }
 
+/// A note recipient digest.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Recipient {
     pub inner: Word,
-}
-
-impl Recipient {
-    /// Computes a recipient digest from the provided components.
-    ///
-    /// This matches the Miden protocol note recipient digest:
-    /// `hash(hash(hash(serial_num, [0; 4]), script_root), inputs_commitment)`.
-    ///
-    /// Where `inputs_commitment` is the RPO256 hash of the provided `inputs`.
-    pub fn compute(serial_num: Word, script_digest: Digest, inputs: Vec<Felt>) -> Self {
-        let empty_word = Word::empty();
-
-        let serial_num_hash = merge([Digest::from_word(serial_num), Digest::from_word(empty_word)]);
-        let merge_script = merge([serial_num_hash, script_digest]);
-        let digest: Word = merge([merge_script, hash_elements(inputs)]).into();
-
-        Self { inner: digest }
-    }
 }
 
 /// The note metadata returned by `*_note::get_metadata` procedures.

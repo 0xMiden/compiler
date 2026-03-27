@@ -115,6 +115,14 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         _ => None,
                     }
                 }
+                module if module == symbols::Note => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::note::BUILD_RECIPIENT => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        _ => None,
+                    }
+                }
                 symbols::ActiveAccount => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::active_account::GET_NONCE

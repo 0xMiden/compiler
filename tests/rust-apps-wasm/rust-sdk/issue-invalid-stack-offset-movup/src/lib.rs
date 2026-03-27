@@ -152,9 +152,9 @@ fn create_p2id_note(serial_num: Word, input_asset: Asset, recipient_id: AccountI
         Felt::new(17933276983439992403),
     ]));
 
-    let recipient = Recipient::compute(
+    let recipient = note::build_recipient(
         serial_num,
-        Digest::from_word(active_note::get_script_root()),
+        active_note::get_script_root(),
         vec![
             recipient_id.prefix,
             recipient_id.suffix,
@@ -182,9 +182,9 @@ fn create_swapp_note(
     let tag = get_note_tag();
     let note_type = get_note_type();
 
-    let recipient = Recipient::compute(
+    let recipient = note::build_recipient(
         serial_num,
-        Digest::from_word(active_note::get_script_root()),
+        active_note::get_script_root(),
         vec![
             offered_asset.key[0],
             offered_asset.key[1],

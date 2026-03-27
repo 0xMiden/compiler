@@ -14,6 +14,7 @@ pub mod asset;
 pub mod faucet;
 pub mod input_note;
 pub mod native_account;
+pub mod note;
 pub mod output_note;
 pub mod storage;
 pub mod tx;

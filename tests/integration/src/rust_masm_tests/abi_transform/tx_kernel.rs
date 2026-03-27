@@ -145,7 +145,7 @@ end
 }
 
 #[test]
-fn test_recipient_compute_matches_note_recipient_digest() -> Result<(), Report> {
+fn test_note_build_recipient_matches_note_recipient_digest() -> Result<(), Report> {
     let note_script_program = Assembler::default()
         .assemble_program(
             r#"
@@ -166,18 +166,18 @@ end
     let note_recipient = NoteRecipient::new(serial_num, note_script.clone(), storage);
     let expected_digest = note_recipient.digest();
 
-    let main_fn = r#"(serial_num: Word, script_digest: Digest, inputs: Vec<Felt>) -> Word {
-        let recipient = Recipient::compute(serial_num, script_digest, inputs);
+    let main_fn = r#"(serial_num: Word, script_root: Word, storage: Vec<Felt>) -> Word {
+        let recipient = note::build_recipient(serial_num, script_root, storage);
         recipient.inner
     }"#
     .to_string();
 
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTestBuilder::rust_fn_body_with_sdk(
-        "abi_transform_tx_kernel_recipient_compute",
+        "abi_transform_tx_kernel_note_build_recipient",
         &main_fn,
         config,
-        ["--test-harness".into()],
+        ["--test-harness".into(), "--link-library".into(), "base".into()],
     )
     .build();
 
@@ -186,24 +186,24 @@ end
     let inputs = [input1, input2];
     let script_root: miden_core::Word = note_script.root();
 
-    // The Rust extern "C" ABI for this entrypoint uses byval pointers for the `Word`, `Digest`,
+    // The Rust extern "C" ABI for this entrypoint uses byval pointers for the `Word`,
     // and `Vec` arguments. We initialize all three arguments in a single contiguous payload and
     // pass their byte pointers as inputs. The return value is written to an output buffer whose
     // pointer is passed as the first argument (see `test_adv_load_preimage` for similar patterns).
     let base_addr = 20u32 * 65536; // 1310720
     let serial_num_ptr = base_addr;
-    let script_digest_ptr = base_addr + 16;
+    let script_root_ptr = base_addr + 16;
     let vec_ptr = base_addr + 32;
     let vec_data_ptr = base_addr + 48;
 
     let out_addr = 21u32 * 65536;
 
     let serial_num_felts: [Felt; 4] = serial_num.into();
-    let script_digest_felts: [Felt; 4] = script_root.into();
+    let script_root_felts: [Felt; 4] = script_root.into();
 
     let mut init_felts = Vec::new();
     init_felts.extend_from_slice(&serial_num_felts);
-    init_felts.extend_from_slice(&script_digest_felts);
+    init_felts.extend_from_slice(&script_root_felts);
     init_felts.extend_from_slice(&[
         Felt::from(inputs.len() as u32),
         Felt::from(vec_data_ptr),
@@ -212,17 +212,17 @@ end
     ]);
     init_felts.extend_from_slice(&inputs);
 
+    let args = [
+        Felt::new(out_addr as u64),
+        Felt::new(serial_num_ptr as u64),
+        Felt::new(script_root_ptr as u64),
+        Felt::new(vec_ptr as u64),
+    ];
+
     let initializers = [Initializer::MemoryFelts {
         addr: base_addr / 4,
         felts: (&init_felts).into(),
     }];
-
-    let args = [
-        Felt::new(out_addr as u64),
-        Felt::new(serial_num_ptr as u64),
-        Felt::new(script_digest_ptr as u64),
-        Felt::new(vec_ptr as u64),
-    ];
 
     let _ = eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
         let actual: [TestFelt; 4] =

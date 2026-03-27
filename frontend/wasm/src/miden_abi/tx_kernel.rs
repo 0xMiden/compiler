@@ -6,6 +6,7 @@ pub(crate) mod asset;
 pub(crate) mod faucet;
 pub(crate) mod input_note;
 pub(crate) mod native_account;
+pub(crate) mod note;
 pub(crate) mod output_note;
 pub(crate) mod tx;
 
@@ -27,6 +28,7 @@ pub(crate) fn signatures() -> &'static ModuleFunctionTypeMap {
         m.extend(faucet::signatures());
         m.extend(native_account::signatures());
         m.extend(input_note::signatures());
+        m.extend(note::signatures());
         m.extend(output_note::signatures());
         m.extend(tx::signatures());
         m
