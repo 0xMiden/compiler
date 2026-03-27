@@ -69,7 +69,9 @@ impl OpEmitter<'_> {
                     "expected a 16-byte-aligned byte pointer for the word-copy fast path",
                     span,
                 ),
-                masm::Instruction::U32WrappingMulImm(4.into()),
+                // `u32widening_mul` leaves `[lo, hi]` on the stack; assert on `hi` and keep `lo`.
+                masm::Instruction::U32WideningMulImm(4.into()),
+                masm::Instruction::Swap1,
                 Self::assertz_with_message_inst(
                     "word-copy fast path element address conversion overflowed",
                     span,
@@ -720,6 +722,7 @@ impl OpEmitter<'_> {
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WideningMadd, // [value_size * i + dst, i, dst, count, value]
+                masm::Instruction::Swap1,
                 Self::assertz_with_message_inst(
                     "memset destination address computation overflowed",
                     span,
@@ -905,6 +908,7 @@ impl OpEmitter<'_> {
                         masm::Instruction::Swap2,
                         // Compute the corrected count
                         masm::Instruction::U32WideningMulImm(factor.into()),
+                        masm::Instruction::Swap1,
                         Self::assertz_with_message_inst(
                             "memcpy word-copy fast path element count overflowed",
                             span,
@@ -950,6 +954,7 @@ impl OpEmitter<'_> {
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WideningMadd,
+                masm::Instruction::Swap1,
                 Self::assertz_with_message_inst(
                     "memcpy destination address computation overflowed",
                     span,
@@ -963,6 +968,7 @@ impl OpEmitter<'_> {
         body_emitter.emit_all(
             [
                 masm::Instruction::U32WideningMadd,
+                masm::Instruction::Swap1,
                 Self::assertz_with_message_inst(
                     "memcpy source address computation overflowed",
                     span,
