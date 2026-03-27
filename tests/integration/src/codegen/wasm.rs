@@ -1,9 +1,6 @@
 use miden_debug::ToMidenRepr;
-use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
-use midenc_hir::{
-    Felt, PointerType, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder,
-};
+use midenc_hir::{Felt, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder};
 
 use crate::testing::{Initializer, compile_test_module, eval_package};
 
@@ -381,12 +378,7 @@ fn test_i32_load8_s() {
     let (package, context) = compile_test_module([Type::I32], [Type::I32], |builder| {
         let block = builder.current_block();
         let addr_i32 = block.borrow().arguments()[0] as ValueRef;
-
-        let addr_u32 = builder.bitcast(addr_i32, Type::U32, span).unwrap();
-        let ptr = builder
-            .inttoptr(addr_u32, Type::from(PointerType::new(Type::I8)), span)
-            .unwrap();
-        let result = builder.i32_load8_s(ptr, span).unwrap();
+        let result = builder.i32_load8_s(addr_i32, None, span).unwrap();
 
         builder.ret(Some(result), span).unwrap();
     });

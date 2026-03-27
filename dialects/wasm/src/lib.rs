@@ -13,6 +13,7 @@ extern crate alloc;
 extern crate std;
 
 mod builders;
+mod mem;
 mod ops;
 
 use midenc_dialect_arith as arith;
@@ -21,7 +22,11 @@ use midenc_hir::{
     derive::DialectRegistration,
 };
 
-pub use self::{builders::WasmOpBuilder, ops::*};
+pub use self::{
+    builders::WasmOpBuilder,
+    mem::{WasmMemArg, prepare_addr},
+    ops::*,
+};
 
 #[derive(Debug, DialectRegistration)]
 pub struct WasmDialect {
