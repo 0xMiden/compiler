@@ -328,9 +328,7 @@ impl HirLowering for scf::IndexSwitch {
         // Lowering `hir.index_switch` is done with nested `if.true`/`else` regions that either
         // compare the selector to each explicit case or partition a contiguous selector range.
         let cases = utils::sorted_switch_cases(self);
-        let is_contiguous = cases
-            .windows(2)
-            .all(|pair| pair[0].selector().checked_add(1) == Some(pair[1].selector()));
+        let is_contiguous = utils::are_switch_cases_contiguous(&cases);
 
         // We have N cases, plus a default case
         //

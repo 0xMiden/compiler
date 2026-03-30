@@ -91,6 +91,18 @@ pub(super) fn sorted_switch_cases(op: &scf::IndexSwitch) -> SmallVec<[SwitchCase
     cases
 }
 
+/// Return true when sorted explicit switch cases span one contiguous selector interval.
+pub(super) fn are_switch_cases_contiguous(cases: &[SwitchCase]) -> bool {
+    cases.windows(2).all(|pair| {
+        debug_assert_ne!(
+            pair[0].selector(),
+            u32::MAX,
+            "sorted switch cases cannot place `u32::MAX` before another selector"
+        );
+        pair[0].selector() + 1 == pair[1].selector()
+    })
+}
+
 /// The explicit selector interval spanned by a sorted `scf.index_switch` case slice.
 #[derive(Clone, Copy, Debug)]
 struct SwitchCaseInterval {
@@ -101,9 +113,14 @@ struct SwitchCaseInterval {
 impl SwitchCaseInterval {
     /// Derive the explicit selector interval represented by `cases`.
     fn from_cases(cases: &[SwitchCase]) -> Self {
-        let lower =
-            cases.first().expect("switch case interval requires at least one case").selector;
-        let upper = cases.last().expect("switch case interval requires at least one case").selector;
+        let lower = cases
+            .first()
+            .expect("switch case interval requires at least one case")
+            .selector();
+        let upper = cases
+            .last()
+            .expect("switch case interval requires at least one case")
+            .selector();
         Self { lower, upper }
     }
 }
@@ -191,9 +208,7 @@ pub(super) fn emit_binary_search(
 ) -> Result<(), Report> {
     debug_assert!(!cases.is_empty());
     debug_assert!(
-        cases
-            .windows(2)
-            .all(|pair| pair[0].selector.checked_add(1) == Some(pair[1].selector)),
+        are_switch_cases_contiguous(cases),
         "binary search lowering requires contiguous switch cases"
     );
 
@@ -374,6 +389,7 @@ fn emit_binary_search_in_bounds(
 
             debug_assert_eq!(interval.lower, left_interval.lower);
             debug_assert_eq!(interval.upper, right_interval.upper);
+            debug_assert_ne!(left_interval.upper, u32::MAX);
 
             {
                 let mut op_emitter = emitter.emitter();
@@ -386,7 +402,7 @@ fn emit_binary_search_in_bounds(
                 emit_branch_block(op.as_operation(), emitter, op.span(), None, |then_emitter| {
                     emit_binary_search_in_bounds(op, then_emitter, left_cases, left_interval)
                 })?;
-            debug_assert_eq!(left_interval.upper.checked_add(1), Some(right_interval.lower));
+            debug_assert_eq!(left_interval.upper + 1, right_interval.lower);
 
             let (else_blk, else_stack) = emit_branch_block(
                 op.as_operation(),
