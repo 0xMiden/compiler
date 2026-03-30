@@ -1,11 +1,13 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
+use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
     Felt, Op, OpBuilder, Report, SourceSpan, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, FunctionBuilder},
 };
 
 use super::{compile_test_module, eval_package};
+use crate::{CompilerTest, testing::setup};
 
 /// Shared builder type used by the switch execution fixtures in this module.
 type TestFunctionBuilder<'a> = FunctionBuilder<'a, OpBuilder>;
@@ -450,4 +452,75 @@ fn index_switch_sparse_cases_with_selector_live_after_switch() {
             SwitchExpectation::new(6, 105),
         ],
     );
+}
+
+/// Minimized frontend regression for the original `resolve_turn` enum-dispatch reproduction.
+#[test]
+fn index_switch_rust_enum_dispatch_regression() {
+    let main_fn = r#"(which: u8) -> Felt {
+        /// Ability category used to determine the emitted event.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        enum AbilityType {
+            Damage = 0,
+            Heal = 1,
+            StatMod = 2,
+        }
+
+        /// Arm-specific handlers used to preserve the original control-flow shape.
+        #[inline(never)]
+        fn on_damage(out: &mut u32) {
+            *out = 11;
+        }
+
+        /// Arm-specific handlers used to preserve the original control-flow shape.
+        #[inline(never)]
+        fn on_heal(out: &mut u32) {
+            *out = 22;
+        }
+
+        /// Arm-specific handlers used to preserve the original control-flow shape.
+        #[inline(never)]
+        fn on_stat_mod(out: &mut u32) {
+            *out = 33;
+        }
+
+        /// Dispatch `ability` to one of the arm-specific handlers.
+        #[inline(never)]
+        fn classify(ability: AbilityType, out: &mut u32) {
+            match ability {
+                AbilityType::Damage => on_damage(out),
+                AbilityType::Heal => on_heal(out),
+                AbilityType::StatMod => on_stat_mod(out),
+            }
+        }
+
+        let abilities = [AbilityType::Damage, AbilityType::Heal, AbilityType::StatMod];
+        let ability = abilities[which as usize];
+        let mut out = 0u32;
+        classify(ability, &mut out);
+        Felt::from_u32(out)
+    }"#;
+
+    setup::enable_compiler_instrumentation();
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "resolve_turn_index_switch_enum_dispatch",
+        main_fn,
+        config,
+        [],
+    );
+
+    let package = test.compile_package();
+
+    for (which, expected) in [(0u32, 11u32), (1, 22), (2, 33)] {
+        let args = [Felt::from(which)];
+
+        eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+            let res: Felt = trace.parse_result().unwrap();
+            assert_eq!(res, Felt::from(expected));
+            Ok(())
+        })
+        .unwrap();
+    }
 }
