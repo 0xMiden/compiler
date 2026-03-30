@@ -93,9 +93,16 @@ fn build_package(
         sections.push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes));
     }
 
-    if let Some(bytes) = debug_info_bytes {
-        log::debug!("adding .debug_info section to package ({} bytes)", bytes.len());
-        sections.push(Section::new(SectionId::DEBUG_INFO, bytes));
+    if let Some((types_bytes, sources_bytes, functions_bytes)) = debug_info_bytes {
+        log::debug!(
+            "adding debug sections to package (types={} sources={} functions={} bytes)",
+            types_bytes.len(),
+            sources_bytes.len(),
+            functions_bytes.len(),
+        );
+        sections.push(Section::new(SectionId::DEBUG_TYPES, types_bytes));
+        sections.push(Section::new(SectionId::DEBUG_SOURCES, sources_bytes));
+        sections.push(Section::new(SectionId::DEBUG_FUNCTIONS, functions_bytes));
     }
 
     Package {

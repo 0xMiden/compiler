@@ -20,8 +20,8 @@ pub struct CodegenOutput {
     pub link_packages: BTreeMap<Symbol, Arc<Package>>,
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<Vec<u8>>,
-    /// The serialized DebugInfoSection for the .debug_info custom section
-    pub debug_info_bytes: Option<Vec<u8>>,
+    /// The serialized debug sections (types, sources, functions)
+    pub debug_info_bytes: Option<(Vec<u8>, Vec<u8>, Vec<u8>)>,
 }
 
 /// Perform code generation on the possibly-linked output of previous stages
@@ -75,18 +75,27 @@ impl Stage for CodegenStage {
             session.emit(OutputMode::Text, masm_component.as_ref()).into_diagnostic()?;
         }
 
-        // Build debug info section if debug decorators are enabled
+        // Build debug info sections if debug decorators are enabled
         let debug_info_bytes = if session.options.emit_debug_decorators() {
-            use miden_assembly::utils::Serializable;
+            use miden_core::serde::Serializable;
 
-            log::debug!("collecting debug info for .debug_info section");
-            let debug_section =
-                crate::debug_info::build_debug_info_section(&component.borrow(), true);
-            debug_section.map(|section| {
-                let mut bytes = alloc::vec::Vec::new();
-                section.write_into(&mut bytes);
-                log::debug!("built debug_info section: {} bytes", bytes.len());
-                bytes
+            log::debug!("collecting debug info for debug sections");
+            let debug_sections =
+                crate::debug_info::build_debug_info_sections(&component.borrow(), true);
+            debug_sections.map(|sections| {
+                let mut types_bytes = alloc::vec::Vec::new();
+                sections.types.write_into(&mut types_bytes);
+                let mut sources_bytes = alloc::vec::Vec::new();
+                sections.sources.write_into(&mut sources_bytes);
+                let mut functions_bytes = alloc::vec::Vec::new();
+                sections.functions.write_into(&mut functions_bytes);
+                log::debug!(
+                    "built debug sections: types={} sources={} functions={} bytes",
+                    types_bytes.len(),
+                    sources_bytes.len(),
+                    functions_bytes.len(),
+                );
+                (types_bytes, sources_bytes, functions_bytes)
             })
         } else {
             None
