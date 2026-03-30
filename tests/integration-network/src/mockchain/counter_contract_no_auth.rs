@@ -1,26 +1,28 @@
 //! Counter contract test with no-auth authentication component
 
 use miden_client::{
-    Word, account::component::BasicWallet, crypto::RandomCoin, note::NoteTag,
+    Word,
+    account::{AccountComponent, component::InitStorageData},
+    note::NoteTag,
     transaction::RawOutputNote,
 };
 use miden_core::Felt;
-use miden_protocol::account::{
-    AccountBuilder, AccountStorageMode, AccountType, StorageMap, StorageMapKey, StorageSlot,
-    auth::AuthScheme,
+use miden_protocol::{
+    account::{AccountBuilder, AccountStorageMode, AccountType, auth::AuthScheme},
+    crypto::rand::RandomCoin,
 };
+use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
 
 use super::{
     cycle_helpers::{auth_procedure_cycles, note_cycles},
     helpers::{
-        NoteCreationConfig, assert_counter_storage,
+        COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage,
         build_existing_counter_account_builder_with_auth_package, compile_rust_package,
-        counter_storage_slot_name, create_note_from_package, execute_tx,
+        counter_storage_slot_name, execute_tx,
     },
 };
-use crate::mockchain::helpers::COUNTER_CONTRACT_STORAGE_KEY;
 
 /// Tests the counter contract with a "no-auth" authentication component.
 ///
@@ -32,26 +34,27 @@ use crate::mockchain::helpers::COUNTER_CONTRACT_STORAGE_KEY;
 #[test]
 pub fn test_counter_contract_no_auth() {
     // Compile the contracts first (before creating any runtime)
-    let contract_package = compile_rust_package("../../examples/counter-contract", true);
+    let counter_package = compile_rust_package("../../examples/counter-contract", true);
     let note_package = compile_rust_package("../../examples/counter-note", true);
     let no_auth_auth_component =
         compile_rust_package("../../examples/auth-component-no-auth", true);
 
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let counter_storage_slot = counter_storage_slot_name();
-    let counter_storage_slots = vec![StorageSlot::with_map(
-        counter_storage_slot.clone(),
-        StorageMap::with_entries([(StorageMapKey::new(COUNTER_CONTRACT_STORAGE_KEY), value)])
-            .unwrap(),
-    )];
+
+    let counter_component = {
+        let mut init_storage_data = InitStorageData::default();
+        init_storage_data
+            .insert_map_entry(counter_storage_slot.clone(), COUNTER_CONTRACT_STORAGE_KEY, value)
+            .unwrap();
+        AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
+    };
 
     let mut builder = MockChain::builder();
-
     let counter_account = build_existing_counter_account_builder_with_auth_package(
-        contract_package,
+        counter_component,
         no_auth_auth_component,
         vec![],
-        counter_storage_slots,
         [0_u8; 32],
     )
     .build_existing()
@@ -66,7 +69,7 @@ pub fn test_counter_contract_no_auth() {
     let sender_builder = AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(BasicWallet);
+        .with_component(miden_client::account::component::BasicWallet);
     let sender_account = builder
         .add_account_from_builder(
             Auth::BasicAuth {
@@ -79,16 +82,13 @@ pub fn test_counter_contract_no_auth() {
     eprintln!("Sender account ID: {:?}", sender_account.id().to_hex());
 
     // Sender creates the counter note (note script increments counter's storage on consumption)
-    let mut rng = RandomCoin::new(note_package.unwrap_program().hash());
-    let counter_note = create_note_from_package(
-        note_package.clone(),
-        sender_account.id(),
-        NoteCreationConfig {
-            tag: NoteTag::with_account_target(counter_account.id()),
-            ..Default::default()
-        },
-        &mut rng,
-    );
+    let rng = RandomCoin::new(note_package.unwrap_program().hash());
+    let counter_note = NoteBuilder::new(sender_account.id(), rng)
+        .package((*note_package).clone())
+        .tag(NoteTag::with_account_target(counter_account.id()).into())
+        .build()
+        .unwrap();
+
     eprintln!("Counter note hash: {:?}", counter_note.id().to_hex());
     builder.add_output_note(RawOutputNote::Full(counter_note.clone()));
 

@@ -4,13 +4,11 @@ use std::{future::Future, sync::Arc};
 
 use miden_client::{
     Word,
-    account::component::BasicWallet,
+    account::component::{BasicWallet, InitStorageData},
     asset::FungibleAsset,
     auth::AuthSecretKey,
     crypto::FeltRng,
-    note::{
-        Note, NoteAssets, NoteMetadata, NoteRecipient, NoteScript, NoteStorage, NoteTag, NoteType,
-    },
+    note::{Note, NoteType},
     transaction::RawOutputNote,
 };
 use miden_core::Felt;
@@ -19,14 +17,16 @@ use miden_mast_package::Package;
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
-        AccountStorage, AccountStorageMode, AccountType, StorageMap, StorageMapKey, StorageSlot,
-        StorageSlotName,
+        AccountStorage, AccountStorageMode, AccountType, StorageSlot, StorageSlotName,
     },
     asset::Asset,
     note::PartialNote,
     transaction::{TransactionMeasurements, TransactionScript},
 };
-use miden_standards::account::interface::{AccountInterface, AccountInterfaceExt};
+use miden_standards::{
+    account::interface::{AccountInterface, AccountInterfaceExt},
+    testing::note::NoteBuilder,
+};
 use miden_testing::{MockChain, TransactionContextBuilder};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use rand::{SeedableRng, rngs::StdRng};
@@ -52,10 +52,9 @@ pub(super) fn block_on<F: Future>(future: F) -> F::Output {
 // COMPILATION
 // ================================================================================================
 
-/// Helper to compile a Rust package to a Miden `Package`.
-pub(super) fn compile_rust_package(package_path: &str, release: bool) -> Arc<Package> {
+pub(super) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Package> {
     let config = WasmTranslationConfig::default();
-    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(package_path, config, []);
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
 
     if release {
         builder.with_release(true);
@@ -65,91 +64,9 @@ pub(super) fn compile_rust_package(package_path: &str, release: bool) -> Arc<Pac
     test.compile_package()
 }
 
-// NOTE HELPERS
 // ================================================================================================
-
-/// Configuration for creating a note.
-#[derive(Debug, Clone)]
-pub(super) struct NoteCreationConfig {
-    /// The note type (public/private).
-    pub note_type: NoteType,
-    /// The note tag.
-    pub tag: NoteTag,
-    /// Assets carried by the note.
-    pub assets: NoteAssets,
-    /// Note inputs (e.g. target account id, timelock/reclaim height, etc.).
-    pub inputs: Vec<Felt>,
-}
-
-impl Default for NoteCreationConfig {
-    fn default() -> Self {
-        Self {
-            note_type: NoteType::Public,
-            tag: NoteTag::new(0),
-            assets: Default::default(),
-            inputs: Default::default(),
-        }
-    }
-}
-
-/// Creates a note from a compiled note package without requiring a `miden_client::Client`.
-pub(super) fn create_note_from_package(
-    package: Arc<Package>,
-    sender_id: AccountId,
-    config: NoteCreationConfig,
-    rng: &mut impl FeltRng,
-) -> Note {
-    let note_program = package.unwrap_program();
-    let note_script =
-        NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
-
-    let serial_num = rng.draw_word();
-    let note_storage = NoteStorage::new(config.inputs).unwrap();
-    let recipient = NoteRecipient::new(serial_num, note_script, note_storage);
-
-    let metadata = NoteMetadata::new(sender_id, config.note_type).with_tag(config.tag);
-
-    Note::new(config.assets, metadata, recipient)
-}
-
 // ACCOUNT COMPONENT HELPERS
 // ================================================================================================
-
-/// Creates an account component from a compiled package's component metadata.
-pub(super) fn account_component_from_package(
-    package: Arc<Package>,
-    storage_slots: Vec<StorageSlot>,
-) -> AccountComponent {
-    let metadata = AccountComponentMetadata::try_from(package.as_ref())
-        .expect("no account component metadata present");
-    AccountComponent::new(package.unwrap_library().as_ref().clone(), storage_slots, metadata)
-        .unwrap()
-}
-
-// BASIC WALLET HELPERS
-// ================================================================================================
-
-/// Builds an account builder for an existing basic-wallet account based on the provided component
-/// package.
-pub(super) fn build_existing_basic_wallet_account_builder(
-    wallet_package: Arc<Package>,
-    with_std_basic_wallet: bool,
-    seed: [u8; 32],
-) -> AccountBuilder {
-    let wallet_component = account_component_from_package(wallet_package, vec![]);
-
-    let mut builder = AccountBuilder::new(seed)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public);
-
-    if with_std_basic_wallet {
-        builder = builder.with_component(BasicWallet);
-    }
-
-    builder = builder.with_component(wallet_component);
-
-    builder
-}
 
 /// Asserts that the account vault contains a fungible asset from the expected faucet with the
 /// expected total amount.
@@ -224,10 +141,6 @@ pub(super) fn build_asset_transfer_tx(
     tx_script_package: Arc<Package>,
     rng: &mut impl FeltRng,
 ) -> (TransactionContextBuilder, Note) {
-    let note_program = p2id_note_package.unwrap_program();
-    let note_script =
-        NoteScript::from_parts(note_program.mast_forest().clone(), note_program.entrypoint());
-
     let tx_script_program = tx_script_package.unwrap_program();
     let tx_script = TransactionScript::from_parts(
         tx_script_program.mast_forest().clone(),
@@ -235,23 +148,30 @@ pub(super) fn build_asset_transfer_tx(
     );
 
     let serial_num = rng.draw_word();
-    let note_storage = NoteStorage::new(to_core_felts(&recipient_id)).unwrap();
-    let note_recipient = NoteRecipient::new(serial_num, note_script, note_storage);
 
-    let config = NoteCreationConfig {
-        assets: NoteAssets::new(vec![asset.into()]).unwrap(),
-        ..Default::default()
-    };
-    let metadata = NoteMetadata::new(sender_id, config.note_type).with_tag(config.tag);
-    let output_note = Note::new(config.assets, metadata, note_recipient.clone());
+    let asset: Asset = asset.into();
+    let output_note = NoteBuilder::new(sender_id, rng)
+        .serial_number(serial_num)
+        .package((*p2id_note_package).clone())
+        .note_storage(to_core_felts(&recipient_id))
+        .unwrap()
+        .add_assets([asset])
+        .tag(0)
+        .build()
+        .unwrap();
 
     // Prepare commitment data
     // This must match the input layout expected by `examples/basic-wallet-tx-script`.
-    let mut commitment_input: Vec<Felt> = vec![config.tag.into(), Felt::from(config.note_type)];
-    let recipient_digest: [Felt; 4] = note_recipient.digest().into();
+    let mut commitment_input: Vec<Felt> = vec![
+        // The output's note tag
+        Felt::new(0u64),
+        // The output's note type
+        Felt::from(NoteType::Public),
+    ];
+    let recipient_digest: [Felt; 4] = output_note.recipient().digest().into();
     commitment_input.extend(recipient_digest);
 
-    let asset_elements = miden_protocol::asset::Asset::from(asset).as_elements();
+    let asset_elements = asset.as_elements();
     commitment_input.extend(asset_elements);
     // Ensure word alignment for `adv_load_preimage` in the tx script.
     commitment_input.extend([Felt::ZERO, Felt::ZERO]);
@@ -312,14 +232,19 @@ pub(super) fn assert_counter_storage(
 /// Builds an account builder for an existing public counter account containing the counter
 /// contract component and a custom authentication component compiled as a package library.
 pub(super) fn build_existing_counter_account_builder_with_auth_package(
-    contract_package: Arc<Package>,
+    counter_component: AccountComponent,
     auth_component_package: Arc<Package>,
     auth_storage_slots: Vec<StorageSlot>,
-    counter_storage_slots: Vec<StorageSlot>,
     seed: [u8; 32],
 ) -> AccountBuilder {
-    let auth_component = account_component_from_package(auth_component_package, auth_storage_slots);
-    let counter_component = account_component_from_package(contract_package, counter_storage_slots);
+    let metadata =
+        AccountComponentMetadata::new("auth", [AccountType::RegularAccountUpdatableCode]);
+    let auth_component = AccountComponent::new(
+        auth_component_package.unwrap_library().as_ref().clone(),
+        auth_storage_slots,
+        metadata,
+    )
+    .unwrap();
 
     AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
@@ -340,10 +265,13 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
 ) -> (Account, AuthSecretKey) {
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-    let counter_storage_slots = vec![StorageSlot::with_map(
-        counter_storage_slot_name(),
-        StorageMap::with_entries([(StorageMapKey::new(key), value)]).unwrap(),
-    )];
+    let mut counter_init_storage_data = InitStorageData::default();
+    counter_init_storage_data
+        .insert_map_entry(counter_storage_slot_name(), key, value)
+        .expect("failed to insert counter map entry");
+
+    let counter_component =
+        AccountComponent::from_package(&component_package, &counter_init_storage_data).unwrap();
 
     let mut rng = StdRng::seed_from_u64(1);
     let secret_key = AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng);
@@ -353,10 +281,9 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
         vec![StorageSlot::with_value(auth_public_key_slot_name(), pk_commitment)];
 
     let account = build_existing_counter_account_builder_with_auth_package(
-        component_package,
+        counter_component,
         auth_component_package,
         auth_storage_slots,
-        counter_storage_slots,
         seed,
     )
     .build_existing()
