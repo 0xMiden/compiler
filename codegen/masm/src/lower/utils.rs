@@ -103,10 +103,12 @@ pub(super) fn are_switch_cases_contiguous(cases: &[SwitchCase]) -> bool {
     })
 }
 
-/// The explicit selector interval spanned by a sorted `scf.index_switch` case slice.
+/// The inclusive explicit selector interval spanned by a sorted `scf.index_switch` case slice.
 #[derive(Clone, Copy, Debug)]
 struct SwitchCaseInterval {
+    /// The smallest explicit selector handled by the interval, inclusive.
     lower: u32,
+    /// The largest explicit selector handled by the interval, inclusive.
     upper: u32,
 }
 
