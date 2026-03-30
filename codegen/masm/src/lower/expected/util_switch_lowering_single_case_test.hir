@@ -1,4 +1,4 @@
-builtin.function public extern("C") @util_emit_binary_search_single_case_test(%0: u32, %1: u32) -> u32 {
+builtin.function public extern("C") @util_switch_lowering_single_case_test(%0: u32, %1: u32) -> u32 {
     %2 = scf.index_switch %0 
     case 0 {
         %3 = arith.constant 0 : u32;

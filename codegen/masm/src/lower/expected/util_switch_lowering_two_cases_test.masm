@@ -1,27 +1,20 @@
 
     dup.0
     dup.0
-    push.1
-    u32lte
+    eq.0
     if.true
-        eq.0
+        drop
+        drop
+        drop
+        push.0
+    else
+        dup.0
+        eq.1
         if.true
             drop
-            drop
-            push.0
-        else
             drop
             drop
             push.1
-        end
-    else
-        dup.0
-        eq.2
-        if.true
-            drop
-            drop
-            drop
-            push.2
         else
             movup.2
             mul

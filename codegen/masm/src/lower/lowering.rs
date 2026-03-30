@@ -10,7 +10,7 @@ use midenc_hir::{
     traits::{BinaryOp, Commutative},
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
-use smallvec::{SmallVec, smallvec};
+use smallvec::smallvec;
 
 use super::*;
 use crate::{
@@ -325,16 +325,16 @@ stack on exit from 'after': {:#?}
 
 impl HirLowering for scf::IndexSwitch {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        // Lowering 'hir.index_switch' is done by lowering to a sequence of if/else ops, comparing
-        // the selector against each non-default case to determine whether control should enter
-        // that block. The final else contains the default case.
-        let mut cases = self.cases().iter().copied().collect::<SmallVec<[_; 4]>>();
-        cases.sort();
+        // Lowering `hir.index_switch` is done with nested `if.true`/`else` regions that either
+        // compare the selector to each explicit case or partition a contiguous selector range.
+        let cases = utils::sorted_switch_cases(self);
+        let is_contiguous = utils::are_switch_cases_contiguous(&cases);
 
         // We have N cases, plus a default case
         //
         // 1. If we have exactly 1 non-default case, we can lower to an `hir.if`
-        // 2. If we have N non-default non-contiguous (or N < 3 contiguous) cases, lower to:
+        // 2. If the explicit cases are sparse, or if there are fewer than 3 contiguous cases,
+        //    lower to a linear search:
         //
         //      if selector == case1 {
         //          <case1 body>
@@ -350,25 +350,9 @@ impl HirLowering for scf::IndexSwitch {
         //          }
         //      }
         //
-        //      if selector < case3 {
-        //         if selector == case1 {
-        //             <case1 body>
-        //         } else {
-        //             <case2 body>
-        //         }
-        //      } else {
-        //         if selector < case4 {
-        //            <case3 body>
-        //         } else {
-        //            if selector == case4 {
-        //               <case4 body>
-        //            } else {
-        //               <default>
-        //            }
-        //         }
-        //      }
-        //
-        // 3. If we have N non-default contiguous cases, use binary search to reduce search space:
+        // 3. If we have at least 3 contiguous non-default cases, use binary search to reduce the
+        //    search space. The lowering emits a single out-of-range guard up front, then
+        //    partitions the remaining interval recursively:
         //
         //      if selector < case3 {
         //         if selector == case1 {
@@ -388,27 +372,12 @@ impl HirLowering for scf::IndexSwitch {
         //         }
         //      }
         //
-        // We do not try to use the binary search approach with non-contiguous cases, as we would
-        // be forced to emit duplicate copies of the fallback branch, and it isn't clear the size
-        // tradeoff would be worth it without branch hints.
-
         assert!(!cases.is_empty());
-        if cases.len() == 1 {
-            return utils::emit_binary_search(self, emitter, &[], &cases, 0, 1);
+        if cases.len() < 3 || !is_contiguous {
+            return utils::emit_linear_search(self, emitter, &cases);
         }
 
-        // Emit binary-search-optimized 'hir.if' sequence
-        //
-        // Partition such that the condition for the `then` branch guarantees that no fallback
-        // branch is needed, i.e. an even number of cases must be in the first partition
-        let num_cases = cases.len();
-        let midpoint = cases[0].midpoint(cases[cases.len() - 1]);
-        let partition_point = core::cmp::min(
-            cases.len(),
-            cases.partition_point(|item| *item < midpoint).next_multiple_of(2),
-        );
-        let (a, b) = cases.split_at(partition_point);
-        utils::emit_binary_search(self, emitter, a, b, midpoint, num_cases)
+        utils::emit_binary_search(self, emitter, &cases)
     }
 
     fn required_operands(&self) -> ValueRange<'_, 4> {
