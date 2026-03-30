@@ -248,7 +248,7 @@ fn rust_sdk_account_storage_get_initial_item_binding() {
         "rust_sdk_account_storage_get_initial_item_binding",
         r#"struct TestAccount {
     #[storage(description = "test value")]
-    value: Storage<Word>,
+    value: StorageValue<Word>,
 }"#,
         "pub fn binding(&self) -> Word {
         storage::get_initial_item(Self::default().value.slot)

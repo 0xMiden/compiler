@@ -152,16 +152,16 @@ impl WordKey for miden_base_sys::bindings::NoteType {
     }
 }
 
-/// Typed access to a single account storage slot.
+/// Typed access to a single account storage value.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Storage<T: WordValue> {
+pub struct StorageValue<T: WordValue> {
     /// The underlying storage slot id.
     pub slot: StorageSlotId,
     _marker: core::marker::PhantomData<T>,
 }
 
-impl<T: WordValue> Storage<T> {
-    /// Creates a new typed storage handle for `slot`.
+impl<T: WordValue> StorageValue<T> {
+    /// Creates a new typed storage-value handle for `slot`.
     pub const fn new(slot: StorageSlotId) -> Self {
         Self {
             slot,
@@ -170,13 +170,13 @@ impl<T: WordValue> Storage<T> {
     }
 }
 
-impl<T: WordValue> From<StorageSlotId> for Storage<T> {
+impl<T: WordValue> From<StorageSlotId> for StorageValue<T> {
     fn from(slot: StorageSlotId) -> Self {
         Self::new(slot)
     }
 }
 
-impl<T: WordValue> Storage<T> {
+impl<T: WordValue> StorageValue<T> {
     /// Reads the current value from account storage.
     #[inline(always)]
     pub fn get(&self) -> T {

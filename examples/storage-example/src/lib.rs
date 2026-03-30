@@ -7,7 +7,7 @@
 //
 // extern crate alloc;
 
-use miden::{Asset, Felt, Storage, StorageMap, Word, component};
+use miden::{Asset, Felt, StorageMap, StorageValue, Word, component};
 
 use crate::bindings::exports::miden::storage_example::*;
 
@@ -19,7 +19,7 @@ bindings::export!(MyAccount);
 struct MyAccount {
     /// Public key authorized to update the stored asset quantities.
     #[storage(description = "owner public key")]
-    owner_public_key: Storage<Word>,
+    owner_public_key: StorageValue<Word>,
 
     /// A map from asset vault key to quantity held by the account.
     #[storage(description = "asset quantity map")]

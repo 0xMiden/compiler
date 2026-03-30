@@ -127,7 +127,7 @@ impl AccountComponentMetadataBuilder {
                 ));
                 self.storage.push((slot_name, slot_schema));
             }
-            StorageFieldType::Storage => {
+            StorageFieldType::StorageValue => {
                 let schema_type = if let Some(field_type) = field_type_attr.as_deref() {
                     SchemaType::new(field_type).map_err(|err| {
                         syn::Error::new(

@@ -222,7 +222,8 @@ pub fn process_storage_fields(
     Ok(field_inits)
 }
 
-/// Checks that the type of `field` is either `StorageMap` or `Storage` from the `miden` crate.
+/// Checks that the type of `field` is either `StorageMap` or `StorageValue` from the `miden`
+/// crate.
 ///
 /// # Limitations
 ///
@@ -230,7 +231,7 @@ pub fn process_storage_fields(
 /// written in the struct correspond to one of the expected values. Hence the following cannot
 /// be detected:
 ///
-/// * A developer defines their own `StorageMap` or `Storage`
+/// * A developer defines their own `StorageMap` or `StorageValue`
 /// * A developer uses a valid type from miden but aliases it
 pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType, syn::Error> {
     let type_path = match &field.ty {
@@ -249,17 +250,17 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
 
     const BASE_CRATE: &str = "miden";
     const TYPENAME_MAP: &str = "StorageMap";
-    const TYPENAME_STORAGE: &str = "Storage";
+    const TYPENAME_VALUE: &str = "StorageValue";
 
     match segments.as_slice() {
         [a] if a == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a] if a == TYPENAME_STORAGE => Ok(StorageFieldType::Storage),
+        [a] if a == TYPENAME_VALUE => Ok(StorageFieldType::StorageValue),
         [a, b] if a == BASE_CRATE && b == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a, b] if a == BASE_CRATE && b == TYPENAME_STORAGE => Ok(StorageFieldType::Storage),
+        [a, b] if a == BASE_CRATE && b == TYPENAME_VALUE => Ok(StorageFieldType::StorageValue),
         _ => Err(syn::Error::new(
             field.span(),
             format!(
-                "storage field type can only be `{TYPENAME_MAP}` or `{TYPENAME_STORAGE}` from \
+                "storage field type can only be `{TYPENAME_MAP}` or `{TYPENAME_VALUE}` from \
                  `{BASE_CRATE}` crate"
             ),
         )),
