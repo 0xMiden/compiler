@@ -103,12 +103,25 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
         ));
     }
 
-    // Add debug info section if present
-    if let Some(bytes) = debug_info_bytes {
-        log::debug!("adding .debug_info section to package ({} bytes)", bytes.len());
+    // Add debug info sections if present
+    if let Some((types_bytes, sources_bytes, functions_bytes)) = debug_info_bytes {
+        log::debug!(
+            "adding debug sections to package (types={} sources={} functions={} bytes)",
+            types_bytes.len(),
+            sources_bytes.len(),
+            functions_bytes.len(),
+        );
         sections.push(miden_mast_package::Section::new(
-            miden_mast_package::SectionId::DEBUG_INFO,
-            bytes,
+            miden_mast_package::SectionId::DEBUG_TYPES,
+            types_bytes,
+        ));
+        sections.push(miden_mast_package::Section::new(
+            miden_mast_package::SectionId::DEBUG_SOURCES,
+            sources_bytes,
+        ));
+        sections.push(miden_mast_package::Section::new(
+            miden_mast_package::SectionId::DEBUG_FUNCTIONS,
+            functions_bytes,
         ));
     }
 
