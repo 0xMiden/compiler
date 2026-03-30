@@ -2,7 +2,7 @@ use alloc::{collections::BTreeSet, sync::Arc, vec::Vec};
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
-use miden_core::DebugVarLocation;
+use miden_core::operations::{DebugVarInfo, DebugVarLocation};
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
     diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager,
@@ -717,7 +717,7 @@ fn patch_debug_var_locals_in_block(block: &mut masm::Block, num_locals: u16) {
                         let fmp_offset = *idx - (num_locals as i16);
 
                         // Create new info with patched location, preserving all fields
-                        let mut new_info = miden_core::DebugVarInfo::new(
+                        let mut new_info = DebugVarInfo::new(
                             info.name(),
                             DebugVarLocation::Local(fmp_offset),
                         );

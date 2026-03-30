@@ -1,0 +1,23 @@
+builtin.component private @root_ns:root@1.0.0 {
+    builtin.module private @test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537 {
+        builtin.function public extern("C") @entrypoint(%0: i32, %1: i32) -> i32 {
+            hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+            hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+            %3 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+            %4 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+            %5 = arith.add %3, %4 <{ overflow = #builtin.overflow<wrapping> }>;
+            cf.br ^block7:(%5);
+        ^block7(%2: i32):
+            builtin.ret %2 : (i32);
+        };
+        builtin.global_variable private @__stack_pointer : i32 {
+            builtin.ret_imm #builtin.number<1048576>;
+        };
+        builtin.global_variable public @gv1 : i32 {
+            builtin.ret_imm #builtin.number<1048576>;
+        };
+        builtin.global_variable public @gv2 : i32 {
+            builtin.ret_imm #builtin.number<1048576>;
+        };
+    };
+};

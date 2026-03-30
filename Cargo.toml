@@ -160,18 +160,12 @@ midenc-expect-test = { path = "tools/expect-test" }
 miden-field = { version = "0.22" }
 
 [patch.crates-io]
-#miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-assembly = { path = "../miden-vm/assembly" }
-#miden-assembly-syntax = { path = "../miden-vm/assembly-syntax" }
-#miden-core = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-core = { path = "../miden-vm/core" }
-# miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "0a5add565d1388f77cd182f3639c16aa8f7ec674" }
-# miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "main" }
-#miden-debug-types = { path = "../miden-vm/crates/debug/types" }
-#miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-processor = { path = "../miden-vm/processor" }
-#miden-mast-package = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
-#miden-mast-package = { path = "../miden-vm/package" }
+miden-assembly = { path = "../miden-vm/crates/assembly" }
+miden-assembly-syntax = { path = "../miden-vm/crates/assembly-syntax" }
+miden-core = { path = "../miden-vm/core" }
+miden-debug-types = { path = "../miden-vm/crates/debug-types" }
+miden-mast-package = { path = "../miden-vm/crates/mast-package" }
+miden-processor = { path = "../miden-vm/processor" }
 # miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
 # miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
 # miden-tx        = { tag = "v0.14.0-beta.4", git = "https://github.com/0xMiden/miden-base" }
