@@ -315,6 +315,10 @@ fn emit_default_block(
 }
 
 /// Emit a single out-of-range guard for `cases`, then enter the in-bounds binary search.
+///
+/// The interval bounds are inclusive. We only emit comparisons for bounds that can actually
+/// exclude values: selectors are unsigned, so there is no need to guard against values below `0`,
+/// and no selector can be greater than `u32::MAX`.
 fn emit_binary_search_with_interval_guard(
     op: &scf::IndexSwitch,
     emitter: &mut BlockEmitter<'_>,
