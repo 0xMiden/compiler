@@ -117,13 +117,17 @@ pub fn build_ir_module(
         ..Default::default()
     })
     .into_diagnostic()?;
-    parsed_module.function_debug = collect_function_debug_info(
-        parsed_module,
-        module_types,
-        &parsed_module.module,
-        &addr2line,
-        context.diagnostics(),
-    );
+    parsed_module.function_debug = if context.session().options.emit_debug_decorators() {
+        collect_function_debug_info(
+            parsed_module,
+            module_types,
+            &parsed_module.module,
+            &addr2line,
+            context.diagnostics(),
+        )
+    } else {
+        Default::default()
+    };
 
     let mut func_translator = FuncTranslator::new(context.clone());
     // Although this renders this parsed module invalid(without function

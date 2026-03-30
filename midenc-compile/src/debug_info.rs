@@ -1,29 +1,37 @@
 //! Debug info section builder for MASP packages.
 //!
 //! This module provides utilities for collecting debug information from the HIR
-//! and building a `DebugInfoSection` that can be serialized into the `.debug_info`
-//! custom section of a MASP package.
+//! and building debug sections that can be serialized into the MASP package.
 
-use alloc::{collections::BTreeMap, format, string::ToString};
+use alloc::{collections::BTreeMap, format, string::ToString, sync::Arc};
 
 use miden_debug_types::{ColumnNumber, LineNumber};
 use miden_mast_package::debug_info::{
-    DebugFileInfo, DebugFunctionInfo, DebugInfoSection, DebugPrimitiveType, DebugTypeInfo,
-    DebugVariableInfo,
+    DebugFileInfo, DebugFunctionInfo, DebugFunctionsSection, DebugPrimitiveType,
+    DebugSourcesSection, DebugTypeIdx, DebugTypeInfo, DebugTypesSection, DebugVariableInfo,
 };
 use midenc_dialect_debuginfo as debuginfo;
-use midenc_hir::{DILocalVariable, DISubprogram, OpExt, Type, dialects::builtin};
+use midenc_hir::{DILocalVariable, DISubprogramAttr, OpExt, Type, dialects::builtin};
 
-/// Builder for constructing a `DebugInfoSection` from HIR components.
-pub struct DebugInfoBuilder {
-    section: DebugInfoSection,
-    /// Maps source file paths to their indices in the file table
-    file_indices: BTreeMap<alloc::string::String, u32>,
-    /// Maps type hashes to their indices in the type table
-    type_indices: BTreeMap<TypeKey, u32>,
+/// The output of the debug info collection pass: three separate sections.
+pub struct DebugInfoSections {
+    pub types: DebugTypesSection,
+    pub sources: DebugSourcesSection,
+    pub functions: DebugFunctionsSection,
 }
 
-/// A key for deduplicating types
+/// Builder for constructing debug info sections from HIR components.
+pub struct DebugInfoBuilder {
+    types: DebugTypesSection,
+    sources: DebugSourcesSection,
+    functions: DebugFunctionsSection,
+    /// Maps source file paths to their indices in the file table
+    file_indices: BTreeMap<alloc::string::String, u32>,
+    /// Maps type keys to their indices in the type table
+    type_indices: BTreeMap<TypeKey, DebugTypeIdx>,
+}
+
+/// A key for deduplicating types (uses u32 since DebugTypeIdx lacks Ord)
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum TypeKey {
     Primitive(u8), // Use discriminant instead of the enum directly
@@ -42,15 +50,12 @@ impl DebugInfoBuilder {
     /// Creates a new debug info builder.
     pub fn new() -> Self {
         Self {
-            section: DebugInfoSection::new(),
+            types: DebugTypesSection::new(),
+            sources: DebugSourcesSection::new(),
+            functions: DebugFunctionsSection::new(),
             file_indices: BTreeMap::new(),
             type_indices: BTreeMap::new(),
         }
-    }
-
-    /// Adds a string to the string table and returns its index.
-    pub fn add_string(&mut self, s: impl Into<alloc::string::String>) -> u32 {
-        self.section.add_string(s)
     }
 
     /// Adds a file to the file table and returns its index.
@@ -74,16 +79,16 @@ impl DebugInfoBuilder {
             return idx;
         }
 
-        let path_idx = self.section.add_string(&full_path);
+        let path_idx = self.sources.add_string(Arc::from(full_path.as_str()));
         let file = DebugFileInfo::new(path_idx);
 
-        let idx = self.section.add_file(file);
+        let idx = self.sources.add_file(file);
         self.file_indices.insert(full_path, idx);
         idx
     }
 
     /// Adds a type to the type table and returns its index.
-    pub fn add_type(&mut self, ty: &Type) -> u32 {
+    pub fn add_type(&mut self, ty: &Type) -> DebugTypeIdx {
         let debug_type = hir_type_to_debug_type(ty, self);
         let key = type_to_key(&debug_type);
 
@@ -91,19 +96,19 @@ impl DebugInfoBuilder {
             return idx;
         }
 
-        let idx = self.section.add_type(debug_type);
+        let idx = self.types.add_type(debug_type);
         self.type_indices.insert(key, idx);
         idx
     }
 
     /// Adds a primitive type and returns its index.
-    pub fn add_primitive_type(&mut self, prim: DebugPrimitiveType) -> u32 {
+    pub fn add_primitive_type(&mut self, prim: DebugPrimitiveType) -> DebugTypeIdx {
         let key = TypeKey::Primitive(prim as u8);
         if let Some(&idx) = self.type_indices.get(&key) {
             return idx;
         }
 
-        let idx = self.section.add_type(DebugTypeInfo::Primitive(prim));
+        let idx = self.types.add_type(DebugTypeInfo::Primitive(prim));
         self.type_indices.insert(key, idx);
         idx
     }
@@ -148,11 +153,14 @@ impl DebugInfoBuilder {
     }
 
     fn collect_from_function(&mut self, function: &builtin::Function) {
-        // Get function debug info from attributes
         // Try to get DISubprogram from the function's attributes
-        let subprogram: Option<DISubprogram> = function
-            .get_attribute(midenc_hir::interner::Symbol::intern("di.subprogram"))
-            .and_then(|attr| attr.downcast_ref::<DISubprogram>().cloned());
+        let subprogram_attr = function
+            .get_attribute(midenc_hir::interner::Symbol::intern("di.subprogram"));
+
+        let subprogram = subprogram_attr.and_then(|attr| {
+            let borrowed = attr.borrow();
+            borrowed.downcast_ref::<DISubprogramAttr>().map(|sp| sp.as_value().clone())
+        });
 
         let Some(subprogram) = subprogram else {
             // No debug info for this function, just collect from body
@@ -164,8 +172,10 @@ impl DebugInfoBuilder {
         let file_idx = self.add_file(subprogram.file.as_str(), None);
 
         // Add function name
-        let name_idx = self.add_string(subprogram.name.as_str());
-        let linkage_name_idx = subprogram.linkage_name.map(|s| self.add_string(s.as_str()));
+        let name_idx = self.functions.add_string(Arc::from(subprogram.name.as_str()));
+        let linkage_name_idx = subprogram
+            .linkage_name
+            .map(|s| self.functions.add_string(Arc::from(s.as_str())));
 
         // Create function info
         let line = LineNumber::new(subprogram.line).unwrap_or_default();
@@ -179,7 +189,7 @@ impl DebugInfoBuilder {
         // Collect local variables from function body
         self.collect_variables_from_function_body(function, Some(&mut func_info));
 
-        self.section.add_function(func_info);
+        self.functions.add_function(func_info);
     }
 
     fn collect_variables_from_function_body(
@@ -204,7 +214,7 @@ impl DebugInfoBuilder {
         for op in block.body() {
             // Check if this is a DbgValue operation
             if let Some(dbg_value) = op.downcast_ref::<debuginfo::DebugValue>()
-                && let Some(var_info) = self.extract_variable_info(dbg_value.variable())
+                && let Some(var_info) = self.extract_variable_info(dbg_value.variable().as_value())
             {
                 func_info.add_variable(var_info);
             }
@@ -219,7 +229,7 @@ impl DebugInfoBuilder {
     }
 
     fn extract_variable_info(&mut self, var: &DILocalVariable) -> Option<DebugVariableInfo> {
-        let name_idx = self.add_string(var.name.as_str());
+        let name_idx = self.functions.add_string(Arc::from(var.name.as_str()));
 
         // Add type if available
         let type_idx = if let Some(ref ty) = var.ty {
@@ -240,14 +250,18 @@ impl DebugInfoBuilder {
         Some(var_info)
     }
 
-    /// Builds and returns the final `DebugInfoSection`.
-    pub fn build(self) -> DebugInfoSection {
-        self.section
+    /// Builds and returns the final debug info sections.
+    pub fn build(self) -> DebugInfoSections {
+        DebugInfoSections {
+            types: self.types,
+            sources: self.sources,
+            functions: self.functions,
+        }
     }
 
     /// Returns whether any debug info has been collected.
     pub fn is_empty(&self) -> bool {
-        self.section.is_empty()
+        self.functions.is_empty() && self.types.is_empty() && self.sources.is_empty()
     }
 }
 
@@ -284,7 +298,9 @@ fn hir_type_to_debug_type(ty: &Type, builder: &mut DebugInfoBuilder) -> DebugTyp
             }
         }
         // For types we don't have direct mappings for, use Unknown
-        Type::Struct(_) | Type::List(_) | Type::Function(_) => DebugTypeInfo::Unknown,
+        Type::Struct(_) | Type::List(_) | Type::Function(_) | Type::Enum(_) => {
+            DebugTypeInfo::Unknown
+        }
     }
 }
 
@@ -292,22 +308,24 @@ fn hir_type_to_debug_type(ty: &Type, builder: &mut DebugInfoBuilder) -> DebugTyp
 fn type_to_key(ty: &DebugTypeInfo) -> TypeKey {
     match ty {
         DebugTypeInfo::Primitive(p) => TypeKey::Primitive(*p as u8),
-        DebugTypeInfo::Pointer { pointee_type_idx } => TypeKey::Pointer(*pointee_type_idx),
+        DebugTypeInfo::Pointer { pointee_type_idx } => {
+            TypeKey::Pointer(pointee_type_idx.as_u32())
+        }
         DebugTypeInfo::Array {
             element_type_idx,
             count,
-        } => TypeKey::Array(*element_type_idx, *count),
+        } => TypeKey::Array(element_type_idx.as_u32(), *count),
         DebugTypeInfo::Unknown => TypeKey::Unknown,
         // For complex types like structs and functions, we don't deduplicate
         _ => TypeKey::Unknown,
     }
 }
 
-/// Builds a `DebugInfoSection` from an HIR component if debug info is enabled.
-pub fn build_debug_info_section(
+/// Builds debug info sections from an HIR component if debug info is enabled.
+pub fn build_debug_info_sections(
     component: &builtin::Component,
     emit_debug_decorators: bool,
-) -> Option<DebugInfoSection> {
+) -> Option<DebugInfoSections> {
     if !emit_debug_decorators {
         return None;
     }

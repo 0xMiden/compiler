@@ -1277,7 +1277,7 @@ impl HirLowering for debuginfo::DebugValue {
     }
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use miden_core::{DebugVarInfo, DebugVarLocation, Felt};
+        use miden_core::{Felt, operations::{DebugVarInfo, DebugVarLocation}};
         use midenc_hir::DIExpressionOp;
 
         // Get the variable info

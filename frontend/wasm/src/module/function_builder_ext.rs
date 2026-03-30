@@ -12,11 +12,12 @@ use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
-    OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Type, ValueRef,
+    Op, OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Type, ValueRef,
     dialects::builtin::{
         BuiltinOpBuilder, FunctionBuilder, FunctionRef,
         attributes::{LocalVariable, Signature},
     },
+    interner::Symbol,
     traits::{BranchOpInterface, Terminator},
 };
 
@@ -594,10 +595,17 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         };
         let info = info.borrow();
+        let context = self.inner.builder().context_rc();
+        let cu_attr = context
+            .create_attribute::<midenc_hir::DICompileUnitAttr, _>(info.compile_unit.clone())
+            .as_attribute_ref();
+        let sp_attr = context
+            .create_attribute::<midenc_hir::DISubprogramAttr, _>(info.subprogram.clone())
+            .as_attribute_ref();
         let mut func = self.inner.func.borrow_mut();
         let op = func.as_operation_mut();
-        op.set_intrinsic_attribute(Self::DI_COMPILE_UNIT_ATTR, Some(info.compile_unit.clone()));
-        op.set_intrinsic_attribute(Self::DI_SUBPROGRAM_ATTR, Some(info.subprogram.clone()));
+        op.set_attribute(Self::DI_COMPILE_UNIT_ATTR, cu_attr);
+        op.set_attribute(Self::DI_SUBPROGRAM_ATTR, sp_attr);
     }
 
     fn emit_parameter_dbg_if_needed(&mut self, span: SourceSpan) {
