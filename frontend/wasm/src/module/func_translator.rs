@@ -10,7 +10,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use cranelift_entity::EntityRef;
 use midenc_hir::{
-    BlockRef, Builder, Context, Op,
+    BlockRef, Builder, Context, Op, Type,
     diagnostics::{ColumnNumber, LineNumber},
     dialects::builtin::{BuiltinOpBuilder, FunctionRef},
 };
@@ -77,6 +77,9 @@ impl FuncTranslator {
             .with_listener(SSABuilderListener::new(self.func_ctx.clone()));
         let mut builder = FunctionBuilderExt::new(func, &mut op_builder);
 
+        // Keep a clone for FrameBase variable declaration below
+        let debug_info_ref = debug_info.clone();
+
         if let Some(info) = debug_info.clone() {
             builder.set_debug_metadata(info);
         }
@@ -99,13 +102,27 @@ impl FuncTranslator {
 
         let mut reader = body.get_locals_reader().into_diagnostic()?;
 
-        parse_local_decls(
+        let total_wasm_vars = parse_local_decls(
             &mut reader,
             &mut builder,
             num_params,
             func_validator,
             &session.diagnostics,
         )?;
+
+        // Declare extra SSA variables for FrameBase-only debug entries (e.g. local `sum`
+        // in debug builds that lives in linear memory, not a WASM local).
+        // Use declare_var_only to avoid allocating HIR locals that would inflate
+        // num_locals and corrupt FMP offset calculations.
+        if let Some(info) = debug_info_ref.as_ref() {
+            let locals_len = info.borrow().locals.len();
+            if locals_len > total_wasm_vars {
+                for idx in total_wasm_vars..locals_len {
+                    let var = Variable::new(idx);
+                    builder.declare_var_only(var, Type::I32);
+                }
+            }
+        }
 
         let mut reader = body.get_operators_reader().into_diagnostic()?;
         parse_function_body(
@@ -153,13 +170,14 @@ fn declare_parameters<B: ?Sized + Builder>(
 /// Parse the local variable declarations that precede the function body.
 ///
 /// Declare local variables, starting from `num_params`.
+/// Returns the total number of declared variables (params + locals).
 fn parse_local_decls<B: ?Sized + Builder>(
     reader: &mut wasmparser::LocalsReader<'_>,
     builder: &mut FunctionBuilderExt<'_, B>,
     num_params: usize,
     validator: &mut FuncValidator<impl WasmModuleResources>,
     diagnostics: &DiagnosticsHandler,
-) -> WasmResult<()> {
+) -> WasmResult<usize> {
     let mut next_local = num_params;
     let local_count = reader.get_count();
 
@@ -170,7 +188,7 @@ fn parse_local_decls<B: ?Sized + Builder>(
         declare_locals(builder, count, ty, &mut next_local, diagnostics)?;
     }
 
-    Ok(())
+    Ok(next_local)
 }
 
 /// Declare `count` local variables of the same type, starting from `next_local`.

@@ -262,9 +262,33 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     }
 
     fn emit_scheduled_dbg_value(&mut self, entry: LocationScheduleEntry, span: SourceSpan) {
-        let var = Variable::new(entry.var_index);
-        let Ok(value) = self.try_use_var(var) else {
+        use crate::module::debug_info::VariableStorage;
+
+        // Skip variables already emitted as parameters to avoid duplicates.
+        if self.param_dbg_emitted
+            && self.param_values.iter().any(|(v, _)| v.index() == entry.var_index)
+        {
             return;
+        }
+
+        let var = Variable::new(entry.var_index);
+        let value = match self.try_use_var(var) {
+            Ok(v) => v,
+            Err(_) => {
+                // For FrameBase-only variables (no WASM local), use a dummy SSA value.
+                // The FrameBase expression will override the value's stack position.
+                if matches!(&entry.storage, VariableStorage::FrameBase { .. }) {
+                    if let Some((_, v)) = self.param_values.first() {
+                        let dummy = *v;
+                        self.def_var(var, dummy);
+                        dummy
+                    } else {
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
         };
 
         // Create expression from the scheduled location
@@ -467,6 +491,19 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         local
     }
 
+    /// Declare an SSA variable without allocating an HIR local.
+    ///
+    /// Used for FrameBase-only debug variables that live in linear memory
+    /// and don't need a real function-local storage slot. This avoids
+    /// inflating `num_locals` which would corrupt FMP offset calculations.
+    pub fn declare_var_only(&mut self, var: Variable, ty: Type) {
+        let mut ctx = self.func_ctx.borrow_mut();
+        if ctx.types[var] != Type::Unknown {
+            return; // Already declared
+        }
+        ctx.types[var] = ty;
+    }
+
     /// Declares the type of a variable, so that it can be used later (by calling
     /// [`FunctionBuilderExt::use_var`]). This function will return an error if the variable
     /// has been previously declared.
@@ -621,9 +658,12 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         }
         self.param_dbg_emitted = true;
         let params: Vec<_> = self.param_values.to_vec();
-        for (var, value) in params {
-            self.emit_dbg_value_for_var(var, value, span);
+        for (var, value) in &params {
+            self.emit_dbg_value_for_var(*var, *value, span);
         }
+        // FrameBase-only variables (e.g. local `sum`) are emitted solely via
+        // the location schedule in apply_location_schedule/emit_scheduled_dbg_value,
+        // avoiding duplicate DebugVar emissions.
     }
 
     fn span_to_location(
