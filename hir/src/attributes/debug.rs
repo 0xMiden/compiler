@@ -243,6 +243,9 @@ pub enum DIExpressionOp {
     Piece(u64),
     /// DW_OP_bit_piece - Describes a piece of a variable in bits
     BitPiece { size: u64, offset: u64 },
+    /// DW_OP_fbreg - Frame base register + offset.
+    /// The variable is in WASM linear memory at `value_of(global[global_index]) + byte_offset`.
+    FrameBase { global_index: u32, byte_offset: i64 },
     /// Placeholder for unsupported operations
     Unsupported(Symbol),
 }
@@ -301,6 +304,9 @@ impl PrettyPrint for DIExpression {
                 DIExpressionOp::Piece(size) => text(format!("DW_OP_piece {}", size)),
                 DIExpressionOp::BitPiece { size, offset } => {
                     text(format!("DW_OP_bit_piece {} {}", size, offset))
+                }
+                DIExpressionOp::FrameBase { global_index, byte_offset } => {
+                    text(format!("DW_OP_fbreg global[{}]{:+}", global_index, byte_offset))
                 }
                 DIExpressionOp::Unsupported(name) => text(name.as_str()),
             };
