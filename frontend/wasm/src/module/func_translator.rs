@@ -144,6 +144,7 @@ fn declare_parameters<B: ?Sized + Builder>(
 
         let param_value = entry_block.borrow().arguments()[i];
         builder.def_var(var, param_value);
+        builder.register_parameter(var, param_value);
         builder.store_local(local, param_value, SourceSpan::UNKNOWN).unwrap();
     }
     next_local

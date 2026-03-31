@@ -647,22 +647,18 @@ impl MasmFunctionBuilder {
             num_locals,
         } = self;
 
-        // Compute total WASM locals count for FMP offset calculation.
-        // WASM locals = params (in felts) + local variables (in felts).
-        // This is needed because DWARF's WasmLocal(idx) uses WASM indexing where
-        // params come first, while num_locals only counts HIR spilled values.
-        let num_params_in_felts: u16 = function
-            .signature()
-            .params
-            .iter()
-            .map(|p| p.ty.size_in_felts() as u16)
-            .sum();
-        let num_wasm_locals = num_params_in_felts + num_locals;
+        // Align num_locals to WORD_SIZE, matching the assembler's FMP frame sizing.
+        // num_locals already counts all HIR locals (including those allocated for params).
+        // The assembler rounds up to next_multiple_of(WORD_SIZE) when advancing FMP
+        // (see fmp.rs fmp_start_frame_sequence and mem_ops.rs locaddr), so we must use
+        // the same alignment for debug var offset computation.
+        let aligned_num_locals = num_locals.next_multiple_of(miden_core::WORD_SIZE as u16);
 
         // Patch DebugVar Local locations to compute FMP offset.
         // During lowering, Local(idx) stores the raw WASM local index.
-        // Now convert to FMP offset: idx - num_wasm_locals
-        patch_debug_var_locals_in_block(&mut body, num_wasm_locals);
+        // Now convert to FMP offset: idx - aligned_num_locals
+        // This matches locaddr.N which computes -(aligned_num_locals - N).
+        patch_debug_var_locals_in_block(&mut body, aligned_num_locals);
 
         // Strip DebugVar-only procedure bodies.
         // The Miden assembler rejects procedures whose bodies contain only decorators
@@ -707,8 +703,9 @@ fn block_has_real_instructions(block: &masm::Block) -> bool {
 /// Recursively patch DebugVar Local locations in a block.
 ///
 /// Converts `Local(idx)` where idx is the raw WASM local index to `Local(offset)`
-/// where offset = idx - num_locals (the FMP offset, typically negative).
-fn patch_debug_var_locals_in_block(block: &mut masm::Block, num_locals: u16) {
+/// where offset = idx - aligned_num_locals (the FMP-relative offset, typically negative).
+/// This matches the assembler's `locaddr.N` formula: `FMP - aligned_num_locals + N`.
+fn patch_debug_var_locals_in_block(block: &mut masm::Block, aligned_num_locals: u16) {
     for op in block.iter_mut() {
         match op {
             masm::Op::Inst(span_inst) => {
@@ -716,7 +713,7 @@ fn patch_debug_var_locals_in_block(block: &mut masm::Block, num_locals: u16) {
                 if let masm::Instruction::DebugVar(info) = &mut **span_inst {
                     if let DebugVarLocation::Local(idx) = info.value_location() {
                         // Convert raw WASM local index to FMP offset
-                        let fmp_offset = *idx - (num_locals as i16);
+                        let fmp_offset = *idx - (aligned_num_locals as i16);
 
                         // Create new info with patched location, preserving all fields
                         let mut new_info = DebugVarInfo::new(
@@ -737,14 +734,14 @@ fn patch_debug_var_locals_in_block(block: &mut masm::Block, num_locals: u16) {
                 }
             }
             masm::Op::If { then_blk, else_blk, .. } => {
-                patch_debug_var_locals_in_block(then_blk, num_locals);
-                patch_debug_var_locals_in_block(else_blk, num_locals);
+                patch_debug_var_locals_in_block(then_blk, aligned_num_locals);
+                patch_debug_var_locals_in_block(else_blk, aligned_num_locals);
             }
             masm::Op::While { body: while_body, .. } => {
-                patch_debug_var_locals_in_block(while_body, num_locals);
+                patch_debug_var_locals_in_block(while_body, aligned_num_locals);
             }
             masm::Op::Repeat { body: repeat_body, .. } => {
-                patch_debug_var_locals_in_block(repeat_body, num_locals);
+                patch_debug_var_locals_in_block(repeat_body, aligned_num_locals);
             }
         }
     }
