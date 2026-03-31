@@ -8,7 +8,7 @@ use midenc_dialect_cf as cf;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
-use midenc_dialect_wasm as wasm;
+use midenc_dialect_wasm::{self as wasm};
 use midenc_hir::{
     AttributeRef, Felt, Immediate, ImmediateAttr, Op, OperationRef, Overflow, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorInfo, Type,
@@ -2065,44 +2065,55 @@ impl Eval for wasm::SignExtend {
     }
 }
 
-impl Eval for wasm::I32Load8S {
-    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        let addr = self.addr();
-        let addr_value = evaluator.use_value(&addr.as_value_ref())?;
-        let Immediate::U32(addr_value) = addr_value else {
-            return Err(evaluator.report(
-                "evaluation failed",
-                self.span(),
-                format!("expected pointer to be a u32 immediate, got {}", addr_value.ty()),
-            ));
-        };
+macro_rules! impl_eval_load_sext {
+    ($op:ty, $src_imm:ident, $dst_imm:ident, $dst_ty:ty) => {
+        impl Eval for $op {
+            fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+                let addr = self.addr();
+                let addr_value = evaluator.use_value(&addr.as_value_ref())?;
+                let Immediate::U32(addr_value) = addr_value else {
+                    return Err(evaluator.report(
+                        "evaluation failed",
+                        self.span(),
+                        format!("expected pointer to be a u32 immediate, got {}", addr_value.ty()),
+                    ));
+                };
 
-        let pointer_ty = addr.ty();
-        let pointee_ty = pointer_ty
-            .pointee()
-            .expect("expected pointer type to have been verified already");
-        let loaded = evaluator.read_memory(addr_value, pointee_ty)?;
-        let sign_extended = match loaded {
-            Value::Immediate(Immediate::I8(x)) => Value::Immediate(Immediate::I32(x as i32)),
-            Value::Poison {
-                origin,
-                used,
-                value: Immediate::I8(x),
-            } => Value::Poison {
-                origin,
-                used,
-                value: Immediate::I32(x as i32),
-            },
-            other => {
-                return Err(evaluator.report(
-                    "evaluation failed",
-                    self.span(),
-                    format!("expected i8 load, got {}", other.ty()),
-                ));
+                let pointer_ty = addr.ty();
+                let pointee_ty = pointer_ty
+                    .pointee()
+                    .expect("expected pointer type to have been verified already");
+                let loaded = evaluator.read_memory(addr_value, pointee_ty)?;
+
+                let sign_extended = match loaded {
+                    Value::Immediate(Immediate::$src_imm(x)) => {
+                        Ok(Value::Immediate(Immediate::$dst_imm(x as $dst_ty)))
+                    }
+                    Value::Poison {
+                        origin,
+                        used,
+                        value: Immediate::$src_imm(x),
+                    } => Ok(Value::Poison {
+                        origin,
+                        used,
+                        value: Immediate::$dst_imm(x as $dst_ty),
+                    }),
+                    other => Err(evaluator.report(
+                        "evaluation failed",
+                        self.span(),
+                        format!("expected {} load, got {}", stringify!($src_imm), other.ty()),
+                    )),
+                }?;
+
+                evaluator.set_value(self.result().as_value_ref(), sign_extended);
+                Ok(ControlFlowEffect::None)
             }
-        };
-
-        evaluator.set_value(self.result().as_value_ref(), sign_extended);
-        Ok(ControlFlowEffect::None)
-    }
+        }
+    };
 }
+
+impl_eval_load_sext!(wasm::I32Load8S, I8, I32, i32);
+impl_eval_load_sext!(wasm::I32Load16S, I16, I32, i32);
+impl_eval_load_sext!(wasm::I64Load8S, I8, I64, i64);
+impl_eval_load_sext!(wasm::I64Load16S, I16, I64, i64);
+impl_eval_load_sext!(wasm::I64Load32S, I32, I64, i64);

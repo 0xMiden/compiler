@@ -30,6 +30,54 @@ pub trait WasmOpBuilder<'f, B: ?Sized + Builder>: WasmMemOpBuilder<'f, B> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    fn i32_load16_s(
+        &mut self,
+        addr: ValueRef,
+        memarg: Option<WasmMemArg>,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let addr = prepare_addr(addr, &Type::I16, memarg, self, span)?;
+        let op_builder = WasmOpBuilder::builder_mut(self).create::<crate::ops::I32Load16S, _>(span);
+        let op = op_builder(addr)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn i64_load8_s(
+        &mut self,
+        addr: ValueRef,
+        memarg: Option<WasmMemArg>,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let addr = prepare_addr(addr, &Type::I8, memarg, self, span)?;
+        let op_builder = WasmOpBuilder::builder_mut(self).create::<crate::ops::I64Load8S, _>(span);
+        let op = op_builder(addr)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn i64_load16_s(
+        &mut self,
+        addr: ValueRef,
+        memarg: Option<WasmMemArg>,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let addr = prepare_addr(addr, &Type::I16, memarg, self, span)?;
+        let op_builder = WasmOpBuilder::builder_mut(self).create::<crate::ops::I64Load16S, _>(span);
+        let op = op_builder(addr)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn i64_load32_s(
+        &mut self,
+        addr: ValueRef,
+        memarg: Option<WasmMemArg>,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let addr = prepare_addr(addr, &Type::I32, memarg, self, span)?;
+        let op_builder = WasmOpBuilder::builder_mut(self).create::<crate::ops::I64Load32S, _>(span);
+        let op = op_builder(addr)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     fn builder(&self) -> &B;
     fn builder_mut(&mut self) -> &mut B;
 }
