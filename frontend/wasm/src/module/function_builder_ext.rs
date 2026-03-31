@@ -166,7 +166,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         self.refresh_function_debug_attrs();
     }
 
-    fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
+    pub fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
         let Some(info) = self.debug_info.as_ref() else {
             return;
         };
@@ -191,8 +191,15 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             attr.column = column;
         }
 
+        // If DWARF didn't provide a location expression, synthesize one from the
+        // wasm local index — we know this variable is stored as a wasm local.
+        let expr = expr_opt.or_else(|| {
+            let ops = vec![midenc_hir::DIExpressionOp::WasmLocal(idx as u32)];
+            Some(midenc_hir::DIExpression::with_ops(ops))
+        });
+
         if let Err(err) =
-            DebugInfoOpBuilder::builder_mut(self).debug_value_with_expr(value, attr, expr_opt, span)
+            DebugInfoOpBuilder::builder_mut(self).debug_value_with_expr(value, attr, expr, span)
         {
             warn!("failed to emit dbg.value for local {idx}: {err:?}");
         }
@@ -615,18 +622,6 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         self.param_dbg_emitted = true;
         let params: Vec<_> = self.param_values.to_vec();
         for (var, value) in params {
-            let skip_due_to_schedule = if let Some(info_rc) = self.debug_info.as_ref() {
-                let info = info_rc.borrow();
-                info.locals
-                    .get(var.index())
-                    .and_then(|entry| entry.as_ref())
-                    .is_some_and(|entry| !entry.locations.is_empty())
-            } else {
-                false
-            };
-            if skip_due_to_schedule {
-                continue;
-            }
             self.emit_dbg_value_for_var(var, value, span);
         }
     }

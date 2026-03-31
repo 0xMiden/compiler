@@ -4,8 +4,10 @@ builtin.component private @root_ns:root@1.0.0 {
             hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
             %2 = arith.constant 0 : i32;
             hir.store_local %2 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+            "debuginfo.debug_value"(%2) <{ variable = #builtin.di_local_variable<di.local_variable(name = local1, file = unknown, line = 0, ty = i32)>, expression = #builtin.di_expression<di.expression(DW_OP_WASM_local 1)> }> : i32 -> ();
             %3 = arith.constant 0 : i32;
             hir.store_local %3 <{ local = #builtin.local_variable<2, i32> }> : (i32);
+            "debuginfo.debug_value"(%3) <{ variable = #builtin.di_local_variable<di.local_variable(name = local2, file = unknown, line = 0, ty = i32)>, expression = #builtin.di_expression<di.expression(DW_OP_WASM_local 2)> }> : i32 -> ();
             cf.br ^block8;
         ^block7(%1: i32):
 
@@ -27,10 +29,12 @@ builtin.component private @root_ns:root@1.0.0 {
             %16 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
             %17 = arith.add %15, %16 <{ overflow = #builtin.overflow<wrapping> }>;
             hir.store_local %17 <{ local = #builtin.local_variable<2, i32> }> : (i32);
+            "debuginfo.debug_value"(%17) <{ variable = #builtin.di_local_variable<di.local_variable(name = local2, file = unknown, line = 0, ty = i32)>, expression = #builtin.di_expression<di.expression(DW_OP_WASM_local 2)> }> : i32 -> ();
             %18 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
             %19 = arith.constant 1 : i32;
             %20 = arith.add %18, %19 <{ overflow = #builtin.overflow<wrapping> }>;
             hir.store_local %20 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+            "debuginfo.debug_value"(%20) <{ variable = #builtin.di_local_variable<di.local_variable(name = local1, file = unknown, line = 0, ty = i32)>, expression = #builtin.di_expression<di.expression(DW_OP_WASM_local 1)> }> : i32 -> ();
             cf.br ^block8;
         ^block11:
             %14 = hir.load_local <{ local = #builtin.local_variable<2, i32> }>;
