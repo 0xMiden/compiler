@@ -6,21 +6,13 @@ Provides the `objtool` CLI to analyze compilation artifacts.
 
 The compilation artifacts to be examined must have been produced by a `midenup` toolchain version compatible with the `compiler` version used to build `objtool`. Otherwise you may run into errors like `unsupported version`.
 
-## Usage
+## Installation
 
-It can be built and run from the repository root, for example:
+Running `cargo make install-objtool` from the repository root installs the `objtool` binary globally via the cargo bin directory. Alternatively, `cargo make install` installs multiple tools, including `objtool`.
 
-```sh
-cargo run -p objtool -- decorators ./mypkg.masp
-```
-
-When using cargo run, arguments for objtool go after the `--` separator.
-
-Alternatively, you can build the package, move it to a directory in your `PATH` and then invoke it directly:
+Once installed, `objtool` can be executed with:
 
 ```sh
-cargo build -p objtool --release
-mv target/release/objtool <dir_on_your_path>
 objtool decorators ./mypkg.masp
 ```
 
@@ -33,7 +25,7 @@ Note that this computes sizes in memory and does *not* write packages stripped o
 **Example usage**
 
 ```sh
-cargo run -p objtool -- decorators ./mypkg.masp
+objtool decorators ./mypkg.masp
 
 Package kind: library
 Artifact: library
@@ -48,7 +40,7 @@ compacted forest    13.10  -23.03  -63.74%
 **Help**
 
 ```sh
-cargo run -p objtool -- decorators --help
+objtool decorators --help
 
 Compare serialized MAST forest sizes after stripping decorators
 
