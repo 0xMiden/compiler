@@ -1288,6 +1288,7 @@ impl HirLowering for debuginfo::DebugValue {
                     | DIExpressionOp::WasmLocal(_)
                     | DIExpressionOp::ConstU64(_)
                     | DIExpressionOp::ConstS64(_)
+                    | DIExpressionOp::FrameBase { .. }
             )
         });
         if !has_location_expr && emitter.stack.find(&value).is_none() {
@@ -1313,6 +1314,12 @@ impl HirLowering for debuginfo::DebugValue {
                 }
                 DIExpressionOp::ConstU64(val) => DebugVarLocation::Const(Felt::new(*val)),
                 DIExpressionOp::ConstS64(val) => DebugVarLocation::Const(Felt::new(*val as u64)),
+                DIExpressionOp::FrameBase { global_index, byte_offset } => {
+                    DebugVarLocation::FrameBase {
+                        global_index: *global_index,
+                        byte_offset: *byte_offset,
+                    }
+                }
                 _ => {
                     // For other operations, try to find the value on the stack
                     if let Some(pos) = emitter.stack.find(&value) {
