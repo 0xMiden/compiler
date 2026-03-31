@@ -1298,16 +1298,10 @@ impl HirLowering for debuginfo::DebugValue {
             match first_op {
                 DIExpressionOp::WasmStack(offset) => DebugVarLocation::Stack(*offset as u8),
                 DIExpressionOp::WasmLocal(idx) => {
-                    // First check if the value is on the Miden operand stack.
-                    // WASM locals might stay on the stack in Miden if not spilled.
-                    if let Some(pos) = emitter.stack.find(&value) {
-                        DebugVarLocation::Stack(pos as u8)
-                    } else {
-                        // Value is not on stack, assume it's in local memory.
-                        // Store raw WASM local index temporarily. The FMP offset will be
-                        // computed later in MasmFunctionBuilder::build() when num_locals is known.
-                        DebugVarLocation::Local(*idx as i16)
-                    }
+                    // WASM locals are always stored in memory via FMP in Miden.
+                    // Store raw WASM local index; the FMP offset will be computed
+                    // later in MasmFunctionBuilder::build() when num_locals is known.
+                    DebugVarLocation::Local(*idx as i16)
                 }
                 DIExpressionOp::WasmGlobal(_) | DIExpressionOp::Deref => {
                     // For global or dereference, check the stack position of the value
