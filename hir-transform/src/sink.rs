@@ -25,9 +25,9 @@ fn is_debug_info_op(op: &Operation) -> bool {
 /// Debug uses are excluded because they are observational and should never
 /// prevent value-producing operations from being moved or eliminated.
 fn is_sole_non_debug_user(value: &dyn Value, operation: OperationRef) -> bool {
-    value.iter_uses().all(|user| {
-        user.owner == operation || is_debug_info_op(&user.owner.borrow())
-    })
+    value
+        .iter_uses()
+        .all(|user| user.owner == operation || is_debug_info_op(&user.owner.borrow()))
 }
 
 /// Returns `true` if the only remaining uses of the given value are debug info uses
@@ -325,8 +325,8 @@ impl Pass for SinkOperandDefs {
             // now if it has no side effects.
             let is_memory_effect_free =
                 op.is_memory_effect_free() || op.implements::<dyn ConstantLike>();
-            let only_debug_uses = !op.is_used()
-                || op.results().iter().all(|r| has_only_debug_uses(&*r.borrow()));
+            let only_debug_uses =
+                !op.is_used() || op.results().iter().all(|r| has_only_debug_uses(&*r.borrow()));
             if only_debug_uses
                 && is_memory_effect_free
                 && !op.implements::<dyn Terminator>()

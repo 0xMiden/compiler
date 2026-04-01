@@ -154,8 +154,8 @@ impl DebugInfoBuilder {
 
     fn collect_from_function(&mut self, function: &builtin::Function) {
         // Try to get DISubprogram from the function's attributes
-        let subprogram_attr = function
-            .get_attribute(midenc_hir::interner::Symbol::intern("di.subprogram"));
+        let subprogram_attr =
+            function.get_attribute(midenc_hir::interner::Symbol::intern("di.subprogram"));
 
         let subprogram = subprogram_attr.and_then(|attr| {
             let borrowed = attr.borrow();
@@ -308,9 +308,7 @@ fn hir_type_to_debug_type(ty: &Type, builder: &mut DebugInfoBuilder) -> DebugTyp
 fn type_to_key(ty: &DebugTypeInfo) -> TypeKey {
     match ty {
         DebugTypeInfo::Primitive(p) => TypeKey::Primitive(*p as u8),
-        DebugTypeInfo::Pointer { pointee_type_idx } => {
-            TypeKey::Pointer(pointee_type_idx.as_u32())
-        }
+        DebugTypeInfo::Pointer { pointee_type_idx } => TypeKey::Pointer(pointee_type_idx.as_u32()),
         DebugTypeInfo::Array {
             element_type_idx,
             count,

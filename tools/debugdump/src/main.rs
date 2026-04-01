@@ -139,18 +139,9 @@ fn run() -> Result<(), Error> {
     let mast_forest = package.mast.mast_forest();
 
     // Find the three debug sections
-    let types_section = package
-        .sections
-        .iter()
-        .find(|s| s.id == SectionId::DEBUG_TYPES);
-    let sources_section = package
-        .sections
-        .iter()
-        .find(|s| s.id == SectionId::DEBUG_SOURCES);
-    let functions_section = package
-        .sections
-        .iter()
-        .find(|s| s.id == SectionId::DEBUG_FUNCTIONS);
+    let types_section = package.sections.iter().find(|s| s.id == SectionId::DEBUG_TYPES);
+    let sources_section = package.sections.iter().find(|s| s.id == SectionId::DEBUG_SOURCES);
+    let functions_section = package.sections.iter().find(|s| s.id == SectionId::DEBUG_FUNCTIONS);
 
     // We need at least one section to proceed
     if types_section.is_none() && sources_section.is_none() && functions_section.is_none() {
@@ -174,16 +165,16 @@ fn run() -> Result<(), Error> {
         None => DebugFunctionsSection::new(),
     };
 
-    let debug_sections = DebugSections { types, sources, functions };
+    let debug_sections = DebugSections {
+        types,
+        sources,
+        functions,
+    };
 
     // Print header
     println!("{}", "=".repeat(80));
     println!("DEBUG INFO DUMP: {}", cli.input.display());
-    println!(
-        "Package: {} (version: {})",
-        package.name,
-        package.version
-    );
+    println!("Package: {} (version: {})", package.name, package.version);
     println!(
         "Debug info versions: types={}, sources={}, functions={}",
         debug_sections.types.version,
@@ -234,23 +225,12 @@ fn print_summary(debug_sections: &DebugSections, mast_forest: &MastForest) {
     );
     println!("  Types:     {} entries", debug_sections.types.types.len());
     println!("  Files:     {} entries", debug_sections.sources.files.len());
-    println!(
-        "  Functions: {} entries",
-        debug_sections.functions.functions.len()
-    );
+    println!("  Functions: {} entries", debug_sections.functions.functions.len());
 
-    let total_vars: usize = debug_sections
-        .functions
-        .functions
-        .iter()
-        .map(|f| f.variables.len())
-        .sum();
-    let total_inlined: usize = debug_sections
-        .functions
-        .functions
-        .iter()
-        .map(|f| f.inlined_calls.len())
-        .sum();
+    let total_vars: usize =
+        debug_sections.functions.functions.iter().map(|f| f.variables.len()).sum();
+    let total_inlined: usize =
+        debug_sections.functions.functions.iter().map(|f| f.inlined_calls.len()).sum();
     println!("  Variables: {} total (across all functions)", total_vars);
     println!("  Inlined:   {} call sites", total_inlined);
 
@@ -294,11 +274,7 @@ fn print_type(ty: &DebugTypeInfo, debug_sections: &DebugSections, raw: bool, ind
     match ty {
         DebugTypeInfo::Primitive(prim) => {
             print!("{}PRIMITIVE: {}", pad, primitive_name(*prim));
-            print!(
-                " (size: {} bytes, {} felts)",
-                prim.size_in_bytes(),
-                prim.size_in_felts()
-            );
+            print!(" (size: {} bytes, {} felts)", prim.size_in_bytes(), prim.size_in_felts());
         }
         DebugTypeInfo::Pointer { pointee_type_idx } => {
             if raw {
@@ -317,12 +293,7 @@ fn print_type(ty: &DebugTypeInfo, debug_sections: &DebugSections, raw: bool, ind
             count,
         } => {
             if raw {
-                print!(
-                    "{}ARRAY [{}; {:?}]",
-                    pad,
-                    element_type_idx.as_u32(),
-                    count
-                );
+                print!("{}ARRAY [{}; {:?}]", pad, element_type_idx.as_u32(), count);
             } else {
                 print!("{}ARRAY [", pad);
                 if let Some(elem) = debug_sections.get_type(*element_type_idx) {
@@ -344,9 +315,7 @@ fn print_type(ty: &DebugTypeInfo, debug_sections: &DebugSections, raw: bool, ind
             let name = if raw {
                 format!("str[{}]", name_idx)
             } else {
-                debug_sections
-                    .get_type_string(*name_idx)
-                    .unwrap_or_else(|| "<unknown>".into())
+                debug_sections.get_type_string(*name_idx).unwrap_or_else(|| "<unknown>".into())
             };
             print!("{}STRUCT {} (size: {} bytes)", pad, name, size);
             if !fields.is_empty() {
@@ -431,9 +400,7 @@ fn print_type_brief(ty: &DebugTypeInfo, debug_sections: &DebugSections) {
         DebugTypeInfo::Struct { name_idx, .. } => {
             print!(
                 "struct {}",
-                debug_sections
-                    .get_type_string(*name_idx)
-                    .unwrap_or_else(|| "?".into())
+                debug_sections.get_type_string(*name_idx).unwrap_or_else(|| "?".into())
             );
         }
         DebugTypeInfo::Function { .. } => print!("fn(...)"),
@@ -539,10 +506,7 @@ fn print_function(
             .and_then(|f| debug_sections.get_source_string(f.path_idx))
             .unwrap_or_else(|| "<unknown>".into())
     };
-    println!(
-        "         Location: {}:{}:{}",
-        file_path, func.line, func.column
-    );
+    println!("         Location: {}:{}:{}", file_path, func.line, func.column);
 
     // Type
     if let Some(type_idx) = func.type_idx {
@@ -576,10 +540,7 @@ fn print_function(
 
     // Inlined calls
     if !func.inlined_calls.is_empty() && verbose {
-        println!(
-            "         Inlined calls ({}):",
-            func.inlined_calls.len()
-        );
+        println!("         Inlined calls ({}):", func.inlined_calls.len());
         for call in &func.inlined_calls {
             let callee = if raw {
                 format!("func[{}]", call.callee_idx)
