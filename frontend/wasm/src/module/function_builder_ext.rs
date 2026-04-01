@@ -275,14 +275,22 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         let value = match self.try_use_var(var) {
             Ok(v) => v,
             Err(_) => {
-                // For FrameBase-only variables (no WASM local), use a dummy SSA value.
-                // The FrameBase expression will override the value's stack position.
                 if matches!(&entry.storage, VariableStorage::FrameBase { .. }) {
+                    // FrameBase-only variables have no WASM local, so no SSA value
+                    // exists for them. The debuginfo.value op requires an SSA operand,
+                    // so we attach an existing parameter value as an anchor. The MASM
+                    // lowering ignores this operand when the DIExpression contains
+                    // FrameBase — the location is fully described by the expression.
                     if let Some((_, v)) = self.param_values.first() {
-                        let dummy = *v;
-                        self.def_var(var, dummy);
-                        dummy
+                        let anchor = *v;
+                        self.def_var(var, anchor);
+                        anchor
                     } else {
+                        warn!(
+                            "cannot track FrameBase variable (index {}): \
+                             no SSA value available (function has no parameters)",
+                            entry.var_index
+                        );
                         return;
                     }
                 } else {
