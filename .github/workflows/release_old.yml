@@ -1,7 +1,7 @@
 # The old release process left for releasing the Miden SDK until it moves to a separate repo.
 #
 # Runs `release-plz release` only after the release PR (starts with `release-plz-`)
-# is merged to the next branch. Publishes any unpublished crates.
+# is merged to the next branch. Publishes any unpublished Miden SDK crates.
 # Does nothing if all crates are already published (i.e. have their versions on crates.io).
 # Does not create/update release PRs.
 #
@@ -16,10 +16,13 @@ on:
 
 jobs:
   publish:
-    name: publish any unpublished packages
+    name: publish any unpublished SDK packages
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/cleanup-runner
@@ -27,11 +30,45 @@ jobs:
         run: |
           rustup update --no-self-update
           rustc --version
-      - name: Publish
+      # Publish SDK crates in dependency order so package verification can resolve
+      # already-published versions for inter-crate dependencies.
+      - name: Release `miden-field-repr-derive` crate
         uses: release-plz/action@v0.5
         with:
-          # Only run the `release` command that publishes any unpublished crates.
           command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          manifest_path: sdk/field-repr/derive/Cargo.toml
+      - name: Release `miden-field-repr` crate
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          manifest_path: sdk/field-repr/repr/Cargo.toml
+      - name: Release `miden-stdlib-sys` crate
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          manifest_path: sdk/stdlib-sys/Cargo.toml
+      - name: Release `miden-base-macros` crate
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          manifest_path: sdk/base-macros/Cargo.toml
+      - name: Release `miden-sdk-alloc` crate
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          manifest_path: sdk/alloc/Cargo.toml
+      - name: Release `miden-base-sys` crate
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          manifest_path: sdk/base-sys/Cargo.toml
+      - name: Release `miden-base` crate
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          manifest_path: sdk/base/Cargo.toml
+      - name: Release `miden` crate
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          manifest_path: sdk/sdk/Cargo.toml
