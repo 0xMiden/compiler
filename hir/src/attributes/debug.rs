@@ -305,9 +305,10 @@ impl PrettyPrint for DIExpression {
                 DIExpressionOp::BitPiece { size, offset } => {
                     text(format!("DW_OP_bit_piece {} {}", size, offset))
                 }
-                DIExpressionOp::FrameBase { global_index, byte_offset } => {
-                    text(format!("DW_OP_fbreg global[{}]{:+}", global_index, byte_offset))
-                }
+                DIExpressionOp::FrameBase {
+                    global_index,
+                    byte_offset,
+                } => text(format!("DW_OP_fbreg global[{}]{:+}", global_index, byte_offset)),
                 DIExpressionOp::Unsupported(name) => text(name.as_str()),
             };
         }
