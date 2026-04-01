@@ -2,9 +2,9 @@
 ;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && bin/midenc '%s' --exe --debug full -o \"\$TMPFILE\" && target/debug/miden-debugdump \"\$TMPFILE\" --section locations" | filecheck %s
 
 ;; Check header for .debug_loc section
-;; CHECK: .debug_loc contents (DebugVar decorators from MAST):
+;; CHECK: .debug_loc contents (DebugVar entries from MAST):
 ;; For raw WAT files without debug info, we expect no decorators
-;; CHECK: (no DebugVar decorators found)
+;; CHECK: (no DebugVar entries found)
 
 (module
   (func $add (export "add") (param i32 i32) (result i32)
