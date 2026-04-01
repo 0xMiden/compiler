@@ -1303,48 +1303,40 @@ impl HirLowering for debuginfo::DebugValue {
             // Value has been dropped and we have no other location info, skip
             return Ok(());
         }
+        // Resolve the runtime location. Returns None when the location cannot
+        // be determined (value dropped and no expression info), in which case
+        // we skip emitting the decorator entirely rather than emitting a
+        // placeholder — the debugger would have nothing useful to show.
         let value_location = if let Some(first_op) = expr.operations.first() {
             match first_op {
-                DIExpressionOp::WasmStack(offset) => DebugVarLocation::Stack(*offset as u8),
+                DIExpressionOp::WasmStack(offset) => Some(DebugVarLocation::Stack(*offset as u8)),
                 DIExpressionOp::WasmLocal(idx) => {
                     // WASM locals are always stored in memory via FMP in Miden.
                     // Store raw WASM local index; the FMP offset will be computed
                     // later in MasmFunctionBuilder::build() when num_locals is known.
-                    DebugVarLocation::Local(*idx as i16)
+                    i16::try_from(*idx).ok().map(DebugVarLocation::Local)
                 }
                 DIExpressionOp::WasmGlobal(_) | DIExpressionOp::Deref => {
-                    // For global or dereference, check the stack position of the value
-                    if let Some(pos) = emitter.stack.find(&value) {
-                        DebugVarLocation::Stack(pos as u8)
-                    } else {
-                        DebugVarLocation::Expression(vec![])
-                    }
+                    emitter.stack.find(&value).map(|pos| DebugVarLocation::Stack(pos as u8))
                 }
-                DIExpressionOp::ConstU64(val) => DebugVarLocation::Const(Felt::new(*val)),
-                DIExpressionOp::ConstS64(val) => DebugVarLocation::Const(Felt::new(*val as u64)),
+                DIExpressionOp::ConstU64(val) => Some(DebugVarLocation::Const(Felt::new(*val))),
+                DIExpressionOp::ConstS64(val) => Some(DebugVarLocation::Const(Felt::new(*val as u64))),
                 DIExpressionOp::FrameBase { global_index, byte_offset } => {
-                    DebugVarLocation::FrameBase {
+                    Some(DebugVarLocation::FrameBase {
                         global_index: *global_index,
                         byte_offset: *byte_offset,
-                    }
+                    })
                 }
                 _ => {
-                    // For other operations, try to find the value on the stack
-                    if let Some(pos) = emitter.stack.find(&value) {
-                        DebugVarLocation::Stack(pos as u8)
-                    } else {
-                        DebugVarLocation::Expression(vec![])
-                    }
+                    emitter.stack.find(&value).map(|pos| DebugVarLocation::Stack(pos as u8))
                 }
             }
         } else {
-            // No expression, try to find the value on the stack
-            if let Some(pos) = emitter.stack.find(&value) {
-                DebugVarLocation::Stack(pos as u8)
-            } else {
-                // Value not found, use expression
-                DebugVarLocation::Expression(vec![])
-            }
+            emitter.stack.find(&value).map(|pos| DebugVarLocation::Stack(pos as u8))
+        };
+
+        let Some(value_location) = value_location else {
+            return Ok(());
         };
 
         let mut debug_var = DebugVarInfo::new(var.name.to_string(), value_location);

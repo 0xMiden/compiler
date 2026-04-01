@@ -564,13 +564,14 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
             },
             gimli::DW_AT_frame_base => {
                 // Decode the frame base expression to find which WASM global
-                // provides the base address (typically __stack_pointer = global 0)
+                // provides the base address (typically __stack_pointer = global 0).
+                // Only WASM globals are supported — downstream FrameBase resolution
+                // assumes the index refers to a global in the linker's layout.
                 if let AttributeValue::Exprloc(expr) = attr.value() {
                     let mut ops = expr.operations(unit.encoding());
                     while let Ok(Some(op)) = ops.next() {
-                        if let Operation::WasmLocal { index } = op {
-                            // Frame base is a WASM local (unusual but possible)
-                            frame_base_global = Some(index);
+                        if let Operation::WasmLocal { .. } = op {
+                            debug!("DW_AT_frame_base uses WASM local; only globals are supported — ignoring");
                         } else if let Operation::WasmGlobal { index } = op {
                             frame_base_global = Some(index);
                         }
