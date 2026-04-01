@@ -1269,7 +1269,10 @@ impl HirLowering for debuginfo::DebugValue {
     }
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use miden_core::{Felt, operations::{DebugVarInfo, DebugVarLocation}};
+        use miden_core::{
+            Felt,
+            operations::{DebugVarInfo, DebugVarLocation},
+        };
         use midenc_hir::DIExpressionOp;
 
         // Get the variable info
@@ -1312,16 +1315,17 @@ impl HirLowering for debuginfo::DebugValue {
                     emitter.stack.find(&value).map(|pos| DebugVarLocation::Stack(pos as u8))
                 }
                 DIExpressionOp::ConstU64(val) => Some(DebugVarLocation::Const(Felt::new(*val))),
-                DIExpressionOp::ConstS64(val) => Some(DebugVarLocation::Const(Felt::new(*val as u64))),
-                DIExpressionOp::FrameBase { global_index, byte_offset } => {
-                    Some(DebugVarLocation::FrameBase {
-                        global_index: *global_index,
-                        byte_offset: *byte_offset,
-                    })
+                DIExpressionOp::ConstS64(val) => {
+                    Some(DebugVarLocation::Const(Felt::new(*val as u64)))
                 }
-                _ => {
-                    emitter.stack.find(&value).map(|pos| DebugVarLocation::Stack(pos as u8))
-                }
+                DIExpressionOp::FrameBase {
+                    global_index,
+                    byte_offset,
+                } => Some(DebugVarLocation::FrameBase {
+                    global_index: *global_index,
+                    byte_offset: *byte_offset,
+                }),
+                _ => emitter.stack.find(&value).map(|pos| DebugVarLocation::Stack(pos as u8)),
             }
         } else {
             emitter.stack.find(&value).map(|pos| DebugVarLocation::Stack(pos as u8))

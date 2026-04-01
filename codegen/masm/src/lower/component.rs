@@ -724,7 +724,9 @@ fn patch_debug_var_locals_in_block(
                         // Convert raw WASM local index to FMP offset
                         let fmp_offset = *idx - (aligned_num_locals as i16);
                         info.set_value_location(DebugVarLocation::Local(fmp_offset));
-                    } else if let DebugVarLocation::FrameBase { byte_offset, .. } = info.value_location() {
+                    } else if let DebugVarLocation::FrameBase { byte_offset, .. } =
+                        info.value_location()
+                    {
                         // Resolve FrameBase: replace WASM global index with
                         // the Miden memory address of the stack pointer global.
                         if let Some(resolved_addr) = stack_pointer_addr {
@@ -737,15 +739,25 @@ fn patch_debug_var_locals_in_block(
                     }
                 }
             }
-            masm::Op::If { then_blk, else_blk, .. } => {
+            masm::Op::If {
+                then_blk, else_blk, ..
+            } => {
                 patch_debug_var_locals_in_block(then_blk, aligned_num_locals, stack_pointer_addr);
                 patch_debug_var_locals_in_block(else_blk, aligned_num_locals, stack_pointer_addr);
             }
-            masm::Op::While { body: while_body, .. } => {
+            masm::Op::While {
+                body: while_body, ..
+            } => {
                 patch_debug_var_locals_in_block(while_body, aligned_num_locals, stack_pointer_addr);
             }
-            masm::Op::Repeat { body: repeat_body, .. } => {
-                patch_debug_var_locals_in_block(repeat_body, aligned_num_locals, stack_pointer_addr);
+            masm::Op::Repeat {
+                body: repeat_body, ..
+            } => {
+                patch_debug_var_locals_in_block(
+                    repeat_body,
+                    aligned_num_locals,
+                    stack_pointer_addr,
+                );
             }
         }
     }
