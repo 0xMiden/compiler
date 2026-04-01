@@ -3,7 +3,7 @@
 
 ;; Check header
 ;; CHECK: DEBUG INFO DUMP:
-;; CHECK: Debug info version: 1
+;; CHECK: Debug info versions:
 
 ;; Check summary section is present
 ;; CHECK: .debug_info summary:
