@@ -182,11 +182,7 @@ fn run() -> Result<(), Error> {
     println!(
         "Package: {} (version: {})",
         package.name,
-        package
-            .version
-            .as_ref()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "unknown".into())
+        package.version
     );
     println!(
         "Debug info versions: types={}, sources={}, functions={}",
