@@ -11,8 +11,8 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
-    BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
-    Op, OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Type, ValueRef,
+    BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
+    OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Type, ValueRef,
     dialects::builtin::{
         BuiltinOpBuilder, FunctionBuilder, FunctionRef,
         attributes::{LocalVariable, Signature},
@@ -287,8 +287,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
                         anchor
                     } else {
                         warn!(
-                            "cannot track FrameBase variable (index {}): \
-                             no SSA value available (function has no parameters)",
+                            "cannot track FrameBase variable (index {}): no SSA value available \
+                             (function has no parameters)",
                             entry.var_index
                         );
                         return;
@@ -325,8 +325,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             attr.column = column;
         }
 
-        if let Err(err) =
-            DebugInfoOpBuilder::builder_mut(self).debug_value_with_expr(value, attr, expression, span)
+        if let Err(err) = DebugInfoOpBuilder::builder_mut(self)
+            .debug_value_with_expr(value, attr, expression, span)
         {
             warn!("failed to emit scheduled dbg.value for local {idx}: {err:?}");
         }

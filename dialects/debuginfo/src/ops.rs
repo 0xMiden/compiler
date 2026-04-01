@@ -2,9 +2,9 @@ use midenc_hir::{
     DIExpressionAttr, DILocalVariableAttr, UnsafeIntrusiveEntityRef, derive::operation,
     traits::AnyType,
 };
+
 // Note: DILocalVariableAttr and DIExpressionAttr are now the generated wrapper
 // types from #[derive(DialectAttribute)] on DILocalVariable and DIExpression.
-
 use crate::DebugInfoDialect;
 
 pub type DebugValueRef = UnsafeIntrusiveEntityRef<DebugValue>;

@@ -870,49 +870,33 @@ mod tests {
         let block = builder.current_block();
         let input = block.borrow().arguments()[0].upcast();
 
-        let input_var = DILocalVariable::new(
-            Symbol::intern("input"),
-            Symbol::intern("test.rs"),
-            1,
-            Some(1),
-        );
-        let result_var = DILocalVariable::new(
-            Symbol::intern("result"),
-            Symbol::intern("test.rs"),
-            2,
-            Some(1),
-        );
+        let input_var =
+            DILocalVariable::new(Symbol::intern("input"), Symbol::intern("test.rs"), 1, Some(1));
+        let result_var =
+            DILocalVariable::new(Symbol::intern("result"), Symbol::intern("test.rs"), 2, Some(1));
 
         let zero = builder.u32(0, span);
         let is_zero = builder.eq(input, zero, span)?;
         // Track the input variable
-        builder
-            .builder_mut()
-            .debug_value(input, input_var.clone(), span)?;
+        builder.builder_mut().debug_value(input, input_var.clone(), span)?;
         builder.cond_br(is_zero, if_is_zero, [], if_is_nonzero, [], span)?;
 
         builder.switch_to_block(if_is_zero);
         let a = builder.incr(input, span)?;
         // Track result in then-branch
-        builder
-            .builder_mut()
-            .debug_value(a, result_var.clone(), span)?;
+        builder.builder_mut().debug_value(a, result_var.clone(), span)?;
         builder.br(exit_block, [a], span)?;
 
         builder.switch_to_block(if_is_nonzero);
         let b = builder.mul(input, input, span)?;
         // Track result in else-branch
-        builder
-            .builder_mut()
-            .debug_value(b, result_var.clone(), span)?;
+        builder.builder_mut().debug_value(b, result_var.clone(), span)?;
         builder.br(exit_block, [b], span)?;
 
         builder.switch_to_block(exit_block);
         // KEY: this debug_value uses the block argument `return_val`, which will be
         // replaced by the scf.if result via replace_all_uses_with
-        builder
-            .builder_mut()
-            .debug_value(return_val, result_var.clone(), span)?;
+        builder.builder_mut().debug_value(return_val, result_var.clone(), span)?;
         builder.ret(Some(return_val), span)?;
 
         let operation = function.as_operation_ref();

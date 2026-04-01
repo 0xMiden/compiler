@@ -7,8 +7,8 @@ use cranelift_entity::EntityRef;
 use gimli::{self, AttributeValue, read::Operation};
 use log::debug;
 use midenc_hir::{
-    DICompileUnit, DIExpression, DIExpressionOp, DILocalVariable, DISubprogram,
-    FxHashMap, SourceSpan, interner::Symbol,
+    DICompileUnit, DIExpression, DIExpressionOp, DILocalVariable, DISubprogram, FxHashMap,
+    SourceSpan, interner::Symbol,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic};
 
@@ -35,7 +35,10 @@ pub enum VariableStorage {
     Stack(u32),
     ConstU64(u64),
     /// Frame base (global index) + byte offset — from DW_OP_fbreg
-    FrameBase { global_index: u32, byte_offset: i64 },
+    FrameBase {
+        global_index: u32,
+        byte_offset: i64,
+    },
     Unsupported,
 }
 
@@ -53,12 +56,13 @@ impl VariableStorage {
             VariableStorage::Global(idx) => DIExpressionOp::WasmGlobal(*idx),
             VariableStorage::Stack(idx) => DIExpressionOp::WasmStack(*idx),
             VariableStorage::ConstU64(val) => DIExpressionOp::ConstU64(*val),
-            VariableStorage::FrameBase { global_index, byte_offset } => {
-                DIExpressionOp::FrameBase {
-                    global_index: *global_index,
-                    byte_offset: *byte_offset,
-                }
-            }
+            VariableStorage::FrameBase {
+                global_index,
+                byte_offset,
+            } => DIExpressionOp::FrameBase {
+                global_index: *global_index,
+                byte_offset: *byte_offset,
+            },
             VariableStorage::Unsupported => {
                 DIExpressionOp::Unsupported(Symbol::intern("unsupported"))
             }
@@ -268,12 +272,8 @@ fn build_local_debug_info(
         {
             name_symbol = symbol;
         }
-        let mut attr = DILocalVariable::new(
-            name_symbol,
-            subprogram.file,
-            subprogram.line,
-            subprogram.column,
-        );
+        let mut attr =
+            DILocalVariable::new(name_symbol, subprogram.file, subprogram.line, subprogram.column);
         attr.arg_index = Some((param_idx + 1) as u32);
         if let Ok(ty) = ir_type(*wasm_ty, diagnostics) {
             attr.ty = Some(ty);
@@ -366,12 +366,8 @@ fn build_local_debug_info(
     if let Some(fb_vars) = frame_base_vars {
         for fb_var in fb_vars {
             let name = fb_var.name.unwrap_or_else(|| Symbol::intern("?"));
-            let mut attr = DILocalVariable::new(
-                name,
-                subprogram.file,
-                subprogram.line,
-                subprogram.column,
-            );
+            let mut attr =
+                DILocalVariable::new(name, subprogram.file, subprogram.line, subprogram.column);
             if let Some(line) = fb_var.decl_line.filter(|l| *l != 0) {
                 attr.line = line;
             }
@@ -496,7 +492,10 @@ fn collect_dwarf_local_data(
                     &mut results,
                     &mut fb_results,
                 ) {
-                    debug!("failed to gather variables for function {:?}: {err:?}", info.func_index);
+                    debug!(
+                        "failed to gather variables for function {:?}: {err:?}",
+                        info.func_index
+                    );
                 }
             }
         }
@@ -571,7 +570,10 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
                     let mut ops = expr.operations(unit.encoding());
                     while let Ok(Some(op)) = ops.next() {
                         if let Operation::WasmLocal { .. } = op {
-                            debug!("DW_AT_frame_base uses WASM local; only globals are supported — ignoring");
+                            debug!(
+                                "DW_AT_frame_base uses WASM local; only globals are supported — \
+                                 ignoring"
+                            );
                         } else if let Operation::WasmGlobal { index } = op {
                             frame_base_global = Some(index);
                         }
@@ -620,8 +622,16 @@ fn collect_subprogram_variables<R: gimli::Reader<Offset = usize>>(
     let mut param_counter: u32 = 0;
     while let Some(child) = children.next()? {
         walk_variable_nodes(
-            dwarf, unit, child, func_index, low_pc, high_pc, frame_base_global, results,
-            fb_results, &mut param_counter,
+            dwarf,
+            unit,
+            child,
+            func_index,
+            low_pc,
+            high_pc,
+            frame_base_global,
+            results,
+            fb_results,
+            &mut param_counter,
         )?;
     }
     Ok(())
@@ -653,9 +663,16 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
                 None
             };
             let mut fb_vars = Vec::new();
-            if let Some((local_index, mut data)) =
-                decode_variable_entry(dwarf, unit, entry, low_pc, high_pc, frame_base_global, fallback_index, &mut fb_vars)?
-            {
+            if let Some((local_index, mut data)) = decode_variable_entry(
+                dwarf,
+                unit,
+                entry,
+                low_pc,
+                high_pc,
+                frame_base_global,
+                fallback_index,
+                &mut fb_vars,
+            )? {
                 let local_map = results.entry(func_index).or_default();
                 let entry = local_map.entry(local_index).or_insert_with(DwarfLocalData::default);
                 entry.name = entry.name.or(data.name);
@@ -675,8 +692,16 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
     let mut children = node.children();
     while let Some(child) = children.next()? {
         walk_variable_nodes(
-            dwarf, unit, child, func_index, low_pc, high_pc, frame_base_global, results,
-            fb_results, param_counter,
+            dwarf,
+            unit,
+            child,
+            func_index,
+            low_pc,
+            high_pc,
+            frame_base_global,
+            results,
+            fb_results,
+            param_counter,
         )?;
     }
     Ok(())
@@ -781,8 +806,12 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
             let mut has_frame_base = false;
             while let Some(entry) = iter.next()? {
                 let storage_expr = entry.data;
-                if let Some(storage) = decode_storage_from_expression(&storage_expr, unit, frame_base_global)? {
-                    if storage.as_local().is_some() || matches!(&storage, VariableStorage::FrameBase { .. }) {
+                if let Some(storage) =
+                    decode_storage_from_expression(&storage_expr, unit, frame_base_global)?
+                {
+                    if storage.as_local().is_some()
+                        || matches!(&storage, VariableStorage::FrameBase { .. })
+                    {
                         if matches!(&storage, VariableStorage::FrameBase { .. }) {
                             has_frame_base = true;
                         }
