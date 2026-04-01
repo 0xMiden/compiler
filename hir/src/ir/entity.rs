@@ -1236,17 +1236,56 @@ impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
 
     #[inline]
     fn data_offset_align(align: usize) -> usize {
-        let layout = Layout::new::<RawEntityMetadata<(), Metadata>>();
-        layout.size() + layout.padding_needed_for(align)
+        // The data field T lives at: RawEntityMetadata.entity.cell
+        //
+        // RawEntityMetadata<T, Metadata> is #[repr(C)] with:
+        //   metadata: Metadata
+        //   entity: RawEntity<T>
+        //
+        // RawEntity<T> is #[repr(C)] with:
+        //   borrow: Cell<BorrowFlag>
+        //   [#[cfg(debug_assertions)] borrowed_at: Cell<Option<&'static Location>>]
+        //   cell: UnsafeCell<T>
+        //
+        // We need the offset from the start of RawEntityMetadata to UnsafeCell<T>.
+        // This requires accounting for internal padding within RawEntity<T> between
+        // the prefix fields (borrow, etc.) and the cell field, which depends on
+        // align_of::<T>().
+
+        let metadata_layout = Layout::new::<Metadata>();
+        let raw_entity_prefix = Layout::new::<RawEntity<()>>();
+
+        // RawEntity<T> alignment = max(prefix alignment, T alignment)
+        let entity_align = core::cmp::max(raw_entity_prefix.align(), align);
+
+        // Offset of entity field within RawEntityMetadata
+        let entity_offset = (metadata_layout.size() + entity_align - 1) & !(entity_align - 1);
+
+        // Offset of cell field within RawEntity = prefix size padded to T alignment
+        let cell_offset = (raw_entity_prefix.size() + align - 1) & !(align - 1);
+
+        entity_offset + cell_offset
     }
 }
 
 fn raw_entity_metadata_layout_for_value_layout<Metadata>(layout: Layout) -> Layout {
-    Layout::new::<RawEntityMetadata<(), Metadata>>()
-        .extend(layout)
-        .unwrap()
-        .0
-        .pad_to_align()
+    // Build the layout that mirrors RawEntityMetadata<T, Metadata> where T has the given layout.
+    //
+    // The structure is: [Metadata] [padding] [RawEntity prefix] [padding] [T]
+    //
+    // We must account for internal RawEntity<T> padding between the prefix fields
+    // (borrow flag, etc.) and the cell field, which depends on T's alignment.
+    let metadata = Layout::new::<Metadata>();
+    let raw_entity_prefix = Layout::new::<RawEntity<()>>();
+
+    // RawEntity<T> alignment = max(prefix alignment, T alignment)
+    let entity_align = core::cmp::max(raw_entity_prefix.align(), layout.align());
+    let raw_entity_prefix_aligned =
+        unsafe { Layout::from_size_align_unchecked(raw_entity_prefix.size(), entity_align) };
+
+    let (combined, _) = metadata.extend(raw_entity_prefix_aligned).unwrap();
+    let (full, _) = combined.extend(layout).unwrap();
+    full.pad_to_align()
 }
 
 /// A [RawEntity] wraps an entity to be allocated in a [crate::Context], and provides dynamic borrow-

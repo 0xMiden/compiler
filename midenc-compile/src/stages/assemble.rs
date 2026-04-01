@@ -1,4 +1,4 @@
-use alloc::{string::ToString, vec, vec::Vec};
+use alloc::{string::ToString, vec::Vec};
 
 use miden_assembly::ast::QualifiedProcedureName;
 use miden_mast_package::{
@@ -91,16 +91,39 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
         miden_mast_package::PackageManifest::new(exports).with_dependencies(dependencies);
 
     let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
+    let debug_info_bytes = outputs.debug_info_bytes.clone();
 
-    let sections = match account_component_metadata_bytes {
-        Some(bytes) => {
-            vec![miden_mast_package::Section::new(
-                miden_mast_package::SectionId::ACCOUNT_COMPONENT_METADATA,
-                bytes,
-            )]
-        }
-        None => vec![],
-    };
+    let mut sections = Vec::new();
+
+    // Add account component metadata section if present
+    if let Some(bytes) = account_component_metadata_bytes {
+        sections.push(miden_mast_package::Section::new(
+            miden_mast_package::SectionId::ACCOUNT_COMPONENT_METADATA,
+            bytes,
+        ));
+    }
+
+    // Add debug info sections if present
+    if let Some((types_bytes, sources_bytes, functions_bytes)) = debug_info_bytes {
+        log::debug!(
+            "adding debug sections to package (types={} sources={} functions={} bytes)",
+            types_bytes.len(),
+            sources_bytes.len(),
+            functions_bytes.len(),
+        );
+        sections.push(miden_mast_package::Section::new(
+            miden_mast_package::SectionId::DEBUG_TYPES,
+            types_bytes,
+        ));
+        sections.push(miden_mast_package::Section::new(
+            miden_mast_package::SectionId::DEBUG_SOURCES,
+            sources_bytes,
+        ));
+        sections.push(miden_mast_package::Section::new(
+            miden_mast_package::SectionId::DEBUG_FUNCTIONS,
+            functions_bytes,
+        ));
+    }
 
     let kind = match mast {
         MastArtifact::Executable(_) => PackageKind::Executable,

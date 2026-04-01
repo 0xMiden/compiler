@@ -471,9 +471,11 @@ impl quote::ToTokens for WithAttrs<'_> {
         for param in self.0.op_builder_impl.create_params.iter() {
             if let OpCreateParamType::Attr(OpAttribute { name, ty, .. }) = &param.param_ty {
                 let span = name.span();
-                let field_name = syn::Lit::Str(syn::LitStr::new(&format!("{name}"), span));
                 tokens.extend(quote_spanned! { span =>
-                    op_builder.with_property::<#ty, _>(#field_name, #name);
+                    {
+                        let __attr = op_builder.context_rc().create_attribute::<#ty, _>(#name);
+                        __this.borrow_mut().#name = __attr;
+                    }
                 });
             }
         }
