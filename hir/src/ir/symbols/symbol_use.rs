@@ -1,45 +1,42 @@
 use alloc::collections::VecDeque;
 use core::fmt;
 
-use super::SymbolPathAttr;
-use crate::{Entity, EntityListItem, EntityRef, OperationRef, UnsafeIntrusiveEntityRef};
+use crate::{
+    Entity, EntityListItem, OperationRef, UnsafeIntrusiveEntityRef,
+    dialects::builtin::attributes::SymbolRefAttr,
+};
 
 pub type SymbolUseRef = UnsafeIntrusiveEntityRef<SymbolUse>;
 pub type SymbolUseList = crate::EntityList<SymbolUse>;
-pub type SymbolUseIter<'a> = crate::EntityIter<'a, SymbolUse>;
-pub type SymbolUseCursor<'a> = crate::EntityCursor<'a, SymbolUse>;
-pub type SymbolUseCursorMut<'a> = crate::EntityCursorMut<'a, SymbolUse>;
+pub type SymbolUseIter<'a> = crate::EntityListIter<'a, SymbolUse>;
+pub type SymbolUseCursor<'a> = crate::EntityListCursor<'a, SymbolUse>;
+pub type SymbolUseCursorMut<'a> = crate::EntityListCursorMut<'a, SymbolUse>;
 
-/// A [SymbolUse] represents a use of a [Symbol] by an [Operation]
+/// A [SymbolUse] represents a use of a [super::Symbol] by an [crate::Operation]
 #[derive(Copy, Clone)]
 pub struct SymbolUse {
     /// The user of the symbol
     pub owner: OperationRef,
     /// The symbol attribute of the op that stores the symbol
-    pub attr: crate::interner::Symbol,
+    pub attr: UnsafeIntrusiveEntityRef<SymbolRefAttr>,
 }
+
 impl SymbolUse {
     #[inline]
-    pub fn new(owner: OperationRef, symbol: crate::interner::Symbol) -> Self {
-        Self {
-            owner,
-            attr: symbol,
-        }
+    pub fn new(owner: OperationRef, attr: UnsafeIntrusiveEntityRef<SymbolRefAttr>) -> Self {
+        Self { owner, attr }
     }
 
-    pub fn symbol(&self) -> EntityRef<'_, SymbolPathAttr> {
-        EntityRef::map(self.owner.borrow(), |owner| {
-            owner.get_typed_attribute::<SymbolPathAttr>(self.attr).expect("expected symbol")
-        })
+    pub fn symbol(&self) -> UnsafeIntrusiveEntityRef<SymbolRefAttr> {
+        self.attr
     }
 }
+
 impl fmt::Debug for SymbolUse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let op = self.owner.borrow();
-        let value = op.get_typed_attribute::<SymbolPathAttr>(self.attr);
+        let value = self.attr.borrow();
         f.debug_struct("SymbolUse")
-            .field("attr", &self.attr)
-            .field("symbol", &value.as_ref().map(|value| &value.path))
+            .field("symbol", &value.path())
             .finish_non_exhaustive()
     }
 }

@@ -1,7 +1,7 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::{
     AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type,
-    dialects::builtin::LocalVariable,
+    dialects::builtin::attributes::LocalVariable,
 };
 
 use super::{OpEmitter, masm};
@@ -9,6 +9,94 @@ use crate::{OperandStack, lower::NativePtr};
 
 /// Allocation
 impl OpEmitter<'_> {
+    /// Emit the loop header for a counted `while.true` loop.
+    ///
+    /// The caller provides the concrete `dup` instruction needed to bring `count` to the top of
+    /// the stack after the loop index has been seeded with zero, because each caller carries
+    /// `count` at a different depth in its loop state.
+    ///
+    /// Stack transition:
+    ///
+    /// - Before: `[loop_state..]`
+    /// - After: `[count > 0, i = 0, loop_state..]`
+    ///
+    /// For example:
+    ///
+    /// - `memset`: `[dst, count, value..] -> [count > 0, i = 0, dst, count, value..]`
+    /// - `memcpy`: `[src, dst, count] -> [count > 0, i = 0, src, dst, count]`
+    fn emit_counted_loop_header(&mut self, count_dup: masm::Instruction, span: SourceSpan) {
+        self.emit_push(0u32, span);
+        self.emit(count_dup, span);
+        self.emit_push(0u32, span);
+        self.emit(masm::Instruction::U32Gt, span);
+    }
+
+    /// Emit the loop back-edge condition for a counted `while.true` loop.
+    ///
+    /// The caller provides the concrete `dup` instruction needed to bring `count` to the top of
+    /// the stack after incrementing the loop index, because each caller carries `count` at a
+    /// different depth in its loop state.
+    ///
+    /// Stack transition:
+    ///
+    /// - Before: `[i, loop_state..]`
+    /// - After: `[i + 1 < count, i + 1, loop_state..]`
+    ///
+    /// For example:
+    ///
+    /// - `memset`: `[i, dst, count, value..] -> [i + 1 < count, i + 1, dst, count, value..]`
+    /// - `memcpy`: `[i, src, dst, count] -> [i + 1 < count, i + 1, src, dst, count]`
+    fn emit_counted_loop_next_condition(&mut self, count_dup: masm::Instruction, span: SourceSpan) {
+        self.emit_all(
+            [
+                masm::Instruction::U32WrappingAddImm(1.into()),
+                masm::Instruction::Dup0,
+                count_dup,
+                masm::Instruction::U32Lt,
+            ],
+            span,
+        );
+    }
+
+    /// Convert the byte pointer on top of the stack to a word-aligned element address.
+    ///
+    /// This traps unless the input byte address is aligned to a 16-byte Miden word boundary.
+    fn emit_word_aligned_element_addr_from_byte_ptr(&mut self, span: SourceSpan) {
+        self.emit_all(
+            [
+                masm::Instruction::U32DivModImm(16.into()),
+                Self::assertz_with_message_inst(
+                    "expected a 16-byte-aligned byte pointer for the word-copy fast path",
+                    span,
+                ),
+                // `u32widening_mul` leaves `[lo, hi]` on the stack; assert on `hi` and keep `lo`.
+                masm::Instruction::U32WideningMulImm(4.into()),
+                masm::Instruction::Swap1,
+                Self::assertz_with_message_inst(
+                    "word-copy fast path element address conversion overflowed",
+                    span,
+                ),
+            ],
+            span,
+        );
+    }
+
+    /// Build a MASM block whose stack protocol is managed by the caller.
+    ///
+    /// This is used for branch bodies which operate on a known stack shape from the enclosing
+    /// emitter, but which do not need to synchronize typed operand-stack state back to it.
+    fn build_masm_block(
+        &mut self,
+        span: SourceSpan,
+        emit: impl FnOnce(&mut OpEmitter<'_>),
+    ) -> masm::Block {
+        let mut ops = Vec::default();
+        let mut stack = OperandStack::new(self.context_rc());
+        let mut emitter = OpEmitter::new(self.invoked, &mut ops, &mut stack);
+        emit(&mut emitter);
+        masm::Block::new(span, ops)
+    }
+
     /// Grow the heap (from the perspective of Wasm programs) by N pages, returning the previous
     /// size of the heap (in pages) if successful, or -1 if the heap could not be grown.
     pub fn mem_grow(&mut self, span: SourceSpan) {
@@ -173,16 +261,14 @@ impl OpEmitter<'_> {
     }
 
     /// Load a 64-bit word from the given address.
+    ///
+    /// After execution, the stack contains `[lo, hi]` (lo on top, LE limb order).
     fn load_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         if let Some(imm) = ptr {
             self.load_double_word_imm(imm, span);
         } else {
             self.raw_exec("::intrinsics::mem::load_dw", span);
         }
-
-        // The mem::intrinsic loads two 32-bit words with the first at the top of the stack.  Swap
-        // them to make a big-endian-limbed stack value.
-        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Load a sub-word value (u8, u16, etc.) from memory
@@ -221,6 +307,18 @@ impl OpEmitter<'_> {
             }
         }
 
+        if ty.size_in_bits() == 16 {
+            self.load_16bit_dynamic(span);
+            return;
+        }
+
+        self.load_small_from_current_element(ty, span);
+    }
+
+    /// Load a sub-word value which is fully contained in the current 32-bit element.
+    ///
+    /// Stack transition: `[addr, offset] -> [value]`.
+    fn load_small_from_current_element(&mut self, ty: &Type, span: SourceSpan) {
         // Stack: [element_addr, byte_offset]
 
         // First, load the aligned word containing our value
@@ -257,6 +355,16 @@ impl OpEmitter<'_> {
 
         self.emit_push(mask as u32, span);
         self.emit(masm::Instruction::U32And, span);
+    }
+
+    /// Load a 16-bit value from a dynamic native pointer tuple.
+    ///
+    /// This delegates to a dedicated intrinsic which owns the complete stack protocol for both the
+    /// within-element and cross-element cases.
+    ///
+    /// Stack transition: `[addr, offset] -> [value]`.
+    fn load_16bit_dynamic(&mut self, span: SourceSpan) {
+        self.raw_exec("::intrinsics::mem::load_u16", span);
     }
 
     fn load_double_word_imm(&mut self, ptr: NativePtr, span: SourceSpan) {
@@ -613,8 +721,12 @@ impl OpEmitter<'_> {
         body_emitter.emit_push(value_size, span); // [value_size, i, * dst, ..]
         body_emitter.emit_all(
             [
-                masm::Instruction::U32OverflowingMadd, // [value_size * i + dst, i, dst, count, value]
-                masm::Instruction::Assertz,            // [aligned_dst, i, dst, count, value..]
+                masm::Instruction::U32WideningMadd, // [value_size * i + dst, i, dst, count, value]
+                masm::Instruction::Swap1,
+                Self::assertz_with_message_inst(
+                    "memset destination address computation overflowed",
+                    span,
+                ), // [aligned_dst, i, dst, count, value..]
             ],
             span,
         );
@@ -632,27 +744,15 @@ impl OpEmitter<'_> {
         body_emitter.store(span); // [i, dst, count, value]
 
         // Loop body - increment iteration count, determine whether to continue loop
-        body_emitter.emit_all(
-            [
-                masm::Instruction::U32WrappingAddImm(1.into()),
-                masm::Instruction::Dup0,   // [i++, i++, dst, count, value]
-                masm::Instruction::Dup3,   // [count, i++, i++, dst, count, value]
-                masm::Instruction::U32Gte, // [i++ >= count, i++, dst, count, value]
-            ],
-            span,
-        );
+        body_emitter.emit_counted_loop_next_condition(masm::Instruction::Dup3, span);
+        // [i++ < count, i++, dst, count, value]
 
         // Switch back to original block and emit loop header and 'while.true' instruction
         //
         // Loop header - prepare to loop until `count` iterations have been performed
         // [dst, count, value..]
-        self.emit_push(0u32, span); // [i, dst, count, value..]
-        self.emit(masm::Instruction::Dup2, span); // [count, i, dst, count, value..]
-        self.emit_push(Felt::ZERO, span);
-        self.emit(
-            masm::Instruction::Gte, // [count > 0, i, dst, count, value..]
-            span,
-        );
+        self.emit_counted_loop_header(masm::Instruction::Dup2, span);
+        // [count > 0, i, dst, count, value..]
         self.current_block.push(masm::Op::While {
             span,
             body: masm::Block::new(span, body),
@@ -672,7 +772,13 @@ impl OpEmitter<'_> {
     ///
     /// The semantics of this instruction are as follows:
     ///
-    /// * The ``
+    /// * `count` is expressed in units of the pointee type, not bytes
+    /// * the effective byte length is `count * size_of(*src)`
+    /// * `count == 0` leaves memory unchanged and performs no copy
+    /// * source and destination pointers are interpreted in the address space described by their
+    ///   pointer type
+    /// * optimized word-copy fast paths are only used for byte-addressable pointers; native
+    ///   pointers fall back to the generic loop
     pub fn memcpy(&mut self, span: SourceSpan) {
         let src = self.stack.pop().expect("operand stack is empty");
         let dst = self.stack.pop().expect("operand stack is empty");
@@ -683,6 +789,10 @@ impl OpEmitter<'_> {
         assert_eq!(ty, dst.ty(), "expected src and dst operands to have the same type");
         let value_ty = ty.pointee().unwrap().clone();
         let value_size = u32::try_from(value_ty.size_in_bytes()).expect("invalid value size");
+        let is_byte_pointer = match &ty {
+            Type::Ptr(ptr_ty) => ptr_ty.is_byte_pointer(),
+            _ => unreachable!("memcpy expects pointer operands"),
+        };
 
         // Use optimized intrinsics when available
         match value_size {
@@ -720,94 +830,89 @@ impl OpEmitter<'_> {
                 );
 
                 // then: convert byte addresses/count to element units and delegate to core
-                let mut then_ops = Vec::default();
-                let mut then_stack = OperandStack::default();
-                let mut then_emitter = OpEmitter::new(self.invoked, &mut then_ops, &mut then_stack);
-                then_emitter.emit_all(
-                    [
-                        // Convert `src` to element address
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
-                        // Convert `dst` to an element address
-                        masm::Instruction::Swap1,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
-                        // Bring `count` to top to convert to element count
-                        masm::Instruction::Swap2,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
-                    ],
-                    span,
-                );
-                then_emitter.raw_exec("::miden::core::mem::memcopy_elements", span);
+                let then_blk = self.build_masm_block(span, |then_emitter| {
+                    then_emitter.emit_all(
+                        [
+                            // Convert `src` to element address
+                            masm::Instruction::U32DivModImm(4.into()),
+                            Self::assertz_with_message_inst(
+                                "memcpy byte-copy fast path expected the source pointer to be \
+                                 4-byte aligned",
+                                span,
+                            ),
+                            // Convert `dst` to an element address
+                            masm::Instruction::Swap1,
+                            masm::Instruction::U32DivModImm(4.into()),
+                            Self::assertz_with_message_inst(
+                                "memcpy byte-copy fast path expected the destination pointer to \
+                                 be 4-byte aligned",
+                                span,
+                            ),
+                            // Bring `count` to top to convert to element count
+                            masm::Instruction::Swap2,
+                            masm::Instruction::U32DivModImm(4.into()),
+                            Self::assertz_with_message_inst(
+                                "memcpy byte-copy fast path expected the byte count to be \
+                                 divisible by 4",
+                                span,
+                            ),
+                        ],
+                        span,
+                    );
+                    then_emitter.raw_exec("::miden::core::mem::memcopy_elements", span);
+                });
 
-                // else: fall back to the generic implementation
-                let mut else_ops = Vec::default();
-                let mut else_stack = OperandStack::default();
-                let mut else_emitter = OpEmitter::new(self.invoked, &mut else_ops, &mut else_stack);
-                else_emitter.emit_memcpy_fallback_loop(
-                    src.clone(),
-                    dst.clone(),
-                    count.clone(),
-                    value_ty.clone(),
-                    value_size,
-                    span,
-                );
+                let else_blk = self.build_masm_block(span, |else_emitter| {
+                    else_emitter.emit_memcpy_fallback_loop(
+                        src.clone(),
+                        dst.clone(),
+                        count.clone(),
+                        value_ty.clone(),
+                        value_size,
+                        span,
+                    );
+                });
 
                 self.current_block.push(masm::Op::If {
                     span,
-                    then_blk: masm::Block::new(span, then_ops),
-                    else_blk: masm::Block::new(span, else_ops),
+                    then_blk,
+                    else_blk,
                 });
                 return;
             }
             // Word-sized values have an optimized intrinsic we can lean on
-            16 => {
-                // We have to convert byte addresses to element addresses
-                self.emit_all(
-                    [
-                        // Convert `src` to element address, and assert aligned to an element address
-                        //
-                        // TODO: We should probably also assert that the address is word-aligned, but
-                        // that is going to happen anyway. That said, the closer to the source the
-                        // better for debugging.
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
-                        // Convert `dst` to an element address the same way
-                        masm::Instruction::Swap1,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
-                        // Swap with `count` to get us into the correct ordering: [count, src, dst]
-                        masm::Instruction::Swap2,
-                    ],
-                    span,
-                );
+            16 if is_byte_pointer => {
+                // Convert `src` to a word-aligned element address.
+                self.emit_word_aligned_element_addr_from_byte_ptr(span);
+                // Convert `dst` to an element address the same way.
+                self.emit(masm::Instruction::Swap1, span);
+                self.emit_word_aligned_element_addr_from_byte_ptr(span);
+                // Swap with `count` to get us into the correct ordering: [count, src, dst].
+                self.emit(masm::Instruction::Swap2, span);
                 self.raw_exec("::miden::core::mem::memcopy_words", span);
                 return;
             }
             // Values which can be broken up into word-sized chunks can piggy-back on the
             // intrinsic for word-sized values, but we have to compute a new `count` by
             // multiplying `count` by the number of words in each value
-            size if size > 16 && size.is_multiple_of(16) => {
+            size if is_byte_pointer && size > 16 && size.is_multiple_of(16) => {
                 let factor = size / 16;
+                // Convert `src` to a word-aligned element address.
+                self.emit_word_aligned_element_addr_from_byte_ptr(span);
+                // Convert `dst` to an element address the same way.
+                self.emit(masm::Instruction::Swap1, span);
+                self.emit_word_aligned_element_addr_from_byte_ptr(span);
                 self.emit_all(
                     [
-                        // Convert `src` to element address, and assert aligned to an element address
-                        //
-                        // TODO: We should probably also assert that the address is word-aligned, but
-                        // that is going to happen anyway. That said, the closer to the source the
-                        // better for debugging.
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
-                        // Convert `dst` to an element address the same way
-                        masm::Instruction::Swap1,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Assertz,
                         // Swap with `count` to get us into the correct ordering: [count, src, dst]
                         masm::Instruction::Swap2,
                         // Compute the corrected count
-                        masm::Instruction::U32OverflowingMulImm(factor.into()),
-                        masm::Instruction::Assertz, // [count * (size / 16), src, dst]
+                        masm::Instruction::U32WideningMulImm(factor.into()),
+                        masm::Instruction::Swap1,
+                        Self::assertz_with_message_inst(
+                            "memcpy word-copy fast path element count overflowed",
+                            span,
+                        ), // [count * (size / 16), src, dst]
                     ],
                     span,
                 );
@@ -848,18 +953,26 @@ impl OpEmitter<'_> {
         body_emitter.emit_push(value_size, span); // [offset, i, dst, i, src, dst, count]
         body_emitter.emit_all(
             [
-                masm::Instruction::U32OverflowingMadd,
-                masm::Instruction::Assertz, // [new_dst := i * offset + dst, i, src, dst, count]
-                masm::Instruction::Dup2,    // [src, new_dst, i, src, dst, count]
-                masm::Instruction::Dup2,    // [i, src, new_dst, i, src, dst, count]
+                masm::Instruction::U32WideningMadd,
+                masm::Instruction::Swap1,
+                Self::assertz_with_message_inst(
+                    "memcpy destination address computation overflowed",
+                    span,
+                ), // [new_dst := i * offset + dst, i, src, dst, count]
+                masm::Instruction::Dup2, // [src, new_dst, i, src, dst, count]
+                masm::Instruction::Dup2, // [i, src, new_dst, i, src, dst, count]
             ],
             span,
         );
         body_emitter.emit_push(value_size, span); // [offset, i, src, new_dst, i, src, dst, count]
         body_emitter.emit_all(
             [
-                masm::Instruction::U32OverflowingMadd,
-                masm::Instruction::Assertz, // [new_src := i * offset + src, new_dst, i, src, dst, count]
+                masm::Instruction::U32WideningMadd,
+                masm::Instruction::Swap1,
+                Self::assertz_with_message_inst(
+                    "memcpy source address computation overflowed",
+                    span,
+                ), // [new_src := i * offset + src, new_dst, i, src, dst, count]
             ],
             span,
         );
@@ -878,28 +991,16 @@ impl OpEmitter<'_> {
         body_emitter.store(span); // [i, src, dst, count]
 
         // Increment iteration count, determine whether to continue loop
-        body_emitter.emit_all(
-            [
-                masm::Instruction::U32WrappingAddImm(1.into()),
-                masm::Instruction::Dup0,   // [i++, i++, src, dst, count]
-                masm::Instruction::Dup4,   // [count, i++, i++, src, dst, count]
-                masm::Instruction::U32Gte, // [i++ >= count, i++, src, dst, count]
-            ],
-            span,
-        );
+        body_emitter.emit_counted_loop_next_condition(masm::Instruction::Dup4, span);
+        // [i++ < count, i++, src, dst, count]
 
         // Switch back to original block and emit loop header and 'while.true' instruction
         //
         // Loop header - prepare to loop until `count` iterations have been performed
 
         // [src, dst, count]
-        self.emit_push(0u32, span); // [i, src, dst, count]
-        self.emit(masm::Instruction::Dup3, span); // [count, i, src, dst, count]
-        self.emit_push(Felt::ZERO, span);
-        self.emit(
-            masm::Instruction::Gte, // [count > 0, i, src, dst, count]
-            span,
-        );
+        self.emit_counted_loop_header(masm::Instruction::Dup3, span);
+        // [count > 0, i, src, dst, count]
         self.current_block.push(masm::Op::While {
             span,
             body: masm::Block::new(span, body),
@@ -949,17 +1050,16 @@ impl OpEmitter<'_> {
 
     /// Store a 64-bit integer in linear memory.
     ///
-    /// Values are represented as two 32-bit limbs on the operand stack in big-endian order
-    /// (`[hi, lo]`).
+    /// Values are represented as two 32-bit limbs on the operand stack in LE limb order
+    /// (`[lo, hi]`, lo on top).
     fn store_double_word_int(&mut self, ptr: Option<NativePtr>, span: SourceSpan) {
         match ptr {
             // When storing to an immediate address, the operand stack only contains the value
-            // limbs. We must swap them so that the low limb is stored at the lower address.
+            // limbs. In LE order, lo is on top, so MemStoreImm stores lo at lower addr first.
             Some(ptr) if ptr.is_element_aligned() => {
-                // Stack: [value_hi, value_lo]
+                // Stack: [value_lo, value_hi]
                 self.emit_all(
                     [
-                        masm::Instruction::Swap1,
                         masm::Instruction::U32Assert2,
                         masm::Instruction::MemStoreImm(ptr.addr.into()),
                         masm::Instruction::MemStoreImm((ptr.addr + 1).into()),
@@ -970,19 +1070,14 @@ impl OpEmitter<'_> {
             // When storing to a dynamic address, or an unaligned immediate address, the operand
             // stack contains (or must contain) the native pointer pair `(element_addr, byte_offset)`
             // above the value limbs. This is derived from the 32-bit byte pointer via `divmod 4`.
-            // Swap the limbs underneath the pointer pair before delegating to the mem intrinsic.
             Some(ptr) => {
-                // Stack: [value_hi, value_lo]
+                // Stack: [value_lo, value_hi]
                 self.push_native_ptr(ptr, span);
-                // Stack: [addr, offset, value_hi, value_lo]
-                self.emit(masm::Instruction::MovUp2, span);
-                self.emit(masm::Instruction::MovDn3, span);
+                // Stack: [addr, offset, value_lo, value_hi]
                 self.raw_exec("::intrinsics::mem::store_dw", span);
             }
             None => {
-                // Stack: [addr, offset, value_hi, value_lo]
-                self.emit(masm::Instruction::MovUp2, span);
-                self.emit(masm::Instruction::MovDn3, span);
+                // Stack: [addr, offset, value_lo, value_hi]
                 self.raw_exec("::intrinsics::mem::store_dw", span);
             }
         }
@@ -1060,6 +1155,21 @@ impl OpEmitter<'_> {
             return;
         }
 
+        if type_size == 16 {
+            self.store_16bit_dynamic(span);
+            return;
+        }
+
+        self.store_small_within_element(
+            u32::try_from(type_size).expect("invalid sub-word type size"),
+            span,
+        );
+    }
+
+    /// Store a sub-word value which is fully contained in the current 32-bit element.
+    ///
+    /// Stack transition: `[addr, offset, value] -> []`.
+    fn store_small_within_element(&mut self, type_size: u32, span: SourceSpan) {
         // Stack: [addr, offset, value]
         // Load the current aligned value
         self.emit_all(
@@ -1108,6 +1218,16 @@ impl OpEmitter<'_> {
         );
     }
 
+    /// Store a 16-bit value to a dynamic native pointer tuple.
+    ///
+    /// This delegates to a dedicated intrinsic which owns the complete stack protocol for both the
+    /// within-element and cross-element cases.
+    ///
+    /// Stack transition: `[addr, offset, value] -> []`.
+    fn store_16bit_dynamic(&mut self, span: SourceSpan) {
+        self.raw_exec("::intrinsics::mem::store_u16", span);
+    }
+
     /// Store a sub-word value using an immediate pointer
     ///
     /// This function stores sub-word values (u8, u16, etc.) to memory at a specific immediate address.
@@ -1121,6 +1241,14 @@ impl OpEmitter<'_> {
     /// - Before: [value] (where value is already truncated to the correct size)
     /// - After: []
     fn store_small_imm(&mut self, ty: &Type, imm: NativePtr, span: SourceSpan) {
+        if ty.size_in_bits() == 16 && !imm.is_element_aligned() {
+            // Route unaligned 16-bit immediates through the dynamic path so they share the same
+            // cross-element windowing logic as byte-pointer stores.
+            self.push_native_ptr(imm, span);
+            self.store_small(ty, None, span);
+            return;
+        }
+
         assert!(imm.alignment() as usize >= ty.min_alignment());
 
         // For immediate pointers, we always load from the element-aligned address

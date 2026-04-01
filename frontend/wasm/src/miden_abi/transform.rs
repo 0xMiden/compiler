@@ -1,7 +1,7 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, Immediate, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
+    Builder, Immediate, Op, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
     dialects::builtin::FunctionRef, interner::symbols,
 };
 
@@ -58,10 +58,11 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                                 _ => None,
                             }
                         }
-                        symbols::Rpo256 => {
+                        symbols::Poseidon2 => {
                             match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                                stdlib::crypto::hashes::rpo256::HASH_ELEMENTS
-                                | stdlib::crypto::hashes::rpo256::HASH_WORDS => {
+                                stdlib::crypto::hashes::poseidon2::HASH_ELEMENTS
+                                | stdlib::crypto::hashes::poseidon2::HASH_WORDS
+                                | stdlib::crypto::hashes::poseidon2::MERGE => {
                                     Some(TransformStrategy::ReturnViaPointer)
                                 }
                                 _ => None,
@@ -70,7 +71,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         _ => None,
                     },
                     symbols::Dsa => match components.next()?.as_symbol_name() {
-                        symbols::Falcon512Rpo => {
+                        symbols::Falcon512Poseidon2 => {
                             match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                                 stdlib::crypto::dsa::rpo_falcon512::RPO_FALCON512_VERIFY => {
                                     Some(TransformStrategy::NoTransform)
@@ -114,6 +115,14 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         _ => None,
                     }
                 }
+                module if module == symbols::Note => {
+                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
+                        tx_kernel::note::BUILD_RECIPIENT => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        _ => None,
+                    }
+                }
                 symbols::ActiveAccount => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::active_account::GET_NONCE
@@ -134,6 +143,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::active_account::GET_INITIAL_STORAGE_ITEM
                         | tx_kernel::active_account::GET_STORAGE_MAP_ITEM
                         | tx_kernel::active_account::GET_INITIAL_STORAGE_MAP_ITEM
+                        | tx_kernel::active_account::GET_ASSET
+                        | tx_kernel::active_account::GET_INITIAL_ASSET
                         | tx_kernel::active_account::GET_INITIAL_VAULT_ROOT
                         | tx_kernel::active_account::GET_VAULT_ROOT
                         | tx_kernel::active_account::GET_PROCEDURE_ROOT => {
@@ -144,8 +155,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 }
                 symbols::Asset => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::asset::BUILD_FUNGIBLE_ASSET
-                        | tx_kernel::asset::BUILD_NON_FUNGIBLE_ASSET => {
+                        tx_kernel::asset::CREATE_FUNGIBLE_ASSET
+                        | tx_kernel::asset::CREATE_NON_FUNGIBLE_ASSET => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -157,16 +168,12 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::faucet::CREATE_NON_FUNGIBLE_ASSET
                         | tx_kernel::faucet::MINT
                         | tx_kernel::faucet::BURN => Some(TransformStrategy::ReturnViaPointer),
-                        tx_kernel::faucet::GET_TOTAL_ISSUANCE
-                        | tx_kernel::faucet::IS_NON_FUNGIBLE_ASSET_ISSUED => {
-                            Some(TransformStrategy::NoTransform)
-                        }
                         _ => None,
                     }
                 }
                 symbols::ActiveNote => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::active_note::GET_INPUTS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::active_note::GET_STORAGE => Some(TransformStrategy::ListReturn),
                         tx_kernel::active_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
                         tx_kernel::active_note::GET_SENDER
                         | tx_kernel::active_note::GET_RECIPIENT
@@ -185,7 +192,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::input_note::GET_RECIPIENT
                         | tx_kernel::input_note::GET_METADATA
                         | tx_kernel::input_note::GET_SENDER
-                        | tx_kernel::input_note::GET_INPUTS_INFO
+                        | tx_kernel::input_note::GET_STORAGE_INFO
                         | tx_kernel::input_note::GET_SCRIPT_ROOT
                         | tx_kernel::input_note::GET_SERIAL_NUMBER => {
                             Some(TransformStrategy::ReturnViaPointer)
@@ -264,13 +271,13 @@ pub fn no_transform<B: ?Sized + Builder>(
     builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
     let span = import_func_ref.borrow().name().span;
-    let signature = import_func_ref.borrow().signature().clone();
+    let signature = import_func_ref.borrow().get_signature().clone();
     let exec = builder
         .exec(import_func_ref, signature, args.to_vec(), span)
         .expect("failed to build an exec op in no_transform strategy");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
     results
@@ -283,13 +290,13 @@ pub fn list_return<B: ?Sized + Builder>(
     builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
     let span = import_func_ref.borrow().name().span;
-    let signature = import_func_ref.borrow().signature().clone();
+    let signature = import_func_ref.borrow().get_signature().clone();
     let exec = builder
         .exec(import_func_ref, signature, args.to_vec(), span)
         .expect("failed to build an exec op in list_return strategy");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
@@ -307,13 +314,13 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     let span = import_func_ref.borrow().name().span;
     // Omit the last argument (pointer)
     let args_wo_pointer = &args[0..args.len() - 1];
-    let signature = import_func_ref.borrow().signature().clone();
+    let signature = import_func_ref.borrow().get_signature().clone();
     let exec = builder
         .exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)
         .expect("failed to build an exec op in return_via_pointer strategy");
 
     let borrow = exec.borrow();
-    let results_storage = borrow.as_ref().results();
+    let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 

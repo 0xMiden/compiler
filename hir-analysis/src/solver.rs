@@ -114,8 +114,8 @@ impl DataFlowSolver {
     /// # Panics
     ///
     /// This function will panic if you attempt to load new analyses while the solver is running.
-    /// It is only permitted to load analyses before calling [initialize_and_run], or after a call
-    /// to that function has returned, and you are starting a new round of analysis.
+    /// It is only permitted to load analyses before calling [Self::initialize_and_run], or after a
+    /// call to that function has returned, and you are starting a new round of analysis.
     pub fn load<A>(&mut self)
     where
         A: BuildableDataFlowAnalysis + 'static,
@@ -137,8 +137,8 @@ impl DataFlowSolver {
     /// # Panics
     ///
     /// This function will panic if you attempt to load new analyses while the solver is running.
-    /// It is only permitted to load analyses before calling [initialize_and_run], or after a call
-    /// to that function has returned, and you are starting a new round of analysis.
+    /// It is only permitted to load analyses before calling [Self::initialize_and_run], or after a
+    /// call to that function has returned, and you are starting a new round of analysis.
     pub fn load_with_strategy<A>(&mut self, analysis: A)
     where
         A: BuildableDataFlowAnalysis + 'static,
@@ -160,8 +160,8 @@ impl DataFlowSolver {
     /// # Panics
     ///
     /// This function will panic if you attempt to load new analyses while the solver is running.
-    /// It is only permitted to load analyses before calling [initialize_and_run], or after a call
-    /// to that function has returned, and you are starting a new round of analysis.
+    /// It is only permitted to load analyses before calling [Self::initialize_and_run], or after a
+    /// call to that function has returned, and you are starting a new round of analysis.
     pub fn load_analysis<A>(&mut self, analysis: A)
     where
         A: DataFlowAnalysis + 'static,

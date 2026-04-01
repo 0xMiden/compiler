@@ -221,6 +221,34 @@ args = [
     "${MIDENC_BIN_DIR}",
 ]
 
+[tasks.hir-opt]
+category = "Build"
+description = "Builds hir-opt and installs it to the bin folder"
+command = "cargo"
+args = [
+    "-Z",
+    "unstable-options",
+    "build",
+    "-p",
+    "midenc-hir-opt",
+    "--artifact-dir",
+    "${MIDENC_BIN_DIR}",
+]
+
+[tasks.objtool]
+category = "Build"
+description = "Builds objtool and installs it to the bin folder"
+command = "cargo"
+args = [
+    "-Z",
+    "unstable-options",
+    "build",
+    "-p",
+    "objtool",
+    "--artifact-dir",
+    "${MIDENC_BIN_DIR}",
+]
+
 [tasks.build]
 category = "Build"
 description = "Runs cargo build on the workspace"
@@ -232,7 +260,9 @@ description = "Installs the compiler via cargo"
 run_task = [
     { name = [
        "install-midenc",
+       "install-hir-opt",
        "install-cargo-miden",
+       "install-objtool",
     ] },
 ]
 
@@ -336,6 +366,36 @@ args = [
     "midenc",
 ]
 
+[tasks.install-hir-opt]
+category = "Install"
+description = "Builds hir-opt and installs it globally via the cargo bin directory"
+command = "cargo"
+args = [
+    "install",
+    "--locked",
+    "--path",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/hir-opt",
+    "--${MIDENC_BUILD_PROFILE}",
+    "--force",
+    "--bin",
+    "hir-opt",
+]
+
+[tasks.install-objtool]
+category = "Install"
+description = "Builds objtool and installs it globally via the cargo bin directory"
+command = "cargo"
+args = [
+    "install",
+    "--locked",
+    "--path",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/objtool",
+    "--${MIDENC_BUILD_PROFILE}",
+    "--force",
+    "--bin",
+    "objtool",
+]
+
 [tasks.test-rust]
 category = "Test"
 description = "Run tests written in Rust, with optional extra arguments"
@@ -361,7 +421,7 @@ args = [
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit",
 ]
-dependencies = ["litcheck", "midenc", "cargo-miden"]
+dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt"]
 
 [tasks.lit]
 category = "Test"
@@ -372,7 +432,7 @@ args = [
     "lit",
     "${@}",
 ]
-dependencies = ["litcheck", "midenc", "cargo-miden"]
+dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt"]
 
 
 [tasks.litcheck]
@@ -387,6 +447,12 @@ dependencies = ["docusaurus"]
 cwd = "./docs/external"
 command = "npm"
 args = ["run", "start:dev"]
+
+[tasks.rustdocs]
+category = "Documentation"
+command = "cargo"
+args = ["doc"]
+
 
 [tasks.docusaurus]
 category = "Build"

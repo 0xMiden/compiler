@@ -3,11 +3,9 @@
 use alloc::{format, string::String, vec, vec::Vec};
 use core::ops::{Index, IndexMut, Range};
 
-use midenc_hir::{Felt, FieldElement, Immediate, SmallVec, SourceSpan, Type};
-use midenc_session::{
-    diagnostics::{Diagnostic, miette},
-    miden_assembly::utils::Deserializable,
-};
+use miden_core::field::PrimeField64;
+use midenc_hir::{Felt, Immediate, SmallVec, SourceSpan, Type};
+use midenc_session::diagnostics::{Diagnostic, miette};
 
 use crate::Value;
 
@@ -114,11 +112,14 @@ pub fn read_value(addr: usize, ty: &Type, memory: &[u8]) -> Result<Value, ReadFa
             Immediate::F64(value)
         }
         Type::Felt => {
-            const FELT_SIZE: usize = Felt::ELEMENT_BYTES;
-            let bytes = read_bytes::<FELT_SIZE>(addr, memory);
-            Felt::read_from_bytes(&bytes).map(Immediate::Felt).map_err(|err| {
-                ReadFailed::InvalidFelt(format!("failed to decode felt at {addr}: {err}"))
-            })?
+            let bytes = read_bytes::<8>(addr, memory);
+            let value = u64::from_le_bytes(bytes);
+            if value >= Felt::ORDER_U64 {
+                return Err(ReadFailed::InvalidFelt(format!(
+                    "failed to decode felt at {addr}: value {value} exceeds field modulus"
+                )));
+            }
+            Immediate::Felt(Felt::new(value))
         }
         Type::Ptr(_) => {
             let value = u32::from_be_bytes(read_bytes(addr, memory));
@@ -232,7 +233,9 @@ pub fn write_value<B: Buffer>(addr: usize, value: Value, memory: &mut B) {
         Immediate::I128(value) => write_bytes(addr, &value.to_be_bytes(), memory),
         Immediate::U128(value) => write_bytes(addr, &value.to_be_bytes(), memory),
         Immediate::F64(value) => write_bytes(addr, &value.to_be_bytes(), memory),
-        Immediate::Felt(value) => write_bytes(addr, Felt::elements_as_bytes(&[value]), memory),
+        Immediate::Felt(value) => {
+            write_bytes(addr, &value.as_canonical_u64().to_le_bytes(), memory)
+        }
     }
 }
 

@@ -5,7 +5,7 @@ use alloc::{format, vec};
 use midenc_hir::{
     BlockRef, Context, EntityRef, Felt, FxHashMap, Immediate, Operation, OperationRef, Report,
     SmallVec, SourceSpan, SymbolPath, ValueId, ValueRef,
-    dialects::builtin::{self, LocalVariable},
+    dialects::builtin::{self, attributes::LocalVariable},
     formatter::DisplayHex,
 };
 use midenc_session::diagnostics::{Diagnostic, Severity, WrapErr, miette};

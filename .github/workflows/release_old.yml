@@ -1,37 +1,67 @@
-# The old release process left for releasing the Miden SDK until it moves to a separate repo.
+# The Miden SDK publishing until it moves to a separate repo.
 #
-# Runs `release-plz release` only after the release PR (starts with `release-plz-`)
-# is merged to the next branch. Publishes any unpublished crates.
-# Does nothing if all crates are already published (i.e. have their versions on crates.io).
-# Does not create/update release PRs.
-#
+# Runs `cargo publish` only after a merged PR whose source branch starts with
+# `release-plz` targets the `next` branch.
 # See CONTRIBUTING.md for more details.
 
 name: release-miden-sdk
 
 on:
-  push:
+  pull_request:
     branches:
       - next
+    types:
+      - closed
 
 jobs:
   publish:
-    name: publish any unpublished packages
+    name: publish SDK packages
+    if: ${{ github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release-plz') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
-      - name: Publish
-        uses: release-plz/action@v0.5
-        with:
-          # Only run the `release` command that publishes any unpublished crates.
-          command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      # Publish SDK crates in dependency order. Keep these as plain
+      # `cargo publish` invocations and continue if a crate is already published.
+      - name: Publish `miden-field-repr-derive` crate
+        working-directory: sdk/field-repr/derive
+        continue-on-error: true
+        run: cargo publish
+      - name: Publish `miden-field-repr` crate
+        working-directory: sdk/field-repr/repr
+        continue-on-error: true
+        run: cargo publish
+      - name: Publish `miden-stdlib-sys` crate
+        working-directory: sdk/stdlib-sys
+        continue-on-error: true
+        run: cargo publish
+      - name: Publish `miden-base-macros` crate
+        working-directory: sdk/base-macros
+        continue-on-error: true
+        run: cargo publish
+      - name: Publish `miden-sdk-alloc` crate
+        working-directory: sdk/alloc
+        continue-on-error: true
+        run: cargo publish
+      - name: Publish `miden-base-sys` crate
+        working-directory: sdk/base-sys
+        continue-on-error: true
+        run: cargo publish
+      - name: Publish `miden-base` crate
+        working-directory: sdk/base
+        continue-on-error: true
+        run: cargo publish
+      - name: Publish `miden` crate
+        working-directory: sdk/sdk
+        continue-on-error: true
+        run: cargo publish

@@ -13,42 +13,43 @@ unsafe extern "C" {
     /// Moves an arbitrary number of words from the advice stack to memory.
     ///
     /// Input: [num_words, write_ptr, ...]
-    /// Output: [HASH, write_ptr', ...]
+    /// Output: [R0, R1, C, write_ptr', ...]
     ///
-    /// Where HASH is the sequential RPO hash of all copied words.
+    /// Where R0, R1, C are the final hasher state, and `write_ptr'` points to the end of the
+    /// copied words.
     ///
     /// Cycles:
-    /// - Even num_words: 48 + 9 * num_words / 2
-    /// - Odd num_words: 65 + 9 * round_down(num_words / 2)
+    /// - Even num_words: 43 + 9 * num_words / 2
+    /// - Odd num_words: 60 + 9 * round_down(num_words / 2)
     #[link_name = "miden::core::mem::pipe_words_to_memory"]
-    fn extern_pipe_words_to_memory(num_words: Felt, ptr: *mut Felt, out_ptr: *mut Felt);
+    fn extern_pipe_words_to_memory(num_words: Felt, write_ptr: *mut Felt, out_ptr: *mut Felt);
 
     /// Moves an even number of words from the advice stack to memory.
     ///
-    /// Input: [C, B, A, write_ptr, end_ptr, ...]
-    /// Output: [C, B, A, write_ptr, ...]
+    /// Input: [R0, R1, C, write_ptr, end_ptr, ...]
+    /// Output: [R0', R1', C', write_ptr, ...]
     ///
     /// Where:
-    /// - The words C, B, and A are the RPO hasher state
-    /// - A is the capacity
-    /// - C, B are the rate portion of the state
+    /// - The words R0, R1, and C are the hasher state (R0 on top)
+    /// - C is the capacity
+    /// - R0, R1 are the rate portion of the state
     /// - The value num_words = end_ptr - write_ptr must be positive and even
     ///
-    /// Cycles: 10 + 9 * num_words / 2
+    /// Cycles: 9 + 6 * (num_words / 2)
     #[link_name = "miden::core::mem::pipe_double_words_to_memory"]
     fn extern_pipe_double_words_to_memory(
+        r00: Felt,
+        r01: Felt,
+        r02: Felt,
+        r03: Felt,
+        r10: Felt,
+        r11: Felt,
+        r12: Felt,
+        r13: Felt,
         c0: Felt,
         c1: Felt,
         c2: Felt,
         c3: Felt,
-        b0: Felt,
-        b1: Felt,
-        b2: Felt,
-        b3: Felt,
-        a0: Felt,
-        a1: Felt,
-        a2: Felt,
-        a3: Felt,
         write_ptr: *mut Felt,
         end_ptr: *mut Felt,
         out_ptr: *mut Felt,
@@ -74,29 +75,42 @@ unsafe extern "C" {
 }
 
 /// Reads an arbitrary number of words `num_words` from the advice stack and returns them along with
-/// sequantial RPO hash of all read words.
+/// the digest of all read words.
 ///
 /// Cycles:
-/// - Even num_words: 48 + 9 * num_words / 2
-/// - Odd num_words: 65 + 9 * round_down(num_words / 2)
+/// - Even num_words: 43 + 9 * num_words / 2
+/// - Odd num_words: 60 + 9 * round_down(num_words / 2)
 #[cfg(all(target_family = "wasm", miden))]
 pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
+    #[repr(C)]
     struct Result {
-        hash: Word,
+        r0: Word,
+        r1: Word,
+        c: Word,
         write_ptr: *mut Felt,
     }
 
     unsafe {
-        // Place for returned HASH, write_ptr
+        let num_words_usize =
+            usize::try_from(num_words.as_canonical_u64()).expect("num_words must fit in usize");
+        let num_felts = num_words_usize.checked_mul(4).expect("num_words too large");
+
         let mut ret_area = ::core::mem::MaybeUninit::<Result>::uninit();
-        let mut buf: Vec<Felt> = Vec::with_capacity((num_words.as_u64() * 4) as usize);
+        let mut buf: Vec<Felt> = Vec::with_capacity(num_felts);
+
+        let rust_write_ptr = buf.as_mut_ptr().addr();
+        let rust_write_ptr_u32 = u32::try_from(rust_write_ptr).expect("write_ptr must fit in u32");
+        assert_eq!(rust_write_ptr_u32 % 4, 0, "write_ptr must be word-aligned");
+        let miden_write_ptr = rust_write_ptr_u32 / 4;
+
         extern_pipe_words_to_memory(
             num_words,
-            buf.as_mut_ptr(),
+            miden_write_ptr as usize as *mut Felt,
             ret_area.as_mut_ptr() as *mut Felt,
         );
-        let Result { hash, .. } = ret_area.assume_init();
-        (hash, buf)
+        buf.set_len(num_felts);
+        let Result { r0, .. } = ret_area.assume_init();
+        (r0, buf)
     }
 }
 
@@ -109,21 +123,31 @@ pub fn pipe_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
 
 /// Returns an even number of words from the advice stack along with the RPO hash of all read words.
 ///
-/// Cycles: 10 + 9 * num_words / 2
+/// Cycles: 9 + 6 * (num_words / 2)
 #[cfg(all(target_family = "wasm", miden))]
 pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
+    #[repr(C)]
     struct Result {
+        r0: Word,
+        r1: Word,
         c: Word,
-        b: Word,
-        a: Word,
         write_ptr: *mut Felt,
     }
 
-    let num_words_in_felts = num_words.as_u64() as usize * 4;
-    let mut buf: Vec<Felt> = Vec::with_capacity(num_words_in_felts);
-    let write_ptr = buf.as_mut_ptr();
-    let end_ptr = unsafe { write_ptr.add(num_words_in_felts) };
-    // Place for returned C, B, A, write_ptr
+    let num_words_usize =
+        usize::try_from(num_words.as_canonical_u64()).expect("num_words must fit in usize");
+    let num_felts = num_words_usize.checked_mul(4).expect("num_words too large");
+
+    let mut buf: Vec<Felt> = Vec::with_capacity(num_felts);
+
+    let rust_write_ptr = buf.as_mut_ptr().addr();
+    let rust_write_ptr_u32 = u32::try_from(rust_write_ptr).expect("write_ptr must fit in u32");
+    assert_eq!(rust_write_ptr_u32 % 4, 0, "write_ptr must be word-aligned");
+    let miden_write_ptr = rust_write_ptr_u32 / 4;
+    let num_felts_u32 = u32::try_from(num_felts).expect("num_felts must fit in u32");
+    let miden_end_ptr = miden_write_ptr + num_felts_u32;
+
+    // Place for returned R0, R1, C, write_ptr
     let mut ret_area = ::core::mem::MaybeUninit::<Result>::uninit();
     let zero = felt!(0);
     unsafe {
@@ -131,22 +155,22 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
             zero,
             zero,
             zero,
+            zero, // R0
             zero,
             zero,
             zero,
+            zero, // R1
             zero,
             zero,
             zero,
-            zero,
-            zero,
-            zero,
-            write_ptr,
-            end_ptr,
+            zero, // C
+            miden_write_ptr as usize as *mut Felt,
+            miden_end_ptr as usize as *mut Felt,
             ret_area.as_mut_ptr() as *mut Felt,
         );
-        let Result { b, .. } = ret_area.assume_init();
-        // B (second) is the hash (see https://github.com/0xMiden/miden-vm/blob/3a957f7c90176914bda2139f74bff9e5700d59ac/stdlib/asm/crypto/hashes/native.masm#L1-L16 )
-        (b, buf)
+        buf.set_len(num_felts);
+        let Result { r0, .. } = ret_area.assume_init();
+        (r0, buf)
     }
 }
 
@@ -162,7 +186,7 @@ pub fn pipe_double_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
 #[cfg(all(target_family = "wasm", miden))]
 pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
     // Allocate a Vec with the specified capacity
-    let num_words_usize = num_words.as_u64() as usize;
+    let num_words_usize = num_words.as_canonical_u64() as usize;
     let num_felts = num_words_usize * 4;
     let mut result: Vec<Felt> = Vec::with_capacity(num_felts);
 
@@ -172,10 +196,10 @@ pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
         extern_pipe_preimage_to_memory(
             num_words,
             result_miden_ptr as *mut Felt,
-            commitment[3],
-            commitment[2],
-            commitment[1],
             commitment[0],
+            commitment[1],
+            commitment[2],
+            commitment[3],
         );
 
         // Set the length of the Vec to match what was loaded

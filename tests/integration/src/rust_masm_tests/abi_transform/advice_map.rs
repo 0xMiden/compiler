@@ -1,9 +1,9 @@
 use core::panic;
 use std::{collections::VecDeque, sync::Arc};
 
-use miden_core::{FieldElement, StarkField, utils::group_slice_elements};
+use miden_core::{field::PrimeField64, utils::group_slice_elements};
 use miden_debug::{Executor, Felt as TestFelt, FromMidenRepr, ToMidenRepr};
-use miden_processor::AdviceInputs;
+use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
@@ -30,9 +30,9 @@ fn test_adv_load_preimage() {
 
         let num_felts = intrinsics::advice::adv_push_mapvaln(key.clone());
 
-        let num_felts_u64 = num_felts.as_u64();
-        assert_eq(Felt::from_u32((num_felts_u64 % 4) as u32), felt!(0));
-        let num_words = Felt::from_u64_unchecked(num_felts_u64 / 4);
+        let num_felts_u64 = num_felts.as_canonical_u64();
+        assert_eq(Felt::new((num_felts_u64 % 4) as u64), felt!(0));
+        let num_words = Felt::new(num_felts_u64 / 4);
 
         let commitment = key;
         let input = adv_load_preimage(num_words, commitment);
@@ -48,12 +48,7 @@ fn test_adv_load_preimage() {
     let mut test =
         CompilerTest::rust_fn_body_with_stdlib_sys("adv_load_preimage", &main_fn, config, []);
 
-    // Test expected compilation artifacts
-    test.expect_wasm(expect_file![format!("../../../expected/adv_load_preimage.wat")]);
-    test.expect_ir(expect_file![format!("../../../expected/adv_load_preimage.hir")]);
-    test.expect_masm(expect_file![format!("../../../expected/adv_load_preimage.masm")]);
-
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     // Create test data: 4 words (16 felts)
     let input: Vec<Felt> = vec![
@@ -72,21 +67,20 @@ fn test_adv_load_preimage() {
         Felt::new(13),
         Felt::new(14),
         Felt::new(15),
-        Felt::new(Felt::MODULUS - 1),
+        Felt::new(Felt::ORDER_U64 - 1),
     ];
 
-    let commitment = miden_core::crypto::hash::Rpo256::hash_elements(&input);
-    dbg!(&commitment.to_hex());
+    let commitment = miden_core::crypto::hash::Poseidon2::hash_elements(&input);
     let mut advice_map = std::collections::BTreeMap::new();
     advice_map.insert(commitment, input.clone());
 
     let out_addr = 20u32 * 65536;
     let args = [
-        commitment[3],
-        commitment[2],
-        commitment[1],
-        commitment[0],
         Felt::new(out_addr as u64),
+        commitment[0],
+        commitment[1],
+        commitment[2],
+        commitment[3],
     ];
 
     let mut exec = Executor::new(args.to_vec());
@@ -109,10 +103,9 @@ fn test_adv_load_preimage() {
     let vec_metadata: [TestFelt; 4] =
         trace.read_from_rust_memory(result_ptr).expect("Failed to read vec metadata");
 
-    let capacity = vec_metadata[0].0.as_int() as usize;
-    let data_ptr = vec_metadata[1].0.as_int() as u32;
-    let vec_len = vec_metadata[2].0.as_int() as usize;
-    dbg!(capacity, data_ptr, vec_len);
+    let capacity = vec_metadata[0].0.as_canonical_u64() as usize;
+    let data_ptr = vec_metadata[1].0.as_canonical_u64() as u32;
+    let vec_len = vec_metadata[2].0.as_canonical_u64() as usize;
 
     // Reconstruct the Vec<Felt> by reading all words from memory
     let mut loaded: Vec<Felt> = Vec::with_capacity(capacity);

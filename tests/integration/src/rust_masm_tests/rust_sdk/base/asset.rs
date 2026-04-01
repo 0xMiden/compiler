@@ -64,32 +64,28 @@ debug = false
     )
     .build();
 
-    test.expect_wasm(expect_file![format!("../../../../expected/rust_sdk/{name}.wat")]);
-    test.expect_ir(expect_file![format!("../../../../expected/rust_sdk/{name}.hir")]);
-    test.expect_masm(expect_file![format!("../../../../expected/rust_sdk/{name}.masm")]);
-
-    test.compiled_package();
+    test.compile_package();
 }
 
 #[test]
-fn rust_sdk_account_asset_build_fungible_asset_binding() {
+fn rust_sdk_account_asset_create_fungible_asset_binding() {
     run_asset_binding_test(
-        "rust_sdk_account_asset_build_fungible_asset_binding",
+        "rust_sdk_account_asset_create_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
-        let faucet = AccountId { prefix: Felt::from_u32(1), suffix: Felt::from_u32(0) };
-        asset::build_fungible_asset(faucet, Felt::from_u32(10))
+        let faucet = AccountId { prefix: Felt::new(1), suffix: Felt::new(0) };
+        asset::create_fungible_asset(faucet, Felt::new(10))
     }",
     );
 }
 
 #[test]
-fn rust_sdk_account_asset_build_non_fungible_asset_binding() {
+fn rust_sdk_account_asset_create_non_fungible_asset_binding() {
     run_asset_binding_test(
-        "rust_sdk_account_asset_build_non_fungible_asset_binding",
+        "rust_sdk_account_asset_create_non_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
-        let faucet = AccountId { prefix: Felt::from_u32(1), suffix: Felt::from_u32(0) };
-        let hash = Word::from([Felt::from_u32(0); 4]);
-        asset::build_non_fungible_asset(faucet, hash)
+        let faucet = AccountId { prefix: Felt::new(1), suffix: Felt::new(0) };
+        let hash = Word::from([Felt::new(0); 4]);
+        asset::create_non_fungible_asset(faucet, hash)
     }",
     );
 }

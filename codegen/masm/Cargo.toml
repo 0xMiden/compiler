@@ -32,6 +32,7 @@ midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-ub.workspace = true
+midenc-dialect-wasm.workspace = true
 midenc-session.workspace = true
 petgraph.workspace = true
 serde.workspace = true
@@ -40,7 +41,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
-midenc-expect-test = { path = "../../tools/expect-test" }
-proptest.workspace = true
-midenc-log = { path = "../../midenc-log" }
 itertools = "0.14.0"
+midenc-expect-test = { path = "../../tools/expect-test" }
+midenc-hir = { path = "../../hir", features = ["logging"] }
+proptest.workspace = true

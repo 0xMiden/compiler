@@ -3,9 +3,7 @@ mod foldable;
 mod info;
 mod types;
 
-use alloc::{boxed::Box, format};
-
-use midenc_session::diagnostics::Severity;
+use alloc::format;
 
 pub use self::{
     canonicalization::Canonicalizable,
@@ -14,38 +12,52 @@ pub use self::{
     types::*,
 };
 use super::BlockRef;
-use crate::{AttributeValue, Context, Operation, Report, Spanned, derive};
+use crate::{
+    AttributeRef, Context, Operation,
+    derive::operation_trait,
+    diagnostics::{Report, Severity, Spanned},
+};
 
 /// Marker trait for commutative ops, e.g. `X op Y == Y op X`
+#[operation_trait]
 pub trait Commutative {}
 
 /// Marker trait for constant-like ops
+#[operation_trait]
 pub trait ConstantLike {}
 
 /// Marker trait for return-like ops
+#[operation_trait]
 pub trait ReturnLike {}
 
 /// Op is a terminator (i.e. it can be used to terminate a block)
+#[operation_trait]
 pub trait Terminator {}
 
 /// Op's regions do not require blocks to end with a [Terminator]
+#[operation_trait]
 pub trait NoTerminator {}
 
 /// Marker trait for idemptoent ops, i.e. `op op X == op X (unary) / X op X == X (binary)`
+#[operation_trait]
 pub trait Idempotent {}
 
 /// Marker trait for ops that exhibit the property `op op X == X`
+#[operation_trait]
 pub trait Involution {}
 
 /// Marker trait for ops which are not permitted to access values defined above them
+#[operation_trait]
 pub trait IsolatedFromAbove {}
 
-/// Marker trait for ops which have only regions of [`RegionKind::Graph`]
+/// Marker trait for ops which have only regions of [`crate::RegionKind::Graph`]
+#[operation_trait]
 pub trait HasOnlyGraphRegion {}
 
 /// Op's regions are all single-block graph regions, that not require a terminator
 ///
 /// This trait _cannot_ be derived via `derive!`
+#[operation_trait]
 pub trait GraphRegionNoTerminator:
     NoTerminator + SingleBlock + crate::RegionKindInterface + HasOnlyGraphRegion
 {
@@ -136,7 +148,7 @@ pub trait BranchOpInterface: crate::Op {
     #[allow(unused_variables)]
     fn get_successor_for_operands(
         &self,
-        operands: &[Option<Box<dyn AttributeValue>>],
+        operands: &[Option<AttributeRef>],
     ) -> Option<crate::SuccessorInfo> {
         None
     }
@@ -181,127 +193,127 @@ pub trait SelectLikeOpInterface {
     fn get_false_value(&self) -> crate::ValueRef;
 }
 
-derive! {
-    /// Marker trait for unary ops, i.e. those which take a single operand
-    pub trait UnaryOp {}
-
-    verify {
-        fn is_unary_op(op: &Operation, context: &Context) -> Result<(), Report> {
-            if op.num_operands() == 1 {
-                Ok(())
-            } else {
-                Err(
-                    context.diagnostics()
-                        .diagnostic(Severity::Error)
-                        .with_message(::alloc::format!("invalid operation {}", op.name()))
-                        .with_primary_label(op.span(), format!("incorrect number of operands, expected 1, got {}", op.num_operands()))
-                        .with_help("this operator implements 'UnaryOp', which requires it to have exactly one operand")
-                        .into_report()
-                )
-            }
-        }
-    }
-}
-
-derive! {
-    /// Marker trait for binary ops, i.e. those which take two operands
-    pub trait BinaryOp {}
-
-    verify {
-        fn is_binary_op(op: &Operation, context: &Context) -> Result<(), Report> {
-            if op.num_operands() == 2 {
-                Ok(())
-            } else {
-                Err(
-                    context.diagnostics()
-                        .diagnostic(Severity::Error)
-                        .with_message(::alloc::format!("invalid operation {}", op.name()))
-                        .with_primary_label(op.span(), format!("incorrect number of operands, expected 2, got {}", op.num_operands()))
-                        .with_help("this operator implements 'BinaryOp', which requires it to have exactly two operands")
-                        .into_report()
-                )
-            }
-        }
-    }
-}
-
-derive! {
-    /// Op's regions have no arguments
-    pub trait NoRegionArguments {}
-
-    verify {
-        fn no_region_arguments(op: &Operation, context: &Context) -> Result<(), Report> {
-            for region in op.regions().iter() {
-                if region.is_empty() {
-                    continue
-                }
-                if region.entry().has_arguments() {
-                    return Err(context
-                        .diagnostics()
-                        .diagnostic(Severity::Error)
-                        .with_message(::alloc::format!("invalid operation {}", op.name()))
-                        .with_primary_label(
-                            op.span(),
-                            "this operation does not permit regions with arguments, but one was found"
-                        )
-                        .into_report());
-                }
-            }
-
+/// Marker trait for unary ops, i.e. those which take a single operand
+#[operation_trait]
+pub trait UnaryOp {
+    #[verifier]
+    fn is_unary_op(op: &Operation, context: &Context) -> Result<(), Report> {
+        if op.num_operands() == 1 {
             Ok(())
+        } else {
+            Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(::alloc::format!("invalid operation {}", op.name()))
+                .with_primary_label(
+                    op.span(),
+                    format!("incorrect number of operands, expected 1, got {}", op.num_operands()),
+                )
+                .with_help(
+                    "this operator implements 'UnaryOp', which requires it to have exactly one \
+                     operand",
+                )
+                .into_report())
         }
     }
 }
 
-derive! {
-    /// Op's regions have a single block
-    pub trait SingleBlock {}
-
-    verify {
-        fn has_only_single_block_regions(op: &Operation, context: &Context) -> Result<(), Report> {
-            for region in op.regions().iter() {
-                if region.body().iter().count() > 1 {
-                    return Err(context
-                        .diagnostics()
-                        .diagnostic(Severity::Error)
-                        .with_message(::alloc::format!("invalid operation {}", op.name()))
-                        .with_primary_label(
-                            op.span(),
-                            "this operation requires single-block regions, but regions with multiple \
-                             blocks were found",
-                        )
-                        .into_report());
-                }
-            }
-
+/// Marker trait for binary ops, i.e. those which take two operands
+#[operation_trait]
+pub trait BinaryOp {
+    #[verifier]
+    fn is_binary_op(op: &Operation, context: &Context) -> Result<(), Report> {
+        if op.num_operands() == 2 {
             Ok(())
+        } else {
+            Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(::alloc::format!("invalid operation {}", op.name()))
+                .with_primary_label(
+                    op.span(),
+                    format!("incorrect number of operands, expected 2, got {}", op.num_operands()),
+                )
+                .with_help(
+                    "this operator implements 'BinaryOp', which requires it to have exactly two \
+                     operands",
+                )
+                .into_report())
         }
+    }
+}
+
+/// Op's regions have no arguments
+#[operation_trait]
+pub trait NoRegionArguments {
+    #[verifier]
+    fn no_region_arguments(op: &Operation, context: &Context) -> Result<(), Report> {
+        for region in op.regions().iter() {
+            if region.is_empty() {
+                continue;
+            }
+            if region.entry().has_arguments() {
+                return Err(context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message(::alloc::format!("invalid operation {}", op.name()))
+                    .with_primary_label(
+                        op.span(),
+                        "this operation does not permit regions with arguments, but one was found",
+                    )
+                    .into_report());
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Op's regions have a single block
+#[operation_trait]
+pub trait SingleBlock {
+    #[verifier]
+    fn has_only_single_block_regions(op: &Operation, context: &Context) -> Result<(), Report> {
+        for region in op.regions().iter() {
+            if region.body().iter().count() > 1 {
+                return Err(context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message(::alloc::format!("invalid operation {}", op.name()))
+                    .with_primary_label(
+                        op.span(),
+                        "this operation requires single-block regions, but regions with multiple \
+                         blocks were found",
+                    )
+                    .into_report());
+            }
+        }
+
+        Ok(())
     }
 }
 
 // pub trait SingleBlockImplicitTerminator<T: Op + Default> {}
 
-derive! {
-    /// Op has a single region
-    pub trait SingleRegion {}
-
-    verify {
-        fn has_exactly_one_region(op: &Operation, context: &Context) -> Result<(), Report> {
-            let num_regions = op.num_regions();
-            if num_regions != 1 {
-                return Err(context
-                    .diagnostics()
-                    .diagnostic(Severity::Error)
-                        .with_message(::alloc::format!("invalid operation {}", op.name()))
-                    .with_primary_label(
-                        op.span(),
-                        format!("this operation requires exactly one region, but got {num_regions}")
-                    )
-                    .into_report());
-            }
-
-            Ok(())
+/// Op has a single region
+#[operation_trait]
+pub trait SingleRegion {
+    #[verifier]
+    fn has_exactly_one_region(op: &Operation, context: &Context) -> Result<(), Report> {
+        let num_regions = op.num_regions();
+        if num_regions != 1 {
+            return Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(::alloc::format!("invalid operation {}", op.name()))
+                .with_primary_label(
+                    op.span(),
+                    format!("this operation requires exactly one region, but got {num_regions}"),
+                )
+                .into_report());
         }
+
+        Ok(())
     }
 }
 

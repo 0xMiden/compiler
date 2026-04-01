@@ -1,5 +1,7 @@
+mod adapter;
 mod group;
 mod list;
+mod map;
 mod storage;
 
 use core::{
@@ -15,58 +17,20 @@ use core::{
 
 pub use self::{
     group::EntityGroup,
-    list::{EntityCursor, EntityCursorMut, EntityIter, EntityList, MaybeDefaultEntityIter},
+    list::{
+        EntityList, EntityListCursor, EntityListCursorMut, EntityListItem, EntityListIter,
+        MaybeDefaultEntityListIter,
+    },
+    map::{
+        EntityMap, EntityMapCursor, EntityMapCursorMut, EntityMapItem, EntityMapIter,
+        EntityWithKey, MaybeDefaultEntityMapIter,
+    },
     storage::{EntityRange, EntityRangeMut, EntityStorage},
 };
 use crate::any::*;
 
 /// A trait implemented by an IR entity
 pub trait Entity: Any {}
-
-/// A trait implemented by any [Entity] that is storeable in an [EntityList].
-///
-/// This trait defines callbacks that are executed any time the entity is added, removed, or
-/// transferred between lists.
-///
-/// By default, these callbacks are no-ops.
-#[allow(unused_variables)]
-pub trait EntityListItem: Sized + Entity {
-    /// Invoked when this entity type is inserted into an intrusive list
-    #[inline]
-    fn on_inserted(this: UnsafeIntrusiveEntityRef<Self>, cursor: &mut EntityCursorMut<'_, Self>) {}
-    /// Invoked when this entity type is removed from an intrusive list
-    #[inline]
-    fn on_removed(this: UnsafeIntrusiveEntityRef<Self>, list: &mut EntityCursorMut<'_, Self>) {}
-    /// Invoked when a set of entities is moved from one intrusive list to another
-    #[inline]
-    fn on_transfer(
-        this: UnsafeIntrusiveEntityRef<Self>,
-        from: &mut EntityList<Self>,
-        to: &mut EntityList<Self>,
-    ) {
-    }
-}
-
-impl<T: Sized + Entity> EntityListItem for T {
-    default fn on_inserted(
-        _this: UnsafeIntrusiveEntityRef<Self>,
-        _list: &mut EntityCursorMut<'_, Self>,
-    ) {
-    }
-
-    default fn on_removed(
-        _this: UnsafeIntrusiveEntityRef<Self>,
-        _list: &mut EntityCursorMut<'_, Self>,
-    ) {
-    }
-
-    default fn on_transfer(
-        _this: UnsafeIntrusiveEntityRef<Self>,
-        _from: &mut EntityList<Self>,
-        _to: &mut EntityList<Self>,
-    ) {
-    }
-}
 
 /// A trait implemented by an [Entity] that is a parent to one or more other [Entity] types.
 ///
@@ -91,7 +55,7 @@ pub trait EntityWithParent: Entity {
 
 /// A trait implemented by an [Entity] that has a unique identifier
 ///
-/// Currently, this is used only for [Value]s and [Block]s.
+/// Currently, this is used only for [crate::Value]s and [crate::Block]s.
 pub trait EntityWithId: Entity {
     type Id: EntityId;
 
@@ -178,56 +142,12 @@ impl fmt::Display for AliasingViolationError {
 pub type UnsafeEntityRef<T> = RawEntityRef<T, ()>;
 
 /// A raw pointer to an IR entity that has an intrusive linked-list link as its metadata
-pub type UnsafeIntrusiveEntityRef<T> = RawEntityRef<T, IntrusiveLink>;
+pub type UnsafeIntrusiveEntityRef<T> = RawEntityRef<T, list::IntrusiveLink>;
 
-pub struct IntrusiveLink {
-    link: intrusive_collections::LinkedListLink,
-    parent: Cell<*const ()>,
-}
+/// A raw pointer to an IR entity that has an intrusive red-black tree link as its metadata
+pub type UnsafeIntrusiveMapEntityRef<T> = RawEntityRef<T, map::IntrusiveLink>;
 
-impl Default for IntrusiveLink {
-    fn default() -> Self {
-        Self {
-            link: Default::default(),
-            parent: Cell::new(core::ptr::null()),
-        }
-    }
-}
-
-impl IntrusiveLink {
-    #[inline]
-    pub fn is_linked(&self) -> bool {
-        self.link.is_linked()
-    }
-}
-
-impl IntrusiveLink {
-    pub(self) fn set_parent<T>(&self, parent: Option<UnsafeIntrusiveEntityRef<T>>) {
-        if let Some(parent) = parent {
-            assert!(
-                self.link.is_linked(),
-                "must add entity to parent entity list before setting parent"
-            );
-            self.parent.set(UnsafeIntrusiveEntityRef::as_ptr(&parent).cast());
-        } else if self.parent.get().is_null() {
-            panic!("no parent previously set");
-        } else {
-            self.parent.set(core::ptr::null());
-        }
-    }
-
-    pub fn parent<T>(&self) -> Option<UnsafeIntrusiveEntityRef<T>> {
-        let parent = self.parent.get();
-        if parent.is_null() {
-            // EntityList is orphaned
-            None
-        } else {
-            Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(parent.cast()) })
-        }
-    }
-}
-
-/// A [RawEntityRef] is an unsafe smart pointer type for IR entities allocated in a [Context].
+/// A [RawEntityRef] is an unsafe smart pointer type for IR entities allocated in a [crate::Context].
 ///
 /// Along with the type of entity referenced, it can be instantiated with extra metadata of any
 /// type. For example, [UnsafeIntrusiveEntityRef] stores an intrusive link in the entity metadata,
@@ -248,7 +168,7 @@ impl IntrusiveLink {
 ///
 /// # SAFETY
 ///
-/// Unlike most smart-pointer types, e.g. `Rc`, [RAwEntityRef] does not provide any protection
+/// Unlike most smart-pointer types, e.g. `Rc`, [RawEntityRef] does not provide any protection
 /// against the underlying allocation being deallocated (i.e. the arena it points into is dropped).
 /// This is by design, as the type is meant to be stored in objects inside the arena, and
 /// _not_ dropped when the arena is dropped. This requires care when using it however, to ensure
@@ -265,22 +185,36 @@ impl<T: ?Sized, Metadata> Clone for RawEntityRef<T, Metadata> {
         *self
     }
 }
+impl<T, Metadata> RawEntityRef<T, Metadata> {
+    /// Creates a new [RawEntityRef] that is dangling, but non-null and well-aligned.
+    ///
+    /// This is useful for initializing types which lazily allocate, similar to `Vec::new`.
+    ///
+    /// Note that the returned value contains a pointer which may potentially be valid, so it is
+    /// not safe to use this as a sentinel value for initialization - it is up to the caller to
+    /// track initialization by some other means.
+    pub const fn dangling() -> Self {
+        Self {
+            inner: NonNull::dangling(),
+        }
+    }
+}
 impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
-    /// Create a new [UnsafeEntityRef] from a raw pointer to the underlying [EntityObj].
+    /// Create a new [RawEntityRef] from a raw pointer to the underlying [EntityObj].
     ///
     /// # SAFETY
     ///
-    /// [UnsafeEntityRef] is designed to operate like an owned smart-pointer type, ala `Rc`. As a
+    /// [RawEntityRef] is designed to operate like an owned smart-pointer type, ala `Rc`. As a
     /// result, it expects that the underlying data _never moves_ after it is allocated, for as
     /// long as any outstanding [UnsafeEntityRef]s exist that might be used to access that data.
     ///
     /// Additionally, it is expected that all accesses to the underlying data flow through an
-    /// [UnsafeEntityRef], as it is the foundation on which the soundness of [UnsafeEntityRef] is
+    /// [RawEntityRef], as it is the foundation on which the soundness of [RawEntityRef] is
     /// built. You must ensure that there no other references to the underlying data exist, or can
-    /// be created, _except_ via [UnsafeEntityRef].
+    /// be created, _except_ via [RawEntityRef].
     ///
     /// You should generally not be using this API, as it is meant solely for constructing an
-    /// [UnsafeEntityRef] immediately after allocating the underlying [EntityObj].
+    /// [RawEntityRef] immediately after allocating the underlying [Entity].
     #[inline]
     unsafe fn from_inner(inner: NonNull<RawEntityMetadata<T, Metadata>>) -> Self {
         Self { inner }
@@ -366,9 +300,9 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     /// Convert this handle into a raw pointer to the underlying entity.
     ///
     /// This should only be used in situations where the returned pointer will not be used to
-    /// actually access the underlying entity. Use [get] or [get_mut] for that. [RawEntityRef]
-    /// ensures that Rust's aliasing rules are not violated when using it, but if you use the
-    /// returned pointer to do so, no such guarantee is provided, and undefined behavior can
+    /// actually access the underlying entity. Use [Self::borrow] or [Self::borrow_mut] for that.
+    /// [RawEntityRef] ensures that Rust's aliasing rules are not violated when using it, but if you
+    /// use the returned pointer to do so, no such guarantee is provided, and undefined behavior can
     /// result.
     ///
     /// # Safety
@@ -598,8 +532,8 @@ impl<From: ?Sized, Metadata: 'static> RawEntityRef<From, Metadata> {
     }
 }
 
-impl<T: crate::Op> RawEntityRef<T, IntrusiveLink> {
-    /// Get a entity ref for the underlying [crate::Operation] data of an [Op].
+impl<T: crate::Op> RawEntityRef<T, list::IntrusiveLink> {
+    /// Get a entity ref for the underlying [crate::Operation] data of an [crate::Op].
     pub fn as_operation_ref(self) -> crate::OperationRef {
         // SAFETY: This relies on the fact that we generate Op implementations such that the first
         // field is always the [crate::Operation], and that the containing struct is #[repr(C)].
@@ -607,6 +541,14 @@ impl<T: crate::Op> RawEntityRef<T, IntrusiveLink> {
             let ptr = Self::into_raw(self);
             crate::OperationRef::from_raw(ptr.cast())
         }
+    }
+}
+
+impl<T: crate::Attribute> RawEntityRef<T, list::IntrusiveLink> {
+    /// Convert this reference to an [crate::AttributeRef]
+    #[inline(always)]
+    pub fn as_attribute_ref(self) -> crate::AttributeRef {
+        self as crate::AttributeRef
     }
 }
 
@@ -620,7 +562,7 @@ where
 impl<T: ?Sized, Metadata> Eq for RawEntityRef<T, Metadata> {}
 impl<T: ?Sized, Metadata> PartialEq for RawEntityRef<T, Metadata> {
     #[inline]
-    fn eq(&self, other: &Self) -> bool {
+    default fn eq(&self, other: &Self) -> bool {
         Self::ptr_eq(self, other)
     }
 }
@@ -710,6 +652,18 @@ pub struct EntityRef<'b, T: ?Sized + 'b> {
     value: NonNull<T>,
     borrow: BorrowRef<'b>,
 }
+impl<T: ?Sized> AsRef<T> for EntityRef<'_, T> {
+    default fn as_ref(&self) -> &T {
+        // SAFETY: the value is accessible as long as we hold our borrow.
+        unsafe { self.value.as_ref() }
+    }
+}
+impl<T: super::Op> AsRef<super::Operation> for EntityRef<'_, T> {
+    fn as_ref(&self) -> &super::Operation {
+        // SAFETY: the value is accessible as long as we hold our borrow.
+        unsafe { self.value.as_ref().as_operation() }
+    }
+}
 impl<T: ?Sized> core::ops::Deref for EntityRef<'_, T> {
     type Target = T;
 
@@ -768,7 +722,6 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
         Self { value, borrow }
     }
 }
-
 impl<'b, T, U> core::ops::CoerceUnsized<EntityRef<'b, U>> for EntityRef<'b, T>
 where
     T: ?Sized + core::marker::Unsize<U>,
@@ -966,7 +919,6 @@ impl<T: ?Sized> DerefMut for EntityMut<'_, T> {
         unsafe { self.value.as_mut() }
     }
 }
-
 impl<'b, T, U> core::ops::CoerceUnsized<EntityMut<'b, U>> for EntityMut<'b, T>
 where
     T: ?Sized + core::marker::Unsize<U>,
@@ -1297,7 +1249,7 @@ fn raw_entity_metadata_layout_for_value_layout<Metadata>(layout: Layout) -> Layo
         .pad_to_align()
 }
 
-/// A [RawEntity] wraps an entity to be allocated in a [Context], and provides dynamic borrow-
+/// A [RawEntity] wraps an entity to be allocated in a [crate::Context], and provides dynamic borrow-
 /// checking functionality for [UnsafeEntityRef], thereby protecting the entity by ensuring that
 /// all accesses adhere to Rust's aliasing rules.
 #[repr(C)]

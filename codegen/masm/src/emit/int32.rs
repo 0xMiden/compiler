@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::{Overflow, SourceSpan};
 
 use super::{OpEmitter, dup_from_offset, felt, masm, movup_from_offset};
@@ -107,7 +107,7 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn assert_signed_int32(&mut self, span: SourceSpan) {
         self.is_signed_int32(span);
-        self.emit(masm::Instruction::Assert, span);
+        self.emit(Self::assert_with_message_inst("expected a signed i32 value", span), span);
     }
 
     /// Emits code to assert that a 32-bit value on the operand stack does not have the i32 sign bit
@@ -119,7 +119,7 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn assert_unsigned_int32(&mut self, span: SourceSpan) {
         self.is_signed_int32(span);
-        self.emit(masm::Instruction::Assertz, span);
+        self.emit(Self::assertz_with_message_inst("expected a non-negative i32 value", span), span);
     }
 
     /// Assert that the 32-bit value on the stack is a valid i32 value
@@ -131,7 +131,7 @@ impl OpEmitter<'_> {
         // the value is <= i32::MIN, which is 1 more than i32::MAX.
         self.push_i32(i32::MIN, span);
         self.emit(masm::Instruction::U32Lte, span);
-        self.emit(masm::Instruction::Assert, span);
+        self.emit(Self::assert_with_message_inst("value does not fit in i32", span), span);
     }
 
     /// Emits code to assert that a 32-bit value on the operand stack is equal to the given constant
@@ -148,7 +148,10 @@ impl OpEmitter<'_> {
             [
                 masm::Instruction::Dup0,
                 masm::Instruction::EqImm(Felt::new(value as u64).into()),
-                masm::Instruction::Assert,
+                Self::assert_with_message_inst(
+                    format!("expected u32 value to equal {value}"),
+                    span,
+                ),
             ],
             span,
         );
@@ -164,7 +167,13 @@ impl OpEmitter<'_> {
     /// `[expected, input, ..] => [input, ..]`
     #[inline]
     pub fn assert_eq_u32(&mut self, span: SourceSpan) {
-        self.emit_all([masm::Instruction::Dup1, masm::Instruction::AssertEq], span);
+        self.emit_all(
+            [
+                masm::Instruction::Dup1,
+                Self::assert_eq_with_message_inst("expected u32 values to be equal", span),
+            ],
+            span,
+        );
     }
 
     /// Emits code to select a constant u32 value, using the `n`th value on the operand
@@ -244,7 +253,10 @@ impl OpEmitter<'_> {
                 // Apply the mask
                 masm::Instruction::U32And,
                 // Assert that the masked bits and the mask are equal
-                masm::Instruction::AssertEq,
+                Self::assert_eq_with_message_inst(
+                    format!("value does not fit in signed {n}-bit range"),
+                    span,
+                ),
             ],
             span,
         );
@@ -293,7 +305,13 @@ impl OpEmitter<'_> {
         self.emit_push(mask, span);
         self.emit(masm::Instruction::U32And, span);
         // Assert the masked value is all 0s
-        self.emit(masm::Instruction::Assertz, span);
+        self.emit(
+            Self::assertz_with_message_inst(
+                format!("value does not fit in unsigned {n}-bit range"),
+                span,
+            ),
+            span,
+        );
     }
 
     /// Convert an i32/u32 value on the stack to an unsigned N-bit integer value
@@ -346,6 +364,16 @@ impl OpEmitter<'_> {
         let num_bits = n % 32;
         let num_elements = (n / 32) + (num_bits > 0) as u32;
         let needed = num_elements - 1;
+        if needed == 0 {
+            return;
+        }
+
+        // Multi-limb integers are represented in little-endian limb order on the operand stack,
+        // i.e. the least-significant limb is on top. When extending a single u32 limb, we must
+        // place the additional zero limbs *below* the existing value.
+        //
+        // We do this by first pushing the required number of zero limbs, and then moving the
+        // original value back to the top.
         self.emit_n(
             needed as usize,
             masm::Instruction::Push(masm::Immediate::Value(masm::Span::new(
@@ -354,6 +382,10 @@ impl OpEmitter<'_> {
             ))),
             span,
         );
+        match needed {
+            1 => self.emit(masm::Instruction::Swap1, span),
+            n => self.emit(movup_from_offset(n as usize), span),
+        }
     }
 
     /// Emit code to sign-extend a signed 32-bit value to N bits, where N <= 128
@@ -366,9 +398,21 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn sext_int32(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 32);
+        if n <= 32 {
+            return;
+        }
         self.is_signed_int32(span);
         self.select_int32(u32::MAX, 0, span);
         self.pad_int32(n, span);
+        // Multi-limb integers are represented in little-endian limb order on the operand stack,
+        // i.e. the least-significant limb is on top. `select_int32` leaves `[pad, value]` on the
+        // stack, so after padding we must move `value` back to the top so the resulting ordering is
+        // `[value, pad, pad, ...]`.
+        let num_elements = n / 32;
+        match num_elements {
+            2 => self.emit(masm::Instruction::Swap1, span),
+            n => self.emit(movup_from_offset((n - 1) as usize), span),
+        }
     }
 
     /// Emit code to pad a 32-bit value out to N bits, where N >= 32.
@@ -602,7 +646,7 @@ impl OpEmitter<'_> {
                         .emit_all([masm::Instruction::Mul, masm::Instruction::U32Assert], span);
                 }
                 Overflow::Wrapping => masm::Instruction::U32WrappingMul,
-                Overflow::Overflowing => masm::Instruction::U32OverflowingMul,
+                Overflow::Overflowing => masm::Instruction::U32WideningMul,
             },
             span,
         );
@@ -653,9 +697,7 @@ impl OpEmitter<'_> {
                             );
                         }
                         Overflow::Wrapping => masm::Instruction::U32WrappingMulImm(imm.into()),
-                        Overflow::Overflowing => {
-                            masm::Instruction::U32OverflowingMulImm(imm.into())
-                        }
+                        Overflow::Overflowing => masm::Instruction::U32WideningMulImm(imm.into()),
                     },
                     span,
                 );

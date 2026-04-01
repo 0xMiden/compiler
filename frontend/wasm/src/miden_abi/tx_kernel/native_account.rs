@@ -27,11 +27,25 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut native_account: FunctionTypeMap = Default::default();
     native_account.insert(
         Symbol::from(ADD_ASSET),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [
+                Felt, Felt, Felt, Felt, // asset key
+                Felt, Felt, Felt, Felt, // asset value
+            ],
+            [Felt, Felt, Felt, Felt], // asset value
+        ),
     );
     native_account.insert(
         Symbol::from(REMOVE_ASSET),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+        FunctionType::new(
+            CallConv::Wasm,
+            [
+                Felt, Felt, Felt, Felt, // ASSET_KEY
+                Felt, Felt, Felt, Felt, // ASSET_VALUE
+            ],
+            [Felt, Felt, Felt, Felt],
+        ),
     );
     native_account.insert(
         Symbol::from(COMPUTE_DELTA_COMMITMENT),

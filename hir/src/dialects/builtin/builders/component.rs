@@ -1,7 +1,9 @@
 use super::BuiltinOpBuilder;
 use crate::{
-    Builder, Ident, Op, OpBuilder, Report, Signature, SymbolName, SymbolPath, SymbolTable,
-    dialects::builtin::{ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef},
+    Builder, Ident, Op, OpBuilder, Report, SymbolName, SymbolPath, SymbolTable, Visibility,
+    dialects::builtin::{
+        ComponentRef, FunctionRef, InterfaceRef, Module, ModuleRef, attributes::Signature,
+    },
 };
 
 pub struct ComponentBuilder {
@@ -49,14 +51,14 @@ impl ComponentBuilder {
         })
     }
 
-    /// Declare a new [crate::dialects::hir::Function] in this component with the given name and
+    /// Declare a new [crate::dialects::builtin::Function] in this component with the given name and
     /// signature.
     pub fn define_function(
         &mut self,
         name: Ident,
+        visibility: Visibility,
         signature: Signature,
     ) -> Result<FunctionRef, Report> {
-        let function_ref = self.builder.create_function(name, signature)?;
-        Ok(function_ref)
+        self.builder.create_function(name, visibility, signature)
     }
 }

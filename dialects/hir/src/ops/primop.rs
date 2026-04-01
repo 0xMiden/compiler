@@ -1,26 +1,24 @@
-use midenc_hir::{derive::operation, effects::*, smallvec, traits::*, *};
+use midenc_hir::{
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    effects::*,
+    traits::*,
+    *,
+};
 
 use crate::HirDialect;
 
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
+#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
 pub struct MemGrow {
     #[operand]
     pages: UInt32,
     #[result]
     result: UInt32,
-}
-
-impl EffectOpInterface<MemoryEffect> for MemGrow {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![
-            EffectInstance::new(MemoryEffect::Read),
-            EffectInstance::new(MemoryEffect::Write),
-        ])
-    }
 }
 
 impl InferTypeOpInterface for MemGrow {
@@ -30,19 +28,15 @@ impl InferTypeOpInterface for MemGrow {
     }
 }
 
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
+#[effects(MemoryEffect(MemoryEffect::Read))]
 pub struct MemSize {
     #[result]
     result: UInt32,
-}
-
-impl EffectOpInterface<MemoryEffect> for MemSize {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Read),])
-    }
 }
 
 impl InferTypeOpInterface for MemSize {
@@ -52,12 +46,14 @@ impl InferTypeOpInterface for MemSize {
     }
 }
 
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct MemSet {
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Write))]
     addr: AnyPointer,
     #[operand]
     count: UInt32,
@@ -65,48 +61,18 @@ pub struct MemSet {
     value: AnyType,
 }
 
-impl EffectOpInterface<MemoryEffect> for MemSet {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
-            MemoryEffect::Write,
-            self.addr().as_value_ref()
-        ),])
-    }
-}
-
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct MemCpy {
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
     source: AnyPointer,
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Write))]
     destination: AnyPointer,
     #[operand]
     count: UInt32,
-}
-
-impl EffectOpInterface<MemoryEffect> for MemCpy {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![
-            EffectInstance::new_for_value(MemoryEffect::Read, self.source().as_value_ref()),
-            EffectInstance::new_for_value(MemoryEffect::Write, self.destination().as_value_ref()),
-        ])
-    }
-}
-
-#[operation(
-    dialect = HirDialect,
-    implements(MemoryEffectOpInterface)
-)]
-pub struct Breakpoint {}
-
-impl EffectOpInterface<MemoryEffect> for Breakpoint {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![
-            EffectInstance::new(MemoryEffect::Read),
-            EffectInstance::new(MemoryEffect::Write),
-        ])
-    }
 }

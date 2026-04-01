@@ -95,8 +95,8 @@ pub trait WalkDirection =
 pub trait Walk<T> {
     /// Walk all `T` in `self` in a specific order, applying the given callback to each.
     ///
-    /// This is very similar to [Walkable::walk_interruptible], except the callback has no control
-    /// over the traversal, and must be infallible.
+    /// This is very similar to [Walk::walk], except the callback has no control over the traversal,
+    /// and must be infallible.
     fn walk_all<D, F>(&self, order: WalkOrder, mut callback: F)
     where
         D: WalkDirection,
@@ -171,8 +171,8 @@ pub trait Walk<T> {
 pub trait WalkMut<T> {
     /// Walk all `T` in `self` in a specific order, applying the given callback to each.
     ///
-    /// This is very similar to [Walkable::walk_interruptible], except the callback has no control
-    /// over the traversal, and must be infallible.
+    /// This is very similar to [WalkMut::walk_mut], except the callback has no control over the
+    /// traversal, and must be infallible.
     fn walk_all_mut<D, F>(&mut self, order: WalkOrder, mut callback: F)
     where
         D: WalkDirection,
@@ -250,7 +250,7 @@ pub trait WalkMut<T> {
 pub trait RawWalk<T> {
     /// Walk all `T` in `self` in a specific order, applying the given callback to each.
     ///
-    /// This is very similar to [Walkable::walk_interruptible], except the callback has no control
+    /// This is very similar to [RawWalk::raw_walk], except the callback has no control
     /// over the traversal, and must be infallible.
     fn raw_walk_all<D, F>(&self, order: WalkOrder, mut callback: F)
     where
@@ -640,8 +640,8 @@ pub trait Walker<Parent, Child> {
     fn continue_walk(child: Child) -> Option<Child>;
 }
 
-/// A custom [WalkDirectionImpl] that is the same as [Forward], except the operations of each block
-/// are visited bottom-up, i.e. as if [Backward] applied just to [Block].
+/// A custom `Walker` that is the same as [crate::Forward], except the operations of each block are
+/// visited bottom-up, i.e. as if [crate::Backward] applied just to [crate::Block].
 pub struct ReverseBlock;
 
 impl Walker<Region, BlockRef> for ReverseBlock {

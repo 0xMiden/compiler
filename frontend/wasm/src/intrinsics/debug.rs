@@ -1,4 +1,3 @@
-use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     Builder, SmallVec, SourceSpan, SymbolNameComponent, ValueRef,
     dialects::builtin::FunctionRef,
@@ -19,13 +18,15 @@ pub(crate) fn convert_debug_intrinsics<B: ?Sized + Builder>(
     function: Symbol,
     _function_ref: Option<FunctionRef>,
     args: &[ValueRef],
-    builder: &mut FunctionBuilderExt<'_, B>,
+    _builder: &mut FunctionBuilderExt<'_, B>,
     span: SourceSpan,
 ) -> WasmResult<SmallVec<[ValueRef; 1]>> {
     match function.as_str() {
         "break" => {
-            assert_eq!(args.len(), 0, "{function} takes exactly one argument");
-            builder.breakpoint(span)?;
+            assert_eq!(args.len(), 0, "{function} takes no arguments");
+            // VM v0.22 no longer exposes a breakpoint instruction, so debug breakpoints compile
+            // to a no-op until we have another debugger hook to target.
+            let _ = span;
             Ok(smallvec![])
         }
         _ => panic!("no debug intrinsics found named '{function}'"),

@@ -3,10 +3,7 @@
 
 extern crate alloc;
 
-use miden::{
-    Felt, Value, ValueAccess, Word, component, felt, hash_words, intrinsics::advice::adv_insert,
-    native_account, tx,
-};
+use miden::{StorageValue, Word, component, felt, hash_words, intrinsics::advice::adv_insert, tx};
 
 /// Authentication component storage/layout.
 ///
@@ -17,9 +14,9 @@ struct AuthComponent {
     /// The account owner's public key (RPO-Falcon512 public key hash).
     #[storage(
         description = "owner public key",
-        type = "miden::standards::auth::falcon512_rpo::pub_key"
+        type = "miden::standards::auth::pub_key"
     )]
-    owner_public_key: Value,
+    owner_public_key: StorageValue<Word>,
 }
 
 #[component]
@@ -35,14 +32,12 @@ impl AuthComponent {
 
         let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
 
-        let mut tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
+        let tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
         let msg: Word = hash_words(&tx_summary).into();
-        // On the advice stack the words are expected to be in the reverse order
-        tx_summary.reverse();
         // Insert tx summary into advice map under key `msg`
         adv_insert(msg, &tx_summary);
 
-        let pub_key: Word = self.owner_public_key.read();
+        let pub_key: Word = self.owner_public_key.get();
 
         // Emit signature request event to advice stack,
         miden::emit_falcon_sig_to_stack(msg, pub_key);

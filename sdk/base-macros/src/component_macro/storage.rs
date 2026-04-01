@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use heck::ToSnakeCase;
 use quote::quote;
 use syn::{Field, Type, spanned::Spanned};
 
@@ -30,6 +31,24 @@ fn sanitize_slot_name_component(component: &str) -> String {
     }
 
     out
+}
+
+/// Derives the full storage slot name for a component field.
+///
+/// Slot names are part of the on-chain storage ABI, so this intentionally ignores any optional
+/// version suffix in `storage_namespace` and keeps the format stable as
+/// `component_package_or_name::component_struct::field_name`.
+fn derive_storage_slot_name(
+    storage_namespace: &str,
+    component_struct_name: &str,
+    field_name: &str,
+) -> String {
+    let storage_namespace = storage_namespace.split('@').next().unwrap_or(storage_namespace);
+    let namespace = sanitize_slot_name_component(storage_namespace);
+    let struct_component = sanitize_slot_name_component(&component_struct_name.to_snake_case());
+    let field_component = sanitize_slot_name_component(field_name);
+
+    format!("{namespace}::{struct_component}::{field_component}")
 }
 
 /// Parsed arguments collected from a `#[storage(...)]` attribute.
@@ -83,12 +102,12 @@ fn parse_storage_attribute(
 /// Converts a [`miden_protocol::account::StorageSlotId`] into tokens that reconstruct it as a
 /// constant expression.
 fn slot_id_tokens(id: miden_protocol::account::StorageSlotId) -> proc_macro2::TokenStream {
-    let suffix = id.suffix().as_int();
-    let prefix = id.prefix().as_int();
+    let suffix = id.suffix().as_canonical_u64();
+    let prefix = id.prefix().as_canonical_u64();
     quote! {
         ::miden::StorageSlotId::new(
-            ::miden::Felt::from_u64_unchecked(#suffix),
-            ::miden::Felt::from_u64_unchecked(#prefix),
+            ::miden::Felt::new(#suffix),
+            ::miden::Felt::new(#prefix),
         )
     }
 }
@@ -99,6 +118,7 @@ pub fn process_storage_fields(
     fields: &mut syn::FieldsNamed,
     builder: &mut AccountComponentMetadataBuilder,
     storage_namespace: &str,
+    component_struct_name: &str,
 ) -> Result<Vec<proc_macro2::TokenStream>, syn::Error> {
     let mut field_infos = Vec::new();
     let mut errors = Vec::new();
@@ -108,10 +128,10 @@ pub fn process_storage_fields(
     for field in fields.named.iter_mut() {
         if let Err(err) = typecheck_storage_field(field) {
             errors.push(err);
+            continue;
         }
         let field_name = field.ident.as_ref().expect("Named field must have an identifier");
         let field_name_str = field_name.to_string();
-        let field_type = &field.ty;
         let mut storage_args = None;
         let mut attr_indices_to_remove = Vec::new();
 
@@ -134,11 +154,9 @@ pub fn process_storage_fields(
         }
 
         if let Some(args) = storage_args {
-            // Slot names are part of the on-chain storage ABI: `StorageSlotId` values are derived
-            // from the slot name. Keep this format stable.
-            let namespace = sanitize_slot_name_component(storage_namespace);
-            let field_component = sanitize_slot_name_component(&field_name_str);
-            let slot_name_str = format!("miden::component::{namespace}::{field_component}");
+            // `StorageSlotId` values are derived from slot names, so keep this format stable.
+            let slot_name_str =
+                derive_storage_slot_name(storage_namespace, component_struct_name, &field_name_str);
             if let Some(existing_field) = slot_names.get(&slot_name_str) {
                 errors.push(syn::Error::new(
                     field.span(),
@@ -158,7 +176,8 @@ pub fn process_storage_fields(
                     )
                 })?;
             let slot_id = slot_name.id();
-            let slot_id_key = (slot_id.suffix().as_int(), slot_id.prefix().as_int());
+            let slot_id_key =
+                (slot_id.suffix().as_canonical_u64(), slot_id.prefix().as_canonical_u64());
             if let Some(existing_field) = slot_ids.get(&slot_id_key) {
                 errors.push(syn::Error::new(
                     field.span(),
@@ -172,9 +191,16 @@ pub fn process_storage_fields(
             slot_names.insert(slot_name_str, field_name_str.clone());
             slot_ids.insert(slot_id_key, field_name_str);
 
-            builder.add_storage_entry(slot_name.clone(), args.description, field, args.type_attr);
+            if let Err(err) = builder.add_storage_entry(
+                slot_name.clone(),
+                args.description,
+                field,
+                args.type_attr,
+            ) {
+                errors.push(err);
+            }
 
-            field_infos.push((field_name.clone(), field_type.clone(), slot_id));
+            field_infos.push((field_name.clone(), slot_id));
         } else {
             errors
                 .push(syn::Error::new(field.span(), "field is missing the `#[storage]` attribute"));
@@ -186,17 +212,18 @@ pub fn process_storage_fields(
     }
 
     let mut field_inits = Vec::with_capacity(field_infos.len());
-    for (field_name, field_type, slot_id) in field_infos.into_iter() {
+    for (field_name, slot_id) in field_infos.into_iter() {
         let slot = slot_id_tokens(slot_id);
         field_inits.push(quote! {
-            #field_name: #field_type { slot: #slot }
+            #field_name: ::core::convert::From::from(#slot)
         });
     }
 
     Ok(field_inits)
 }
 
-/// Checks that the type of `field` is either `StorageMap` or `Value` from the `miden` crate.
+/// Checks that the type of `field` is either `StorageMap` or `StorageValue` from the `miden`
+/// crate.
 ///
 /// # Limitations
 ///
@@ -204,7 +231,7 @@ pub fn process_storage_fields(
 /// written in the struct correspond to one of the expected values. Hence the following cannot
 /// be detected:
 ///
-/// * A developer defines their own `StorageMap` or `Value`
+/// * A developer defines their own `StorageMap` or `StorageValue`
 /// * A developer uses a valid type from miden but aliases it
 pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType, syn::Error> {
     let type_path = match &field.ty {
@@ -223,13 +250,13 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
 
     const BASE_CRATE: &str = "miden";
     const TYPENAME_MAP: &str = "StorageMap";
-    const TYPENAME_VALUE: &str = "Value";
+    const TYPENAME_VALUE: &str = "StorageValue";
 
     match segments.as_slice() {
         [a] if a == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a] if a == TYPENAME_VALUE => Ok(StorageFieldType::Value),
+        [a] if a == TYPENAME_VALUE => Ok(StorageFieldType::StorageValue),
         [a, b] if a == BASE_CRATE && b == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a, b] if a == BASE_CRATE && b == TYPENAME_VALUE => Ok(StorageFieldType::Value),
+        [a, b] if a == BASE_CRATE && b == TYPENAME_VALUE => Ok(StorageFieldType::StorageValue),
         _ => Err(syn::Error::new(
             field.span(),
             format!(
@@ -237,5 +264,30 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
                  `{BASE_CRATE}` crate"
             ),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::derive_storage_slot_name;
+
+    #[test]
+    fn derives_slot_name_from_component_package_struct_and_field() {
+        assert_eq!(
+            derive_storage_slot_name("miden:counter-contract", "CounterContract", "count_map"),
+            "miden_counter_contract::counter_contract::count_map"
+        );
+    }
+
+    #[test]
+    fn ignores_component_package_version_when_deriving_slot_name() {
+        assert_eq!(
+            derive_storage_slot_name(
+                "miden:counter-contract@1.2.3",
+                "CounterContract",
+                "count_map"
+            ),
+            "miden_counter_contract::counter_contract::count_map"
+        );
     }
 }

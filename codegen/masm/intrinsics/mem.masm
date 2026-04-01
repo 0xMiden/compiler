@@ -93,7 +93,7 @@ pub proc memory_grow # [num_pages]
         mem_load.HEAP_INFO_BASE   # [heap_base, new_heap_size, heap_size]
         dup.1                     # [new_heap_size, heap_base, new_heap_size, heap_size]
         push.PAGE_SIZE            # [PAGE_SIZE, new_heap_size, heap_base, new_heap_size, heap_size]
-        u32overflowing_madd       # [overflowed, PAGE_SIZE * new_heap_size + heap_base, ..]
+        u32widening_madd       # [overflowed, PAGE_SIZE * new_heap_size + heap_base, ..]
         if.true  # [new_heap_top, new_heap_size, heap_size]
             # Overflow, drop the changes and return -1
             drop drop drop
@@ -167,24 +167,42 @@ pub proc load_sw # [addr, offset]
         # load the element containing the data we want
         mem_load
     else     # [addr, offset]
+        # convert the byte offset to a bit offset
+        swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset]
         # the load crosses an element boundary
         #
         # 1. load the first element
-        dup.0 mem_load   # [e0, addr, offset]
+        dup.0 mem_load   # [e0, addr, bit_offset]
         # 2. load the second element
-        swap.1           # [addr, e0, offset]
-        push.1 u32overflowing_add  # [overflowed, addr + 1, e0, offset]
-        assertz mem_load # [e1, e0, offset]
-        # shift low bits
-        push.32 dup.3 # [offset, 32, e1, e0, offset]
-        u32overflowing_sub assertz # [32 - offset, e1, e0, offset]
-        u32shr        # [lo, e0, offset]
-        # shift high bits left by the offset
-        swap.2        # [offset, e0, lo]
-        u32shl        # [hi, lo]
+        swap.1           # [addr, e0, bit_offset]
+        push.1 u32overflowing_add  # [overflowed, addr + 1, e0, bit_offset]
+        assertz mem_load # [e1, e0, bit_offset]
+        # Reconstruct the 32-bit window whose first byte begins at the original byte pointer.
+        # `e0` contributes the low part after shifting right, and `e1` contributes the carried
+        # high part after shifting left into the vacated bits.
+        swap.1              # [e0, e1, bit_offset]
+        dup.2               # [bit_offset, e0, e1, bit_offset]
+        u32shr              # [lo, e1, bit_offset]
+        movup.2             # [bit_offset, lo, e1]
+        push.32 swap.1      # [bit_offset, 32, lo, e1]
+        u32overflowing_sub assertz # [32 - bit_offset, lo, e1]
+        movup.2 swap.1      # [32 - bit_offset, e1, lo]
+        u32shl              # [hi, lo]
         # combine the two halves
         u32or         # [result]
     end
+end
+
+# Load a 16-bit integer from the given native pointer tuple.
+#
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
+#
+# Stack transition: [addr, offset] -> [value]
+pub proc load_u16(addr: ptr<felt, addrspace(felt)>, offset: u8) -> u16
+    exec.load_sw
+    push.65535
+    u32and
 end
 
 # This handles emitting code that handles aligning an unaligned 64-bit value which is split across
@@ -436,6 +454,26 @@ pub proc store_sw # [addr, offset, value]
     end
 end
 
+# Store a 16-bit integer to the given native pointer tuple.
+#
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
+#
+# Stack transition: [addr, offset, value] -> []
+pub proc store_u16(addr: ptr<felt, addrspace(felt)>, offset: u8, value: u16)
+    # Load the current 32-bit window at the destination, keep its upper half, then overwrite the
+    # target two bytes before delegating the write-back to `store_sw`.
+    dup.1 dup.1 exec.load_sw     # [window, addr, offset, value]
+    push.4294901760              # 0xffff0000
+    u32and                       # [masked_window, addr, offset, value]
+    movup.3                      # [value, masked_window, addr, offset]
+    push.65535
+    u32and                       # [value16, masked_window, addr, offset]
+    u32or                        # [combined, addr, offset]
+    swap.2 swap.1                # [addr, offset, combined]
+    exec.store_sw
+end
+
 # Store two 32-bit words to the given native pointer tuple.
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
@@ -512,7 +550,7 @@ pub proc memset_sw # [size, dst, count, value]
         dup.1  # [dst, i, dst, size, count, value]
         dup.1  # [i, dst, i, dst, size, count, value]
         dup.4  # [size, i, dst, i, dst, size, count, value]
-        u32overflowing_madd assertz # [size * i + dst, i, dst, size, count, value]
+        u32widening_madd assertz # [size * i + dst, i, dst, size, count, value]
 
         # copy value to top of stack, swap with pointer
         dup.5     # [value, dst', i, dst, size, count, value]
@@ -552,7 +590,7 @@ pub proc memset_dw # [size, dst, count, value_hi, value_lo]
         dup.1  # [dst, i, dst, size, count, value_hi, value_lo]
         dup.1  # [i, dst, i, dst, size, count, value_hi, value_lo]
         dup.4  # [size, i, dst, i, dst, size, count, value_hi, value_lo]
-        u32overflowing_madd assertz # [size * i + dst, i, dst, size, count, value_hi, value_lo]
+        u32widening_madd assertz # [size * i + dst, i, dst, size, count, value_hi, value_lo]
 
         # copy value to top of stack, swap with pointer
         dup.6     # [value_lo, dst', i, dst, size, count, value_hi, value_lo]

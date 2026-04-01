@@ -1,7 +1,8 @@
 use core::ffi::c_void;
 
 /// Note interface stubs
-#[unsafe(export_name = "miden::protocol::active_note::get_inputs")]
+// NOTE: In protocol v0.14, note "inputs" are exposed via `active_note::get_storage`.
+#[unsafe(export_name = "miden::protocol::active_note::get_storage")]
 pub extern "C" fn note_get_inputs_plain(_ptr: *mut c_void) -> usize {
     unsafe { core::hint::unreachable_unchecked() }
 }

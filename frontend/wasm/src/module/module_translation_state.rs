@@ -1,8 +1,7 @@
 use midenc_hir::{
-    AbiParam, CallConv, FunctionType, FxHashMap, Signature, SymbolNameComponent, SymbolPath,
-    Visibility,
+    CallConv, FunctionType, FxHashMap, SymbolNameComponent, SymbolPath, Visibility,
     diagnostics::WrapErr,
-    dialects::builtin::{FunctionRef, ModuleBuilder, WorldBuilder},
+    dialects::builtin::{FunctionRef, ModuleBuilder, WorldBuilder, attributes::Signature},
     interner::Symbol,
     smallvec,
 };
@@ -56,7 +55,7 @@ impl<'a> ModuleTranslationState<'a> {
             } else {
                 Visibility::Private
             };
-            let sig = sig_from_func_type(&ir_func_type, CallConv::SystemV, visibility);
+            let sig = sig_from_func_type(&ir_func_type, CallConv::C);
             if module.is_imported_function(index) {
                 assert!((index.as_u32() as usize) < module.num_imported_funcs);
                 let import = &module.imports[index.as_u32() as usize];
@@ -72,7 +71,7 @@ impl<'a> ModuleTranslationState<'a> {
                 functions.insert(index, func);
             } else {
                 let function_ref = module_builder
-                    .define_function(path.name().into(), sig.clone())
+                    .define_function(path.name().into(), visibility, sig.clone())
                     .map_err(|e| {
                         diagnostics
                             .diagnostic(Severity::Error)
@@ -143,10 +142,8 @@ impl<'a> ModuleTranslationState<'a> {
             let import_ft: FunctionType = intrinsic
                 .function_type()
                 .unwrap_or_else(|| miden_abi_function_type(&import_path));
-            let import_sig = Signature::new(
-                import_ft.params.into_iter().map(AbiParam::new),
-                import_ft.results.into_iter().map(AbiParam::new),
-            );
+            let context = self.world_builder.context_rc();
+            let import_sig = Signature::new(&context, import_ft.params, import_ft.results);
 
             let import_module_ref = self
                 .world_builder
@@ -154,7 +151,7 @@ impl<'a> ModuleTranslationState<'a> {
                 .wrap_err("failed to create module for intrinsic imports")?;
             let mut import_module_builder = ModuleBuilder::new(import_module_ref);
             let intrinsic_func_ref = import_module_builder
-                .define_function(import_path.name().into(), import_sig)
+                .define_function(import_path.name().into(), Visibility::Public, import_sig)
                 .wrap_err("failed to create intrinsic function ref")?;
 
             self.functions.insert(

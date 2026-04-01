@@ -2,6 +2,8 @@ use std::{env, fs, path::Path};
 
 use cargo_miden::{BuildOutput, OutputType, run};
 
+use crate::utils::current_dir_lock;
+
 /// Creates a minimal Cargo workspace at `root` with a single member named `member_name`.
 fn write_workspace_root(root: &Path, member_name: &str) {
     let ws_toml = format!(
@@ -69,6 +71,7 @@ fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
 
 #[test]
 fn build_workspace_member_account_project() {
+    let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
@@ -123,6 +126,7 @@ fn build_workspace_member_account_project() {
 
 #[test]
 fn build_from_workspace_root_is_rejected() {
+    let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
@@ -175,6 +179,7 @@ fn build_from_workspace_root_is_rejected() {
 
 #[test]
 fn new_project_auto_adds_to_workspace() {
+    let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
@@ -233,6 +238,7 @@ fn new_project_auto_adds_to_workspace() {
 
 #[test]
 fn new_project_auto_adds_to_workspace_with_existing_members() {
+    let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
@@ -292,6 +298,7 @@ fn new_project_auto_adds_to_workspace_with_existing_members() {
 
 #[test]
 fn new_project_does_not_duplicate_existing_member() {
+    let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)

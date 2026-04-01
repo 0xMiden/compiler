@@ -17,7 +17,6 @@ members = [
     "midenc-log",
     "midenc-session",
     "sdk/field-repr/*",
-    "sdk/field",
     "sdk/alloc",
     "sdk/base",
     "sdk/base-macros",
@@ -26,7 +25,6 @@ members = [
     "sdk/stdlib-sys",
     "tools/*",
     "tests/integration",
-    "test-harness/*",
     "tests/integration-network",
 ]
 exclude = [
@@ -63,6 +61,7 @@ clap = { version = "4.5", default-features = false, features = [
     "std",
     "env",
     "help",
+    "usage",
     "suggestions",
     "error-context",
 ] }
@@ -77,18 +76,19 @@ litcheck-filecheck = "0.4"
 log = { version = "0.4", features = ["kv"] }
 
 # Miden Dependencies
-miden-assembly = { version = "0.20", default-features = false }
-miden-core = { version = "0.20", default-features = false }
-miden-debug = { version = "0.4" }
-miden-debug-types = { version = "0.20", default-features = false }
-miden-assembly-syntax = { version = "0.20", default-features = false }
+miden-assembly = { version = "0.22", default-features = false }
+miden-core = { version = "0.22", default-features = false }
+miden-debug = { version = "0.6" }
+miden-debug-types = { version = "0.22", default-features = false }
+miden-assembly-syntax = { version = "0.22", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
-miden-protocol = { version = "0.13", default-features = false }
-miden-standards = { version = "0.13", default-features = false }
-miden-processor = { version = "0.20", default-features = false }
-miden-core-lib = { version = "0.20", default-features = false }
-miden-mast-package = { version = "0.20", default-features = false }
-miette = { package = "miden-miette", version = "7.1.1" }
+miden-protocol = { version = "0.14.0", default-features = false }
+miden-standards = { version = "0.14.0", default-features = false }
+
+miden-processor = { version = "0.22", default-features = false }
+miden-core-lib = { version = "0.22", default-features = false }
+miden-mast-package = { version = "0.22", default-features = false }
+miette = { package = "miden-miette", version = "8.0" }
 paste = "1.0"
 parking_lot = "0.12"
 parking_lot_core = "0.9"
@@ -140,6 +140,7 @@ midenc-dialect-hir = { version = "0.7.1", path = "dialects/hir" }
 midenc-dialect-scf = { version = "0.7.1", path = "dialects/scf" }
 midenc-dialect-cf = { version = "0.7.1", path = "dialects/cf" }
 midenc-dialect-ub = { version = "0.7.1", path = "dialects/ub" }
+midenc-dialect-wasm = { version = "0.7.1", path = "dialects/wasm" }
 midenc-hir = { version = "0.7.1", path = "hir" }
 midenc-hir-analysis = { version = "0.7.1", path = "hir-analysis" }
 midenc-hir-eval = { version = "0.7.1", path = "eval" }
@@ -154,8 +155,7 @@ midenc-session = { version = "0.7.1", path = "midenc-session" }
 cargo-miden = { version = "0.7.1", path = "tools/cargo-miden" }
 miden-integration-tests = { path = "tests/integration" }
 midenc-expect-test = { path = "tools/expect-test" }
-miden-test-harness = { path = "test-harness/test-harness-lib" }
-miden-test-harness-macros = { path = "test-harness/test-harness-macros" }
+miden-field = { version = "0.22" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
@@ -170,7 +170,9 @@ miden-test-harness-macros = { path = "test-harness/test-harness-macros" }
 #miden-processor = { path = "../miden-vm/processor" }
 #miden-mast-package = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-mast-package = { path = "../miden-vm/package" }
-
+# miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
+# miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
+# miden-tx        = { tag = "v0.14.0-beta.4", git = "https://github.com/0xMiden/miden-base" }
 
 [profile.dev]
 lto = false
@@ -193,39 +195,15 @@ opt-level = 3
 # Speed up the test profile (proving times)
 # ============================================================
 # The test package itself needs optimization
-[profile.test.package.midenc-integration-network-tests]
-opt-level = 3
-
 # Core Miden packages
 [profile.test.package.miden-processor]
-opt-level = 3
-
-[profile.test.package.miden-prover]
-opt-level = 3
-
-[profile.test.package.winter-prover]
-opt-level = 3
-
-[profile.test.package.miden-client]
 opt-level = 3
 
 [profile.test.package.miden-protocol]
 opt-level = 3
 
-[profile.test.package.miden-tx]
-opt-level = 3
-
 # Additional crypto and math-heavy dependencies
 [profile.test.package.miden-crypto]
-opt-level = 3
-
-[profile.test.package.winter-crypto]
-opt-level = 3
-
-[profile.test.package.winter-air]
-opt-level = 3
-
-[profile.test.package.winter-math]
 opt-level = 3
 
 [profile.test.package.miden-standards]
@@ -268,18 +246,6 @@ opt-level = 3
 [profile.dev.package.miden-processor]
 opt-level = 3
 
-[profile.dev.package.miden-prover]
-opt-level = 3
-
-[profile.dev.package.winter-prover]
-opt-level = 3
-
-[profile.dev.package.miden-client]
-opt-level = 3
-
 [profile.dev.package.miden-protocol]
-opt-level = 3
-
-[profile.dev.package.miden-tx]
 opt-level = 3
 # ============================================================

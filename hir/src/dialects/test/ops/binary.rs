@@ -1,4 +1,10 @@
-use crate::{derive::operation, dialects::test::TestDialect, effects::*, traits::*, *};
+use crate::{
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    dialects::{builtin::attributes::OverflowAttr, test::TestDialect},
+    effects::*,
+    traits::*,
+    *,
+};
 
 macro_rules! infer_return_ty_for_binary_op {
     ($Op:ty) => {
@@ -21,25 +27,12 @@ macro_rules! infer_return_ty_for_binary_op {
     };
 }
 
-macro_rules! has_no_effects {
-    ($Op:ty) => {
-        impl EffectOpInterface<MemoryEffect> for $Op {
-            fn has_no_effect(&self) -> bool {
-                true
-            }
-
-            fn effects(&self) -> EffectIterator<::midenc_hir::effects::MemoryEffect> {
-                EffectIterator::from_smallvec(::midenc_hir::smallvec![])
-            }
-        }
-    };
-}
-
 /// Two's complement sum
+#[derive(OpParser, OpPrinter, EffectOpInterface)]
 #[operation(
     dialect = TestDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Add {
     #[operand]
@@ -49,17 +42,17 @@ pub struct Add {
     #[result]
     result: AnyInteger,
     #[attr]
-    overflow: Overflow,
+    overflow: OverflowAttr,
 }
 
 infer_return_ty_for_binary_op!(Add);
-has_no_effects!(Add);
 
 /// Two's complement product
+#[derive(OpParser, OpPrinter, EffectOpInterface)]
 #[operation(
     dialect = TestDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Mul {
     #[operand]
@@ -69,19 +62,19 @@ pub struct Mul {
     #[result]
     result: AnyInteger,
     #[attr]
-    overflow: Overflow,
+    overflow: OverflowAttr,
 }
 
 infer_return_ty_for_binary_op!(Mul);
-has_no_effects!(Mul);
 
 /// Bitwise shift-left
 ///
 /// Shifts larger than the bitwidth of the value will be wrapped to zero.
+#[derive(OpParser, OpPrinter, EffectOpInterface)]
 #[operation(
     dialect = TestDialect,
     traits(BinaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Shl {
     #[operand]
@@ -93,13 +86,13 @@ pub struct Shl {
 }
 
 infer_return_ty_for_binary_op!(Shl);
-has_no_effects!(Shl);
 
 /// Equality comparison
+#[derive(OpParser, OpPrinter, EffectOpInterface)]
 #[operation(
     dialect = TestDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Eq {
     #[operand]
@@ -111,13 +104,13 @@ pub struct Eq {
 }
 
 infer_return_ty_for_binary_op!(Eq as Type::I1);
-has_no_effects!(Eq);
 
 /// Inequality comparison
+#[derive(OpParser, OpPrinter, EffectOpInterface)]
 #[operation(
     dialect = TestDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Neq {
     #[operand]
@@ -129,4 +122,3 @@ pub struct Neq {
 }
 
 infer_return_ty_for_binary_op!(Neq as Type::I1);
-has_no_effects!(Neq);

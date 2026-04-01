@@ -1,4 +1,4 @@
-/// Represents the name of a [Symbol] in its local [SymbolTable]
+/// Represents the name of a [super::Symbol] in its local [super::SymbolTable]
 pub type SymbolName = crate::interner::Symbol;
 
 /// Generate a unique symbol name.
@@ -11,14 +11,14 @@ where
 {
     use core::fmt::Write;
 
-    use crate::SmallStr;
+    use crate::CompactString;
 
     if is_unique(name.as_str()) {
         return name;
     }
 
     let base_len = name.as_str().len();
-    let mut buf = SmallStr::with_capacity(base_len + 2);
+    let mut buf = CompactString::with_capacity(base_len + 2);
     buf.push_str(name.as_str());
     loop {
         *counter += 1;

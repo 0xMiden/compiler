@@ -1,19 +1,19 @@
-use alloc::{format, vec::Vec};
-use core::{fmt, sync::atomic::AtomicBool};
+use alloc::{rc::Rc, vec::Vec};
+use core::{fmt, ptr::NonNull, sync::atomic::AtomicBool};
 
 use smallvec::SmallVec;
 
 use super::{entity::EntityParent, *};
-use crate::traits::SingleRegion;
+use crate::{Context, interner};
 
 /// A pointer to a [Block]
 pub type BlockRef = UnsafeIntrusiveEntityRef<Block>;
 /// An intrusive, doubly-linked list of [Block]
 pub type BlockList = EntityList<Block>;
 /// A cursor into a [BlockList]
-pub type BlockCursor<'a> = EntityCursor<'a, Block>;
+pub type BlockCursor<'a> = EntityListCursor<'a, Block>;
 /// A mutable cursor into a [BlockList]
-pub type BlockCursorMut<'a> = EntityCursorMut<'a, Block>;
+pub type BlockCursorMut<'a> = EntityListCursorMut<'a, Block>;
 /// An iterator over blocks produced by a depth-first, pre-order visit of the CFG
 pub type PreOrderBlockIter = cfg::PreOrderIter<BlockRef>;
 /// An iterator over blocks produced by a depth-first, post-order visit of the CFG
@@ -23,29 +23,67 @@ pub type PostOrderBlockIter = cfg::PostOrderIter<BlockRef>;
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct BlockId(u32);
+
 impl BlockId {
+    const USER_DEFINED_TAG: u32 = 1u32 << 31;
+
+    /// Create a [BlockId] from a [Symbol](interner::Symbol) representing a user-defined name.
+    ///
+    /// This is used when parsing IR, so that we can preserve the user-provided names.
+    pub const fn from_symbol(sym: interner::Symbol) -> Self {
+        assert!(
+            sym.as_u32() & Self::USER_DEFINED_TAG == 0,
+            "cannot convert symbol id to block id: out of range"
+        );
+        Self(sym.as_u32())
+    }
+
+    pub const fn is_user_defined(self) -> bool {
+        self.0 & Self::USER_DEFINED_TAG == Self::USER_DEFINED_TAG
+    }
+
     pub const fn from_u32(id: u32) -> Self {
+        assert!(
+            id & Self::USER_DEFINED_TAG == 0,
+            "invalid block id: value must be less than 2^31"
+        );
         Self(id)
     }
 
     pub const fn as_u32(&self) -> u32 {
-        self.0
+        self.0 & !Self::USER_DEFINED_TAG
     }
 }
+
 impl EntityId for BlockId {
     #[inline(always)]
     fn as_usize(&self) -> usize {
         self.0 as usize
     }
 }
+
 impl fmt::Debug for BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "^block{}", &self.0)
+        if f.alternate() {
+            f.debug_struct("BlockId")
+                .field("is_user_defined", &self.is_user_defined())
+                .field("id", &self.as_u32())
+                .finish()
+        } else {
+            fmt::Display::fmt(self, f)
+        }
     }
 }
+
 impl fmt::Display for BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "^block{}", &self.0)
+        if self.is_user_defined() {
+            write!(f, "^{}", unsafe {
+                core::mem::transmute::<u32, interner::Symbol>(self.as_u32())
+            })
+        } else {
+            write!(f, "^block{}", self.as_u32())
+        }
     }
 }
 
@@ -65,6 +103,8 @@ impl fmt::Display for BlockId {
 /// to have both unreachable blocks and critical edges in the IR, but they must be removed during
 /// the course of compilation.
 pub struct Block {
+    /// The [Context] in which this [Block] was allocated.
+    context: NonNull<Context>,
     /// The unique id of this block
     id: BlockId,
     /// Flag that indicates whether the ops in this block have a valid ordering
@@ -114,79 +154,13 @@ impl fmt::Display for Block {
     }
 }
 
-impl Block {
-    pub fn print(&self, flags: &OpPrintingFlags) -> crate::formatter::Document {
-        use crate::formatter::PrettyPrint;
-
-        let printer = BlockPrinter { block: self, flags };
-        printer.render()
-    }
-}
-
-struct BlockPrinter<'a> {
-    block: &'a Block,
-    flags: &'a OpPrintingFlags,
-}
-
-impl crate::formatter::PrettyPrint for BlockPrinter<'_> {
-    fn render(&self) -> crate::formatter::Document {
-        use crate::{formatter::*, traits::SingleBlock};
-
-        let is_entry_block = self.block.is_entry_block() && !self.flags.print_entry_block_headers;
-        let mut is_parent_op_single_block_single_region = false;
-        let mut is_parent_op_symbol = false;
-        if let Some(parent_op) = self.block.parent_op() {
-            let parent_op = parent_op.borrow();
-            is_parent_op_single_block_single_region = parent_op.implements::<dyn SingleBlock>()
-                && parent_op.implements::<dyn SingleRegion>();
-            is_parent_op_symbol = parent_op.implements::<dyn Symbol>();
-        }
-
-        let block = self.block.body.iter().fold(Document::Empty, |acc, op| {
-            let context = op.context();
-            let doc = op.print(self.flags, context);
-            if acc.is_empty() {
-                doc
-            } else if is_parent_op_single_block_single_region && is_parent_op_symbol {
-                // For blocks that serve as containers for symbol ops, e.g. module/component,
-                // add extra spacing between symbol ops to aid in readability
-                acc + nl() + nl() + doc
-            } else {
-                acc + nl() + doc
-            }
-        });
-
-        if is_parent_op_single_block_single_region {
-            block
-        } else if !is_entry_block || self.flags.print_entry_block_headers {
-            let args = self.block.arguments().iter().fold(Document::Empty, |acc, arg| {
-                let arg = *arg;
-                let doc = text(format!("{arg}: {}", arg.borrow().ty()));
-                if acc.is_empty() {
-                    doc
-                } else {
-                    acc + const_text(", ") + doc
-                }
-            });
-            let args = if self.block.has_arguments() {
-                const_text("(") + args + const_text(")")
-            } else {
-                args
-            };
-
-            let header = display(self.block.id) + args + const_text(":");
-            header + indent(4, nl() + block)
-        } else {
-            block
-        }
-    }
-}
-
 impl crate::formatter::PrettyPrint for Block {
     fn render(&self) -> crate::formatter::Document {
         let flags = OpPrintingFlags::default();
 
-        self.print(&flags)
+        let mut printer = crate::print::AsmPrinter::new(self.context_rc(), &flags);
+        printer.print_block(self);
+        printer.finish()
     }
 }
 
@@ -589,13 +563,39 @@ impl Iterator for BlockPredecessorEdgesIter {
 }
 
 impl Block {
-    pub fn new(id: BlockId) -> Self {
+    pub fn new(context: Rc<Context>, id: BlockId) -> Self {
         Self {
+            context: unsafe { NonNull::new_unchecked(Rc::as_ptr(&context).cast_mut()) },
             id,
             valid_op_ordering: AtomicBool::new(true),
             uses: Default::default(),
             body: Default::default(),
             arguments: Default::default(),
+        }
+    }
+
+    /// Get a borrowed reference to the owning [Context] of this block
+    #[inline(always)]
+    pub fn context(&self) -> &Context {
+        // SAFETY: This is safe so long as this block is allocated in a Context, since the
+        // Context by definition outlives the allocation.
+        unsafe { self.context.as_ref() }
+    }
+
+    /// Get an owned reference to the owning [Context] of this block
+    pub fn context_rc(&self) -> Rc<Context> {
+        // SAFETY: This is safe so long as this block is allocated in a Context, since the
+        // Context by definition outlives the allocation.
+        //
+        // Additionally, constructing the Rc from a raw pointer is safe here, as the pointer was
+        // obtained using `Rc::as_ptr`, so the only requirement to call `Rc::from_raw` is to
+        // increment the strong count, as `as_ptr` does not preserve the count for the reference
+        // held by this operation. Incrementing the count first is required to manufacture new
+        // clones of the `Rc` safely.
+        unsafe {
+            let ptr = self.context.as_ptr().cast_const();
+            Rc::increment_strong_count(ptr);
+            Rc::from_raw(ptr)
         }
     }
 
@@ -844,7 +844,7 @@ impl Block {
         let mut region = self.parent().expect("block is not attached to a region");
         let parent = region.parent().expect("parent region is not attached to an operation");
         // Create a new empty block
-        let mut new_block = parent.borrow().context().create_block();
+        let mut new_block = parent.borrow().context_rc().create_block();
         // Insert the block in the same region as `self`, immediately after `self`
         {
             let mut region_mut = region.borrow_mut();
@@ -1196,10 +1196,10 @@ pub type BlockOperandRef = UnsafeIntrusiveEntityRef<BlockOperand>;
 /// An intrusive, doubly-linked list of [BlockOperand]
 pub type BlockOperandList = EntityList<BlockOperand>;
 #[allow(unused)]
-pub type BlockOperandCursor<'a> = EntityCursor<'a, BlockOperand>;
+pub type BlockOperandCursor<'a> = EntityListCursor<'a, BlockOperand>;
 #[allow(unused)]
-pub type BlockOperandCursorMut<'a> = EntityCursorMut<'a, BlockOperand>;
-pub type BlockOperandIter<'a> = EntityIter<'a, BlockOperand>;
+pub type BlockOperandCursorMut<'a> = EntityListCursorMut<'a, BlockOperand>;
+pub type BlockOperandIter<'a> = EntityListIter<'a, BlockOperand>;
 
 /// A [BlockOperand] represents a use of a [Block] by an [Operation]
 pub struct BlockOperand {
@@ -1215,7 +1215,10 @@ impl EntityWithParent for BlockOperand {
 }
 impl EntityListItem for BlockOperand {
     #[track_caller]
-    fn on_inserted(this: UnsafeIntrusiveEntityRef<Self>, _cursor: &mut EntityCursorMut<'_, Self>) {
+    fn on_inserted(
+        this: UnsafeIntrusiveEntityRef<Self>,
+        _cursor: &mut EntityListCursorMut<'_, Self>,
+    ) {
         assert!(this.parent().is_some());
     }
 }

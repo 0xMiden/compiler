@@ -1,3 +1,5 @@
+use alloc::{rc::Rc, sync::Arc};
+
 use midenc_session::diagnostics::Span;
 
 /// The field modulus for Miden's prime field
@@ -91,7 +93,7 @@ use alloc::collections::BTreeSet;
 use core::ops::{Deref, DerefMut};
 
 use miden_assembly::ast::InvokeKind;
-use midenc_hir::{Immediate, Operation, SourceSpan, Type, ValueRef};
+use midenc_hir::{Context, Immediate, Operation, SourceSpan, Type, ValueRef};
 
 use super::{Operand, OperandStack};
 use crate::{
@@ -153,6 +155,48 @@ pub struct OpEmitter<'a> {
     current_block: &'a mut Vec<masm::Op>,
 }
 impl<'a> OpEmitter<'a> {
+    /// Build a MASM `assert` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assert_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertWithError(masm::Immediate::Value(Span::new(span, message.into())))
+    }
+
+    /// Build a MASM `assert_eq` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assert_eq_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertEqWithError(masm::Immediate::Value(Span::new(
+            span,
+            message.into(),
+        )))
+    }
+
+    /// Build a MASM `assert_eqw` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assert_eqw_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertEqwWithError(masm::Immediate::Value(Span::new(
+            span,
+            message.into(),
+        )))
+    }
+
+    /// Build a MASM `assertz` instruction with an inline diagnostic.
+    #[inline]
+    pub fn assertz_with_message_inst(
+        message: impl Into<Arc<str>>,
+        span: SourceSpan,
+    ) -> masm::Instruction {
+        masm::Instruction::AssertzWithError(masm::Immediate::Value(Span::new(span, message.into())))
+    }
+
     #[inline(always)]
     pub fn new(
         invoked: &'a mut BTreeSet<masm::Invoke>,
@@ -164,6 +208,11 @@ impl<'a> OpEmitter<'a> {
             invoked,
             current_block: block,
         }
+    }
+
+    #[inline]
+    pub fn context_rc(&self) -> Rc<Context> {
+        self.stack.context_rc()
     }
 
     #[cfg(test)]
@@ -308,7 +357,7 @@ impl<'a> OpEmitter<'a> {
     pub fn literal<I: Into<Immediate>>(&mut self, imm: I, span: SourceSpan) {
         let imm = imm.into();
         self.push_immediate(imm, span);
-        self.stack.push(imm);
+        self.stack.push_immediate(imm);
     }
 
     #[inline(always)]
@@ -726,8 +775,8 @@ mod tests {
     use alloc::rc::Rc;
 
     use midenc_hir::{
-        AbiParam, ArrayType, Context, Felt, FieldElement, Overflow, PointerType, Signature,
-        ValueRef,
+        ArrayType, Context, Felt, Overflow, PointerType, ValueRef,
+        dialects::builtin::attributes::Signature,
     };
 
     use super::*;
@@ -741,11 +790,30 @@ mod tests {
         };
     }
 
+    /// Assert that the emitted block ends by delegating to the dedicated 16-bit memory intrinsic.
+    fn assert_unaligned_16bit_intrinsic(block: &[Op], intrinsic: &str) {
+        let execs = block
+            .iter()
+            .filter_map(|op| match op {
+                Op::Inst(inst) => match inst.inner() {
+                    masm::Instruction::Exec(target) => Some(target.to_string()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            execs.iter().any(|target| target == intrinsic),
+            "expected block to delegate to `{intrinsic}`, found execs: {execs:?}"
+        );
+    }
+
     #[test]
     fn op_emitter_stack_manipulation_test() {
         let mut block = Vec::default();
 
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -768,10 +836,12 @@ mod tests {
             assert_eq!(&ops[0], &push!(1u32));
             assert_eq!(&ops[1], &push!(2u32));
             assert_eq!(&ops[2], &push!(3u8));
-            assert_eq!(&ops[3], &push!(Felt::ZERO));
-            assert_eq!(&ops[4], &push!(Felt::ONE));
-            assert_eq!(&ops[5], &push!(Felt::new(u32::MAX as u64)));
-            assert_eq!(&ops[6], &push!(Felt::new(3)));
+            // `u64` immediates are pushed as two `u32` limbs in LE stack order (`lo` on top),
+            // which means the hi limb is pushed first, followed by the lo limb.
+            assert_eq!(&ops[3], &push!(Felt::ONE));
+            assert_eq!(&ops[4], &push!(Felt::ZERO));
+            assert_eq!(&ops[5], &push!(Felt::new(3)));
+            assert_eq!(&ops[6], &push!(Felt::new(u32::MAX as u64)));
         }
 
         assert_eq!(emitter.stack()[0], five);
@@ -931,10 +1001,9 @@ mod tests {
     fn op_emitter_copy_operand_to_position_test() {
         let mut block = Vec::default();
         let mut invoked = BTreeSet::default();
-        let mut stack = OperandStack::default();
-        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
-
         let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
         let unused_block = context.create_block_with_params(vec![Type::U32; 7]);
         let unused_block = unused_block.borrow();
@@ -977,7 +1046,8 @@ mod tests {
     fn op_emitter_u32_add_test() {
         let mut block = Vec::default();
         let mut invoked = BTreeSet::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
         let one = Immediate::U32(1);
@@ -1012,7 +1082,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_sub_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1048,7 +1119,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_mul_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1084,7 +1156,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_eq_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1112,7 +1185,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_neq_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1140,7 +1214,8 @@ mod tests {
     #[test]
     fn op_emitter_i1_and_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1163,7 +1238,8 @@ mod tests {
     #[test]
     fn op_emitter_i1_or_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1186,7 +1262,8 @@ mod tests {
     #[test]
     fn op_emitter_i1_xor_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1209,7 +1286,8 @@ mod tests {
     #[test]
     fn op_emitter_i1_not_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1225,7 +1303,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_gt_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1250,7 +1329,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_gte_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1275,7 +1355,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_lt_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1300,7 +1381,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_lte_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1325,7 +1407,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_checked_div_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1348,7 +1431,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_unchecked_div_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1371,7 +1455,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_checked_mod_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1394,7 +1479,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_unchecked_mod_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1417,7 +1503,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_checked_divmod_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1443,7 +1530,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_unchecked_divmod_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1469,7 +1557,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_exp_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1492,7 +1581,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_band_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1515,7 +1605,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_bor_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1538,7 +1629,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_bxor_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1561,7 +1653,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_shl_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1584,7 +1677,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_shr_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1607,7 +1701,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_rotl_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1630,7 +1725,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_rotr_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1653,7 +1749,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_min_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1676,7 +1773,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_max_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1699,7 +1797,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_trunc_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1715,7 +1814,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_zext_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1731,7 +1831,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_sext_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1747,7 +1848,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_cast_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1763,7 +1865,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_inttoptr_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1780,7 +1883,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_is_odd_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1796,7 +1900,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_popcnt_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1812,7 +1917,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_bnot_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1828,7 +1934,8 @@ mod tests {
     #[test]
     fn op_emitter_u128_bnot_shadowing_fix_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1861,7 +1968,8 @@ mod tests {
     #[test]
     fn op_emitter_i128_bnot_shadowing_fix_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1894,7 +2002,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_pow2_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1910,7 +2019,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_incr_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1926,7 +2036,8 @@ mod tests {
     #[test]
     fn op_emitter_inv_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1942,7 +2053,8 @@ mod tests {
     #[test]
     fn op_emitter_neg_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1958,7 +2070,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_assert_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1974,7 +2087,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_assertz_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -1990,7 +2104,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_assert_eq_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -2004,14 +2119,15 @@ mod tests {
         emitter.assert_eq_imm(ten, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
 
-        emitter.assert_eq(SourceSpan::default());
+        emitter.assert_eq(None, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 0);
     }
 
     #[test]
     fn op_emitter_u32_select_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -2032,7 +2148,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_exec_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -2043,10 +2160,7 @@ mod tests {
             let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
             masm::InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
         };
-        let signature = Signature::new(
-            [AbiParam::new(Type::U32), AbiParam::new(Type::I1)],
-            [AbiParam::new(return_ty.clone())],
-        );
+        let signature = Signature::new(&context, [Type::U32, Type::I1], [return_ty.clone()]);
 
         let t = Immediate::I1(true);
         let one = Immediate::U32(1);
@@ -2063,7 +2177,8 @@ mod tests {
     #[test]
     fn op_emitter_u32_load_test() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
@@ -2083,9 +2198,70 @@ mod tests {
     }
 
     #[test]
+    fn op_emitter_unaligned_u16_load_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.load_imm(130, Type::U16, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::U16);
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::load_u16");
+    }
+
+    #[test]
+    fn op_emitter_unaligned_i16_load_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.load_imm(130, Type::I16, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::I16);
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::load_u16");
+    }
+
+    #[test]
+    fn op_emitter_unaligned_u16_store_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.push(Type::U16);
+        emitter.store_imm(130, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 0);
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::store_u16");
+    }
+
+    #[test]
+    fn op_emitter_unaligned_i16_store_imm_test() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.push(Type::I16);
+        emitter.store_imm(130, SourceSpan::default());
+
+        assert_eq!(emitter.stack_len(), 0);
+        assert_unaligned_16bit_intrinsic(&block, "::intrinsics::mem::store_u16");
+    }
+
+    #[test]
     fn op_emitter_truncate_stack_drops_all_with_remainder() {
         let mut block = Vec::default();
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 

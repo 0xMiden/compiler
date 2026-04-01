@@ -1,26 +1,23 @@
-use smallvec::smallvec;
-
-use crate::{derive::operation, dialects::test::*, effects::*, traits::*, *};
+use crate::{
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    dialects::test::*,
+    effects::*,
+    traits::*,
+    *,
+};
 
 /// Store `value` on the heap at `addr`
+#[derive(OpPrinter, OpParser, EffectOpInterface)]
 #[operation(
     dialect = TestDialect,
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Store {
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Write))]
     addr: AnyPointer,
     #[operand]
     value: AnyType,
-}
-
-impl EffectOpInterface<MemoryEffect> for Store {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
-            MemoryEffect::Write,
-            self.addr().as_value_ref()
-        )])
-    }
 }
 
 /// Load `result` from the heap at `addr`
@@ -28,24 +25,17 @@ impl EffectOpInterface<MemoryEffect> for Store {
 /// The type of load is determined by the pointer operand type - cast the pointer to the type you
 /// wish to load, so long as such a load is safe according to the semantics of your high-level
 /// language.
+#[derive(OpPrinter, OpParser, EffectOpInterface)]
 #[operation(
     dialect = TestDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Load {
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
     addr: AnyPointer,
     #[result]
     result: AnyType,
-}
-
-impl EffectOpInterface<MemoryEffect> for Load {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new_for_value(
-            MemoryEffect::Read,
-            self.addr().as_value_ref()
-        )])
-    }
 }
 
 impl InferTypeOpInterface for Load {

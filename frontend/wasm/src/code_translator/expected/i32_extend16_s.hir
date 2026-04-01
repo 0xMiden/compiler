@@ -1,0 +1,7 @@
+builtin.function public extern("C") @test_wrapper() {
+    %0 = arith.constant 1 : i32;
+    %1 = wasm.sign_extend %0 <{ src_ty = #builtin.type<i16>, dst_ty = #builtin.type<i32> }>;
+    cf.br ^block5;
+^block5:
+    builtin.ret;
+};

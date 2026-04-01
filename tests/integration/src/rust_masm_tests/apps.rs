@@ -41,9 +41,10 @@ fn cargo_toml(name: &str) -> String {
                 debug-assertions = true
                 overflow-checks = false
                 debug = false
+
             "#,
         sdk_alloc_path = sdk_alloc_path.display(),
-        sdk_path = sdk_path.display()
+        sdk_path = sdk_path.display(),
     )
 }
 
@@ -89,16 +90,13 @@ fn function_call_hir2() {
             "#,
         )
         .build();
-    let mut test = CompilerTestBuilder::rust_source_cargo_miden(
+    let _ = CompilerTestBuilder::rust_source_cargo_miden(
         cargo_proj.root(),
         WasmTranslationConfig::default(),
         [],
     )
-    .build();
-
-    let artifact_name = name;
-    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    .build()
+    .compile_package();
 }
 
 #[test]
@@ -138,16 +136,13 @@ fn mem_intrinsics_heap_base() {
             "#,
         )
         .build();
-    let mut test = CompilerTestBuilder::rust_source_cargo_miden(
+    let _ = CompilerTestBuilder::rust_source_cargo_miden(
         cargo_proj.root(),
         WasmTranslationConfig::default(),
         [],
     )
-    .build();
-
-    let artifact_name = name;
-    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    .build()
+    .compile_package();
 }
 
 #[test]
@@ -186,14 +181,11 @@ fn felt_intrinsics() {
             "#,
         )
         .build();
-    let mut test = CompilerTestBuilder::rust_source_cargo_miden(
+    let _ = CompilerTestBuilder::rust_source_cargo_miden(
         cargo_proj.root(),
         WasmTranslationConfig::default(),
         [],
     )
-    .build();
-
-    let artifact_name = name;
-    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
+    .build()
+    .compile_package();
 }

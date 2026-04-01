@@ -1,8 +1,7 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
-    AbiParam, Felt, Immediate, Signature, SourceSpan, Type, ValueRef,
-    dialects::builtin::BuiltinOpBuilder,
+    Felt, Immediate, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder,
 };
 
 use crate::testing::{compile_test_module, eval_package};
@@ -11,9 +10,7 @@ fn run_select_test(ty: Type, a: Immediate, a_result: &[u64], b: Immediate, b_res
     let span = SourceSpan::default();
 
     // Wrap 'select' in a function which takes a bool and returns selection from consts.
-    let signature = Signature::new([AbiParam::new(Type::I1)], [AbiParam::new(ty)]);
-
-    let (package, context) = compile_test_module(signature, |builder| {
+    let (package, context) = compile_test_module([Type::I1], [ty], |builder| {
         let block = builder.current_block();
         let cond_val = block.borrow().arguments()[0] as ValueRef;
 
@@ -29,7 +26,7 @@ fn run_select_test(ty: Type, a: Immediate, a_result: &[u64], b: Immediate, b_res
         eval_package::<u32, _, _>(
             &package,
             None,
-            &[Felt::from(cond_val)],
+            &[Felt::new(cond_val as u64)],
             context.session(),
             |trace| {
                 let outputs = trace.outputs().as_int_vec();
@@ -110,76 +107,74 @@ fn select_felt() {
 
 #[test]
 fn select_u64() {
-    // U64 is split into two 32bit limbs.
+    // U64 is split into two 32bit limbs in LE order (lo on top).
     run_select_test(
         Type::U64,
         Immediate::U64(1111111111111111),
-        &[1111111111111111_u64 >> 32, 1111111111111111_u64 & 0xffffffff],
+        &[1111111111111111_u64 & 0xffffffff, 1111111111111111_u64 >> 32],
         Immediate::U64(2222222222222222),
-        &[2222222222222222_u64 >> 32, 2222222222222222_u64 & 0xffffffff],
+        &[2222222222222222_u64 & 0xffffffff, 2222222222222222_u64 >> 32],
     );
 }
 
 #[test]
 fn select_i64() {
-    // I64 is split into two 32bit limbs.
+    // I64 is split into two 32bit limbs in LE order (lo on top).
     run_select_test(
         Type::I64,
         Immediate::I64(1111111111111111),
-        &[1111111111111111_u64 >> 32, 1111111111111111_u64 & 0xffffffff],
+        &[1111111111111111_u64 & 0xffffffff, 1111111111111111_u64 >> 32],
         Immediate::I64(2222222222222222),
-        &[2222222222222222_u64 >> 32, 2222222222222222_u64 & 0xffffffff],
+        &[2222222222222222_u64 & 0xffffffff, 2222222222222222_u64 >> 32],
     );
 }
 
 #[test]
 fn select_u128() {
-    // U128 is split into four 32bit limbs.
-    //
-    // It also mixes them up based on the virtual 64bit limbs.
+    // U128 is split into four 32bit limbs in LE order (lo_lo on top).
     let ones = 1111111111111111111111111111111_u128;
     let twos = 2222222222222222222222222222222_u128;
     run_select_test(
         Type::U128,
         Immediate::U128(ones),
         &[
-            ((ones >> 32) & 0xffffffff) as u64, // lo_mid
-            (ones & 0xffffffff) as u64,         // lo_lo
-            (ones >> 96) as u64,                // hi_hi
-            ((ones >> 64) & 0xffffffff) as u64, // hi_mid
+            (ones & 0xffffffff) as u64,         // lo_lo (bits 0-31)
+            ((ones >> 32) & 0xffffffff) as u64, // lo_hi (bits 32-63)
+            ((ones >> 64) & 0xffffffff) as u64, // hi_lo (bits 64-95)
+            (ones >> 96) as u64,                // hi_hi (bits 96-127)
         ],
         Immediate::U128(twos),
         &[
-            ((twos >> 32) & 0xffffffff) as u64, // lo_mid
-            (twos & 0xffffffff) as u64,         // lo_lo
-            (twos >> 96) as u64,                // hi_hi
-            ((twos >> 64) & 0xffffffff) as u64, // hi_mid
+            (twos & 0xffffffff) as u64,         // lo_lo (bits 0-31)
+            ((twos >> 32) & 0xffffffff) as u64, // lo_hi (bits 32-63)
+            ((twos >> 64) & 0xffffffff) as u64, // hi_lo (bits 64-95)
+            (twos >> 96) as u64,                // hi_hi (bits 96-127)
         ],
     );
 }
 
 #[test]
 fn select_i128() {
-    // I128 is split into four 32bit limbs.
-    //
-    // It also mixes them up based on the virtual 64bit limbs.
+    // I128 is split into four 32bit limbs in LE order (lo_lo on top).
     let ones = 1111111111111111111111111111111_i128;
     let twos = 2222222222222222222222222222222_i128;
     run_select_test(
         Type::I128,
         Immediate::I128(ones),
         &[
-            ((ones >> 32) & 0xffffffff) as u64, // lo_mid
-            (ones & 0xffffffff) as u64,         // lo_lo
-            (ones >> 96) as u64,                // hi_hi
-            ((ones >> 64) & 0xffffffff) as u64, // hi_mid
+            (ones & 0xffffffff) as u64,         // lo_lo (bits 0-31)
+            ((ones >> 32) & 0xffffffff) as u64, // lo_hi (bits 32-63)
+            ((ones >> 64) & 0xffffffff) as u64, // hi_lo (bits 64-95)
+            (ones >> 96) as u64,                // hi_hi (bits 96-127)
         ],
         Immediate::I128(twos),
         &[
-            ((twos >> 32) & 0xffffffff) as u64, // lo_mid
-            (twos & 0xffffffff) as u64,         // lo_lo
-            (twos >> 96) as u64,                // hi_hi
-            ((twos >> 64) & 0xffffffff) as u64, // hi_mid
+            (twos & 0xffffffff) as u64,         // lo_lo (bits 0-31)
+            ((twos >> 32) & 0xffffffff) as u64, // lo_hi (bits 32-63)
+            ((twos >> 64) & 0xffffffff) as u64, // hi_lo (bits 64-95)
+            (twos >> 96) as u64,                // hi_hi (bits 96-127)
         ],
     );
 }
+
+mod switch;

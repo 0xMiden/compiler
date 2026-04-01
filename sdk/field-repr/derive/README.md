@@ -11,6 +11,7 @@ traits re-exported by that crate.
 ### Struct example
 
 ```rust
+use core::convert::TryFrom;
 use miden_field::Felt;
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 
@@ -21,17 +22,18 @@ struct AccountId {
 }
 
 let value = AccountId {
-    prefix: Felt::from_u64_unchecked(1),
-    suffix: Felt::from_u64_unchecked(2),
+    prefix: Felt::new(1),
+    suffix: Felt::new(2),
 };
 let felts = value.to_felt_repr();
-let roundtrip = AccountId::from(felts.as_slice());
+let roundtrip = AccountId::try_from(felts.as_slice()).unwrap();
 assert_eq!(roundtrip, value);
 ```
 
 ### Enum example
 
 ```rust
+use core::convert::TryFrom;
 use miden_field::Felt;
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 
@@ -45,11 +47,11 @@ enum Message {
 // Ping -> tag = 0
 // Transfer -> tag = 1
 let value = Message::Transfer {
-    to: Felt::from_u64_unchecked(7),
+    to: Felt::new(7),
     amount: 10,
 };
 let felts = value.to_felt_repr();
-let roundtrip = Message::from(felts.as_slice());
+let roundtrip = Message::try_from(felts.as_slice()).unwrap();
 assert_eq!(roundtrip, value);
 ```
 

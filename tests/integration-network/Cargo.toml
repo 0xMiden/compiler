@@ -12,13 +12,15 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-miden-client = { version = "0.13", features = ["std", "tonic", "testing"] }
+# miden-client = { version = "0.14", features = ["std", "tonic", "testing"] }
+miden-client = { git = "https://github.com/0xMiden/miden-client", branch = "release/v0.14.0-beta", features = ["std", "testing"] }
 miden-core.workspace = true
-miden-protocol = { workspace = true, features = ["std"] }
+miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std"] }
-miden-field-repr = { version = "0.10.0", path = "../../sdk/field-repr/repr" }
+miden-testing = { version = "0.14", features = ["std"] }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
+midenc-expect-test.workspace = true
 rand = "0.9"
 tokio.workspace = true
 

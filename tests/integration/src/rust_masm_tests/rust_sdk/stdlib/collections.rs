@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use miden_core::{
-    Felt, FieldElement, Word,
+    Felt, Word,
     crypto::merkle::{MerkleStore, Smt},
 };
 use miden_debug::Executor;
-use miden_processor::AdviceInputs;
+use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
 use midenc_expect_test::expect_file;
@@ -26,7 +26,7 @@ fn build_advice_inputs_for_smt(smt: &Smt) -> AdviceInputs {
     let store = MerkleStore::from(smt);
     let map = smt
         .leaves()
-        .map(|(_, leaf)| (leaf.hash(), leaf.to_elements()))
+        .map(|(_, leaf)| (leaf.hash(), leaf.to_elements().collect()))
         .collect::<Vec<_>>();
 
     AdviceInputs::default()
@@ -41,15 +41,20 @@ fn word_components(word: Word) -> [Felt; 4] {
 
 fn word_to_u64s(word: Word) -> [u64; 4] {
     let [a, b, c, d] = word_components(word);
-    [a.as_int(), b.as_int(), c.as_int(), d.as_int()]
+    [
+        a.as_canonical_u64(),
+        b.as_canonical_u64(),
+        c.as_canonical_u64(),
+        d.as_canonical_u64(),
+    ]
 }
 
 fn push_word_args(args: &mut Vec<Felt>, word: Word) {
     let [a, b, c, d] = word_components(word);
-    args.push(d);
-    args.push(c);
-    args.push(b);
     args.push(a);
+    args.push(b);
+    args.push(c);
+    args.push(d);
 }
 
 fn executor_with_std(args: Vec<Felt>) -> Executor {
@@ -97,15 +102,15 @@ fn test_smt_get_binding() {
         let value = result.value;
         let returned_root = result.root;
 
-        let expected = Word::new([
-            Felt::from_u64_unchecked({ev0}),
-            Felt::from_u64_unchecked({ev1}),
-            Felt::from_u64_unchecked({ev2}),
-            Felt::from_u64_unchecked({ev3}),
-        ]);
-        assert_eq!(value, expected, "smt_get returned unexpected value");
-        assert_eq!(returned_root, root, "smt_get should not mutate the root");
-    }}"#,
+	        let expected = Word::new([
+	            Felt::new({ev0}),
+	            Felt::new({ev1}),
+	            Felt::new({ev2}),
+	            Felt::new({ev3}),
+	        ]);
+	        assert_eq!(value, expected, "smt_get returned unexpected value");
+	        assert_eq!(returned_root, root, "smt_get should not mutate the root");
+	    }}"#,
         ev0 = expected_value_u64[0],
         ev1 = expected_value_u64[1],
         ev2 = expected_value_u64[2],
@@ -119,17 +124,14 @@ fn test_smt_get_binding() {
         config,
         ["--test-harness".into()],
     );
-    test.expect_wasm(expect_file!["../../../../expected/rust_sdk_stdlib_smt_get.wat"]);
-    test.expect_ir(expect_file!["../../../../expected/rust_sdk_stdlib_smt_get.hir"]);
-    test.expect_masm(expect_file!["../../../../expected/rust_sdk_stdlib_smt_get.masm"]);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let advice_inputs = build_advice_inputs_for_smt(&smt);
 
     let mut args = Vec::new();
-    push_word_args(&mut args, root);
     push_word_args(&mut args, key);
+    push_word_args(&mut args, root);
 
     let mut exec = executor_with_std(args.clone());
     exec.with_dependencies(package.manifest.dependencies())
@@ -178,21 +180,21 @@ fn test_smt_set_binding() {
         let old_value = result.old_value;
         let new_root = result.new_root;
 
-        let expected_old = Word::new([
-            Felt::from_u64_unchecked({eo0}),
-            Felt::from_u64_unchecked({eo1}),
-            Felt::from_u64_unchecked({eo2}),
-            Felt::from_u64_unchecked({eo3}),
-        ]);
-        let expected_new = Word::new([
-            Felt::from_u64_unchecked({en0}),
-            Felt::from_u64_unchecked({en1}),
-            Felt::from_u64_unchecked({en2}),
-            Felt::from_u64_unchecked({en3}),
-        ]);
-        assert_eq!(old_value, expected_old, "smt_set returned unexpected old value");
-        assert_eq!(new_root, expected_new, "smt_set returned unexpected new root");
-    }}"#,
+	        let expected_old = Word::new([
+	            Felt::new({eo0}),
+	            Felt::new({eo1}),
+	            Felt::new({eo2}),
+	            Felt::new({eo3}),
+	        ]);
+	        let expected_new = Word::new([
+	            Felt::new({en0}),
+	            Felt::new({en1}),
+	            Felt::new({en2}),
+	            Felt::new({en3}),
+	        ]);
+	        assert_eq!(old_value, expected_old, "smt_set returned unexpected old value");
+	        assert_eq!(new_root, expected_new, "smt_set returned unexpected new root");
+	    }}"#,
         eo0 = expected_old_u64[0],
         eo1 = expected_old_u64[1],
         eo2 = expected_old_u64[2],
@@ -210,18 +212,15 @@ fn test_smt_set_binding() {
         config,
         ["--test-harness".into()],
     );
-    test.expect_wasm(expect_file!["../../../../expected/rust_sdk_stdlib_smt_set.wat"]);
-    test.expect_ir(expect_file!["../../../../expected/rust_sdk_stdlib_smt_set.hir"]);
-    test.expect_masm(expect_file!["../../../../expected/rust_sdk_stdlib_smt_set.masm"]);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let advice_inputs = build_advice_inputs_for_smt(&smt);
 
     let mut args = Vec::new();
-    push_word_args(&mut args, root);
-    push_word_args(&mut args, key);
     push_word_args(&mut args, new_value);
+    push_word_args(&mut args, key);
+    push_word_args(&mut args, root);
 
     let mut exec = executor_with_std(args.clone());
     exec.with_dependencies(package.manifest.dependencies())

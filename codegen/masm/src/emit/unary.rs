@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::Overflow;
 
 use super::*;
@@ -106,8 +106,25 @@ impl OpEmitter<'_> {
         match (&src, dst) {
             // If the types are equivalent, it's a no-op, but only if they are integers
             (src, dst) if src == dst => (),
-            // Zero-extending a u64 to i128 simply requires pushing a 0u64 on the stack
-            (Type::U64, Type::U128 | Type::I128) => self.push_u64(0, span),
+            // Zero-extending a u64 to u128/i128 requires us to provide the most-significant bits
+            // of the resulting 128-bit value. This is achieved by pushing a `0u64` value below
+            // the current u64 on the operand stack, as the limb order of multi-limb integer
+            // values is little-endian.
+            //
+            // u64 is represented as two u32 limbs; u128/i128 as four u32 limbs. With the least-
+            // significant limb on top, we want to transform:
+            //
+            // - before: [lo, hi]
+            // - after : [lo, hi, 0, 0]
+            //
+            // where the additional 0 limbs are the most-significant u32 limbs.
+            (Type::U64, Type::U128 | Type::I128) => {
+                // Push 0u64 (two u32 limbs) then rotate the original limbs back to the top.
+                self.push_u64(0, span);
+                self.emit(movup_from_offset(2), span);
+                self.emit(movup_from_offset(3), span);
+                self.emit(masm::Instruction::Swap1, span);
+            }
             (Type::Felt, Type::U64 | Type::U128 | Type::I128) => self.zext_felt(dst_bits, span),
             (Type::U32, Type::U64 | Type::I64 | Type::U128 | Type::I128) => {
                 self.zext_int32(dst_bits, span)
@@ -166,7 +183,7 @@ impl OpEmitter<'_> {
         let dst_bits = dst.size_in_bits() as u32;
         assert!(
             src_bits <= dst_bits,
-            "invalid zero-extension from {src} to {dst}: cannot zero-extend to a smaller type"
+            "invalid sign-extension from {src} to {dst}: cannot sign-extend to a smaller type"
         );
         match (&src, dst) {
             // If the types are equivalent, it's a no-op
@@ -328,7 +345,16 @@ impl OpEmitter<'_> {
                 // bit being set will make the i8 larger than 0 or 1
                 self.emit(masm::Instruction::Dup0, span);
                 self.emit_push(2u32, span);
-                self.emit_all([masm::Instruction::Lt, masm::Instruction::Assert], span);
+                self.emit_all(
+                    [
+                        masm::Instruction::Lt,
+                        Self::assert_with_message_inst(
+                            "expected i8 value to be 0 or 1 when casting to i1",
+                            span,
+                        ),
+                    ],
+                    span,
+                );
             }
             // i1
             (Type::I1, _) => self.zext_smallint(src_bits, dst_bits, span),
@@ -419,7 +445,7 @@ impl OpEmitter<'_> {
                         masm::Instruction::Swap1,
                         masm::Instruction::Sub,
                         masm::Instruction::U32OverflowingSubImm(1.into()),
-                        masm::Instruction::Assertz,
+                        Self::assertz_with_message_inst("ilog2 is undefined for zero", span),
                     ],
                     span,
                 );
@@ -918,7 +944,10 @@ impl OpEmitter<'_> {
                 self.emit_all(
                     [
                         // Assert that the high bits are zero
-                        masm::Instruction::Assertz,
+                        Self::assertz_with_message_inst(
+                            "u64 exponent for pow2 must fit in u32",
+                            span,
+                        ),
                         // This asserts if value > 63, thus result is guaranteed to fit in u64
                         masm::Instruction::Pow2,
                         // Obtain the u64 representation by splitting the felt result

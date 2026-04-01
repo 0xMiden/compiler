@@ -4,8 +4,8 @@ use miden_debug::ToMidenRepr;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    AbiParam, Builder, Felt, PointerType, Signature, SourceSpan, Type, ValueRef,
-    dialects::builtin::BuiltinOpBuilder,
+    Builder, Felt, PointerType, SourceSpan, Type, ValueRef,
+    dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
 };
 use proptest::{
     prelude::any,
@@ -24,20 +24,16 @@ fn load_sw() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes `load_sw` when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::U32)))],
-        [AbiParam::new(Type::U32)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::U32))], [Type::U32], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u32>(), move |value| {
@@ -93,36 +89,36 @@ fn load_dw() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes `load_dw` when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::U64)))],
-        [AbiParam::new(Type::U64)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::U64))], [Type::U64], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u64>(), move |value| {
         // Write `value` to the start of the 17th page (1 page after the 16 pages reserved for the
-        // Rust stack).  Felts must be written in little endian order.
+        // Rust stack).  Felts must be written in little-endian order: lo at lower address.
         let value_felts = value.to_felts();
         let initializers = [Initializer::MemoryFelts {
             addr: write_to / 4,
-            felts: Cow::Borrowed(&[value_felts[1], value_felts[0]]),
+            felts: Cow::Borrowed(&value_felts),
         }];
 
         let args = [Felt::new(write_to as u64)];
         let output =
             eval_package::<u64, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let lo = trace.read_memory_element(write_to / 4).unwrap_or_default().as_int();
-                let hi = trace.read_memory_element((write_to / 4) + 1).unwrap_or_default().as_int();
+                let lo =
+                    trace.read_memory_element(write_to / 4).unwrap_or_default().as_canonical_u64();
+                let hi = trace
+                    .read_memory_element((write_to / 4) + 1)
+                    .unwrap_or_default()
+                    .as_canonical_u64();
 
                 log::trace!(target: "executor", "hi = {hi} ({hi:0x})");
                 log::trace!(target: "executor", "lo = {lo} ({lo:0x})");
@@ -130,15 +126,12 @@ fn load_dw() {
                 prop_assert_eq!(lo, value & 0xffffffff);
                 prop_assert_eq!(hi, value >> 32);
 
-                let mut stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
+                let stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
                     TestCaseError::fail(format!(
                         "expected {value} to have been written to byte address {write_to}, but \
                          read from that address failed"
                     ))
                 })?;
-
-                // read_from_rust_memory() still reads in big-endian limbs.
-                stored = ((stored >> 32) & 0xffffffff) | (stored << 32);
 
                 prop_assert_eq!(
                     stored,
@@ -211,11 +204,15 @@ fn global_u64_initializer_uses_immediate_store_dw() {
     }
 
     // Entrypoint: load the global and return it.
-    let signature = Signature::new([], [AbiParam::new(Type::U64)]);
+    let signature = Signature::new(&context, [], [Type::U64]);
     let function = {
         let mut module_builder = midenc_hir::dialects::builtin::ModuleBuilder::new(module);
         module_builder
-            .define_function(midenc_hir::Ident::with_empty_span("main".into()), signature.clone())
+            .define_function(
+                midenc_hir::Ident::with_empty_span("main".into()),
+                midenc_hir::Visibility::Public,
+                signature.clone(),
+            )
             .unwrap()
     };
     {
@@ -247,20 +244,16 @@ fn load_u8() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes load for u8 when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::U8)))],
-        [AbiParam::new(Type::U8)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::U8))], [Type::U8], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u8>(), move |value| {
@@ -316,20 +309,16 @@ fn load_u16() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes load for u16 when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::U16)))],
-        [AbiParam::new(Type::U16)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::U16))], [Type::U16], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<u16>(), move |value| {
@@ -376,6 +365,121 @@ fn load_u16() {
     }
 }
 
+macro_rules! define_unaligned_16bit_load_tests {
+    (
+        $run_fn:ident,
+        $rust_ty:ty,
+        $hir_ty:expr,
+        $offset_1_test:ident,
+        $offset_2_test:ident,
+        $offset_3_test:ident
+    ) => {
+        #[doc = concat!(
+                    "Runs a `",
+                    stringify!($rust_ty),
+                    "` load test from the specified unaligned byte offset."
+                )]
+        fn $run_fn(offset: u32) {
+            setup::enable_compiler_instrumentation();
+
+            let write_to = 17 * 2u32.pow(16);
+            let read_from = write_to + offset;
+
+            let (package, context) = compile_test_module(
+                [Type::from(PointerType::new($hir_ty))],
+                [$hir_ty],
+                |builder| {
+                    let block = builder.current_block();
+                    let ptr = block.borrow().arguments()[0] as ValueRef;
+                    let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+                    builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+                },
+            );
+
+            let config = proptest::test_runner::Config::with_cases(10);
+            let res = TestRunner::new(config).run(&any::<$rust_ty>(), move |value| {
+                let expected = value.to_le_bytes();
+                let mut initial_bytes = [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88];
+                initial_bytes[offset as usize] = expected[0];
+                initial_bytes[offset as usize + 1] = expected[1];
+                let initializers = [Initializer::MemoryBytes {
+                    addr: write_to,
+                    bytes: &initial_bytes,
+                }];
+
+                let args = [Felt::new(read_from as u64)];
+                let output = eval_package::<$rust_ty, _, _>(
+                    &package,
+                    initializers,
+                    &args,
+                    context.session(),
+                    |_| Ok(()),
+                )?;
+
+                prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
+
+                Ok(())
+            });
+
+            match res {
+                Err(TestError::Fail(reason, value)) => {
+                    panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
+                }
+                Ok(_) => (),
+                _ => panic!("Unexpected test result: {res:?}"),
+            }
+        }
+
+        #[doc = concat!(
+                    "Tests that loading a `",
+                    stringify!($rust_ty),
+                    "` from byte offset 1 stays within the current element."
+                )]
+        #[test]
+        fn $offset_1_test() {
+            $run_fn(1);
+        }
+
+        #[doc = concat!(
+                    "Tests that loading a `",
+                    stringify!($rust_ty),
+                    "` from byte offset 2 stays within the current element."
+                )]
+        #[test]
+        fn $offset_2_test() {
+            $run_fn(2);
+        }
+
+        #[doc = concat!(
+                    "Tests that loading a `",
+                    stringify!($rust_ty),
+                    "` from byte offset 3 correctly reconstructs the value across the next element \
+                     boundary."
+                )]
+        #[test]
+        fn $offset_3_test() {
+            $run_fn(3);
+        }
+    };
+}
+
+define_unaligned_16bit_load_tests!(
+    run_load_unaligned_u16,
+    u16,
+    Type::U16,
+    load_unaligned_u16_offset_1,
+    load_unaligned_u16_offset_2,
+    load_unaligned_u16
+);
+define_unaligned_16bit_load_tests!(
+    run_load_unaligned_i16,
+    i16,
+    Type::I16,
+    load_unaligned_i16_offset_1,
+    load_unaligned_i16_offset_2,
+    load_unaligned_i16
+);
+
 /// Tests the memory load intrinsic for loads of boolean (i.e. 1-bit) values
 #[test]
 fn load_bool() {
@@ -385,20 +489,16 @@ fn load_bool() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes load for bool when lowered to MASM
-    let signature = Signature::new(
-        [AbiParam::new(Type::from(PointerType::new(Type::I1)))],
-        [AbiParam::new(Type::I1)],
-    );
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
-        let block = builder.current_block();
-        // Get the input pointer, and load the value at that address
-        let ptr = block.borrow().arguments()[0] as ValueRef;
-        let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
-        // Return the value so we can assert that the output of execution matches
-        builder.ret(Some(loaded), SourceSpan::default()).unwrap();
-    });
+    let (package, context) =
+        compile_test_module([Type::from(PointerType::new(Type::I1))], [Type::I1], |builder| {
+            let block = builder.current_block();
+            // Get the input pointer, and load the value at that address
+            let ptr = block.borrow().arguments()[0] as ValueRef;
+            let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
+            // Return the value so we can assert that the output of execution matches
+            builder.ret(Some(loaded), SourceSpan::default()).unwrap();
+        });
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<bool>(), move |value| {
@@ -460,12 +560,8 @@ fn store_u16() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that stores two u16 values
-    let signature = Signature::new(
-        [AbiParam::new(Type::U16), AbiParam::new(Type::U16)],
-        [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
-    );
-
-    let (package, context) = compile_test_module(signature, |builder| {
+    // Return u32 to satisfy test infrastructure
+    let (package, context) = compile_test_module([Type::U16, Type::U16], [Type::U32], |builder| {
         let block = builder.current_block();
         let (value1, value2) = {
             let block_ref = block.borrow();
@@ -527,8 +623,8 @@ fn store_u16() {
                 bytes: &initial_bytes,
             }];
 
-            // Note: Arguments are pushed in reverse order on the stack in Miden
-            let args = [Felt::new(store_value2 as u64), Felt::new(store_value1 as u64)];
+            // C calling convention: first argument on top of the stack
+            let args = [Felt::new(store_value1 as u64), Felt::new(store_value2 as u64)];
             let output = eval_package::<u32, _, _>(
                 &package,
                 initializers,
@@ -589,6 +685,165 @@ fn store_u16() {
     }
 }
 
+macro_rules! define_unaligned_16bit_store_tests {
+    (
+        $run_fn:ident,
+        $rust_ty:ty,
+        $hir_ty:expr,
+        $to_felt:expr,
+        $offset_1_test:ident,
+        $offset_2_test:ident,
+        $offset_3_test:ident
+    ) => {
+        #[doc = concat!(
+                    "Runs a `",
+                    stringify!($rust_ty),
+                    "` store test at the specified unaligned byte offset."
+                )]
+        fn $run_fn(offset: u32) {
+            setup::enable_compiler_instrumentation();
+
+            let write_to = 17 * 2u32.pow(16);
+            let store_to = write_to + offset;
+
+            let (package, context) = compile_test_module([$hir_ty], [Type::U32], |builder| {
+                let block = builder.current_block();
+                let value = block.borrow().arguments()[0] as ValueRef;
+
+                let addr = builder.u32(store_to, SourceSpan::default());
+                let ptr = builder
+                    .inttoptr(addr, Type::from(PointerType::new($hir_ty)), SourceSpan::default())
+                    .unwrap();
+
+                builder.store(ptr, value, SourceSpan::default()).unwrap();
+
+                let result = builder.u32(1, SourceSpan::default());
+                builder.ret(Some(result), SourceSpan::default()).unwrap();
+            });
+
+            let config = proptest::test_runner::Config::with_cases(32);
+            let res = TestRunner::new(config).run(&any::<$rust_ty>(), move |store_value| {
+                let initial_bytes = [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88];
+                let initializers = [Initializer::MemoryBytes {
+                    addr: write_to,
+                    bytes: &initial_bytes,
+                }];
+
+                let args = [($to_felt)(store_value)];
+                let output = eval_package::<u32, _, _>(
+                    &package,
+                    initializers,
+                    &args,
+                    context.session(),
+                    |trace| {
+                        let expected = store_value.to_le_bytes();
+                        let mut expected_bytes = initial_bytes;
+                        expected_bytes[offset as usize] = expected[0];
+                        expected_bytes[offset as usize + 1] = expected[1];
+
+                        let word0 =
+                            trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
+                                TestCaseError::fail(format!(
+                                    "failed to read from byte address {write_to}"
+                                ))
+                            })?;
+                        let word1 =
+                            trace.read_from_rust_memory::<u32>(write_to + 4).ok_or_else(|| {
+                                TestCaseError::fail(format!(
+                                    "failed to read from byte address {}",
+                                    write_to + 4
+                                ))
+                            })?;
+                        let observed_bytes = [
+                            (word0 & 0xff) as u8,
+                            ((word0 >> 8) & 0xff) as u8,
+                            ((word0 >> 16) & 0xff) as u8,
+                            ((word0 >> 24) & 0xff) as u8,
+                            (word1 & 0xff) as u8,
+                            ((word1 >> 8) & 0xff) as u8,
+                            ((word1 >> 16) & 0xff) as u8,
+                            ((word1 >> 24) & 0xff) as u8,
+                        ];
+
+                        for (index, (stored, expected_byte)) in
+                            observed_bytes.into_iter().zip(expected_bytes).enumerate()
+                        {
+                            prop_assert_eq!(
+                                stored,
+                                expected_byte,
+                                "unexpected byte at address {}",
+                                write_to + index as u32
+                            );
+                        }
+
+                        Ok(())
+                    },
+                )?;
+
+                prop_assert_eq!(output, 1u32);
+                Ok(())
+            });
+
+            match res {
+                Err(TestError::Fail(reason, value)) => {
+                    panic!("FAILURE: {}\nMinimal failing case: {value:?}", reason.message());
+                }
+                Ok(_) => (),
+                _ => panic!("Unexpected test result: {res:?}"),
+            }
+        }
+
+        #[doc = concat!(
+                    "Tests that storing a `",
+                    stringify!($rust_ty),
+                    "` at byte offset 1 updates only the target bytes."
+                )]
+        #[test]
+        fn $offset_1_test() {
+            $run_fn(1);
+        }
+
+        #[doc = concat!(
+                    "Tests that storing a `",
+                    stringify!($rust_ty),
+                    "` at byte offset 2 updates only the target bytes."
+                )]
+        #[test]
+        fn $offset_2_test() {
+            $run_fn(2);
+        }
+
+        #[doc = concat!(
+                    "Tests that storing a `",
+                    stringify!($rust_ty),
+                    "` at byte offset 3 updates only the target bytes across the element boundary."
+                )]
+        #[test]
+        fn $offset_3_test() {
+            $run_fn(3);
+        }
+    };
+}
+
+define_unaligned_16bit_store_tests!(
+    run_store_unaligned_u16,
+    u16,
+    Type::U16,
+    |store_value: u16| Felt::new(store_value as u64),
+    store_unaligned_u16_offset_1,
+    store_unaligned_u16_offset_2,
+    store_unaligned_u16
+);
+define_unaligned_16bit_store_tests!(
+    run_store_unaligned_i16,
+    i16,
+    Type::I16,
+    |store_value: i16| Felt::new(store_value as u16 as u64),
+    store_unaligned_i16_offset_1,
+    store_unaligned_i16_offset_2,
+    store_unaligned_i16
+);
+
 /// Tests that u8 stores only affect the targeted byte and don't corrupt surrounding memory
 #[test]
 fn store_u8() {
@@ -598,17 +853,9 @@ fn store_u8() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that stores four u8 values
-    let signature = Signature::new(
-        [
-            AbiParam::new(Type::U8),
-            AbiParam::new(Type::U8),
-            AbiParam::new(Type::U8),
-            AbiParam::new(Type::U8),
-        ],
-        [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
-    );
-
-    let (package, context) = compile_test_module(signature, |builder| {
+    // Return u32 to satisfy test infrastructure
+    let params = [Type::U8, Type::U8, Type::U8, Type::U8];
+    let (package, context) = compile_test_module(params, [Type::U32], |builder| {
         let block = builder.current_block();
         let (value0, value1, value2, value3) = {
             let block_ref = block.borrow();
@@ -725,12 +972,12 @@ fn store_u8() {
                 bytes: &initial_bytes,
             }];
 
-            // Note: Arguments are pushed in reverse order on the stack in Miden
+            // C calling convention: first argument on top of the stack
             let args = [
-                Felt::new(store_value3 as u64),
-                Felt::new(store_value2 as u64),
-                Felt::new(store_value1 as u64),
                 Felt::new(store_value0 as u64),
+                Felt::new(store_value1 as u64),
+                Felt::new(store_value2 as u64),
+                Felt::new(store_value3 as u64),
             ];
             let output = eval_package::<u32, _, _>(
                 &package,
@@ -818,13 +1065,9 @@ fn store_unaligned_u32() {
     let write_val = 0xddccbbaa_u32; // Little-endian bytes will be [AA BB CC DD].
 
     // Generate a `test` module with `main` function that stores to a u32 offset.
-    let signature = Signature::new(
-        [AbiParam::new(Type::U32)],
-        [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
-    );
-
+    // Return u32 to satisfy test infrastructure
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
+    let (package, context) = compile_test_module([Type::U32], [Type::U32], |builder| {
         let block = builder.current_block();
         let idx_val = block.borrow().arguments()[0] as ValueRef;
 
@@ -906,10 +1149,8 @@ fn load_unaligned_u64() {
     let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that loads from `write_to` + a passed offset.
-    let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U64)]);
-
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
+    let (package, context) = compile_test_module([Type::U32], [Type::U64], |builder| {
         let block = builder.current_block();
 
         // Get the offset, add it to the base address and load the 64bit value there.
@@ -943,8 +1184,8 @@ fn load_unaligned_u64() {
             |trace| {
                 //
                 let stack = trace.outputs();
-                let hi: u64 = stack.get_stack_item(0).unwrap().into();
-                let lo: u64 = stack.get_stack_item(1).unwrap().into();
+                let hi: u64 = stack.get_element(0).unwrap().as_canonical_u64();
+                let lo: u64 = stack.get_element(1).unwrap().as_canonical_u64();
 
                 eprintln!("hi limb = 0x{hi:08x}");
                 eprintln!("lo limb = 0x{lo:08x}");
@@ -976,13 +1217,9 @@ fn store_unaligned_u64() {
     let write_val = 0xcdabffee_ddccbbaa_u64;
 
     // Generate a `test` module with `main` function that stores to a u32 offset.
-    let signature = Signature::new(
-        [AbiParam::new(Type::U32)],
-        [AbiParam::new(Type::U32)], // Return u32 to satisfy test infrastructure
-    );
-
+    // Return u32 to satisfy test infrastructure
     // Compile once outside the test loop
-    let (package, context) = compile_test_module(signature, |builder| {
+    let (package, context) = compile_test_module([Type::U32], [Type::U32], |builder| {
         let block = builder.current_block();
         let idx_val = block.borrow().arguments()[0] as ValueRef;
 

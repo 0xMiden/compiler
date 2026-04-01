@@ -1,11 +1,11 @@
 use miden_stdlib_sys::{Felt, Word};
 
-use super::types::{AccountId, Asset};
+use super::types::{AccountId, Asset, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
     #[link_name = "miden::protocol::active_account::get_id"]
-    fn extern_active_account_get_id(ptr: *mut AccountId);
+    fn extern_active_account_get_id(ptr: *mut RawAccountId);
     #[link_name = "miden::protocol::active_account::get_nonce"]
     fn extern_active_account_get_nonce() -> Felt;
     #[link_name = "miden::protocol::active_account::get_initial_commitment"]
@@ -18,19 +18,35 @@ unsafe extern "C" {
     fn extern_active_account_get_initial_storage_commitment(ptr: *mut Word);
     #[link_name = "miden::protocol::active_account::compute_storage_commitment"]
     fn extern_active_account_compute_storage_commitment(ptr: *mut Word);
+    #[link_name = "miden::protocol::active_account::get_asset"]
+    fn extern_active_account_get_asset(
+        asset_key_0: Felt,
+        asset_key_1: Felt,
+        asset_key_2: Felt,
+        asset_key_3: Felt,
+        ptr: *mut Word,
+    );
+    #[link_name = "miden::protocol::active_account::get_initial_asset"]
+    fn extern_active_account_get_initial_asset(
+        asset_key_0: Felt,
+        asset_key_1: Felt,
+        asset_key_2: Felt,
+        asset_key_3: Felt,
+        ptr: *mut Word,
+    );
     #[link_name = "miden::protocol::active_account::get_balance"]
-    fn extern_active_account_get_balance(faucet_id_prefix: Felt, faucet_id_suffix: Felt) -> Felt;
+    fn extern_active_account_get_balance(faucet_id_suffix: Felt, faucet_id_prefix: Felt) -> Felt;
     #[link_name = "miden::protocol::active_account::get_initial_balance"]
     fn extern_active_account_get_initial_balance(
-        faucet_id_prefix: Felt,
         faucet_id_suffix: Felt,
+        faucet_id_prefix: Felt,
     ) -> Felt;
     #[link_name = "miden::protocol::active_account::has_non_fungible_asset"]
     fn extern_active_account_has_non_fungible_asset(
-        asset_3: Felt,
-        asset_2: Felt,
-        asset_1: Felt,
         asset_0: Felt,
+        asset_1: Felt,
+        asset_2: Felt,
+        asset_3: Felt,
     ) -> Felt;
     #[link_name = "miden::protocol::active_account::get_initial_vault_root"]
     fn extern_active_account_get_initial_vault_root(ptr: *mut Word);
@@ -42,19 +58,19 @@ unsafe extern "C" {
     fn extern_active_account_get_procedure_root(index: Felt, ptr: *mut Word);
     #[link_name = "miden::protocol::active_account::has_procedure"]
     fn extern_active_account_has_procedure(
-        proc_root_3: Felt,
-        proc_root_2: Felt,
-        proc_root_1: Felt,
         proc_root_0: Felt,
+        proc_root_1: Felt,
+        proc_root_2: Felt,
+        proc_root_3: Felt,
     ) -> Felt;
 }
 
 /// Returns the account ID of the active account.
 pub fn get_id() -> AccountId {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<AccountId>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<RawAccountId>::uninit();
         extern_active_account_get_id(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.assume_init().into_account_id()
     }
 }
 
@@ -70,7 +86,7 @@ pub fn get_initial_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_initial_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init()
     }
 }
 
@@ -80,7 +96,7 @@ pub fn compute_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_compute_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init()
     }
 }
 
@@ -90,7 +106,7 @@ pub fn get_code_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_code_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init()
     }
 }
 
@@ -100,7 +116,7 @@ pub fn get_initial_storage_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_initial_storage_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init()
     }
 }
 
@@ -110,7 +126,37 @@ pub fn compute_storage_commitment() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_compute_storage_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init()
+    }
+}
+
+/// Returns the current value stored under the specified `asset_key` in the active account vault.
+pub fn get_asset(asset_key: Word) -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_active_account_get_asset(
+            asset_key[0],
+            asset_key[1],
+            asset_key[2],
+            asset_key[3],
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.assume_init()
+    }
+}
+
+/// Returns the initial value stored under the specified `asset_key` in the active account vault.
+pub fn get_initial_asset(asset_key: Word) -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_active_account_get_initial_asset(
+            asset_key[0],
+            asset_key[1],
+            asset_key[2],
+            asset_key[3],
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.assume_init()
     }
 }
 
@@ -121,13 +167,13 @@ pub fn compute_storage_commitment() -> Word {
 /// Propagates kernel errors if the referenced asset is non-fungible or the
 /// account vault invariants are violated.
 pub fn get_balance(faucet_id: AccountId) -> Felt {
-    unsafe { extern_active_account_get_balance(faucet_id.prefix, faucet_id.suffix) }
+    unsafe { extern_active_account_get_balance(faucet_id.suffix, faucet_id.prefix) }
 }
 
 /// Returns the initial balance of the fungible asset identified by `faucet_id`.
 #[inline]
 pub fn get_initial_balance(faucet_id: AccountId) -> Felt {
-    unsafe { extern_active_account_get_initial_balance(faucet_id.prefix, faucet_id.suffix) }
+    unsafe { extern_active_account_get_initial_balance(faucet_id.suffix, faucet_id.prefix) }
 }
 
 /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
@@ -135,11 +181,11 @@ pub fn get_initial_balance(faucet_id: AccountId) -> Felt {
 pub fn has_non_fungible_asset(asset: Asset) -> bool {
     unsafe {
         extern_active_account_has_non_fungible_asset(
-            asset.inner[3],
-            asset.inner[2],
-            asset.inner[1],
-            asset.inner[0],
-        ) != Felt::from_u32(0)
+            asset.key[0],
+            asset.key[1],
+            asset.key[2],
+            asset.key[3],
+        ) != Felt::new(0)
     }
 }
 
@@ -149,7 +195,7 @@ pub fn get_initial_vault_root() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_initial_vault_root(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init()
     }
 }
 
@@ -159,7 +205,7 @@ pub fn get_vault_root() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_active_account_get_vault_root(ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        ret_area.assume_init()
     }
 }
 
@@ -174,8 +220,8 @@ pub fn get_num_procedures() -> Felt {
 pub fn get_procedure_root(index: u8) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        extern_active_account_get_procedure_root(index.into(), ret_area.as_mut_ptr());
-        ret_area.assume_init().reverse()
+        extern_active_account_get_procedure_root(Felt::new(index as u64), ret_area.as_mut_ptr());
+        ret_area.assume_init()
     }
 }
 
@@ -183,8 +229,8 @@ pub fn get_procedure_root(index: u8) -> Word {
 #[inline]
 pub fn has_procedure(proc_root: Word) -> bool {
     unsafe {
-        extern_active_account_has_procedure(proc_root[3], proc_root[2], proc_root[1], proc_root[0])
-            != Felt::from_u32(0)
+        extern_active_account_has_procedure(proc_root[0], proc_root[1], proc_root[2], proc_root[3])
+            != Felt::new(0)
     }
 }
 
@@ -232,6 +278,20 @@ pub trait ActiveAccount {
     #[inline]
     fn compute_storage_commitment(&self) -> Word {
         compute_storage_commitment()
+    }
+
+    /// Returns the current value stored under the specified `asset_key` in the active account
+    /// vault.
+    #[inline]
+    fn get_asset(&self, asset_key: Word) -> Word {
+        get_asset(asset_key)
+    }
+
+    /// Returns the initial value stored under the specified `asset_key` in the active account
+    /// vault.
+    #[inline]
+    fn get_initial_asset(&self, asset_key: Word) -> Word {
+        get_initial_asset(asset_key)
     }
 
     /// Returns the balance of the fungible asset identified by `faucet_id`.

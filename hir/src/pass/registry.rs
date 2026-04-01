@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, collections::BTreeMap, format, sync::Arc};
+use alloc::{boxed::Box, collections::BTreeMap, format};
 use core::any::TypeId;
 
 use midenc_hir_symbol::sync::{LazyLock, RwLock};
@@ -33,7 +33,7 @@ impl PassRegistry {
                     arg: pass.0.arg,
                     description: pass.0.description,
                     type_id: pass.0.type_id,
-                    builder: Arc::clone(&pass.0.builder),
+                    builder: pass.0.builder,
                 },
             );
         }
@@ -44,7 +44,7 @@ impl PassRegistry {
                     arg: pipeline.0.arg,
                     description: pipeline.0.description,
                     type_id: pipeline.0.type_id,
-                    builder: Arc::clone(&pipeline.0.builder),
+                    builder: pipeline.0.builder,
                 },
             );
         }
@@ -102,7 +102,10 @@ impl PassRegistry {
                      type",
                     info.argument()
                 );
-                assert!(Arc::ptr_eq(&entry.get().builder, &info.0.builder))
+                assert!(core::ptr::addr_eq(
+                    entry.get().builder as *const (),
+                    info.0.builder as *const ()
+                ));
             }
         }
     }
@@ -112,13 +115,11 @@ inventory::collect!(PassInfo);
 inventory::collect!(PassPipelineInfo);
 
 /// A type alias for the closure type for registering a pass with a pass manager
-pub type PassRegistryFunction = dyn Fn(&mut OpPassManager, &str, &DiagnosticsHandler) -> Result<(), Report>
-    + Send
-    + Sync
-    + 'static;
+pub type PassRegistryFunction =
+    fn(&mut OpPassManager, &str, &DiagnosticsHandler) -> Result<(), Report>;
 
 /// A type alias for the closure type used for type-erased pass constructors
-pub type PassAllocatorFunction = dyn Fn() -> Box<dyn OperationPass>;
+pub type PassAllocatorFunction = fn() -> Box<dyn OperationPass>;
 
 /// A [RegistryEntry] is a registered pass or pass pipeline.
 ///
@@ -152,7 +153,7 @@ struct PassRegistryEntry {
     /// The type id of the concrete pass type
     type_id: Option<TypeId>,
     /// Function that registers this entry with a pass manager pipeline
-    builder: Arc<PassRegistryFunction>,
+    builder: PassAllocatorFunction,
 }
 impl RegistryEntry for PassRegistryEntry {
     #[inline]
@@ -162,7 +163,7 @@ impl RegistryEntry for PassRegistryEntry {
         options: &str,
         diagnostics: &DiagnosticsHandler,
     ) -> Result<(), Report> {
-        (self.builder)(pm, options, diagnostics)
+        default_registration_factory(self.builder)(pm, options, diagnostics)
     }
 
     #[inline(always)]
@@ -179,18 +180,16 @@ impl RegistryEntry for PassRegistryEntry {
 /// Information about a registered pass pipeline
 pub struct PassPipelineInfo(PassRegistryEntry);
 impl PassPipelineInfo {
-    pub fn new<B>(arg: &'static str, description: &'static str, builder: B) -> Self
-    where
-        B: Fn(&mut OpPassManager, &str, &DiagnosticsHandler) -> Result<(), Report>
-            + Send
-            + Sync
-            + 'static,
-    {
+    pub fn new<B>(
+        arg: &'static str,
+        description: &'static str,
+        builder: PassAllocatorFunction,
+    ) -> Self {
         Self(PassRegistryEntry {
             arg,
             description,
             type_id: None,
-            builder: Arc::new(builder),
+            builder,
         })
     }
 
@@ -223,13 +222,27 @@ pub struct PassInfo(PassRegistryEntry);
 impl PassInfo {
     /// Create a new [PassInfo] from the given argument name and description, for a default-
     /// constructible pass type `P`.
-    pub fn new<P: Pass + Default>(arg: &'static str, description: &'static str) -> Self {
+    pub const fn new<P: Pass + Default>(arg: &'static str, description: &'static str) -> Self {
         let type_id = TypeId::of::<P>();
         Self(PassRegistryEntry {
             arg,
             description,
             type_id: Some(type_id),
-            builder: Arc::new(default_registration::<P>),
+            builder: default_instance::<P>,
+        })
+    }
+
+    pub const fn new_with_builder<P: Pass>(
+        arg: &'static str,
+        description: &'static str,
+        builder: PassAllocatorFunction,
+    ) -> Self {
+        let type_id = TypeId::of::<P>();
+        Self(PassRegistryEntry {
+            arg,
+            description,
+            type_id: Some(type_id),
+            builder,
         })
     }
 
@@ -285,18 +298,16 @@ impl RegistryEntry for PassInfo {
 /// NOTE: The functions/closures passed above are required to be `Send + Sync + 'static`, as they
 /// are stored in the global registry for the lifetime of the program, and may be accessed from any
 /// thread.
-pub fn register_pass_pipeline<B, O>(arg: &'static str, description: &'static str, builder: B)
-where
-    B: Fn(&mut OpPassManager, &str, &DiagnosticsHandler) -> Result<(), Report>
-        + Send
-        + Sync
-        + 'static,
-{
+pub fn register_pass_pipeline(
+    arg: &'static str,
+    description: &'static str,
+    builder: PassAllocatorFunction,
+) {
     PASS_REGISTRY.register_pipeline(PassPipelineInfo(PassRegistryEntry {
         arg,
         description,
         type_id: None,
-        builder: Arc::new(builder),
+        builder,
     }));
 }
 
@@ -311,8 +322,8 @@ where
 /// NOTE: The allocator function provided is required to be `Send + Sync + 'static`, as it is
 /// stored in the global registry for the lifetime of the program, and may be accessed from any
 /// thread.
-pub fn register_pass(ctor: impl Fn() -> Box<dyn OperationPass> + Send + Sync + 'static) {
-    let pass = ctor();
+pub fn register_pass(builder: PassAllocatorFunction) {
+    let pass = builder();
     let type_id = pass.as_any().type_id();
     let arg = pass.argument();
     assert!(
@@ -325,7 +336,7 @@ pub fn register_pass(ctor: impl Fn() -> Box<dyn OperationPass> + Send + Sync + '
         arg,
         description,
         type_id: Some(type_id),
-        builder: Arc::new(default_registration_factory(ctor)),
+        builder,
     }));
 }
 
@@ -346,7 +357,10 @@ pub fn default_registration<P: Pass + Default>(
     let pm_op_name = pm.name();
     let pass_op_name = pass.target_name(&pm.context());
     let pass_op_name = pass_op_name.as_ref();
-    if matches!(pm.nesting(), Nesting::Explicit) && pm_op_name != pass_op_name {
+    if matches!(pm.nesting(), Nesting::Explicit)
+        && (pass_op_name.is_some_and(|p| pm_op_name.is_none_or(|p2| p != p2))
+            || (pm_op_name.is_some_and(|p| pass_op_name.is_some_and(|p2| p != p2))))
+    {
         return Err(diagnostics
             .diagnostic(Severity::Error)
             .with_message(format!(
@@ -365,8 +379,8 @@ pub fn default_registration<P: Pass + Default>(
 /// Like [default_registration], but takes an arbitrary constructor in the form of a zero-arity
 /// closure, rather than relying on [Default]. Thus, this is actually a registration function
 /// _factory_, rather than a registration function itself.
-pub fn default_registration_factory<B: Fn() -> Box<dyn OperationPass> + Send + Sync + 'static>(
-    builder: B,
+pub fn default_registration_factory(
+    builder: PassAllocatorFunction,
 ) -> impl Fn(&mut OpPassManager, &str, &DiagnosticsHandler) -> Result<(), Report> + Send + Sync + 'static
 {
     use midenc_session::diagnostics::Severity;
@@ -379,7 +393,10 @@ pub fn default_registration_factory<B: Fn() -> Box<dyn OperationPass> + Send + S
         let pm_op_name = pm.name();
         let pass_op_name = pass.target_name(&pm.context());
         let pass_op_name = pass_op_name.as_ref();
-        if matches!(pm.nesting(), Nesting::Explicit) && pm_op_name != pass_op_name {
+        if matches!(pm.nesting(), Nesting::Explicit)
+            && (pass_op_name.is_some_and(|p| pm_op_name.is_none_or(|p2| p != p2))
+                || (pm_op_name.is_some_and(|p| pass_op_name.is_some_and(|p2| p != p2))))
+        {
             return Err(diagnostics
                 .diagnostic(Severity::Error)
                 .with_message(format!(
@@ -394,4 +411,8 @@ pub fn default_registration_factory<B: Fn() -> Box<dyn OperationPass> + Send + S
         pm.add_pass(pass);
         result
     }
+}
+
+fn default_instance<P: Pass + Default>() -> Box<dyn OperationPass> {
+    Box::<P>::default() as Box<dyn OperationPass>
 }

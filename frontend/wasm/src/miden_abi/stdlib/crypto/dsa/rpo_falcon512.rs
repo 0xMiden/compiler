@@ -9,14 +9,13 @@ use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 pub(crate) const RPO_FALCON512_VERIFY: &str = "verify";
 
 fn module_path() -> SymbolPath {
-    // Build 'std::crypto::dsa::rpo_falcon512' using interned symbol components
     let parts = [
         SymbolNameComponent::Root,
         SymbolNameComponent::Component(symbols::Miden),
         SymbolNameComponent::Component(symbols::Core),
         SymbolNameComponent::Component(symbols::Crypto),
         SymbolNameComponent::Component(symbols::Dsa),
-        SymbolNameComponent::Component(symbols::Falcon512Rpo),
+        SymbolNameComponent::Component(symbols::Falcon512Poseidon2),
     ];
     SymbolPath::from_iter(parts)
 }

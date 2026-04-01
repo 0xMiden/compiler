@@ -14,6 +14,7 @@ pub mod loops;
 mod op;
 mod operands;
 mod operation;
+pub mod parse;
 pub mod print;
 mod region;
 mod successor;
@@ -36,25 +37,33 @@ pub use self::{
     builder::{Builder, BuilderExt, InsertionGuard, Listener, ListenerType, OpBuilder},
     callable::*,
     context::Context,
-    dialect::{Dialect, DialectInfo, DialectRegistration, DialectRegistrationHook},
-    entity::{
-        Entity, EntityCursor, EntityCursorMut, EntityGroup, EntityId, EntityIter, EntityList,
-        EntityListItem, EntityMut, EntityParent, EntityProjection, EntityProjectionMut,
-        EntityRange, EntityRangeMut, EntityRef, EntityStorage, EntityWithId, EntityWithParent,
-        MaybeDefaultEntityIter, RawEntityRef, StorableEntity, UnsafeEntityRef,
-        UnsafeIntrusiveEntityRef,
+    dialect::{
+        Dialect, DialectAttributeRegistrationInfo, DialectInfo, DialectOpRegistrationInfo,
+        DialectRegistration, DialectRegistrationHook, DialectRegistrationHookInfo,
+        DialectRegistrationInfo,
     },
-    ident::{FunctionIdent, Ident},
-    immediates::{Felt, FieldElement, Immediate, StarkField},
+    entity::{
+        Entity, EntityGroup, EntityId, EntityList, EntityListCursor, EntityListCursorMut,
+        EntityListItem, EntityListIter, EntityMap, EntityMapCursor, EntityMapCursorMut,
+        EntityMapItem, EntityMapIter, EntityMut, EntityParent, EntityProjection,
+        EntityProjectionMut, EntityRange, EntityRangeMut, EntityRef, EntityStorage, EntityWithId,
+        EntityWithKey, EntityWithParent, MaybeDefaultEntityListIter, MaybeDefaultEntityMapIter,
+        RawEntityRef, StorableEntity, UnsafeEntityRef, UnsafeIntrusiveEntityRef,
+        UnsafeIntrusiveMapEntityRef,
+    },
+    ident::{FunctionIdent, Ident, IdentAttr},
+    immediates::{Felt, Immediate, ImmediateAttr},
     op::{BuildableOp, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,
         OpOperandStorage,
     },
     operation::{
-        OpCursor, OpCursorMut, OpList, Operation, OperationBuilder, OperationName, OperationRef,
+        AttrInfo, GenericOperationBuilder, OpCursor, OpCursorMut, OpList, Operation,
+        OperationBuilder, OperationName, OperationRef, OperationState, PendingSuccessorInfo,
         equivalence,
     },
+    parse::{OpAsmParser, OpParser, ParseResult},
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
     region::{
         InvocationBounds, LoopLikeOpInterface, Region, RegionBranchOpInterface, RegionBranchPoint,

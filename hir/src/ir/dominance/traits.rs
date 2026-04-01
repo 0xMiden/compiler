@@ -21,7 +21,7 @@ pub trait PostDominates<Rhs = Self> {
     ///
     /// In cases where `Rhs = Self`, implementations should return true when `self == other`.
     ///
-    /// For a stricter form of dominance, use [PostDominates::properly_dominates].
+    /// For a stricter form of dominance, use [Self::properly_post_dominates].
     fn post_dominates(&self, other: &Rhs, dom_info: &PostDominanceInfo) -> bool;
     /// Returns true if `self` properly post-dominates `other`.
     ///

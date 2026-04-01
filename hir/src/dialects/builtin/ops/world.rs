@@ -1,7 +1,7 @@
 use crate::{
-    Operation, RegionKind, RegionKindInterface, SymbolManager, SymbolManagerMut, SymbolMap,
-    SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
-    derive::operation,
+    OpPrinter, Operation, RegionKind, RegionKindInterface, SymbolManager, SymbolManagerMut,
+    SymbolMap, SymbolName, SymbolRef, SymbolTable, SymbolUseList, UnsafeIntrusiveEntityRef, Usable,
+    derive::{OpParser, OpPrinter, operation},
     dialects::builtin::BuiltinDialect,
     traits::{
         GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
@@ -12,13 +12,14 @@ use crate::{
 pub type WorldRef = UnsafeIntrusiveEntityRef<World>;
 
 /// A [World] is a component abstraction operation, i.e. it is designed to tie particular
-/// [Component]s together.
+/// [super::Component]s together.
 ///
-/// Worlds can contain only [Component]s.
+/// Worlds can contain only [super::Component]s.
 ///
 /// NOTE: Worlds always have `Public` visibility.
 ///
 /// Worlds are linked into Miden Assembly according to the following rules:
+#[derive(OpPrinter, OpParser)]
 #[operation(
     dialect = BuiltinDialect,
     traits(
@@ -30,7 +31,7 @@ pub type WorldRef = UnsafeIntrusiveEntityRef<World>;
         GraphRegionNoTerminator,
         IsolatedFromAbove,
     ),
-    implements(RegionKindInterface, SymbolTable)
+    implements(RegionKindInterface, SymbolTable, OpPrinter)
 )]
 pub struct World {
     #[region]

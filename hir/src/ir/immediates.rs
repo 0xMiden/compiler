@@ -3,11 +3,19 @@ use core::{
     hash::{Hash, Hasher},
 };
 
-pub use miden_core::{Felt, FieldElement, StarkField};
+pub use miden_core::Felt;
 
-use crate::{Type, formatter::PrettyPrint};
+use super::{AttrPrinter, parse::ParserExt};
+use crate::{
+    Type,
+    attributes::{AttrParser, InferAttributeType, IntegerLikeAttr},
+    derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect,
+    formatter::PrettyPrint,
+};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(DialectAttribute, Debug, Copy, Clone)]
+#[attribute(name = "number", dialect = BuiltinDialect, implements(AttrPrinter, IntegerLikeAttr))]
 pub enum Immediate {
     I1(bool),
     U8(u8),
@@ -22,6 +30,64 @@ pub enum Immediate {
     I128(i128),
     F64(f64),
     Felt(Felt),
+}
+
+impl Default for Immediate {
+    fn default() -> Self {
+        // We choose this as a default as it represents a zero value in both Wasm and MASM
+        Self::I32(0)
+    }
+}
+
+impl IntegerLikeAttr for ImmediateAttr {
+    #[inline(always)]
+    fn as_immediate(&self) -> Immediate {
+        self.value
+    }
+
+    #[inline(always)]
+    fn set_from_immediate_lossy(&mut self, value: Immediate) {
+        self.value = value;
+    }
+}
+
+impl AttrPrinter for ImmediateAttr {
+    fn print(&self, printer: &mut super::print::AsmPrinter<'_>) {
+        match self.value {
+            Immediate::F64(_) => todo!("IR assembly support for floats"),
+            value => {
+                printer.print_decimal_integer(value);
+            }
+        }
+    }
+}
+
+impl AttrParser for ImmediateAttr {
+    fn parse(
+        parser: &mut dyn super::parse::Parser<'_>,
+    ) -> super::parse::ParseResult<crate::AttributeRef> {
+        use crate::parse::Token;
+
+        let imm = if parser.token_stream_mut().is_next(|tok| matches!(tok, Token::Minus)) {
+            Immediate::I128(parser.parse_decimal_integer::<i128>()?.into_inner())
+        } else {
+            Immediate::U128(parser.parse_decimal_integer::<u128>()?.into_inner())
+        };
+
+        Ok(parser.context_rc().create_attribute::<ImmediateAttr, _>(imm))
+    }
+}
+
+impl InferAttributeType for ImmediateAttr {
+    fn infer_type() -> Type {
+        // We cannot know the type of this attribute until we have a concrete value
+        Type::Unknown
+    }
+
+    #[inline]
+    fn infer_type_from_value(value: &<Self as crate::AttributeRegistration>::Value) -> Type {
+        value.ty()
+    }
 }
 
 impl Immediate {
@@ -98,7 +164,7 @@ impl Immediate {
             Self::I32(i) => Some(*i % 2 == 0),
             Self::U64(i) => Some((*i).is_multiple_of(2)),
             Self::I64(i) => Some(*i % 2 == 0),
-            Self::Felt(i) => Some(i.as_int().is_multiple_of(2)),
+            Self::Felt(i) => Some(i.as_canonical_u64().is_multiple_of(2)),
             Self::U128(i) => Some((*i).is_multiple_of(2)),
             Self::I128(i) => Some(*i % 2 == 0),
             Self::F64(_) => None,
@@ -119,7 +185,7 @@ impl Immediate {
             Self::I32(i) => Some(i != 0),
             Self::U64(i) => Some(i != 0),
             Self::I64(i) => Some(i != 0),
-            Self::Felt(i) => Some(i.as_int() != 0),
+            Self::Felt(i) => Some(i.as_canonical_u64() != 0),
             Self::U128(i) => Some(i != 0),
             Self::I128(i) => Some(i != 0),
             Self::F64(_) => None,
@@ -138,7 +204,7 @@ impl Immediate {
             Self::I32(b) => i8::try_from(b).ok().map(|v| v as u8),
             Self::U64(b) => u8::try_from(b).ok(),
             Self::I64(b) => i8::try_from(b).ok().map(|v| v as u8),
-            Self::Felt(i) => u8::try_from(i.as_int()).ok(),
+            Self::Felt(i) => u8::try_from(i.as_canonical_u64()).ok(),
             Self::U128(b) if b <= (u8::MAX as u128) => Some(b as u8),
             Self::U128(_) => None,
             Self::I128(b) if b < (i8::MIN as i128) || b > (i8::MAX as i128) => None,
@@ -159,7 +225,7 @@ impl Immediate {
             Self::I32(b) => i8::try_from(b).ok(),
             Self::U64(b) => i8::try_from(b as i64).ok(),
             Self::I64(b) => i8::try_from(b).ok(),
-            Self::Felt(i) => i8::try_from(i.as_int() as i64).ok(),
+            Self::Felt(i) => i8::try_from(i.as_canonical_u64() as i64).ok(),
             Self::U128(b) if b <= (u8::MAX as u128) => Some(b as u8 as i8),
             Self::U128(_) => None,
             Self::I128(b) if b < (i8::MIN as i128) || b > (i8::MAX as i128) => None,
@@ -180,7 +246,7 @@ impl Immediate {
             Self::I32(b) => i16::try_from(b).ok().map(|v| v as u16),
             Self::U64(b) => u16::try_from(b).ok(),
             Self::I64(b) => i16::try_from(b).ok().map(|v| v as u16),
-            Self::Felt(i) => u16::try_from(i.as_int()).ok(),
+            Self::Felt(i) => u16::try_from(i.as_canonical_u64()).ok(),
             Self::U128(b) if b <= (u16::MAX as u128) => Some(b as u16),
             Self::U128(_) => None,
             Self::I128(b) if b < (i16::MIN as i128) || b > (i16::MAX as i128) => None,
@@ -201,7 +267,7 @@ impl Immediate {
             Self::I32(b) => i16::try_from(b).ok(),
             Self::U64(b) => u16::try_from(b).ok().map(|v| v as i16),
             Self::I64(b) => i16::try_from(b).ok(),
-            Self::Felt(i) => u16::try_from(i.as_int()).ok().map(|v| v as i16),
+            Self::Felt(i) => u16::try_from(i.as_canonical_u64()).ok().map(|v| v as i16),
             Self::U128(b) if b <= (u16::MAX as u128) => Some(b as i16),
             Self::U128(_) => None,
             Self::I128(b) if b < (i16::MIN as i128) || b > (i16::MAX as i128) => None,
@@ -222,7 +288,7 @@ impl Immediate {
             Self::I32(b) => Some(b as u32),
             Self::U64(b) => u32::try_from(b).ok(),
             Self::I64(b) => i32::try_from(b).ok().map(|v| v as u32),
-            Self::Felt(i) => u32::try_from(i.as_int()).ok(),
+            Self::Felt(i) => u32::try_from(i.as_canonical_u64()).ok(),
             Self::U128(b) if b <= (u32::MAX as u128) => Some(b as u32),
             Self::U128(_) => None,
             Self::I128(b) if b < (i32::MIN as i128) || b > (i32::MAX as i128) => None,
@@ -243,7 +309,7 @@ impl Immediate {
             Self::I32(b) => Some(b),
             Self::U64(b) => u32::try_from(b).ok().map(|v| v as i32),
             Self::I64(b) => i32::try_from(b).ok(),
-            Self::Felt(i) => u32::try_from(i.as_int()).ok().map(|v| v as i32),
+            Self::Felt(i) => u32::try_from(i.as_canonical_u64()).ok().map(|v| v as i32),
             Self::U128(b) if b <= (u32::MAX as u128) => Some(b as i32),
             Self::U128(_) => None,
             Self::I128(b) if b < (i32::MIN as i128) || b > (i32::MAX as i128) => None,
@@ -264,7 +330,7 @@ impl Immediate {
             Self::I32(b) => Some(b as u64),
             Self::U64(b) => Some(b),
             Self::I64(b) => Some(b as u64),
-            Self::Felt(i) => Some(i.as_int()),
+            Self::Felt(i) => Some(i.as_canonical_u64()),
             Self::U128(b) if b <= (u64::MAX as u128) => Some(b as u64),
             Self::U128(_) => None,
             Self::I128(b) if b < (i64::MIN as i128) || b > (i64::MAX as i128) => None,
@@ -285,7 +351,7 @@ impl Immediate {
             Self::I32(b) => Some(b as i64),
             Self::U64(b) => Some(b as i64),
             Self::I64(b) => Some(b),
-            Self::Felt(i) => Some(i.as_int() as i64),
+            Self::Felt(i) => Some(i.as_canonical_u64() as i64),
             Self::U128(b) if b <= (u64::MAX as u128) => Some(b as i64),
             Self::U128(_) => None,
             Self::I128(b) if b < (i64::MIN as i128) || b > (i64::MAX as i128) => None,
@@ -306,7 +372,7 @@ impl Immediate {
             Self::I32(b) => Some(b as u128),
             Self::U64(b) => Some(b as u128),
             Self::I64(b) => Some(b as u128),
-            Self::Felt(i) => Some(i.as_int() as u128),
+            Self::Felt(i) => Some(i.as_canonical_u64() as u128),
             Self::U128(b) => Some(b),
             Self::I128(b) => Some(b as u128),
             Self::F64(f) => FloatToInt::<u128>::to_int(f).ok(),
@@ -325,7 +391,7 @@ impl Immediate {
             Self::I32(b) => Some(b as i128),
             Self::U64(b) => Some(b as i128),
             Self::I64(b) => Some(b as i128),
-            Self::Felt(i) => Some(i.as_int() as i128),
+            Self::Felt(i) => Some(i.as_canonical_u64() as i128),
             Self::U128(b) => Some(b as i128),
             Self::I128(b) => Some(b),
             Self::F64(f) => FloatToInt::<i128>::to_int(f).ok(),
@@ -352,10 +418,107 @@ impl Immediate {
             Self::I32(b) => Some(f64::from(b)),
             Self::U64(b) => Some(b as f64),
             Self::I64(b) => Some(b as f64),
-            Self::Felt(i) => Some(i.as_int() as f64),
+            Self::Felt(i) => Some(i.as_canonical_u64() as f64),
             Self::U128(b) => Some(b as f64),
             Self::I128(b) => Some(b as f64),
             Self::F64(f) => Some(f),
+        }
+    }
+
+    /// Attempts to convert this value to a u8
+    pub fn as_u8(self) -> Option<u8> {
+        match self {
+            Self::I1(b) => Some(b as u8),
+            Self::U8(b) => Some(b),
+            Self::I8(b) if b >= 0 => Some(b as u8),
+            Self::I8(_) => None,
+            Self::U16(b) => b.try_into().ok(),
+            Self::I16(b) if b >= 0 && b <= (u8::MAX as i16) => Some(b as u16 as u8),
+            Self::I16(_) => None,
+            Self::U32(b) => b.try_into().ok(),
+            Self::I32(b) if b >= 0 && b <= (u8::MAX as i32) => Some(b as u32 as u8),
+            Self::I32(_) => None,
+            Self::U64(b) => b.try_into().ok(),
+            Self::I64(b) if b >= 0 && b <= (u8::MAX as i64) => Some(b as u64 as u8),
+            Self::I64(_) => None,
+            Self::Felt(i) => i.as_canonical_u64().try_into().ok(),
+            Self::U128(b) => b.try_into().ok(),
+            Self::I128(b) if b >= 0 && b <= (u8::MAX as i128) => Some(b as u8),
+            Self::I128(_) => None,
+            Self::F64(f) => FloatToInt::<u8>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to i8
+    pub fn as_i8(self) -> Option<i8> {
+        match self {
+            Self::I1(i) => Some(i as u8 as i8),
+            Self::U8(i) => i.try_into().ok(),
+            Self::I8(i) => Some(i),
+            Self::U16(i) if i <= (i8::MAX as u16) => Some(i as i8),
+            Self::U16(_) => None,
+            Self::I16(i) => i.try_into().ok(),
+            Self::U32(i) if i <= (i8::MAX as u32) => Some(i as i8),
+            Self::U32(_) => None,
+            Self::I32(i) => i.try_into().ok(),
+            Self::U64(i) if i <= (i8::MAX as u64) => Some(i as i8),
+            Self::U64(_) => None,
+            Self::I64(i) => i.try_into().ok(),
+            Self::Felt(i) => i.as_canonical_u64().try_into().ok(),
+            Self::U128(i) if i <= (i8::MAX as u128) => Some(i as i8),
+            Self::U128(_) => None,
+            Self::I128(i) if i >= (i8::MIN as i128) && i <= (i8::MAX as i128) => Some(i as i8),
+            Self::I128(_) => None,
+            Self::F64(f) => FloatToInt::<i8>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to a u16
+    pub fn as_u16(self) -> Option<u16> {
+        match self {
+            Self::I1(b) => Some(b as u16),
+            Self::U8(b) => Some(b as u16),
+            Self::I8(b) if b >= 0 => Some(b as u16),
+            Self::I8(_) => None,
+            Self::U16(b) => Some(b),
+            Self::I16(b) if b >= 0 => Some(b as u16),
+            Self::I16(_) => None,
+            Self::U32(b) => b.try_into().ok(),
+            Self::I32(b) if b >= 0 && b <= (u16::MAX as i32) => Some(b as u32 as u16),
+            Self::I32(_) => None,
+            Self::U64(b) => b.try_into().ok(),
+            Self::I64(b) if b >= 0 => u64::try_from(b).ok()?.try_into().ok(),
+            Self::I64(_) => None,
+            Self::Felt(i) => i.as_canonical_u64().try_into().ok(),
+            Self::U128(b) if b <= (u16::MAX as u64 as u128) => Some(b as u16),
+            Self::U128(_) => None,
+            Self::I128(b) if b >= 0 && b <= (u16::MAX as i128) => Some(b as u16),
+            Self::I128(_) => None,
+            Self::F64(f) => FloatToInt::<u16>::to_int(f).ok(),
+        }
+    }
+
+    /// Attempts to convert this value to i16
+    pub fn as_i16(self) -> Option<i16> {
+        match self {
+            Self::I1(b) => Some(b as u16 as i16),
+            Self::U8(i) => Some(i as i16),
+            Self::I8(i) => Some(i as i16),
+            Self::U16(i) if i <= (i16::MAX as u16) => Some(i as i16),
+            Self::U16(_) => None,
+            Self::I16(i) => Some(i),
+            Self::U32(i) if i <= (i16::MAX as u32) => Some(i as i16),
+            Self::U32(_) => None,
+            Self::I32(i) => i.try_into().ok(),
+            Self::U64(i) if i <= (i16::MAX as u64) => Some(i as i16),
+            Self::U64(_) => None,
+            Self::I64(i) => i.try_into().ok(),
+            Self::Felt(i) => i.as_canonical_u64().try_into().ok(),
+            Self::U128(i) if i <= (i16::MAX as u16 as u128) => Some(i as u16 as i16),
+            Self::U128(_) => None,
+            Self::I128(i) if i >= (i16::MIN as i128) && i <= (i16::MAX as i128) => Some(i as i16),
+            Self::I128(_) => None,
+            Self::F64(f) => FloatToInt::<i16>::to_int(f).ok(),
         }
     }
 
@@ -375,7 +538,7 @@ impl Immediate {
             Self::U64(b) => u32::try_from(b).ok(),
             Self::I64(b) if b >= 0 => u32::try_from(b as u64).ok(),
             Self::I64(_) => None,
-            Self::Felt(i) => u32::try_from(i.as_int()).ok(),
+            Self::Felt(i) => u32::try_from(i.as_canonical_u64()).ok(),
             Self::U128(b) if b <= (u32::MAX as u64 as u128) => Some(b as u32),
             Self::U128(_) => None,
             Self::I128(b) if b >= 0 && b <= (u32::MAX as u64 as i128) => Some(b as u32),
@@ -387,7 +550,7 @@ impl Immediate {
     /// Attempts to convert this value to i32
     pub fn as_i32(self) -> Option<i32> {
         match self {
-            Self::I1(b) => Some(b as i32),
+            Self::I1(b) => Some(b as u32 as i32),
             Self::U8(i) => Some(i as i32),
             Self::I8(i) => Some(i as i32),
             Self::U16(i) => Some(i as i32),
@@ -396,7 +559,7 @@ impl Immediate {
             Self::I32(i) => Some(i),
             Self::U64(i) => i.try_into().ok(),
             Self::I64(i) => i.try_into().ok(),
-            Self::Felt(i) => i.as_int().try_into().ok(),
+            Self::Felt(i) => i.as_canonical_u64().try_into().ok(),
             Self::U128(i) if i <= (i32::MAX as u32 as u128) => Some(i as u32 as i32),
             Self::U128(_) => None,
             Self::I128(i) if i >= (i32::MIN as i128) && i <= (i32::MAX as i128) => Some(i as i32),
@@ -440,7 +603,7 @@ impl Immediate {
             Self::U64(i) => Some(i),
             Self::I64(i) if i >= 0 => Some(i as u64),
             Self::I64(_) => None,
-            Self::Felt(i) => Some(i.as_int()),
+            Self::Felt(i) => Some(i.as_canonical_u64()),
             Self::U128(i) => (i).try_into().ok(),
             Self::I128(i) if i >= 0 => (i).try_into().ok(),
             Self::I128(_) => None,
@@ -460,7 +623,7 @@ impl Immediate {
             Self::I32(i) => Some(i as i64),
             Self::U64(i) => (i).try_into().ok(),
             Self::I64(i) => Some(i),
-            Self::Felt(i) => i.as_int().try_into().ok(),
+            Self::Felt(i) => i.as_canonical_u64().try_into().ok(),
             Self::U128(i) if i <= i64::MAX as u128 => Some(i as u64 as i64),
             Self::U128(_) => None,
             Self::I128(i) => (i).try_into().ok(),
@@ -484,7 +647,7 @@ impl Immediate {
             Self::U64(i) => Some(i as u128),
             Self::I64(i) if i >= 0 => Some(i as u128),
             Self::I64(_) => None,
-            Self::Felt(i) => Some(i.as_int() as u128),
+            Self::Felt(i) => Some(i.as_canonical_u64() as u128),
             Self::U128(i) => Some(i),
             Self::I128(i) if i >= 0 => (i).try_into().ok(),
             Self::I128(_) => None,
@@ -504,7 +667,7 @@ impl Immediate {
             Self::I32(i) => Some(i as i128),
             Self::U64(i) => Some(i as i128),
             Self::I64(i) => Some(i as i128),
-            Self::Felt(i) => Some(i.as_int() as i128),
+            Self::Felt(i) => Some(i.as_canonical_u64() as i128),
             Self::U128(i) if i <= i128::MAX as u128 => Some(i as i128),
             Self::U128(_) => None,
             Self::I128(i) => Some(i),
@@ -557,7 +720,7 @@ impl Hash for Immediate {
                 let bytes = f.to_be_bytes();
                 bytes.hash(state)
             }
-            Self::Felt(i) => i.as_int().hash(state),
+            Self::Felt(i) => i.as_canonical_u64().hash(state),
         }
     }
 }
@@ -604,7 +767,7 @@ impl PartialEq<isize> for Immediate {
             Self::I128(x) => x == y as i128,
             Self::F64(_) => false,
             Self::Felt(_) if y < 0 => false,
-            Self::Felt(x) => x.as_int() == y as i64 as u64,
+            Self::Felt(x) => x.as_canonical_u64() == y as i64 as u64,
         }
     }
 }
@@ -779,6 +942,18 @@ impl From<i128> for Immediate {
         Self::I128(value)
     }
 }
+impl From<usize> for Immediate {
+    #[inline(always)]
+    fn from(value: usize) -> Self {
+        Self::U64(value as u64)
+    }
+}
+impl From<isize> for Immediate {
+    #[inline(always)]
+    fn from(value: isize) -> Self {
+        Self::I64(value as i64)
+    }
+}
 impl From<f64> for Immediate {
     #[inline(always)]
     fn from(value: f64) -> Self {
@@ -789,6 +964,12 @@ impl From<char> for Immediate {
     #[inline(always)]
     fn from(value: char) -> Self {
         Self::I32(value as u32 as i32)
+    }
+}
+impl From<Felt> for Immediate {
+    #[inline(always)]
+    fn from(value: Felt) -> Self {
+        Self::Felt(value)
     }
 }
 

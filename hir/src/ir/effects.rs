@@ -3,14 +3,14 @@ mod interface;
 mod memory;
 mod speculation;
 
-use core::{any::Any, fmt};
+use core::fmt;
 
 pub use self::{instance::EffectInstance, interface::*, memory::*, speculation::*};
-use crate::DynPartialEq;
+use crate::{DynPartialEq, any::AsAny, eq::PartialEqable};
 
-pub trait Effect: Any + fmt::Debug {}
+pub trait Effect: AsAny + fmt::Debug {}
 
-pub trait Resource: Any + DynPartialEq + fmt::Debug {
+pub trait Resource: AsAny + PartialEqable + DynPartialEq + fmt::Debug {
     fn name(&self) -> &'static str;
 }
 

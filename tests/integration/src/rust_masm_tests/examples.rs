@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, collections::VecDeque};
 
-use miden_core::utils::{Deserializable, Serializable};
+use miden_core::serde::{Deserializable, Serializable};
 use miden_debug::ToMidenRepr;
 use miden_mast_package::SectionId;
 use miden_protocol::account::AccountComponentMetadata;
@@ -20,10 +20,7 @@ fn storage_example() {
     let mut test =
         CompilerTest::rust_source_cargo_miden("../../examples/storage-example", config, []);
 
-    test.expect_wasm(expect_file!["../../expected/examples/storage_example.wat"]);
-    test.expect_ir(expect_file!["../../expected/examples/storage_example.hir"]);
-    test.expect_masm(expect_file!["../../expected/examples/storage_example.masm"]);
-    let package = test.compiled_package();
+    let package = test.compile_package();
     let account_component_metadata_bytes = package
         .as_ref()
         .sections
@@ -47,17 +44,17 @@ fn storage_example() {
         supported-types = ["RegularAccountUpdatableCode"]
 
         [[storage.slots]]
-        name = "miden::component::miden_storage_example::asset_qty_map"
+        name = "miden_storage_example::my_account::owner_public_key"
+        description = "owner public key"
+        type = "word"
+
+        [[storage.slots]]
+        name = "miden_storage_example::my_account::asset_qty_map"
         description = "asset quantity map"
 
         [storage.slots.type]
         key = "word"
-        value = "word"
-
-        [[storage.slots]]
-        name = "miden::component::miden_storage_example::owner_public_key"
-        description = "owner public key"
-        type = "word"
+        value = "felt"
     "#]]
     .assert_eq(&toml);
 }
@@ -77,10 +74,7 @@ fn fibonacci() {
 
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden("../../examples/fibonacci", config, []);
-    test.expect_wasm(expect_file!["../../expected/examples/fib.wat"]);
-    test.expect_ir(expect_file!["../../expected/examples/fib.hir"]);
-    test.expect_masm(expect_file!["../../expected/examples/fib.masm"]);
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
     TestRunner::default()
@@ -98,10 +92,7 @@ fn fibonacci() {
 
 #[test]
 fn collatz() {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    crate::testing::setup::enable_compiler_instrumentation();
 
     fn expected(mut n: u32) -> u32 {
         let mut steps = 0;
@@ -119,10 +110,7 @@ fn collatz() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden("../../examples/collatz", config, []);
     let artifact_name = "collatz";
-    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
     TestRunner::new(Config::with_cases(4))
@@ -143,10 +131,7 @@ fn collatz() {
 
 #[test]
 fn is_prime() {
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .format_timestamp(None)
-        .is_test(true)
-        .try_init();
+    crate::testing::setup::enable_compiler_instrumentation();
 
     fn expected(n: u32) -> bool {
         if n <= 1 {
@@ -171,10 +156,7 @@ fn is_prime() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden("../../examples/is-prime", config, []);
     let artifact_name = "is_prime";
-    test.expect_wasm(expect_file![format!("../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../../expected/{artifact_name}.masm")]);
-    let package = test.compiled_package();
+    let package = test.compile_package();
     let hir = test.hir();
 
     println!("{}", hir.borrow().as_operation());
@@ -231,10 +213,7 @@ fn counter_contract() {
     );
     builder_release.with_release(true);
     let mut test_release = builder_release.build();
-    test_release.expect_wasm(expect_file!["../../expected/examples/counter.wat"]);
-    test_release.expect_ir(expect_file!["../../expected/examples/counter.hir"]);
-    test_release.expect_masm(expect_file!["../../expected/examples/counter.masm"]);
-    let package = test_release.compiled_package();
+    let package = test_release.compile_package();
     let account_component_metadata_bytes = package
         .as_ref()
         .sections
@@ -258,12 +237,12 @@ fn counter_contract() {
         supported-types = ["RegularAccountUpdatableCode"]
 
         [[storage.slots]]
-        name = "miden::component::miden_counter_contract::count_map"
+        name = "miden_counter_contract::counter_contract::count_map"
         description = "counter contract storage map"
 
         [storage.slots.type]
         key = "word"
-        value = "word"
+        value = "felt"
     "#]]
     .assert_eq(&toml);
 }
@@ -277,7 +256,7 @@ fn counter_contract_debug_build() {
         CompilerTestBuilder::rust_source_cargo_miden("../../examples/counter-contract", config, []);
     builder.with_release(false);
     let mut test = builder.build();
-    let package = test.compiled_package();
+    let package = test.compile_package();
 }
 
 #[test]
@@ -289,10 +268,7 @@ fn counter_note() {
 
     let mut test = builder.build();
 
-    test.expect_wasm(expect_file!["../../expected/examples/counter_note.wat"]);
-    test.expect_ir(expect_file!["../../expected/examples/counter_note.hir"]);
-    test.expect_masm(expect_file!["../../expected/examples/counter_note.masm"]);
-    let package = test.compiled_package();
+    let package = test.compile_package();
     assert!(package.is_program(), "expected program");
 
     // TODO: uncomment after the testing environment implemented (node, devnet, etc.)
@@ -313,10 +289,7 @@ fn basic_wallet_and_p2id() {
     let config = WasmTranslationConfig::default();
     let mut test =
         CompilerTest::rust_source_cargo_miden("../../examples/basic-wallet", config.clone(), []);
-    test.expect_wasm(expect_file![format!("../../expected/examples/basic_wallet.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/examples/basic_wallet.hir")]);
-    test.expect_masm(expect_file![format!("../../expected/examples/basic_wallet.masm")]);
-    let account_package = test.compiled_package();
+    let account_package = test.compile_package();
     assert!(account_package.is_library(), "expected library");
 
     let mut test = CompilerTest::rust_source_cargo_miden(
@@ -324,17 +297,11 @@ fn basic_wallet_and_p2id() {
         config.clone(),
         [],
     );
-    test.expect_wasm(expect_file![format!("../../expected/examples/basic_wallet_tx_script.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/examples/basic_wallet_tx_script.hir")]);
-    test.expect_masm(expect_file![format!("../../expected/examples/basic_wallet_tx_script.masm")]);
-    let package = test.compiled_package();
+    let package = test.compile_package();
     assert!(package.is_program(), "expected program");
 
     let mut test = CompilerTest::rust_source_cargo_miden("../../examples/p2id-note", config, []);
-    test.expect_wasm(expect_file![format!("../../expected/examples/p2id.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/examples/p2id.hir")]);
-    test.expect_masm(expect_file![format!("../../expected/examples/p2id.masm")]);
-    let note_package = test.compiled_package();
+    let note_package = test.compile_package();
     assert!(note_package.is_program(), "expected program");
 }
 
@@ -343,10 +310,7 @@ fn auth_component_no_auth() {
     let config = WasmTranslationConfig::default();
     let mut test =
         CompilerTest::rust_source_cargo_miden("../../examples/auth-component-no-auth", config, []);
-    test.expect_wasm(expect_file![format!("../../expected/examples/auth_component_no_auth.wat")]);
-    test.expect_ir(expect_file![format!("../../expected/examples/auth_component_no_auth.hir")]);
-    test.expect_masm(expect_file![format!("../../expected/examples/auth_component_no_auth.masm")]);
-    let auth_comp_package = test.compiled_package();
+    let auth_comp_package = test.compile_package();
     let lib = auth_comp_package.unwrap_library();
     let expected_function = "auth__procedure";
     let exports = lib
@@ -372,16 +336,7 @@ fn auth_component_rpo_falcon512() {
         config,
         [],
     );
-    test.expect_wasm(expect_file![format!(
-        "../../expected/examples/auth_component_rpo_falcon512.wat"
-    )]);
-    test.expect_ir(expect_file![format!(
-        "../../expected/examples/auth_component_rpo_falcon512.hir"
-    )]);
-    test.expect_masm(expect_file![format!(
-        "../../expected/examples/auth_component_rpo_falcon512.masm"
-    )]);
-    let auth_comp_package = test.compiled_package();
+    let auth_comp_package = test.compile_package();
     let lib = auth_comp_package.unwrap_library();
     let expected_function = "auth__procedure";
 

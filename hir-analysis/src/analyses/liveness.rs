@@ -1,5 +1,6 @@
 mod next_use_set;
 
+use alloc::rc::Rc;
 use core::borrow::Borrow;
 
 use midenc_hir::{
@@ -78,14 +79,14 @@ pub const LOOP_EXIT_DISTANCE: u32 = 100_000;
 #[derive(Default)]
 pub struct Liveness;
 
-/// This type is used to compute the [LivenessAnalysis] results for an entire [Function].
+/// This type is used to compute the [LivenessAnalysis] results for an entire function.
 ///
 /// Internally, it instantiates a [DataFlowSolver] with [DeadCodeAnalysis],
 /// [SparseConstantPropagation], and [LivenessAnalysis], and runs them to fixpint. It additionally
-/// relies on the [DominanceInfo] and [LoopForest] analyses to provide us with details about the
-/// CFG structure that we then use both to optimize the work done by the solver, as well as feed
-/// into the actual liveness information itself (i.e. by specifying how much distance a given
-/// control flow edge adds).
+/// relies on the [DominanceInfo] and [midenc_hir::loops::LoopForest] analyses to provide us with
+/// details about the CFG structure that we then use both to optimize the work done by the solver,
+/// as well as feed into the actual liveness information itself (i.e. by specifying how much
+/// distance a given control flow edge adds).
 #[derive(Default)]
 pub struct LivenessAnalysis {
     solver: DataFlowSolver,
@@ -199,8 +200,19 @@ impl LivenessAnalysis {
 impl Analysis for LivenessAnalysis {
     type Target = Operation;
 
+    #[inline(always)]
     fn name(&self) -> &'static str {
         "liveness"
+    }
+
+    #[inline(always)]
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
+
+    #[inline(always)]
+    fn as_any_rc(self: Rc<Self>) -> Rc<dyn core::any::Any> {
+        self
     }
 
     fn analyze(

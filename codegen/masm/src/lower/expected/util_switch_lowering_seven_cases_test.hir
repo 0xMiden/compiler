@@ -1,0 +1,36 @@
+builtin.function public extern("C") @util_switch_lowering_seven_cases_test(%0: u32, %1: u32) -> u32 {
+    %2 = scf.index_switch %0 
+    case 0 {
+        %3 = arith.constant 0 : u32;
+        scf.yield %3 : (u32);
+    }
+    case 1 {
+        %4 = arith.constant 1 : u32;
+        scf.yield %4 : (u32);
+    }
+    case 2 {
+        %5 = arith.constant 2 : u32;
+        scf.yield %5 : (u32);
+    }
+    case 3 {
+        %6 = arith.constant 3 : u32;
+        scf.yield %6 : (u32);
+    }
+    case 4 {
+        %7 = arith.constant 4 : u32;
+        scf.yield %7 : (u32);
+    }
+    case 5 {
+        %8 = arith.constant 5 : u32;
+        scf.yield %8 : (u32);
+    }
+    case 6 {
+        %9 = arith.constant 6 : u32;
+        scf.yield %9 : (u32);
+    }
+    default {
+        %10 = arith.mul %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+        scf.yield %10 : (u32);
+    } : (u32);
+    builtin.ret %2 : (u32);
+};

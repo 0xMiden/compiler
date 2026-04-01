@@ -70,7 +70,7 @@ impl RewritePattern for SimplifySwitchFallbackOverlap {
                 }
 
                 non_overlapping.push(SwitchCase {
-                    value: *case.key().unwrap(),
+                    value: case.key_storage(),
                     successor,
                     arguments: ValueRange::<4>::from(case.arguments().as_slice())
                         .into_smallvec()

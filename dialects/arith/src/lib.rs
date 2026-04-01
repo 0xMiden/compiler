@@ -12,28 +12,25 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
-use alloc::boxed::Box;
-
 mod builders;
 mod canonicalization;
 mod ops;
 
 use midenc_hir::{
-    AttributeValue, Builder, BuilderExt, Dialect, DialectInfo, DialectRegistration, Immediate,
-    OperationRef, SourceSpan, Type,
+    AttributeRef, Builder, BuilderExt, Dialect, DialectInfo, Immediate, OperationRef, SourceSpan,
+    Type, attributes::IntegerLikeAttr, derive::DialectRegistration,
 };
 
 pub use self::{builders::ArithOpBuilder, ops::*};
 
-#[derive(Debug)]
+#[derive(Debug, DialectRegistration)]
 pub struct ArithDialect {
     info: DialectInfo,
 }
 
-impl ArithDialect {
-    #[inline]
-    pub fn num_registered(&self) -> usize {
-        self.registered_ops().len()
+impl From<DialectInfo> for ArithDialect {
+    fn from(info: DialectInfo) -> Self {
+        Self { info }
     }
 }
 
@@ -46,7 +43,7 @@ impl Dialect for ArithDialect {
     fn materialize_constant(
         &self,
         builder: &mut dyn Builder,
-        attr: Box<dyn AttributeValue>,
+        attr: AttributeRef,
         ty: &Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
@@ -59,7 +56,10 @@ impl Dialect for ArithDialect {
         }
 
         // Currently, we expect folds to produce `Immediate`-valued attributes for integer-likes
-        if let Some(&imm) = attr.downcast_ref::<Immediate>() {
+        let attr = attr.borrow();
+        if let Some(imm) =
+            attr.as_attr().as_trait::<dyn IntegerLikeAttr>().map(|attr| attr.as_immediate())
+        {
             // If the immediate value is of the same type as the expected result type, we're ready
             // to materialize the constant
             let imm_ty = imm.ty();
@@ -117,6 +117,7 @@ impl Dialect for ArithDialect {
     }
 }
 
+#[cfg(false)]
 impl DialectRegistration for ArithDialect {
     const NAMESPACE: &'static str = "arith";
 

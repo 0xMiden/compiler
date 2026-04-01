@@ -3,7 +3,7 @@ use alloc::borrow::Cow;
 #[cfg(feature = "std")]
 use alloc::{format, rc::Rc, sync::Arc};
 
-use miden_assembly::utils::Deserializable;
+use miden_assembly::serde::Deserializable;
 #[cfg(feature = "std")]
 use miden_assembly::utils::ReadAdapter;
 #[cfg(feature = "std")]

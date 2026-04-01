@@ -1,4 +1,4 @@
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_hir::{Overflow, SourceSpan, Span};
 
 use super::{OpEmitter, P, dup_from_offset, masm, movup_from_offset};
@@ -14,7 +14,9 @@ impl OpEmitter<'_> {
         // Assert that value is <= P, then unsplit the limbs to get a felt
         self.push_u64(P, span);
         self.lt_u64(span);
-        self.emit(masm::Instruction::Assert, span);
+        self.emit(Self::assert_with_message_inst("u64 value does not fit in felt", span), span);
+        // `u32unsplit` expects `[hi, lo]` on the stack; u64 values are represented as `[lo, hi]`.
+        self.emit(masm::Instruction::Swap1, span);
         self.u32unsplit(span);
     }
 
@@ -31,17 +33,35 @@ impl OpEmitter<'_> {
     ///
     /// Conversion will trap if the input value is too large to fit in an N-bit integer.
     pub fn u64_to_uint(&mut self, n: u32, span: SourceSpan) {
+        // u64 values are stored on the operand stack in little-endian limb order, i.e. `[lo, hi]`
+        // with `lo` on top. To validate truncation to <=32 bits, we must assert `hi == 0` and
+        // then range-check `lo`.
         self.emit_all(
             [
+                // Bring `hi` to the top of the stack and assert it is zero. This consumes `hi`,
+                // leaving only `lo` on the stack.
+                masm::Instruction::Swap1,
                 // Assert hi bits are zero
-                masm::Instruction::Assertz,
+                Self::assertz_with_message_inst(
+                    format!("u64 value does not fit in unsigned {n}-bit range"),
+                    span,
+                ),
                 // Check that the remaining bits fit in range
                 masm::Instruction::Dup0,
             ],
             span,
         );
         self.emit_push(Felt::new(2u64.pow(n) - 1), span);
-        self.emit_all([masm::Instruction::U32Lte, masm::Instruction::Assert], span);
+        self.emit_all(
+            [
+                masm::Instruction::U32Lte,
+                Self::assert_with_message_inst(
+                    format!("u64 value does not fit in unsigned {n}-bit range"),
+                    span,
+                ),
+            ],
+            span,
+        );
     }
 
     /// Convert an i64 value to a signed N-bit integer, where N <= 32
@@ -68,7 +88,10 @@ impl OpEmitter<'_> {
         self.emit_all(
             [
                 // [is_unsigned, x_lo]
-                masm::Instruction::AssertEq,
+                Self::assert_eq_with_message_inst(
+                    format!("i64 value does not fit in signed {n}-bit range"),
+                    span,
+                ),
                 // [x_lo, is_unsigned, x_lo]
                 masm::Instruction::Dup1,
             ],
@@ -97,7 +120,10 @@ impl OpEmitter<'_> {
                 // [expected_sign_bits, sign_bits, x_lo]
                 masm::Instruction::CDrop,
                 // [x_lo]
-                masm::Instruction::AssertEq,
+                Self::assert_eq_with_message_inst(
+                    format!("i64 value does not fit in signed {n}-bit range"),
+                    span,
+                ),
             ],
             span,
         );
@@ -121,6 +147,8 @@ impl OpEmitter<'_> {
     /// have already validated that the top of the stack holds a valid value of this type.
     #[inline(always)]
     pub fn trunc_int64_to_felt(&mut self, span: SourceSpan) {
+        // `u32unsplit` expects `[hi, lo]`; u64/i64 values are represented as `[lo, hi]`.
+        self.emit(masm::Instruction::Swap1, span);
         self.u32unsplit(span)
     }
 
@@ -133,7 +161,9 @@ impl OpEmitter<'_> {
     #[inline]
     pub fn trunc_int64(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 32);
-        self.emit(masm::Instruction::Drop, span);
+        // u64/i64 values are represented as `[lo, hi]` (lo on top). To truncate to <= 32 bits we
+        // must drop the high limb and keep the low limb.
+        self.emit_all([masm::Instruction::Swap1, masm::Instruction::Drop], span);
         match n {
             32 => (),
             n => self.trunc_int32(n, span),
@@ -143,22 +173,41 @@ impl OpEmitter<'_> {
     /// Sign-extend a 64-bit value to an signed N-bit integer, where N >= 128
     pub fn sext_int64(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 128, 256);
-        self.is_signed_int64(span);
-        // Select the extension bits
+        let additional_limbs = (n / 32) - 2;
+
+        // Move the most-significant limb to the top so the sign check inspects the actual i64
+        // sign bit, rather than the low limb.
+        self.emit(masm::Instruction::Swap1, span);
+        self.is_signed_int32(span);
         self.select_int32(u32::MAX, 0, span);
-        // Pad out the missing bits
-        //
-        // Deduct 32 bits to account for the difference between u32 and u64
-        self.pad_int32(n - 32, span);
+
+        // `select_int32` leaves `[pad, hi, lo]` on the stack. Duplicate the sign-extension limb
+        // as many times as needed, then rotate the original 64-bit value back to the top so the
+        // final limb order remains little-endian: `[lo, hi, pad, pad, ...]`.
+        self.emit_n(additional_limbs.saturating_sub(1) as usize, masm::Instruction::Dup0, span);
+        self.emit(movup_from_offset((additional_limbs + 1) as usize), span);
+        self.emit(movup_from_offset((additional_limbs + 1) as usize), span);
+        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Zero-extend a 64-bit value to N-bits, where N >= 64
     pub fn zext_int64(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 128, 256);
-        // Pad out the missing bits
-        //
-        // Deduct 32 bits to account for the difference between u32 and u64
-        self.zext_int32(n - 32, span);
+        let additional_limbs = (n / 32) - 2;
+
+        // Push the new most-significant limbs, then move the original 64-bit value back to the
+        // top so the result stays in little-endian limb order: `[lo, hi, 0, 0, ...]`.
+        self.emit_n(
+            additional_limbs as usize,
+            masm::Instruction::Push(masm::Immediate::Value(masm::Span::new(
+                span,
+                Felt::ZERO.into(),
+            ))),
+            span,
+        );
+        self.emit(movup_from_offset(additional_limbs as usize), span);
+        self.emit(movup_from_offset((additional_limbs + 1) as usize), span);
+        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Assert that there is a valid 64-bit integer value on the operand stack
@@ -167,16 +216,18 @@ impl OpEmitter<'_> {
     }
 
     /// Checks if the 64-bit value on the stack has its sign bit set.
-    #[inline(always)]
     pub fn is_signed_int64(&mut self, span: SourceSpan) {
-        self.is_signed_int32(span)
+        self.emit(masm::Instruction::Swap1, span);
+        self.is_signed_int32(span);
+        self.emit_all([masm::Instruction::Swap1, masm::Instruction::MovDn2], span);
     }
 
     /// Assert that the 64-bit value on the stack does not have its sign bit set.
-    #[inline(always)]
     pub fn assert_unsigned_int64(&mut self, span: SourceSpan) {
         // Assert that the sign bit is unset
-        self.assert_unsigned_int32(span)
+        self.emit(masm::Instruction::Swap1, span);
+        self.assert_unsigned_int32(span);
+        self.emit(masm::Instruction::Swap1, span);
     }
 
     /// Assert that the 64-bit value on the stack is a valid i64 value
@@ -188,7 +239,7 @@ impl OpEmitter<'_> {
         // the value is <= i64::MIN, which is 1 more than i64::MAX.
         self.push_i64(i64::MIN, span);
         self.lte_u64(span);
-        self.emit(masm::Instruction::Assert, span);
+        self.emit(Self::assert_with_message_inst("value does not fit in i64", span), span);
     }
 
     /// Duplicate the i64/u64 value on top of the stack
@@ -396,7 +447,7 @@ impl OpEmitter<'_> {
         match overflow {
             Overflow::Checked => {
                 self.raw_exec("::miden::core::math::u64::overflowing_add", span);
-                self.emit(masm::Instruction::Assertz, span);
+                self.emit(Self::assertz_with_message_inst("u64 addition overflowed", span), span);
             }
             Overflow::Unchecked | Overflow::Wrapping => {
                 self.raw_exec("::miden::core::math::u64::wrapping_add", span);
@@ -461,7 +512,10 @@ impl OpEmitter<'_> {
         match overflow {
             Overflow::Checked => {
                 self.raw_exec("::miden::core::math::u64::overflowing_sub", span);
-                self.emit(masm::Instruction::Assertz, span);
+                self.emit(
+                    Self::assertz_with_message_inst("u64 subtraction overflowed", span),
+                    span,
+                );
             }
             Overflow::Unchecked | Overflow::Wrapping => {
                 self.raw_exec("::miden::core::math::u64::wrapping_sub", span);
@@ -517,16 +571,67 @@ impl OpEmitter<'_> {
     pub fn mul_u64(&mut self, overflow: Overflow, span: SourceSpan) {
         match overflow {
             Overflow::Checked => {
-                self.raw_exec("::miden::core::math::u64::overflowing_mul", span);
-                self.raw_exec("::miden::core::math::u64::eqz", span);
-                self.emit(masm::Instruction::Assertz, span);
+                self.raw_exec("::miden::core::math::u64::widening_mul", span);
+                // `widening_mul` returns a u128: `[c0, c1, c2, c3]` where `c0` is the low limb.
+                //
+                // To check that the result fits in u64, we must verify that the upper 64-bits
+                // (i.e. `c2` and `c3`) are zero. We compute an overflow flag and then assert it is
+                // zero, leaving only the low 64-bits (`c0`, `c1`) on the stack.
+                self.emit_all(
+                    [
+                        // overflow = (c2 != 0) || (c3 != 0)
+                        masm::Instruction::Dup2,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::Not,
+                        masm::Instruction::Dup4,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::Not,
+                        masm::Instruction::Or,
+                        // Move overflow to the bottom so we can drop the upper limbs
+                        masm::Instruction::MovDn4,
+                        // Drop c3
+                        masm::Instruction::MovUp3,
+                        masm::Instruction::Drop,
+                        // Drop c2
+                        masm::Instruction::MovUp2,
+                        masm::Instruction::Drop,
+                        // Bring overflow back to the top and assert it is zero
+                        masm::Instruction::MovUp2,
+                        Self::assertz_with_message_inst("u64 multiplication overflowed", span),
+                    ],
+                    span,
+                );
             }
             Overflow::Unchecked | Overflow::Wrapping => {
                 self.raw_exec("::miden::core::math::u64::wrapping_mul", span);
             }
             Overflow::Overflowing => {
-                self.raw_exec("::miden::core::math::u64::overflowing_mul", span);
-                self.raw_exec("::miden::core::math::u64::eqz", span);
+                self.raw_exec("::miden::core::math::u64::widening_mul", span);
+                // Return `[overflow, c_lo, c_hi]`, where `overflow` is 1 iff the upper 64 bits are
+                // non-zero.
+                self.emit_all(
+                    [
+                        // overflow = (c2 != 0) || (c3 != 0)
+                        masm::Instruction::Dup2,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::Not,
+                        masm::Instruction::Dup4,
+                        masm::Instruction::EqImm(Felt::ZERO.into()),
+                        masm::Instruction::Not,
+                        masm::Instruction::Or,
+                        // Move overflow to the bottom so we can drop the upper limbs
+                        masm::Instruction::MovDn4,
+                        // Drop c3
+                        masm::Instruction::MovUp3,
+                        masm::Instruction::Drop,
+                        // Drop c2
+                        masm::Instruction::MovUp2,
+                        masm::Instruction::Drop,
+                        // Bring overflow back to the top
+                        masm::Instruction::MovUp2,
+                    ],
+                    span,
+                );
             }
         }
     }
@@ -754,20 +859,23 @@ pub fn to_raw_parts(value: u64) -> (u32, u32) {
 }
 
 /// Construct a u64/i64 constant from raw parts, i.e. two 32-bit little-endian limbs
+///
+/// Pushes hi first, then lo, so the stack ends up as [lo, hi] (lo on top) matching the LE
+/// convention where the low limb is on top.
 #[inline]
 pub fn from_raw_parts(lo: u32, hi: u32, block: &mut Vec<masm::Op>, span: SourceSpan) {
     block.push(masm::Op::Inst(Span::new(
         span,
         masm::Instruction::Push(masm::Immediate::Value(Span::new(
             span,
-            Felt::new(lo as u64).into(),
+            Felt::new(hi as u64).into(),
         ))),
     )));
     block.push(masm::Op::Inst(Span::new(
         span,
         masm::Instruction::Push(masm::Immediate::Value(Span::new(
             span,
-            Felt::new(hi as u64).into(),
+            Felt::new(lo as u64).into(),
         ))),
     )));
 }

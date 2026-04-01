@@ -14,13 +14,13 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 cargo-util = "0.2"
-midenc-log.workspace = true
-midenc-expect-test.workspace = true
 filetime = "0.2.23"
 glob = "0.3.1"
 log.workspace = true
 miden-assembly.workspace = true
-miden-core.workspace = true
+midenc-expect-test.workspace = true
+miden-core = { workspace = true, features = ["testing"] }
+miden-core-lib.workspace = true
 miden-mast-package.workspace = true
 miden-protocol = { workspace = true, features = ["std"] }
 miden-standards = { workspace = true, features = ["std"] }
@@ -29,12 +29,15 @@ miden-debug = { workspace = true, features = ["proptest"] }
 midenc-dialect-arith.workspace = true
 midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true
+midenc-dialect-scf.workspace = true
+midenc-dialect-wasm.workspace = true
 midenc-frontend-wasm.workspace = true
-midenc-hir.workspace = true
+midenc-hir = { workspace = true, features = ["logging"] }
 midenc-hir-eval.workspace = true
 midenc-codegen-masm.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true
+num-traits = "0.2"
 cargo-miden.workspace = true
 wasmprinter = "0.227"
 proptest.workspace = true

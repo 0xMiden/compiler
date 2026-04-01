@@ -1,5 +1,4 @@
 use alloc::{
-    boxed::Box,
     format,
     string::{String, ToString},
 };
@@ -9,8 +8,9 @@ use midenc_dialect_cf as cf;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
+use midenc_dialect_wasm::{self as wasm};
 use midenc_hir::{
-    AttributeValue, Felt, Immediate, Op, OperationRef, Overflow, RegionBranchPoint,
+    AttributeRef, Felt, Immediate, ImmediateAttr, Op, OperationRef, Overflow, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorInfo, Type,
     Value as _, ValueRange, dialects::builtin,
 };
@@ -93,7 +93,7 @@ impl Eval for builtin::Ret {
 
 impl Eval for builtin::RetImm {
     fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        Ok(ControlFlowEffect::Return(Some((*self.value()).into())))
+        Ok(ControlFlowEffect::Return(Some((*self.get_value()).into())))
     }
 }
 
@@ -109,15 +109,18 @@ impl Eval for ub::Unreachable {
 impl Eval for ub::Poison {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         let value = match self.value().as_immediate() {
-            Ok(imm) => Value::poison(self.span(), imm),
-            Err(ty) => {
+            Some(imm) => Value::poison(self.span(), imm),
+            _ => {
                 return Err(self
                     .as_operation()
                     .context()
                     .diagnostics()
                     .diagnostic(Severity::Error)
                     .with_message("invalid poison")
-                    .with_primary_label(self.span(), format!("invalid poison type: {ty}"))
+                    .with_primary_label(
+                        self.span(),
+                        format!("invalid poison type: {}", self.get_value()),
+                    )
                     .into_report());
             }
         };
@@ -162,7 +165,7 @@ impl Eval for cf::Switch {
                 let successor = self
                     .cases()
                     .iter()
-                    .find(|succ| succ.key().is_some_and(|k| *k == selector))
+                    .find(|succ| *succ.key() == selector)
                     .map(|succ| *succ.info())
                     .unwrap_or_else(|| self.successors()[0]);
                 Ok(ControlFlowEffect::Jump(successor))
@@ -262,13 +265,14 @@ impl Eval for scf::Yield {
         // hardcoding the list of known parent operations here and how to select the successor
         // region, since that's already been done in the compiler. If this turns out to be a big
         // perf bottleneck, we can implement something more efficient.
+        let context = self.as_operation().context_rc();
         let this = self.as_operation().as_trait::<dyn RegionBranchTerminatorOpInterface>().unwrap();
         let mut operands = SmallVec::<[_; 4]>::with_capacity(self.yielded().len());
         for yielded in self.yielded().iter() {
             match evaluator.get_value(&yielded.borrow().as_value_ref())? {
-                Value::Immediate(value) | Value::Poison { value, .. } => {
-                    operands.push(Some(Box::new(value) as Box<dyn AttributeValue>))
-                }
+                Value::Immediate(value) | Value::Poison { value, .. } => operands.push(Some(
+                    context.create_attribute::<ImmediateAttr, _>(value) as AttributeRef,
+                )),
             }
         }
 
@@ -326,7 +330,7 @@ impl Eval for hir::Assert {
                 } else {
                     Ok(ControlFlowEffect::Trap {
                         span: self.span(),
-                        reason: format!("assertion failed with code {}", self.code()),
+                        reason: format!("assertion failed with code {}", *self.get_code()),
                     })
                 }
             }
@@ -347,7 +351,7 @@ impl Eval for hir::Assertz {
                 if condition {
                     Ok(ControlFlowEffect::Trap {
                         span: self.span(),
-                        reason: format!("assertion failed with code {}", self.code()),
+                        reason: format!("assertion failed with code {}", *self.get_code()),
                     })
                 } else {
                     Ok(ControlFlowEffect::None)
@@ -452,7 +456,8 @@ impl Eval for hir::Exec {
 
         let symbol_table = symbol_table.borrow();
         let symbol_table = symbol_table.as_symbol_table().unwrap();
-        let symbol_path = &self.callee().path;
+        let callee = self.callee();
+        let symbol_path = callee.path();
         let Some(symbol) = symbol_table.resolve(symbol_path) else {
             return Err(evaluator.report(
                 "evaluation failed",
@@ -506,7 +511,7 @@ impl Eval for hir::Store {
 
 impl Eval for hir::StoreLocal {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        let local = self.local();
+        let local = *self.get_local();
         let value = evaluator.get_value(&self.value().as_value_ref())?;
         let value_ty = value.ty();
         let local_ty = local.ty();
@@ -521,7 +526,7 @@ impl Eval for hir::StoreLocal {
             ));
         }
 
-        evaluator.write_local(local, value)?;
+        evaluator.write_local(&local, value)?;
 
         Ok(ControlFlowEffect::None)
     }
@@ -563,7 +568,7 @@ impl Eval for hir::Load {
 
 impl Eval for hir::LoadLocal {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        let local = self.local();
+        let local = *self.get_local();
         let result = self.result();
         let ty = result.ty();
         let local_ty = local.ty();
@@ -578,7 +583,7 @@ impl Eval for hir::LoadLocal {
             ));
         }
 
-        let loaded = evaluator.read_local(local)?;
+        let loaded = evaluator.read_local(&local)?;
 
         evaluator.set_value(result.as_value_ref(), loaded);
 
@@ -729,7 +734,7 @@ impl Eval for hir::MemCpy {
 
 impl Eval for arith::Constant {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        evaluator.set_value(self.result().as_value_ref(), *self.value());
+        evaluator.set_value(self.result().as_value_ref(), *self.get_value());
         Ok(ControlFlowEffect::None)
     }
 }
@@ -916,7 +921,7 @@ impl Eval for arith::Add {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         use core::ops::Add;
 
-        let result = match self.overflow() {
+        let result = match *self.get_overflow() {
             Overflow::Unchecked => binop!(self, evaluator, add),
             Overflow::Checked => {
                 let result = binop_checked!(self, evaluator, checked_add, add);
@@ -952,7 +957,7 @@ impl Eval for arith::Sub {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         use core::ops::Sub;
 
-        let result = match self.overflow() {
+        let result = match *self.get_overflow() {
             Overflow::Unchecked => binop!(self, evaluator, sub),
             Overflow::Checked => {
                 let result = binop_checked!(self, evaluator, checked_sub, sub);
@@ -988,7 +993,7 @@ impl Eval for arith::Mul {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         use core::ops::Mul;
 
-        let result = match self.overflow() {
+        let result = match *self.get_overflow() {
             Overflow::Unchecked => binop!(self, evaluator, mul),
             Overflow::Checked => {
                 let result = binop_checked!(self, evaluator, checked_sub, mul);
@@ -1416,7 +1421,9 @@ macro_rules! comparison {
             (Immediate::U64(x), Immediate::U64(y)) => x.$operator(&y),
             (Immediate::I128(x), Immediate::I128(y)) => x.$operator(&y),
             (Immediate::U128(x), Immediate::U128(y)) => x.$operator(&y),
-            (Immediate::Felt(x), Immediate::Felt(y)) => x.as_int().$operator(&y.as_int()),
+            (Immediate::Felt(x), Immediate::Felt(y)) => {
+                x.as_canonical_u64().$operator(&y.as_canonical_u64())
+            }
             _ => unreachable!(),
         }
     }};
@@ -1451,7 +1458,7 @@ macro_rules! comparison_with {
             (Immediate::I128(x), Immediate::I128(y)) => Immediate::I128($comparator(x, y)),
             (Immediate::U128(x), Immediate::U128(y)) => Immediate::U128($comparator(x, y)),
             (Immediate::Felt(x), Immediate::Felt(y)) => {
-                Immediate::Felt(Felt::new($comparator(x.as_int(), y.as_int())))
+                Immediate::Felt(Felt::new($comparator(x.as_canonical_u64(), y.as_canonical_u64())))
             }
             _ => unreachable!(),
         }
@@ -1693,8 +1700,6 @@ macro_rules! unaryop {
 
 impl Eval for arith::Incr {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        use midenc_hir::FieldElement;
-
         let lhs = self.operand();
         let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
 
@@ -1739,7 +1744,7 @@ impl Eval for arith::Neg {
             Immediate::U64(x) => Immediate::U64(!x),
             Immediate::I128(x) => Immediate::I128(-x),
             Immediate::U128(x) => Immediate::U128(!x),
-            Immediate::Felt(x) => Immediate::Felt(Felt::new(!x.as_int())),
+            Immediate::Felt(x) => Immediate::Felt(Felt::new(!x.as_canonical_u64())),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1755,13 +1760,21 @@ impl Eval for arith::Neg {
 
 impl Eval for arith::Inv {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
-        use midenc_hir::FieldElement;
-
         let lhs = self.operand();
         let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
 
         let result = match lhs_value {
-            Immediate::Felt(x) => Immediate::Felt(x.inv()),
+            Immediate::Felt(x) => {
+                use miden_core::field::Field;
+                let Some(inverse) = x.try_inverse() else {
+                    return Err(evaluator.report(
+                        "evaluation failed",
+                        self.span(),
+                        "cannot invert zero in the field",
+                    ));
+                };
+                Immediate::Felt(inverse)
+            }
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1791,7 +1804,7 @@ impl Eval for arith::Ilog2 {
             Immediate::U64(x) => Immediate::U32(x.ilog2()),
             Immediate::I128(x) => Immediate::U32(x.ilog2()),
             Immediate::U128(x) => Immediate::U32(x.ilog2()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().ilog2()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().ilog2()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1869,7 +1882,7 @@ impl Eval for arith::IsOdd {
             Immediate::U64(x) => !x.is_multiple_of(2),
             Immediate::I128(x) => x % 2 != 0,
             Immediate::U128(x) => !x.is_multiple_of(2),
-            Immediate::Felt(x) => !x.as_int().is_multiple_of(2),
+            Immediate::Felt(x) => !x.as_canonical_u64().is_multiple_of(2),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1899,7 +1912,7 @@ impl Eval for arith::Popcnt {
             Immediate::U64(x) => Immediate::U32(x.count_ones()),
             Immediate::I128(x) => Immediate::U32(x.count_ones()),
             Immediate::U128(x) => Immediate::U32(x.count_ones()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().count_ones()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().count_ones()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1929,7 +1942,7 @@ impl Eval for arith::Clz {
             Immediate::U64(x) => Immediate::U32(x.leading_zeros()),
             Immediate::I128(x) => Immediate::U32(x.leading_zeros()),
             Immediate::U128(x) => Immediate::U32(x.leading_zeros()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().leading_zeros()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().leading_zeros()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1959,7 +1972,7 @@ impl Eval for arith::Ctz {
             Immediate::U64(x) => Immediate::U32(x.trailing_zeros()),
             Immediate::I128(x) => Immediate::U32(x.trailing_zeros()),
             Immediate::U128(x) => Immediate::U32(x.trailing_zeros()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().trailing_zeros()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().trailing_zeros()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -1989,7 +2002,7 @@ impl Eval for arith::Clo {
             Immediate::U64(x) => Immediate::U32(x.leading_ones()),
             Immediate::I128(x) => Immediate::U32(x.leading_ones()),
             Immediate::U128(x) => Immediate::U32(x.leading_ones()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().leading_ones()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().leading_ones()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -2019,7 +2032,7 @@ impl Eval for arith::Cto {
             Immediate::U64(x) => Immediate::U32(x.trailing_ones()),
             Immediate::I128(x) => Immediate::U32(x.trailing_ones()),
             Immediate::U128(x) => Immediate::U32(x.trailing_ones()),
-            Immediate::Felt(x) => Immediate::U32(x.as_int().trailing_ones()),
+            Immediate::Felt(x) => Immediate::U32(x.as_canonical_u64().trailing_ones()),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",
@@ -2032,3 +2045,75 @@ impl Eval for arith::Cto {
         Ok(ControlFlowEffect::None)
     }
 }
+
+impl Eval for wasm::SignExtend {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let lhs = self.operand();
+        let lhs_value = evaluator.use_value(&lhs.as_value_ref())?;
+
+        if !self.is_valid_immediate(lhs_value) {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("expected {} operand, got {}", self.get_dst_ty(), lhs_value.ty()),
+            ));
+        }
+
+        let result = self.sext_from_src(lhs_value);
+        evaluator.set_value(self.result().as_value_ref(), result);
+        Ok(ControlFlowEffect::None)
+    }
+}
+
+macro_rules! impl_eval_load_sext {
+    ($op:ty, $src_imm:ident, $dst_imm:ident, $dst_ty:ty) => {
+        impl Eval for $op {
+            fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+                let addr = self.addr();
+                let addr_value = evaluator.use_value(&addr.as_value_ref())?;
+                let Immediate::U32(addr_value) = addr_value else {
+                    return Err(evaluator.report(
+                        "evaluation failed",
+                        self.span(),
+                        format!("expected pointer to be a u32 immediate, got {}", addr_value.ty()),
+                    ));
+                };
+
+                let pointer_ty = addr.ty();
+                let pointee_ty = pointer_ty
+                    .pointee()
+                    .expect("expected pointer type to have been verified already");
+                let loaded = evaluator.read_memory(addr_value, pointee_ty)?;
+
+                let sign_extended = match loaded {
+                    Value::Immediate(Immediate::$src_imm(x)) => {
+                        Ok(Value::Immediate(Immediate::$dst_imm(x as $dst_ty)))
+                    }
+                    Value::Poison {
+                        origin,
+                        used,
+                        value: Immediate::$src_imm(x),
+                    } => Ok(Value::Poison {
+                        origin,
+                        used,
+                        value: Immediate::$dst_imm(x as $dst_ty),
+                    }),
+                    other => Err(evaluator.report(
+                        "evaluation failed",
+                        self.span(),
+                        format!("expected {} load, got {}", stringify!($src_imm), other.ty()),
+                    )),
+                }?;
+
+                evaluator.set_value(self.result().as_value_ref(), sign_extended);
+                Ok(ControlFlowEffect::None)
+            }
+        }
+    };
+}
+
+impl_eval_load_sext!(wasm::I32Load8S, I8, I32, i32);
+impl_eval_load_sext!(wasm::I32Load16S, I16, I32, i32);
+impl_eval_load_sext!(wasm::I64Load8S, I8, I64, i64);
+impl_eval_load_sext!(wasm::I64Load16S, I16, I64, i64);
+impl_eval_load_sext!(wasm::I64Load32S, I32, I64, i64);

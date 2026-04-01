@@ -144,7 +144,13 @@ fn expand_component_struct(
     let default_impl = match &mut input_struct.fields {
         syn::Fields::Named(fields) => {
             let storage_namespace = metadata.component_package.as_deref().unwrap_or(&metadata.name);
-            let field_inits = process_storage_fields(fields, &mut acc_builder, storage_namespace)?;
+            let component_struct_name = struct_name.to_string();
+            let field_inits = process_storage_fields(
+                fields,
+                &mut acc_builder,
+                storage_namespace,
+                &component_struct_name,
+            )?;
             generate_default_impl(struct_name, &field_inits)
         }
         syn::Fields::Unit => quote! {
@@ -162,7 +168,7 @@ fn expand_component_struct(
         }
     };
 
-    let component_metadata = acc_builder.build();
+    let component_metadata = acc_builder.build(call_site_span.into())?;
 
     let mut metadata_bytes = component_metadata.to_bytes();
     let padded_len = metadata_bytes.len().div_ceil(16) * 16;

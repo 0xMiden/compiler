@@ -18,7 +18,7 @@ fn test_rust_assert_macro_source_location_with_debug_executor() {
         [],
     );
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
     let program = package.unwrap_program();
 
     // First, test that the function works when assertion passes (x > 100)

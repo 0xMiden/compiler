@@ -1,10 +1,12 @@
-use alloc::format;
+use alloc::{format, string::ToString};
 use core::fmt;
 
 use midenc_hir_type::PointerType;
 use midenc_session::diagnostics::Severity;
 
-use crate::{Context, Op, Operation, Report, Type, derive, ir::value::Value};
+use crate::{
+    CompactString, Context, Op, Operation, Report, Type, derive::operation_trait, ir::value::Value,
+};
 
 /// OpInterface to compute the return type(s) of an operation.
 pub trait InferTypeOpInterface: Op {
@@ -19,149 +21,135 @@ pub trait InferTypeOpInterface: Op {
     }
 }
 
-derive! {
-    /// Op expects all operands to be of the same type
-    pub trait SameTypeOperands {}
+/// Op expects all operands to be of the same type
+#[operation_trait]
+pub trait SameTypeOperands {
+    #[verifier]
+    fn operands_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
+        let mut operands = op.operands().iter();
+        // If there are no operands, then it is trivially true that operands agree on type
+        let Some(first_operand) = operands.next() else {
+            return Ok(());
+        };
+        let (expected_ty, set_by) = {
+            let operand = first_operand.borrow();
+            let value = operand.value();
+            (value.ty().clone(), value.span())
+        };
 
-    verify {
-        fn operands_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
-            let mut operands = op.operands().iter();
-            // If there are no operands, then it is trivially true that operands agree on type
-            let Some(first_operand) = operands.next() else { return Ok(()); };
-            let (expected_ty, set_by) = {
-                let operand = first_operand.borrow();
-                let value = operand.value();
-                (value.ty().clone(), value.span())
-            };
-
-            for operand in operands {
-                let operand = operand.borrow();
-                let value = operand.value();
-                let value_ty = value.ty();
-                if value_ty != &expected_ty {
-                    return Err(context
-                               .session()
-                               .diagnostics
-                               .diagnostic(Severity::Error)
-                               .with_message(::alloc::format!("invalid operation {}", op.name()))
-                               .with_primary_label(
-                                   op.span,
-                                   "this operation expects all operands to be of the same type"
-                               )
-                               .with_secondary_label(
-                                   set_by,
-                                   "inferred the expected type from this value"
-                               )
-                               .with_secondary_label(
-                                   value.span(),
-                                   "which differs from this value's type"
-                               )
-                               .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
-                               .into_report()
-                    );
-                }
+        for operand in operands {
+            let operand = operand.borrow();
+            let value = operand.value();
+            let value_ty = value.ty();
+            if value_ty != &expected_ty {
+                return Err(context
+                    .session()
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message(::alloc::format!("invalid operation {}", op.name()))
+                    .with_primary_label(
+                        op.span,
+                        "this operation expects all operands to be of the same type",
+                    )
+                    .with_secondary_label(set_by, "inferred the expected type from this value")
+                    .with_secondary_label(value.span(), "which differs from this value's type")
+                    .with_help(format!("expected '{expected_ty}', got '{value_ty}'"))
+                    .into_report());
             }
-
-            Ok(())
         }
+
+        Ok(())
     }
 }
 
-derive! {
-    /// Op expects all operands and results to be of the same type.
-    ///
-    /// **NOTE:** Operations that implement this trait must also explicitly implement
-    /// [`SameTypeOperands`]. This can be achieved by using the "traits" field in the [#operation]
-    /// macro, as shown below:
-    ///
-    /// ```rust,ignore
-    /// #[operation (
-    ///     dialect = ArithDialect,
-    ///     traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-    ///     implements(InferTypeOpInterface, MemoryEffectOpInterface)
-    /// )]
-    /// pub struct SomeOp {
-    ///     # ...
-    /// }
-    /// ```
-    pub trait SameOperandsAndResultType: SameTypeOperands {}
+/// Op expects all operands and results to be of the same type.
+///
+/// **NOTE:** Operations that implement this trait must also explicitly implement
+/// [`SameTypeOperands`]. This can be achieved by using the "traits" field in the [#operation]
+/// macro, as shown below:
+///
+/// ```rust,ignore
+/// #[operation (
+///     dialect = ArithDialect,
+///     traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
+///     implements(InferTypeOpInterface, MemoryEffectOpInterface)
+/// )]
+/// pub struct SomeOp {
+///     # ...
+/// }
+/// ```
+#[operation_trait]
+pub trait SameOperandsAndResultType: SameTypeOperands {
+    #[verifier]
+    fn operands_and_result_are_the_same_type(
+        op: &Operation,
+        context: &Context,
+    ) -> Result<(), Report> {
+        let mut operands = op.operands().iter();
+        // If there are no operands, then it is trivially true that operands and results agree
+        // on type
+        let Some(first_operand) = operands.next() else {
+            return Ok(());
+        };
+        let (expected_ty, set_by) = {
+            let operand = first_operand.borrow();
+            let value = operand.value();
+            (value.ty().clone(), value.span())
+        };
 
-    verify {
-        fn operands_and_result_are_the_same_type(op: &Operation, context: &Context) -> Result<(), Report> {
-            let mut operands = op.operands().iter();
-            // If there are no operands, then it is trivially true that operands and results agree
-            // on type
-            let Some(first_operand) = operands.next() else { return Ok(()); };
-            let (expected_ty, set_by) = {
-                let operand = first_operand.borrow();
-                let value = operand.value();
-                (value.ty().clone(), value.span())
-            };
+        let results = op.results();
+        assert!(
+            !results.is_empty(),
+            "Operation: {} was marked as having SameOperandsAndResultType, however it has no \
+             results.",
+            op.name()
+        );
 
-            let results = op.results();
-            assert!(!results.is_empty(),
-                    "Operation: {} was marked as having SameOperandsAndResultType, however it has no results.", op.name());
+        for result in results.iter() {
+            let result = result.borrow();
+            let value = result.as_value_ref().borrow();
+            let result_ty = result.ty();
 
-            for result in results.iter() {
-                let result = result.borrow();
-                let value = result.as_value_ref().borrow();
-                let result_ty = result.ty();
-
-                if result_ty != &expected_ty {
-                    return Err(context
-                               .session()
-                               .diagnostics
-                               .diagnostic(Severity::Error)
-                               .with_message(::alloc::format!("invalid operation result {}", op.name()))
-                               .with_primary_label(
-                                   op.span,
-                                   "this operation expects the operands and the results to be of the same type"
-                               )
-                               .with_secondary_label(
-                                   set_by,
-                                   "inferred the expected type from this value"
-                               )
-                               .with_secondary_label(
-                                   value.span(),
-                                   "which differs from this value's type"
-                               )
-                               .with_help(format!("expected '{expected_ty}', got '{result_ty}'"))
-                               .into_report()
-                    );
-                }
+            if result_ty != &expected_ty {
+                return Err(context
+                    .session()
+                    .diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message(::alloc::format!("invalid operation result {}", op.name()))
+                    .with_primary_label(
+                        op.span,
+                        "this operation expects the operands and the results to be of the same \
+                         type",
+                    )
+                    .with_secondary_label(set_by, "inferred the expected type from this value")
+                    .with_secondary_label(value.span(), "which differs from this value's type")
+                    .with_help(format!("expected '{expected_ty}', got '{result_ty}'"))
+                    .into_report());
             }
-
-            Ok(())
         }
+
+        Ok(())
     }
 }
 
 /// An operation trait that indicates it expects a variable number of operands, matching the given
 /// type constraint, i.e. zero or more of the base type.
-pub trait Variadic<T: TypeConstraint> {}
-
-impl<T, C: TypeConstraint> crate::Verify<dyn Variadic<C>> for T
-where
-    T: crate::Op + Variadic<C>,
-{
-    fn verify(&self, _context: &Context) -> Result<(), Report> {
-        self.as_operation().verify()
-    }
-}
-impl<C: TypeConstraint> crate::Verify<dyn Variadic<C>> for Operation {
-    fn should_verify(&self, _context: &Context) -> bool {
-        self.implements::<dyn Variadic<C>>()
-    }
-
-    fn verify(&self, context: &Context) -> Result<(), Report> {
-        for operand in self.operands().iter() {
+#[operation_trait]
+pub trait Variadic<T: TypeConstraint> {
+    #[verifier]
+    fn all_operands_match_constraint<T: TypeConstraint>(
+        op: &Operation,
+        context: &Context,
+    ) -> Result<(), Report> {
+        for operand in op.operands().iter() {
             let operand = operand.borrow();
             let value = operand.value();
             let ty = value.ty();
-            if <C as TypeConstraint>::matches(ty) {
+            let constraint = <T as TypeConstraint>::get();
+            if constraint.matches(ty) {
                 continue;
             } else {
-                let description = <C as TypeConstraint>::description();
+                let description = constraint.description();
                 return Err(context
                     .diagnostics()
                     .diagnostic(Severity::Error)
@@ -179,8 +167,11 @@ impl<C: TypeConstraint> crate::Verify<dyn Variadic<C>> for Operation {
 }
 
 pub trait TypeConstraint: 'static {
-    fn description() -> impl fmt::Display;
-    fn matches(ty: &crate::Type) -> bool;
+    fn get() -> Self
+    where
+        Self: Sized;
+    fn description(&self) -> CompactString;
+    fn matches(&self, ty: &crate::Type) -> bool;
 }
 
 /// A type that can be constructed as a [crate::Type]
@@ -194,12 +185,17 @@ macro_rules! type_constraint {
         pub struct $Constraint;
         impl TypeConstraint for $Constraint {
             #[inline(always)]
-            fn description() -> impl core::fmt::Display {
-                $description
+            fn get() -> Self {
+                Self
             }
 
             #[inline(always)]
-            fn matches(_ty: &$crate::Type) -> bool {
+            fn description(&self) -> $crate::CompactString {
+                $crate::CompactString::const_new($description)
+            }
+
+            #[inline]
+            fn matches(&self, _ty: &$crate::Type) -> bool {
                 $matcher
             }
         }
@@ -210,12 +206,17 @@ macro_rules! type_constraint {
         pub struct $Constraint;
         impl TypeConstraint for $Constraint {
             #[inline(always)]
-            fn description() -> impl core::fmt::Display {
-                $description
+            fn get() -> Self {
+                Self
             }
 
             #[inline(always)]
-            fn matches(ty: &$crate::Type) -> bool {
+            fn description(&self) -> $crate::CompactString {
+                $crate::CompactString::const_new($description)
+            }
+
+            #[inline]
+            fn matches(&self, ty: &$crate::Type) -> bool {
                 $matcher(ty)
             }
         }
@@ -226,12 +227,17 @@ macro_rules! type_constraint {
         pub struct $Constraint;
         impl TypeConstraint for $Constraint {
             #[inline(always)]
-            fn description() -> impl core::fmt::Display {
-                $description
+            fn get() -> Self {
+                Self
             }
 
             #[inline(always)]
-            fn matches($matcher_input: &$crate::Type) -> bool {
+            fn description(&self) -> $crate::CompactString {
+                $crate::CompactString::const_new($description)
+            }
+
+            #[inline]
+            fn matches(&self, $matcher_input: &$crate::Type) -> bool {
                 $matcher
             }
         }
@@ -374,11 +380,16 @@ impl<const N: usize> fmt::Display for SizedInt<N> {
     }
 }
 impl<const N: usize> TypeConstraint for SizedInt<N> {
-    fn description() -> impl fmt::Display {
+    #[inline(always)]
+    fn get() -> Self {
         Self(core::marker::PhantomData)
     }
 
-    fn matches(ty: &crate::Type) -> bool {
+    fn description(&self) -> CompactString {
+        CompactString::from(self.to_string())
+    }
+
+    fn matches(&self, ty: &crate::Type) -> bool {
         ty.is_integer()
     }
 }
@@ -418,18 +429,23 @@ impl<T> fmt::Debug for PointerOf<T> {
 }
 impl<T: TypeConstraint> fmt::Display for PointerOf<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let pointee = <T as TypeConstraint>::description();
+        let pointee = <T as TypeConstraint>::get().description();
         write!(f, "a pointer to {pointee}")
     }
 }
 impl<T: TypeConstraint> TypeConstraint for PointerOf<T> {
     #[inline(always)]
-    fn description() -> impl fmt::Display {
+    fn get() -> Self {
         Self(core::marker::PhantomData)
     }
 
-    fn matches(ty: &crate::Type) -> bool {
-        ty.pointee().is_some_and(|pointee| <T as TypeConstraint>::matches(pointee))
+    fn description(&self) -> CompactString {
+        CompactString::from(self.to_string())
+    }
+
+    fn matches(&self, ty: &crate::Type) -> bool {
+        ty.pointee()
+            .is_some_and(|pointee| <T as TypeConstraint>::get().matches(pointee))
     }
 }
 impl<T: BuildableTypeConstraint> BuildableTypeConstraint for PointerOf<T> {
@@ -453,19 +469,23 @@ impl<T> fmt::Debug for AnyArrayOf<T> {
 }
 impl<T: TypeConstraint> fmt::Display for AnyArrayOf<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let element = <T as TypeConstraint>::description();
+        let element = <T as TypeConstraint>::get().description();
         write!(f, "an array of {element}")
     }
 }
 impl<T: TypeConstraint> TypeConstraint for AnyArrayOf<T> {
     #[inline(always)]
-    fn description() -> impl fmt::Display {
+    fn get() -> Self {
         Self(core::marker::PhantomData)
     }
 
-    fn matches(ty: &crate::Type) -> bool {
+    fn description(&self) -> CompactString {
+        CompactString::from(self.to_string())
+    }
+
+    fn matches(&self, ty: &crate::Type) -> bool {
         match ty {
-            crate::Type::Array(ty) => <T as TypeConstraint>::matches(ty.element_type()),
+            crate::Type::Array(ty) => <T as TypeConstraint>::get().matches(ty.element_type()),
             _ => false,
         }
     }
@@ -486,20 +506,24 @@ impl<const N: usize, T> fmt::Debug for ArrayOf<N, T> {
 }
 impl<const N: usize, T: TypeConstraint> fmt::Display for ArrayOf<N, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let element = <T as TypeConstraint>::description();
+        let element = <T as TypeConstraint>::get().description();
         write!(f, "an array of {N} {element}")
     }
 }
 impl<const N: usize, T: TypeConstraint> TypeConstraint for ArrayOf<N, T> {
     #[inline(always)]
-    fn description() -> impl fmt::Display {
+    fn get() -> Self {
         Self(core::marker::PhantomData)
     }
 
-    fn matches(ty: &crate::Type) -> bool {
+    fn description(&self) -> CompactString {
+        CompactString::from(self.to_string())
+    }
+
+    fn matches(&self, ty: &crate::Type) -> bool {
         match ty {
             crate::Type::Array(ty) if ty.len() == N => {
-                <T as TypeConstraint>::matches(ty.element_type())
+                <T as TypeConstraint>::get().matches(ty.element_type())
             }
             _ => false,
         }
@@ -529,24 +553,23 @@ impl<T, U> fmt::Debug for And<T, U> {
     }
 }
 impl<T: TypeConstraint, U: TypeConstraint> TypeConstraint for And<T, U> {
-    fn description() -> impl fmt::Display {
-        struct Both<L, R> {
-            left: L,
-            right: R,
+    #[inline(always)]
+    fn get() -> Self {
+        Self {
+            _left: core::marker::PhantomData,
+            _right: core::marker::PhantomData,
         }
-        impl<L: fmt::Display, R: fmt::Display> fmt::Display for Both<L, R> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "both {} and {}", &self.left, &self.right)
-            }
-        }
-        let left = <T as TypeConstraint>::description();
-        let right = <U as TypeConstraint>::description();
-        Both { left, right }
+    }
+
+    fn description(&self) -> CompactString {
+        let left = <T as TypeConstraint>::get().description();
+        let right = <U as TypeConstraint>::get().description();
+        CompactString::from(format!("both {left} and {right}"))
     }
 
     #[inline]
-    fn matches(ty: &crate::Type) -> bool {
-        <T as TypeConstraint>::matches(ty) && <U as TypeConstraint>::matches(ty)
+    fn matches(&self, ty: &crate::Type) -> bool {
+        <T as TypeConstraint>::get().matches(ty) && <U as TypeConstraint>::get().matches(ty)
     }
 }
 
@@ -567,23 +590,22 @@ impl<T, U> fmt::Debug for Or<T, U> {
     }
 }
 impl<T: TypeConstraint, U: TypeConstraint> TypeConstraint for Or<T, U> {
-    fn description() -> impl fmt::Display {
-        struct Either<L, R> {
-            left: L,
-            right: R,
+    #[inline(always)]
+    fn get() -> Self {
+        Self {
+            _left: core::marker::PhantomData,
+            _right: core::marker::PhantomData,
         }
-        impl<L: fmt::Display, R: fmt::Display> fmt::Display for Either<L, R> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "either {} or {}", &self.left, &self.right)
-            }
-        }
-        let left = <T as TypeConstraint>::description();
-        let right = <U as TypeConstraint>::description();
-        Either { left, right }
+    }
+
+    fn description(&self) -> CompactString {
+        let left = <T as TypeConstraint>::get().description();
+        let right = <U as TypeConstraint>::get().description();
+        CompactString::from(format!("either {left} or {right}"))
     }
 
     #[inline]
-    fn matches(ty: &crate::Type) -> bool {
-        <T as TypeConstraint>::matches(ty) || <U as TypeConstraint>::matches(ty)
+    fn matches(&self, ty: &crate::Type) -> bool {
+        <T as TypeConstraint>::get().matches(ty) || <U as TypeConstraint>::get().matches(ty)
     }
 }

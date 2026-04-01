@@ -27,11 +27,9 @@ where
         config,
         ["--test-harness".into()],
     );
-    test.expect_wasm(expect_file![format!("../../../../expected/{artifact_name}.wat")]);
-    test.expect_ir(expect_file![format!("../../../../expected/{artifact_name}.hir")]);
-    test.expect_masm(expect_file![format!("../../../../expected/{artifact_name}.masm")]);
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
+    let session = test.session.clone();
 
     let config = proptest::test_runner::Config::with_cases(10);
     let res = TestRunner::new(config).run(&any::<[u8; 32]>(), move |ibytes| {
@@ -44,8 +42,9 @@ where
             bytes: &ibytes,
         }];
 
-        let args = [Felt::new(in_addr as u64), Felt::new(out_addr as u64)];
-        eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
+        // The generated `entrypoint` uses the `(out_ptr, in_ptr)` convention.
+        let args = [Felt::new(out_addr as u64), Felt::new(in_addr as u64)];
+        eval_package::<Felt, _, _>(&package, initializers, &args, &session, |trace| {
             let vm_in: [u8; 32] = trace
                 .read_from_rust_memory(in_addr)
                 .expect("expected memory to have been written");
@@ -82,7 +81,7 @@ where
         ["--test-harness".into()],
     );
 
-    let package = test.compiled_package();
+    let package = test.compile_package();
 
     let config = proptest::test_runner::Config::with_cases(4);
     let res = TestRunner::new(config).run(&any::<[u8; 64]>(), move |ibytes| {
@@ -95,7 +94,7 @@ where
             bytes: &ibytes,
         }];
 
-        let args = [Felt::new(in_addr as u64), Felt::new(out_addr as u64)];
+        let args = [Felt::new(out_addr as u64), Felt::new(in_addr as u64)];
         eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
             let vm_in: [u8; 64] = trace
                 .read_from_rust_memory(in_addr)

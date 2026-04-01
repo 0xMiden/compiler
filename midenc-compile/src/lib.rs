@@ -32,13 +32,11 @@ pub type CompilerResult<T> = Result<T, Report>;
 #[diagnostic()]
 pub struct CompilerStopped;
 
-/// Run the compiler using the provided [Session]
+/// Run the compiler using the provided [midenc_session::Session]
 pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
     use midenc_hir::formatter::DisplayHex;
 
     log::info!("starting compilation session");
-
-    midenc_codegen_masm::register_dialect_hooks(&context);
 
     let session = context.session();
     match compile_inputs(session.inputs.clone(), context.clone())? {

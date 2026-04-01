@@ -659,6 +659,7 @@ impl CompilerTestBuilder {
     opt-level = "z"
     debug = true
     trim-paths = ["diagnostics", "object"]
+
 "#,
                     sdk_path = sdk_path.display(),
                     sdk_alloc_path = sdk_alloc_path.display(),
@@ -876,8 +877,8 @@ impl CompilerTest {
         }
     }
 
-    /// Get the compiled [miden_mast_package::Package]
-    pub fn compiled_package(&mut self) -> Arc<miden_mast_package::Package> {
+    /// Lazily compiles the [miden_mast_package::Package]
+    pub fn compile_package(&mut self) -> Arc<miden_mast_package::Package> {
         if self.package.is_none() {
             self.compile_wasm_to_masm_program().unwrap();
         }

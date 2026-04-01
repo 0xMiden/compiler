@@ -7,8 +7,8 @@ use core::{
 
 use smallvec::SmallVec;
 
-/// [SmallOrdMap] is a [BTreeMap]-like structure that can store a specified number
-/// of elements inline (i.e. on the stack) without allocating memory from the heap.
+/// [SmallOrdMap] is a BTreeMap-like structure that can store a specified number of elements inline
+/// (i.e. on the stack) without allocating memory from the heap.
 ///
 /// This data structure is designed with two goals in mind:
 ///
@@ -23,7 +23,7 @@ use smallvec::SmallVec;
 /// Due to its design constraints, it only supports keys which implement [Ord].
 pub type SmallOrdMap<K, V, const N: usize = 4> = SmallMap<K, V, Ordered, N>;
 
-/// [SmallDenseMap] is a [HashMap]-like structure that can store a specified number of elements inline
+/// [SmallDenseMap] is a HashMap-like structure that can store a specified number of elements inline
 /// (i.e. on the stack) without allocating memory from the heap.
 ///
 /// This data structure is designed with two goals in mind:

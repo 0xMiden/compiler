@@ -1,9 +1,0 @@
-export.entrypoint
-  push.4294967295.4294967295
-  exec.checked_xor
-
-end
-begin
-    exec.entrypoint
-end
-

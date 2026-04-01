@@ -1,8 +1,6 @@
-use alloc::boxed::Box;
-
 use bitvec::bitvec;
 use midenc_hir::{
-    AttributeValue, Backward, CallOpInterface, CallableOpInterface, EntityWithId, OpOperandImpl,
+    AttributeRef, Backward, CallOpInterface, CallableOpInterface, EntityWithId, OpOperandImpl,
     OpOperandRange, OpResultRange, Operation, OperationRef, ProgramPoint, RegionBranchOpInterface,
     RegionBranchTerminatorOpInterface, RegionSuccessorIter, Report, SmallVec, StorableEntity,
     SuccessorOperands, ValueRef,
@@ -43,7 +41,7 @@ pub trait SparseBackwardDataFlowAnalysis: 'static {
     /// The transfer function for calls to external functions.
     ///
     /// This function is expected to set lattice values of the call operands. By default, this calls
-    /// [visit_call_operand] for all operands.
+    /// [Self::visit_call_operand] for all operands.
     fn visit_external_call(
         &self,
         call: &dyn CallOpInterface,
@@ -340,7 +338,7 @@ fn visit_region_successors<A>(
     let op = branch.as_operation();
 
     let mut const_operands =
-        SmallVec::<[Option<Box<dyn AttributeValue>>; 2]>::with_capacity(op.num_operands());
+        SmallVec::<[Option<AttributeRef>; 2]>::with_capacity(op.num_operands());
     const_operands.resize_with(op.num_operands(), || None);
     let successors = branch.get_entry_successor_regions(&const_operands);
 
@@ -392,8 +390,7 @@ fn visit_region_successors_from_terminator<A>(
     );
 
     let num_operands = terminator.num_operands();
-    let mut const_operands =
-        SmallVec::<[Option<Box<dyn AttributeValue>>; 2]>::with_capacity(num_operands);
+    let mut const_operands = SmallVec::<[Option<AttributeRef>; 2]>::with_capacity(num_operands);
     const_operands.resize_with(num_operands, || None);
 
     let terminator_op = terminator.as_operation();

@@ -310,7 +310,7 @@ mod tests {
         let block = block.borrow();
         let block_args = block.arguments();
 
-        let mut stack = OperandStack::default();
+        let mut stack = OperandStack::new(hir_ctx.clone());
         // Stack top is `[v1, v2, v3, v0]`.
         for value in [
             block_args[0] as hir::ValueRef,
@@ -360,7 +360,7 @@ mod tests {
         let block = block.borrow();
         let block_args = block.arguments();
 
-        let mut stack = OperandStack::default();
+        let mut stack = OperandStack::new(hir_ctx.clone());
         // Stack top is `[v0, v1, v2, v3]`.
         for value in block_args.iter().copied().rev() {
             stack.push(value as hir::ValueRef);

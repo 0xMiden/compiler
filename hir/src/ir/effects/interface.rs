@@ -43,24 +43,24 @@ impl<T: Effect> dyn EffectOpInterface<T> {
     where
         E: Effect,
     {
-        self.effects().filter(|instance| (instance.effect() as &dyn Any).is::<E>())
+        self.effects().filter(|instance| instance.effect().as_any().is::<E>())
     }
 
     /// Returns true if the operation exhibits the given effect.
     pub fn has_effect<E>(&self) -> bool
     where
-        E: Any,
+        E: Effect,
     {
-        self.effects().any(|instance| (instance.effect() as &dyn Any).is::<E>())
+        self.effects().any(|instance| instance.effect().as_any().is::<E>())
     }
 
     /// Returns true if the operation only exhibits the given effect.
     pub fn only_has_effect<E>(&self) -> bool
     where
-        E: Any,
+        E: Effect,
     {
         let mut effects = self.effects();
-        !effects.is_empty() && effects.all(|instance| (instance.effect() as &dyn Any).is::<E>())
+        !effects.is_empty() && effects.all(|instance| instance.effect().as_any().is::<E>())
     }
 }
 

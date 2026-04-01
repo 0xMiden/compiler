@@ -17,6 +17,7 @@ use super::{
     ComponentIndex, ComponentInstanceIndex, ComponentInstantiation, ComponentTypesBuilder,
     ComponentUpvarIndex, ModuleIndex, ModuleInstanceIndex, ModuleUpvarIndex, ParsedComponent,
     StaticModuleIndex, TypeComponentInstanceIndex, TypeDef, TypeFuncIndex, TypeModuleIndex,
+    flat::CanonicalAbiMode,
     interface_type_to_ir,
     shim_bypass::{self, ShimBypassInfo},
 };
@@ -460,7 +461,8 @@ impl<'a> ComponentTranslator<'a> {
         let type_func_idx = types.convert_component_func_type(frame.types, canon_lift.ty).unwrap();
 
         let component_types = types.resources_mut_and_types().1;
-        let func_ty = convert_lifted_func_ty(CallConv::CanonLift, &type_func_idx, component_types);
+        let func_ty =
+            convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
         generate_export_lifting_function(
             &mut self.result,
@@ -673,7 +675,7 @@ impl<'a> ComponentTranslator<'a> {
 }
 
 fn convert_lifted_func_ty(
-    abi: CallConv,
+    _mode: CanonicalAbiMode,
     ty: &TypeFuncIndex,
     component_types: &super::ComponentTypes,
 ) -> FunctionType {
@@ -691,7 +693,7 @@ fn convert_lifted_func_ty(
     FunctionType {
         params,
         results,
-        abi,
+        abi: CallConv::ComponentModel,
     }
 }
 
@@ -718,7 +720,7 @@ fn canon_lower_func(
 
             let component_types = types.resources_mut_and_types().1;
             let func_ty =
-                convert_lifted_func_ty(CallConv::CanonLower, &type_func_idx, component_types);
+                convert_lifted_func_ty(CanonicalAbiMode::Import, &type_func_idx, component_types);
 
             let mut path = module_path.clone();
             path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));
@@ -801,7 +803,7 @@ fn canon_lower_from_alias_export(
             // We found the type information, use it to create the correct signature
             let component_types = types.resources_mut_and_types().1;
             let func_ty =
-                convert_lifted_func_ty(CallConv::CanonLower, &type_func_idx, component_types);
+                convert_lifted_func_ty(CanonicalAbiMode::Import, &type_func_idx, component_types);
 
             let mut path = module_path.clone();
             path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));

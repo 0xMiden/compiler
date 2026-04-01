@@ -78,7 +78,11 @@ impl OpEmitter<'_> {
         //
         // What remains on the stack at this point are the low 64-bits,
         // which is also our result.
-        self.emit_n(2, masm::Instruction::Assertz, span);
+        self.emit_n(
+            2,
+            Self::assertz_with_message_inst("128-bit value does not fit in u64", span),
+            span,
+        );
     }
 
     /// Convert a 128-bit value to u32
@@ -95,7 +99,11 @@ impl OpEmitter<'_> {
         //
         // What remains on the stack at this point are the low 32-bits,
         // which is also our result.
-        self.emit_n(3, masm::Instruction::Assertz, span);
+        self.emit_n(
+            3,
+            Self::assertz_with_message_inst("128-bit value does not fit in u32", span),
+            span,
+        );
     }
 
     /// Convert a unsigned 128-bit value to i64
@@ -139,7 +147,7 @@ impl OpEmitter<'_> {
             [
                 // Assert that both 32-bit limbs of the most significant 64 bits match,
                 // consuming them in the process
-                masm::Instruction::AssertEq,
+                Self::assert_eq_with_message_inst("128-bit value does not fit in i64", span),
                 // At this point, the stack is: [is_signed, x1, x0]
                 //
                 // Select an expected value for the sign bit based on the is_signed flag
@@ -158,7 +166,7 @@ impl OpEmitter<'_> {
                 // any other combination will trap.
                 //
                 // [x1, x0]
-                masm::Instruction::AssertEq,
+                Self::assert_eq_with_message_inst("128-bit value does not fit in i64", span),
             ],
             span,
         );
@@ -234,8 +242,7 @@ impl OpEmitter<'_> {
             matches!(overflow, Overflow::Wrapping),
             "Only 128bit *wrapping* adds implemented as yet."
         );
-
-        self.raw_exec("::intrinsics::i128::add", span);
+        self.raw_exec("::miden::core::math::u128::wrapping_add", span);
     }
 
     /// Pops two i128 values off the stack, `b` and `a`, and performs `a - b`.
@@ -244,13 +251,12 @@ impl OpEmitter<'_> {
             matches!(overflow, Overflow::Wrapping),
             "Only 128bit *wrapping* subs implemented as yet."
         );
-
-        self.raw_exec("::intrinsics::i128::sub", span);
+        self.raw_exec("::miden::core::math::u128::wrapping_sub", span);
     }
 
     /// Pops two i128 values off the stack, `b` and `a`, and performs `a * b`.
     #[inline]
     pub fn mul_i128(&mut self, span: SourceSpan) {
-        self.raw_exec("::intrinsics::i128::mul", span);
+        self.raw_exec("::miden::core::math::u128::wrapping_mul", span);
     }
 }

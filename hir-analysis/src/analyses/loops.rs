@@ -55,7 +55,8 @@ impl LoopAction {
     }
 }
 
-/// An [AnalyisState] that associates a [LoopAction] with some anchor ([CfgEdge] for now)
+/// An [crate::AnalysisState] that associates a [LoopAction] with some anchor
+/// ([super::dce::CfgEdge] for now)
 #[derive(Copy, Clone)]
 pub struct LoopState {
     anchor: LatticeAnchorRef,

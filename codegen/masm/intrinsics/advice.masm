@@ -24,13 +24,13 @@ pub proc adv_push_mapvaln
     # Stack: [num_elements, ...]
 end
 
-#! Emits an event to request a Falcon signature loaded to the advice stack
+#! Emits an event to request a Falcon signature loaded to the advice stack.
 #! MSG and PK are expected to be on the operand stack.
-#! Emits the canonical `miden::auth::request` event introduced in node/client 0.12.
+#! Emits the canonical `miden::protocol::auth::request` event used by protocol v0.14.
 #!
 #! Inputs:  [msg3, msg2, msg1, msg0, pk3, pk2, pk1, pk0, ...]
 #! Outputs: [...]
-const AUTH_REQUEST_EVENT=event("miden::auth::request")
+const AUTH_REQUEST_EVENT=event("miden::protocol::auth::request")
 pub proc emit_falcon_sig_to_stack
     emit.AUTH_REQUEST_EVENT
     dropw dropw

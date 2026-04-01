@@ -10,35 +10,128 @@ pub use self::{
     stack::StackOperand,
 };
 use super::*;
-use crate::{DynHash, DynPartialEq};
+use crate::{DynHash, DynPartialEq, PartialEqable, any::AsAny, interner};
 
 /// A unique identifier for a [Value] in the IR
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct ValueId(u32);
+
 impl ValueId {
+    /// The shift used to offset the actual unique value id into untagged bits
+    const ID_SHIFT: u32 = 6;
+    /// The maximum value of any raw u32 value used as a [ValueId]
+    const MAX_VALUE_ID: u32 = (u8::MAX as u32) << 24;
+    /// 6 bits are reserved for op result indices, used when OP_RESULT_TAG is set
+    const OP_RESULT_INDEX_MASK: u32 = (u8::MAX as u32) >> 2;
+    /// 1 bit is reserved for marking op result value ids
+    const OP_RESULT_TAG: u32 = 1u32 << 30;
+    /// 1 bit is reserved for marking user-defined symbols
+    const USER_DEFINED_TAG: u32 = 1u32 << 31;
+
+    /// Create a [ValueId] from a [Symbol](interner::Symbol) representing a user-defined name.
+    ///
+    /// This is used when parsing IR, so that we can preserve the user-provided names.
+    pub const fn from_symbol(sym: interner::Symbol) -> Self {
+        // Symbol guarantees that 8 bits of its 32-bit repr are reserved for uses like this
+        let sym = sym.as_u32();
+        debug_assert!(
+            sym < Self::MAX_VALUE_ID,
+            "cannot convert symbol id to value id: bits set in reserved range"
+        );
+        Self((sym << Self::ID_SHIFT) | Self::USER_DEFINED_TAG)
+    }
+
+    /// Returns true if this [ValueId] was user-defined
+    pub const fn is_user_defined(self) -> bool {
+        self.0 & Self::USER_DEFINED_TAG == Self::USER_DEFINED_TAG
+    }
+
+    /// Returns true if this [ValueId] represents an operation result
+    pub const fn is_op_result(self) -> bool {
+        self.0 & Self::OP_RESULT_TAG == Self::OP_RESULT_TAG
+    }
+
+    /// Returns the index of the operation result that this value id corresponds to.
+    ///
+    /// Returns `None` if this [ValueId] does not represent a compressed operation result, e.g.
+    /// values of the form `%result:2`, where `%result` is the name bound to some operation's
+    /// results, of which there are 2.
+    pub const fn result_index(self) -> Option<u8> {
+        if self.is_op_result() {
+            Some((self.0 & Self::OP_RESULT_INDEX_MASK) as u8)
+        } else {
+            None
+        }
+    }
+
+    /// Convert this [ValueId] into one which represents the `index`th result of some operation.
+    pub const fn with_result_index(self, index: u8) -> Self {
+        assert!(
+            index as u32 <= Self::OP_RESULT_INDEX_MASK,
+            "invalid op result index: must be less than 64",
+        );
+        Self((self.0 & !Self::OP_RESULT_INDEX_MASK) | index as u32)
+    }
+
+    /// Strip operation result metadata from this [ValueId]
+    ///
+    /// This is used during parsing to look up definitions of a value whose name is shared across
+    /// multiple operation results, without incorporating the result index into the hash.
+    pub(super) const fn without_result_index(self) -> Self {
+        Self(self.0 & !(Self::OP_RESULT_INDEX_MASK | Self::OP_RESULT_TAG))
+    }
+
     pub const fn from_u32(id: u32) -> Self {
-        Self(id)
+        assert!(id < Self::MAX_VALUE_ID, "invalid value id: bits set in reserved range");
+        Self(id << Self::ID_SHIFT)
     }
 
     pub const fn as_u32(&self) -> u32 {
-        self.0
+        let untagged = self.0 & !(Self::USER_DEFINED_TAG | Self::OP_RESULT_TAG);
+        untagged >> Self::ID_SHIFT
+    }
+
+    pub const fn as_symbol_id(self) -> Option<interner::Symbol> {
+        if self.is_user_defined() {
+            Some(unsafe { core::mem::transmute::<u32, interner::Symbol>(self.as_u32()) })
+        } else {
+            None
+        }
     }
 }
+
 impl EntityId for ValueId {
     #[inline(always)]
     fn as_usize(&self) -> usize {
         self.0 as usize
     }
 }
+
 impl fmt::Debug for ValueId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "v{}", &self.0)
+        if f.alternate() {
+            f.debug_struct("ValueId")
+                .field("is_user_defined", &self.is_user_defined())
+                .field("is_op_result", &self.is_op_result())
+                .field("op_result_index", &self.result_index())
+                .field("id", &self.as_u32())
+                .finish()
+        } else {
+            fmt::Display::fmt(self, f)
+        }
     }
 }
+
 impl fmt::Display for ValueId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "v{}", &self.0)
+        if let Some(sym) = self.as_symbol_id() {
+            write!(f, "%{sym}")
+        } else if let Some(index) = self.result_index() {
+            write!(f, "%{}#{index}", self.as_u32())
+        } else {
+            write!(f, "%{}", self.as_u32())
+        }
     }
 }
 
@@ -49,15 +142,18 @@ impl fmt::Display for ValueId {
 /// the graph formed of the edges between values and operations via operands forms the data-flow
 /// graph of the program.
 pub trait Value:
-    Any
+    AsAny
     + EntityWithId<Id = ValueId>
     + Spanned
     + Usable<Use = OpOperandImpl>
     + fmt::Debug
     + fmt::Display
+    + PartialEqable
     + DynPartialEq
     + DynHash
 {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
     /// Set the source location of this value
     fn set_span(&mut self, span: SourceSpan);
     /// Get the type of this value
@@ -118,17 +214,17 @@ pub trait Value:
 impl dyn Value {
     #[inline]
     pub fn is<T: Value>(&self) -> bool {
-        (self as &dyn Any).is::<T>()
+        Value::as_any(self).is::<T>()
     }
 
     #[inline]
     pub fn downcast_ref<T: Value>(&self) -> Option<&T> {
-        (self as &dyn Any).downcast_ref::<T>()
+        Value::as_any(self).downcast_ref::<T>()
     }
 
     #[inline]
     pub fn downcast_mut<T: Value>(&mut self) -> Option<&mut T> {
-        (self as &mut dyn Any).downcast_mut::<T>()
+        Value::as_any_mut(self).downcast_mut::<T>()
     }
 
     /// Replace all uses of `self` with `replacement` if `should_replace` returns true
@@ -229,6 +325,14 @@ macro_rules! value_impl {
         }
 
         impl Value for $ValueKind {
+            #[inline(always)]
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+            #[inline(always)]
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
+            }
             fn ty(&self) -> &Type {
                 &self.ty
             }

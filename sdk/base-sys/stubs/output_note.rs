@@ -15,10 +15,14 @@ pub extern "C" fn output_note_create_plain(
 
 #[unsafe(export_name = "miden::protocol::output_note::add_asset")]
 pub extern "C" fn output_note_add_asset_plain(
-    _a0: f32,
-    _a1: f32,
-    _a2: f32,
-    _a3: f32,
+    _k0: f32,
+    _k1: f32,
+    _k2: f32,
+    _k3: f32,
+    _v0: f32,
+    _v1: f32,
+    _v2: f32,
+    _v3: f32,
     _note_idx: f32,
 ) {
     unsafe { core::hint::unreachable_unchecked() }

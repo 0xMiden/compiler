@@ -1,10 +1,11 @@
+use alloc::rc::Rc;
 use core::{
     fmt,
     ops::{Index, IndexMut},
 };
 
-use miden_core::{Felt, FieldElement};
-use midenc_hir::{AttributeValue, Immediate, Type, ValueRef};
+use miden_core::Felt;
+use midenc_hir::{Attribute, AttributeRef, Context, Immediate, ImmediateAttr, Type, ValueRef};
 use smallvec::{SmallVec, smallvec};
 
 /// This represents a constraint an operand's usage at
@@ -24,7 +25,7 @@ pub enum Constraint {
 /// Represents the type of operand represented on the operand stack
 pub enum OperandType {
     /// The operand is a literal, unassociated with any value in the IR
-    Const(Box<dyn AttributeValue>),
+    Const(AttributeRef),
     /// The operand is an SSA value of known type
     Value(ValueRef),
     /// The operand is an intermediate runtime value of a known type, but
@@ -34,7 +35,7 @@ pub enum OperandType {
 impl Clone for OperandType {
     fn clone(&self) -> Self {
         match self {
-            Self::Const(value) => Self::Const(value.clone_value()),
+            Self::Const(value) => Self::Const(*value),
             Self::Value(value) => Self::Value(*value),
             Self::Type(ty) => Self::Type(ty.clone()),
         }
@@ -44,9 +45,7 @@ impl OperandType {
     /// Get the type representation of this operand
     pub fn ty(&self) -> Type {
         match self {
-            Self::Const(imm) => {
-                imm.downcast_ref::<Immediate>().expect("unexpected constant value type").ty()
-            }
+            Self::Const(imm) => imm.borrow().ty().clone(),
             Self::Value(value) => value.borrow().ty().clone(),
             Self::Type(ty) => ty.clone(),
         }
@@ -84,15 +83,23 @@ impl PartialEq<Type> for OperandType {
 impl PartialEq<Immediate> for OperandType {
     fn eq(&self, other: &Immediate) -> bool {
         match self {
-            Self::Const(a) => a.downcast_ref::<Immediate>().is_some_and(|a| a == other),
+            Self::Const(a) => a.borrow().as_immediate().is_some_and(|a| &a == other),
             _ => false,
         }
     }
 }
-impl PartialEq<dyn AttributeValue> for OperandType {
-    fn eq(&self, other: &dyn AttributeValue) -> bool {
+impl PartialEq<dyn Attribute> for OperandType {
+    fn eq(&self, other: &dyn Attribute) -> bool {
         match self {
-            Self::Const(a) => a.as_ref() == other,
+            Self::Const(a) => a.borrow().dyn_eq(other),
+            _ => false,
+        }
+    }
+}
+impl PartialEq<AttributeRef> for OperandType {
+    fn eq(&self, other: &AttributeRef) -> bool {
+        match self {
+            Self::Const(a) => *a == *other,
             _ => false,
         }
     }
@@ -115,13 +122,8 @@ impl From<Type> for OperandType {
         Self::Type(ty)
     }
 }
-impl From<Immediate> for OperandType {
-    fn from(value: Immediate) -> Self {
-        Self::Const(Box::new(value))
-    }
-}
-impl From<Box<dyn AttributeValue>> for OperandType {
-    fn from(value: Box<dyn AttributeValue>) -> Self {
+impl From<AttributeRef> for OperandType {
+    fn from(value: AttributeRef) -> Self {
         Self::Const(value)
     }
 }
@@ -153,11 +155,13 @@ pub struct Operand {
     /// we have about the remaining parts of the original operand on the stack.
     operand: OperandType,
 }
-impl Default for Operand {
-    fn default() -> Self {
+impl Operand {
+    pub fn default(context: Rc<Context>) -> Self {
         Self {
             word: smallvec![Type::Felt],
-            operand: OperandType::Const(Box::new(Immediate::Felt(Felt::ZERO))),
+            operand: OperandType::Const(
+                context.create_attribute::<ImmediateAttr, _>(Immediate::Felt(Felt::ZERO)),
+            ),
         }
     }
 }
@@ -167,9 +171,15 @@ impl PartialEq<ValueRef> for Operand {
         self.operand.eq(other)
     }
 }
-impl PartialEq<dyn AttributeValue> for Operand {
+impl PartialEq<dyn Attribute> for Operand {
     #[inline(always)]
-    fn eq(&self, other: &dyn AttributeValue) -> bool {
+    fn eq(&self, other: &dyn Attribute) -> bool {
+        self.operand.eq(other)
+    }
+}
+impl PartialEq<AttributeRef> for Operand {
+    #[inline(always)]
+    fn eq(&self, other: &AttributeRef) -> bool {
         self.operand.eq(other)
     }
 }
@@ -197,18 +207,6 @@ impl PartialEq<Type> for &Operand {
         self.operand.eq(other)
     }
 }
-impl From<Immediate> for Operand {
-    #[inline]
-    fn from(imm: Immediate) -> Self {
-        Self::new(imm.into())
-    }
-}
-impl From<u32> for Operand {
-    #[inline]
-    fn from(imm: u32) -> Self {
-        Self::new(Immediate::U32(imm).into())
-    }
-}
 impl TryFrom<&Operand> for ValueRef {
     type Error = ();
 
@@ -225,7 +223,7 @@ impl TryFrom<&Operand> for Immediate {
 
     fn try_from(operand: &Operand) -> Result<Self, Self::Error> {
         match &operand.operand {
-            OperandType::Const(value) => value.downcast_ref::<Immediate>().copied().ok_or(()),
+            OperandType::Const(value) => value.borrow().as_immediate().ok_or(()),
             _ => Err(()),
         }
     }
@@ -281,13 +279,13 @@ impl Operand {
         self.word.len()
     }
 
-    /// Get the [OperandType] representing the value of this operand
+    /// Get the `OperandType` representing the value of this operand
     #[inline(always)]
     pub fn value(&self) -> &OperandType {
         &self.operand
     }
 
-    /// Get this operand as a [Value]
+    /// Get this operand as a [ValueRef]
     #[inline]
     pub fn as_value(&self) -> Option<ValueRef> {
         self.try_into().ok()
@@ -312,18 +310,30 @@ impl Operand {
 /// In addition to the state tracked, this structure also has an API that mimics the
 /// stack manipulation instructions we can emit in the code generator, so that as we
 /// emit instructions and modify this structure at the same time, 1:1.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct OperandStack {
+    context: Rc<Context>,
     stack: Vec<Operand>,
 }
-impl Default for OperandStack {
-    fn default() -> Self {
-        Self {
-            stack: Vec::with_capacity(16),
-        }
+impl Eq for OperandStack {}
+impl PartialEq for OperandStack {
+    fn eq(&self, other: &Self) -> bool {
+        self.stack == other.stack
     }
 }
 impl OperandStack {
+    pub fn new(context: Rc<Context>) -> Self {
+        Self {
+            context,
+            stack: Vec::with_capacity(16),
+        }
+    }
+
+    #[inline(always)]
+    pub fn context_rc(&self) -> Rc<Context> {
+        self.context.clone()
+    }
+
     /// Renames the `n`th operand from the top of the stack to `value`
     ///
     /// The type is assumed to remain unchanged
@@ -417,6 +427,14 @@ impl OperandStack {
     #[inline]
     pub fn push<V: Into<Operand>>(&mut self, value: V) {
         self.stack.push(value.into());
+    }
+
+    /// Pushes an immediate operand on top of the stack
+    pub fn push_immediate(&mut self, imm: impl Into<Immediate>) {
+        let imm = imm.into();
+        self.stack.push(Operand::new(OperandType::Const(
+            self.context.create_attribute::<ImmediateAttr, _>(imm),
+        )));
     }
 
     /// Pops the operand on top of the stack
@@ -563,7 +581,8 @@ mod tests {
 
     #[test]
     fn operand_stack_homogenous_operand_sizes_test() {
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
 
         let zero = Immediate::U32(0);
         let one = Immediate::U32(1);
@@ -587,10 +606,10 @@ mod tests {
         }
 
         // push
-        stack.push(zero);
-        stack.push(one);
-        stack.push(two);
-        stack.push(three);
+        stack.push_immediate(zero);
+        stack.push_immediate(one);
+        stack.push_immediate(two);
+        stack.push_immediate(three);
         assert_eq!(stack.len(), 4);
         assert_eq!(stack[0], three);
         assert_eq!(stack[1], two);
@@ -681,8 +700,8 @@ mod tests {
     fn operand_stack_values_test() {
         use midenc_dialect_hir::Load;
 
-        let mut stack = OperandStack::default();
         let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
 
         let ptr_u8 = Type::from(PointerType::new(Type::U8));
         let array_u8 = Type::from(ArrayType::new(Type::U8, 4));
@@ -725,10 +744,10 @@ mod tests {
         assert_eq!(stack[1], three);
 
         // padw
-        stack.push(Immediate::Felt(Felt::ZERO));
-        stack.push(Immediate::Felt(Felt::ZERO));
-        stack.push(Immediate::Felt(Felt::ZERO));
-        stack.push(Immediate::Felt(Felt::ZERO));
+        stack.push_immediate(Immediate::Felt(Felt::ZERO));
+        stack.push_immediate(Immediate::Felt(Felt::ZERO));
+        stack.push_immediate(Immediate::Felt(Felt::ZERO));
+        stack.push_immediate(Immediate::Felt(Felt::ZERO));
         assert_eq!(stack.find(&one), Some(7));
         assert_eq!(stack.find(&three), Some(4));
 
@@ -791,7 +810,8 @@ mod tests {
 
     #[test]
     fn operand_stack_heterogenous_operand_sizes_test() {
-        let mut stack = OperandStack::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
 
         let zero = Immediate::U32(0);
         let one = Immediate::U32(1);
@@ -804,8 +824,8 @@ mod tests {
         ]));
 
         // push
-        stack.push(zero);
-        stack.push(one);
+        stack.push_immediate(zero);
+        stack.push_immediate(one);
         stack.push(two.clone());
         stack.push(three.clone());
         stack.push(struct_a.clone());

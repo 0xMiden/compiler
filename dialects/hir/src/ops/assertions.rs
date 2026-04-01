@@ -1,85 +1,54 @@
-use midenc_hir::{derive::operation, effects::*, traits::*, *};
+use midenc_hir::{
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    dialects::builtin::attributes::U32Attr,
+    effects::*,
+    traits::*,
+    *,
+};
 
 use crate::HirDialect;
 
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(OpPrinter, MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
+#[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct Assert {
     #[operand]
     value: Bool,
-    #[attr(hidden)]
+    #[attr]
     #[default]
-    code: u32,
+    code: U32Attr,
 }
 
-impl EffectOpInterface<MemoryEffect> for Assert {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
-    }
-}
-
-impl OpPrinter for Assert {
-    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
-        use formatter::*;
-
-        let doc = display(self.op.name()) + const_text(" ") + display(self.value().as_value_ref());
-        let code = *self.code();
-        if code == 0 {
-            doc + const_text(";")
-        } else {
-            doc + const_text(" #[code = ") + display(code) + const_text("];")
-        }
-    }
-}
-
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(OpPrinter, MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
+#[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct Assertz {
     #[operand]
     value: Bool,
-    #[attr(hidden)]
+    #[attr]
     #[default]
-    code: u32,
+    code: U32Attr,
 }
 
-impl EffectOpInterface<MemoryEffect> for Assertz {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
-    }
-}
-
-impl OpPrinter for Assertz {
-    fn print(&self, _flags: &OpPrintingFlags, _context: &Context) -> formatter::Document {
-        use formatter::*;
-
-        let doc = display(self.op.name()) + const_text(" ") + display(self.value().as_value_ref());
-        let code = *self.code();
-        if code == 0 {
-            doc + const_text(";")
-        } else {
-            doc + const_text(" #[code = ") + display(code) + const_text("];")
-        }
-    }
-}
-
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(MemoryEffectOpInterface)
+    implements(MemoryEffectOpInterface, OpPrinter)
 )]
+#[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct AssertEq {
     #[operand]
     lhs: AnyInteger,
     #[operand]
     rhs: AnyInteger,
-}
-
-impl EffectOpInterface<MemoryEffect> for AssertEq {
-    fn effects(&self) -> EffectIterator<MemoryEffect> {
-        EffectIterator::from_smallvec(smallvec![EffectInstance::new(MemoryEffect::Write)])
-    }
+    #[attr]
+    #[default]
+    code: U32Attr,
 }

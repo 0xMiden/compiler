@@ -3,16 +3,19 @@ use midenc_dialect_cf as cf;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
+use midenc_dialect_wasm as wasm;
 use midenc_hir::{
     Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
     dialects::builtin,
     traits::{BinaryOp, Commutative},
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
-use smallvec::{SmallVec, smallvec};
+use smallvec::smallvec;
 
 use super::*;
-use crate::{Constraint, emitter::BlockEmitter, masm, opt::operands::SolverOptions};
+use crate::{
+    Constraint, emit::OpEmitter, emitter::BlockEmitter, masm, opt::operands::SolverOptions,
+};
 
 /// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
 fn invocation_target_from_symbol_path(
@@ -146,7 +149,7 @@ impl HirLowering for builtin::RetImm {
         emitter.truncate_stack(0, span);
 
         // We need to push the return value on the stack at this point.
-        emitter.literal(*self.value(), span);
+        emitter.literal(*self.get_value(), span);
 
         Ok(())
     }
@@ -322,16 +325,16 @@ stack on exit from 'after': {:#?}
 
 impl HirLowering for scf::IndexSwitch {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        // Lowering 'hir.index_switch' is done by lowering to a sequence of if/else ops, comparing
-        // the selector against each non-default case to determine whether control should enter
-        // that block. The final else contains the default case.
-        let mut cases = self.cases().iter().copied().collect::<SmallVec<[_; 4]>>();
-        cases.sort();
+        // Lowering `hir.index_switch` is done with nested `if.true`/`else` regions that either
+        // compare the selector to each explicit case or partition a contiguous selector range.
+        let cases = utils::sorted_switch_cases(self);
+        let is_contiguous = utils::are_switch_cases_contiguous(&cases);
 
         // We have N cases, plus a default case
         //
         // 1. If we have exactly 1 non-default case, we can lower to an `hir.if`
-        // 2. If we have N non-default non-contiguous (or N < 3 contiguous) cases, lower to:
+        // 2. If the explicit cases are sparse, or if there are fewer than 3 contiguous cases,
+        //    lower to a linear search:
         //
         //      if selector == case1 {
         //          <case1 body>
@@ -347,25 +350,9 @@ impl HirLowering for scf::IndexSwitch {
         //          }
         //      }
         //
-        //      if selector < case3 {
-        //         if selector == case1 {
-        //             <case1 body>
-        //         } else {
-        //             <case2 body>
-        //         }
-        //      } else {
-        //         if selector < case4 {
-        //            <case3 body>
-        //         } else {
-        //            if selector == case4 {
-        //               <case4 body>
-        //            } else {
-        //               <default>
-        //            }
-        //         }
-        //      }
-        //
-        // 3. If we have N non-default contiguous cases, use binary search to reduce search space:
+        // 3. If we have at least 3 contiguous non-default cases, use binary search to reduce the
+        //    search space. The lowering emits a single out-of-range guard up front, then
+        //    partitions the remaining interval recursively:
         //
         //      if selector < case3 {
         //         if selector == case1 {
@@ -385,27 +372,12 @@ impl HirLowering for scf::IndexSwitch {
         //         }
         //      }
         //
-        // We do not try to use the binary search approach with non-contiguous cases, as we would
-        // be forced to emit duplicate copies of the fallback branch, and it isn't clear the size
-        // tradeoff would be worth it without branch hints.
-
         assert!(!cases.is_empty());
-        if cases.len() == 1 {
-            return utils::emit_binary_search(self, emitter, &[], &cases, 0, 1);
+        if cases.len() < 3 || !is_contiguous {
+            return utils::emit_linear_search(self, emitter, &cases);
         }
 
-        // Emit binary-search-optimized 'hir.if' sequence
-        //
-        // Partition such that the condition for the `then` branch guarantees that no fallback
-        // branch is needed, i.e. an even number of cases must be in the first partition
-        let num_cases = cases.len();
-        let midpoint = cases[0].midpoint(cases[cases.len() - 1]);
-        let partition_point = core::cmp::min(
-            cases.len(),
-            cases.partition_point(|item| *item < midpoint).next_multiple_of(2),
-        );
-        let (a, b) = cases.split_at(partition_point);
-        utils::emit_binary_search(self, emitter, a, b, midpoint, num_cases)
+        utils::emit_binary_search(self, emitter, &cases)
     }
 
     fn required_operands(&self) -> ValueRange<'_, 4> {
@@ -431,7 +403,7 @@ impl HirLowering for scf::Condition {
 
 impl HirLowering for arith::Constant {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let value = *self.value();
+        let value = *self.get_value();
 
         emitter.inst_emitter(self.as_operation()).literal(value, self.span());
 
@@ -441,7 +413,7 @@ impl HirLowering for arith::Constant {
 
 impl HirLowering for hir::Assert {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let code = *self.code();
+        let code = *self.get_code();
 
         emitter.emitter().assert(Some(code), self.span());
 
@@ -451,7 +423,7 @@ impl HirLowering for hir::Assert {
 
 impl HirLowering for hir::Assertz {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let code = *self.code();
+        let code = *self.get_code();
 
         emitter.emitter().assertz(Some(code), self.span());
 
@@ -461,15 +433,9 @@ impl HirLowering for hir::Assertz {
 
 impl HirLowering for hir::AssertEq {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.emitter().assert_eq(self.span());
+        let code = *self.get_code();
 
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::Breakpoint {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), masm::Instruction::Breakpoint)));
+        emitter.emitter().assert_eq(Some(code), self.span());
 
         Ok(())
     }
@@ -482,7 +448,8 @@ impl HirLowering for ub::Unreachable {
         let span = self.span();
         let mut op_emitter = emitter.emitter();
         op_emitter.emit_push(0u32, span);
-        op_emitter.emit(masm::Instruction::Assert, span);
+        op_emitter
+            .emit(OpEmitter::assert_with_message_inst("entered unreachable code", span), span);
 
         Ok(())
     }
@@ -506,34 +473,36 @@ impl HirLowering for ub::Poison {
         op_emitter.literal(
             {
                 match self.value().as_immediate() {
-                    Ok(imm) => imm,
-                    Err(Type::U256) => {
-                        return Err(self
-                            .as_operation()
-                            .context()
-                            .diagnostics()
-                            .diagnostic(Severity::Error)
-                            .with_message("invalid operation")
-                            .with_primary_label(
-                                span,
-                                "the lowering for u256 immediates is not yet implemented",
-                            )
-                            .into_report());
-                    }
-                    Err(Type::F64) => {
-                        return Err(self
-                            .as_operation()
-                            .context()
-                            .diagnostics()
-                            .diagnostic(Severity::Error)
-                            .with_message("invalid operation")
-                            .with_primary_label(
-                                span,
-                                "the lowering for f64 immediates is not yet implemented",
-                            )
-                            .into_report());
-                    }
-                    Err(ty) => panic!("unexpected poison type: {ty}"),
+                    Some(imm) => imm,
+                    None => match self.value().as_value() {
+                        Type::U256 => {
+                            return Err(self
+                                .as_operation()
+                                .context()
+                                .diagnostics()
+                                .diagnostic(Severity::Error)
+                                .with_message("invalid operation")
+                                .with_primary_label(
+                                    span,
+                                    "the lowering for u256 immediates is not yet implemented",
+                                )
+                                .into_report());
+                        }
+                        Type::F64 => {
+                            return Err(self
+                                .as_operation()
+                                .context()
+                                .diagnostics()
+                                .diagnostic(Severity::Error)
+                                .with_message("invalid operation")
+                                .with_primary_label(
+                                    span,
+                                    "the lowering for f64 immediates is not yet implemented",
+                                )
+                                .into_report());
+                        }
+                        ty => panic!("unexpected poison type: {ty}"),
+                    },
                 }
             },
             span,
@@ -545,7 +514,7 @@ impl HirLowering for ub::Poison {
 
 impl HirLowering for arith::Add {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).add(*self.overflow(), self.span());
+        emitter.inst_emitter(self.as_operation()).add(*self.get_overflow(), self.span());
         Ok(())
     }
 }
@@ -561,7 +530,7 @@ impl HirLowering for arith::AddOverflowing {
 
 impl HirLowering for arith::Sub {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).sub(*self.overflow(), self.span());
+        emitter.inst_emitter(self.as_operation()).sub(*self.get_overflow(), self.span());
         Ok(())
     }
 }
@@ -577,7 +546,7 @@ impl HirLowering for arith::SubOverflowing {
 
 impl HirLowering for arith::Mul {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).mul(*self.overflow(), self.span());
+        emitter.inst_emitter(self.as_operation()).mul(*self.get_overflow(), self.span());
         Ok(())
     }
 }
@@ -871,7 +840,7 @@ impl HirLowering for hir::Exec {
         // Convert the symbol path to a fully-qualified procedure path
         let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
-        emitter.inst_emitter(self.as_operation()).exec(callee, signature, self.span());
+        emitter.inst_emitter(self.as_operation()).exec(callee, &signature, self.span());
 
         Ok(())
     }
@@ -921,7 +890,7 @@ impl HirLowering for hir::Call {
         // Convert the symbol path to a fully-qualified procedure path
         let callee = invocation_target_from_symbol_path(&callee_path, self.span());
 
-        emitter.inst_emitter(self.as_operation()).call(callee, signature, self.span());
+        emitter.inst_emitter(self.as_operation()).call(callee, &signature, self.span());
 
         Ok(())
     }
@@ -937,7 +906,9 @@ impl HirLowering for hir::Load {
 
 impl HirLowering for hir::LoadLocal {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).load_local(self.local(), self.span());
+        emitter
+            .inst_emitter(self.as_operation())
+            .load_local(&self.get_local(), self.span());
         Ok(())
     }
 }
@@ -951,7 +922,7 @@ impl HirLowering for hir::Store {
 
 impl HirLowering for hir::StoreLocal {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.emitter().store_local(self.local(), self.span());
+        emitter.emitter().store_local(&self.get_local(), self.span());
         Ok(())
     }
 }
@@ -1230,7 +1201,7 @@ impl HirLowering for arith::Join {
         //
         // The IR specifies limbs most-significant to least-significant, but the runtime stack
         // representation for two 64-bit limbs is (lo, hi).
-        if args.len() == 2 && matches!(self.ty(), Type::I128 | Type::U128) {
+        if args.len() == 2 && matches!(&*self.get_ty(), Type::I128 | Type::U128) {
             args.swap(0, 1);
             constraints.swap(0, 1);
         }
@@ -1271,7 +1242,12 @@ impl HirLowering for arith::Split {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let mut inst_emitter = emitter.inst_emitter(self.as_operation());
         inst_emitter.pop().expect("operand stack is empty");
-        for limb in self.limbs().iter().rev() {
+        // `arith.split` defines results in most-significant to least-significant order, but the
+        // underlying runtime stack representation is little-endian (least-significant parts are
+        // closer to the top of the stack). Since `arith.split` does not emit runtime instructions,
+        // we must update the operand stack to match the existing raw-part order, which means
+        // leaving the least-significant limb on top.
+        for limb in self.limbs().iter() {
             inst_emitter.push(limb.borrow().as_value_ref());
         }
         Ok(())
@@ -1286,7 +1262,7 @@ impl HirLowering for builtin::GlobalSymbol {
         let current_module = self
             .nearest_parent_op::<builtin::Module>()
             .expect("expected 'hir.global_symbol' op to have a module ancestor");
-        let symbol = current_module.borrow().resolve(&self.symbol().path).ok_or_else(|| {
+        let symbol = current_module.borrow().resolve(self.symbol().path()).ok_or_else(|| {
             context
                 .diagnostics()
                 .diagnostic(Severity::Error)
@@ -1323,7 +1299,7 @@ impl HirLowering for builtin::GlobalSymbol {
             .globals_layout()
             .get_computed_addr(global_variable)
             .expect("link error: missing global variable in computed global layout");
-        let addr = computed_addr.checked_add_signed(*self.offset()).ok_or_else(|| {
+        let addr = computed_addr.checked_add_signed(*self.get_offset()).ok_or_else(|| {
             context
                 .diagnostics()
                 .diagnostic(Severity::Error)
@@ -1345,3 +1321,38 @@ impl HirLowering for builtin::GlobalSymbol {
         Ok(())
     }
 }
+
+impl HirLowering for wasm::SignExtend {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        // We're sign-extending a value of the source type contained in an I32/I64 operand, where
+        // the destination type is wider than the source type. Wasm does not specify the contents of
+        // the excess bits. However the `sext` instruction requires them to be zero, so we truncate
+        // to meet that requirement.
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        inst_emitter.trunc(&self.get_src_ty(), self.span());
+        inst_emitter.sext(&self.get_dst_ty(), self.span());
+
+        Ok(())
+    }
+}
+
+macro_rules! impl_hir_lowering_load_sext {
+    ($op:ty) => {
+        impl HirLowering for $op {
+            fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+                let pointee_ty =
+                    self.addr().ty().pointee().expect("pointer should have been verified").clone();
+                let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+                inst_emitter.load(pointee_ty, self.span());
+                inst_emitter.sext(self.result().ty(), self.span());
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_hir_lowering_load_sext!(wasm::I32Load8S);
+impl_hir_lowering_load_sext!(wasm::I32Load16S);
+impl_hir_lowering_load_sext!(wasm::I64Load8S);
+impl_hir_lowering_load_sext!(wasm::I64Load16S);
+impl_hir_lowering_load_sext!(wasm::I64Load32S);

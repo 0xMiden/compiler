@@ -379,6 +379,66 @@ fn i64_ctz() {
 }
 
 #[test]
+fn i32_extend8_s() {
+    check_op(
+        r#"
+            i32.const 1
+            i32.extend8_s
+            drop
+        "#,
+        expect_file!["./expected/i32_extend8_s.hir"],
+    )
+}
+
+#[test]
+fn i32_extend16_s() {
+    check_op(
+        r#"
+            i32.const 1
+            i32.extend16_s
+            drop
+        "#,
+        expect_file!["./expected/i32_extend16_s.hir"],
+    )
+}
+
+#[test]
+fn i64_extend8_s() {
+    check_op(
+        r#"
+            i64.const 1
+            i64.extend8_s
+            drop
+        "#,
+        expect_file!["./expected/i64_extend8_s.hir"],
+    )
+}
+
+#[test]
+fn i64_extend16_s() {
+    check_op(
+        r#"
+            i64.const 1
+            i64.extend16_s
+            drop
+        "#,
+        expect_file!["./expected/i64_extend16_s.hir"],
+    )
+}
+
+#[test]
+fn i64_extend32_s() {
+    check_op(
+        r#"
+            i64.const 1
+            i64.extend32_s
+            drop
+        "#,
+        expect_file!["./expected/i64_extend32_s.hir"],
+    )
+}
+
+#[test]
 fn i64_extend_i32_s() {
     check_op(
         r#"

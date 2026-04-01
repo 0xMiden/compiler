@@ -11,6 +11,7 @@ mod asset;
 mod active_note;
 mod faucet;
 mod input_note;
+mod note;
 mod output_note;
 mod native_account;
 mod tx;

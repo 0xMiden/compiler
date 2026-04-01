@@ -39,10 +39,10 @@ struct MyFoo;
 impl foo::Guest for MyFoo {
     fn process_word(input: Word) -> Word {
         let result = Word::new([
-            input.inner.0 + felt!(1),
-            input.inner.1 + felt!(2),
-            input.inner.2 + felt!(3),
-            input.inner.3 + felt!(4),
+            input.a + felt!(1),
+            input.b + felt!(2),
+            input.c + felt!(3),
+            input.d + felt!(4),
         ]);
 
         result
@@ -52,10 +52,10 @@ impl foo::Guest for MyFoo {
     // The same signature, different name and body
     fn process_another_word(input: Word) -> Word {
         let result = Word::new([
-            input.inner.0 + felt!(2),
-            input.inner.1 + felt!(3),
-            input.inner.2 + felt!(4),
-            input.inner.3 + felt!(5),
+            input.a + felt!(2),
+            input.b + felt!(3),
+            input.c + felt!(4),
+            input.d + felt!(5),
         ]);
 
         result

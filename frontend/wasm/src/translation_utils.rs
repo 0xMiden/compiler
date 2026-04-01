@@ -1,9 +1,10 @@
 //! Helper functions and structures for the translation.
 
-use miden_core::{Felt, FieldElement};
+use miden_core::Felt;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_hir::{
-    AbiParam, Builder, CallConv, FunctionType, Signature, SourceSpan, Type, ValueRef, Visibility,
+    Builder, CallConv, FunctionType, SourceSpan, Type, ValueRef,
+    dialects::builtin::attributes::{AbiParam, Signature},
 };
 use midenc_session::DiagnosticsHandler;
 
@@ -120,6 +121,13 @@ pub fn emit_zero<B: ?Sized + Builder>(
         Type::U64 => builder.u64(0, SourceSpan::default()),
         Type::F64 => builder.f64(0.0, SourceSpan::default()),
         Type::Felt => builder.felt(Felt::ZERO, SourceSpan::default()),
+        Type::Enum(enum_ty) => {
+            assert!(
+                enum_ty.is_c_like(),
+                "non-C-like enums are not yet supported in canonical ABI zero emission: {enum_ty}"
+            );
+            emit_zero(enum_ty.discriminant(), builder, diagnostics)?
+        }
         Type::I128
         | Type::U128
         | Type::U256
@@ -135,15 +143,10 @@ pub fn emit_zero<B: ?Sized + Builder>(
     })
 }
 
-pub fn sig_from_func_type(
-    func_type: &FunctionType,
-    call_conv: CallConv,
-    visibility: Visibility,
-) -> Signature {
+pub fn sig_from_func_type(func_type: &FunctionType, call_conv: CallConv) -> Signature {
     Signature {
         params: func_type.params.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
         results: func_type.results.iter().map(|ty| AbiParam::new(ty.clone())).collect(),
         cc: call_conv,
-        visibility,
     }
 }

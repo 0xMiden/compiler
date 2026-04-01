@@ -1,0 +1,11 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.function(cse)' | filecheck %s
+
+// CHECK:  builtin.function public extern("C") @simple_constant() -> (i32, i32) {
+builtin.function public extern("C") @simple_constant() -> (i32, i32) {
+    // CHECK: [[V0:%\d+]] = arith.constant 1 : i32;
+    %0 = arith.constant 1 : i32;
+
+    // CHECK-NEXT: builtin.ret [[V0]], [[V0]] : (i32, i32);
+    %1 = arith.constant 1 : i32;
+    builtin.ret %0, %1 : (i32, i32);
+};

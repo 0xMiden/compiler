@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING
+- `Felt` and `Word` API changes (unified with the off-chain API).
+- `Recipient::compute` removed in favor of `build_recipient` binding.
+- Account storage `StorageMap` became `StorageMap<K,V>` and `Value` became `StorageValue<T>` where `K`, `V` and `T` have to be convertible to and from `Word` #987
+
+### Fixed
+- Fixed `pipe_words_to_memory` binding;
+
+
 ## [0.10.0]
 
 ### BREAKING

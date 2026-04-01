@@ -15,10 +15,11 @@
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
-use midenc_dialect_hir::{HirOpBuilder, assertions};
+use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
+use midenc_dialect_wasm::{WasmMemArg, WasmOpBuilder, prepare_addr};
 use midenc_hir::{
-    BlockRef, Builder, Felt, FieldElement, Immediate, PointerType,
+    BlockRef, Builder, Felt, Immediate, Op,
     Type::{self, *},
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,
@@ -256,10 +257,22 @@ pub fn translate_operator<B: ?Sized + Builder>(
             translate_load_zext(U16, U32, memarg, state, builder, span)?;
         }
         Operator::I32Load8S { memarg } => {
-            translate_load_sext(I8, I32, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let val = builder.i32_load8_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
+            state.push1(val);
         }
         Operator::I32Load16S { memarg } => {
-            translate_load_sext(I16, I32, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let val = builder.i32_load16_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
+            state.push1(val);
         }
         Operator::I64Load8U { memarg } => {
             translate_load_zext(U8, U64, memarg, state, builder, span)?;
@@ -268,13 +281,31 @@ pub fn translate_operator<B: ?Sized + Builder>(
             translate_load_zext(U16, U64, memarg, state, builder, span)?;
         }
         Operator::I64Load8S { memarg } => {
-            translate_load_sext(I8, I64, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let val = builder.i64_load8_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
+            state.push1(val);
         }
         Operator::I64Load16S { memarg } => {
-            translate_load_sext(I16, I64, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let val = builder.i64_load16_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
+            state.push1(val);
         }
         Operator::I64Load32S { memarg } => {
-            translate_load_sext(I32, I64, memarg, state, builder, span)?;
+            let addr_int = state.pop1();
+            let val = builder.i64_load32_s(
+                addr_int,
+                Some(WasmMemArg::new(memarg.offset, memarg.align)),
+                span,
+            )?;
+            state.push1(val);
         }
         Operator::I64Load32U { memarg } => {
             translate_load_zext(U32, U64, memarg, state, builder, span)?;
@@ -316,9 +347,25 @@ pub fn translate_operator<B: ?Sized + Builder>(
             // To ensure we match the Wasm semantics, treat the output of popcnt as an i32
             state.push1(builder.bitcast(count, Type::I32, span)?);
         }
-        Operator::I32Extend8S | Operator::I32Extend16S => {
+        Operator::I32Extend8S => {
             let val = state.pop1();
-            state.push1(builder.sext(val, I32, span)?);
+            state.push1(builder.sign_extend(val, Type::I8, Type::I32, span)?);
+        }
+        Operator::I32Extend16S => {
+            let val = state.pop1();
+            state.push1(builder.sign_extend(val, Type::I16, Type::I32, span)?);
+        }
+        Operator::I64Extend8S => {
+            let val = state.pop1();
+            state.push1(builder.sign_extend(val, Type::I8, Type::I64, span)?);
+        }
+        Operator::I64Extend16S => {
+            let val = state.pop1();
+            state.push1(builder.sign_extend(val, Type::I16, Type::I64, span)?);
+        }
+        Operator::I64Extend32S => {
+            let val = state.pop1();
+            state.push1(builder.sign_extend(val, Type::I32, Type::I64, span)?);
         }
         Operator::I64ExtendI32S => {
             let val = state.pop1();
@@ -355,17 +402,16 @@ pub fn translate_operator<B: ?Sized + Builder>(
             state.push1(builder.add_wrapping(arg1, arg2, span)?);
         }
         Operator::I64Add128 => {
-            let (rhs_hi, rhs_lo) = state.pop2();
-            let (lhs_hi, lhs_lo) = state.pop2();
+            let (rhs_lo, rhs_hi) = state.pop2();
+            let (lhs_lo, lhs_hi) = state.pop2();
 
             let lhs = builder.join2(lhs_hi, lhs_lo, Type::I128, span)?;
             let rhs = builder.join2(rhs_hi, rhs_lo, Type::I128, span)?;
 
             let res = builder.add_wrapping(lhs, rhs, span)?;
 
-            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_lo, res_hi]);
+            state.pushn(&[res_hi, res_lo]);
         }
         Operator::I32And | Operator::I64And => {
             let (arg1, arg2) = state.pop2();
@@ -450,17 +496,16 @@ pub fn translate_operator<B: ?Sized + Builder>(
             state.push1(builder.sub_wrapping(arg1, arg2, span)?);
         }
         Operator::I64Sub128 => {
-            let (rhs_hi, rhs_lo) = state.pop2();
-            let (lhs_hi, lhs_lo) = state.pop2();
+            let (rhs_lo, rhs_hi) = state.pop2();
+            let (lhs_lo, lhs_hi) = state.pop2();
 
             let lhs = builder.join2(lhs_hi, lhs_lo, Type::I128, span)?;
             let rhs = builder.join2(rhs_hi, rhs_lo, Type::I128, span)?;
 
             let res = builder.sub_wrapping(lhs, rhs, span)?;
 
-            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_lo, res_hi]);
+            state.pushn(&[res_hi, res_lo]);
         }
         Operator::I32Mul | Operator::I64Mul => {
             let (arg1, arg2) = state.pop2();
@@ -479,9 +524,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
-            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split2(res, Type::U64, span)?;
-            state.pushn(&[res_lo, res_hi]);
+            state.pushn(&[res_hi, res_lo]);
         }
         Operator::I64MulWideS => {
             let (arg1, arg2) = state.pop2();
@@ -491,9 +535,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
-            // Ensure the high limb is left on the top of the value stack.
             let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
-            state.pushn(&[res_lo, res_hi]);
+            state.pushn(&[res_hi, res_lo]);
         }
         Operator::I32DivS | Operator::I64DivS => {
             let (arg1, arg2) = state.pop2();
@@ -667,24 +710,14 @@ fn translate_load<B: ?Sized + Builder>(
     span: SourceSpan,
 ) -> WasmResult<()> {
     let addr_int = state.pop1();
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
+    let addr = prepare_addr(
+        addr_int,
+        &ptr_ty,
+        Some(WasmMemArg::new(memarg.offset, memarg.align)),
+        builder,
+        span,
+    )?;
     state.push1(builder.load(addr, span)?);
-    Ok(())
-}
-
-fn translate_load_sext<B: ?Sized + Builder>(
-    ptr_ty: Type,
-    sext_ty: Type,
-    memarg: &MemArg,
-    state: &mut FuncTranslationState,
-    builder: &mut FunctionBuilderExt<'_, B>,
-    span: SourceSpan,
-) -> WasmResult<()> {
-    let addr_int = state.pop1();
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
-    let val = builder.load(addr, span)?;
-    let sext_val = builder.sext(val, sext_ty, span)?;
-    state.push1(sext_val);
     Ok(())
 }
 
@@ -698,7 +731,13 @@ fn translate_load_zext<B: ?Sized + Builder>(
 ) -> WasmResult<()> {
     assert!(ptr_ty.is_unsigned_integer());
     let addr_int = state.pop1();
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
+    let addr = prepare_addr(
+        addr_int,
+        &ptr_ty,
+        Some(WasmMemArg::new(memarg.offset, memarg.align)),
+        builder,
+        span,
+    )?;
     let val = builder.load(addr, span)?;
     let zext_val = builder.zext(val, zext_ty.clone(), span)?;
     let bitcast_val = match zext_ty {
@@ -732,44 +771,15 @@ fn translate_store<B: ?Sized + Builder>(
     } else {
         val
     };
-    let addr = prepare_addr(addr_int, &ptr_ty, Some(memarg), builder, span)?;
+    let addr = prepare_addr(
+        addr_int,
+        &ptr_ty,
+        Some(WasmMemArg::new(memarg.offset, memarg.align)),
+        builder,
+        span,
+    )?;
     builder.store(addr, arg, span)?;
     Ok(())
-}
-
-fn prepare_addr<B: ?Sized + Builder>(
-    addr_int: ValueRef,
-    ptr_ty: &Type,
-    memarg: Option<&MemArg>,
-    builder: &mut FunctionBuilderExt<'_, B>,
-    span: SourceSpan,
-) -> WasmResult<ValueRef> {
-    let addr_int_ty = addr_int.borrow().ty().clone();
-    let addr_u32 = if addr_int_ty == U32 {
-        addr_int
-    } else if addr_int_ty == I32 {
-        builder.bitcast(addr_int, U32, span)?
-    } else if matches!(addr_int_ty, Ptr(_)) {
-        builder.ptrtoint(addr_int, U32, span)?
-    } else {
-        panic!("unexpected type used as pointer value: {addr_int_ty}");
-    };
-    let mut full_addr_int = addr_u32;
-    if let Some(memarg) = memarg {
-        if memarg.offset != 0 {
-            let imm = builder.imm(Immediate::U32(memarg.offset as u32), span);
-            full_addr_int = builder.add(addr_u32, imm, span)?;
-        }
-        // TODO(pauls): For now, asserting alignment helps us catch mistakes/bugs, but we should
-        // probably make this something that can be disabled to avoid the overhead in release builds
-        if memarg.align > 0 {
-            // Generate alignment assertion - aligned addresses should always produce 0 here
-            let imm = builder.imm(Immediate::U32(2u32.pow(memarg.align as u32)), span);
-            let align_offset = builder.r#mod(full_addr_int, imm, span)?;
-            builder.assertz_with_error(align_offset, assertions::ASSERT_FAILED_ALIGNMENT, span)?;
-        }
-    };
-    builder.inttoptr(full_addr_int, Type::from(PointerType::new(ptr_ty.clone())), span)
 }
 
 fn translate_call<B: ?Sized + Builder>(
@@ -812,7 +822,7 @@ fn translate_call<B: ?Sized + Builder>(
             let args = func_state.peekn(arity);
             let exec = builder.exec(function_ref, signature, args.iter().copied(), span)?;
             let borrow = exec.borrow();
-            let results = borrow.as_ref().results();
+            let results = borrow.results();
             func_state.popn(arity);
             let result_vals: Vec<ValueRef> =
                 results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
@@ -966,11 +976,7 @@ fn translate_br_table<B: ?Sized + Builder>(
             frame.br_destination()
         };
         let args = state.peekn_mut(argc).to_vec();
-        let case = SwitchCase {
-            value: label_idx as u32,
-            successor: block,
-            arguments: args,
-        };
+        let case = SwitchCase::create(label_idx as u32, block, args);
         cases.push(case);
     }
 
