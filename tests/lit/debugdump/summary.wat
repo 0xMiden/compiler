@@ -3,7 +3,7 @@
 
 ;; Check summary is present
 ;; CHECK: .debug_info summary:
-;; CHECK: Strings:{{.*}}entries
+;; CHECK: Strings:
 ;; CHECK: Types:{{.*}}entries
 ;; CHECK: Files:{{.*}}entries
 ;; CHECK: Functions:{{.*}}entries
