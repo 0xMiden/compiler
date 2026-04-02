@@ -1148,20 +1148,12 @@ impl<T, Metadata> RawEntityMetadata<T, Metadata> {
 impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
     #[track_caller]
     pub(crate) fn borrow(&self) -> EntityRef<'_, T> {
-        let ptr = self as *const Self;
-        let borrow = unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() };
-        let cell_ptr = unsafe { core::ptr::addr_of!((*ptr).entity.cell) };
-        let value = unsafe { NonNull::new_unchecked(UnsafeCell::raw_get(cell_ptr)) };
-        EntityRef::from_raw_parts(value, borrow.into_borrow_ref())
+        self.entity.borrow()
     }
 
     #[track_caller]
     pub(crate) fn borrow_mut(&self) -> EntityMut<'_, T> {
-        let ptr = (self as *const Self).cast_mut();
-        let borrow = unsafe { (*core::ptr::addr_of_mut!((*ptr).entity)).borrow_mut() };
-        let cell_ptr = unsafe { core::ptr::addr_of_mut!((*ptr).entity.cell) };
-        let value = unsafe { NonNull::new_unchecked(UnsafeCell::raw_get(cell_ptr)) };
-        EntityMut::from_raw_parts(value, borrow.into_borrow_ref_mut())
+        self.entity.borrow_mut()
     }
 
     #[inline]
