@@ -289,7 +289,7 @@ impl CallOpInterface for Call {
 #[cfg(test)]
 mod tests {
     use midenc_hir::{
-        CallOpInterface, SourceSpan, Symbol, Type, Usable,
+        CallOpInterface, SourceSpan, Symbol, SymbolTable, Type, Usable,
         dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
         testing::Test,
     };
@@ -362,6 +362,46 @@ mod tests {
         let resolved = call.borrow().resolve().unwrap();
         assert_eq!(call.borrow().callee().path(), &replacement_path);
         assert_eq!(resolved.borrow().path(), replacement_path);
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert_eq!(replacement.borrow().iter_uses().count(), 1);
+    }
+
+    #[test]
+    fn call_set_callee_relinks_symbol_use_after_old_symbol_is_removed_from_table() {
+        let mut test = Test::named(
+            "call_set_callee_relinks_symbol_use_after_old_symbol_is_removed_from_table",
+        )
+        .in_module("test");
+        let original = test.define_function("original", &[], &[]);
+        let replacement = test.define_function("replacement", &[], &[]);
+        test.with_function("caller", &[], &[]);
+
+        let signature = Signature::new(
+            &test.context_rc(),
+            core::iter::empty::<Type>(),
+            core::iter::empty::<Type>(),
+        );
+        let mut call = {
+            let mut builder = test.function_builder();
+            let call = builder.call(original, signature, [], SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            call
+        };
+
+        assert_eq!(original.borrow().iter_uses().count(), 1);
+        assert_eq!(replacement.borrow().iter_uses().count(), 0);
+
+        {
+            let mut module = test.module().borrow_mut();
+            let removed = module.remove("original".into());
+            assert!(removed.is_some(), "expected the original symbol to be removed");
+            assert!(module.get("original".into()).is_none());
+        }
+
+        call.borrow_mut().set_callee(replacement).unwrap();
+
+        let replacement_path = replacement.borrow().path();
+        assert_eq!(call.borrow().callee().path(), &replacement_path);
         assert_eq!(original.borrow().iter_uses().count(), 0);
         assert_eq!(replacement.borrow().iter_uses().count(), 1);
     }

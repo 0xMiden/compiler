@@ -101,6 +101,31 @@ impl SymbolRefAttr {
     pub fn set_user(&mut self, user: SymbolUseRef) {
         self.value.set_user(user);
     }
+
+    /// Resolves this symbol reference relative to the operation that owns the tracked use.
+    pub fn resolve(&self) -> Option<crate::SymbolRef> {
+        self.user().borrow().resolve_symbol(self.path())
+    }
+
+    /// Unlinks the tracked use from its current symbol, if it is linked.
+    pub fn unlink(&mut self) -> Option<crate::SymbolRef> {
+        let mut user = self.user();
+        let path = self.path().clone();
+        user.borrow_mut().unlink_from_symbol(user, &path)
+    }
+
+    /// Links the tracked use to `symbol` without modifying the stored path.
+    pub fn link(&mut self, symbol: crate::SymbolRef) {
+        let mut user = self.user();
+        user.borrow_mut().link_to_symbol(user, symbol);
+    }
+
+    /// Updates this symbol reference to point at `symbol`, mutating and relinking the existing use.
+    pub fn set_symbol(&mut self, symbol: crate::SymbolRef) {
+        self.unlink();
+        self.set_path(symbol.borrow().path());
+        self.link(symbol);
+    }
 }
 
 impl AttrPrinter for SymbolRefAttr {

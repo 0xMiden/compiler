@@ -1,8 +1,9 @@
 use alloc::collections::VecDeque;
 use core::fmt;
 
+use super::{SymbolPath, SymbolRef};
 use crate::{
-    Entity, EntityListItem, OperationRef, UnsafeIntrusiveEntityRef,
+    Entity, EntityListItem, OperationRef, SymbolTable, UnsafeIntrusiveEntityRef,
     dialects::builtin::attributes::SymbolRefAttr,
 };
 
@@ -19,16 +20,79 @@ pub struct SymbolUse {
     pub owner: OperationRef,
     /// The symbol attribute of the op that stores the symbol
     pub attr: UnsafeIntrusiveEntityRef<SymbolRefAttr>,
+    /// The symbol currently linked to this use, if any.
+    pub used: Option<SymbolRef>,
 }
 
 impl SymbolUse {
     #[inline]
     pub fn new(owner: OperationRef, attr: UnsafeIntrusiveEntityRef<SymbolRefAttr>) -> Self {
-        Self { owner, attr }
+        Self {
+            owner,
+            attr,
+            used: None,
+        }
     }
 
+    /// Returns the symbol attribute that owns this use.
     pub fn symbol(&self) -> UnsafeIntrusiveEntityRef<SymbolRefAttr> {
         self.attr
+    }
+
+    /// Returns the symbol currently linked to this use, if any.
+    #[inline(always)]
+    pub fn used_symbol(&self) -> Option<SymbolRef> {
+        self.used
+    }
+
+    /// Updates the symbol currently linked to this use.
+    #[inline]
+    pub fn set_used_symbol(&mut self, symbol: Option<SymbolRef>) {
+        self.used = symbol;
+    }
+
+    /// Resolves the referenced symbol relative to the owning operation of this use.
+    pub fn resolve_symbol(&self, path: &SymbolPath) -> Option<SymbolRef> {
+        let symbol_table = {
+            let owner = self.owner.borrow();
+            owner
+                .nearest_symbol_table()
+                .or_else(|| owner.implements::<dyn SymbolTable>().then_some(self.owner))
+        }?;
+        let symbol_table = symbol_table.borrow();
+        symbol_table.as_symbol_table()?.resolve(path)
+    }
+
+    /// Unlinks this use from its current symbol, if any.
+    pub fn unlink_from_symbol(
+        &mut self,
+        user: SymbolUseRef,
+        path: &SymbolPath,
+    ) -> Option<SymbolRef> {
+        if !user.is_linked() {
+            return self.used.take();
+        }
+
+        let mut symbol = self
+            .used
+            .or_else(|| self.resolve_symbol(path))
+            .expect("linked symbol uses must track or resolve their target symbol");
+        unsafe {
+            symbol.borrow_mut().uses_mut().cursor_mut_from_ptr(user).remove();
+        }
+        self.used = None;
+
+        Some(symbol)
+    }
+
+    /// Links this use to `symbol`.
+    pub fn link_to_symbol(&mut self, user: SymbolUseRef, mut symbol: SymbolRef) {
+        debug_assert!(
+            !user.is_linked(),
+            "symbol use must be unlinked before it can be linked again"
+        );
+        symbol.borrow_mut().insert_use(user);
+        self.used = Some(symbol);
     }
 }
 
