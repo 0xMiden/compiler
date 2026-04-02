@@ -297,3 +297,45 @@ impl CallOpInterface for Call {
         symbols.resolve(callee.path())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use midenc_hir::{
+        SourceSpan, Symbol, Type, Usable,
+        dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
+        testing::Test,
+    };
+
+    use crate::HirOpBuilder;
+
+    #[test]
+    fn call_set_callee_rebinds_property_backed_symbol_use() {
+        let mut test =
+            Test::named("call_set_callee_rebinds_property_backed_symbol_use").in_module("test");
+        let original = test.define_function("original", &[], &[]);
+        let replacement = test.define_function("replacement", &[], &[]);
+        test.with_function("caller", &[], &[]);
+
+        let signature = Signature::new(
+            &test.context_rc(),
+            core::iter::empty::<Type>(),
+            core::iter::empty::<Type>(),
+        );
+        let mut call = {
+            let mut builder = test.function_builder();
+            let call = builder.call(original, signature, [], SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            call
+        };
+
+        assert_eq!(original.borrow().iter_uses().count(), 1);
+        assert_eq!(replacement.borrow().iter_uses().count(), 0);
+
+        call.borrow_mut().set_callee(replacement).unwrap();
+
+        let replacement_path = replacement.borrow().path();
+        assert_eq!(call.borrow().callee().path(), &replacement_path);
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert_eq!(replacement.borrow().iter_uses().count(), 1);
+    }
+}
