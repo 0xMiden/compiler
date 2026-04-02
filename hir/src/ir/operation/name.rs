@@ -100,7 +100,7 @@ unsafe impl<T: AttributeRegistration> TryFromAttribute for T {
     ) -> Result<(), crate::diagnostics::Report> {
         use alloc::format;
         let attr = value.borrow().as_attr().as_attr_ref();
-        let typed_attr = value.try_downcast::<T>().ok();
+        let typed_attr = value.try_downcast_attr::<T>().ok();
         if let Some(attr) = typed_attr {
             let offset = info.offset as usize;
             unsafe {

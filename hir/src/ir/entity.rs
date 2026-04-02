@@ -346,18 +346,18 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     #[track_caller]
     pub fn borrow<'a, 'b: 'a>(&'a self) -> EntityRef<'b, T> {
         let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
-        let mut borrow = unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() };
-        borrow.handle = unsafe { NonNull::new_unchecked(ptr.cast::<()>()) };
-        borrow
+        let borrow = unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() };
+        let value = unsafe { NonNull::new_unchecked(Self::as_ptr(self).cast_mut()) };
+        EntityRef::from_raw_parts(value, borrow.into_borrow_ref())
     }
 
     /// Get a dynamically-checked mutable reference to the underlying `T`
     #[track_caller]
     pub fn borrow_mut<'a, 'b: 'a>(&'a mut self) -> EntityMut<'b, T> {
         let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
-        let mut borrow = unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow_mut() };
-        borrow.handle = unsafe { NonNull::new_unchecked(ptr.cast::<()>()) };
-        borrow
+        let borrow = unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow_mut() };
+        let value = unsafe { NonNull::new_unchecked(Self::as_ptr(self).cast_mut()) };
+        EntityMut::from_raw_parts(value, borrow.into_borrow_ref_mut())
     }
 
     /// Try to get a dynamically-checked mutable reference to the underlying `T`
@@ -365,9 +365,9 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     /// Returns `None` if the entity is already borrowed
     pub fn try_borrow_mut<'a, 'b: 'a>(&'a mut self) -> Option<EntityMut<'b, T>> {
         let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
-        unsafe { (*core::ptr::addr_of!((*ptr).entity)).try_borrow_mut().ok() }.map(|mut borrow| {
-            borrow.handle = unsafe { NonNull::new_unchecked(ptr.cast::<()>()) };
-            borrow
+        unsafe { (*core::ptr::addr_of!((*ptr).entity)).try_borrow_mut().ok() }.map(|borrow| {
+            let value = unsafe { NonNull::new_unchecked(Self::as_ptr(self).cast_mut()) };
+            EntityMut::from_raw_parts(value, borrow.into_borrow_ref_mut())
         })
     }
 
@@ -705,7 +705,6 @@ impl<T: ?Sized + crate::Spanned, Metadata> crate::Spanned for RawEntityRef<T, Me
 /// A guard that ensures a reference to an IR entity cannot be mutably aliased
 pub struct EntityRef<'b, T: ?Sized + 'b> {
     value: NonNull<T>,
-    handle: NonNull<()>,
     borrow: BorrowRef<'b>,
 }
 impl<T: ?Sized> AsRef<T> for EntityRef<'_, T> {
@@ -737,7 +736,6 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
     {
         EntityRef {
             value: NonNull::from(f(&*orig)),
-            handle: orig.handle,
             borrow: orig.borrow,
         }
     }
@@ -761,19 +759,13 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
     /// Try to convert this immutable borrow into a mutable borrow, if it is the only immutable borrow
     pub fn into_entity_mut(self) -> Result<EntityMut<'b, T>, Self> {
         let value = self.value;
-        let handle = self.handle;
         match self.borrow.try_into_mut() {
             Ok(borrow) => Ok(EntityMut {
                 value,
-                handle,
                 borrow,
                 _marker: core::marker::PhantomData,
             }),
-            Err(borrow) => Err(Self {
-                value,
-                handle,
-                borrow,
-            }),
+            Err(borrow) => Err(Self { value, borrow }),
         }
     }
 
@@ -781,33 +773,21 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
         self.borrow
     }
 
-    pub fn from_raw_parts(value: NonNull<T>, handle: NonNull<()>, borrow: BorrowRef<'b>) -> Self {
-        Self {
-            value,
-            handle,
-            borrow,
-        }
+    pub fn from_raw_parts(value: NonNull<T>, borrow: BorrowRef<'b>) -> Self {
+        Self { value, borrow }
     }
 }
 impl<T: crate::Attribute> EntityRef<'_, T> {
     /// Reconstitutes the type-erased intrusive handle for this borrowed attribute.
-    ///
-    /// This preserves the original allocation pointer captured by the borrow and reconstitutes the
-    /// erased handle using the attribute's registered type metadata.
     pub fn as_attribute_ref(&self) -> crate::AttributeRef {
-        unsafe { RawEntityRef::<T, list::IntrusiveLink>::from_ptr(self.handle.as_ptr().cast()) }
+        unsafe { RawEntityRef::<T, list::IntrusiveLink>::from_raw(self.value.as_ptr()) }
             .as_attribute_ref()
     }
 }
 impl EntityRef<'_, dyn crate::Attribute> {
     /// Reconstitutes the type-erased intrusive handle for this borrowed attribute.
-    ///
-    /// This preserves the original allocation pointer captured by the borrow and reconstitutes the
-    /// erased handle using the attribute's registered type metadata.
     pub fn as_attribute_ref(&self) -> crate::AttributeRef {
-        let metadata = core::ptr::metadata(self.value.as_ptr());
-        let inner = core::ptr::from_raw_parts_mut(self.handle.as_ptr(), metadata);
-        unsafe { crate::AttributeRef::from_ptr(inner) }
+        unsafe { crate::AttributeRef::from_raw(self.value.as_ptr()) }
     }
 }
 impl<'b, T, U> core::ops::CoerceUnsized<EntityRef<'b, U>> for EntityRef<'b, T>
@@ -878,8 +858,6 @@ pub struct EntityMut<'b, T: ?Sized> {
     /// This is a pointer rather than a `&'b mut T` to avoid `noalias` violations, because a
     /// `EntityMut` argument doesn't hold exclusivity for its whole scope, only until it drops.
     value: NonNull<T>,
-    /// A raw token that allows reconstructing the originating owner handle for this borrow.
-    handle: NonNull<()>,
     /// This value provides the drop glue for tracking that the underlying allocation is
     /// mutably borrowed, but it is otherwise not read.
     #[allow(unused)]
@@ -897,7 +875,6 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
         let value = NonNull::from(f(&mut *orig));
         EntityMut {
             value,
-            handle: orig.handle,
             borrow: orig.borrow,
             _marker: core::marker::PhantomData,
         }
@@ -954,18 +931,15 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
         F: FnOnce(&mut T) -> (&mut U, &mut V),
     {
         let borrow = orig.borrow.clone();
-        let handle = orig.handle;
         let (a, b) = f(&mut *orig);
         (
             EntityMut {
                 value: NonNull::from(a),
-                handle,
                 borrow,
                 _marker: core::marker::PhantomData,
             },
             EntityMut {
                 value: NonNull::from(b),
-                handle,
                 borrow: orig.borrow,
                 _marker: core::marker::PhantomData,
             },
@@ -975,12 +949,10 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
     /// Convert this mutable borrow into an immutable borrow
     pub fn into_entity_ref(self) -> EntityRef<'b, T> {
         let value = self.value;
-        let handle = self.handle;
         let borrow = self.into_borrow_ref_mut();
 
         EntityRef {
             value,
-            handle,
             borrow: borrow.into_borrow_ref(),
         }
     }
@@ -991,14 +963,9 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
     }
 
     #[allow(unused)]
-    pub(crate) fn from_raw_parts(
-        value: NonNull<T>,
-        handle: NonNull<()>,
-        borrow: BorrowRefMut<'b>,
-    ) -> Self {
+    pub(crate) fn from_raw_parts(value: NonNull<T>, borrow: BorrowRefMut<'b>) -> Self {
         Self {
             value,
-            handle,
             borrow,
             _marker: core::marker::PhantomData,
         }
@@ -1303,17 +1270,19 @@ impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
     #[track_caller]
     pub(crate) fn borrow(&self) -> EntityRef<'_, T> {
         let ptr = self as *const Self;
-        let mut borrow = unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() };
-        borrow.handle = unsafe { NonNull::new_unchecked(ptr.cast_mut().cast::<()>()) };
-        borrow
+        let borrow = unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() };
+        let cell_ptr = unsafe { core::ptr::addr_of!((*ptr).entity.cell) };
+        let value = unsafe { NonNull::new_unchecked(UnsafeCell::raw_get(cell_ptr)) };
+        EntityRef::from_raw_parts(value, borrow.into_borrow_ref())
     }
 
     #[track_caller]
     pub(crate) fn borrow_mut(&self) -> EntityMut<'_, T> {
         let ptr = (self as *const Self).cast_mut();
-        let mut borrow = unsafe { (*core::ptr::addr_of_mut!((*ptr).entity)).borrow_mut() };
-        borrow.handle = unsafe { NonNull::new_unchecked(ptr.cast::<()>()) };
-        borrow
+        let borrow = unsafe { (*core::ptr::addr_of_mut!((*ptr).entity)).borrow_mut() };
+        let cell_ptr = unsafe { core::ptr::addr_of_mut!((*ptr).entity.cell) };
+        let value = unsafe { NonNull::new_unchecked(UnsafeCell::raw_get(cell_ptr)) };
+        EntityMut::from_raw_parts(value, borrow.into_borrow_ref_mut())
     }
 
     #[inline]
@@ -1341,17 +1310,26 @@ impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
 
     #[inline]
     fn data_offset_align(align: usize) -> usize {
-        let layout = Layout::new::<RawEntityMetadata<(), Metadata>>();
-        layout.size() + layout.padding_needed_for(align)
+        raw_entity_value_offset_for_align::<Metadata>(align)
     }
 }
 
 fn raw_entity_metadata_layout_for_value_layout<Metadata>(layout: Layout) -> Layout {
-    Layout::new::<RawEntityMetadata<(), Metadata>>()
-        .extend(layout)
+    let value_offset = raw_entity_value_offset_for_align::<Metadata>(layout.align());
+    let header_layout = Layout::new::<RawEntity<()>>();
+    let align = Layout::new::<Metadata>().align().max(header_layout.align()).max(layout.align());
+    Layout::from_size_align(value_offset + layout.size(), align)
         .unwrap()
-        .0
         .pad_to_align()
+}
+
+fn raw_entity_value_offset_for_align<Metadata>(value_align: usize) -> usize {
+    let metadata_layout = Layout::new::<Metadata>();
+    let header_layout = Layout::new::<RawEntity<()>>();
+    let entity_align = header_layout.align().max(value_align);
+    let entity_offset = metadata_layout.size() + metadata_layout.padding_needed_for(entity_align);
+    let cell_offset = header_layout.size() + header_layout.padding_needed_for(value_align);
+    entity_offset + cell_offset
 }
 
 /// A [RawEntity] wraps an entity to be allocated in a [crate::Context], and provides dynamic borrow-
@@ -1450,12 +1428,7 @@ impl<T: ?Sized> RawEntity<T> {
                 // SAFETY: `BorrowRef` ensures that there is only immutable access to the value
                 // while borrowed.
                 let value = unsafe { NonNull::new_unchecked(self.cell.get()) };
-                let handle = unsafe { NonNull::new_unchecked(self.cell.get().cast::<()>()) };
-                Ok(EntityRef {
-                    value,
-                    handle,
-                    borrow: b,
-                })
+                Ok(EntityRef { value, borrow: b })
             }
             None => Err(AliasingViolationError {
                 #[cfg(debug_assertions)]
@@ -1486,10 +1459,8 @@ impl<T: ?Sized> RawEntity<T> {
 
                 // SAFETY: `BorrowRefMut` guarantees unique access.
                 let value = unsafe { NonNull::new_unchecked(self.cell.get()) };
-                let handle = unsafe { NonNull::new_unchecked(self.cell.get().cast::<()>()) };
                 Ok(EntityMut {
                     value,
-                    handle,
                     borrow: b,
                     _marker: core::marker::PhantomData,
                 })

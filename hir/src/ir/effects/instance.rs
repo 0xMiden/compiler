@@ -367,22 +367,25 @@ impl<'a> core::convert::TryFrom<&'a EffectValue> for EntityRef<'a, OpResult> {
 mod tests {
     use super::EffectValue;
     use crate::{
-        Attribute, EntityRef, Immediate, ImmediateAttr, Type, attributes::IntegerLikeAttr,
-        testing::Test,
+        Attribute, AttributeRef, EntityRef, Immediate, ImmediateAttr, Type,
+        attributes::IntegerLikeAttr, testing::Test,
     };
 
     #[test]
     fn effect_value_from_typed_attribute_borrow_preserves_type() {
         let test = Test::default();
         let immediate = test.context_rc().create_attribute::<ImmediateAttr, _>(Immediate::I32(7));
+        let expected = immediate.as_attribute_ref();
+        let borrowed = immediate.borrow();
 
-        let effect = EffectValue::from(immediate.borrow());
+        let effect = EffectValue::from(borrowed);
         let EffectValue::Attribute(attr) = effect else {
             panic!("expected attribute effect value");
         };
 
+        assert!(AttributeRef::ptr_eq(&attr, &expected));
         assert_eq!(attr.borrow().ty().clone(), Type::I32);
-        let attr = attr.try_downcast::<ImmediateAttr>().unwrap();
+        let attr = attr.try_downcast_attr::<ImmediateAttr>().unwrap();
         assert_eq!(attr.borrow().as_immediate(), Immediate::I32(7));
     }
 
@@ -390,15 +393,18 @@ mod tests {
     fn effect_value_from_dyn_attribute_borrow_preserves_type() {
         let test = Test::default();
         let immediate = test.context_rc().create_attribute::<ImmediateAttr, _>(Immediate::I32(9));
-        let immediate = EntityRef::map(immediate.borrow(), |attr| attr as &dyn Attribute);
+        let expected = immediate.as_attribute_ref();
+        let immediate = immediate.borrow();
+        let immediate = EntityRef::map(immediate, |attr| attr as &dyn Attribute);
 
         let effect = EffectValue::from(immediate);
         let EffectValue::Attribute(attr) = effect else {
             panic!("expected attribute effect value");
         };
 
+        assert!(AttributeRef::ptr_eq(&attr, &expected));
         assert_eq!(attr.borrow().ty().clone(), Type::I32);
-        let attr = attr.try_downcast::<ImmediateAttr>().unwrap();
+        let attr = attr.try_downcast_attr::<ImmediateAttr>().unwrap();
         assert_eq!(attr.borrow().as_immediate(), Immediate::I32(9));
     }
 }

@@ -33,7 +33,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
         let guard = core::mem::ManuallyDrop::new(guard);
         let state = guard.state;
         let borrow_ref = unsafe { core::ptr::read(&guard._borrow) };
-        EntityRef::from_raw_parts(state, state.cast(), borrow_ref)
+        EntityRef::from_raw_parts(state, borrow_ref)
     }
 
     /// Subscribe `analysis` to any changes of the lattice anchor.
@@ -156,7 +156,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
         let guard = core::mem::ManuallyDrop::new(guard);
         let state = guard.state;
         let borrow_ref_mut = unsafe { core::ptr::read(&guard._borrow) };
-        EntityRef::from_raw_parts(state, state.cast(), borrow_ref_mut.into_borrow_ref())
+        EntityRef::from_raw_parts(state, borrow_ref_mut.into_borrow_ref())
     }
 
     /// Apply a function to the underlying [AnalysisState] that may or may not change it.

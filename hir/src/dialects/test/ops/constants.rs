@@ -65,7 +65,7 @@ impl OpParser for Constant {
 
         let start = parser.current_location();
         let imm = ImmediateAttr::parse(parser)?;
-        let mut imm = imm.try_downcast::<ImmediateAttr>().unwrap();
+        let mut imm = imm.try_downcast_attr::<ImmediateAttr>().unwrap();
 
         let (ty_span, ty) = parser.parse_colon_type()?.into_parts();
         let span = SourceSpan::new(start.source_id(), start.start()..ty_span.end());

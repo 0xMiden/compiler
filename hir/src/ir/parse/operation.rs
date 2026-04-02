@@ -219,7 +219,7 @@ where
             let Some(attr) = attribute_aliases.get(&loc_info.identifier) else {
                 return Err(ParserError::UnresolvedLocationAlias { span: loc_info.loc });
             };
-            let Some(loc_attr) = attr.try_downcast::<LocationAttr>().ok() else {
+            let Some(loc_attr) = attr.try_downcast_attr::<LocationAttr>().ok() else {
                 return Err(ParserError::InvalidLocationAlias {
                     span: loc_info.loc,
                     reason: format!("expected location, but found '{:?}'", &attr.borrow()),
@@ -1041,7 +1041,7 @@ where
 
         // If this alias can be resolved, do it now.
         if let Some(attr) = self.state_mut().symbols.attribute_alias_definitions.get(&alias) {
-            if let Ok(loc) = attr.try_downcast::<LocationAttr>() {
+            if let Ok(loc) = attr.try_downcast_attr::<LocationAttr>() {
                 Ok(loc.borrow().as_value().clone())
             } else {
                 Err(ParserError::InvalidLocationAlias {

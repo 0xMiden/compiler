@@ -459,7 +459,7 @@ impl<T: AttributeRegistration> Matcher<OpOperand> for TypedFoldableOperandBinder
     fn matches(&self, operand: &OpOperand) -> Option<Self::Matched> {
         FoldableOperandBinder
             .matches(operand)
-            .and_then(|value| value.try_downcast::<T>().ok())
+            .and_then(|value| value.try_downcast_attr::<T>().ok())
     }
 }
 

@@ -298,6 +298,35 @@ impl UnsafeIntrusiveEntityRef<dyn Attribute> {
         let (_, metadata) = ptr.to_raw_parts();
         Some(unsafe { self.cast_unsized_unchecked::<Trait>(metadata) })
     }
+
+    /// Attempts to cast this handle to the concrete attribute type `T`.
+    ///
+    /// This preserves the original intrusive allocation identity rather than routing through the
+    /// generic `RawEntityRef` downcast helpers.
+    pub fn try_downcast_attr<T>(self) -> Result<UnsafeIntrusiveEntityRef<T>, Self>
+    where
+        T: AttributeRegistration,
+    {
+        if self.name().is::<T>() {
+            Ok(unsafe { self.cast_unchecked::<T>() })
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Casts this handle to the concrete attribute type `T`.
+    ///
+    /// Panics if the cast is not valid for this attribute.
+    #[track_caller]
+    pub fn downcast_attr<T>(self) -> UnsafeIntrusiveEntityRef<T>
+    where
+        T: AttributeRegistration,
+    {
+        match self.try_downcast_attr::<T>() {
+            Ok(attr) => attr,
+            Err(_) => panic!("invalid cast"),
+        }
+    }
 }
 
 /// Metadata
@@ -495,7 +524,7 @@ mod tests {
         let erased = immediate.as_attribute_ref();
         assert_eq!(erased.borrow().ty().clone(), Type::I32);
 
-        let roundtrip = erased.try_downcast::<ImmediateAttr>().unwrap();
+        let roundtrip = erased.try_downcast_attr::<ImmediateAttr>().unwrap();
         let roundtrip = roundtrip.borrow();
         assert_eq!(roundtrip.ty().clone(), Type::I32);
         assert_eq!(roundtrip.as_immediate(), Immediate::I32(1));

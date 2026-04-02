@@ -654,7 +654,7 @@ impl Operation {
         T: AttributeRegistration,
     {
         self.get_attribute(name.into())
-            .and_then(|attr_ref| attr_ref.try_downcast::<T>().ok())
+            .and_then(|attr_ref| attr_ref.try_downcast_attr::<T>().ok())
     }
 
     /// Return true if this function has an attributed named `name`
@@ -742,7 +742,7 @@ impl Operation {
             user
         } else if let Some(mut attr) = self
             .get_attribute(attr_name)
-            .and_then(|attr| attr.try_downcast::<SymbolRefAttr>().ok())
+            .and_then(|attr| attr.try_downcast_attr::<SymbolRefAttr>().ok())
         {
             {
                 let attr_ref = attr.borrow();
@@ -836,11 +836,9 @@ impl Operation {
     pub fn nearest_parent_op<T: Op>(&self) -> Option<UnsafeIntrusiveEntityRef<T>> {
         let mut parent = self.parent_op();
         while let Some(op) = parent.take() {
-            parent =
-                op.parent().and_then(|block| block.parent()).and_then(|region| region.parent());
-            let is_match = { op.borrow().is::<T>() };
-            if is_match {
-                return op.try_downcast_op::<T>().ok();
+            parent = op.parent_op();
+            if let Ok(op) = op.try_downcast_op::<T>() {
+                return Some(op);
             }
         }
         None

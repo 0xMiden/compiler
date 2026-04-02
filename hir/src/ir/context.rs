@@ -463,7 +463,7 @@ impl<T: AttributeRegistration + Marker> UniquedAttribute for T {
                 entry.insert(attr as AttributeRef);
                 attr
             }
-            Entry::Occupied(entry) => entry.get().try_downcast().unwrap(),
+            Entry::Occupied(entry) => entry.get().try_downcast_attr().unwrap(),
         }
     }
 
@@ -481,7 +481,7 @@ impl<T: AttributeRegistration + Marker> UniquedAttribute for T {
                 entry.insert(attr as AttributeRef);
                 attr
             }
-            Entry::Occupied(entry) => entry.get().try_downcast().unwrap(),
+            Entry::Occupied(entry) => entry.get().try_downcast_attr().unwrap(),
         }
     }
 }

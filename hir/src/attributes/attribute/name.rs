@@ -198,7 +198,7 @@ impl AttributeName {
     }
 
     /// Rebuilds a raw trait object pointer for `ptr` using metadata registered for `Trait`.
-    pub(crate) fn upcast_raw<Trait>(&self, ptr: *const ()) -> Option<*const Trait>
+    pub(super) fn upcast_raw<Trait>(&self, ptr: *const ()) -> Option<*const Trait>
     where
         Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
     {
