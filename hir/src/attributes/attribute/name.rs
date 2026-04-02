@@ -197,7 +197,8 @@ impl AttributeName {
         Some(unsafe { &*core::ptr::from_raw_parts(ptr, metadata) })
     }
 
-    pub(super) fn upcast_raw<Trait>(&self, ptr: *const ()) -> Option<*const Trait>
+    /// Rebuilds a raw trait object pointer for `ptr` using metadata registered for `Trait`.
+    pub(crate) fn upcast_raw<Trait>(&self, ptr: *const ()) -> Option<*const Trait>
     where
         Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
     {

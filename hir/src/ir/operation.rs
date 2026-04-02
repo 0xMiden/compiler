@@ -475,7 +475,7 @@ impl Operation {
         //
         // Additionally, this relies on the fact that Op implementations are #[repr(C)] and ensure
         // that their Operation field is always first in the generated struct
-        unsafe { OperationRef::from_raw(self) }
+        unsafe { OperationRef::from_raw(self.container().cast()) }
     }
 
     /// Returns true if the concrete type of this operation is `T`
@@ -1669,5 +1669,33 @@ impl crate::traits::Foldable for Operation {
         } else {
             FoldResult::Failed
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{AsCallableSymbolRef, AsSymbolRef, Type, testing::Test};
+
+    #[test]
+    fn borrowed_operation_roundtrips_symbol_and_callable_handles() {
+        let mut test = Test::named("borrowed_operation_roundtrips_symbol_and_callable_handles")
+            .in_module("test");
+        let function = test.define_function("callee", &[], &[Type::I32]);
+        let op_ref = function.as_operation_ref();
+
+        let symbol_ref = {
+            let op = op_ref.borrow();
+            op.as_symbol_ref().expect("expected function operation to be a symbol")
+        };
+        assert_eq!(symbol_ref.borrow().as_operation_ref(), op_ref);
+
+        let callable_ref = {
+            let function = function.borrow();
+            function.as_callable_symbol_ref()
+        };
+        assert_eq!(callable_ref.borrow().as_operation_ref(), op_ref);
+
+        let symbol_from_callable = function.as_symbol_ref();
+        assert_eq!(symbol_from_callable.borrow().as_operation_ref(), op_ref);
     }
 }
