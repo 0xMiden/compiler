@@ -270,7 +270,12 @@ impl From<SymbolRef> for EffectValue {
 
 impl From<EntityRef<'_, dyn Symbol>> for EffectValue {
     fn from(value: EntityRef<'_, dyn Symbol>) -> Self {
-        Self::Symbol(unsafe { SymbolRef::from_raw(&*value) })
+        Self::Symbol(
+            value
+                .as_symbol_operation()
+                .as_symbol_ref()
+                .expect("effect values must be backed by symbol operations"),
+        )
     }
 }
 

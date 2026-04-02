@@ -39,9 +39,7 @@ pub trait SymbolTable {
     /// Resolve the entry for `path` in this table, or via the root symbol table
     fn resolve(&self, path: &SymbolPath) -> Option<SymbolRef> {
         let found = self.symbol_manager().lookup_symbol_ref(path)?;
-        let op = found.borrow();
-        let sym = op.as_symbol().expect("symbol table resolved to a non-symbol op!");
-        Some(unsafe { SymbolRef::from_raw(sym) })
+        found.as_trait_ref::<dyn Symbol>()
     }
 
     /// Insert `entry` in the symbol table, but only if no other symbol with the same name exists.
@@ -137,9 +135,8 @@ impl SymbolMap {
 
         let region = op.regions().front().get().unwrap();
         for op in region.entry().body() {
-            if let Some(symbol) = op.as_trait::<dyn Symbol>() {
-                let name = symbol.name();
-                let symbol_ref = unsafe { SymbolRef::from_raw(symbol) };
+            if let Some(symbol_ref) = op.as_symbol_ref() {
+                let name = symbol_ref.borrow().name();
                 symbols
                     .try_insert(name, symbol_ref)
                     .expect("expected region to contain uniquely named symbol operations");

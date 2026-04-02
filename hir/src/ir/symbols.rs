@@ -7,6 +7,7 @@ mod symbol_use;
 mod table;
 
 use alloc::{collections::VecDeque, format, vec};
+use core::ptr::{DynMetadata, Pointee};
 
 use midenc_session::diagnostics::{Diagnostic, miette};
 use smallvec::SmallVec;
@@ -90,6 +91,27 @@ impl AsSymbolRef for SymbolRef {
     #[inline(always)]
     fn as_symbol_ref(&self) -> SymbolRef {
         *self
+    }
+}
+
+impl UnsafeIntrusiveEntityRef<dyn Symbol> {
+    /// Returns this symbol as a handle to an implemented trait object, if supported.
+    ///
+    /// The returned handle preserves the original intrusive allocation identity and swaps only the
+    /// pointee metadata for the requested trait object.
+    pub fn as_trait_ref<Trait>(self) -> Option<UnsafeIntrusiveEntityRef<Trait>>
+    where
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+    {
+        let ptr = {
+            let symbol = self.borrow();
+            symbol
+                .as_symbol_operation()
+                .name()
+                .upcast_raw::<Trait>(Self::into_raw(self).cast())?
+        };
+        let (_, metadata) = ptr.to_raw_parts();
+        Some(unsafe { self.cast_unsized_unchecked::<Trait>(metadata) })
     }
 }
 

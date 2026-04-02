@@ -146,15 +146,9 @@ impl CallOpInterface for Exec {
             .unwrap()
             .resolve(&callee)
             .expect("invalid callee: could not be resolved");
-        // SAFETY: This is guaranteed to be safe because the original reference was an UnsafeIntrusiveEntityRef;
-        let callable = unsafe {
-            let resolved = resolved.borrow();
-            let callable = resolved
-                .as_symbol_operation()
-                .as_trait::<dyn CallableSymbol>()
-                .expect("invalid callee: not a callable symbol");
-            CallableSymbolRef::from_raw(callable)
-        };
+        let callable = resolved
+            .as_trait_ref::<dyn CallableSymbol>()
+            .expect("invalid callee: not a callable symbol");
         Exec::set_callee(self, callable).expect("invalid callee");
     }
 
@@ -262,15 +256,9 @@ impl CallOpInterface for Call {
             .unwrap()
             .resolve(&callee)
             .expect("invalid callee: could not be resolved");
-        // SAFETY: This is guaranteed to be safe because the original reference was an UnsafeIntrusiveEntityRef;
-        let callable = unsafe {
-            let resolved = resolved.borrow();
-            let callable = resolved
-                .as_symbol_operation()
-                .as_trait::<dyn CallableSymbol>()
-                .expect("invalid callee: not a callable symbol");
-            CallableSymbolRef::from_raw(callable)
-        };
+        let callable = resolved
+            .as_trait_ref::<dyn CallableSymbol>()
+            .expect("invalid callee: not a callable symbol");
         Call::set_callee(self, callable).expect("invalid callee");
     }
 
@@ -301,7 +289,7 @@ impl CallOpInterface for Call {
 #[cfg(test)]
 mod tests {
     use midenc_hir::{
-        SourceSpan, Symbol, Type, Usable,
+        CallOpInterface, SourceSpan, Symbol, Type, Usable,
         dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
         testing::Test,
     };
@@ -335,6 +323,45 @@ mod tests {
 
         let replacement_path = replacement.borrow().path();
         assert_eq!(call.borrow().callee().path(), &replacement_path);
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert_eq!(replacement.borrow().iter_uses().count(), 1);
+    }
+
+    #[test]
+    fn call_op_interface_set_callee_resolves_callable_symbol_refs() {
+        let mut test = Test::named("call_op_interface_set_callee_resolves_callable_symbol_refs")
+            .in_module("test");
+        let original = test.define_function("original", &[], &[]);
+        let replacement = test.define_function("replacement", &[], &[]);
+        test.with_function("caller", &[], &[]);
+
+        let signature = Signature::new(
+            &test.context_rc(),
+            core::iter::empty::<Type>(),
+            core::iter::empty::<Type>(),
+        );
+        let mut call = {
+            let mut builder = test.function_builder();
+            let call = builder.call(original, signature, [], SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            call
+        };
+
+        assert_eq!(original.borrow().iter_uses().count(), 1);
+        assert_eq!(replacement.borrow().iter_uses().count(), 0);
+
+        let replacement_path = replacement.borrow().path();
+        {
+            let mut call_mut = call.borrow_mut();
+            <crate::Call as CallOpInterface>::set_callee(
+                &mut call_mut,
+                replacement_path.clone().into(),
+            );
+        }
+
+        let resolved = call.borrow().resolve().unwrap();
+        assert_eq!(call.borrow().callee().path(), &replacement_path);
+        assert_eq!(resolved.borrow().path(), replacement_path);
         assert_eq!(original.borrow().iter_uses().count(), 0);
         assert_eq!(replacement.borrow().iter_uses().count(), 1);
     }

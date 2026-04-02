@@ -111,7 +111,9 @@ impl Symbol for GlobalVariable {
 
 impl AsSymbolRef for GlobalVariable {
     fn as_symbol_ref(&self) -> SymbolRef {
-        unsafe { SymbolRef::from_raw(self as &dyn Symbol) }
+        self.as_symbol_operation()
+            .as_symbol_ref()
+            .expect("global variables must provide a symbol operation")
     }
 }
 
