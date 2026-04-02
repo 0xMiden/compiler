@@ -251,6 +251,32 @@ impl dyn Value {
     }
 }
 
+/// Read-only metadata for type-erased value handles.
+impl ValueRef {
+    /// Attempts to cast this handle to the concrete value type `T`.
+    ///
+    /// This preserves the original allocation identity rather than routing through the generic
+    /// `RawEntityRef` downcast helpers.
+    pub fn try_downcast_value<T: Value>(self) -> Result<UnsafeEntityRef<T>, Self> {
+        if self.borrow().is::<T>() {
+            Ok(unsafe { self.cast_unchecked::<T>() })
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Casts this handle to the concrete value type `T`.
+    ///
+    /// Panics if the cast is not valid for this value.
+    #[track_caller]
+    pub fn downcast_value<T: Value>(self) -> UnsafeEntityRef<T> {
+        match self.try_downcast_value::<T>() {
+            Ok(value) => value,
+            Err(_) => panic!("invalid cast"),
+        }
+    }
+}
+
 /// Generates the boilerplate for a concrete [Value] type.
 macro_rules! value_impl {
     (

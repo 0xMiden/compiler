@@ -94,7 +94,8 @@ impl Foldable for PtrToInt {
         operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(value) = operands[0].as_ref().and_then(|o| o.try_downcast::<PointerAttr>().ok())
+        if let Some(value) =
+            operands[0].as_ref().and_then(|o| o.try_downcast_attr::<PointerAttr>().ok())
         {
             let input = value.borrow();
             // Support folding just pointer -> 32-bit integer types for now

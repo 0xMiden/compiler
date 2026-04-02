@@ -1403,7 +1403,7 @@ where
                     arg
                 } else {
                     let arg = context.append_block_argument(owner, ty, use_info.loc);
-                    arg.downcast::<BlockArgument, dyn Value>()
+                    arg.downcast_value::<BlockArgument>()
                 };
 
                 // If the argument has an explicit loc(...) specifier, parse and apply it.
