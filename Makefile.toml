@@ -338,7 +338,7 @@ dependencies = ["test-rust"]
 
 [tasks.test-release]
 category = "Test"
-description = "Runs Rust-based tests with compiler crates built via the test-release profile"
+description = "Runs Rust-based tests via the workspace-wide test-release profile"
 dependencies = ["test-release-rust"]
 
 [tasks.install-cargo-miden]
@@ -416,7 +416,7 @@ args = [
 
 [tasks.test-release-rust]
 category = "Test"
-description = "Run tests written in Rust with compiler crates built via the test-release profile"
+description = "Run tests written in Rust via the workspace-wide test-release profile"
 command = "cargo"
 install_crate_args = ["--locked"]
 args = [
