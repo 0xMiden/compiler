@@ -137,9 +137,7 @@ where
     type Matched = UnsafeIntrusiveEntityRef<Trait>;
 
     fn matches(&self, entity: &Operation) -> Option<Self::Matched> {
-        entity
-            .as_trait::<Trait>()
-            .map(|op| unsafe { UnsafeIntrusiveEntityRef::from_raw(op) })
+        entity.as_operation_ref().as_trait_ref::<Trait>()
     }
 }
 
@@ -262,9 +260,7 @@ impl<T: Op> Matcher<Operation> for OneOpMatcher<T> {
 
     #[inline(always)]
     fn matches(&self, entity: &Operation) -> Option<Self::Matched> {
-        entity
-            .downcast_ref::<T>()
-            .map(|op| unsafe { UnsafeIntrusiveEntityRef::from_raw(op) })
+        entity.as_operation_ref().try_downcast_op::<T>().ok()
     }
 }
 
@@ -339,11 +335,7 @@ where
     type Matched = UnsafeIntrusiveEntityRef<Trait>;
 
     fn matches(&self, entity: &Operation) -> Option<Self::Matched> {
-        ConstantOpBinder.matches(entity).and_then(|attr| {
-            let attr = attr.borrow();
-            let implementation = attr.as_attr().as_trait::<Trait>()?;
-            Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(implementation) })
-        })
+        ConstantOpBinder.matches(entity).and_then(|attr| attr.as_trait_ref::<Trait>())
     }
 }
 
@@ -486,11 +478,9 @@ where
     type Matched = UnsafeIntrusiveEntityRef<Trait>;
 
     fn matches(&self, operand: &OpOperand) -> Option<Self::Matched> {
-        FoldableOperandBinder.matches(operand).and_then(|attr| {
-            let attr = attr.borrow();
-            let implementation = attr.as_attr().as_trait::<Trait>()?;
-            Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(implementation) })
-        })
+        FoldableOperandBinder
+            .matches(operand)
+            .and_then(|attr| attr.as_trait_ref::<Trait>())
     }
 }
 
@@ -812,6 +802,29 @@ mod tests {
         // `lhs` should produce a matching constant value of the correct type and value
         assert_eq!(constant_of::<Immediate>().matches(&lhs_op.borrow()), Some(Immediate::U32(1)));
         assert!(constant_of::<Immediate>().matches(&sum_op.borrow()).is_none());
+    }
+
+    #[test]
+    fn matcher_foldable_operand_of_trait() {
+        let mut test = Test::new("matcher_foldable_operand_of_trait", &[Type::U32], &[Type::U32]);
+
+        let mut builder = test.function_builder();
+        let shift = builder.u32(1, SourceSpan::default()).unwrap();
+        let lhs = builder.current_block().borrow().arguments()[0].upcast();
+        let result = builder.shl(lhs, shift, SourceSpan::default()).unwrap();
+        builder.ret(Some(result), SourceSpan::default()).unwrap();
+
+        let shl_op = result.borrow().get_defining_op().unwrap();
+        let operand = {
+            let shl = shl_op.borrow();
+            let shl = shl.downcast_ref::<Shl>().unwrap();
+            shl.shift().as_operand_ref()
+        };
+        let matched =
+            foldable_operand_of_trait::<dyn crate::attributes::IntegerLikeAttr>().matches(&operand);
+
+        let matched = matched.expect("expected the shift operand to match as an integer immediate");
+        assert_eq!(matched.borrow().as_immediate(), Immediate::U32(1));
     }
 
     fn setup(name: &'static str, test: &mut Test) -> (ValueRef, ValueRef, ValueRef) {

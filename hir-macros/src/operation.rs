@@ -473,7 +473,7 @@ impl quote::ToTokens for WithAttrs<'_> {
                 let span = name.span();
                 let field_name = syn::Lit::Str(syn::LitStr::new(&format!("{name}"), span));
                 tokens.extend(quote_spanned! { span =>
-                    op_builder.with_property::<#ty, _>(#field_name, #name);
+                    op_builder.with_property::<#ty, _>(#field_name, #name)?;
                 });
             }
         }

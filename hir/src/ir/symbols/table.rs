@@ -102,10 +102,13 @@ impl dyn SymbolTable {
     /// Look up a symbol with the given name and concrete type, returning `None` if no such symbol
     /// exists
     pub fn find<T: Op + Symbol>(&self, name: SymbolName) -> Option<UnsafeIntrusiveEntityRef<T>> {
-        let op = self.get(name)?;
-        let op = op.borrow();
-        let op = op.as_symbol_operation().downcast_ref::<T>()?;
-        Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(op) })
+        let symbol = self.get(name)?;
+        symbol
+            .borrow()
+            .as_symbol_operation()
+            .as_operation_ref()
+            .try_downcast_op::<T>()
+            .ok()
     }
 }
 

@@ -479,10 +479,16 @@ impl<To, Metadata: 'static> RawEntityRef<To, Metadata> {
         From: ?Sized + 'static,
         To: DowncastFromRef<From> + 'static,
     {
-        let borrow = from.borrow();
-        <To as DowncastFromRef<From>>::downcast_from_ref(&*borrow)
-            .map(|to| unsafe { RawEntityRef::from_raw(to) })
-            .ok_or(from)
+        let is_valid = {
+            let borrow = from.borrow();
+            <To as DowncastFromRef<From>>::downcast_from_ref(&*borrow).is_some()
+        };
+        if is_valid {
+            let inner = RawEntityRef::<From, Metadata>::into_inner(from);
+            Ok(unsafe { RawEntityRef::from_inner(inner.cast()) })
+        } else {
+            Err(from)
+        }
     }
 
     pub fn try_downcast_from_ref<From, Obj>(from: &RawEntityRef<From, Metadata>) -> Option<Self>
@@ -491,8 +497,15 @@ impl<To, Metadata: 'static> RawEntityRef<To, Metadata> {
         To: DowncastFromRef<From> + 'static,
         Obj: ?Sized,
     {
-        let borrow = from.borrow();
-        borrow.as_any().downcast_ref().map(|to| unsafe { RawEntityRef::from_raw(to) })
+        let is_valid = {
+            let borrow = from.borrow();
+            <To as DowncastFromRef<From>>::downcast_from_ref(&*borrow).is_some()
+        };
+        if is_valid {
+            Some(unsafe { RawEntityRef::from_inner(from.inner.cast()) })
+        } else {
+            None
+        }
     }
 
     #[track_caller]
@@ -502,8 +515,10 @@ impl<To, Metadata: 'static> RawEntityRef<To, Metadata> {
         To: DowncastFromRef<From> + 'static,
         Obj: ?Sized,
     {
-        let borrow = from.borrow();
-        unsafe { RawEntityRef::from_raw(borrow.as_any().downcast_ref().expect("invalid cast")) }
+        match Self::try_downcast_from(from) {
+            Ok(to) => to,
+            Err(_) => panic!("invalid cast"),
+        }
     }
 
     #[track_caller]
@@ -513,12 +528,45 @@ impl<To, Metadata: 'static> RawEntityRef<To, Metadata> {
         To: DowncastFromRef<From> + 'static,
         Obj: ?Sized,
     {
-        let borrow = from.borrow();
-        unsafe { RawEntityRef::from_raw(borrow.as_any().downcast_ref().expect("invalid cast")) }
+        match Self::try_downcast_from_ref(from) {
+            Some(to) => to,
+            None => panic!("invalid cast"),
+        }
     }
 }
 
 impl<From: ?Sized, Metadata: 'static> RawEntityRef<From, Metadata> {
+    /// Cast this handle to a different pointee type without validating the cast.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure that `To` refers to the same allocation as `self`.
+    #[inline(always)]
+    pub(crate) unsafe fn cast_unchecked<To>(self) -> RawEntityRef<To, Metadata>
+    where
+        To: Sized,
+    {
+        unsafe { RawEntityRef::from_inner(self.inner.cast()) }
+    }
+
+    /// Cast this handle to an unsized pointee type without validating the cast.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure that `To` refers to the same allocation as `self`, and that `metadata`
+    /// matches the target pointee type for that allocation.
+    #[inline(always)]
+    pub(crate) unsafe fn cast_unsized_unchecked<To>(
+        self,
+        metadata: <To as core::ptr::Pointee>::Metadata,
+    ) -> RawEntityRef<To, Metadata>
+    where
+        To: ?Sized + core::ptr::Pointee,
+    {
+        let inner = core::ptr::from_raw_parts_mut(self.inner.as_ptr().cast::<()>(), metadata);
+        unsafe { RawEntityRef::from_ptr(inner) }
+    }
+
     /// Casts this reference to the an unsized type `Trait`, if `From` implements `Trait`
     ///
     /// If the cast is not valid for this reference, `Err` is returned containing the original value.
@@ -548,7 +596,7 @@ impl<T: crate::Attribute> RawEntityRef<T, list::IntrusiveLink> {
     /// Convert this reference to an [crate::AttributeRef]
     #[inline(always)]
     pub fn as_attribute_ref(self) -> crate::AttributeRef {
-        self as crate::AttributeRef
+        self.upcast()
     }
 }
 

@@ -44,22 +44,16 @@ pub struct If {
 impl If {
     pub fn then_yield(&self) -> UnsafeIntrusiveEntityRef<Yield> {
         let terminator = self.then_body().entry().terminator().unwrap();
-        let term = terminator
-            .borrow()
-            .downcast_ref::<Yield>()
+        terminator
+            .try_downcast_op::<Yield>()
             .expect("invalid hir.if then terminator: expected yield")
-            as *const Yield;
-        unsafe { UnsafeIntrusiveEntityRef::from_raw(term) }
     }
 
     pub fn else_yield(&self) -> UnsafeIntrusiveEntityRef<Yield> {
         let terminator = self.else_body().entry().terminator().unwrap();
-        let term = terminator
-            .borrow()
-            .downcast_ref::<Yield>()
+        terminator
+            .try_downcast_op::<Yield>()
             .expect("invalid hir.if else terminator: expected yield")
-            as *const Yield;
-        unsafe { UnsafeIntrusiveEntityRef::from_raw(term) }
     }
 }
 
@@ -187,12 +181,8 @@ impl While {
             .entry()
             .terminator()
             .expect("expected before region to have a terminator");
-        let cond = term
-            .borrow()
-            .downcast_ref::<Condition>()
+        term.try_downcast_op::<Condition>()
             .expect("expected before region to terminate with hir.condition")
-            as *const Condition;
-        unsafe { UnsafeIntrusiveEntityRef::from_raw(cond) }
     }
 
     pub fn yield_op(&self) -> UnsafeIntrusiveEntityRef<Yield> {
@@ -201,12 +191,8 @@ impl While {
             .entry()
             .terminator()
             .expect("expected after region to have a terminator");
-        let yield_op = term
-            .borrow()
-            .downcast_ref::<Yield>()
+        term.try_downcast_op::<Yield>()
             .expect("expected after region to terminate with hir.yield")
-            as *const Yield;
-        unsafe { UnsafeIntrusiveEntityRef::from_raw(yield_op) }
     }
 }
 

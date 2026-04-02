@@ -218,12 +218,152 @@ opt-level = 3
 [profile.test.package.miden-core-lib]
 opt-level = 3
 
-# Compiler packages that might be used in tests
+# Build the compiler with release-like settings when it is exercised through the
+# integration test crate. Cargo only honors these overrides in the workspace
+# root, even though the consuming crate lives under tests/integration.
+[profile.test.package.cargo-miden]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-codegen-masm]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-compile]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-dialect-arith]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-dialect-cf]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-dialect-hir]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-dialect-scf]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-dialect-ub]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-dialect-wasm]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
 [profile.test.package.midenc-frontend-wasm]
-opt-level = 3
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-hir]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-hir-analysis]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-hir-eval]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-hir-macros]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-hir-symbol]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-hir-transform]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
+
+[profile.test.package.midenc-log]
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
 
 [profile.test.package.midenc-session]
-opt-level = 3
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
 
 [profile.test.package.miden-debug]
 opt-level = 3

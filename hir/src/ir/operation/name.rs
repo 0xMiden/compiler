@@ -100,14 +100,7 @@ unsafe impl<T: AttributeRegistration> TryFromAttribute for T {
     ) -> Result<(), crate::diagnostics::Report> {
         use alloc::format;
         let attr = value.borrow().as_attr().as_attr_ref();
-        let typed_attr = {
-            let value = value.borrow();
-            if let Some(v) = value.downcast_ref::<T>() {
-                Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(v) })
-            } else {
-                None
-            }
-        };
+        let typed_attr = value.try_downcast::<T>().ok();
         if let Some(attr) = typed_attr {
             let offset = info.offset as usize;
             unsafe {
@@ -373,6 +366,17 @@ impl OperationName {
             .get::<Trait>()
             .map(|trait_impl| unsafe { trait_impl.metadata_unchecked::<Trait>() })?;
         Some(unsafe { &*core::ptr::from_raw_parts(ptr, metadata) })
+    }
+
+    /// Rebuilds a raw trait object pointer for `ptr` using metadata registered for `Trait`.
+    pub(super) fn upcast_raw<Trait>(&self, ptr: *const ()) -> Option<*const Trait>
+    where
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+    {
+        let metadata = self
+            .get::<Trait>()
+            .map(|trait_impl| unsafe { trait_impl.metadata_unchecked::<Trait>() })?;
+        Some(core::ptr::from_raw_parts(ptr, metadata))
     }
 
     pub(super) fn upcast_mut<Trait>(&mut self, ptr: *mut ()) -> Option<&mut Trait>
