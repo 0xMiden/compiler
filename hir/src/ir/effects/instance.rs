@@ -245,8 +245,7 @@ impl<T: AttributeRegistration> From<UnsafeIntrusiveEntityRef<T>> for EffectValue
 
 impl<T: AttributeRegistration> From<EntityRef<'_, T>> for EffectValue {
     fn from(value: EntityRef<'_, T>) -> Self {
-        let attr = unsafe { UnsafeIntrusiveEntityRef::<T>::from_raw(&*value) };
-        Self::Attribute(attr.as_attribute_ref())
+        Self::Attribute(value.as_attribute_ref())
     }
 }
 
@@ -258,7 +257,7 @@ impl From<AttributeRef> for EffectValue {
 
 impl From<EntityRef<'_, dyn Attribute>> for EffectValue {
     fn from(value: EntityRef<'_, dyn Attribute>) -> Self {
-        Self::Attribute(unsafe { AttributeRef::from_raw(&*value) })
+        Self::Attribute(value.as_attribute_ref())
     }
 }
 
@@ -361,5 +360,45 @@ impl<'a> core::convert::TryFrom<&'a EffectValue> for EntityRef<'a, OpResult> {
             EffectValue::Result(operand) => Ok(operand.borrow()),
             _ => Err(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EffectValue;
+    use crate::{
+        Attribute, EntityRef, Immediate, ImmediateAttr, Type, attributes::IntegerLikeAttr,
+        testing::Test,
+    };
+
+    #[test]
+    fn effect_value_from_typed_attribute_borrow_preserves_type() {
+        let test = Test::default();
+        let immediate = test.context_rc().create_attribute::<ImmediateAttr, _>(Immediate::I32(7));
+
+        let effect = EffectValue::from(immediate.borrow());
+        let EffectValue::Attribute(attr) = effect else {
+            panic!("expected attribute effect value");
+        };
+
+        assert_eq!(attr.borrow().ty().clone(), Type::I32);
+        let attr = attr.try_downcast::<ImmediateAttr>().unwrap();
+        assert_eq!(attr.borrow().as_immediate(), Immediate::I32(7));
+    }
+
+    #[test]
+    fn effect_value_from_dyn_attribute_borrow_preserves_type() {
+        let test = Test::default();
+        let immediate = test.context_rc().create_attribute::<ImmediateAttr, _>(Immediate::I32(9));
+        let immediate = EntityRef::map(immediate.borrow(), |attr| attr as &dyn Attribute);
+
+        let effect = EffectValue::from(immediate);
+        let EffectValue::Attribute(attr) = effect else {
+            panic!("expected attribute effect value");
+        };
+
+        assert_eq!(attr.borrow().ty().clone(), Type::I32);
+        let attr = attr.try_downcast::<ImmediateAttr>().unwrap();
+        assert_eq!(attr.borrow().as_immediate(), Immediate::I32(9));
     }
 }

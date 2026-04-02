@@ -770,6 +770,25 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
         Self { value, borrow }
     }
 }
+impl<T: crate::Attribute> EntityRef<'_, T> {
+    /// Reconstitutes the type-erased intrusive handle for this borrowed attribute.
+    ///
+    /// This preserves the raw pointer provenance captured when the borrow was created instead of
+    /// rebuilding a handle from a borrowed `&T`.
+    pub fn as_attribute_ref(&self) -> crate::AttributeRef {
+        unsafe { RawEntityRef::<T, list::IntrusiveLink>::from_raw(self.value.as_ptr()) }
+            .as_attribute_ref()
+    }
+}
+impl EntityRef<'_, dyn crate::Attribute> {
+    /// Reconstitutes the type-erased intrusive handle for this borrowed attribute.
+    ///
+    /// This preserves the raw pointer provenance captured when the borrow was created instead of
+    /// rebuilding a handle from a borrowed `&dyn Attribute`.
+    pub fn as_attribute_ref(&self) -> crate::AttributeRef {
+        unsafe { crate::AttributeRef::from_raw(self.value.as_ptr()) }
+    }
+}
 impl<'b, T, U> core::ops::CoerceUnsized<EntityRef<'b, U>> for EntityRef<'b, T>
 where
     T: ?Sized + core::marker::Unsize<U>,
