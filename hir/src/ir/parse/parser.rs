@@ -1436,7 +1436,7 @@ pub trait ParserExt<'input>: Parser<'input> {
 
         let (span, value) = self.parse_attribute(ty)?.into_parts();
 
-        match value.try_downcast::<T>() {
+        match value.try_downcast_attr::<T>() {
             Ok(attr) => Ok(Some(Span::new(span, attr))),
             Err(other) => {
                 let other = other.borrow();

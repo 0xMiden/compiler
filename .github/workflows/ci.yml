@@ -115,6 +115,33 @@ jobs:
         run: |
           cargo make test -E 'not (package(miden-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden))'
 
+  release_profile_tests:
+    name: midenc release-profile tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          # NOTE: Keep a separate cache because the workspace is rebuilt under
+          # the custom test-release profile.
+          shared-key: ${{ github.workflow }}-shared-release-tests
+          prefix-key: ${{ env.RUST_CACHE_KEY }}
+          save-if: ${{ github.ref == 'refs/heads/next' }}
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+      - name: Test
+        run: |
+          cargo make test-release
+
   lit_tests:
     name: midenc lit/filecheck tests
     runs-on: ubuntu-latest

@@ -54,7 +54,7 @@ impl Dialect for HirDialect {
         let mut builder = midenc_hir::InsertionGuard::new(builder);
 
         // Check for `PointerAttr`
-        if let Ok(attr) = attr.try_downcast::<PointerAttr>() {
+        if let Ok(attr) = attr.try_downcast_attr::<PointerAttr>() {
             let pointee_type = ty
                 .pointee()
                 .expect("unexpected pointer constant given when materializing non-pointer value")

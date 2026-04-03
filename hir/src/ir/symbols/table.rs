@@ -39,9 +39,7 @@ pub trait SymbolTable {
     /// Resolve the entry for `path` in this table, or via the root symbol table
     fn resolve(&self, path: &SymbolPath) -> Option<SymbolRef> {
         let found = self.symbol_manager().lookup_symbol_ref(path)?;
-        let op = found.borrow();
-        let sym = op.as_symbol().expect("symbol table resolved to a non-symbol op!");
-        Some(unsafe { SymbolRef::from_raw(sym) })
+        found.as_trait_ref::<dyn Symbol>()
     }
 
     /// Insert `entry` in the symbol table, but only if no other symbol with the same name exists.
@@ -64,15 +62,16 @@ pub trait SymbolTable {
     }
 
     /// Remove the symbol `name`, and return the entry if one was present.
+    ///
+    /// This unlinks any current users of the removed symbol, as the removed name can no longer be
+    /// resolved within this table.
     fn remove(&mut self, name: SymbolName) -> Option<SymbolRef> {
         let mut manager = self.symbol_manager_mut();
 
-        if let Some(symbol) = manager.lookup(name) {
-            manager.remove(symbol);
-            Some(symbol)
-        } else {
-            None
-        }
+        let mut symbol = manager.lookup(name)?;
+        manager.remove(symbol);
+        symbol.borrow_mut().uses_mut().clear();
+        Some(symbol)
     }
 
     /// Renames the symbol named `from`, as `to`, as well as all uses of that symbol.
@@ -102,10 +101,13 @@ impl dyn SymbolTable {
     /// Look up a symbol with the given name and concrete type, returning `None` if no such symbol
     /// exists
     pub fn find<T: Op + Symbol>(&self, name: SymbolName) -> Option<UnsafeIntrusiveEntityRef<T>> {
-        let op = self.get(name)?;
-        let op = op.borrow();
-        let op = op.as_symbol_operation().downcast_ref::<T>()?;
-        Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(op) })
+        let symbol = self.get(name)?;
+        symbol
+            .borrow()
+            .as_symbol_operation()
+            .as_operation_ref()
+            .try_downcast_op::<T>()
+            .ok()
     }
 }
 
@@ -134,9 +136,8 @@ impl SymbolMap {
 
         let region = op.regions().front().get().unwrap();
         for op in region.entry().body() {
-            if let Some(symbol) = op.as_trait::<dyn Symbol>() {
-                let name = symbol.name();
-                let symbol_ref = unsafe { SymbolRef::from_raw(symbol) };
+            if let Some(symbol_ref) = op.as_symbol_ref() {
+                let name = symbol_ref.borrow().name();
                 symbols
                     .try_insert(name, symbol_ref)
                     .expect("expected region to contain uniquely named symbol operations");
