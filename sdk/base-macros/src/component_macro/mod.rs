@@ -36,8 +36,8 @@ mod storage;
 const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 /// Attribute name used to mark the authentication procedure on a component method.
 const AUTH_SCRIPT_ATTR: &str = "auth_script";
-/// Stable marker preserved by `#[auth_script]` so `#[component]` can recognize the method.
-const AUTH_SCRIPT_DOC_MARKER: &str = "__miden_auth_script_marker";
+/// Helper attribute preserved by `#[auth_script]` so `#[component]` can recognize the method.
+const AUTH_SCRIPT_MARKER_ATTR: &str = "miden_auth_script_requires_component";
 /// Symbol emitted for every `#[auth_script]` method to enforce project-wide uniqueness.
 const AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL: &str = "__MIDEN_AUTH_SCRIPT_UNIQUENESS_GUARD";
 /// Wasm custom section used to pass frontend-only component metadata into the compiler frontend.
@@ -174,8 +174,11 @@ pub fn expand_auth_script(
         }
     };
 
-    let marker = syn::LitStr::new(AUTH_SCRIPT_DOC_MARKER, Span2::call_site());
-    item_fn.attrs.push(syn::parse_quote!(#[doc = #marker]));
+    // Preserve a helper attribute for `#[component]` to consume. If the surrounding impl forgets
+    // `#[component]`, rustc rejects this unknown helper attribute instead of silently compiling a
+    // method that emits no auth metadata.
+    let marker_attr = format_ident!("{}", AUTH_SCRIPT_MARKER_ATTR);
+    item_fn.attrs.push(syn::parse_quote!(#[#marker_attr]));
     quote!(#item_fn).into()
 }
 
@@ -996,7 +999,10 @@ fn is_attr_named(attr: &Attribute, name: &str) -> bool {
 
 /// Returns true if an attribute marks a method as the authentication procedure entrypoint.
 fn is_auth_script_marker_attr(attr: &Attribute) -> bool {
-    is_attr_named(attr, AUTH_SCRIPT_ATTR) || is_doc_marker_attr(attr, AUTH_SCRIPT_DOC_MARKER)
+    is_attr_named(attr, AUTH_SCRIPT_ATTR)
+        || is_attr_named(attr, AUTH_SCRIPT_MARKER_ATTR)
+        // Accept the previous doc marker while older generated test inputs are still around.
+        || is_doc_marker_attr(attr, "__miden_auth_script_marker")
 }
 
 /// Returns true if `attr` is `#[doc = "..."]` with `marker` as the string value.
@@ -1182,5 +1188,15 @@ mod tests {
 
         validate_auth_script_count(Some(AUTH_COMPONENT_PROJECT_KIND), 1, Span2::call_site())
             .expect("expected exactly one auth script to be accepted");
+    }
+
+    #[test]
+    fn auth_script_marker_accepts_helper_attribute() {
+        let method: ImplItemFn = parse_quote! {
+            #[miden_auth_script_requires_component]
+            pub fn whatever_name(&mut self, arg: Word) {}
+        };
+
+        assert!(has_auth_script_marker_attr(&method.attrs));
     }
 }
