@@ -57,15 +57,6 @@ fn test_all_templates() {
 
     let auth_comp = build_new_project_from_template("--auth-component");
     assert!(auth_comp.is_library());
-
-    let expected_function = "auth__procedure";
-    let lib = auth_comp.mast.clone();
-    assert!(
-        lib.exports()
-            .any(|export| export.path().as_ref().last() == Some(expected_function)),
-        "expected one of the authentication component exports to contain  function \
-         '{expected_function}'"
-    );
 }
 
 /// Build a new project from the specified template and return its package

@@ -55,6 +55,6 @@ pub fn translate_component(
         &parsed_root_component.static_components,
         config,
         context,
-    );
+    )?;
     translator.translate2(&parsed_root_component.root_component, &mut component_types_builder)
 }

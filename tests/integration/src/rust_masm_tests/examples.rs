@@ -313,15 +313,16 @@ fn auth_component_no_auth() {
     let auth_comp_package = test.compile_package();
     assert!(auth_comp_package.is_library());
     let lib = auth_comp_package.mast.clone();
-    let expected_function = "auth__procedure";
     let exports = lib
         .exports()
-        .map(|e| e.path().as_ref().as_str().to_string())
+        .filter_map(|export| {
+            let proc_export = export.as_procedure()?;
+            proc_export.attributes.has("auth_script").then_some(proc_export)
+        })
         .collect::<Vec<_>>();
     assert!(
-        lib.exports()
-            .any(|export| export.path().as_ref().last() == Some(expected_function)),
-        "expected one of the exports to contain function '{expected_function}', got: {exports:?}"
+        !exports.is_empty(),
+        "expected at least one exported procedure to carry the `auth_script` attribute",
     );
 
     // Test that the package loads
@@ -340,12 +341,16 @@ fn auth_component_rpo_falcon512() {
     let auth_comp_package = test.compile_package();
     assert!(auth_comp_package.is_library());
     let lib = auth_comp_package.mast.clone();
-    let expected_function = "auth__procedure";
-
+    let auth_exports = lib
+        .exports()
+        .filter_map(|export| {
+            let proc_export = export.as_procedure()?;
+            proc_export.attributes.has("auth_script").then_some(proc_export)
+        })
+        .collect::<Vec<_>>();
     assert!(
-        lib.exports()
-            .any(|export| export.path().as_ref().last() == Some(expected_function)),
-        "expected one of the exports to contain function '{expected_function}'"
+        !auth_exports.is_empty(),
+        "expected at least one exported procedure to carry the `auth_script` attribute",
     );
 
     // Test that the package loads

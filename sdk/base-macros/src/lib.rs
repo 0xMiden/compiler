@@ -80,6 +80,18 @@ pub fn component(
     component_macro::component(attr, item)
 }
 
+/// Marks a component method as the authentication procedure entrypoint (`#[auth_script]`).
+///
+/// The method must be contained within an inherent `impl` block annotated with `#[component]`.
+/// At most one method in a crate may be annotated with `#[auth_script]`.
+#[proc_macro_attribute]
+pub fn auth_script(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    component_macro::expand_auth_script(attr, item)
+}
+
 /// Generates an equvalent type in the WIT interface.
 /// Required for every type mentioned in the public methods of an account component.
 ///
