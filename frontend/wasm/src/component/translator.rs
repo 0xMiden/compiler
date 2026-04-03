@@ -64,6 +64,9 @@ pub struct ComponentTranslator<'a> {
 
     context: Rc<Context>,
 
+    /// Export name that must be marked with the protocol's `@auth_script` attribute.
+    auth_export_name: Option<String>,
+
     /// Information about shim modules to bypass
     shim_bypass_info: ShimBypassInfo,
 }
@@ -112,9 +115,27 @@ impl<'a> ComponentTranslator<'a> {
         nested_components: &'a PrimaryMap<StaticComponentIndex, ParsedComponent<'a>>,
         config: &'a WasmTranslationConfig,
         context: Rc<Context>,
-    ) -> Self {
+    ) -> WasmResult<Self> {
         let ns = hir2::Ident::with_empty_span(id.namespace);
         let name = hir2::Ident::with_empty_span(id.name);
+        let mut auth_export_name = None;
+        for (_, module) in nested_modules.iter() {
+            let Some(module_auth_export_name) = module
+                .component_frontend_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.auth_export_name.clone())
+            else {
+                continue;
+            };
+
+            if auth_export_name.replace(module_auth_export_name).is_some() {
+                return Err(Report::from(crate::error::WasmError::Unsupported(
+                    "multiple `#[auth_script]` procedures were found; only one is allowed per \
+                     project"
+                        .to_string(),
+                )));
+            }
+        }
 
         // If a world wasn't provided to us, create one
         let world_ref = match config.world {
@@ -129,7 +150,7 @@ impl<'a> ComponentTranslator<'a> {
             .expect("failed to define component");
         let result = ComponentBuilder::new(raw_entity_ref);
 
-        Self {
+        Ok(Self {
             config,
             context,
             nested_modules,
@@ -137,7 +158,8 @@ impl<'a> ComponentTranslator<'a> {
             world_builder,
             result,
             shim_bypass_info: ShimBypassInfo::default(),
-        }
+            auth_export_name,
+        })
     }
 
     pub fn translate2(
@@ -464,11 +486,13 @@ impl<'a> ComponentTranslator<'a> {
         let func_ty =
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
+        let is_auth_procedure = self.auth_export_name.as_deref() == Some(name);
         generate_export_lifting_function(
             &mut self.result,
             name,
             func_ty,
             core_export_func_path,
+            is_auth_procedure,
             self.context.diagnostics(),
         )?;
         Ok(())

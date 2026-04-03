@@ -79,6 +79,61 @@ pub struct ParsedModule<'data> {
 
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<&'data [u8]>,
+    /// Frontend-only component metadata emitted by SDK macros.
+    pub component_frontend_metadata: Option<ComponentFrontendMetadata>,
+}
+
+/// Frontend-only metadata emitted by the SDK macros into a dedicated Wasm custom section.
+#[derive(Clone, Debug, Default)]
+pub struct ComponentFrontendMetadata {
+    /// Export name that must be marked with the protocol's `@auth_script` attribute.
+    pub auth_export_name: Option<String>,
+}
+
+impl ComponentFrontendMetadata {
+    /// Decodes the SDK-emitted metadata payload from the custom section bytes.
+    fn read_from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let Some((&version, bytes)) = bytes.split_first() else {
+            return Err("component frontend metadata section is empty".to_string());
+        };
+        if version != 1 {
+            return Err(format!("unsupported component frontend metadata version `{version}`"));
+        }
+
+        let Some((&auth_export_count, mut bytes)) = bytes.split_first() else {
+            return Err("component frontend metadata section is truncated".to_string());
+        };
+
+        if auth_export_count > 1 {
+            return Err("component frontend metadata supports at most one auth export".to_string());
+        }
+
+        let auth_export_name = if auth_export_count == 1 {
+            let Some((&name_len, rest)) = bytes.split_first() else {
+                return Err("component frontend metadata section is truncated".to_string());
+            };
+            bytes = rest;
+
+            let name_len = name_len as usize;
+            if bytes.len() < name_len {
+                return Err("component frontend metadata section is truncated".to_string());
+            }
+
+            let (name_bytes, rest) = bytes.split_at(name_len);
+            let name = core::str::from_utf8(name_bytes)
+                .map_err(|_| "component frontend metadata must be valid UTF-8".to_string())?;
+            bytes = rest;
+            Some(name.to_string())
+        } else {
+            None
+        };
+
+        if !bytes.is_empty() {
+            return Err("component frontend metadata section has trailing bytes".to_string());
+        }
+
+        Ok(Self { auth_export_name })
+    }
 }
 
 /// Contains function data: byte code and its offset in the module.
@@ -216,6 +271,27 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
             Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
             Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
                 self.result.account_component_metadata_bytes = Some(s.data());
+            }
+            Payload::CustomSection(s) if s.name() == "rodata,miden_account_component_frontend" => {
+                let metadata =
+                    ComponentFrontendMetadata::read_from_bytes(s.data()).map_err(|err| {
+                        diagnostics
+                            .diagnostic(Severity::Error)
+                            .with_message(format!(
+                                "failed to parse component frontend metadata section: {err}"
+                            ))
+                            .into_report()
+                    })?;
+
+                if self.result.component_frontend_metadata.replace(metadata).is_some() {
+                    return Err(diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(
+                            "wasm error: multiple `#[auth_script]` procedures were found; only \
+                             one is allowed per project",
+                        )
+                        .into_report());
+                }
             }
             Payload::CustomSection { .. } => {
                 // ignore any other custom sections
