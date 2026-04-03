@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-03
+
+Changes since `v0.7.1`.
+
+### Added
+- initial `wasm` dialect support plus lowering for `i32.extend8_s`, `i32.extend16_s`, `i64.extend*_s`, and signed `i32`/`i64` loads
+- `objtool` CLI plus `install-objtool` and `install` tasks for inspecting MASP artifacts
+- typed SDK storage and felt representation improvements, including `StorageValue<T>`, `StorageMap<K, V>`, `SchemaTypeId`, typed `FeltReader` reads, and richer decode errors
+
+### Changed
+- migrate the compiler stack to Miden VM `v0.22`, protocol `v0.14`, and SDK `v0.11`
+- move address preparation into the `wasm` dialect
+
+### Fixed
+- release-build crashes in HIR caused by unsound intrusive handle conversions and stale `SymbolUse` targets
+- `scf.index_switch` lowering for sparse and non-zero case sets, including selector liveness and span preservation
+- `memcpy` and `memset` lowering for zero-count copies, byte fast paths, and unaligned or signed `u16`/`i16` memory access
+- protocol and SDK binding regressions during the VM and protocol migration, including storage slots, note recipient helpers, active account assets, and canonical ABI edge cases
+- `cargo miden new` symlink materialization on non-Unix platforms and tests that mutate the process working directory
+
 ## `cargo-miden` - [0.7.0](https://github.com/0xMiden/compiler/compare/0.6.0...0.7.0) - 2026-02-11
 
 ### Added
