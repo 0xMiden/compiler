@@ -414,15 +414,7 @@ impl AsmParserState {
                 };
 
                 for mut user in uses.iter().copied() {
-                    let used = symbol_op
-                        .borrow()
-                        .as_symbol_ref()
-                        .expect("resolved symbol references must point to symbols");
-                    let symbol_use = context.alloc_tracked(crate::SymbolUse {
-                        owner: *op,
-                        attr: user,
-                        used: Some(used),
-                    });
+                    let symbol_use = context.alloc_tracked(crate::SymbolUse::new(*op, user));
                     user.borrow_mut().set_user(symbol_use);
                     if let Some(index) = self.operation_to_idx.get(&symbol_op).copied() {
                         self.operations[index].symbol_uses.push(symbol_use);
@@ -459,15 +451,7 @@ impl AsmParserState {
                     continue;
                 };
 
-                let used = resolved
-                    .borrow()
-                    .as_symbol_ref()
-                    .expect("resolved symbol references must point to symbols");
-                let symbol_use = context.alloc_tracked(crate::SymbolUse {
-                    owner: user,
-                    attr: using_attr,
-                    used: Some(used),
-                });
+                let symbol_use = context.alloc_tracked(crate::SymbolUse::new(user, using_attr));
                 using_attr.borrow_mut().set_user(symbol_use);
                 if let Some(index) = self.operation_to_idx.get(&resolved).copied() {
                     self.operations[index].symbol_uses.push(symbol_use);

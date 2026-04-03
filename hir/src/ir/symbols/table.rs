@@ -62,15 +62,16 @@ pub trait SymbolTable {
     }
 
     /// Remove the symbol `name`, and return the entry if one was present.
+    ///
+    /// This unlinks any current users of the removed symbol, as the removed name can no longer be
+    /// resolved within this table.
     fn remove(&mut self, name: SymbolName) -> Option<SymbolRef> {
         let mut manager = self.symbol_manager_mut();
 
-        if let Some(symbol) = manager.lookup(name) {
-            manager.remove(symbol);
-            Some(symbol)
-        } else {
-            None
-        }
+        let mut symbol = manager.lookup(name)?;
+        manager.remove(symbol);
+        symbol.borrow_mut().uses_mut().clear();
+        Some(symbol)
     }
 
     /// Renames the symbol named `from`, as `to`, as well as all uses of that symbol.

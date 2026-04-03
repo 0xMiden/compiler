@@ -398,6 +398,9 @@ mod tests {
             assert!(module.get("original".into()).is_none());
         }
 
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert!(call.borrow().resolve().is_none());
+
         call.borrow_mut().set_callee(replacement).unwrap();
 
         let replacement_path = replacement.borrow().path();

@@ -108,20 +108,17 @@ impl SymbolRefAttr {
     /// must not hold a mutable borrow of that user when invoking this API, or the borrow check will
     /// report an aliasing violation.
     pub fn resolve(&self) -> Option<crate::SymbolRef> {
-        self.user().borrow().resolve_symbol(self.path())
+        self.user().resolve_symbol(self.path())
     }
 
     /// Unlinks the tracked use from its current symbol, if it is linked.
-    pub fn unlink(&mut self) -> Option<crate::SymbolRef> {
-        let mut user = self.user();
-        let path = self.path().clone();
-        user.borrow_mut().unlink_from_symbol(user, &path)
+    pub fn unlink(&mut self) {
+        self.user().unlink_from_symbol(self.path());
     }
 
     /// Links the tracked use to `symbol` without modifying the stored path.
     pub fn link(&mut self, symbol: crate::SymbolRef) {
-        let mut user = self.user();
-        user.borrow_mut().link_to_symbol(user, symbol);
+        self.user().link_to_symbol(symbol);
     }
 
     /// Updates this symbol reference to point at `symbol`, mutating and relinking the existing use.
