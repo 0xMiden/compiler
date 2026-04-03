@@ -18,7 +18,7 @@ Changes since `v0.7.1`.
 
 ### Changed
 - migrate the compiler stack to Miden VM `v0.22`, protocol `v0.14`, and SDK `v0.11`
-- move address preparation into the `wasm` dialect and rename `objsize` to `objtool`
+- move address preparation into the `wasm` dialect
 
 ### Fixed
 - release-build crashes in HIR caused by unsound intrusive handle conversions and stale `SymbolUse` targets
