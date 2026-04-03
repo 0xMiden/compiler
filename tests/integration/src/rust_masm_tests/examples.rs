@@ -312,15 +312,17 @@ fn auth_component_no_auth() {
         CompilerTest::rust_source_cargo_miden("../../examples/auth-component-no-auth", config, []);
     let auth_comp_package = test.compile_package();
     let lib = auth_comp_package.unwrap_library();
-    let expected_function = "auth__procedure";
-    let exports = lib
+    let auth_exports = lib
         .exports()
-        .map(|e| e.path().as_ref().as_str().to_string())
+        .filter_map(|export| {
+            let proc_export = export.as_procedure()?;
+            proc_export.attributes.has("auth_script").then_some(proc_export)
+        })
         .collect::<Vec<_>>();
-    assert!(
-        lib.exports()
-            .any(|export| export.path().as_ref().last() == Some(expected_function)),
-        "expected one of the exports to contain function '{expected_function}', got: {exports:?}"
+    assert_eq!(
+        auth_exports.len(),
+        1,
+        "expected exactly one exported procedure to carry the `auth_script` attribute",
     );
 
     // Test that the package loads
@@ -338,12 +340,17 @@ fn auth_component_rpo_falcon512() {
     );
     let auth_comp_package = test.compile_package();
     let lib = auth_comp_package.unwrap_library();
-    let expected_function = "auth__procedure";
-
-    assert!(
-        lib.exports()
-            .any(|export| export.path().as_ref().last() == Some(expected_function)),
-        "expected one of the exports to contain function '{expected_function}'"
+    let auth_exports = lib
+        .exports()
+        .filter_map(|export| {
+            let proc_export = export.as_procedure()?;
+            proc_export.attributes.has("auth_script").then_some(proc_export)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        auth_exports.len(),
+        1,
+        "expected exactly one exported procedure to carry the `auth_script` attribute",
     );
 
     // Test that the package loads

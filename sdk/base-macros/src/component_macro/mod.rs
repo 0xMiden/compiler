@@ -7,11 +7,11 @@ use std::{
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_protocol::{account::AccountType, utils::serde::Serializable};
 use proc_macro::Span;
-use proc_macro2::{Ident, Literal, TokenStream as TokenStream2};
+use proc_macro2::{Ident, Literal, Span as Span2, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemStruct, ReturnType, Type, Visibility,
-    spanned::Spanned,
+    Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemStruct, PathArguments, ReturnType, Type,
+    Visibility, spanned::Spanned,
 };
 
 pub(crate) use crate::component_macro::storage::typecheck_storage_field;
@@ -34,6 +34,16 @@ mod storage;
 
 /// Fully-qualified identifier for the core types package used by exported component interfaces.
 const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
+/// Attribute name used to mark the authentication procedure on a component method.
+const AUTH_SCRIPT_ATTR: &str = "auth_script";
+/// Helper attribute preserved by `#[auth_script]` so `#[component]` can recognize the method.
+const AUTH_SCRIPT_MARKER_ATTR: &str = "miden_auth_script_requires_component";
+/// Symbol emitted for every `#[auth_script]` method to enforce project-wide uniqueness.
+const AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL: &str = "__MIDEN_AUTH_SCRIPT_UNIQUENESS_GUARD";
+/// Wasm custom section used to pass frontend-only component metadata into the compiler frontend.
+const FRONTEND_METADATA_LINK_SECTION: &str = "rodata,miden_account_component_frontend";
+/// Cargo project kind used by authentication component crates.
+const AUTH_COMPONENT_PROJECT_KIND: &str = "authentication-component";
 
 /// Receiver kinds supported by the derived guest trait implementation.
 #[derive(Clone, Copy)]
@@ -77,6 +87,8 @@ struct ComponentMethod {
     return_info: MethodReturn,
     /// Method name rendered in kebab-case for WIT output.
     wit_name: String,
+    /// Indicates whether this method is the authentication procedure entrypoint.
+    is_auth_script: bool,
 }
 
 /// Expands the `#[component]` attribute applied to either a struct declaration or an inherent
@@ -112,6 +124,62 @@ pub fn component(
         .into_compile_error()
         .into()
     }
+}
+
+/// Expands `#[auth_script]`.
+///
+/// This attribute must be applied to a method inside an inherent `impl` block annotated with
+/// `#[component]`. It acts as a marker for `#[component]` so the macro can emit frontend metadata
+/// for the annotated export without rewriting its user-defined name.
+pub fn expand_auth_script(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    if !attr.is_empty() {
+        return syn::Error::new(Span2::call_site(), "this attribute does not accept arguments")
+            .into_compile_error()
+            .into();
+    }
+
+    let item_tokens: TokenStream2 = item.clone().into();
+    let mut item_fn: ImplItemFn = match syn::parse2(item_tokens.clone()) {
+        Ok(item_fn) => item_fn,
+        Err(_) => {
+            if let Ok(item_fn) = syn::parse2::<syn::ItemFn>(item_tokens.clone()) {
+                return syn::Error::new(
+                    item_fn.sig.span(),
+                    "`#[auth_script]` must be applied to a method inside a `#[component]` `impl` \
+                     block",
+                )
+                .into_compile_error()
+                .into();
+            }
+
+            if let Ok(item_fn) = syn::parse2::<syn::TraitItemFn>(item_tokens.clone()) {
+                return syn::Error::new(
+                    item_fn.sig.span(),
+                    "`#[auth_script]` must be applied to a method inside a `#[component]` `impl` \
+                     block",
+                )
+                .into_compile_error()
+                .into();
+            }
+
+            return syn::Error::new(
+                Span2::call_site(),
+                "`#[auth_script]` must be applied to a method inside a `#[component]` `impl` block",
+            )
+            .into_compile_error()
+            .into();
+        }
+    };
+
+    // Preserve a helper attribute for `#[component]` to consume. If the surrounding impl forgets
+    // `#[component]`, rustc rejects this unknown helper attribute instead of silently compiling a
+    // method that emits no auth metadata.
+    let marker_attr = format_ident!("{}", AUTH_SCRIPT_MARKER_ATTR);
+    item_fn.attrs.push(syn::parse_quote!(#[#marker_attr]));
+    quote!(#item_fn).into()
 }
 
 /// Expands the `#[component]` attribute applied to a struct by wiring storage metadata and link
@@ -191,7 +259,7 @@ fn expand_component_struct(
 /// the inline WIT interface, invoking `miden::generate!`, and wiring the guest trait implementation.
 fn expand_component_impl(
     call_site_span: Span,
-    impl_block: ItemImpl,
+    mut impl_block: ItemImpl,
 ) -> Result<TokenStream2, syn::Error> {
     if impl_block.trait_.is_some() {
         return Err(syn::Error::new(
@@ -230,17 +298,33 @@ fn expand_component_impl(
         exported_types.iter().map(|def| (def.rust_name.clone(), def.clone())).collect();
     let mut methods = Vec::new();
     let mut type_imports = BTreeSet::new();
+    let mut auth_method_count = 0usize;
 
-    for item in &impl_block.items {
-        if let ImplItem::Fn(method) = item {
-            if !matches!(method.vis, Visibility::Public(_)) {
-                continue;
-            }
+    for item in &mut impl_block.items {
+        let ImplItem::Fn(method) = item else {
+            continue;
+        };
 
-            let (parsed_method, imports) = parse_component_method(method, &exported_types_by_rust)?;
-            type_imports.extend(imports);
-            methods.push(parsed_method);
+        let is_auth_script = has_auth_script_marker_attr(&method.attrs);
+        if is_auth_script && !matches!(method.vis, Visibility::Public(_)) {
+            return Err(syn::Error::new(
+                method.sig.ident.span(),
+                "`#[auth_script]` can only be applied to `pub` component methods",
+            ));
         }
+        method.attrs.retain(|attr| !is_auth_script_marker_attr(attr));
+
+        if !matches!(method.vis, Visibility::Public(_)) {
+            continue;
+        }
+
+        let (parsed_method, imports) =
+            parse_component_method(method, &exported_types_by_rust, is_auth_script)?;
+        if parsed_method.is_auth_script {
+            auth_method_count += 1;
+        }
+        type_imports.extend(imports);
+        methods.push(parsed_method);
     }
 
     if methods.is_empty() {
@@ -249,6 +333,12 @@ fn expand_component_impl(
             "Component `impl` is missing `pub` methods. A component cannot have empty exports.",
         ));
     }
+
+    validate_auth_script_count(
+        metadata.project_kind.as_deref(),
+        auth_method_count,
+        impl_block.span(),
+    )?;
 
     let wit_source = build_component_wit(
         &component_package,
@@ -292,6 +382,8 @@ fn expand_component_impl(
         );
     }
 
+    let frontend_link_section = generate_frontend_link_section(&methods);
+
     Ok(quote! {
         ::miden::generate!(inline = #inline_literal, with = { #(#custom_with_entries)* });
         // Bring account traits into scope so users can call `self.add_asset()`, etc.
@@ -303,10 +395,34 @@ fn expand_component_impl(
         impl #guest_trait_path for #component_type {
             #(#guest_methods)*
         }
+        #frontend_link_section
         // Use the fully-qualified component type here so the export macro works even when
         // the impl block was declared through a module-qualified path (e.g. `impl super::Foo`).
         self::bindings::export!(#component_type);
     })
+}
+
+/// Validates how many methods may be annotated with `#[auth_script]` for the current project kind.
+fn validate_auth_script_count(
+    project_kind: Option<&str>,
+    auth_method_count: usize,
+    span: Span2,
+) -> Result<(), syn::Error> {
+    if project_kind == Some(AUTH_COMPONENT_PROJECT_KIND) {
+        if auth_method_count != 1 {
+            return Err(syn::Error::new(
+                span,
+                "authentication components require exactly one `#[auth_script]` method",
+            ));
+        }
+    } else if auth_method_count > 1 {
+        return Err(syn::Error::new(
+            span,
+            "only one `#[auth_script]` method is allowed per `#[component]` impl block",
+        ));
+    }
+
+    Ok(())
 }
 
 /// Synthesizes the guest trait path exposed by `wit-bindgen` for the generated interface.
@@ -578,6 +694,7 @@ fn build_path_tokens(segments: &[String], type_ident: &Ident) -> TokenStream2 {
 fn parse_component_method(
     method: &ImplItemFn,
     exported_types: &HashMap<String, ExportedTypeDef>,
+    is_auth_script: bool,
 ) -> Result<(ComponentMethod, BTreeSet<String>), syn::Error> {
     if method.sig.constness.is_some() {
         return Err(syn::Error::new(
@@ -691,6 +808,10 @@ fn parse_component_method(
         }
     };
 
+    if is_auth_script {
+        validate_auth_script_signature(method, &params, &return_info)?;
+    }
+
     let doc_attrs = method
         .attrs
         .iter()
@@ -705,6 +826,7 @@ fn parse_component_method(
         receiver_kind,
         return_info,
         wit_name: to_kebab_case(&method.sig.ident.to_string()),
+        is_auth_script,
     };
 
     Ok((component_method, type_imports))
@@ -724,6 +846,21 @@ fn extract_type_ident(ty: &Type) -> Option<syn::Ident> {
 /// Determines whether a type represents the unit type `()`.
 fn is_unit_type(ty: &Type) -> bool {
     matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty())
+}
+
+/// Determines whether a type path resolves to a simple identifier with the given name.
+fn is_type_named(ty: &Type, name: &str) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    if type_path.qself.is_some() {
+        return false;
+    }
+    type_path
+        .path
+        .segments
+        .last()
+        .is_some_and(|seg| seg.ident == name && matches!(seg.arguments, PathArguments::None))
 }
 
 /// Converts a snake_case identifier into kebab-case.
@@ -753,6 +890,84 @@ fn generate_default_impl(
     }
 }
 
+/// Validates the signature requirements for a method annotated with `#[auth_script]`.
+fn validate_auth_script_signature(
+    method: &ImplItemFn,
+    params: &[MethodParam],
+    return_info: &MethodReturn,
+) -> Result<(), syn::Error> {
+    if params.len() != 1 || !is_type_named(&params[0].user_ty, "Word") {
+        return Err(syn::Error::new(
+            method.sig.span(),
+            "`#[auth_script]` methods must accept exactly one `Word` argument (excluding `self`)",
+        ));
+    }
+
+    if !matches!(return_info, MethodReturn::Unit) {
+        return Err(syn::Error::new(
+            method.sig.output.span(),
+            "`#[auth_script]` methods must return `()`",
+        ));
+    }
+
+    Ok(())
+}
+
+/// Emits frontend-only component metadata into a dedicated custom section.
+fn generate_frontend_link_section(methods: &[ComponentMethod]) -> proc_macro2::TokenStream {
+    let auth_export_name = methods
+        .iter()
+        .find(|method| method.is_auth_script)
+        .map(|method| method.wit_name.as_str());
+
+    let Some(auth_export_name) = auth_export_name else {
+        return quote! {};
+    };
+
+    let metadata_bytes = encode_frontend_metadata(Some(auth_export_name));
+    let metadata_len = metadata_bytes.len();
+    let encoded_bytes = Literal::byte_string(&metadata_bytes);
+    let uniqueness_guard_symbol = AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL;
+
+    quote! {
+        const _: () = {
+            // A crate may contain exactly one `#[auth_script]` method. Reusing a fixed symbol name
+            // lets the linker reject duplicates across modules or impl blocks.
+            #[doc(hidden)]
+            #[used]
+            #[unsafe(export_name = #uniqueness_guard_symbol)]
+            static __miden_auth_script_uniqueness_guard: u8 = 0;
+        };
+
+        #[unsafe(
+            // Keep the Mach-O-friendly `segment,section` naming scheme used by the main metadata
+            // section so the linker preserves these bytes in test and release builds.
+            link_section = #FRONTEND_METADATA_LINK_SECTION
+        )]
+        #[doc(hidden)]
+        #[allow(clippy::octal_escapes)]
+        pub static __MIDEN_ACCOUNT_COMPONENT_FRONTEND_METADATA_BYTES: [u8; #metadata_len] = *#encoded_bytes;
+    }
+}
+
+/// Encodes the frontend-only metadata payload consumed by the Wasm frontend.
+fn encode_frontend_metadata(auth_export_name: Option<&str>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.push(1);
+    bytes.push(u8::from(auth_export_name.is_some()));
+
+    if let Some(export_name) = auth_export_name {
+        let name_bytes = export_name.as_bytes();
+        bytes.push(
+            u8::try_from(name_bytes.len())
+                .expect("component frontend metadata supports auth export names up to 255 bytes"),
+        );
+        bytes.extend_from_slice(name_bytes);
+    }
+
+    bytes
+}
+
 /// Emits the static metadata blob inside the `rodata,miden_account` link section.
 fn generate_link_section(metadata_bytes: &[u8]) -> proc_macro2::TokenStream {
     let link_section_bytes_len = metadata_bytes.len();
@@ -770,9 +985,52 @@ fn generate_link_section(metadata_bytes: &[u8]) -> proc_macro2::TokenStream {
     }
 }
 
+/// Returns true if any authentication marker attribute is present.
+fn has_auth_script_marker_attr(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(is_auth_script_marker_attr)
+}
+
+fn is_attr_named(attr: &Attribute, name: &str) -> bool {
+    attr.path()
+        .segments
+        .last()
+        .is_some_and(|seg| seg.ident == name && matches!(seg.arguments, PathArguments::None))
+}
+
+/// Returns true if an attribute marks a method as the authentication procedure entrypoint.
+fn is_auth_script_marker_attr(attr: &Attribute) -> bool {
+    is_attr_named(attr, AUTH_SCRIPT_ATTR)
+        || is_attr_named(attr, AUTH_SCRIPT_MARKER_ATTR)
+        // Accept the previous doc marker while older generated test inputs are still around.
+        || is_doc_marker_attr(attr, "__miden_auth_script_marker")
+}
+
+/// Returns true if `attr` is `#[doc = "..."]` with `marker` as the string value.
+fn is_doc_marker_attr(attr: &Attribute, marker: &str) -> bool {
+    if !attr.path().is_ident("doc") {
+        return false;
+    }
+
+    let syn::Meta::NameValue(meta) = &attr.meta else {
+        return false;
+    };
+
+    let syn::Expr::Lit(expr) = &meta.value else {
+        return false;
+    };
+
+    let syn::Lit::Str(value) = &expr.lit else {
+        return false;
+    };
+
+    value.value() == marker
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+
+    use syn::parse_quote;
 
     use super::*;
 
@@ -863,5 +1121,82 @@ mod tests {
             entries[0].to_string(),
             "\"miden:component/path/struct-a\" : crate :: types :: StructA ,"
         );
+    }
+
+    #[test]
+    fn auth_script_methods_preserve_user_defined_names() {
+        let mut method: ImplItemFn = parse_quote! {
+            #[auth_script]
+            pub fn whatever_name(&mut self, arg: Word) {}
+        };
+        let exported_types = HashMap::new();
+        let is_auth_script = has_auth_script_marker_attr(&method.attrs);
+        method.attrs.retain(|attr| !is_auth_script_marker_attr(attr));
+
+        let (parsed_method, _) =
+            parse_component_method(&method, &exported_types, is_auth_script).unwrap();
+
+        assert_eq!(parsed_method.fn_ident.to_string(), "whatever_name");
+        assert_eq!(parsed_method.wit_name, "whatever-name");
+        assert!(parsed_method.is_auth_script);
+    }
+
+    #[test]
+    fn auth_script_methods_require_word_argument() {
+        let mut method: ImplItemFn = parse_quote! {
+            #[auth_script]
+            pub fn auth_procedure(&mut self, arg: u32) {}
+        };
+        let exported_types = HashMap::new();
+        let is_auth_script = has_auth_script_marker_attr(&method.attrs);
+        method.attrs.retain(|attr| !is_auth_script_marker_attr(attr));
+
+        let err = match parse_component_method(&method, &exported_types, is_auth_script) {
+            Ok(_) => panic!("expected `#[auth_script]` validation to reject non-`Word` arguments"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("exactly one `Word` argument"));
+    }
+
+    #[test]
+    fn auth_script_frontend_metadata_emits_project_wide_uniqueness_guard() {
+        let mut method: ImplItemFn = parse_quote! {
+            #[auth_script]
+            pub fn whatever_name(&mut self, arg: Word) {}
+        };
+        let exported_types = HashMap::new();
+        let is_auth_script = has_auth_script_marker_attr(&method.attrs);
+        method.attrs.retain(|attr| !is_auth_script_marker_attr(attr));
+
+        let (parsed_method, _) =
+            parse_component_method(&method, &exported_types, is_auth_script).unwrap();
+        let tokens = generate_frontend_link_section(&[parsed_method]).to_string();
+
+        assert!(tokens.contains(AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL));
+    }
+
+    #[test]
+    fn authentication_components_require_exactly_one_auth_script() {
+        let err =
+            validate_auth_script_count(Some(AUTH_COMPONENT_PROJECT_KIND), 0, Span2::call_site())
+                .expect_err("expected authentication components to require an auth script");
+
+        assert!(
+            err.to_string()
+                .contains("authentication components require exactly one `#[auth_script]` method")
+        );
+
+        validate_auth_script_count(Some(AUTH_COMPONENT_PROJECT_KIND), 1, Span2::call_site())
+            .expect("expected exactly one auth script to be accepted");
+    }
+
+    #[test]
+    fn auth_script_marker_accepts_helper_attribute() {
+        let method: ImplItemFn = parse_quote! {
+            #[miden_auth_script_requires_component]
+            pub fn whatever_name(&mut self, arg: Word) {}
+        };
+
+        assert!(has_auth_script_marker_attr(&method.attrs));
     }
 }

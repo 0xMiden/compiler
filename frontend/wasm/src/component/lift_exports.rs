@@ -29,6 +29,7 @@ pub fn generate_export_lifting_function(
     export_func_name: &str,
     export_func_ty: FunctionType,
     core_export_func_path: SymbolPath,
+    is_auth_procedure: bool,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     let context = { component_builder.component.borrow().as_operation().context_rc() };
@@ -51,23 +52,7 @@ pub fn generate_export_lifting_function(
         return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
     }
 
-    // Miden Base expects the authentication component to export a single
-    // procedure whose name matches `auth_*` (underscore). The base WIT
-    // defines this function as `auth-procedure` (kebab-case). Until
-    // https://github.com/0xMiden/miden-base/issues/1861 lands, we map the
-    // authentication procedure name from `auth-procedure` to
-    // `auth__procedure` (double underscore) to match the current miden-base
-    // expectation.
-    //
-    // IMPORTANT: Restrict this rename to the authentication interface only.
-    // We do this by matching the exact WIT name `auth-procedure` instead of
-    // rewriting arbitrary names that merely start with `auth-`.
-    let is_auth_procedure = export_func_name == "auth-procedure";
-    let export_func_ident = if is_auth_procedure {
-        Ident::new("auth__procedure".into(), SourceSpan::default())
-    } else {
-        Ident::new(export_func_name.to_string().into(), SourceSpan::default())
-    };
+    let export_func_ident = Ident::new(export_func_name.to_string().into(), SourceSpan::default());
 
     let core_export_module_path = core_export_func_path.without_leaf();
     let core_module_ref = component_builder
