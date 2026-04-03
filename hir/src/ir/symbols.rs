@@ -7,6 +7,7 @@ mod symbol_use;
 mod table;
 
 use alloc::{collections::VecDeque, format, vec};
+use core::ptr::{DynMetadata, Pointee};
 
 use midenc_session::diagnostics::{Diagnostic, miette};
 use smallvec::SmallVec;
@@ -72,20 +73,35 @@ pub trait AsSymbolRef {
 impl<T: Symbol> AsSymbolRef for &T {
     #[inline]
     fn as_symbol_ref(&self) -> SymbolRef {
-        unsafe { SymbolRef::from_raw(*self as &dyn Symbol) }
+        self.as_symbol_operation()
+            .as_symbol_ref()
+            .expect("symbol implementations must provide a symbol operation")
     }
 }
 impl<T: Symbol> AsSymbolRef for UnsafeIntrusiveEntityRef<T> {
     #[inline]
     fn as_symbol_ref(&self) -> SymbolRef {
-        let t_ptr = Self::as_ptr(self);
-        unsafe { SymbolRef::from_raw(t_ptr as *const dyn Symbol) }
+        self.borrow()
+            .as_symbol_operation()
+            .as_symbol_ref()
+            .expect("symbol handles must point at symbol operations")
     }
 }
 impl AsSymbolRef for SymbolRef {
     #[inline(always)]
     fn as_symbol_ref(&self) -> SymbolRef {
         *self
+    }
+}
+
+impl UnsafeIntrusiveEntityRef<dyn Symbol> {
+    /// Returns this symbol as a handle to an implemented trait object, if supported.
+    pub fn as_trait_ref<Trait>(self) -> Option<UnsafeIntrusiveEntityRef<Trait>>
+    where
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+    {
+        let symbol = self.borrow();
+        symbol.as_symbol_operation().as_operation_ref().as_trait_ref::<Trait>()
     }
 }
 
@@ -110,8 +126,7 @@ impl Operation {
     /// Get this operation as a [SymbolRef], if this operation implements the trait.
     #[inline]
     pub fn as_symbol_ref(&self) -> Option<SymbolRef> {
-        self.as_trait::<dyn Symbol>()
-            .map(|symbol| unsafe { SymbolRef::from_raw(symbol) })
+        self.as_operation_ref().as_trait_ref::<dyn Symbol>()
     }
 
     /// Get this operation as a [SymbolTable], if this operation implements the trait.
@@ -164,7 +179,7 @@ impl Operation {
         if let Some(sym) = self.as_symbol()
             && sym.name() == symbol
         {
-            return Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(sym) });
+            return self.as_symbol_ref();
         }
         let symbol_table_op = self.nearest_symbol_table()?;
         let op = symbol_table_op.borrow();

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{diagnostics::SourceSpan, interner, smallvec};
+use crate::{attributes::IntoAttributeRef, diagnostics::SourceSpan, interner, smallvec};
 
 /// This represents an operation in an abstracted form, suitable for use with the builder APIs.
 ///
@@ -55,10 +55,14 @@ impl OperationState {
         self.operands.push(operands);
     }
 
-    pub fn add_attribute(&mut self, name: impl Into<interner::Symbol>, value: AttributeRef) {
+    pub fn add_attribute(
+        &mut self,
+        name: impl Into<interner::Symbol>,
+        value: impl IntoAttributeRef,
+    ) {
         self.attrs.push(NamedAttribute {
             name: name.into(),
-            value,
+            value: value.into_attribute_ref(),
         });
     }
 

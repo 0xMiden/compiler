@@ -48,7 +48,7 @@ impl Dialect for UndefinedBehaviorDialect {
         _ty: &Type,
         span: SourceSpan,
     ) -> Option<OperationRef> {
-        if let Ok(poison_attr) = attr.try_downcast::<PoisonAttr>() {
+        if let Ok(poison_attr) = attr.try_downcast_attr::<PoisonAttr>() {
             let poison_value = poison_attr.borrow().as_value().clone();
             let op_builder = builder.create::<Poison, _>(span);
             return op_builder(poison_value).ok().map(|op| op.as_operation_ref());

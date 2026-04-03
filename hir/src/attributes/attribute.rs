@@ -27,6 +27,29 @@ use crate::{
 
 pub type AttributeRef = UnsafeIntrusiveEntityRef<dyn Attribute>;
 
+/// Converts an attribute handle into a type-erased [AttributeRef].
+pub trait IntoAttributeRef {
+    /// Converts this handle into a type-erased [AttributeRef].
+    fn into_attribute_ref(self) -> AttributeRef;
+}
+
+impl IntoAttributeRef for AttributeRef {
+    #[inline(always)]
+    fn into_attribute_ref(self) -> AttributeRef {
+        self
+    }
+}
+
+impl<T> IntoAttributeRef for UnsafeIntrusiveEntityRef<T>
+where
+    T: Attribute,
+{
+    #[inline(always)]
+    fn into_attribute_ref(self) -> AttributeRef {
+        self.as_attribute_ref()
+    }
+}
+
 impl PartialEq for AttributeRef {
     fn eq(&self, other: &Self) -> bool {
         if Self::ptr_eq(self, other) {
@@ -262,6 +285,48 @@ impl UnsafeIntrusiveEntityRef<dyn Attribute> {
             AttributeName::clone(&*name_ptr)
         }
     }
+
+    /// Returns this attribute as a handle to an implemented trait object, if supported.
+    ///
+    /// The returned handle preserves the original intrusive allocation identity and swaps only the
+    /// pointee metadata for the requested trait object.
+    pub fn as_trait_ref<Trait>(self) -> Option<UnsafeIntrusiveEntityRef<Trait>>
+    where
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+    {
+        let ptr = self.name().upcast_raw::<Trait>(Self::into_raw(self).cast())?;
+        let (_, metadata) = ptr.to_raw_parts();
+        Some(unsafe { self.cast_unsized_unchecked::<Trait>(metadata) })
+    }
+
+    /// Attempts to cast this handle to the concrete attribute type `T`.
+    ///
+    /// This preserves the original intrusive allocation identity rather than routing through the
+    /// generic `RawEntityRef` downcast helpers.
+    pub fn try_downcast_attr<T>(self) -> Result<UnsafeIntrusiveEntityRef<T>, Self>
+    where
+        T: AttributeRegistration,
+    {
+        if self.name().is::<T>() {
+            Ok(unsafe { self.cast_unchecked::<T>() })
+        } else {
+            Err(self)
+        }
+    }
+
+    /// Casts this handle to the concrete attribute type `T`.
+    ///
+    /// Panics if the cast is not valid for this attribute.
+    #[track_caller]
+    pub fn downcast_attr<T>(self) -> UnsafeIntrusiveEntityRef<T>
+    where
+        T: AttributeRegistration,
+    {
+        match self.try_downcast_attr::<T>() {
+            Ok(attr) => attr,
+            Err(_) => panic!("invalid cast"),
+        }
+    }
 }
 
 /// Metadata
@@ -394,7 +459,10 @@ impl Attr {
 mod tests {
     use core::hash::Hasher;
 
-    use crate::{ImmediateAttr, dialects::builtin::attributes::U32Attr, testing::Test};
+    use crate::{
+        Immediate, ImmediateAttr, Type, attributes::IntegerLikeAttr,
+        dialects::builtin::attributes::U32Attr, testing::Test,
+    };
 
     #[test]
     fn attribute_dyn_hash() {
@@ -444,5 +512,21 @@ mod tests {
         assert_eq!(&zero, &zero_two);
         assert_ne!(&zero, &zero_three);
         assert_ne!(&zero, &one);
+    }
+
+    #[test]
+    fn immediate_attribute_ref_roundtrips_with_type() {
+        let test = Test::default();
+
+        let immediate = test.context_rc().create_attribute::<ImmediateAttr, _>(Immediate::I32(1));
+        assert_eq!(immediate.borrow().ty().clone(), Type::I32);
+
+        let erased = immediate.as_attribute_ref();
+        assert_eq!(erased.borrow().ty().clone(), Type::I32);
+
+        let roundtrip = erased.try_downcast_attr::<ImmediateAttr>().unwrap();
+        let roundtrip = roundtrip.borrow();
+        assert_eq!(roundtrip.ty().clone(), Type::I32);
+        assert_eq!(roundtrip.as_immediate(), Immediate::I32(1));
     }
 }

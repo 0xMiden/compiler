@@ -346,14 +346,18 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     #[track_caller]
     pub fn borrow<'a, 'b: 'a>(&'a self) -> EntityRef<'b, T> {
         let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
-        unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() }
+        let borrow = unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() };
+        let value = unsafe { NonNull::new_unchecked(Self::as_ptr(self).cast_mut()) };
+        EntityRef::from_raw_parts(value, borrow.into_borrow_ref())
     }
 
     /// Get a dynamically-checked mutable reference to the underlying `T`
     #[track_caller]
     pub fn borrow_mut<'a, 'b: 'a>(&'a mut self) -> EntityMut<'b, T> {
         let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
-        unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow_mut() }
+        let borrow = unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow_mut() };
+        let value = unsafe { NonNull::new_unchecked(Self::as_ptr(self).cast_mut()) };
+        EntityMut::from_raw_parts(value, borrow.into_borrow_ref_mut())
     }
 
     /// Try to get a dynamically-checked mutable reference to the underlying `T`
@@ -361,7 +365,10 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     /// Returns `None` if the entity is already borrowed
     pub fn try_borrow_mut<'a, 'b: 'a>(&'a mut self) -> Option<EntityMut<'b, T>> {
         let ptr: *mut RawEntityMetadata<T, Metadata> = NonNull::as_ptr(self.inner);
-        unsafe { (*core::ptr::addr_of!((*ptr).entity)).try_borrow_mut().ok() }
+        unsafe { (*core::ptr::addr_of!((*ptr).entity)).try_borrow_mut().ok() }.map(|borrow| {
+            let value = unsafe { NonNull::new_unchecked(Self::as_ptr(self).cast_mut()) };
+            EntityMut::from_raw_parts(value, borrow.into_borrow_ref_mut())
+        })
     }
 
     pub fn ptr_eq(this: &Self, other: &Self) -> bool {
@@ -415,110 +422,37 @@ impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
 }
 
 impl<From: ?Sized, Metadata: 'static> RawEntityRef<From, Metadata> {
-    /// Casts this reference to the concrete type `T`, if the underlying value is a `T`.
+    /// Cast this handle to a different pointee type without validating the cast.
     ///
-    /// If the cast is not valid for this reference, `Err` is returned containing the original value.
-    #[inline]
-    pub fn try_downcast<To>(
+    /// # Safety
+    ///
+    /// Callers must ensure that `To` refers to the same allocation as `self`.
+    #[inline(always)]
+    pub(crate) unsafe fn cast_unchecked<To>(self) -> RawEntityRef<To, Metadata>
+    where
+        To: Sized,
+    {
+        unsafe { RawEntityRef::from_inner(self.inner.cast()) }
+    }
+
+    /// Cast this handle to an unsized pointee type without validating the cast.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure that `To` refers to the same allocation as `self`, and that `metadata`
+    /// matches the target pointee type for that allocation.
+    #[inline(always)]
+    pub(crate) unsafe fn cast_unsized_unchecked<To>(
         self,
-    ) -> Result<RawEntityRef<To, Metadata>, RawEntityRef<From, Metadata>>
+        metadata: <To as core::ptr::Pointee>::Metadata,
+    ) -> RawEntityRef<To, Metadata>
     where
-        To: DowncastFromRef<From> + 'static,
-        From: 'static,
+        To: ?Sized + core::ptr::Pointee,
     {
-        RawEntityRef::<To, Metadata>::try_downcast_from(self)
+        let inner = core::ptr::from_raw_parts_mut(self.inner.as_ptr().cast::<()>(), metadata);
+        unsafe { RawEntityRef::from_ptr(inner) }
     }
 
-    /// Casts this reference to the concrete type `T`, if the underlying value is a `T`.
-    ///
-    /// If the cast is not valid for this reference, `Err` is returned containing the original value.
-    #[inline]
-    pub fn try_downcast_ref<To, Obj>(&self) -> Option<RawEntityRef<To, Metadata>>
-    where
-        To: DowncastFromRef<From> + 'static,
-        From: Is<Obj> + AsAny + 'static,
-        Obj: ?Sized,
-    {
-        RawEntityRef::<To, Metadata>::try_downcast_from_ref(self)
-    }
-
-    /// Casts this reference to the concrete type `T`, if the underlying value is a `T`.
-    ///
-    /// Panics if the cast is not valid for this reference.
-    #[inline]
-    #[track_caller]
-    pub fn downcast<To, Obj>(self) -> RawEntityRef<To, Metadata>
-    where
-        To: DowncastFromRef<From> + 'static,
-        From: Is<Obj> + AsAny + 'static,
-        Obj: ?Sized,
-    {
-        RawEntityRef::<To, Metadata>::downcast_from(self)
-    }
-
-    /// Casts this reference to the concrete type `T`, if the underlying value is a `T`.
-    ///
-    /// Panics if the cast is not valid for this reference.
-    #[inline]
-    #[track_caller]
-    pub fn downcast_ref<To, Obj>(&self) -> RawEntityRef<To, Metadata>
-    where
-        To: DowncastFromRef<From> + 'static,
-        From: Is<Obj> + AsAny + 'static,
-        Obj: ?Sized,
-    {
-        RawEntityRef::<To, Metadata>::downcast_from_ref(self)
-    }
-}
-
-impl<To, Metadata: 'static> RawEntityRef<To, Metadata> {
-    pub fn try_downcast_from<From>(
-        from: RawEntityRef<From, Metadata>,
-    ) -> Result<Self, RawEntityRef<From, Metadata>>
-    where
-        From: ?Sized + 'static,
-        To: DowncastFromRef<From> + 'static,
-    {
-        let borrow = from.borrow();
-        <To as DowncastFromRef<From>>::downcast_from_ref(&*borrow)
-            .map(|to| unsafe { RawEntityRef::from_raw(to) })
-            .ok_or(from)
-    }
-
-    pub fn try_downcast_from_ref<From, Obj>(from: &RawEntityRef<From, Metadata>) -> Option<Self>
-    where
-        From: ?Sized + Is<Obj> + AsAny + 'static,
-        To: DowncastFromRef<From> + 'static,
-        Obj: ?Sized,
-    {
-        let borrow = from.borrow();
-        borrow.as_any().downcast_ref().map(|to| unsafe { RawEntityRef::from_raw(to) })
-    }
-
-    #[track_caller]
-    pub fn downcast_from<From, Obj>(from: RawEntityRef<From, Metadata>) -> Self
-    where
-        From: ?Sized + Is<Obj> + AsAny + 'static,
-        To: DowncastFromRef<From> + 'static,
-        Obj: ?Sized,
-    {
-        let borrow = from.borrow();
-        unsafe { RawEntityRef::from_raw(borrow.as_any().downcast_ref().expect("invalid cast")) }
-    }
-
-    #[track_caller]
-    pub fn downcast_from_ref<From, Obj>(from: &RawEntityRef<From, Metadata>) -> Self
-    where
-        From: ?Sized + Is<Obj> + AsAny + 'static,
-        To: DowncastFromRef<From> + 'static,
-        Obj: ?Sized,
-    {
-        let borrow = from.borrow();
-        unsafe { RawEntityRef::from_raw(borrow.as_any().downcast_ref().expect("invalid cast")) }
-    }
-}
-
-impl<From: ?Sized, Metadata: 'static> RawEntityRef<From, Metadata> {
     /// Casts this reference to the an unsized type `Trait`, if `From` implements `Trait`
     ///
     /// If the cast is not valid for this reference, `Err` is returned containing the original value.
@@ -548,7 +482,7 @@ impl<T: crate::Attribute> RawEntityRef<T, list::IntrusiveLink> {
     /// Convert this reference to an [crate::AttributeRef]
     #[inline(always)]
     pub fn as_attribute_ref(self) -> crate::AttributeRef {
-        self as crate::AttributeRef
+        self.upcast()
     }
 }
 
@@ -720,6 +654,19 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
 
     pub fn from_raw_parts(value: NonNull<T>, borrow: BorrowRef<'b>) -> Self {
         Self { value, borrow }
+    }
+}
+impl<T: crate::Attribute> EntityRef<'_, T> {
+    /// Reconstitutes the type-erased intrusive handle for this borrowed attribute.
+    pub fn as_attribute_ref(&self) -> crate::AttributeRef {
+        unsafe { RawEntityRef::<T, list::IntrusiveLink>::from_raw(self.value.as_ptr()) }
+            .as_attribute_ref()
+    }
+}
+impl EntityRef<'_, dyn crate::Attribute> {
+    /// Reconstitutes the type-erased intrusive handle for this borrowed attribute.
+    pub fn as_attribute_ref(&self) -> crate::AttributeRef {
+        unsafe { crate::AttributeRef::from_raw(self.value.as_ptr()) }
     }
 }
 impl<'b, T, U> core::ops::CoerceUnsized<EntityRef<'b, U>> for EntityRef<'b, T>
@@ -1201,14 +1148,12 @@ impl<T, Metadata> RawEntityMetadata<T, Metadata> {
 impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
     #[track_caller]
     pub(crate) fn borrow(&self) -> EntityRef<'_, T> {
-        let ptr = self as *const Self;
-        unsafe { (*core::ptr::addr_of!((*ptr).entity)).borrow() }
+        self.entity.borrow()
     }
 
     #[track_caller]
     pub(crate) fn borrow_mut(&self) -> EntityMut<'_, T> {
-        let ptr = (self as *const Self).cast_mut();
-        unsafe { (*core::ptr::addr_of_mut!((*ptr).entity)).borrow_mut() }
+        self.entity.borrow_mut()
     }
 
     #[inline]
@@ -1236,17 +1181,26 @@ impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
 
     #[inline]
     fn data_offset_align(align: usize) -> usize {
-        let layout = Layout::new::<RawEntityMetadata<(), Metadata>>();
-        layout.size() + layout.padding_needed_for(align)
+        raw_entity_value_offset_for_align::<Metadata>(align)
     }
 }
 
 fn raw_entity_metadata_layout_for_value_layout<Metadata>(layout: Layout) -> Layout {
-    Layout::new::<RawEntityMetadata<(), Metadata>>()
-        .extend(layout)
+    let value_offset = raw_entity_value_offset_for_align::<Metadata>(layout.align());
+    let header_layout = Layout::new::<RawEntity<()>>();
+    let align = Layout::new::<Metadata>().align().max(header_layout.align()).max(layout.align());
+    Layout::from_size_align(value_offset + layout.size(), align)
         .unwrap()
-        .0
         .pad_to_align()
+}
+
+fn raw_entity_value_offset_for_align<Metadata>(value_align: usize) -> usize {
+    let metadata_layout = Layout::new::<Metadata>();
+    let header_layout = Layout::new::<RawEntity<()>>();
+    let entity_align = header_layout.align().max(value_align);
+    let entity_offset = metadata_layout.size() + metadata_layout.padding_needed_for(entity_align);
+    let cell_offset = header_layout.size() + header_layout.padding_needed_for(value_align);
+    entity_offset + cell_offset
 }
 
 /// A [RawEntity] wraps an entity to be allocated in a [crate::Context], and provides dynamic borrow-

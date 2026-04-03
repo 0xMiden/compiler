@@ -38,9 +38,7 @@ impl IfRemoveUnusedResults {
 
         // Replace the yield op with one that returns only the used values.
         let op = { dest.borrow().terminator().unwrap() };
-        let mut yield_op = unsafe {
-            UnsafeIntrusiveEntityRef::from_raw(op.borrow().downcast_ref::<Yield>().unwrap())
-        };
+        let mut yield_op = op.try_downcast_op::<Yield>().unwrap();
 
         let mut used_operands = SmallVec::<[ValueRef; 4]>::with_capacity(used_results.len());
         {

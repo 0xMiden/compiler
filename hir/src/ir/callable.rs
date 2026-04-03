@@ -71,9 +71,9 @@ impl AsCallableSymbolRef for CallableSymbolRef {
 impl<T: CallableSymbol> AsCallableSymbolRef for T {
     #[inline(always)]
     fn as_callable_symbol_ref(&self) -> SymbolRef {
-        // SAFETY: This is safe under the assumption that all Op implementations are allocated
-        // via the arena
-        unsafe { SymbolRef::from_raw(self as &dyn Symbol) }
+        self.as_symbol_operation()
+            .as_symbol_ref()
+            .expect("callable symbols must provide a symbol operation")
     }
 }
 impl<T: CallableSymbol> AsCallableSymbolRef for UnsafeIntrusiveEntityRef<T> {

@@ -218,12 +218,16 @@ opt-level = 3
 [profile.test.package.miden-core-lib]
 opt-level = 3
 
-# Compiler packages that might be used in tests
-[profile.test.package.midenc-frontend-wasm]
-opt-level = 3
-
-[profile.test.package.midenc-session]
-opt-level = 3
+# Build the workspace with release-like settings only when explicitly requested
+# via the `test-release` profile.
+[profile.test-release]
+inherits = "test"
+opt-level = 2
+debug = true
+codegen-units = 1
+debug-assertions = false
+overflow-checks = false
+incremental = false
 
 [profile.test.package.miden-debug]
 opt-level = 3

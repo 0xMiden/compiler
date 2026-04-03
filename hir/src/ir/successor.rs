@@ -526,7 +526,7 @@ where
             .info
             .key
             .expect("invalid keyed successor: missing key")
-            .try_downcast::<<T as KeyedSuccessor>::KeyStorage>()
+            .try_downcast_attr::<<T as KeyedSuccessor>::KeyStorage>()
             .expect("invalid keyed successor: key is invalid");
         EntityRef::map(
             storage.borrow(),
@@ -538,7 +538,7 @@ where
         self.info
             .key
             .expect("invalid keyed successor: missing key")
-            .try_downcast::<<T as KeyedSuccessor>::KeyStorage>()
+            .try_downcast_attr::<<T as KeyedSuccessor>::KeyStorage>()
             .expect("invalid keyed successor: key is invalid")
     }
 
@@ -573,7 +573,7 @@ where
 {
     pub fn key(&self) -> Option<EntityRef<'_, <T as KeyedSuccessor>::Key>> {
         self.info.key.and_then(|storage| {
-            let storage = storage.try_downcast::<<T as KeyedSuccessor>::KeyStorage>().ok()?;
+            let storage = storage.try_downcast_attr::<<T as KeyedSuccessor>::KeyStorage>().ok()?;
             Some(EntityRef::map(
                 storage.borrow(),
                 <<T as KeyedSuccessor>::KeyStorage as AttributeRegistration>::underlying_value,

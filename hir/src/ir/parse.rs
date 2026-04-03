@@ -344,8 +344,10 @@ fn parse_source<T: OpParser + OpRegistration>(
 ) -> Result<UnsafeIntrusiveEntityRef<T>, Report> {
     let name = config.context.get_registered_name::<T>();
     let op = parse_anchored_source(Some(name), config, source_file)?;
-    let op = op.borrow();
-    Ok(unsafe { UnsafeIntrusiveEntityRef::from_raw(op.downcast_ref::<T>().unwrap()) })
+    match op.try_downcast_op::<T>() {
+        Ok(op) => Ok(op),
+        Err(_) => unreachable!("anchored parser returned the wrong operation type"),
+    }
 }
 
 /// This trait is implemented by parsers which can parse operations from IR assembly, and provides

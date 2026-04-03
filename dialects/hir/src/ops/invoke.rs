@@ -146,15 +146,9 @@ impl CallOpInterface for Exec {
             .unwrap()
             .resolve(&callee)
             .expect("invalid callee: could not be resolved");
-        // SAFETY: This is guaranteed to be safe because the original reference was an UnsafeIntrusiveEntityRef;
-        let callable = unsafe {
-            let resolved = resolved.borrow();
-            let callable = resolved
-                .as_symbol_operation()
-                .as_trait::<dyn CallableSymbol>()
-                .expect("invalid callee: not a callable symbol");
-            CallableSymbolRef::from_raw(callable)
-        };
+        let callable = resolved
+            .as_trait_ref::<dyn CallableSymbol>()
+            .expect("invalid callee: not a callable symbol");
         Exec::set_callee(self, callable).expect("invalid callee");
     }
 
@@ -262,15 +256,9 @@ impl CallOpInterface for Call {
             .unwrap()
             .resolve(&callee)
             .expect("invalid callee: could not be resolved");
-        // SAFETY: This is guaranteed to be safe because the original reference was an UnsafeIntrusiveEntityRef;
-        let callable = unsafe {
-            let resolved = resolved.borrow();
-            let callable = resolved
-                .as_symbol_operation()
-                .as_trait::<dyn CallableSymbol>()
-                .expect("invalid callee: not a callable symbol");
-            CallableSymbolRef::from_raw(callable)
-        };
+        let callable = resolved
+            .as_trait_ref::<dyn CallableSymbol>()
+            .expect("invalid callee: not a callable symbol");
         Call::set_callee(self, callable).expect("invalid callee");
     }
 
@@ -295,5 +283,129 @@ impl CallOpInterface for Call {
     fn resolve_in_symbol_table(&self, symbols: &dyn SymbolTable) -> Option<SymbolRef> {
         let callee = self.callee();
         symbols.resolve(callee.path())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_hir::{
+        CallOpInterface, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
+        testing::Test,
+    };
+
+    use crate::HirOpBuilder;
+
+    #[test]
+    fn call_set_callee_rebinds_property_backed_symbol_use() {
+        let mut test =
+            Test::named("call_set_callee_rebinds_property_backed_symbol_use").in_module("test");
+        let original = test.define_function("original", &[], &[]);
+        let replacement = test.define_function("replacement", &[], &[]);
+        test.with_function("caller", &[], &[]);
+
+        let signature = Signature::new(
+            &test.context_rc(),
+            core::iter::empty::<Type>(),
+            core::iter::empty::<Type>(),
+        );
+        let mut call = {
+            let mut builder = test.function_builder();
+            let call = builder.call(original, signature, [], SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            call
+        };
+
+        assert_eq!(original.borrow().iter_uses().count(), 1);
+        assert_eq!(replacement.borrow().iter_uses().count(), 0);
+
+        call.borrow_mut().set_callee(replacement).unwrap();
+
+        let replacement_path = replacement.borrow().path();
+        assert_eq!(call.borrow().callee().path(), &replacement_path);
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert_eq!(replacement.borrow().iter_uses().count(), 1);
+    }
+
+    #[test]
+    fn call_op_interface_set_callee_resolves_callable_symbol_refs() {
+        let mut test = Test::named("call_op_interface_set_callee_resolves_callable_symbol_refs")
+            .in_module("test");
+        let original = test.define_function("original", &[], &[]);
+        let replacement = test.define_function("replacement", &[], &[]);
+        test.with_function("caller", &[], &[]);
+
+        let signature = Signature::new(
+            &test.context_rc(),
+            core::iter::empty::<Type>(),
+            core::iter::empty::<Type>(),
+        );
+        let mut call = {
+            let mut builder = test.function_builder();
+            let call = builder.call(original, signature, [], SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            call
+        };
+
+        assert_eq!(original.borrow().iter_uses().count(), 1);
+        assert_eq!(replacement.borrow().iter_uses().count(), 0);
+
+        let replacement_path = replacement.borrow().path();
+        {
+            let mut call_mut = call.borrow_mut();
+            <crate::Call as CallOpInterface>::set_callee(
+                &mut call_mut,
+                replacement_path.clone().into(),
+            );
+        }
+
+        let resolved = call.borrow().resolve().unwrap();
+        assert_eq!(call.borrow().callee().path(), &replacement_path);
+        assert_eq!(resolved.borrow().path(), replacement_path);
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert_eq!(replacement.borrow().iter_uses().count(), 1);
+    }
+
+    #[test]
+    fn call_set_callee_relinks_symbol_use_after_old_symbol_is_removed_from_table() {
+        let mut test = Test::named(
+            "call_set_callee_relinks_symbol_use_after_old_symbol_is_removed_from_table",
+        )
+        .in_module("test");
+        let original = test.define_function("original", &[], &[]);
+        let replacement = test.define_function("replacement", &[], &[]);
+        test.with_function("caller", &[], &[]);
+
+        let signature = Signature::new(
+            &test.context_rc(),
+            core::iter::empty::<Type>(),
+            core::iter::empty::<Type>(),
+        );
+        let mut call = {
+            let mut builder = test.function_builder();
+            let call = builder.call(original, signature, [], SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            call
+        };
+
+        assert_eq!(original.borrow().iter_uses().count(), 1);
+        assert_eq!(replacement.borrow().iter_uses().count(), 0);
+
+        {
+            let mut module = test.module().borrow_mut();
+            let removed = module.remove("original".into());
+            assert!(removed.is_some(), "expected the original symbol to be removed");
+            assert!(module.get("original".into()).is_none());
+        }
+
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert!(call.borrow().resolve().is_none());
+
+        call.borrow_mut().set_callee(replacement).unwrap();
+
+        let replacement_path = replacement.borrow().path();
+        assert_eq!(call.borrow().callee().path(), &replacement_path);
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert_eq!(replacement.borrow().iter_uses().count(), 1);
     }
 }

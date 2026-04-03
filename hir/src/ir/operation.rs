@@ -345,6 +345,31 @@ impl OperationRef {
         }
     }
 
+    /// Returns this operation as a handle to an implemented trait object, if supported.
+    ///
+    /// The returned handle preserves the original intrusive allocation identity and swaps only the
+    /// pointee metadata for the requested trait object.
+    pub fn as_trait_ref<Trait>(self) -> Option<UnsafeIntrusiveEntityRef<Trait>>
+    where
+        Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
+    {
+        let ptr = self.name().upcast_raw::<Trait>(OperationRef::into_raw(self).cast())?;
+        let (_, metadata) = ptr.to_raw_parts();
+        Some(unsafe { self.cast_unsized_unchecked::<Trait>(metadata) })
+    }
+
+    /// Attempts to cast this handle to the concrete operation type `T`.
+    ///
+    /// This reuses the existing intrusive handle rather than reconstructing one from a borrowed
+    /// reference.
+    pub fn try_downcast_op<T: Op>(self) -> Result<UnsafeIntrusiveEntityRef<T>, Self> {
+        if self.name().is::<T>() {
+            Ok(unsafe { self.cast_unchecked::<T>() })
+        } else {
+            Err(self)
+        }
+    }
+
     /// Returns a handle to the nearest containing [Operation] of this operation, if it is attached
     /// to one
     pub fn parent_op(&self) -> Option<OperationRef> {
@@ -450,7 +475,7 @@ impl Operation {
         //
         // Additionally, this relies on the fact that Op implementations are #[repr(C)] and ensure
         // that their Operation field is always first in the generated struct
-        unsafe { OperationRef::from_raw(self) }
+        unsafe { OperationRef::from_raw(self.container().cast()) }
     }
 
     /// Returns true if the concrete type of this operation is `T`
@@ -628,12 +653,8 @@ impl Operation {
     where
         T: AttributeRegistration,
     {
-        self.get_attribute(name.into()).and_then(|attr_ref| {
-            attr_ref
-                .borrow()
-                .downcast_ref::<T>()
-                .map(|t| unsafe { UnsafeIntrusiveEntityRef::from_raw(t) })
-        })
+        self.get_attribute(name.into())
+            .and_then(|attr_ref| attr_ref.try_downcast_attr::<T>().ok())
     }
 
     /// Return true if this function has an attributed named `name`
@@ -664,7 +685,7 @@ impl Operation {
         symbol: impl AsSymbolRef,
     ) {
         let attr_name = attr_name.into();
-        let mut symbol = symbol.as_symbol_ref();
+        let symbol = symbol.as_symbol_ref();
 
         // Do not allow self-references
         //
@@ -681,35 +702,24 @@ impl Operation {
         // Store the underlying attribute value
         let owner = self.as_operation_ref();
         let context = self.context_rc();
-        let user = if self.has_property(attr_name) {
+        if self.has_property(attr_name) {
             let mut prop = self.get_property_mut(attr_name);
             let prop = prop.downcast_mut::<SymbolRefAttr>().unwrap();
-            let attr = unsafe { UnsafeIntrusiveEntityRef::from_raw(prop) };
-
-            // Track the usage of `symbol` by `self`
-            let user = context.alloc_tracked(SymbolUse { owner, attr });
-            let symbol = symbol.borrow();
-            prop.set_user(user);
-            prop.set_path(symbol.path());
-            user
-        } else if self.has_attribute(attr_name) {
-            let mut attr = self.get_typed_attribute::<SymbolRefAttr>(attr_name).unwrap();
-            let user = context.alloc_tracked(SymbolUse { owner, attr });
-            let mut attr = attr.borrow_mut();
-            let symbol = symbol.borrow();
-            attr.set_user(user);
-            attr.set_path(symbol.path());
-            user
+            prop.set_symbol(symbol);
+        } else if let Some(mut attr) = self
+            .get_attribute(attr_name)
+            .and_then(|attr| attr.try_downcast_attr::<SymbolRefAttr>().ok())
+        {
+            attr.borrow_mut().set_symbol(symbol);
         } else {
             let path = symbol.borrow().path();
             let symbol_ref = crate::dialects::builtin::attributes::SymbolRef::new(path, None);
             let mut attr = context.create_attribute::<SymbolRefAttr, _>(symbol_ref);
-            let user = context.alloc_tracked(SymbolUse { owner, attr });
+            let user = context.alloc_tracked(SymbolUse::new(owner, attr));
             attr.borrow_mut().set_user(user);
-            user
-        };
-
-        symbol.borrow_mut().insert_use(user);
+            self.set_attribute(attr_name, attr.as_attribute_ref());
+            attr.borrow_mut().link(symbol);
+        }
     }
 
     /// This function performs the same change as [`Self::set_symbol_attribute`], but is called
@@ -722,7 +732,7 @@ impl Operation {
         attr_name: interner::Symbol,
         symbol: impl AsSymbolRef,
     ) {
-        let mut symbol = symbol.as_symbol_ref();
+        let symbol = symbol.as_symbol_ref();
 
         // Do not allow self-references
         //
@@ -739,21 +749,21 @@ impl Operation {
         // Track the usage of `symbol` by `self`
         let context = self.context_rc();
         let owner = self.as_operation_ref();
-        let (attr, user) = {
+        let mut attr = {
             let symbol = symbol.borrow();
             let mut attr = context.create_attribute::<SymbolRefAttr, _>(
                 crate::dialects::builtin::attributes::SymbolRef::new(symbol.path(), None),
             );
 
-            let user = context.alloc_tracked(SymbolUse { owner, attr });
+            let user = context.alloc_tracked(SymbolUse::new(owner, attr));
             attr.borrow_mut().set_user(user);
-            (attr, user)
+            attr
         };
 
         // Store the underlying attribute value
         self.set_property(attr_name, attr)
             .expect("not a valid value for this operation property");
-        symbol.borrow_mut().insert_use(user);
+        attr.borrow_mut().link(symbol);
     }
 }
 
@@ -781,11 +791,9 @@ impl Operation {
     pub fn nearest_parent_op<T: Op>(&self) -> Option<UnsafeIntrusiveEntityRef<T>> {
         let mut parent = self.parent_op();
         while let Some(op) = parent.take() {
-            parent =
-                op.parent().and_then(|block| block.parent()).and_then(|region| region.parent());
-            let op = op.borrow();
-            if let Some(t_ref) = op.downcast_ref::<T>() {
-                return Some(unsafe { UnsafeIntrusiveEntityRef::from_raw(t_ref) });
+            parent = op.parent_op();
+            if let Ok(op) = op.try_downcast_op::<T>() {
+                return Some(op);
             }
         }
         None
@@ -1614,5 +1622,33 @@ impl crate::traits::Foldable for Operation {
         } else {
             FoldResult::Failed
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{AsCallableSymbolRef, AsSymbolRef, Type, testing::Test};
+
+    #[test]
+    fn borrowed_operation_roundtrips_symbol_and_callable_handles() {
+        let mut test = Test::named("borrowed_operation_roundtrips_symbol_and_callable_handles")
+            .in_module("test");
+        let function = test.define_function("callee", &[], &[Type::I32]);
+        let op_ref = function.as_operation_ref();
+
+        let symbol_ref = {
+            let op = op_ref.borrow();
+            op.as_symbol_ref().expect("expected function operation to be a symbol")
+        };
+        assert_eq!(symbol_ref.borrow().as_operation_ref(), op_ref);
+
+        let callable_ref = {
+            let function = function.borrow();
+            function.as_callable_symbol_ref()
+        };
+        assert_eq!(callable_ref.borrow().as_operation_ref(), op_ref);
+
+        let symbol_from_callable = function.as_symbol_ref();
+        assert_eq!(symbol_from_callable.borrow().as_operation_ref(), op_ref);
     }
 }

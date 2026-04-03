@@ -6,7 +6,7 @@ use super::state::PendingSuccessorInfo;
 use crate::{
     AsCallableSymbolRef, AsSymbolRef, AttributeRef, AttributeRegistration, BlockRef, Builder,
     KeyedSuccessor, Op, OpBuilder, OperationRef, Report, Spanned, SuccessorInfo, Type,
-    UnsafeIntrusiveEntityRef, ValueRef, interner, traits::Terminator,
+    UnsafeIntrusiveEntityRef, ValueRef, attributes::IntoAttributeRef, interner, traits::Terminator,
 };
 
 /// This is the type-erased version of [OperationBuilder].
@@ -52,7 +52,7 @@ where
         <A as AttributeRegistration>::Value: From<V>,
     {
         let attr = self.context_rc().create_attribute::<A, V>(value);
-        self.op.borrow_mut().set_attribute(name.into(), attr);
+        self.op.borrow_mut().set_attribute(name.into(), attr.as_attribute_ref());
     }
 
     /// Set attribute `name` on this op to `value`
@@ -73,7 +73,7 @@ where
         <A as AttributeRegistration>::Value: From<V>,
     {
         let attr = self.context_rc().create_attribute::<A, V>(value);
-        self.op.borrow_mut().set_property(name.into(), attr)
+        self.op.borrow_mut().set_property(name.into(), attr.into_attribute_ref())
     }
 
     /// Set attribute `name` on this op to `value`
@@ -362,7 +362,10 @@ where
     /// failed.
     pub fn build(self) -> Result<UnsafeIntrusiveEntityRef<T>, Report> {
         let op = self.builder.build()?;
-        Ok(unsafe { UnsafeIntrusiveEntityRef::from_raw(op.borrow().container().cast()) })
+        match op.try_downcast_op::<T>() {
+            Ok(op) => Ok(op),
+            Err(_) => unreachable!("operation builder produced the wrong operation type"),
+        }
     }
 }
 

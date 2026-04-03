@@ -2,7 +2,7 @@ use alloc::{format, rc::Rc};
 
 use crate::{
     Builder, Context, Ident, Op, OpBuilder, Report, Spanned, SymbolName, SymbolNameComponent,
-    SymbolPath, SymbolTable, UnsafeIntrusiveEntityRef,
+    SymbolPath, SymbolTable,
     dialects::builtin::{
         Component, ComponentId, ComponentRef, Module, ModuleBuilder, ModuleRef,
         PrimComponentBuilder, PrimModuleBuilder, World, WorldRef,
@@ -119,11 +119,7 @@ impl WorldBuilder {
                     module_builder.declare_module(module_name.into())?
                 }
                 None => {
-                    let world = unsafe {
-                        UnsafeIntrusiveEntityRef::from_raw(
-                            current_symbol_table.borrow().downcast_ref::<World>().unwrap(),
-                        )
-                    };
+                    let world = current_symbol_table.try_downcast_op::<World>().unwrap();
                     let mut world_builder = WorldBuilder::new(world);
                     world_builder.declare_module(module_name.into())?
                 }

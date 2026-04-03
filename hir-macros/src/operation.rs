@@ -473,7 +473,7 @@ impl quote::ToTokens for WithAttrs<'_> {
                 let span = name.span();
                 let field_name = syn::Lit::Str(syn::LitStr::new(&format!("{name}"), span));
                 tokens.extend(quote_spanned! { span =>
-                    op_builder.with_property::<#ty, _>(#field_name, #name);
+                    op_builder.with_property::<#ty, _>(#field_name, #name)?;
                 });
             }
         }
@@ -1193,7 +1193,7 @@ impl quote::ToTokens for OpSymbolFns<'_> {
             let symbol_mut = format_ident!("{symbol}_mut");
             let get_symbol = format_ident!("get_{symbol}");
             let set_symbol = format_ident!("set_{symbol}");
-            let symbol_symbol = format_ident!("{symbol}_symbol");
+            let symbol_name = syn::Lit::Str(syn::LitStr::new(&format!("{symbol}"), span));
             let symbol_doc = syn::Lit::Str(syn::LitStr::new(
                 &format!(" Get a reference to the `{symbol}` attribute."),
                 span,
@@ -1269,7 +1269,7 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                         pub fn #set_symbol(&mut self, symbol: impl ::midenc_hir::AsSymbolRef) -> Result<(), ::midenc_hir::InvalidSymbolRefError> {
                             let symbol = symbol.as_symbol_ref();
                             #(#is_concrete_ty)*
-                            self.op.set_symbol_attribute(stringify!(#symbol_symbol), symbol);
+                            self.op.set_symbol_attribute(#symbol_name, symbol);
 
                             Ok(())
                         }
@@ -1299,7 +1299,7 @@ impl quote::ToTokens for OpSymbolFns<'_> {
                                     });
                                 }
                             }
-                            self.op.set_symbol_attribute(stringify!(#symbol_symbol), symbol);
+                            self.op.set_symbol_attribute(#symbol_name, symbol);
 
                             Ok(())
                         }
