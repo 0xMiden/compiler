@@ -42,6 +42,8 @@ const AUTH_SCRIPT_DOC_MARKER: &str = "__miden_auth_script_marker";
 const AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL: &str = "__MIDEN_AUTH_SCRIPT_UNIQUENESS_GUARD";
 /// Wasm custom section used to pass frontend-only component metadata into the compiler frontend.
 const FRONTEND_METADATA_LINK_SECTION: &str = "rodata,miden_account_component_frontend";
+/// Cargo project kind used by authentication component crates.
+const AUTH_COMPONENT_PROJECT_KIND: &str = "authentication-component";
 
 /// Receiver kinds supported by the derived guest trait implementation.
 #[derive(Clone, Copy)]
@@ -322,19 +324,18 @@ fn expand_component_impl(
         methods.push(parsed_method);
     }
 
-    if auth_method_count > 1 {
-        return Err(syn::Error::new(
-            impl_block.span(),
-            "only one `#[auth_script]` method is allowed per `#[component]` impl block",
-        ));
-    }
-
     if methods.is_empty() {
         return Err(syn::Error::new(
             call_site_span.into(),
             "Component `impl` is missing `pub` methods. A component cannot have empty exports.",
         ));
     }
+
+    validate_auth_script_count(
+        metadata.project_kind.as_deref(),
+        auth_method_count,
+        impl_block.span(),
+    )?;
 
     let wit_source = build_component_wit(
         &component_package,
@@ -396,6 +397,29 @@ fn expand_component_impl(
         // the impl block was declared through a module-qualified path (e.g. `impl super::Foo`).
         self::bindings::export!(#component_type);
     })
+}
+
+/// Validates how many methods may be annotated with `#[auth_script]` for the current project kind.
+fn validate_auth_script_count(
+    project_kind: Option<&str>,
+    auth_method_count: usize,
+    span: Span2,
+) -> Result<(), syn::Error> {
+    if project_kind == Some(AUTH_COMPONENT_PROJECT_KIND) {
+        if auth_method_count != 1 {
+            return Err(syn::Error::new(
+                span,
+                "authentication components require exactly one `#[auth_script]` method",
+            ));
+        }
+    } else if auth_method_count > 1 {
+        return Err(syn::Error::new(
+            span,
+            "only one `#[auth_script]` method is allowed per `#[component]` impl block",
+        ));
+    }
+
+    Ok(())
 }
 
 /// Synthesizes the guest trait path exposed by `wit-bindgen` for the generated interface.
@@ -1143,5 +1167,20 @@ mod tests {
         let tokens = generate_frontend_link_section(&[parsed_method]).to_string();
 
         assert!(tokens.contains(AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL));
+    }
+
+    #[test]
+    fn authentication_components_require_exactly_one_auth_script() {
+        let err =
+            validate_auth_script_count(Some(AUTH_COMPONENT_PROJECT_KIND), 0, Span2::call_site())
+                .expect_err("expected authentication components to require an auth script");
+
+        assert!(
+            err.to_string()
+                .contains("authentication components require exactly one `#[auth_script]` method")
+        );
+
+        validate_auth_script_count(Some(AUTH_COMPONENT_PROJECT_KIND), 1, Span2::call_site())
+            .expect("expected exactly one auth script to be accepted");
     }
 }

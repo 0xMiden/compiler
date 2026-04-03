@@ -11,6 +11,7 @@ pub struct CargoMetadata {
     pub description: String,
     pub supported_types: Vec<String>,
     pub component_package: Option<String>,
+    pub project_kind: Option<String>,
 }
 
 /// Reads component metadata (name/description/version/supported types) from the enclosing package
@@ -27,6 +28,7 @@ pub fn get_package_metadata(call_site_span: Span) -> Result<CargoMetadata, syn::
             description: String::new(),
             supported_types: vec![],
             component_package: None,
+            project_kind: None,
         });
     }
 
@@ -125,11 +127,20 @@ pub fn get_package_metadata(call_site_span: Span) -> Result<CargoMetadata, syn::
         .and_then(|pkg_val| pkg_val.as_str())
         .map(|pkg| pkg.to_string());
 
+    let project_kind = cargo_toml
+        .get("package")
+        .and_then(|pkg| pkg.get("metadata"))
+        .and_then(|m| m.get("miden"))
+        .and_then(|m| m.get("project-kind"))
+        .and_then(|kind| kind.as_str())
+        .map(|kind| kind.to_string());
+
     Ok(CargoMetadata {
         name,
         version,
         description,
         supported_types,
         component_package,
+        project_kind,
     })
 }
