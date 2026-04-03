@@ -319,9 +319,10 @@ fn auth_component_no_auth() {
             proc_export.attributes.has("auth_script").then_some(proc_export)
         })
         .collect::<Vec<_>>();
-    assert!(
-        !auth_exports.is_empty(),
-        "expected at least one exported procedure to carry the `auth_script` attribute",
+    assert_eq!(
+        auth_exports.len(),
+        1,
+        "expected exactly one exported procedure to carry the `auth_script` attribute",
     );
 
     // Test that the package loads
@@ -346,9 +347,10 @@ fn auth_component_rpo_falcon512() {
             proc_export.attributes.has("auth_script").then_some(proc_export)
         })
         .collect::<Vec<_>>();
-    assert!(
-        !auth_exports.is_empty(),
-        "expected at least one exported procedure to carry the `auth_script` attribute",
+    assert_eq!(
+        auth_exports.len(),
+        1,
+        "expected exactly one exported procedure to carry the `auth_script` attribute",
     );
 
     // Test that the package loads

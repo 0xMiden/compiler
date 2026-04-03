@@ -83,6 +83,7 @@ pub fn component(
 /// Marks a component method as the authentication procedure entrypoint (`#[auth_script]`).
 ///
 /// The method must be contained within an inherent `impl` block annotated with `#[component]`.
+/// Authentication components must annotate exactly one method with `#[auth_script]`.
 /// At most one method in a crate may be annotated with `#[auth_script]`.
 #[proc_macro_attribute]
 pub fn auth_script(
