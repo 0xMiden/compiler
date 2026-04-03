@@ -103,6 +103,10 @@ impl SymbolRefAttr {
     }
 
     /// Resolves this symbol reference relative to the operation that owns the tracked use.
+    ///
+    /// This immutably borrows the tracked user while resolving the containing symbol table. Callers
+    /// must not hold a mutable borrow of that user when invoking this API, or the borrow check will
+    /// report an aliasing violation.
     pub fn resolve(&self) -> Option<crate::SymbolRef> {
         self.user().borrow().resolve_symbol(self.path())
     }
