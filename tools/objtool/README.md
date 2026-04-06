@@ -8,7 +8,7 @@ The compilation artifacts to be examined must have been produced by a `midenup` 
 
 ## Installation
 
-Running `cargo make install-miden-objtool` from the repository root installs the `objtool` binary globally via the cargo bin directory. Alternatively, `cargo make install` installs multiple tools, including `objtool`.
+Running `cargo make install-miden-objtool` from the repository root installs the `miden-objtool` binary globally via the cargo bin directory. Alternatively, `cargo make install` installs multiple tools, including `miden-objtool`.
 
 Once installed, `miden-objtool` can be executed with:
 
