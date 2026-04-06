@@ -5,8 +5,8 @@ use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "objtool",
-    bin_name = "objtool",
+    name = "miden-objtool",
+    bin_name = "miden-objtool",
     version,
     about = "Inspect Miden compilation artifact sizes",
     long_about = None,
