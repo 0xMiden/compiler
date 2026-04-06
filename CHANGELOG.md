@@ -13,7 +13,7 @@ Changes since `v0.7.1`.
 
 ### Added
 - initial `wasm` dialect support plus lowering for `i32.extend8_s`, `i32.extend16_s`, `i64.extend*_s`, and signed `i32`/`i64` loads
-- `objtool` CLI plus `install-objtool` and `install` tasks for inspecting MASP artifacts
+- `miden-objtool` CLI plus `install-miden-objtool` and `install` tasks for inspecting MASP artifacts
 - typed SDK storage and felt representation improvements, including `StorageValue<T>`, `StorageMap<K, V>`, `SchemaTypeId`, typed `FeltReader` reads, and richer decode errors
 
 ### Changed

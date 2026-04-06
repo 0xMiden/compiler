@@ -13,7 +13,8 @@ publish = false
 
 [dependencies]
 # miden-client = { version = "0.14", features = ["std", "tonic", "testing"] }
-miden-client = { git = "https://github.com/0xMiden/miden-client", branch = "release/v0.14.0-beta", features = ["std", "testing"] }
+# Commit from the next branch
+miden-client = { git = "https://github.com/0xMiden/miden-client", ref = "9aa6d0c0d23ebe0fb1c4d2df7a0d085a802d81bb", features = ["std", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std"] }

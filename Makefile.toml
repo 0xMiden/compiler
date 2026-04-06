@@ -235,16 +235,16 @@ args = [
     "${MIDENC_BIN_DIR}",
 ]
 
-[tasks.objtool]
+[tasks.miden-objtool]
 category = "Build"
-description = "Builds objtool and installs it to the bin folder"
+description = "Builds miden-objtool and installs it to the bin folder"
 command = "cargo"
 args = [
     "-Z",
     "unstable-options",
     "build",
     "-p",
-    "objtool",
+    "miden-objtool",
     "--artifact-dir",
     "${MIDENC_BIN_DIR}",
 ]
@@ -262,7 +262,7 @@ run_task = [
        "install-midenc",
        "install-hir-opt",
        "install-cargo-miden",
-       "install-objtool",
+       "install-miden-objtool",
     ] },
 ]
 
@@ -386,9 +386,9 @@ args = [
     "hir-opt",
 ]
 
-[tasks.install-objtool]
+[tasks.install-miden-objtool]
 category = "Install"
-description = "Builds objtool and installs it globally via the cargo bin directory"
+description = "Builds miden-objtool and installs it globally via the cargo bin directory"
 command = "cargo"
 args = [
     "install",
@@ -398,7 +398,7 @@ args = [
     "--${MIDENC_BUILD_PROFILE}",
     "--force",
     "--bin",
-    "objtool",
+    "miden-objtool",
 ]
 
 [tasks.test-rust]
