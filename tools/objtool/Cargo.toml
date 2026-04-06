@@ -1,5 +1,5 @@
 [package]
-name = "objtool"
+name = "miden-objtool"
 description = "Inspect Miden package MAST forest sizes"
 version.workspace = true
 rust-version.workspace = true

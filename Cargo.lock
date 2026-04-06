@@ -2784,6 +2784,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-objtool"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "miden-core",
+ "miden-mast-package",
+]
+
+[[package]]
 name = "miden-processor"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3662,16 +3672,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "objtool"
-version = "0.8.0"
-dependencies = [
- "anyhow",
- "clap",
- "miden-core",
- "miden-mast-package",
 ]
 
 [[package]]
