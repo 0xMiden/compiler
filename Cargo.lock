@@ -2417,8 +2417,8 @@ dependencies = [
 
 [[package]]
 name = "miden-client"
-version = "0.14.0-beta.1"
-source = "git+https://github.com/0xMiden/miden-client?branch=release%2Fv0.14.0-beta#07333c85ad85885b5de91c10b53a0953569536f9"
+version = "0.14.0"
+source = "git+https://github.com/0xMiden/miden-client#9aa6d0c0d23ebe0fb1c4d2df7a0d085a802d81bb"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2762,7 +2762,7 @@ dependencies = [
 [[package]]
 name = "miden-node-proto-build"
 version = "0.14.0"
-source = "git+https://github.com/0xMiden/miden-node?branch=next#a329b4c7fc5592bd2844242f8a325084e76c9512"
+source = "git+https://github.com/0xMiden/miden-node?rev=c2d61c0eee9f81dd6335ed51c3424a9bd5e34dd8#c2d61c0eee9f81dd6335ed51c3424a9bd5e34dd8"
 dependencies = [
  "build-rs",
  "fs-err",
@@ -2874,7 +2874,7 @@ dependencies = [
 [[package]]
 name = "miden-remote-prover-client"
 version = "0.14.0"
-source = "git+https://github.com/0xMiden/miden-node?branch=next#a329b4c7fc5592bd2844242f8a325084e76c9512"
+source = "git+https://github.com/0xMiden/miden-node?rev=c2d61c0eee9f81dd6335ed51c3424a9bd5e34dd8#c2d61c0eee9f81dd6335ed51c3424a9bd5e34dd8"
 dependencies = [
  "build-rs",
  "fs-err",
