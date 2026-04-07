@@ -72,13 +72,23 @@ impl HirEvaluator {
     }
 
     /// The current execution context (i.e. memory, registers)
+    ///
+    /// # Panics
+    ///
+    /// Panics if the context stack is empty. This should not happen after construction, as the
+    /// evaluator always maintains at least one context (the root context).
     pub fn current_context(&self) -> &ExecutionContext {
-        self.contexts.last().unwrap()
+        self.contexts.last().expect("invariant violated: context stack is empty")
     }
 
     /// The current execution context (i.e. memory, registers)
+    ///
+    /// # Panics
+    ///
+    /// Panics if the context stack is empty. This should not happen after construction, as the
+    /// evaluator always maintains at least one context (the root context).
     pub fn current_context_mut(&mut self) -> &mut ExecutionContext {
-        self.contexts.last_mut().unwrap()
+        self.contexts.last_mut().expect("invariant violated: context stack is empty")
     }
 
     /// Enter a fresh execution context (i.e. memory, registers), with an optional identifier
