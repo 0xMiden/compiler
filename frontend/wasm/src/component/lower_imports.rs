@@ -20,7 +20,7 @@ use super::{
 };
 use crate::{
     callable::CallableFunction,
-    error::WasmResult,
+    error::{WasmError, WasmResult},
     module::function_builder_ext::{
         FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
     },
@@ -197,7 +197,7 @@ fn generate_lowering_with_transformation(
             Visibility::Internal,
             new_import_func_sig.clone(),
         )
-        .expect("failed to define the import function");
+        .wrap_err("failed to define the import function")?;
 
     // Import lowering: The lowered function takes a pointer as the last parameter
     // where results should be stored. The import function returns a pointer to the result.
@@ -207,7 +207,17 @@ fn generate_lowering_with_transformation(
     //    flattened result
 
     // Get the pointer argument (last argument) where we need to store results
-    let output_ptr = args.last().expect("expected pointer argument");
+    if args.is_empty() {
+        return Err(WasmError::InvalidWebAssembly {
+            message: "expected at least one argument (output pointer)".into(),
+            offset: 0,
+        }
+        .into());
+    }
+    let output_ptr = args.last().ok_or_else(|| WasmError::InvalidWebAssembly {
+        message: "expected pointer argument in args".into(),
+        offset: 0,
+    })?;
     let args_without_ptr: Vec<_> = args[..args.len() - 1].to_vec();
 
     // Call the import function - it will return a tuple to the flattened result
