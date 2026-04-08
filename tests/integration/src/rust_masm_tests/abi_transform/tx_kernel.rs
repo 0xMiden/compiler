@@ -74,8 +74,7 @@ end
 
     let mut exec = Executor::new(vec![]);
     let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .add(*std_library.digest(), std_library.clone().into());
+    exec.dependency_resolver_mut().insert(*std_library.digest(), std_library);
     exec.with_dependencies(package.manifest.dependencies())?;
 
     let _ = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
@@ -130,14 +129,11 @@ end
 
     let mut exec = Executor::new(vec![]);
     let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .add(*std_library.digest(), std_library.clone().into());
+    exec.dependency_resolver_mut().insert(*std_library.digest(), std_library);
     let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .add(*protocol_library.digest(), protocol_library.clone().into());
+    exec.dependency_resolver_mut().insert(*protocol_library.digest(), protocol_library);
     let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .add(*standards_library.digest(), standards_library.clone().into());
+    exec.dependency_resolver_mut().insert(*standards_library.digest(), standards_library);
     exec.with_dependencies(package.manifest.dependencies())?;
 
     let _ = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());

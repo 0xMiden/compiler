@@ -59,7 +59,7 @@ fn test_all_templates() {
     assert!(auth_comp.is_library());
 
     let expected_function = "auth__procedure";
-    let lib = auth_comp.unwrap_library();
+    let lib = auth_comp.mast.clone();
     assert!(
         lib.exports()
             .any(|export| export.path().as_ref().last() == Some(expected_function)),

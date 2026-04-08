@@ -311,7 +311,8 @@ fn auth_component_no_auth() {
     let mut test =
         CompilerTest::rust_source_cargo_miden("../../examples/auth-component-no-auth", config, []);
     let auth_comp_package = test.compile_package();
-    let lib = auth_comp_package.unwrap_library();
+    assert!(auth_comp_package.is_library());
+    let lib = auth_comp_package.mast.clone();
     let expected_function = "auth__procedure";
     let exports = lib
         .exports()
@@ -337,7 +338,8 @@ fn auth_component_rpo_falcon512() {
         [],
     );
     let auth_comp_package = test.compile_package();
-    let lib = auth_comp_package.unwrap_library();
+    assert!(auth_comp_package.is_library());
+    let lib = auth_comp_package.mast.clone();
     let expected_function = "auth__procedure";
 
     assert!(
