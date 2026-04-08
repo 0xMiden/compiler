@@ -1,6 +1,8 @@
 use alloc::{string::ToString, vec, vec::Vec};
 
-use miden_mast_package::{Dependency, Package, PackageManifest, Section, SectionId, TargetType, Version};
+use miden_mast_package::{
+    Dependency, Package, PackageManifest, Section, SectionId, TargetType, Version,
+};
 use midenc_session::Session;
 
 use super::*;
@@ -65,6 +67,7 @@ fn build_package(
         let dependency = Dependency {
             name: link_lib.name.to_string().into(),
             kind: TargetType::Library,
+            // proper version will be implemented in https://github.com/0xMiden/compiler/issues/1069
             version: Version::new(0, 0, 0),
             digest: *lib.digest(),
         };
@@ -88,6 +91,7 @@ fn build_package(
 
     Package {
         name,
+        // proper version will be implemented in https://github.com/0xMiden/compiler/issues/1068
         version: Version::new(0, 0, 0),
         description: None,
         kind,
