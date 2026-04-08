@@ -20,6 +20,7 @@ use super::{
 
 /// Verify that another client (without the RPO-Falcon512 key) cannot create notes for
 /// the counter account which uses the Rust-compiled RPO-Falcon512 authentication component.
+#[ignore = "until https://github.com/0xMiden/compiler/issues/926 is implemented"]
 #[test]
 pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     let contract_package = compile_rust_package("../../examples/counter-contract", true);

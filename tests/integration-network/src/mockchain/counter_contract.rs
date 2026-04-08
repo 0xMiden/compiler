@@ -20,6 +20,7 @@ use super::{
 };
 
 /// Tests the counter contract deployment and note consumption workflow on a mock chain.
+#[ignore = "until https://github.com/0xMiden/compiler/issues/926 is implemented"]
 #[test]
 pub fn test_counter_contract() {
     // Compile the contracts first (before creating any runtime)

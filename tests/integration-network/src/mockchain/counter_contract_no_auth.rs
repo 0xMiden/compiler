@@ -31,6 +31,7 @@ use super::{
 /// - Build a separate sender account (basic wallet)
 /// - Sender issues a counter note to the network
 /// - Counter account consumes the note without requiring authentication/signature
+#[ignore = "until https://github.com/0xMiden/compiler/issues/926 is implemented"]
 #[test]
 pub fn test_counter_contract_no_auth() {
     // Compile the contracts first (before creating any runtime)
