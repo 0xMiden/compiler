@@ -1120,10 +1120,7 @@ mod tests {
 
     use crate::{
         EntityMut, Operation, OperationName, Report, SourceSpan, Type,
-        dialects::{
-            builtin::BuiltinOpBuilder,
-            test::TestOpBuilder,
-        },
+        dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
         pass::{Pass, PassExecutionState},
         testing::Test,
     };
