@@ -135,6 +135,7 @@ impl LinkLibrary {
 
                 miden_assembly::Assembler::new(session.source_manager.clone())
                     .assemble_library_from_dir(path, ns)
+                    .map(|library| (*library).clone())
             }
             LibraryKind::Mast => CompiledLibrary::deserialize_from_file(path).map_err(|err| {
                 Report::msg(format!(
@@ -151,16 +152,14 @@ impl LinkLibrary {
                             path.display()
                         ))
                     })?;
-                let lib = match package.mast {
-                    miden_mast_package::MastArtifact::Executable(_) => {
-                        return Err(Report::msg(format!(
-                            "Expected Miden package to contain a Library, got Program: '{}'",
-                            path.display()
-                        )));
-                    }
-                    miden_mast_package::MastArtifact::Library(lib) => lib.clone(),
-                };
-                Ok((*lib).clone())
+                if package.is_program() {
+                    return Err(Report::msg(format!(
+                        "Expected Miden package to contain a Library, got Program: '{}'",
+                        path.display()
+                    )));
+                }
+
+                Ok((*package.mast).clone())
             }
         }
     }

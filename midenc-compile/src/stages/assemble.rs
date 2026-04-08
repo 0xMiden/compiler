@@ -1,9 +1,6 @@
 use alloc::{string::ToString, vec, vec::Vec};
 
-use miden_assembly::ast::QualifiedProcedureName;
-use miden_mast_package::{
-    Dependency, MastArtifact, Package, PackageExport, PackageKind, ProcedureExport,
-};
+use miden_mast_package::{Dependency, Package, PackageManifest, Section, SectionId, TargetType, Version};
 use midenc_session::Session;
 
 use super::*;
@@ -55,60 +52,43 @@ impl Stage for AssembleStage {
     }
 }
 
-fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session) -> Package {
-    let name = session.name.clone();
+fn build_package(
+    artifact: midenc_codegen_masm::AssemblyArtifact,
+    outputs: &CodegenOutput,
+    session: &Session,
+) -> Package {
+    let name = session.name.clone().into();
 
     let mut dependencies = Vec::new();
     for (link_lib, lib) in session.options.link_libraries.iter().zip(outputs.link_libraries.iter())
     {
         let dependency = Dependency {
             name: link_lib.name.to_string().into(),
+            kind: TargetType::Library,
+            version: Version::new(0, 0, 0),
             digest: *lib.digest(),
         };
         dependencies.push(dependency);
     }
 
-    // Gather all of the procedure metadata for exports of this package
-    let mut exports: Vec<PackageExport> = Vec::new();
-    if let MastArtifact::Library(ref lib) = mast {
-        assert!(outputs.component.entrypoint.is_none(), "expect masm component to be a library");
-        for module_info in lib.module_infos() {
-            for (_, proc_info) in module_info.procedures() {
-                let name = QualifiedProcedureName::new(module_info.path(), proc_info.name.clone());
-                let digest = proc_info.digest;
-                let signature = proc_info.signature.as_deref().cloned();
-                exports.push(PackageExport::Procedure(ProcedureExport {
-                    path: name.into_inner(),
-                    digest,
-                    signature,
-                    attributes: Default::default(),
-                }));
-            }
-        }
-    }
-
-    let manifest =
-        miden_mast_package::PackageManifest::new(exports).with_dependencies(dependencies);
+    let kind = artifact.kind();
+    let mast = artifact.into_mast();
+    let manifest = PackageManifest::from_library(&mast)
+        .with_dependencies(dependencies)
+        .expect("package dependencies should be unique");
 
     let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
 
     let sections = match account_component_metadata_bytes {
         Some(bytes) => {
-            vec![miden_mast_package::Section::new(
-                miden_mast_package::SectionId::ACCOUNT_COMPONENT_METADATA,
-                bytes,
-            )]
+            vec![Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes)]
         }
         None => vec![],
     };
 
-    let kind = match mast {
-        MastArtifact::Executable(_) => PackageKind::Executable,
-        MastArtifact::Library(_) => PackageKind::Library,
-    };
-    miden_mast_package::Package {
+    Package {
         name,
-        version: None,
+        version: Version::new(0, 0, 0),
         description: None,
         kind,
         mast,

@@ -1,7 +1,6 @@
 use alloc::{boxed::Box, fmt, format, string::ToString, sync::Arc, vec};
 
 use miden_core::{prettier::PrettyPrint, serde::Serializable};
-use miden_mast_package::MastArtifact;
 use midenc_hir_symbol::Symbol;
 
 use crate::{OutputMode, OutputType, Session};
@@ -436,47 +435,18 @@ impl Emit for miden_mast_package::Package {
         session: &Session,
     ) -> anyhow::Result<()> {
         match mode {
-            OutputMode::Text => match self.mast {
-                miden_mast_package::MastArtifact::Executable(ref prog) => {
-                    prog.write_to(writer, mode, session)
+            OutputMode::Text => {
+                if self.is_program() {
+                    self.try_into_program()
+                        .map_err(|err| anyhow::Error::msg(err.to_string()))?
+                        .write_to(writer, mode, session)
+                } else {
+                    self.mast.write_to(writer, mode, session)
                 }
-                miden_mast_package::MastArtifact::Library(ref lib) => {
-                    lib.write_to(writer, mode, session)
-                }
-            },
+            }
             OutputMode::Binary => {
                 let bytes = self.to_bytes();
                 writer.write_all(bytes.as_slice())
-            }
-        }
-    }
-}
-
-impl Emit for MastArtifact {
-    fn name(&self) -> Option<Symbol> {
-        None
-    }
-
-    fn output_type(&self, mode: OutputMode) -> OutputType {
-        let _ = mode;
-        OutputType::Mast
-    }
-
-    fn write_to<W: Writer>(
-        &self,
-        mut writer: W,
-        mode: OutputMode,
-        session: &Session,
-    ) -> anyhow::Result<()> {
-        match mode {
-            OutputMode::Text => match self {
-                MastArtifact::Executable(program) => program.write_to(writer, mode, session),
-                MastArtifact::Library(lib) => lib.write_to(writer, mode, session),
-            },
-            OutputMode::Binary => {
-                let mut writer = ByteWriterAdapter(&mut writer);
-                self.write_into(&mut writer);
-                Ok(())
             }
         }
     }
