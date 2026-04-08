@@ -233,7 +233,9 @@ impl MasmComponent {
     ) -> Result<AssemblyArtifact, Report> {
         if let Some(entrypoint) = self.entrypoint.as_ref() {
             self.assemble_program(entrypoint, link_libraries, link_packages, session)
-                .and_then(|program| AssemblyArtifact::from_program(program, entrypoint.unwrap_path().into()))
+                .and_then(|(program, entrypoint)| {
+                    AssemblyArtifact::from_program(program, entrypoint)
+                })
         } else {
             self.assemble_library(link_libraries, link_packages, session)
                 .map(AssemblyArtifact::from_library)
@@ -246,7 +248,7 @@ impl MasmComponent {
         link_libraries: &[Arc<Library>],
         _link_packages: &BTreeMap<Symbol, Arc<Package>>,
         session: &Session,
-    ) -> Result<Program, Report> {
+    ) -> Result<(Program, Arc<Path>), Report> {
         use miden_assembly::Assembler;
 
         log::debug!(
@@ -299,11 +301,12 @@ impl MasmComponent {
         let emit_test_harness = session.get_flag("test_harness");
         let main =
             self.generate_main(entrypoint, emit_test_harness, session.source_manager.clone())?;
+        let entrypoint: Arc<Path> = main.path().join(&masm::ProcedureName::main()).into();
         log::debug!(target: "assembly", "generated executable module:\n{main}");
         let program = assembler.assemble_program(main)?;
         let advice_map: miden_core::advice::AdviceMap =
             self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
-        Ok(program.with_advice_map(advice_map))
+        Ok((program.with_advice_map(advice_map), entrypoint))
     }
 
     fn assemble_library(
