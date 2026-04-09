@@ -74,6 +74,43 @@ impl ExecutionContext {
         memory::read_value(addr, ty, &self.memory).wrap_err("invalid memory read")
     }
 
+    /// Read `len` bytes from memory starting at `addr`.
+    ///
+    /// Returns an error if `addr` or the end address is out of bounds.
+    pub fn read_memory_bytes(
+        &self,
+        addr: u32,
+        len: u32,
+        at: SourceSpan,
+    ) -> Result<Vec<u8>, Report> {
+        let addr = addr as usize;
+        if addr > MAX_ADDRESSABLE_HEAP {
+            return Err(ReadFailed::AddressOutOfBounds {
+                addr: addr as u32,
+                at,
+            })
+            .wrap_err("invalid memory read");
+        }
+
+        let len = len as usize;
+        let end_addr = addr.checked_add(len);
+        if end_addr.is_none_or(|addr| addr > MAX_ADDRESSABLE_HEAP) {
+            return Err(ReadFailed::SizeOutOfBounds {
+                addr: addr as u32,
+                size: len as u32,
+                at,
+            })
+            .wrap_err("invalid memory read");
+        }
+
+        let mut bytes = Vec::with_capacity(len);
+        for offset in 0..len {
+            bytes.push(memory::read_byte(addr + offset, &self.memory));
+        }
+
+        Ok(bytes)
+    }
+
     /// Write `value` to `addr` in heap memory.
     ///
     /// Returns an error if `addr` is invalid, or `value` could not be written to `addr` (either the
