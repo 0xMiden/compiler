@@ -21,3 +21,10 @@ pub fn breakpoint() {
 pub fn breakpoint() {
     unimplemented!("debug intrinsics are only available when targeting the Miden VM")
 }
+
+/// Prints the string pointed to by `ptr` in the debug executor.
+#[inline(always)]
+#[cfg(not(all(target_family = "wasm", miden)))]
+pub fn println(_ptr: *const u8, _len: usize) {
+    unimplemented!("debug intrinsics are only available when targeting the Miden VM")
+}

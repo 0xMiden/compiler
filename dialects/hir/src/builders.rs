@@ -413,6 +413,19 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(src, dst, count)
     }
 
+    /// Emit a println operation for printing a string to the debug output.
+    ///
+    /// The string is constructed by reading `len` bytes from memory starting at `ptr`.
+    fn println(
+        &mut self,
+        ptr: ValueRef,
+        len: ValueRef,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::PrintLn>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::PrintLn, _>(span);
+        op_builder(ptr, len)
+    }
+
     /// This is a cast operation that permits performing arithmetic on pointer values
     /// by casting a pointer to a specified integral type.
     fn ptrtoint(&mut self, arg: ValueRef, ty: Type, span: SourceSpan) -> Result<ValueRef, Report> {
