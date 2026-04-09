@@ -135,7 +135,7 @@ impl LinkLibrary {
 
                 miden_assembly::Assembler::new(session.source_manager.clone())
                     .assemble_library_from_dir(path, ns)
-                    .map(|library| (*library).clone())
+                    .map(Arc::unwrap_or_clone)
             }
             LibraryKind::Mast => CompiledLibrary::deserialize_from_file(path).map_err(|err| {
                 Report::msg(format!(
