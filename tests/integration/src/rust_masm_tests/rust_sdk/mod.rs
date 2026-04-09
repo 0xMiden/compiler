@@ -161,7 +161,8 @@ fn rust_sdk_cross_ctx_account_and_note() {
     let package = test.compile_package();
     let program = package.unwrap_program();
     let mut exec = executor_with_std(vec![], None);
-    exec.dependency_resolver_mut().insert(*account_package.mast.digest(), account_package.mast.clone());
+    exec.dependency_resolver_mut()
+        .insert(*account_package.mast.digest(), account_package.mast.clone());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("failed to add package dependencies");
     let trace = exec.execute(&program, test.session.source_manager.clone());
@@ -206,7 +207,8 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     let mut test = builder.build();
     let package = test.compile_package();
     let mut exec = executor_with_std(vec![], None);
-    exec.dependency_resolver_mut().insert(*account_package.mast.digest(), account_package.mast.clone());
+    exec.dependency_resolver_mut()
+        .insert(*account_package.mast.digest(), account_package.mast.clone());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("failed to add package dependencies");
     let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
@@ -248,7 +250,8 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     let package = test.compile_package();
     assert!(package.is_program());
     let mut exec = executor_with_std(vec![], None);
-    exec.dependency_resolver_mut().insert(*account_package.mast.digest(), account_package.mast.clone());
+    exec.dependency_resolver_mut()
+        .insert(*account_package.mast.digest(), account_package.mast.clone());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("failed to add package dependencies");
     let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());

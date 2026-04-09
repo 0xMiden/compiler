@@ -87,9 +87,11 @@ fn test_adv_load_preimage() {
     let std_library = (*STDLIB).clone();
     exec.dependency_resolver_mut().insert(*std_library.digest(), std_library);
     let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
-    exec.dependency_resolver_mut().insert(*protocol_library.digest(), protocol_library);
+    exec.dependency_resolver_mut()
+        .insert(*protocol_library.digest(), protocol_library);
     let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
-    exec.dependency_resolver_mut().insert(*standards_library.digest(), standards_library);
+    exec.dependency_resolver_mut()
+        .insert(*standards_library.digest(), standards_library);
     exec.with_dependencies(package.manifest.dependencies())
         .expect("Failed to register dependencies");
     exec.with_advice_inputs(AdviceInputs::default().with_map(advice_map));
