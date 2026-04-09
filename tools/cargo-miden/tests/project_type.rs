@@ -18,7 +18,7 @@ fn test_project_type_detection() {
         ),
         (
             "counter-note",
-            ProjectType::Program,
+            ProjectType::Library,
             TargetEnv::Rollup {
                 target: RollupTarget::NoteScript,
             },

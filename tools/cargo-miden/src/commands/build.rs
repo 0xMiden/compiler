@@ -361,8 +361,7 @@ fn midenc_flags_from_target(
                 }
                 midenc_session::RollupTarget::NoteScript => {
                     midenc_args.push("rollup:note-script".into());
-                    midenc_args.push("--exe".into());
-                    midenc_args.push("--entrypoint=miden:base/note-script@1.0.0::run".to_string())
+                    midenc_args.push("--lib".into());
                 }
                 midenc_session::RollupTarget::TransactionScript => {
                     midenc_args.push("rollup:transaction-script".into());

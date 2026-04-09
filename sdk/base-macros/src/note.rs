@@ -1,14 +1,22 @@
-use proc_macro2::{Span, TokenStream as TokenStream2};
-use quote::quote;
+use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
+use quote::{format_ident, quote};
 use syn::{
     Attribute, FnArg, ImplItem, ImplItemFn, Item, ItemImpl, ItemStruct, PathArguments, Type,
     parse_macro_input, spanned::Spanned,
 };
 
-use crate::script::{GuestWrapperConfig, expand_guest_wrapper};
+use crate::{
+    component_macro::{FRONTEND_METADATA_LINK_SECTION, encode_frontend_metadata},
+    script::{GuestWrapperConfig, expand_guest_wrapper},
+};
 
 const NOTE_SCRIPT_ATTR: &str = "note_script";
+const NOTE_SCRIPT_MARKER_ATTR: &str = "miden_note_script_requires_note";
 const NOTE_SCRIPT_DOC_MARKER: &str = "__miden_note_script_marker";
+// Note scripts always export the protocol-defined `run` function, regardless of the user-facing
+// method name marked with `#[note_script]`.
+const NOTE_SCRIPT_COMPONENT_EXPORT_NAME: &str = "run";
+const NOTE_SCRIPT_UNIQUENESS_GUARD_SYMBOL: &str = "__MIDEN_NOTE_SCRIPT_UNIQUENESS_GUARD";
 
 /// Expands `#[note]` for either a note input `struct` or an inherent `impl` block.
 pub(crate) fn expand_note(
@@ -37,7 +45,8 @@ pub(crate) fn expand_note(
 /// Expands `#[note_script]`.
 ///
 /// This attribute must be applied to a method inside an inherent `impl` block annotated with
-/// `#[note]`. It acts as a marker for `#[note]` to locate the entrypoint method.
+/// `#[note]`. It acts as a marker for `#[note]` to locate the entrypoint method and emit
+/// frontend metadata for the generated note-script export.
 pub(crate) fn expand_note_script(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
@@ -79,10 +88,11 @@ pub(crate) fn expand_note_script(
         }
     };
 
-    // `#[note]` uses `#[note_script]` as a marker. Since proc-macro attributes are consumed during
-    // expansion, we also attach a stable marker attribute that `#[note]` can reliably detect.
-    let marker = syn::LitStr::new(NOTE_SCRIPT_DOC_MARKER, Span::call_site());
-    item_fn.attrs.push(syn::parse_quote!(#[doc = #marker]));
+    // Preserve a helper attribute for `#[note]` to consume. If the surrounding impl forgets
+    // `#[note]`, rustc rejects this unknown helper attribute instead of silently compiling a
+    // method that emits no note-script metadata.
+    let marker_attr = format_ident!("{}", NOTE_SCRIPT_MARKER_ATTR);
+    item_fn.attrs.push(syn::parse_quote!(#[#marker_attr]));
     quote!(#item_fn).into()
 }
 
@@ -240,6 +250,8 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     };
     let call = quote! { __miden_note.#entrypoint_ident(#(#args),*); };
 
+    let frontend_link_section = generate_frontend_link_section();
+
     match expand_guest_wrapper(
         Span::call_site(),
         GuestWrapperConfig {
@@ -256,7 +268,10 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
                 #call
         },
     ) {
-        Ok(tokens) => tokens,
+        Ok(tokens) => quote! {
+            #tokens
+            #frontend_link_section
+        },
         Err(err) => err.into_compile_error(),
     }
 }
@@ -488,7 +503,9 @@ fn is_attr_named(attr: &Attribute, name: &str) -> bool {
 
 /// Returns true if an attribute marks a method as the note entrypoint.
 fn is_entrypoint_marker_attr(attr: &Attribute) -> bool {
-    is_attr_named(attr, NOTE_SCRIPT_ATTR) || is_doc_marker_attr(attr, NOTE_SCRIPT_DOC_MARKER)
+    is_attr_named(attr, NOTE_SCRIPT_ATTR)
+        || is_attr_named(attr, NOTE_SCRIPT_MARKER_ATTR)
+        || is_doc_marker_attr(attr, NOTE_SCRIPT_DOC_MARKER)
 }
 
 /// Returns true if `attr` is `#[doc = "..."]` with `marker` as the string value.
@@ -510,6 +527,34 @@ fn is_doc_marker_attr(attr: &Attribute, marker: &str) -> bool {
     };
 
     value.value() == marker
+}
+
+/// Emits frontend-only note-script metadata into the shared component frontend custom section.
+fn generate_frontend_link_section() -> TokenStream2 {
+    let metadata_bytes = encode_frontend_metadata(None, Some(NOTE_SCRIPT_COMPONENT_EXPORT_NAME));
+    let metadata_len = metadata_bytes.len();
+    let encoded_bytes = Literal::byte_string(&metadata_bytes);
+    let uniqueness_guard_symbol = NOTE_SCRIPT_UNIQUENESS_GUARD_SYMBOL;
+
+    quote! {
+        const _: () = {
+            // A crate may contain exactly one `#[note_script]` method. Reusing a fixed symbol name
+            // lets the linker reject duplicates across modules or impl blocks.
+            #[doc(hidden)]
+            #[used]
+            #[unsafe(export_name = #uniqueness_guard_symbol)]
+            static __miden_note_script_uniqueness_guard: u8 = 0;
+        };
+
+        #[unsafe(
+            // Keep the Mach-O-friendly `segment,section` naming scheme used by the main metadata
+            // section so the linker preserves these bytes in test and release builds.
+            link_section = #FRONTEND_METADATA_LINK_SECTION
+        )]
+        #[doc(hidden)]
+        #[allow(clippy::octal_escapes)]
+        pub static __MIDEN_NOTE_SCRIPT_FRONTEND_METADATA_BYTES: [u8; #metadata_len] = *#encoded_bytes;
+    }
 }
 
 #[cfg(test)]
@@ -623,5 +668,23 @@ mod tests {
             method.attrs.iter().all(|attr| !is_entrypoint_marker_attr(attr)),
             "entrypoint markers must be removed from output"
         );
+    }
+
+    #[test]
+    fn note_script_frontend_metadata_emits_project_wide_uniqueness_guard() {
+        let tokens = generate_frontend_link_section().to_string();
+
+        assert!(tokens.contains(NOTE_SCRIPT_UNIQUENESS_GUARD_SYMBOL));
+        assert!(tokens.contains(NOTE_SCRIPT_COMPONENT_EXPORT_NAME));
+    }
+
+    #[test]
+    fn note_script_marker_accepts_helper_attribute() {
+        let method: ImplItemFn = parse_quote! {
+            #[miden_note_script_requires_note]
+            pub fn execute(self, _arg: Word) {}
+        };
+
+        assert!(has_entrypoint_marker_attr(&method.attrs));
     }
 }

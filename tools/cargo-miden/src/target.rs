@@ -62,7 +62,8 @@ pub fn target_environment_to_project_type(target_env: TargetEnv) -> ProjectType 
         TargetEnv::Rollup { target } => match target {
             RollupTarget::Account => ProjectType::Library,
             RollupTarget::AuthComponent => ProjectType::Library,
-            RollupTarget::NoteScript | RollupTarget::TransactionScript => ProjectType::Program,
+            RollupTarget::NoteScript => ProjectType::Library,
+            RollupTarget::TransactionScript => ProjectType::Program,
         },
         TargetEnv::Emu => {
             panic!("Emulator target environment is not supported for project type detection",)

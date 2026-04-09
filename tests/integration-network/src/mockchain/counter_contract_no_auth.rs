@@ -1,12 +1,10 @@
 //! Counter contract test with no-auth authentication component
 
 use miden_client::{
-    Word,
     account::{AccountComponent, component::InitStorageData},
     note::NoteTag,
     transaction::RawOutputNote,
 };
-use miden_core::Felt;
 use miden_protocol::{
     account::{AccountBuilder, AccountStorageMode, AccountType, auth::AuthScheme},
     crypto::rand::RandomCoin,
@@ -20,7 +18,7 @@ use super::{
     helpers::{
         COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage,
         build_existing_counter_account_builder_with_auth_package, compile_rust_package,
-        counter_storage_slot_name, execute_tx,
+        counter_storage_slot_name, execute_tx, note_script_root,
     },
 };
 
@@ -31,7 +29,6 @@ use super::{
 /// - Build a separate sender account (basic wallet)
 /// - Sender issues a counter note to the network
 /// - Counter account consumes the note without requiring authentication/signature
-#[ignore = "until https://github.com/0xMiden/compiler/issues/926 is implemented"]
 #[test]
 pub fn test_counter_contract_no_auth() {
     // Compile the contracts first (before creating any runtime)
@@ -40,13 +37,12 @@ pub fn test_counter_contract_no_auth() {
     let no_auth_auth_component =
         compile_rust_package("../../examples/auth-component-no-auth", true);
 
-    let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let counter_storage_slot = counter_storage_slot_name();
 
     let counter_component = {
         let mut init_storage_data = InitStorageData::default();
         init_storage_data
-            .insert_map_entry(counter_storage_slot.clone(), COUNTER_CONTRACT_STORAGE_KEY, value)
+            .insert_map_entry(counter_storage_slot.clone(), COUNTER_CONTRACT_STORAGE_KEY, 1_u64)
             .unwrap();
         AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
     };
@@ -83,7 +79,7 @@ pub fn test_counter_contract_no_auth() {
     eprintln!("Sender account ID: {:?}", sender_account.id().to_hex());
 
     // Sender creates the counter note (note script increments counter's storage on consumption)
-    let rng = RandomCoin::new(note_package.unwrap_program().hash());
+    let rng = RandomCoin::new(note_script_root(note_package.as_ref()));
     let counter_note = NoteBuilder::new(sender_account.id(), rng)
         .package((*note_package).clone())
         .tag(NoteTag::with_account_target(counter_account.id()).into())
@@ -109,7 +105,7 @@ pub fn test_counter_contract_no_auth() {
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, tx_context_builder);
     expect!["1824"].assert_eq(auth_procedure_cycles(&tx_measurements));
-    expect!["28731"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
+    expect!["28489"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(

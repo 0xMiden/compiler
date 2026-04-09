@@ -142,6 +142,7 @@ pub fn note(
 /// Marks a method as the note script entrypoint (`#[note_script]`).
 ///
 /// The method must be contained within an inherent `impl` block annotated with `#[note]`.
+/// At most one method in a crate may be annotated with `#[note_script]`.
 ///
 /// # Supported entrypoint signature
 ///

@@ -48,7 +48,7 @@ fn test_all_templates() {
     assert!(account.is_library());
 
     let note = build_new_project_from_template("--note");
-    assert!(note.is_program());
+    assert!(note.is_library());
 
     let tx_script = build_new_project_from_template("--tx-script");
     assert!(tx_script.is_program());

@@ -2,9 +2,13 @@ use std::{collections::BTreeMap, env, path::PathBuf};
 
 use miden_core::{
     Felt, Word,
+    program::Program,
     serde::{Deserializable, Serializable},
 };
-use miden_protocol::account::{AccountComponentMetadata, component::InitStorageData};
+use miden_protocol::{
+    account::{AccountComponentMetadata, component::InitStorageData},
+    note::NoteScript,
+};
 use midenc_expect_test::expect_file;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{FunctionIdent, Ident, SourceSpan, interner::Symbol};
@@ -20,6 +24,13 @@ use crate::{
 mod base;
 mod macros;
 mod stdlib;
+
+/// Rebuilds an executable program from a compiled note-script package for direct execution tests.
+fn note_script_program(package: &miden_mast_package::Package) -> Program {
+    let note_script =
+        NoteScript::from_package(package).expect("compiled package should contain a note script");
+    Program::new(note_script.mast(), note_script.entrypoint())
+}
 
 #[test]
 fn rust_sdk_swapp_note_bindings() {
@@ -159,7 +170,8 @@ fn rust_sdk_cross_ctx_account_and_note() {
 
     let mut test = builder.build();
     let package = test.compile_package();
-    let program = package.unwrap_program();
+    assert!(package.is_library());
+    let program = note_script_program(package.as_ref());
     let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .insert(*account_package.mast.digest(), account_package.mast.clone());
@@ -206,12 +218,14 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
 
     let mut test = builder.build();
     let package = test.compile_package();
+    assert!(package.is_library());
+    let program = note_script_program(package.as_ref());
     let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .insert(*account_package.mast.digest(), account_package.mast.clone());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("failed to add package dependencies");
-    let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
+    let trace = exec.execute(&program, test.session.source_manager.clone());
 }
 
 #[test]
@@ -248,11 +262,12 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     );
     let mut test = builder.build();
     let package = test.compile_package();
-    assert!(package.is_program());
+    assert!(package.is_library());
+    let program = note_script_program(package.as_ref());
     let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
         .insert(*account_package.mast.digest(), account_package.mast.clone());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("failed to add package dependencies");
-    let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
+    let trace = exec.execute(&program, test.session.source_manager.clone());
 }

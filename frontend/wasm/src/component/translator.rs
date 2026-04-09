@@ -10,6 +10,7 @@ use midenc_hir::{
     interner::Symbol,
     smallvec,
 };
+use midenc_session::{RollupTarget, TargetEnv};
 use wasmparser::{component_types::ComponentEntityType, types::TypesRef};
 
 use super::{
@@ -67,6 +68,15 @@ pub struct ComponentTranslator<'a> {
     /// Export name that must be marked with the protocol's `@auth_script` attribute.
     auth_export_name: Option<String>,
 
+    /// Export name that must be marked with the protocol's `@note_script` attribute.
+    note_script_export_name: Option<String>,
+
+    /// Tracks whether the marked authentication export was found while lifting component exports.
+    found_auth_export: bool,
+
+    /// Tracks whether the marked note-script export was found while lifting component exports.
+    found_note_script_export: bool,
+
     /// Information about shim modules to bypass
     shim_bypass_info: ShimBypassInfo,
 }
@@ -119,18 +129,27 @@ impl<'a> ComponentTranslator<'a> {
         let ns = hir2::Ident::with_empty_span(id.namespace);
         let name = hir2::Ident::with_empty_span(id.name);
         let mut auth_export_name = None;
+        let mut note_script_export_name = None;
         for (_, module) in nested_modules.iter() {
-            let Some(module_auth_export_name) = module
-                .component_frontend_metadata
-                .as_ref()
-                .and_then(|metadata| metadata.auth_export_name.clone())
-            else {
+            let Some(metadata) = module.component_frontend_metadata.as_ref() else {
                 continue;
             };
 
-            if auth_export_name.replace(module_auth_export_name).is_some() {
+            if let Some(module_auth_export_name) = metadata.auth_export_name.clone()
+                && auth_export_name.replace(module_auth_export_name).is_some()
+            {
                 return Err(Report::from(crate::error::WasmError::Unsupported(
                     "multiple `#[auth_script]` procedures were found; only one is allowed per \
+                     project"
+                        .to_string(),
+                )));
+            }
+
+            if let Some(module_note_script_export_name) = metadata.note_script_export_name.clone()
+                && note_script_export_name.replace(module_note_script_export_name).is_some()
+            {
+                return Err(Report::from(crate::error::WasmError::Unsupported(
+                    "multiple `#[note_script]` procedures were found; only one is allowed per \
                      project"
                         .to_string(),
                 )));
@@ -159,6 +178,9 @@ impl<'a> ComponentTranslator<'a> {
             result,
             shim_bypass_info: ShimBypassInfo::default(),
             auth_export_name,
+            note_script_export_name,
+            found_auth_export: false,
+            found_note_script_export: false,
         })
     }
 
@@ -174,6 +196,8 @@ impl<'a> ComponentTranslator<'a> {
         for init in &root_component.initializers {
             self.initializer(&mut frame, types, init)?;
         }
+
+        self.validate_marked_exports_found()?;
 
         let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
             .nested_modules
@@ -192,6 +216,43 @@ impl<'a> ComponentTranslator<'a> {
             account_component_metadata_bytes,
         };
         Ok(output)
+    }
+
+    /// Ensures metadata-selected protocol exports were actually present in the component exports.
+    fn validate_marked_exports_found(&self) -> WasmResult<()> {
+        if let Some(auth_export_name) = self.auth_export_name.as_deref()
+            && !self.found_auth_export
+        {
+            return Err(Report::from(crate::error::WasmError::Unsupported(format!(
+                "failed to find the component export marked with `#[auth_script]`: \
+                 `{auth_export_name}`"
+            ))));
+        }
+
+        if let Some(note_script_export_name) = self.note_script_export_name.as_deref()
+            && !self.found_note_script_export
+        {
+            return Err(Report::from(crate::error::WasmError::Unsupported(format!(
+                "failed to find the component export marked with `#[note_script]`: \
+                 `{note_script_export_name}`"
+            ))));
+        }
+
+        Ok(())
+    }
+
+    /// Returns true when `name` should be marked as the protocol note-script export.
+    fn is_note_script_export(&self, name: &str) -> bool {
+        if let Some(note_script_export_name) = self.note_script_export_name.as_deref() {
+            return note_script_export_name == name;
+        }
+
+        matches!(
+            self.context.session().options.target,
+            TargetEnv::Rollup {
+                target: RollupTarget::NoteScript,
+            }
+        ) && name == "run"
     }
 
     fn initializer(
@@ -487,12 +548,16 @@ impl<'a> ComponentTranslator<'a> {
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
         let is_auth_procedure = self.auth_export_name.as_deref() == Some(name);
+        let is_note_script_export = self.is_note_script_export(name);
+        self.found_auth_export |= is_auth_procedure;
+        self.found_note_script_export |= is_note_script_export;
         generate_export_lifting_function(
             &mut self.result,
             name,
             func_ty,
             core_export_func_path,
             is_auth_procedure,
+            is_note_script_export,
             self.context.diagnostics(),
         )?;
         Ok(())

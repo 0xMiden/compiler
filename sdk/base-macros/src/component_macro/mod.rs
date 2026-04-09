@@ -41,7 +41,7 @@ const AUTH_SCRIPT_MARKER_ATTR: &str = "miden_auth_script_requires_component";
 /// Symbol emitted for every `#[auth_script]` method to enforce project-wide uniqueness.
 const AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL: &str = "__MIDEN_AUTH_SCRIPT_UNIQUENESS_GUARD";
 /// Wasm custom section used to pass frontend-only component metadata into the compiler frontend.
-const FRONTEND_METADATA_LINK_SECTION: &str = "rodata,miden_account_component_frontend";
+pub(crate) const FRONTEND_METADATA_LINK_SECTION: &str = "rodata,miden_account_component_frontend";
 /// Cargo project kind used by authentication component crates.
 const AUTH_COMPONENT_PROJECT_KIND: &str = "authentication-component";
 
@@ -924,7 +924,7 @@ fn generate_frontend_link_section(methods: &[ComponentMethod]) -> proc_macro2::T
         return quote! {};
     };
 
-    let metadata_bytes = encode_frontend_metadata(Some(auth_export_name));
+    let metadata_bytes = encode_frontend_metadata(Some(auth_export_name), None);
     let metadata_len = metadata_bytes.len();
     let encoded_bytes = Literal::byte_string(&metadata_bytes);
     let uniqueness_guard_symbol = AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL;
@@ -951,21 +951,31 @@ fn generate_frontend_link_section(methods: &[ComponentMethod]) -> proc_macro2::T
 }
 
 /// Encodes the frontend-only metadata payload consumed by the Wasm frontend.
-fn encode_frontend_metadata(auth_export_name: Option<&str>) -> Vec<u8> {
+pub(crate) fn encode_frontend_metadata(
+    auth_export_name: Option<&str>,
+    note_script_export_name: Option<&str>,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
-    bytes.push(1);
-    bytes.push(u8::from(auth_export_name.is_some()));
-
-    if let Some(export_name) = auth_export_name {
-        let name_bytes = export_name.as_bytes();
-        bytes.push(
-            u8::try_from(name_bytes.len())
-                .expect("component frontend metadata supports auth export names up to 255 bytes"),
-        );
-        bytes.extend_from_slice(name_bytes);
-    }
+    bytes.push(2);
+    encode_optional_export_name(&mut bytes, auth_export_name, "auth");
+    encode_optional_export_name(&mut bytes, note_script_export_name, "note-script");
 
     bytes
+}
+
+/// Appends an optional export name to the serialized frontend metadata payload.
+fn encode_optional_export_name(bytes: &mut Vec<u8>, export_name: Option<&str>, export_kind: &str) {
+    bytes.push(u8::from(export_name.is_some()));
+
+    if let Some(export_name) = export_name {
+        let name_bytes = export_name.as_bytes();
+        bytes.push(u8::try_from(name_bytes.len()).unwrap_or_else(|_| {
+            panic!(
+                "component frontend metadata supports {export_kind} export names up to 255 bytes"
+            )
+        }));
+        bytes.extend_from_slice(name_bytes);
+    }
 }
 
 /// Emits the static metadata blob inside the `rodata,miden_account` link section.

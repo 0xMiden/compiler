@@ -3,18 +3,18 @@ extern crate alloc;
 use miden_field_repr::FromFeltRepr;
 use miden_stdlib_sys::{Felt, Word, felt};
 
-/// Packs a scalar felt into the low limb of a protocol word.
+/// Packs a scalar felt into the leading limb of a protocol word.
 fn padded_word_from_felt(value: Felt) -> Word {
-    Word::new([felt!(0), felt!(0), felt!(0), value])
+    Word::new([value, felt!(0), felt!(0), felt!(0)])
 }
 
-/// Extracts a scalar felt from a protocol word with zero-padded high limbs.
+/// Extracts a scalar felt from a protocol word with zero-padded trailing limbs.
 fn felt_from_padded_word(value: Word) -> Result<Felt, &'static str> {
-    if value[0] != felt!(0) || value[1] != felt!(0) || value[2] != felt!(0) {
-        return Err("expected zero padding in the upper three felts");
+    if value[1] != felt!(0) || value[2] != felt!(0) || value[3] != felt!(0) {
+        return Err("expected zero padding in the trailing three felts");
     }
 
-    Ok(value[3])
+    Ok(value[0])
 }
 
 /// Unique identifier for a Miden account, composed of two field elements.

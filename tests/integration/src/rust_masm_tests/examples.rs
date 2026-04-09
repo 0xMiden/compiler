@@ -3,7 +3,7 @@ use std::{borrow::Borrow, collections::VecDeque};
 use miden_core::serde::{Deserializable, Serializable};
 use miden_debug::ToMidenRepr;
 use miden_mast_package::SectionId;
-use miden_protocol::account::AccountComponentMetadata;
+use miden_protocol::{account::AccountComponentMetadata, note::NoteScript};
 use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
@@ -269,7 +269,22 @@ fn counter_note() {
     let mut test = builder.build();
 
     let package = test.compile_package();
-    assert!(package.is_program(), "expected program");
+    assert!(package.is_library(), "expected library");
+    let _note_script =
+        NoteScript::from_package(package.as_ref()).expect("expected a note-script package");
+    let lib = package.mast.clone();
+    let note_exports = lib
+        .exports()
+        .filter_map(|export| {
+            let proc_export = export.as_procedure()?;
+            proc_export.attributes.has("note_script").then_some(proc_export)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        note_exports.len(),
+        1,
+        "expected exactly one exported procedure to carry the `note_script` attribute",
+    );
 
     // TODO: uncomment after the testing environment implemented (node, devnet, etc.)
     //
@@ -302,7 +317,22 @@ fn basic_wallet_and_p2id() {
 
     let mut test = CompilerTest::rust_source_cargo_miden("../../examples/p2id-note", config, []);
     let note_package = test.compile_package();
-    assert!(note_package.is_program(), "expected program");
+    assert!(note_package.is_library(), "expected library");
+    let _note_script =
+        NoteScript::from_package(note_package.as_ref()).expect("expected a note-script package");
+    let lib = note_package.mast.clone();
+    let note_exports = lib
+        .exports()
+        .filter_map(|export| {
+            let proc_export = export.as_procedure()?;
+            proc_export.attributes.has("note_script").then_some(proc_export)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        note_exports.len(),
+        1,
+        "expected exactly one exported procedure to carry the `note_script` attribute",
+    );
 }
 
 #[test]

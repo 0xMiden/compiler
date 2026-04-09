@@ -30,6 +30,7 @@ pub fn generate_export_lifting_function(
     export_func_ty: FunctionType,
     core_export_func_path: SymbolPath,
     is_auth_procedure: bool,
+    is_note_script_export: bool,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     let context = { component_builder.component.borrow().as_operation().context_rc() };
@@ -81,6 +82,7 @@ pub fn generate_export_lifting_function(
             core_export_func_sig,
             &core_export_func_path,
             is_auth_procedure,
+            is_note_script_export,
             diagnostics,
         )?;
     } else {
@@ -91,6 +93,7 @@ pub fn generate_export_lifting_function(
             core_export_func_sig,
             cross_ctx_export_sig_flat,
             is_auth_procedure,
+            is_note_script_export,
         )?;
     }
 
@@ -136,6 +139,7 @@ fn generate_lifting_with_transformation(
     core_export_func_sig: Signature,
     core_export_func_path: &SymbolPath,
     is_auth_procedure: bool,
+    is_note_script_export: bool,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     assert_eq!(
@@ -174,9 +178,7 @@ fn generate_lifting_with_transformation(
     };
     let export_func_ref =
         component_builder.define_function(export_func_ident, Visibility::Public, new_func_sig)?;
-    if is_auth_procedure {
-        annotate_auth_script(export_func_ref);
-    }
+    annotate_protocol_export(export_func_ref, is_auth_procedure, is_note_script_export);
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -277,15 +279,14 @@ fn generate_direct_lifting(
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
     is_auth_procedure: bool,
+    is_note_script_export: bool,
 ) -> WasmResult<()> {
     let export_func_ref = component_builder.define_function(
         export_func_ident,
         Visibility::Public,
         cross_ctx_export_sig_flat.clone(),
     )?;
-    if is_auth_procedure {
-        annotate_auth_script(export_func_ref);
-    }
+    annotate_protocol_export(export_func_ref, is_auth_procedure, is_note_script_export);
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -328,9 +329,25 @@ fn generate_direct_lifting(
     Ok(())
 }
 
-/// Marks the lifted authentication export with the protocol's `@auth_script` attribute.
-fn annotate_auth_script(mut export_func_ref: midenc_hir::dialects::builtin::FunctionRef) {
-    let context = export_func_ref.borrow().as_operation().context_rc();
-    let auth_attr = context.create_attribute::<UnitAttr, _>(());
-    export_func_ref.borrow_mut().set_attribute("auth_script", auth_attr);
+/// Marks lifted protocol exports with the attributes required by downstream consumers.
+fn annotate_protocol_export(
+    mut export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
+    is_auth_procedure: bool,
+    is_note_script_export: bool,
+) {
+    let context = {
+        let export_func = export_func_ref.borrow();
+        export_func.as_operation().context_rc()
+    };
+
+    let mut export_func = export_func_ref.borrow_mut();
+    if is_note_script_export {
+        let note_attr = context.create_attribute::<UnitAttr, _>(());
+        export_func.set_attribute("note_script", note_attr);
+    }
+
+    if is_auth_procedure {
+        let auth_attr = context.create_attribute::<UnitAttr, _>(());
+        export_func.set_attribute("auth_script", auth_attr);
+    }
 }

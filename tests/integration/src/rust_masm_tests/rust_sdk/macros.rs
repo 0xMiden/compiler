@@ -188,3 +188,68 @@ impl AuthComponent {
         "unexpected stderr: {stderr}"
     );
 }
+
+#[test]
+fn note_script_requires_a_note_impl() {
+    let name = "note_script_requires_a_note_impl";
+    let sdk_path = sdk_crate_path();
+    let component_package = format!("miden:{}", name.replace('_', "-"));
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.component]
+package = "{component_package}"
+"#,
+        name = name,
+        sdk_path = sdk_path.display(),
+        component_package = component_package,
+    );
+
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{note, note_script, Word};
+
+#[note]
+struct MyNote;
+
+impl MyNote {
+    #[note_script]
+    pub fn execute(self, _arg: Word) {}
+}
+"#;
+
+    let cargo_proj =
+        project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build();
+
+    let output = std::process::Command::new("cargo")
+        .arg("check")
+        .arg("--target")
+        .arg("wasm32-wasip2")
+        .arg("--target-dir")
+        .arg(cargo_proj.build_dir())
+        .current_dir(cargo_proj.root())
+        .output()
+        .expect("failed to spawn `cargo check` for the note-script marker regression test");
+    assert!(
+        !output.status.success(),
+        "expected note-script compilation to fail outside a `#[note]` impl"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("miden_note_script_requires_note"),
+        "unexpected stderr: {stderr}"
+    );
+}
