@@ -240,7 +240,7 @@ pub(super) fn build_existing_counter_account_builder_with_auth_package(
     let metadata =
         AccountComponentMetadata::new("auth", [AccountType::RegularAccountUpdatableCode]);
     let auth_component = AccountComponent::new(
-        auth_component_package.unwrap_library().as_ref().clone(),
+        auth_component_package.mast.as_ref().clone(),
         auth_storage_slots,
         metadata,
     )

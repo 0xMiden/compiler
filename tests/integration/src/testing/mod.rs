@@ -27,14 +27,13 @@ pub use self::{
 pub fn executor_with_std(args: Vec<Felt>, package: Option<&Package>) -> Executor {
     let mut exec = Executor::new(args);
     let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .add(*std_library.digest(), std_library.clone().into());
+    exec.dependency_resolver_mut().insert(*std_library.digest(), std_library);
     let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
     exec.dependency_resolver_mut()
-        .add(*protocol_library.digest(), protocol_library.clone().into());
+        .insert(*protocol_library.digest(), protocol_library);
     let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
     exec.dependency_resolver_mut()
-        .add(*standards_library.digest(), standards_library.clone().into());
+        .insert(*standards_library.digest(), standards_library);
     if let Some(pkg) = package {
         exec.with_dependencies(pkg.manifest.dependencies())
             .expect("Failed to set up dependencies");

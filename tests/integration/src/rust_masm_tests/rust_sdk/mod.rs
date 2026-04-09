@@ -126,7 +126,8 @@ fn rust_sdk_cross_ctx_account_and_note() {
         [],
     );
     let account_package = test.compile_package();
-    let lib = account_package.unwrap_library();
+    assert!(account_package.is_library());
+    let lib = account_package.mast.clone();
     let exports = lib
         .exports()
         .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
@@ -161,7 +162,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     let program = package.unwrap_program();
     let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
-        .add(account_package.digest(), account_package.into());
+        .insert(*account_package.mast.digest(), account_package.mast.clone());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("failed to add package dependencies");
     let trace = exec.execute(&program, test.session.source_manager.clone());
@@ -176,7 +177,8 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
         [],
     );
     let account_package = test.compile_package();
-    let lib = account_package.unwrap_library();
+    assert!(account_package.is_library());
+    let lib = account_package.mast.clone();
     let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
     let expected_function_suffix = "\"process-word\"";
     let exports = lib
@@ -206,7 +208,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     let package = test.compile_package();
     let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
-        .add(account_package.digest(), account_package.into());
+        .insert(*account_package.mast.digest(), account_package.mast.clone());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("failed to add package dependencies");
     let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
@@ -222,7 +224,8 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     );
     let account_package = test.compile_package();
 
-    let lib = account_package.unwrap_library();
+    assert!(account_package.is_library());
+    let lib = account_package.mast.clone();
     let expected_module_prefix = "::\"miden:cross-ctx-account-word-arg/";
     let expected_function_suffix = "\"process-word\"";
     let exports = lib
@@ -248,7 +251,7 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     assert!(package.is_program());
     let mut exec = executor_with_std(vec![], None);
     exec.dependency_resolver_mut()
-        .add(account_package.digest(), account_package.into());
+        .insert(*account_package.mast.digest(), account_package.mast.clone());
     exec.with_dependencies(package.manifest.dependencies())
         .expect("failed to add package dependencies");
     let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());

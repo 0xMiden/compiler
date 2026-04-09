@@ -10,7 +10,7 @@ use miden_assembly::{
     library::{LibraryExport, ProcedureExport},
 };
 use miden_core::{Word, program::Program};
-use miden_mast_package::{MastArtifact, Package};
+use miden_mast_package::{Package, TargetType};
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
@@ -175,19 +175,70 @@ impl fmt::Display for MasmComponent {
     }
 }
 
+/// The library-backed MAST produced by assembling a [`MasmComponent`].
+#[derive(Clone)]
+pub struct AssemblyArtifact {
+    kind: TargetType,
+    mast: Arc<Library>,
+}
+
+impl AssemblyArtifact {
+    fn from_library(mast: Arc<Library>) -> Self {
+        Self {
+            kind: TargetType::Library,
+            mast,
+        }
+    }
+
+    fn from_program(program: Program, entry: Arc<Path>) -> Result<Self, Report> {
+        let export = LibraryExport::Procedure(ProcedureExport {
+            node: program.entrypoint(),
+            path: entry.clone(),
+            signature: None,
+            attributes: Default::default(),
+        });
+        let mast = Arc::new(Library::new(
+            program.mast_forest().clone(),
+            BTreeMap::from_iter([(entry, export)]),
+        )?);
+
+        Ok(Self {
+            kind: TargetType::Executable,
+            mast,
+        })
+    }
+
+    /// Returns the target type represented by this assembled artifact.
+    pub fn kind(&self) -> TargetType {
+        self.kind
+    }
+
+    /// Returns the digest of the assembled MAST.
+    pub fn digest(&self) -> Word {
+        *self.mast.digest()
+    }
+
+    /// Consumes this artifact and returns its assembled library form.
+    pub fn into_mast(self) -> Arc<Library> {
+        self.mast
+    }
+}
+
 impl MasmComponent {
     pub fn assemble(
         &self,
         link_libraries: &[Arc<Library>],
         link_packages: &BTreeMap<Symbol, Arc<Package>>,
         session: &Session,
-    ) -> Result<MastArtifact, Report> {
+    ) -> Result<AssemblyArtifact, Report> {
         if let Some(entrypoint) = self.entrypoint.as_ref() {
             self.assemble_program(entrypoint, link_libraries, link_packages, session)
-                .map(MastArtifact::Executable)
+                .and_then(|(program, entrypoint)| {
+                    AssemblyArtifact::from_program(program, entrypoint)
+                })
         } else {
             self.assemble_library(link_libraries, link_packages, session)
-                .map(MastArtifact::Library)
+                .map(AssemblyArtifact::from_library)
         }
     }
 
@@ -197,7 +248,7 @@ impl MasmComponent {
         link_libraries: &[Arc<Library>],
         _link_packages: &BTreeMap<Symbol, Arc<Package>>,
         session: &Session,
-    ) -> Result<Arc<Program>, Report> {
+    ) -> Result<(Program, Arc<Path>), Report> {
         use miden_assembly::Assembler;
 
         log::debug!(
@@ -250,11 +301,12 @@ impl MasmComponent {
         let emit_test_harness = session.get_flag("test_harness");
         let main =
             self.generate_main(entrypoint, emit_test_harness, session.source_manager.clone())?;
+        let entrypoint: Arc<Path> = main.path().join(&masm::ProcedureName::main()).into();
         log::debug!(target: "assembly", "generated executable module:\n{main}");
         let program = assembler.assemble_program(main)?;
         let advice_map: miden_core::advice::AdviceMap =
             self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
-        Ok(Arc::new(program.with_advice_map(advice_map)))
+        Ok((program.with_advice_map(advice_map), entrypoint))
     }
 
     fn assemble_library(
