@@ -103,6 +103,8 @@ impl AuthComponent {
         .arg("check")
         .arg("--target")
         .arg("wasm32-wasip2")
+        .arg("--target-dir")
+        .arg(cargo_proj.build_dir())
         .current_dir(cargo_proj.root())
         .output()
         .expect("failed to spawn `cargo check` for the auth-component regression test");
@@ -170,6 +172,8 @@ impl AuthComponent {
         .arg("check")
         .arg("--target")
         .arg("wasm32-wasip2")
+        .arg("--target-dir")
+        .arg(cargo_proj.build_dir())
         .current_dir(cargo_proj.root())
         .output()
         .expect("failed to spawn `cargo check` for the auth-script marker regression test");
