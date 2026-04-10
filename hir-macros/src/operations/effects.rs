@@ -166,12 +166,11 @@ impl quote::ToTokens for EffectOpInterface {
                     let exprs = exprs.iter();
                     quote! {
                         {
-                            let target = self.#field();
                             values.extend([
                                 #(
                                     ::midenc_hir::effects::EffectInstance::new_for_value(
                                         #exprs,
-                                        target,
+                                        self.#field(),
                                     ),
                                 )*
                             ]);
