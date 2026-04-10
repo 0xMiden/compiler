@@ -60,6 +60,8 @@ mod note;
 mod script;
 mod types;
 mod util;
+mod wit_builder;
+mod wit_world;
 
 /// Generates the WIT interface and storage metadata.
 ///
