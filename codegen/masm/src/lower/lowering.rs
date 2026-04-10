@@ -441,6 +441,14 @@ impl HirLowering for hir::AssertEq {
     }
 }
 
+impl HirLowering for hir::ConstantPointer {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let addr = self.get_value().addr();
+        emitter.inst_emitter(self.as_operation()).literal(addr, self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for ub::Unreachable {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // This instruction, if reached, must cause the VM to trap, so we emit an assertion that
