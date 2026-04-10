@@ -1,4 +1,5 @@
 use heck::{ToKebabCase, ToSnakeCase};
+use midenc_frontend_wasm_metadata::FrontendMetadata;
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
@@ -8,9 +9,7 @@ use syn::{
 
 use crate::{
     boilerplate::runtime_boilerplate,
-    component_macro::{
-        FRONTEND_METADATA_LINK_SECTION, encode_frontend_metadata, metadata::get_package_metadata,
-    },
+    component_macro::{FRONTEND_METADATA_LINK_SECTION, metadata::get_package_metadata},
     wit_builder::WitBuilder,
     wit_world::{ManifestPackage, write_world_block},
 };
@@ -634,7 +633,12 @@ fn build_guest_trait_path(
 
 /// Emits frontend-only note-script metadata into the shared component frontend custom section.
 fn generate_frontend_link_section(export_name: &str) -> TokenStream2 {
-    let metadata_bytes = encode_frontend_metadata(None, Some(export_name));
+    let metadata_bytes = FrontendMetadata {
+        auth_export_name: None,
+        note_script_export_name: Some(export_name.to_owned()),
+    }
+    .to_bytes()
+    .unwrap_or_else(|err| panic!("{err}"));
     let metadata_len = metadata_bytes.len();
     let encoded_bytes = Literal::byte_string(&metadata_bytes);
     let uniqueness_guard_symbol = NOTE_SCRIPT_UNIQUENESS_GUARD_SYMBOL;

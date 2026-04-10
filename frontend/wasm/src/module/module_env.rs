@@ -3,6 +3,7 @@ use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
+use midenc_frontend_wasm_metadata::{CUSTOM_SECTION_NAME, FrontendMetadata};
 use midenc_hir::{FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
@@ -80,156 +81,61 @@ pub struct ParsedModule<'data> {
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<&'data [u8]>,
     /// Frontend-only component metadata emitted by SDK macros.
-    pub component_frontend_metadata: Option<ComponentFrontendMetadata>,
+    pub component_frontend_metadata: Option<FrontendMetadata>,
 }
 
-/// Frontend-only metadata emitted by the SDK macros into a dedicated Wasm custom section.
-#[derive(Clone, Debug, Default)]
-pub struct ComponentFrontendMetadata {
-    /// Export name that must be marked with the protocol's `@auth_script` attribute.
-    pub auth_export_name: Option<String>,
-    /// Export name that must be marked with the protocol's `@note_script` attribute.
-    pub note_script_export_name: Option<String>,
-}
-
-impl ComponentFrontendMetadata {
-    /// Aggregates frontend metadata from all core modules that participate in one component.
-    pub(crate) fn from_modules<'data>(
-        modules: impl Iterator<Item = &'data ParsedModule<'data>>,
-    ) -> WasmResult<Self> {
-        let mut metadata = Self::default();
-        for module in modules {
-            let Some(module_metadata) = module.component_frontend_metadata.as_ref() else {
-                continue;
-            };
-
-            metadata.merge(module_metadata)?;
-        }
-
-        Ok(metadata)
-    }
-
-    /// Returns true if `export_name` is the authentication export selected by frontend metadata.
-    pub(crate) fn is_auth_export(&self, export_name: &str) -> bool {
-        self.auth_export_name.as_deref() == Some(export_name)
-    }
-
-    /// Returns true if `export_name` is the note-script export selected by frontend metadata.
-    pub(crate) fn is_note_script_export(&self, export_name: &str) -> bool {
-        self.note_script_export_name.as_deref() == Some(export_name)
-    }
-
-    /// Verifies that metadata-selected exports were emitted as lifted component exports.
-    pub(crate) fn validate_lifted_exports(
-        &self,
-        lifted_exports: &FxHashSet<String>,
-    ) -> WasmResult<()> {
-        validate_lifted_export(
-            self.auth_export_name.as_deref(),
-            "`#[auth_script]`",
-            lifted_exports,
-        )?;
-        validate_lifted_export(
-            self.note_script_export_name.as_deref(),
-            "`#[note_script]`",
-            lifted_exports,
-        )?;
-
-        Ok(())
-    }
-
-    /// Decodes the SDK-emitted metadata payload from the custom section bytes.
-    fn read_from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        let Some((&version, bytes)) = bytes.split_first() else {
-            return Err("component frontend metadata section is empty".to_string());
+/// Aggregates frontend metadata from all core modules that participate in one component.
+pub(crate) fn merge_frontend_metadata<'data>(
+    modules: impl Iterator<Item = &'data ParsedModule<'data>>,
+) -> WasmResult<FrontendMetadata> {
+    let mut metadata = FrontendMetadata::default();
+    for module in modules {
+        let Some(module_metadata) = module.component_frontend_metadata.as_ref() else {
+            continue;
         };
-        match version {
-            1 => {
-                let mut bytes = bytes;
-                let auth_export_name = read_optional_export_name(&mut bytes, "auth")?;
-                if !bytes.is_empty() {
-                    return Err(
-                        "component frontend metadata section has trailing bytes".to_string()
-                    );
-                }
 
-                Ok(Self {
-                    auth_export_name,
-                    note_script_export_name: None,
-                })
-            }
-            2 => {
-                let mut bytes = bytes;
-                let auth_export_name = read_optional_export_name(&mut bytes, "auth")?;
-                let note_script_export_name = read_optional_export_name(&mut bytes, "note-script")?;
-                if !bytes.is_empty() {
-                    return Err(
-                        "component frontend metadata section has trailing bytes".to_string()
-                    );
-                }
-
-                Ok(Self {
-                    auth_export_name,
-                    note_script_export_name,
-                })
-            }
-            _ => Err(format!("unsupported component frontend metadata version `{version}`")),
-        }
+        merge_single_frontend_metadata(&mut metadata, module_metadata)?;
     }
 
-    /// Merges a single module's frontend metadata into the component-wide metadata view.
-    fn merge(&mut self, other: &Self) -> WasmResult<()> {
-        merge_marked_export_name(
-            &mut self.auth_export_name,
-            other.auth_export_name.as_deref(),
-            "#[auth_script]",
-        )?;
-        merge_marked_export_name(
-            &mut self.note_script_export_name,
-            other.note_script_export_name.as_deref(),
-            "#[note_script]",
-        )?;
-
-        Ok(())
-    }
+    Ok(metadata)
 }
 
-/// Reads an optional export name from the serialized frontend metadata payload.
-fn read_optional_export_name(
-    bytes: &mut &[u8],
-    export_kind: &str,
-) -> Result<Option<String>, String> {
-    let Some((&export_count, rest)) = bytes.split_first() else {
-        return Err("component frontend metadata section is truncated".to_string());
-    };
-    *bytes = rest;
+/// Verifies that metadata-selected exports were emitted as lifted component exports.
+pub(crate) fn validate_lifted_frontend_metadata_exports(
+    metadata: &FrontendMetadata,
+    lifted_exports: &FxHashSet<String>,
+) -> WasmResult<()> {
+    validate_lifted_export(
+        metadata.auth_export_name.as_deref(),
+        "`#[auth_script]`",
+        lifted_exports,
+    )?;
+    validate_lifted_export(
+        metadata.note_script_export_name.as_deref(),
+        "`#[note_script]`",
+        lifted_exports,
+    )?;
 
-    if export_count > 1 {
-        return Err(format!(
-            "component frontend metadata supports at most one {export_kind} export"
-        ));
-    }
+    Ok(())
+}
 
-    if export_count == 0 {
-        return Ok(None);
-    }
+/// Merges a single module's frontend metadata into the component-wide metadata view.
+fn merge_single_frontend_metadata(
+    metadata: &mut FrontendMetadata,
+    module_metadata: &FrontendMetadata,
+) -> WasmResult<()> {
+    merge_marked_export_name(
+        &mut metadata.auth_export_name,
+        module_metadata.auth_export_name.as_deref(),
+        "#[auth_script]",
+    )?;
+    merge_marked_export_name(
+        &mut metadata.note_script_export_name,
+        module_metadata.note_script_export_name.as_deref(),
+        "#[note_script]",
+    )?;
 
-    let Some((&name_len, rest)) = bytes.split_first() else {
-        return Err("component frontend metadata section is truncated".to_string());
-    };
-    *bytes = rest;
-
-    let name_len = name_len as usize;
-    if bytes.len() < name_len {
-        return Err("component frontend metadata section is truncated".to_string());
-    }
-
-    let (name_bytes, rest) = bytes.split_at(name_len);
-    let name = core::str::from_utf8(name_bytes)
-        .map_err(|_| "component frontend metadata must be valid UTF-8".to_string())?;
-    *bytes = rest;
-
-    Ok(Some(name.to_string()))
+    Ok(())
 }
 
 /// Merges a metadata-selected export name while enforcing project-wide uniqueness.
@@ -408,16 +314,15 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
             Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
                 self.result.account_component_metadata_bytes = Some(s.data());
             }
-            Payload::CustomSection(s) if s.name() == "rodata,miden_account_component_frontend" => {
-                let metadata =
-                    ComponentFrontendMetadata::read_from_bytes(s.data()).map_err(|err| {
-                        diagnostics
-                            .diagnostic(Severity::Error)
-                            .with_message(format!(
-                                "failed to parse component frontend metadata section: {err}"
-                            ))
-                            .into_report()
-                    })?;
+            Payload::CustomSection(s) if s.name() == CUSTOM_SECTION_NAME => {
+                let metadata = FrontendMetadata::from_bytes(s.data()).map_err(|err| {
+                    diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "failed to parse component frontend metadata section: {err}"
+                        ))
+                        .into_report()
+                })?;
 
                 if self.result.component_frontend_metadata.replace(metadata).is_some() {
                     return Err(diagnostics

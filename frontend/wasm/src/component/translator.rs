@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
+use midenc_frontend_wasm_metadata::FrontendMetadata;
 use midenc_hir::{
     self as hir2, BuilderExt, CallConv, Context, FunctionType, FxHashMap, FxHashSet, Ident,
     SymbolNameComponent, SymbolPath,
@@ -31,7 +32,9 @@ use crate::{
     module::{
         build_ir::build_ir_module,
         instance::ModuleArgument,
-        module_env::{ComponentFrontendMetadata, ParsedModule},
+        module_env::{
+            ParsedModule, merge_frontend_metadata, validate_lifted_frontend_metadata_exports,
+        },
         module_translation_state::ModuleTranslationState,
         types::{EntityIndex, FuncIndex},
     },
@@ -65,7 +68,7 @@ pub struct ComponentTranslator<'a> {
     context: Rc<Context>,
 
     /// Frontend metadata merged across all core modules that feed this component translation.
-    component_frontend_metadata: ComponentFrontendMetadata,
+    component_frontend_metadata: FrontendMetadata,
 
     /// Names of component exports for which a lifting shim was emitted.
     lifted_export_names: FxHashSet<String>,
@@ -121,9 +124,8 @@ impl<'a> ComponentTranslator<'a> {
     ) -> WasmResult<Self> {
         let ns = hir2::Ident::with_empty_span(id.namespace);
         let name = hir2::Ident::with_empty_span(id.name);
-        let component_frontend_metadata = ComponentFrontendMetadata::from_modules(
-            nested_modules.iter().map(|(_, module)| module),
-        )?;
+        let component_frontend_metadata =
+            merge_frontend_metadata(nested_modules.iter().map(|(_, module)| module))?;
 
         // If a world wasn't provided to us, create one
         let world_ref = match config.world {
@@ -164,8 +166,10 @@ impl<'a> ComponentTranslator<'a> {
             self.initializer(&mut frame, types, init)?;
         }
 
-        self.component_frontend_metadata
-            .validate_lifted_exports(&self.lifted_export_names)?;
+        validate_lifted_frontend_metadata_exports(
+            &self.component_frontend_metadata,
+            &self.lifted_export_names,
+        )?;
 
         let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
             .nested_modules
