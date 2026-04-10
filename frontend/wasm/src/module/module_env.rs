@@ -3,7 +3,7 @@ use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
-use midenc_hir::{Ident, interner::Symbol};
+use midenc_hir::{FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
     CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding, ExternalKind,
@@ -18,7 +18,7 @@ use super::{
 use crate::{
     WasmTranslationConfig,
     component::SignatureIndex,
-    error::WasmResult,
+    error::{WasmError, WasmResult},
     module::{
         FuncRefIndex, Module, ModuleType, TableSegment,
         types::{
@@ -93,6 +93,51 @@ pub struct ComponentFrontendMetadata {
 }
 
 impl ComponentFrontendMetadata {
+    /// Aggregates frontend metadata from all core modules that participate in one component.
+    pub(crate) fn from_modules<'data>(
+        modules: impl Iterator<Item = &'data ParsedModule<'data>>,
+    ) -> WasmResult<Self> {
+        let mut metadata = Self::default();
+        for module in modules {
+            let Some(module_metadata) = module.component_frontend_metadata.as_ref() else {
+                continue;
+            };
+
+            metadata.merge(module_metadata)?;
+        }
+
+        Ok(metadata)
+    }
+
+    /// Returns true if `export_name` is the authentication export selected by frontend metadata.
+    pub(crate) fn is_auth_export(&self, export_name: &str) -> bool {
+        self.auth_export_name.as_deref() == Some(export_name)
+    }
+
+    /// Returns true if `export_name` is the note-script export selected by frontend metadata.
+    pub(crate) fn is_note_script_export(&self, export_name: &str) -> bool {
+        self.note_script_export_name.as_deref() == Some(export_name)
+    }
+
+    /// Verifies that metadata-selected exports were emitted as lifted component exports.
+    pub(crate) fn validate_lifted_exports(
+        &self,
+        lifted_exports: &FxHashSet<String>,
+    ) -> WasmResult<()> {
+        validate_lifted_export(
+            self.auth_export_name.as_deref(),
+            "`#[auth_script]`",
+            lifted_exports,
+        )?;
+        validate_lifted_export(
+            self.note_script_export_name.as_deref(),
+            "`#[note_script]`",
+            lifted_exports,
+        )?;
+
+        Ok(())
+    }
+
     /// Decodes the SDK-emitted metadata payload from the custom section bytes.
     fn read_from_bytes(bytes: &[u8]) -> Result<Self, String> {
         let Some((&version, bytes)) = bytes.split_first() else {
@@ -130,6 +175,22 @@ impl ComponentFrontendMetadata {
             }
             _ => Err(format!("unsupported component frontend metadata version `{version}`")),
         }
+    }
+
+    /// Merges a single module's frontend metadata into the component-wide metadata view.
+    fn merge(&mut self, other: &Self) -> WasmResult<()> {
+        merge_marked_export_name(
+            &mut self.auth_export_name,
+            other.auth_export_name.as_deref(),
+            "#[auth_script]",
+        )?;
+        merge_marked_export_name(
+            &mut self.note_script_export_name,
+            other.note_script_export_name.as_deref(),
+            "#[note_script]",
+        )?;
+
+        Ok(())
     }
 }
 
@@ -171,6 +232,43 @@ fn read_optional_export_name(
     Ok(Some(name.to_string()))
 }
 
+/// Merges a metadata-selected export name while enforcing project-wide uniqueness.
+fn merge_marked_export_name(
+    current_export_name: &mut Option<String>,
+    next_export_name: Option<&str>,
+    attribute: &str,
+) -> WasmResult<()> {
+    match (current_export_name.as_deref(), next_export_name) {
+        (_, None) => Ok(()),
+        (None, Some(export_name)) => {
+            *current_export_name = Some(export_name.to_owned());
+            Ok(())
+        }
+        (Some(_), Some(_)) => Err(Report::from(WasmError::Unsupported(format!(
+            "multiple `{attribute}` procedures were found; only one is allowed per project"
+        )))),
+    }
+}
+
+/// Validates that a metadata-selected export name was seen among the lifted component exports.
+fn validate_lifted_export(
+    export_name: Option<&str>,
+    attribute: &str,
+    lifted_exports: &FxHashSet<String>,
+) -> WasmResult<()> {
+    let Some(export_name) = export_name else {
+        return Ok(());
+    };
+
+    if lifted_exports.contains(export_name) {
+        return Ok(());
+    }
+
+    Err(Report::from(WasmError::MissingExportMetadata(format!(
+        "failed to find the component export marked with {attribute}: `{export_name}`"
+    ))))
+}
+
 /// Contains function data: byte code and its offset in the module.
 pub struct FunctionBodyData<'a> {
     /// The body of the function, containing code and locals.
@@ -178,6 +276,9 @@ pub struct FunctionBodyData<'a> {
     /// Validator for the function body
     pub validator: FuncToValidate<ValidatorResources>,
 }
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Default)]
 pub struct DebugInfoData<'a> {

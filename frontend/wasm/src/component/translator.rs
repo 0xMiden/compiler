@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
 use midenc_hir::{
-    self as hir2, BuilderExt, CallConv, Context, FunctionType, FxHashMap, Ident,
+    self as hir2, BuilderExt, CallConv, Context, FunctionType, FxHashMap, FxHashSet, Ident,
     SymbolNameComponent, SymbolPath,
     diagnostics::Report,
     dialects::builtin::{self, ComponentBuilder, ModuleBuilder, World, WorldBuilder},
@@ -31,7 +31,7 @@ use crate::{
     module::{
         build_ir::build_ir_module,
         instance::ModuleArgument,
-        module_env::ParsedModule,
+        module_env::{ComponentFrontendMetadata, ParsedModule},
         module_translation_state::ModuleTranslationState,
         types::{EntityIndex, FuncIndex},
     },
@@ -64,17 +64,11 @@ pub struct ComponentTranslator<'a> {
 
     context: Rc<Context>,
 
-    /// Export name that must be marked with the protocol's `@auth_script` attribute.
-    auth_export_name: Option<String>,
+    /// Frontend metadata merged across all core modules that feed this component translation.
+    component_frontend_metadata: ComponentFrontendMetadata,
 
-    /// Export name that must be marked with the protocol's `@note_script` attribute.
-    note_script_export_name: Option<String>,
-
-    /// Tracks whether the marked authentication export was found while lifting component exports.
-    found_auth_export: bool,
-
-    /// Tracks whether the marked note-script export was found while lifting component exports.
-    found_note_script_export: bool,
+    /// Names of component exports for which a lifting shim was emitted.
+    lifted_export_names: FxHashSet<String>,
 
     /// Information about shim modules to bypass
     shim_bypass_info: ShimBypassInfo,
@@ -127,33 +121,9 @@ impl<'a> ComponentTranslator<'a> {
     ) -> WasmResult<Self> {
         let ns = hir2::Ident::with_empty_span(id.namespace);
         let name = hir2::Ident::with_empty_span(id.name);
-        let mut auth_export_name = None;
-        let mut note_script_export_name = None;
-        for (_, module) in nested_modules.iter() {
-            let Some(metadata) = module.component_frontend_metadata.as_ref() else {
-                continue;
-            };
-
-            if let Some(module_auth_export_name) = metadata.auth_export_name.clone()
-                && auth_export_name.replace(module_auth_export_name).is_some()
-            {
-                return Err(Report::from(crate::error::WasmError::Unsupported(
-                    "multiple `#[auth_script]` procedures were found; only one is allowed per \
-                     project"
-                        .to_string(),
-                )));
-            }
-
-            if let Some(module_note_script_export_name) = metadata.note_script_export_name.clone()
-                && note_script_export_name.replace(module_note_script_export_name).is_some()
-            {
-                return Err(Report::from(crate::error::WasmError::Unsupported(
-                    "multiple `#[note_script]` procedures were found; only one is allowed per \
-                     project"
-                        .to_string(),
-                )));
-            }
-        }
+        let component_frontend_metadata = ComponentFrontendMetadata::from_modules(
+            nested_modules.iter().map(|(_, module)| module),
+        )?;
 
         // If a world wasn't provided to us, create one
         let world_ref = match config.world {
@@ -176,10 +146,8 @@ impl<'a> ComponentTranslator<'a> {
             world_builder,
             result,
             shim_bypass_info: ShimBypassInfo::default(),
-            auth_export_name,
-            note_script_export_name,
-            found_auth_export: false,
-            found_note_script_export: false,
+            component_frontend_metadata,
+            lifted_export_names: FxHashSet::default(),
         })
     }
 
@@ -196,7 +164,8 @@ impl<'a> ComponentTranslator<'a> {
             self.initializer(&mut frame, types, init)?;
         }
 
-        self.validate_marked_exports_found()?;
+        self.component_frontend_metadata
+            .validate_lifted_exports(&self.lifted_export_names)?;
 
         let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
             .nested_modules
@@ -215,29 +184,6 @@ impl<'a> ComponentTranslator<'a> {
             account_component_metadata_bytes,
         };
         Ok(output)
-    }
-
-    /// Ensures metadata-selected protocol exports were actually present in the component exports.
-    fn validate_marked_exports_found(&self) -> WasmResult<()> {
-        if let Some(auth_export_name) = self.auth_export_name.as_deref()
-            && !self.found_auth_export
-        {
-            return Err(Report::from(crate::error::WasmError::Unsupported(format!(
-                "failed to find the component export marked with `#[auth_script]`: \
-                 `{auth_export_name}`"
-            ))));
-        }
-
-        if let Some(note_script_export_name) = self.note_script_export_name.as_deref()
-            && !self.found_note_script_export
-        {
-            return Err(Report::from(crate::error::WasmError::Unsupported(format!(
-                "failed to find the component export marked with `#[note_script]`: \
-                 `{note_script_export_name}`"
-            ))));
-        }
-
-        Ok(())
     }
 
     fn initializer(
@@ -532,10 +478,8 @@ impl<'a> ComponentTranslator<'a> {
         let func_ty =
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
-        let is_auth_procedure = self.auth_export_name.as_deref() == Some(name);
-        let is_note_script_export = self.note_script_export_name.as_deref() == Some(name);
-        self.found_auth_export |= is_auth_procedure;
-        self.found_note_script_export |= is_note_script_export;
+        let is_auth_procedure = self.component_frontend_metadata.is_auth_export(name);
+        let is_note_script_export = self.component_frontend_metadata.is_note_script_export(name);
         generate_export_lifting_function(
             &mut self.result,
             name,
@@ -545,6 +489,7 @@ impl<'a> ComponentTranslator<'a> {
             is_note_script_export,
             self.context.diagnostics(),
         )?;
+        self.lifted_export_names.insert(name.to_owned());
         Ok(())
     }
 
