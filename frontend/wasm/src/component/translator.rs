@@ -10,7 +10,6 @@ use midenc_hir::{
     interner::Symbol,
     smallvec,
 };
-use midenc_session::{RollupTarget, TargetEnv};
 use wasmparser::{component_types::ComponentEntityType, types::TypesRef};
 
 use super::{
@@ -239,20 +238,6 @@ impl<'a> ComponentTranslator<'a> {
         }
 
         Ok(())
-    }
-
-    /// Returns true when `name` should be marked as the protocol note-script export.
-    fn is_note_script_export(&self, name: &str) -> bool {
-        if let Some(note_script_export_name) = self.note_script_export_name.as_deref() {
-            return note_script_export_name == name;
-        }
-
-        matches!(
-            self.context.session().options.target,
-            TargetEnv::Rollup {
-                target: RollupTarget::NoteScript,
-            }
-        ) && name == "run"
     }
 
     fn initializer(
@@ -548,7 +533,7 @@ impl<'a> ComponentTranslator<'a> {
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
         let is_auth_procedure = self.auth_export_name.as_deref() == Some(name);
-        let is_note_script_export = self.is_note_script_export(name);
+        let is_note_script_export = self.note_script_export_name.as_deref() == Some(name);
         self.found_auth_export |= is_auth_procedure;
         self.found_note_script_export |= is_note_script_export;
         generate_export_lifting_function(

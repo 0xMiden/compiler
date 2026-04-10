@@ -143,6 +143,7 @@ pub fn note(
 ///
 /// The method must be contained within an inherent `impl` block annotated with `#[note]`.
 /// At most one method in a crate may be annotated with `#[note_script]`.
+/// The exported component procedure keeps the annotated method name (converted to WIT kebab-case).
 ///
 /// # Supported entrypoint signature
 ///

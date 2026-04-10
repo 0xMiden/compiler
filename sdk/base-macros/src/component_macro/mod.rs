@@ -29,7 +29,7 @@ use crate::{
 };
 
 mod generate_wit;
-mod metadata;
+pub(crate) mod metadata;
 mod storage;
 
 /// Fully-qualified identifier for the core types package used by exported component interfaces.
