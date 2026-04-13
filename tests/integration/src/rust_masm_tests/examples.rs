@@ -14,6 +14,37 @@ use proptest::prelude::*;
 
 use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project, testing::executor_with_std};
 
+/// Asserts that exactly one exported procedure carries `attribute` and that its leaf export name
+/// matches `expected_export_name`.
+fn assert_single_protocol_export(
+    package: &miden_mast_package::Package,
+    attribute: &str,
+    expected_export_name: &str,
+) {
+    let matching_exports = package
+        .mast
+        .exports()
+        .filter_map(|export| {
+            let proc_export = export.as_procedure()?;
+            proc_export.attributes.has(attribute).then_some(proc_export)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matching_exports.len(),
+        1,
+        "expected exactly one exported procedure to carry the `{attribute}` attribute",
+    );
+
+    let export_name = matching_exports[0]
+        .path
+        .last()
+        .expect("protocol export should have a procedure name");
+    assert_eq!(
+        export_name, expected_export_name,
+        "expected the `{attribute}` export to preserve the user-defined procedure name",
+    );
+}
+
 #[test]
 fn storage_example() {
     let config = WasmTranslationConfig::default();
@@ -272,19 +303,7 @@ fn counter_note() {
     assert!(package.is_library(), "expected library");
     let _note_script =
         NoteScript::from_package(package.as_ref()).expect("expected a note-script package");
-    let lib = package.mast.clone();
-    let note_exports = lib
-        .exports()
-        .filter_map(|export| {
-            let proc_export = export.as_procedure()?;
-            proc_export.attributes.has("note_script").then_some(proc_export)
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        note_exports.len(),
-        1,
-        "expected exactly one exported procedure to carry the `note_script` attribute",
-    );
+    assert_single_protocol_export(package.as_ref(), "note_script", "run");
 
     // TODO: uncomment after the testing environment implemented (node, devnet, etc.)
     //
@@ -320,19 +339,7 @@ fn basic_wallet_and_p2id() {
     assert!(note_package.is_library(), "expected library");
     let _note_script =
         NoteScript::from_package(note_package.as_ref()).expect("expected a note-script package");
-    let lib = note_package.mast.clone();
-    let note_exports = lib
-        .exports()
-        .filter_map(|export| {
-            let proc_export = export.as_procedure()?;
-            proc_export.attributes.has("note_script").then_some(proc_export)
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        note_exports.len(),
-        1,
-        "expected exactly one exported procedure to carry the `note_script` attribute",
-    );
+    assert_single_protocol_export(note_package.as_ref(), "note_script", "script");
 }
 
 #[test]
@@ -342,19 +349,7 @@ fn auth_component_no_auth() {
         CompilerTest::rust_source_cargo_miden("../../examples/auth-component-no-auth", config, []);
     let auth_comp_package = test.compile_package();
     assert!(auth_comp_package.is_library());
-    let lib = auth_comp_package.mast.clone();
-    let auth_exports = lib
-        .exports()
-        .filter_map(|export| {
-            let proc_export = export.as_procedure()?;
-            proc_export.attributes.has("auth_script").then_some(proc_export)
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        auth_exports.len(),
-        1,
-        "expected exactly one exported procedure to carry the `auth_script` attribute",
-    );
+    assert_single_protocol_export(auth_comp_package.as_ref(), "auth_script", "auth-procedure");
 
     // Test that the package loads
     let bytes = auth_comp_package.to_bytes();
@@ -371,19 +366,7 @@ fn auth_component_rpo_falcon512() {
     );
     let auth_comp_package = test.compile_package();
     assert!(auth_comp_package.is_library());
-    let lib = auth_comp_package.mast.clone();
-    let auth_exports = lib
-        .exports()
-        .filter_map(|export| {
-            let proc_export = export.as_procedure()?;
-            proc_export.attributes.has("auth_script").then_some(proc_export)
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        auth_exports.len(),
-        1,
-        "expected exactly one exported procedure to carry the `auth_script` attribute",
-    );
+    assert_single_protocol_export(auth_comp_package.as_ref(), "auth_script", "check-signature");
 
     // Test that the package loads
     let bytes = auth_comp_package.to_bytes();
