@@ -4,12 +4,14 @@ use miden_field_repr::FromFeltRepr;
 use miden_stdlib_sys::{Felt, Word, felt};
 
 /// Packs a scalar felt into the leading limb of a protocol word.
-fn padded_word_from_felt(value: Felt) -> Word {
+#[inline(always)]
+pub fn padded_word_from_felt(value: Felt) -> Word {
     Word::new([value, felt!(0), felt!(0), felt!(0)])
 }
 
 /// Extracts a scalar felt from a protocol word with zero-padded trailing limbs.
-fn felt_from_padded_word(value: Word) -> Result<Felt, &'static str> {
+#[inline(always)]
+pub fn felt_from_padded_word(value: Word) -> Result<Felt, &'static str> {
     if value[1] != felt!(0) || value[2] != felt!(0) || value[3] != felt!(0) {
         return Err("expected zero padding in the trailing three felts");
     }
@@ -277,5 +279,38 @@ impl StorageSlotId {
     /// Returns the prefix of the [`StorageSlotId`].
     pub fn prefix(&self) -> Felt {
         self.prefix
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_stdlib_sys::{Word, felt};
+
+    use super::{felt_from_padded_word, padded_word_from_felt};
+
+    /// Ensures `padded_word_from_felt` zero-pads the trailing three limbs.
+    #[test]
+    fn padded_word_from_felt_zero_pads_trailing_limbs() {
+        assert_eq!(
+            padded_word_from_felt(felt!(7)),
+            Word::new([felt!(7), felt!(0), felt!(0), felt!(0)])
+        );
+    }
+
+    /// Ensures `felt_from_padded_word` rejects words with non-zero trailing padding.
+    #[test]
+    fn felt_from_padded_word_rejects_non_zero_padding() {
+        let err =
+            felt_from_padded_word(Word::new([felt!(7), felt!(1), felt!(0), felt!(0)])).unwrap_err();
+
+        assert_eq!(err, "expected zero padding in the trailing three felts");
+    }
+
+    /// Ensures the felt-padding helpers form a lossless roundtrip for scalar values.
+    #[test]
+    fn felt_padding_helpers_roundtrip() {
+        let value = felt!(42);
+
+        assert_eq!(felt_from_padded_word(padded_word_from_felt(value)), Ok(value));
     }
 }
