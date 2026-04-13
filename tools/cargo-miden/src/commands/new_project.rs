@@ -13,7 +13,7 @@ use crate::template::{GenerateArgs, TemplatePath, generate};
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const PROJECT_TEMPLATES_REPO_TAG: &str = "v0.28.0";
+const PROJECT_TEMPLATES_REPO_TAG: &str = "v0.29.0";
 
 /// The tag used in checkout of the new Miden project template (`cargo miden new <NAME>`)
 ///
