@@ -3,7 +3,7 @@ use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
-use midenc_frontend_wasm_metadata::{CUSTOM_SECTION_NAME, FrontendMetadata};
+use midenc_frontend_wasm_metadata::{FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME};
 use midenc_hir::{FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
@@ -110,12 +110,14 @@ pub(crate) fn validate_lifted_frontend_metadata_exports(
     };
 
     match metadata {
-        FrontendMetadata::AuthScript { export_name } => {
-            validate_lifted_export(export_name, "`#[auth_script]`", lifted_exports)?
-        }
-        FrontendMetadata::NoteScript { export_name } => {
-            validate_lifted_export(export_name, "`#[note_script]`", lifted_exports)?
-        }
+        FrontendMetadata::AuthScript {
+            method_path,
+            export_name,
+        } => validate_lifted_export(method_path, export_name, "`#[auth_script]`", lifted_exports)?,
+        FrontendMetadata::NoteScript {
+            method_path,
+            export_name,
+        } => validate_lifted_export(method_path, export_name, "`#[note_script]`", lifted_exports)?,
     }
 
     Ok(())
@@ -131,28 +133,31 @@ fn merge_single_frontend_metadata(
             *metadata = Some(module_metadata.clone());
             Ok(())
         }
-        Some(existing_metadata) => match (existing_metadata, module_metadata) {
+        Some(existing_metadata) => match (&*existing_metadata, module_metadata) {
             (FrontendMetadata::AuthScript { .. }, FrontendMetadata::AuthScript { .. }) => {
-                Err(Report::from(WasmError::Unsupported(
-                    "multiple `#[auth_script]` procedures were found; only one is allowed per \
-                     project"
-                        .to_string(),
-                )))
+                Err(Report::from(WasmError::Unsupported(format!(
+                    "multiple `#[auth_script]` procedures were found: `{}` and `{}`; only one is \
+                     allowed per project",
+                    existing_metadata.method_path(),
+                    module_metadata.method_path()
+                ))))
             }
             (FrontendMetadata::NoteScript { .. }, FrontendMetadata::NoteScript { .. }) => {
-                Err(Report::from(WasmError::Unsupported(
-                    "multiple `#[note_script]` procedures were found; only one is allowed per \
-                     project"
-                        .to_string(),
-                )))
+                Err(Report::from(WasmError::Unsupported(format!(
+                    "multiple `#[note_script]` procedures were found: `{}` and `{}`; only one is \
+                     allowed per project",
+                    existing_metadata.method_path(),
+                    module_metadata.method_path()
+                ))))
             }
             (FrontendMetadata::AuthScript { .. }, FrontendMetadata::NoteScript { .. })
             | (FrontendMetadata::NoteScript { .. }, FrontendMetadata::AuthScript { .. }) => {
-                Err(Report::from(WasmError::Unsupported(
-                    "both `#[auth_script]` and `#[note_script]` procedures were found; only one \
-                     kind is allowed per project"
-                        .to_string(),
-                )))
+                Err(Report::from(WasmError::Unsupported(format!(
+                    "both `#[auth_script]` and `#[note_script]` procedures were found: `{}` and \
+                     `{}`; only one kind is allowed per project",
+                    existing_metadata.method_path(),
+                    module_metadata.method_path()
+                ))))
             }
         },
     }
@@ -160,6 +165,7 @@ fn merge_single_frontend_metadata(
 
 /// Validates that a metadata-selected export name was seen among the lifted component exports.
 fn validate_lifted_export(
+    method_path: &str,
     export_name: &str,
     attribute: &str,
     lifted_exports: &FxHashSet<String>,
@@ -169,7 +175,8 @@ fn validate_lifted_export(
     }
 
     Err(Report::from(WasmError::MissingExportMetadata(format!(
-        "failed to find the component export marked with {attribute}: `{export_name}`"
+        "failed to find the component export marked with {attribute}: `{method_path}` (expected \
+         lifted export `{export_name}`)"
     ))))
 }
 
@@ -312,7 +319,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
             Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
                 self.result.account_component_metadata_bytes = Some(s.data());
             }
-            Payload::CustomSection(s) if s.name() == CUSTOM_SECTION_NAME => {
+            Payload::CustomSection(s) if s.name() == WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME => {
                 let metadata = FrontendMetadata::from_bytes(s.data()).map_err(|err| {
                     diagnostics
                         .diagnostic(Severity::Error)

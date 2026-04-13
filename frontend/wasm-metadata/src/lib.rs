@@ -12,7 +12,8 @@ use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 /// Name of the Wasm custom section used to store frontend metadata bytes.
-pub const CUSTOM_SECTION_NAME: &str = "rodata,miden_account_component_frontend";
+pub const WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME: &str =
+    "rodata,miden_account_component_frontend";
 
 /// Frontend-only metadata emitted by the SDK macros into a dedicated Wasm custom section.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -20,11 +21,15 @@ pub const CUSTOM_SECTION_NAME: &str = "rodata,miden_account_component_frontend";
 pub enum FrontendMetadata {
     /// Metadata for the single export marked with `#[auth_script]`.
     AuthScript {
+        /// Fully-qualified Rust method path marked with `#[auth_script]`.
+        method_path: String,
         /// Name of the export marked with `#[auth_script]`.
         export_name: String,
     },
     /// Metadata for the single export marked with `#[note_script]`.
     NoteScript {
+        /// Fully-qualified Rust method path marked with `#[note_script]`.
+        method_path: String,
         /// Name of the export marked with `#[note_script]`.
         export_name: String,
     },
@@ -33,18 +38,29 @@ pub enum FrontendMetadata {
 impl FrontendMetadata {
     /// Returns true if `export_name` is the authentication export selected by frontend metadata.
     pub fn is_auth_export(&self, export_name: &str) -> bool {
-        matches!(self, Self::AuthScript { export_name: marked_export_name } if marked_export_name == export_name)
+        matches!(self, Self::AuthScript { export_name: marked_export_name, .. } if marked_export_name == export_name)
     }
 
     /// Returns true if `export_name` is the note-script export selected by frontend metadata.
     pub fn is_note_script_export(&self, export_name: &str) -> bool {
-        matches!(self, Self::NoteScript { export_name: marked_export_name } if marked_export_name == export_name)
+        matches!(self, Self::NoteScript { export_name: marked_export_name, .. } if marked_export_name == export_name)
+    }
+
+    /// Returns the Rust method path marked by this metadata entry.
+    pub fn method_path(&self) -> &str {
+        match self {
+            Self::AuthScript { method_path, .. } | Self::NoteScript { method_path, .. } => {
+                method_path
+            }
+        }
     }
 
     /// Returns the export name marked by this metadata entry.
     pub fn export_name(&self) -> &str {
         match self {
-            Self::AuthScript { export_name } | Self::NoteScript { export_name } => export_name,
+            Self::AuthScript { export_name, .. } | Self::NoteScript { export_name, .. } => {
+                export_name
+            }
         }
     }
 
@@ -73,9 +89,11 @@ mod tests {
     fn frontend_metadata_roundtrips_payload() {
         let metadata = [
             FrontendMetadata::AuthScript {
+                method_path: "crate::auth::AuthComponent::authenticate".to_string(),
                 export_name: "auth".to_string(),
             },
             FrontendMetadata::NoteScript {
+                method_path: "crate::notes::PaymentNote::execute".to_string(),
                 export_name: "note-script".to_string(),
             },
         ];

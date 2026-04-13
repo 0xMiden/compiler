@@ -6,10 +6,10 @@ use std::{
 
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_protocol::{account::AccountType, utils::serde::Serializable};
-use midenc_frontend_wasm_metadata::{CUSTOM_SECTION_NAME, FrontendMetadata};
+use midenc_frontend_wasm_metadata::FrontendMetadata;
 use proc_macro::Span;
 use proc_macro2::{Ident, Literal, Span as Span2, TokenStream as TokenStream2};
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::{
     Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemStruct, PathArguments, ReturnType, Type,
     Visibility, spanned::Spanned,
@@ -27,6 +27,7 @@ use crate::{
     types::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
+    util::generate_frontend_link_section,
 };
 
 mod generate_wit;
@@ -39,10 +40,6 @@ const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 const AUTH_SCRIPT_ATTR: &str = "auth_script";
 /// Helper attribute preserved by `#[auth_script]` so `#[component]` can recognize the method.
 const AUTH_SCRIPT_MARKER_ATTR: &str = "miden_auth_script_requires_component";
-/// Symbol emitted for every `#[auth_script]` method to enforce project-wide uniqueness.
-const AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL: &str = "__MIDEN_AUTH_SCRIPT_UNIQUENESS_GUARD";
-/// Wasm custom section used to pass frontend-only component metadata into the compiler frontend.
-pub(crate) const FRONTEND_METADATA_LINK_SECTION: &str = CUSTOM_SECTION_NAME;
 /// Cargo project kind used by authentication component crates.
 const AUTH_COMPONENT_PROJECT_KIND: &str = "authentication-component";
 
@@ -383,7 +380,13 @@ fn expand_component_impl(
         );
     }
 
-    let frontend_link_section = generate_frontend_link_section(&methods);
+    let frontend_link_section = methods.iter().find(|method| method.is_auth_script).map_or_else(
+        || quote! {},
+        |auth_method| {
+            let metadata = auth_script_frontend_metadata(&component_type, auth_method);
+            generate_frontend_link_section(&metadata)
+        },
+    );
 
     Ok(quote! {
         ::miden::generate!(inline = #inline_literal, with = { #(#custom_with_entries)* });
@@ -914,45 +917,21 @@ fn validate_auth_script_signature(
     Ok(())
 }
 
-/// Emits frontend-only component metadata into a dedicated custom section.
-fn generate_frontend_link_section(methods: &[ComponentMethod]) -> proc_macro2::TokenStream {
-    let auth_export_name = methods
-        .iter()
-        .find(|method| method.is_auth_script)
-        .map(|method| method.wit_name.as_str());
-
-    let Some(auth_export_name) = auth_export_name else {
-        return quote! {};
-    };
-
-    let metadata_bytes = FrontendMetadata::AuthScript {
-        export_name: auth_export_name.to_owned(),
+/// Builds frontend metadata for the single `#[auth_script]` method exported by a component.
+fn auth_script_frontend_metadata(
+    component_type: &Type,
+    auth_method: &ComponentMethod,
+) -> FrontendMetadata {
+    FrontendMetadata::AuthScript {
+        method_path: render_method_path(component_type, &auth_method.fn_ident),
+        export_name: auth_method.wit_name.clone(),
     }
-    .to_bytes()
-    .unwrap_or_else(|err| panic!("{err}"));
-    let metadata_len = metadata_bytes.len();
-    let encoded_bytes = Literal::byte_string(&metadata_bytes);
-    let uniqueness_guard_symbol = AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL;
+}
 
-    quote! {
-        const _: () = {
-            // A crate may contain exactly one `#[auth_script]` method. Reusing a fixed symbol name
-            // lets the linker reject duplicates across modules or impl blocks.
-            #[doc(hidden)]
-            #[used]
-            #[unsafe(export_name = #uniqueness_guard_symbol)]
-            static __miden_auth_script_uniqueness_guard: u8 = 0;
-        };
-
-        #[unsafe(
-            // Keep the Mach-O-friendly `segment,section` naming scheme used by the main metadata
-            // section so the linker preserves these bytes in test and release builds.
-            link_section = #FRONTEND_METADATA_LINK_SECTION
-        )]
-        #[doc(hidden)]
-        #[allow(clippy::octal_escapes)]
-        pub static __MIDEN_ACCOUNT_COMPONENT_FRONTEND_METADATA_BYTES: [u8; #metadata_len] = *#encoded_bytes;
-    }
+/// Renders a Rust method path for frontend metadata diagnostics.
+fn render_method_path(component_type: &Type, fn_ident: &syn::Ident) -> String {
+    let component_path = component_type.to_token_stream().to_string().replace(" :: ", "::");
+    format!("{component_path}::{fn_ident}")
 }
 
 /// Emits the static metadata blob inside the `rodata,miden_account` link section.
@@ -1157,9 +1136,35 @@ mod tests {
 
         let (parsed_method, _) =
             parse_component_method(&method, &exported_types, is_auth_script).unwrap();
-        let tokens = generate_frontend_link_section(&[parsed_method]).to_string();
+        let component_type: Type = parse_quote!(crate::accounts::AuthComponent);
+        let metadata = auth_script_frontend_metadata(&component_type, &parsed_method);
+        let tokens = generate_frontend_link_section(&metadata).to_string();
 
-        assert!(tokens.contains(AUTH_SCRIPT_UNIQUENESS_GUARD_SYMBOL));
+        assert!(tokens.contains(crate::util::FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL));
+    }
+
+    #[test]
+    fn auth_script_frontend_metadata_stores_method_path() {
+        let mut method: ImplItemFn = parse_quote! {
+            #[auth_script]
+            pub fn whatever_name(&mut self, arg: Word) {}
+        };
+        let exported_types = HashMap::new();
+        let is_auth_script = has_auth_script_marker_attr(&method.attrs);
+        method.attrs.retain(|attr| !is_auth_script_marker_attr(attr));
+
+        let (parsed_method, _) =
+            parse_component_method(&method, &exported_types, is_auth_script).unwrap();
+        let component_type: Type = parse_quote!(crate::accounts::AuthComponent);
+        let metadata = auth_script_frontend_metadata(&component_type, &parsed_method);
+
+        assert_eq!(
+            metadata,
+            FrontendMetadata::AuthScript {
+                method_path: "crate::accounts::AuthComponent::whatever_name".into(),
+                export_name: "whatever-name".into(),
+            }
+        );
     }
 
     #[test]

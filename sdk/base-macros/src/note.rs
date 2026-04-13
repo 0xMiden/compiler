@@ -1,7 +1,7 @@
 use heck::{ToKebabCase, ToSnakeCase};
 use midenc_frontend_wasm_metadata::FrontendMetadata;
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::{
     Attribute, FnArg, ImplItem, ImplItemFn, Item, ItemImpl, ItemStruct, PathArguments, Type,
     parse_macro_input, spanned::Spanned,
@@ -9,7 +9,8 @@ use syn::{
 
 use crate::{
     boilerplate::runtime_boilerplate,
-    component_macro::{FRONTEND_METADATA_LINK_SECTION, metadata::get_package_metadata},
+    component_macro::metadata::get_package_metadata,
+    util::generate_frontend_link_section,
     wit_builder::WitBuilder,
     wit_world::{ManifestPackage, write_world_block},
 };
@@ -17,7 +18,6 @@ use crate::{
 const NOTE_SCRIPT_ATTR: &str = "note_script";
 const NOTE_SCRIPT_MARKER_ATTR: &str = "miden_note_script_requires_note";
 const NOTE_SCRIPT_DOC_MARKER: &str = "__miden_note_script_marker";
-const NOTE_SCRIPT_UNIQUENESS_GUARD_SYMBOL: &str = "__MIDEN_NOTE_SCRIPT_UNIQUENESS_GUARD";
 const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 
 /// Expands `#[note]` for either a note input `struct` or an inherent `impl` block.
@@ -286,7 +286,8 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         Err(err) => return err.into_compile_error(),
     };
     let runtime_boilerplate = runtime_boilerplate();
-    let frontend_link_section = generate_frontend_link_section(&export_name);
+    let frontend_metadata = note_script_frontend_metadata(&note_ty, entrypoint_ident, &export_name);
+    let frontend_link_section = generate_frontend_link_section(&frontend_metadata);
 
     quote! {
         #runtime_boilerplate
@@ -631,36 +632,22 @@ fn build_guest_trait_path(
     })
 }
 
-/// Emits frontend-only note-script metadata into the shared component frontend custom section.
-fn generate_frontend_link_section(export_name: &str) -> TokenStream2 {
-    let metadata_bytes = FrontendMetadata::NoteScript {
+/// Builds frontend metadata for the `#[note_script]` method exported by a note.
+fn note_script_frontend_metadata(
+    note_ty: &syn::TypePath,
+    entrypoint_ident: &syn::Ident,
+    export_name: &str,
+) -> FrontendMetadata {
+    FrontendMetadata::NoteScript {
+        method_path: render_method_path(note_ty, entrypoint_ident),
         export_name: export_name.to_owned(),
     }
-    .to_bytes()
-    .unwrap_or_else(|err| panic!("{err}"));
-    let metadata_len = metadata_bytes.len();
-    let encoded_bytes = Literal::byte_string(&metadata_bytes);
-    let uniqueness_guard_symbol = NOTE_SCRIPT_UNIQUENESS_GUARD_SYMBOL;
+}
 
-    quote! {
-        const _: () = {
-            // A crate may contain exactly one `#[note_script]` method. Reusing a fixed symbol name
-            // lets the linker reject duplicates across modules or impl blocks.
-            #[doc(hidden)]
-            #[used]
-            #[unsafe(export_name = #uniqueness_guard_symbol)]
-            static __miden_note_script_uniqueness_guard: u8 = 0;
-        };
-
-        #[unsafe(
-            // Keep the Mach-O-friendly `segment,section` naming scheme used by the main metadata
-            // section so the linker preserves these bytes in test and release builds.
-            link_section = #FRONTEND_METADATA_LINK_SECTION
-        )]
-        #[doc(hidden)]
-        #[allow(clippy::octal_escapes)]
-        pub static __MIDEN_NOTE_SCRIPT_FRONTEND_METADATA_BYTES: [u8; #metadata_len] = *#encoded_bytes;
-    }
+/// Renders a Rust method path for frontend metadata diagnostics.
+fn render_method_path(note_ty: &syn::TypePath, entrypoint_ident: &syn::Ident) -> String {
+    let note_path = note_ty.to_token_stream().to_string().replace(" :: ", "::");
+    format!("{note_path}::{entrypoint_ident}")
 }
 
 #[cfg(test)]
@@ -778,10 +765,29 @@ mod tests {
 
     #[test]
     fn note_script_frontend_metadata_emits_project_wide_uniqueness_guard() {
-        let tokens = generate_frontend_link_section("execute").to_string();
+        let note_ty: syn::TypePath = parse_quote!(crate::notes::PaymentNote);
+        let entrypoint_ident = format_ident!("execute");
+        let metadata = note_script_frontend_metadata(&note_ty, &entrypoint_ident, "execute");
+        let tokens = generate_frontend_link_section(&metadata).to_string();
 
-        assert!(tokens.contains(NOTE_SCRIPT_UNIQUENESS_GUARD_SYMBOL));
+        assert!(tokens.contains(crate::util::FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL));
         assert!(tokens.contains("execute"));
+    }
+
+    #[test]
+    fn note_script_frontend_metadata_stores_method_path() {
+        let note_ty: syn::TypePath = parse_quote!(crate::notes::PaymentNote);
+        let entrypoint_ident = format_ident!("execute");
+
+        let metadata = note_script_frontend_metadata(&note_ty, &entrypoint_ident, "execute");
+
+        assert_eq!(
+            metadata,
+            FrontendMetadata::NoteScript {
+                method_path: "crate::notes::PaymentNote::execute".into(),
+                export_name: "execute".into(),
+            }
+        );
     }
 
     #[test]
