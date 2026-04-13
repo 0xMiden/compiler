@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use midenc_codegen_masm::TRACE_PRINT_LN;
 use midenc_compile::{CodegenOutput, compile_link_output_to_masm_with_pre_assembly_stage};
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
@@ -23,7 +24,7 @@ fn println_lowers_to_trace_nop_and_cleanup() {
     setup::build_entrypoint(link_output.component, &signature, |builder| {
         let span = SourceSpan::default();
         let ptr_ty = Type::from(PointerType::new(Type::U8));
-        let addr = builder.u32(256, span); // TODO page 17
+        let addr = builder.u32(256, span);
         let ptr = builder.inttoptr(addr, ptr_ty, span).unwrap();
         let len = builder.u32(1, span);
         builder.println(ptr, len, span).unwrap();
@@ -32,10 +33,10 @@ fn println_lowers_to_trace_nop_and_cleanup() {
 
     let masm_src = compile_to_masm_src(link_output, context);
 
-    // TODO don't hardcode number
+    let trace = format!("trace.{TRACE_PRINT_LN}");
     let trace_idx = masm_src
-        .find("trace.42")
-        .expect("expected hir.println lowering to emit trace.42");
+        .find(&trace)
+        .unwrap_or_else(|| panic!("expected hir.println lowering to emit {trace}"));
     let nop_idx = masm_src[trace_idx..]
         .find("nop")
         .map(|idx| trace_idx + idx)

@@ -806,6 +806,16 @@ impl CompilerTest {
         CompilerTestBuilder::rust_fn_body(source, midenc_flags).build()
     }
 
+    /// Set the Rust source code to compile with the `miden` SDK crate available.
+    pub fn rust_fn_body_with_sdk(
+        name: impl Into<Cow<'static, str>>,
+        source: &str,
+        config: WasmTranslationConfig,
+        midenc_flags: impl IntoIterator<Item = String>,
+    ) -> Self {
+        CompilerTestBuilder::rust_fn_body_with_sdk(name, source, config, midenc_flags).build()
+    }
+
     /// Set the Rust source code to compile with `miden-stdlib-sys` (stdlib + intrinsics)
     pub fn rust_fn_body_with_stdlib_sys(
         name: impl Into<Cow<'static, str>>,

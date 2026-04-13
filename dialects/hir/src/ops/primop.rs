@@ -89,7 +89,7 @@ pub struct PrintLn {
     // There is no write, but without `MemoryEffect::Write`, the `PrintLn` is not lowered to masm.
     // With `Read` only, `PrintLn` probably gets eliminated since it is not producing a result.
     #[operand]
-    #[effects(MemoryEffect(MemoryEffect::Read))]
+    #[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
     ptr: PointerOf<UInt8>,
     #[operand]
     len: UInt32,

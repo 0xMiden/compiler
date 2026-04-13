@@ -225,7 +225,7 @@ fn println_collects_printed_lines() -> Result<(), Report> {
         let span = SourceSpan::default();
         let mut builder = test.function_builder();
         let ptr_ty = Type::from(PointerType::new(Type::U8));
-        let base_addr = 64u32; // TODO use address at page 17
+        let base_addr = 64u32;
 
         for (offset, byte) in [b'h', b'e', b'l', b'l', b'o'].into_iter().enumerate() {
             let addr = builder.u32(base_addr + offset as u32, span);
@@ -258,7 +258,7 @@ fn println_reports_invalid_utf8() -> Result<(), Report> {
         let span = SourceSpan::default();
         let mut builder = test.function_builder();
         let ptr_ty = Type::from(PointerType::new(Type::U8));
-        let addr = builder.u32(96, span); // TODO use address at page 17
+        let addr = builder.u32(96, span);
         let ptr = builder.inttoptr(addr, ptr_ty.clone(), span)?;
         let invalid_utf8 = builder.u8(0xff, span);
         builder.store(ptr, invalid_utf8, span)?;
