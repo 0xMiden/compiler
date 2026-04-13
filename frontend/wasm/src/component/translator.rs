@@ -68,7 +68,7 @@ pub struct ComponentTranslator<'a> {
     context: Rc<Context>,
 
     /// Frontend metadata merged across all core modules that feed this component translation.
-    component_frontend_metadata: FrontendMetadata,
+    component_frontend_metadata: Option<FrontendMetadata>,
 
     /// Names of component exports for which a lifting shim was emitted.
     lifted_export_names: FxHashSet<String>,
@@ -167,7 +167,7 @@ impl<'a> ComponentTranslator<'a> {
         }
 
         validate_lifted_frontend_metadata_exports(
-            &self.component_frontend_metadata,
+            self.component_frontend_metadata.as_ref(),
             &self.lifted_export_names,
         )?;
 
@@ -482,8 +482,14 @@ impl<'a> ComponentTranslator<'a> {
         let func_ty =
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
-        let is_auth_procedure = self.component_frontend_metadata.is_auth_export(name);
-        let is_note_script_export = self.component_frontend_metadata.is_note_script_export(name);
+        let is_auth_procedure = self
+            .component_frontend_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.is_auth_export(name));
+        let is_note_script_export = self
+            .component_frontend_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.is_note_script_export(name));
         generate_export_lifting_function(
             &mut self.result,
             name,

@@ -925,9 +925,8 @@ fn generate_frontend_link_section(methods: &[ComponentMethod]) -> proc_macro2::T
         return quote! {};
     };
 
-    let metadata_bytes = FrontendMetadata {
-        auth_export_name: Some(auth_export_name.to_owned()),
-        note_script_export_name: None,
+    let metadata_bytes = FrontendMetadata::AuthScript {
+        export_name: auth_export_name.to_owned(),
     }
     .to_bytes()
     .unwrap_or_else(|err| panic!("{err}"));

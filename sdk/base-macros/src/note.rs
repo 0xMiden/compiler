@@ -633,9 +633,8 @@ fn build_guest_trait_path(
 
 /// Emits frontend-only note-script metadata into the shared component frontend custom section.
 fn generate_frontend_link_section(export_name: &str) -> TokenStream2 {
-    let metadata_bytes = FrontendMetadata {
-        auth_export_name: None,
-        note_script_export_name: Some(export_name.to_owned()),
+    let metadata_bytes = FrontendMetadata::NoteScript {
+        export_name: export_name.to_owned(),
     }
     .to_bytes()
     .unwrap_or_else(|err| panic!("{err}"));

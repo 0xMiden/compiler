@@ -12,3 +12,5 @@ readme.workspace = true
 edition.workspace = true
 
 [dependencies]
+serde.workspace = true
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }

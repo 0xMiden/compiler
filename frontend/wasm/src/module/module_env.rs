@@ -87,8 +87,8 @@ pub struct ParsedModule<'data> {
 /// Aggregates frontend metadata from all core modules that participate in one component.
 pub(crate) fn merge_frontend_metadata<'data>(
     modules: impl Iterator<Item = &'data ParsedModule<'data>>,
-) -> WasmResult<FrontendMetadata> {
-    let mut metadata = FrontendMetadata::default();
+) -> WasmResult<Option<FrontendMetadata>> {
+    let mut metadata = None;
     for module in modules {
         let Some(module_metadata) = module.component_frontend_metadata.as_ref() else {
             continue;
@@ -102,70 +102,68 @@ pub(crate) fn merge_frontend_metadata<'data>(
 
 /// Verifies that metadata-selected exports were emitted as lifted component exports.
 pub(crate) fn validate_lifted_frontend_metadata_exports(
-    metadata: &FrontendMetadata,
+    metadata: Option<&FrontendMetadata>,
     lifted_exports: &FxHashSet<String>,
 ) -> WasmResult<()> {
-    validate_lifted_export(
-        metadata.auth_export_name.as_deref(),
-        "`#[auth_script]`",
-        lifted_exports,
-    )?;
-    validate_lifted_export(
-        metadata.note_script_export_name.as_deref(),
-        "`#[note_script]`",
-        lifted_exports,
-    )?;
+    let Some(metadata) = metadata else {
+        return Ok(());
+    };
+
+    match metadata {
+        FrontendMetadata::AuthScript { export_name } => {
+            validate_lifted_export(export_name, "`#[auth_script]`", lifted_exports)?
+        }
+        FrontendMetadata::NoteScript { export_name } => {
+            validate_lifted_export(export_name, "`#[note_script]`", lifted_exports)?
+        }
+    }
 
     Ok(())
 }
 
 /// Merges a single module's frontend metadata into the component-wide metadata view.
 fn merge_single_frontend_metadata(
-    metadata: &mut FrontendMetadata,
+    metadata: &mut Option<FrontendMetadata>,
     module_metadata: &FrontendMetadata,
 ) -> WasmResult<()> {
-    merge_marked_export_name(
-        &mut metadata.auth_export_name,
-        module_metadata.auth_export_name.as_deref(),
-        "#[auth_script]",
-    )?;
-    merge_marked_export_name(
-        &mut metadata.note_script_export_name,
-        module_metadata.note_script_export_name.as_deref(),
-        "#[note_script]",
-    )?;
-
-    Ok(())
-}
-
-/// Merges a metadata-selected export name while enforcing project-wide uniqueness.
-fn merge_marked_export_name(
-    current_export_name: &mut Option<String>,
-    next_export_name: Option<&str>,
-    attribute: &str,
-) -> WasmResult<()> {
-    match (current_export_name.as_deref(), next_export_name) {
-        (_, None) => Ok(()),
-        (None, Some(export_name)) => {
-            *current_export_name = Some(export_name.to_owned());
+    match metadata {
+        None => {
+            *metadata = Some(module_metadata.clone());
             Ok(())
         }
-        (Some(_), Some(_)) => Err(Report::from(WasmError::Unsupported(format!(
-            "multiple `{attribute}` procedures were found; only one is allowed per project"
-        )))),
+        Some(existing_metadata) => match (existing_metadata, module_metadata) {
+            (FrontendMetadata::AuthScript { .. }, FrontendMetadata::AuthScript { .. }) => {
+                Err(Report::from(WasmError::Unsupported(
+                    "multiple `#[auth_script]` procedures were found; only one is allowed per \
+                     project"
+                        .to_string(),
+                )))
+            }
+            (FrontendMetadata::NoteScript { .. }, FrontendMetadata::NoteScript { .. }) => {
+                Err(Report::from(WasmError::Unsupported(
+                    "multiple `#[note_script]` procedures were found; only one is allowed per \
+                     project"
+                        .to_string(),
+                )))
+            }
+            (FrontendMetadata::AuthScript { .. }, FrontendMetadata::NoteScript { .. })
+            | (FrontendMetadata::NoteScript { .. }, FrontendMetadata::AuthScript { .. }) => {
+                Err(Report::from(WasmError::Unsupported(
+                    "both `#[auth_script]` and `#[note_script]` procedures were found; only one \
+                     kind is allowed per project"
+                        .to_string(),
+                )))
+            }
+        },
     }
 }
 
 /// Validates that a metadata-selected export name was seen among the lifted component exports.
 fn validate_lifted_export(
-    export_name: Option<&str>,
+    export_name: &str,
     attribute: &str,
     lifted_exports: &FxHashSet<String>,
 ) -> WasmResult<()> {
-    let Some(export_name) = export_name else {
-        return Ok(());
-    };
-
     if lifted_exports.contains(export_name) {
         return Ok(());
     }
