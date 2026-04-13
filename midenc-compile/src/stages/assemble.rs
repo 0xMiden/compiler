@@ -1,9 +1,7 @@
 use alloc::{string::ToString, vec, vec::Vec};
 
-use miden_assembly::ast::QualifiedProcedureName;
-use miden_mast_package::{
-    Dependency, MastArtifact, Package, PackageExport, PackageKind, ProcedureExport,
-};
+use miden_mast_package::{Dependency, Package, TargetType, Version};
+use midenc_codegen_masm::MastArtifact;
 use midenc_session::Session;
 
 use super::*;
@@ -45,7 +43,7 @@ impl Stage for AssembleStage {
                 "successfully assembled mast artifact with digest {}",
                 DisplayHex::new(&mast.digest().as_bytes())
             );
-            Ok(Artifact::Assembled(build_package(mast, &input, session)))
+            Ok(Artifact::Assembled(build_package(mast, &input, session)?))
         } else {
             log::debug!(
                 "skipping assembly of mast package from masm artifact (should-assemble=false)"
@@ -55,40 +53,30 @@ impl Stage for AssembleStage {
     }
 }
 
-fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session) -> Package {
-    let name = session.name.clone();
+fn build_package(
+    mast: MastArtifact,
+    outputs: &CodegenOutput,
+    session: &Session,
+) -> CompilerResult<Package> {
+    let name = session.name.clone().into();
+    let kind = mast.target_type();
+    let mast = mast.into_library()?;
 
     let mut dependencies = Vec::new();
     for (link_lib, lib) in session.options.link_libraries.iter().zip(outputs.link_libraries.iter())
     {
         let dependency = Dependency {
             name: link_lib.name.to_string().into(),
+            kind: TargetType::Library,
+            version: Version::new(0, 0, 0),
             digest: *lib.digest(),
         };
         dependencies.push(dependency);
     }
 
-    // Gather all of the procedure metadata for exports of this package
-    let mut exports: Vec<PackageExport> = Vec::new();
-    if let MastArtifact::Library(ref lib) = mast {
-        assert!(outputs.component.entrypoint.is_none(), "expect masm component to be a library");
-        for module_info in lib.module_infos() {
-            for (_, proc_info) in module_info.procedures() {
-                let name = QualifiedProcedureName::new(module_info.path(), proc_info.name.clone());
-                let digest = proc_info.digest;
-                let signature = proc_info.signature.as_deref().cloned();
-                exports.push(PackageExport::Procedure(ProcedureExport {
-                    path: name.into_inner(),
-                    digest,
-                    signature,
-                    attributes: Default::default(),
-                }));
-            }
-        }
-    }
-
-    let manifest =
-        miden_mast_package::PackageManifest::new(exports).with_dependencies(dependencies);
+    let manifest = miden_mast_package::PackageManifest::from_library(&mast)
+        .with_dependencies(dependencies)
+        .map_err(|err| Report::msg(err.to_string()))?;
 
     let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
 
@@ -102,17 +90,13 @@ fn build_package(mast: MastArtifact, outputs: &CodegenOutput, session: &Session)
         None => vec![],
     };
 
-    let kind = match mast {
-        MastArtifact::Executable(_) => PackageKind::Executable,
-        MastArtifact::Library(_) => PackageKind::Library,
-    };
-    miden_mast_package::Package {
+    Ok(miden_mast_package::Package {
         name,
-        version: None,
+        version: Version::new(0, 0, 0),
         description: None,
         kind,
         mast,
         manifest,
         sections,
-    }
+    })
 }

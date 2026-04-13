@@ -6,11 +6,11 @@ use core::fmt;
 
 use miden_assembly::{
     Library, Path, PathBuf,
-    ast::InvocationTarget,
+    ast::{InvocationTarget, ProcedureName},
     library::{LibraryExport, ProcedureExport},
 };
 use miden_core::{Word, program::Program};
-use miden_mast_package::{MastArtifact, Package};
+use miden_mast_package::{Package, TargetType};
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
@@ -77,6 +77,54 @@ pub struct Rodata {
     /// The raw binary data for this segment
     pub data: Arc<ConstantData>,
 }
+
+/// The assembled MAST artifact produced by codegen before packaging.
+pub enum MastArtifact {
+    Executable(Arc<Program>),
+    Library(Arc<Library>),
+}
+
+impl MastArtifact {
+    pub fn digest(&self) -> Word {
+        match self {
+            Self::Executable(program) => program.hash(),
+            Self::Library(library) => *library.digest(),
+        }
+    }
+
+    pub fn target_type(&self) -> TargetType {
+        match self {
+            Self::Executable(_) => TargetType::Executable,
+            Self::Library(_) => TargetType::Library,
+        }
+    }
+
+    pub fn into_library(self) -> Result<Arc<Library>, Report> {
+        match self {
+            Self::Executable(program) => executable_package_library(program),
+            Self::Library(library) => Ok(library),
+        }
+    }
+}
+
+fn executable_package_library(program: Arc<Program>) -> Result<Arc<Library>, Report> {
+    if !program.kernel().is_empty() {
+        return Err(Report::msg("cannot package executable with a non-empty embedded kernel"));
+    }
+
+    let entry_path: Arc<Path> = Path::exec_path().join(ProcedureName::MAIN_PROC_NAME).into();
+    let entrypoint = LibraryExport::Procedure(ProcedureExport {
+        node: program.entrypoint(),
+        path: entry_path.clone(),
+        signature: None,
+        attributes: Default::default(),
+    });
+
+    Library::new(program.mast_forest().clone(), BTreeMap::from_iter([(entry_path, entrypoint)]))
+        .map(Arc::new)
+        .into_diagnostic()
+}
+
 impl fmt::Debug for Rodata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Rodata")
