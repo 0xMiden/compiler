@@ -2,6 +2,9 @@
 unsafe extern "C" {
     #[link_name = "intrinsics::debug::break"]
     fn extern_break();
+
+    #[link_name = "intrinsics::debug::println"]
+    fn extern_println(ptr: *const u8, len: usize);
 }
 
 /// Sets a breakpoint in the emitted Miden Assembly at the point this function is called.
@@ -11,6 +14,15 @@ unsafe extern "C" {
 pub fn breakpoint() {
     unsafe {
         extern_break();
+    }
+}
+
+/// Prints the string pointed to by `ptr` in the debug executor.
+#[inline(always)]
+#[cfg(all(target_family = "wasm", miden))]
+pub fn println(ptr: *const u8, len: usize) {
+    unsafe {
+        extern_println(ptr, len);
     }
 }
 

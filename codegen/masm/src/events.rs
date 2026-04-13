@@ -11,8 +11,13 @@ pub const TRACE_FRAME_START: u32 = 0xf0;
 /// The mnemonic here is F = frame, C = close
 pub const TRACE_FRAME_END: u32 = 0xfc;
 
-/// TODO add doc comment
-pub const TRACE_PRINT_LN: u32 = 42;
+/// This event is emitted via `trace`, and indicates that a line should be printed.
+///
+/// The bytes representing the string are expected in memory. The executor reads the start address
+/// and length from the operand stack.
+///
+/// The mnemonic here is ASCII `PLN`.
+pub const TRACE_PRINT_LN: u32 = 0x50_4c_4e;
 
 /// A typed wrapper around the raw trace events known to the compiler
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
