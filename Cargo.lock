@@ -2642,6 +2642,7 @@ dependencies = [
 [[package]]
 name = "miden-debug"
 version = "0.6.1"
+source = "git+https://github.com/0xMiden/miden-debug.git?branch=mooori%2Fprint-via-trace#17f1dd4d9e5512364d0d878ba679566d61189f9d"
 dependencies = [
  "clap",
  "crossterm",
@@ -2680,6 +2681,7 @@ dependencies = [
 [[package]]
 name = "miden-debug-dap"
 version = "0.6.1"
+source = "git+https://github.com/0xMiden/miden-debug.git?branch=mooori%2Fprint-via-trace#17f1dd4d9e5512364d0d878ba679566d61189f9d"
 dependencies = [
  "serde",
  "serde_json",
@@ -2689,6 +2691,7 @@ dependencies = [
 [[package]]
 name = "miden-debug-engine"
 version = "0.6.1"
+source = "git+https://github.com/0xMiden/miden-debug.git?branch=mooori%2Fprint-via-trace#17f1dd4d9e5512364d0d878ba679566d61189f9d"
 dependencies = [
  "clap",
  "glob",
