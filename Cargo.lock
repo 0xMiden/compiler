@@ -3468,6 +3468,7 @@ dependencies = [
  "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
+ "midenc-dialect-debuginfo",
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",

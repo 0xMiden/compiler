@@ -5,6 +5,7 @@ use alloc::{
 
 use midenc_dialect_arith as arith;
 use midenc_dialect_cf as cf;
+use midenc_dialect_debuginfo as debuginfo;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
@@ -103,6 +104,13 @@ impl Eval for ub::Unreachable {
             span: self.span(),
             reason: "control reached an unreachable program point".to_string(),
         })
+    }
+}
+
+// Debug info operations are purely observational and have no runtime semantics.
+impl Eval for debuginfo::DebugValue {
+    fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        Ok(ControlFlowEffect::None)
     }
 }
 
