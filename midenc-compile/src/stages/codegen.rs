@@ -20,6 +20,8 @@ pub struct CodegenOutput {
     pub link_packages: BTreeMap<Symbol, Arc<Package>>,
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// The serialized debug sections (types, sources, functions)
+    pub debug_info_bytes: Option<(Vec<u8>, Vec<u8>, Vec<u8>)>,
 }
 
 /// Perform code generation on the possibly-linked output of previous stages
@@ -73,11 +75,38 @@ impl Stage for CodegenStage {
             session.emit(OutputMode::Text, masm_component.as_ref()).into_diagnostic()?;
         }
 
+        // Build debug info sections if debug decorators are enabled
+        let debug_info_bytes = if session.options.emit_debug_decorators() {
+            use miden_core::serde::Serializable;
+
+            log::debug!("collecting debug info for debug sections");
+            let debug_sections =
+                crate::debug_info::build_debug_info_sections(&component.borrow(), true);
+            debug_sections.map(|sections| {
+                let mut types_bytes = alloc::vec::Vec::new();
+                sections.types.write_into(&mut types_bytes);
+                let mut sources_bytes = alloc::vec::Vec::new();
+                sections.sources.write_into(&mut sources_bytes);
+                let mut functions_bytes = alloc::vec::Vec::new();
+                sections.functions.write_into(&mut functions_bytes);
+                log::debug!(
+                    "built debug sections: types={} sources={} functions={} bytes",
+                    types_bytes.len(),
+                    sources_bytes.len(),
+                    functions_bytes.len(),
+                );
+                (types_bytes, sources_bytes, functions_bytes)
+            })
+        } else {
+            None
+        };
+
         Ok(CodegenOutput {
             component: Arc::from(masm_component),
             link_libraries,
             link_packages,
             account_component_metadata_bytes: linker_output.account_component_metadata_bytes,
+            debug_info_bytes,
         })
     }
 }

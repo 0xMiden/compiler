@@ -83,8 +83,11 @@ pub use midenc_session::diagnostics;
 
 pub use self::{
     attributes::{
-        Attribute, AttributeName, AttributeRef, AttributeRegistration, NamedAttribute,
-        NamedAttributeList,
+        Attribute, AttributeName, AttributeRef, AttributeRegistration, AttributeValue,
+        DICompileUnit, DICompileUnitAttr, DIExpression, DIExpressionAttr, DIExpressionOp,
+        DILocalVariable, DILocalVariableAttr, DISubprogram, DISubprogramAttr, NamedAttribute,
+        NamedAttributeList, decode_frame_base_local_index, decode_frame_base_local_offset,
+        encode_frame_base_local_index, encode_frame_base_local_offset,
     },
     dialects::builtin::attributes::{Location, Overflow, Visibility, version},
     direction::{Backward, Direction, Forward},

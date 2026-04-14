@@ -1,4 +1,4 @@
-use alloc::{string::ToString, vec, vec::Vec};
+use alloc::{string::ToString, vec::Vec};
 
 use miden_mast_package::{
     Dependency, Package, PackageManifest, Section, SectionId, TargetType, Version,
@@ -81,13 +81,25 @@ fn build_package(
         .expect("package dependencies should be unique");
 
     let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
+    let debug_info_bytes = outputs.debug_info_bytes.clone();
 
-    let sections = match account_component_metadata_bytes {
-        Some(bytes) => {
-            vec![Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes)]
-        }
-        None => vec![],
-    };
+    let mut sections = Vec::new();
+
+    if let Some(bytes) = account_component_metadata_bytes {
+        sections.push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes));
+    }
+
+    if let Some((types_bytes, sources_bytes, functions_bytes)) = debug_info_bytes {
+        log::debug!(
+            "adding debug sections to package (types={} sources={} functions={} bytes)",
+            types_bytes.len(),
+            sources_bytes.len(),
+            functions_bytes.len(),
+        );
+        sections.push(Section::new(SectionId::DEBUG_TYPES, types_bytes));
+        sections.push(Section::new(SectionId::DEBUG_SOURCES, sources_bytes));
+        sections.push(Section::new(SectionId::DEBUG_FUNCTIONS, functions_bytes));
+    }
 
     Package {
         name,

@@ -1,23 +1,30 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, vec::Vec};
 use core::cell::RefCell;
+use std::path::Path;
 
-use cranelift_entity::SecondaryMap;
+use cranelift_entity::{EntityRef as _, SecondaryMap};
+use log::warn;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
+use midenc_dialect_debuginfo::DebugInfoOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
-    BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
+    BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
     OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Type, ValueRef,
     dialects::builtin::{
         BuiltinOpBuilder, FunctionBuilder, FunctionRef,
         attributes::{LocalVariable, Signature},
     },
+    interner::Symbol,
     traits::{BranchOpInterface, Terminator},
 };
 
-use crate::ssa::{SSABuilder, SideEffects, Variable};
+use crate::{
+    module::debug_info::{FunctionDebugInfo, LocationScheduleEntry},
+    ssa::{SSABuilder, SideEffects, Variable},
+};
 
 /// Tracking variables and blocks for SSA construction.
 pub struct FunctionBuilderContext {
@@ -127,6 +134,14 @@ impl Listener for SSABuilderListener {
 pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
     inner: FunctionBuilder<'c, B>,
     func_ctx: Rc<RefCell<FunctionBuilderContext>>,
+    debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
+    param_values: Vec<(Variable, ValueRef)>,
+    param_dbg_emitted: bool,
+    /// Set of variables that have been defined via def_var. Used by
+    /// apply_location_schedule to avoid calling try_use_var on undefined
+    /// variables, which would insert block parameters as a side effect and
+    /// corrupt the CFG.
+    defined_vars: alloc::collections::BTreeSet<u32>,
 }
 
 impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
@@ -136,11 +151,193 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
 
         let inner = FunctionBuilder::new(func, builder);
 
-        Self { inner, func_ctx }
+        Self {
+            inner,
+            func_ctx,
+            debug_info: None,
+            param_values: Vec::new(),
+            param_dbg_emitted: false,
+            defined_vars: alloc::collections::BTreeSet::new(),
+        }
     }
 }
 
 impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
+    const DI_COMPILE_UNIT_ATTR: &'static str = "di.compile_unit";
+    const DI_SUBPROGRAM_ATTR: &'static str = "di.subprogram";
+
+    pub fn set_debug_metadata(&mut self, info: Rc<RefCell<FunctionDebugInfo>>) {
+        self.debug_info = Some(info);
+        self.param_dbg_emitted = false;
+        self.refresh_function_debug_attrs();
+    }
+
+    pub fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
+        let Some(info) = self.debug_info.as_ref() else {
+            return;
+        };
+        let idx = var.index();
+        let (attr_opt, expr_opt) = {
+            let info = info.borrow();
+            let local_info = info.locals.get(idx).and_then(|l| l.as_ref());
+            match local_info {
+                Some(l) => (Some(l.attr.clone()), l.expression.clone()),
+                None => (None, None),
+            }
+        };
+        let Some(mut attr) = attr_opt else {
+            return;
+        };
+
+        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+            attr.file = file_symbol;
+            if line != 0 {
+                attr.line = line;
+            }
+            attr.column = column;
+        }
+
+        // If DWARF didn't provide a location expression, synthesize one from the
+        // wasm local index — we know this variable is stored as a wasm local.
+        let expr = expr_opt.or_else(|| {
+            let ops = vec![midenc_hir::DIExpressionOp::WasmLocal(idx as u32)];
+            Some(midenc_hir::DIExpression::with_ops(ops))
+        });
+
+        if let Err(err) =
+            DebugInfoOpBuilder::builder_mut(self).debug_value_with_expr(value, attr, expr, span)
+        {
+            warn!("failed to emit dbg.value for local {idx}: {err:?}");
+        }
+    }
+
+    pub fn def_var_with_dbg(&mut self, var: Variable, val: ValueRef, span: SourceSpan) {
+        self.def_var(var, val);
+        self.emit_dbg_value_for_var(var, val, span);
+    }
+
+    pub fn register_parameter(&mut self, var: Variable, value: ValueRef) {
+        self.param_values.push((var, value));
+    }
+
+    pub fn record_debug_span(&mut self, span: SourceSpan) {
+        if span == SourceSpan::UNKNOWN {
+            return;
+        }
+        let Some(info_rc) = self.debug_info.as_ref() else {
+            return;
+        };
+
+        if let Some((file_symbol, directory_symbol, line, column)) = self.span_to_location(span) {
+            {
+                let mut info = info_rc.borrow_mut();
+                info.compile_unit.file = file_symbol;
+                info.compile_unit.directory = directory_symbol;
+                info.subprogram.file = file_symbol;
+                info.subprogram.line = line;
+                info.subprogram.column = column;
+                info.function_span.get_or_insert(span);
+            }
+            self.refresh_function_debug_attrs();
+            self.emit_parameter_dbg_if_needed(span);
+        }
+    }
+
+    pub fn apply_location_schedule(&mut self, offset: u64, span: SourceSpan) {
+        let Some(info_rc) = self.debug_info.as_ref() else {
+            return;
+        };
+
+        let updates = {
+            let mut info = info_rc.borrow_mut();
+            let mut pending = Vec::new();
+            while info.next_location_event < info.location_schedule.len() {
+                let entry = &info.location_schedule[info.next_location_event];
+                if entry.offset > offset {
+                    break;
+                }
+                pending.push(entry.clone());
+                info.next_location_event += 1;
+            }
+            pending
+        };
+
+        for entry in updates {
+            self.emit_scheduled_dbg_value(entry, span);
+        }
+    }
+
+    fn emit_scheduled_dbg_value(&mut self, entry: LocationScheduleEntry, span: SourceSpan) {
+        use crate::module::debug_info::VariableStorage;
+
+        // Skip variables already emitted as parameters to avoid duplicates.
+        if self.param_dbg_emitted
+            && self.param_values.iter().any(|(v, _)| v.index() == entry.var_index)
+        {
+            return;
+        }
+
+        // Only emit debug values for variables that have already been defined.
+        // Calling try_use_var on an undefined variable would insert block
+        // parameters (phis) as a side effect, corrupting the CFG.
+        let is_frame_base = matches!(&entry.storage, VariableStorage::FrameBase { .. });
+        if !is_frame_base && !self.defined_vars.contains(&(entry.var_index as u32)) {
+            return;
+        }
+
+        let var = Variable::new(entry.var_index);
+        let value = match self.try_use_var(var) {
+            Ok(v) => v,
+            Err(_) => {
+                if is_frame_base {
+                    // FrameBase-only variables have no WASM local, so no SSA value
+                    // exists for them. The debuginfo.value op requires an SSA operand,
+                    // so we attach an existing parameter value as an anchor. The MASM
+                    // lowering ignores this operand when the DIExpression contains
+                    // FrameBase — the location is fully described by the expression.
+                    if let Some((_, v)) = self.param_values.first() {
+                        let anchor = *v;
+                        self.def_var(var, anchor);
+                        anchor
+                    } else {
+                        warn!(
+                            "cannot track FrameBase variable (index {}): no SSA value available \
+                             (function has no parameters)",
+                            entry.var_index
+                        );
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
+        };
+
+        // Create expression from the scheduled location
+        let expression = {
+            let ops = vec![entry.storage.to_expression_op()];
+            Some(midenc_hir::DIExpression::with_ops(ops))
+        };
+
+        let Some(info) = self.debug_info.as_ref() else {
+            return;
+        };
+        let idx = entry.var_index;
+        let attr_opt = {
+            let info = info.borrow();
+            info.local_attr(idx).cloned()
+        };
+        let Some(attr) = attr_opt else {
+            return;
+        };
+
+        if let Err(err) = DebugInfoOpBuilder::builder_mut(self)
+            .debug_value_with_expr(value, attr, expression, span)
+        {
+            warn!("failed to emit scheduled dbg.value for local {idx}: {err:?}");
+        }
+    }
+
     pub fn name(&self) -> Ident {
         *self.inner.func.borrow().get_name()
     }
@@ -308,6 +505,19 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         local
     }
 
+    /// Declare an SSA variable without allocating an HIR local.
+    ///
+    /// Used for FrameBase-only debug variables that live in linear memory
+    /// and don't need a real function-local storage slot. This avoids
+    /// inflating `num_locals` which would corrupt FMP offset calculations.
+    pub fn declare_var_only(&mut self, var: Variable, ty: Type) {
+        let mut ctx = self.func_ctx.borrow_mut();
+        if ctx.types[var] != Type::Unknown {
+            return; // Already declared
+        }
+        ctx.types[var] = ty;
+    }
+
     /// Declares the type of a variable, so that it can be used later (by calling
     /// [`FunctionBuilderExt::use_var`]). This function will return an error if the variable
     /// has been previously declared.
@@ -367,12 +577,16 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     /// an error if the value supplied does not match the type the variable was
     /// declared to have.
     pub fn try_def_var(&mut self, var: Variable, val: ValueRef) -> Result<(), DefVariableError> {
-        let mut func_ctx = self.func_ctx.borrow_mut();
-        let var_ty = func_ctx.types.get(var).ok_or(DefVariableError::DefinedBeforeDeclared(var))?;
-        if var_ty != val.borrow().ty() {
-            return Err(DefVariableError::TypeMismatch(var, val));
+        {
+            let mut func_ctx = self.func_ctx.borrow_mut();
+            let var_ty =
+                func_ctx.types.get(var).ok_or(DefVariableError::DefinedBeforeDeclared(var))?;
+            if var_ty != val.borrow().ty() {
+                return Err(DefVariableError::TypeMismatch(var, val));
+            }
+            func_ctx.ssa.def_var(var, val, self.inner.current_block());
         }
-        func_ctx.ssa.def_var(var, val, self.inner.current_block());
+        self.defined_vars.insert(var.index() as u32);
         Ok(())
     }
 
@@ -437,6 +651,59 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         inst_branch.change_branch_destination(old_block, new_block);
         self.func_ctx.borrow_mut().ssa.declare_block_predecessor(new_block, branch_inst);
     }
+
+    fn refresh_function_debug_attrs(&mut self) {
+        let Some(info) = self.debug_info.as_ref() else {
+            return;
+        };
+        let info = info.borrow();
+        let context = self.inner.builder().context_rc();
+        let cu_attr = context
+            .create_attribute::<midenc_hir::DICompileUnitAttr, _>(info.compile_unit.clone())
+            .as_attribute_ref();
+        let sp_attr = context
+            .create_attribute::<midenc_hir::DISubprogramAttr, _>(info.subprogram.clone())
+            .as_attribute_ref();
+        let mut func = self.inner.func.borrow_mut();
+        let op = func.as_operation_mut();
+        op.set_attribute(Self::DI_COMPILE_UNIT_ATTR, cu_attr);
+        op.set_attribute(Self::DI_SUBPROGRAM_ATTR, sp_attr);
+    }
+
+    fn emit_parameter_dbg_if_needed(&mut self, span: SourceSpan) {
+        if self.param_dbg_emitted {
+            return;
+        }
+        self.param_dbg_emitted = true;
+        let params: Vec<_> = self.param_values.to_vec();
+        for (var, value) in &params {
+            self.emit_dbg_value_for_var(*var, *value, span);
+        }
+        // FrameBase-only variables (e.g. local `sum`) are emitted solely via
+        // the location schedule in apply_location_schedule/emit_scheduled_dbg_value,
+        // avoiding duplicate DebugVar emissions.
+    }
+
+    fn span_to_location(
+        &self,
+        span: SourceSpan,
+    ) -> Option<(Symbol, Option<Symbol>, u32, Option<u32>)> {
+        if span == SourceSpan::UNKNOWN {
+            return None;
+        }
+
+        let context = self.inner.builder().context();
+        let session = context.session();
+        let source_file = session.source_manager.get(span.source_id()).ok()?;
+        let uri = source_file.uri().as_str();
+        let path = Path::new(uri);
+        let file_symbol = Symbol::intern(uri);
+        let directory_symbol = path.parent().and_then(|parent| parent.to_str()).map(Symbol::intern);
+        let location = source_file.location(span);
+        let line = location.line.to_u32();
+        let column = location.column.to_u32();
+        Some((file_symbol, directory_symbol, line, Some(column)))
+    }
 }
 
 impl<'f, B: ?Sized + Builder> ArithOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
@@ -488,6 +755,18 @@ impl<'f, B: ?Sized + Builder> WasmOpBuilder<'f, B> for FunctionBuilderExt<'f, B>
 }
 
 impl<'f, B: ?Sized + Builder> BuiltinOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+    #[inline(always)]
+    fn builder(&self) -> &B {
+        self.inner.builder()
+    }
+
+    #[inline(always)]
+    fn builder_mut(&mut self) -> &mut B {
+        self.inner.builder_mut()
+    }
+}
+
+impl<'f, B: ?Sized + Builder> DebugInfoOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
     #[inline(always)]
     fn builder(&self) -> &B {
         self.inner.builder()

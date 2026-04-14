@@ -86,6 +86,9 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(arg)
     }
 
+    // Note: dbg_value / dbg_value_with_expr have moved to DebugInfoOpBuilder
+    // in the midenc-dialect-debuginfo crate. Use debug_value / debug_value_with_expr there.
+
     fn builder(&self) -> &B;
     fn builder_mut(&mut self) -> &mut B;
 }

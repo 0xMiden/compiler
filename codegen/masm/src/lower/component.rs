@@ -1,10 +1,12 @@
-use alloc::{collections::BTreeSet, sync::Arc};
+use alloc::{collections::BTreeSet, sync::Arc, vec::Vec};
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
+use miden_core::operations::DebugVarLocation;
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
-    diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager,
+    decode_frame_base_local_index, diagnostics::IntoDiagnostic, dialects::builtin,
+    encode_frame_base_local_offset, pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::{
@@ -646,6 +648,33 @@ impl MasmFunctionBuilder {
             num_locals,
         } = self;
 
+        // Align num_locals to WORD_SIZE, matching the assembler's FMP frame sizing.
+        // num_locals already counts all HIR locals (including those allocated for params).
+        // The assembler rounds up to next_multiple_of(WORD_SIZE) when advancing FMP
+        // (see fmp.rs fmp_start_frame_sequence and mem_ops.rs locaddr), so we must use
+        // the same alignment for debug var offset computation.
+        let aligned_num_locals = num_locals.next_multiple_of(miden_core::WORD_SIZE as u16);
+
+        // Resolve FrameBase global_index → Miden memory address.
+        // Use the stack pointer offset from the linker's global layout.
+        let stack_pointer_addr = link_info.globals_layout().stack_pointer_offset();
+
+        // Patch DebugVar Local locations to compute FMP offset.
+        // During lowering, Local(idx) stores the raw WASM local index.
+        // Now convert to FMP offset: idx - aligned_num_locals
+        // This matches locaddr.N which computes -(aligned_num_locals - N).
+        patch_debug_var_locals_in_block(&mut body, aligned_num_locals, stack_pointer_addr);
+
+        // Strip DebugVar-only procedure bodies.
+        // The Miden assembler rejects procedures whose bodies contain only decorators
+        // (like DebugVar) and no real instructions, because decorators don't affect
+        // MAST digests — two empty procedures with different decorators would be
+        // indistinguishable. If there are no real instructions, the debug info is
+        // meaningless anyway, so just drop it.
+        if !block_has_real_instructions(&body) {
+            body = masm::Block::new(body.span(), vec![]);
+        }
+
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
         if function.has_attribute("auth_script") {
@@ -656,5 +685,93 @@ impl MasmFunctionBuilder {
         procedure.extend_invoked(invoked);
 
         Ok(procedure)
+    }
+}
+
+/// Returns true if the block contains at least one real (non-decorator) instruction.
+///
+/// DebugVar instructions are decorator-only and don't produce MAST nodes. If a procedure
+/// body contains only DebugVar ops, the assembler will reject it.
+fn block_has_real_instructions(block: &masm::Block) -> bool {
+    block.iter().any(|op| match op {
+        masm::Op::Inst(inst) => inst.has_textual_representation(),
+        masm::Op::If {
+            then_blk, else_blk, ..
+        } => block_has_real_instructions(then_blk) || block_has_real_instructions(else_blk),
+        masm::Op::While { body, .. } => block_has_real_instructions(body),
+        masm::Op::Repeat { body, .. } => block_has_real_instructions(body),
+    })
+}
+
+/// Recursively patch DebugVar locations in a block.
+///
+/// Converts `Local(idx)` where idx is the raw WASM local index to `Local(offset)`
+/// where offset = idx - aligned_num_locals (the FMP-relative offset, typically negative).
+/// This matches the assembler's `locaddr.N` formula: `FMP - aligned_num_locals + N`.
+///
+/// Also resolves `FrameBase { global_index, byte_offset }` by replacing the WASM
+/// global index with the resolved Miden memory address of the stack pointer.
+fn patch_debug_var_locals_in_block(
+    block: &mut masm::Block,
+    aligned_num_locals: u16,
+    stack_pointer_addr: Option<u32>,
+) {
+    for op in block.iter_mut() {
+        match op {
+            masm::Op::Inst(span_inst) => {
+                // Use DerefMut to get mutable access to the inner Instruction
+                if let masm::Instruction::DebugVar(info) = &mut **span_inst {
+                    if let DebugVarLocation::Local(idx) = info.value_location() {
+                        // Convert raw WASM local index to FMP offset
+                        let fmp_offset = *idx - (aligned_num_locals as i16);
+                        info.set_value_location(DebugVarLocation::Local(fmp_offset));
+                    } else if let DebugVarLocation::FrameBase {
+                        global_index,
+                        byte_offset,
+                    } = info.value_location()
+                    {
+                        let byte_offset = *byte_offset;
+                        if let Some(local_index) = decode_frame_base_local_index(*global_index) {
+                            if let Ok(local_index) = i16::try_from(local_index) {
+                                let local_offset = local_index - (aligned_num_locals as i16);
+                                info.set_value_location(DebugVarLocation::FrameBase {
+                                    global_index: encode_frame_base_local_offset(local_offset),
+                                    byte_offset,
+                                });
+                            }
+                        } else {
+                            // Resolve FrameBase: replace WASM global index with
+                            // the Miden memory address of the stack pointer global.
+                            if let Some(resolved_addr) = stack_pointer_addr {
+                                info.set_value_location(DebugVarLocation::FrameBase {
+                                    global_index: resolved_addr,
+                                    byte_offset,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            masm::Op::If {
+                then_blk, else_blk, ..
+            } => {
+                patch_debug_var_locals_in_block(then_blk, aligned_num_locals, stack_pointer_addr);
+                patch_debug_var_locals_in_block(else_blk, aligned_num_locals, stack_pointer_addr);
+            }
+            masm::Op::While {
+                body: while_body, ..
+            } => {
+                patch_debug_var_locals_in_block(while_body, aligned_num_locals, stack_pointer_addr);
+            }
+            masm::Op::Repeat {
+                body: repeat_body, ..
+            } => {
+                patch_debug_var_locals_in_block(
+                    repeat_body,
+                    aligned_num_locals,
+                    stack_pointer_addr,
+                );
+            }
+        }
     }
 }

@@ -24,6 +24,7 @@ indexmap = "2.7"
 log.workspace = true
 miden-core.workspace = true
 midenc-hir.workspace = true
+midenc-dialect-debuginfo.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-cf.workspace = true
 midenc-dialect-ub.workspace = true
