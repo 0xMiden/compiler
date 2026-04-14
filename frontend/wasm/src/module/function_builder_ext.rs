@@ -137,6 +137,11 @@ pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
     debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
     param_values: Vec<(Variable, ValueRef)>,
     param_dbg_emitted: bool,
+    /// Set of variables that have been defined via def_var. Used by
+    /// apply_location_schedule to avoid calling try_use_var on undefined
+    /// variables, which would insert block parameters as a side effect and
+    /// corrupt the CFG.
+    defined_vars: alloc::collections::BTreeSet<u32>,
 }
 
 impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
@@ -152,6 +157,7 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
             debug_info: None,
             param_values: Vec::new(),
             param_dbg_emitted: false,
+            defined_vars: alloc::collections::BTreeSet::new(),
         }
     }
 }
@@ -271,11 +277,19 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         }
 
+        // Only emit debug values for variables that have already been defined.
+        // Calling try_use_var on an undefined variable would insert block
+        // parameters (phis) as a side effect, corrupting the CFG.
+        let is_frame_base = matches!(&entry.storage, VariableStorage::FrameBase { .. });
+        if !is_frame_base && !self.defined_vars.contains(&(entry.var_index as u32)) {
+            return;
+        }
+
         let var = Variable::new(entry.var_index);
         let value = match self.try_use_var(var) {
             Ok(v) => v,
             Err(_) => {
-                if matches!(&entry.storage, VariableStorage::FrameBase { .. }) {
+                if is_frame_base {
                     // FrameBase-only variables have no WASM local, so no SSA value
                     // exists for them. The debuginfo.value op requires an SSA operand,
                     // so we attach an existing parameter value as an anchor. The MASM
@@ -571,12 +585,16 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     /// an error if the value supplied does not match the type the variable was
     /// declared to have.
     pub fn try_def_var(&mut self, var: Variable, val: ValueRef) -> Result<(), DefVariableError> {
-        let mut func_ctx = self.func_ctx.borrow_mut();
-        let var_ty = func_ctx.types.get(var).ok_or(DefVariableError::DefinedBeforeDeclared(var))?;
-        if var_ty != val.borrow().ty() {
-            return Err(DefVariableError::TypeMismatch(var, val));
+        {
+            let mut func_ctx = self.func_ctx.borrow_mut();
+            let var_ty =
+                func_ctx.types.get(var).ok_or(DefVariableError::DefinedBeforeDeclared(var))?;
+            if var_ty != val.borrow().ty() {
+                return Err(DefVariableError::TypeMismatch(var, val));
+            }
+            func_ctx.ssa.def_var(var, val, self.inner.current_block());
         }
-        func_ctx.ssa.def_var(var, val, self.inner.current_block());
+        self.defined_vars.insert(var.index() as u32);
         Ok(())
     }
 
