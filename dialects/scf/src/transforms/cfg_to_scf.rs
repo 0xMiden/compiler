@@ -847,8 +847,7 @@ mod tests {
         use midenc_dialect_debuginfo::{DebugInfoDialect, DebugInfoOpBuilder};
         use midenc_hir::{DILocalVariable, interner::Symbol};
 
-        let mut test =
-            Test::new("cfg_to_scf_debug_value_preservation", &[Type::U32], &[Type::U32]);
+        let mut test = Test::new("cfg_to_scf_debug_value_preservation", &[Type::U32], &[Type::U32]);
         test.context().get_or_register_dialect::<DebugInfoDialect>();
 
         let span = SourceSpan::default();
