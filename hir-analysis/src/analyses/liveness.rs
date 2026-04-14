@@ -22,6 +22,14 @@ use crate::{
 /// The distance penalty applied to an edge which exits a loop
 pub const LOOP_EXIT_DISTANCE: u32 = 100_000;
 
+/// Returns `true` if the operation belongs to the debuginfo dialect.
+///
+/// Debug info ops (debuginfo.debug_value, etc.) are purely observational — their
+/// operands are not real uses and must not keep values alive.
+fn is_debug_info_op(op: &Operation) -> bool {
+    op.name().dialect().as_str() == "debuginfo"
+}
+
 /// This analysis computes what values are live, and the distance to next use, for all program
 /// points in the given operation. It computes both live-in and live-out sets, in order to answer
 /// liveness questions about the state of the program at an operation, as well as questions about
@@ -360,9 +368,15 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
             temp_live_in.remove(result);
         }
 
-        // Set the next-use distance of any operands to 0
-        for operand in op.operands().all().iter() {
-            temp_live_in.insert(operand.borrow().as_value_ref(), 0);
+        // Set the next-use distance of any operands to 0.
+        // Skip debug info ops: their operands are observational metadata and must
+        // not keep values alive, otherwise scf.if branches can end up with
+        // mismatched operand-stack sizes when one branch has a real use and the
+        // other only a debug use.
+        if !is_debug_info_op(op) {
+            for operand in op.operands().all().iter() {
+                temp_live_in.insert(operand.borrow().as_value_ref(), 0);
+            }
         }
 
         // Determine if the state has changed, if so, then overwrite `live_in` with what we've
