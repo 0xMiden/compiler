@@ -5,7 +5,8 @@ use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use miden_core::operations::DebugVarLocation;
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
-    diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager,
+    decode_frame_base_local_index, diagnostics::IntoDiagnostic, dialects::builtin,
+    encode_frame_base_local_offset, pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::{
@@ -724,17 +725,29 @@ fn patch_debug_var_locals_in_block(
                         // Convert raw WASM local index to FMP offset
                         let fmp_offset = *idx - (aligned_num_locals as i16);
                         info.set_value_location(DebugVarLocation::Local(fmp_offset));
-                    } else if let DebugVarLocation::FrameBase { byte_offset, .. } =
-                        info.value_location()
+                    } else if let DebugVarLocation::FrameBase {
+                        global_index,
+                        byte_offset,
+                    } = info.value_location()
                     {
-                        // Resolve FrameBase: replace WASM global index with
-                        // the Miden memory address of the stack pointer global.
-                        if let Some(resolved_addr) = stack_pointer_addr {
-                            let byte_offset = *byte_offset;
-                            info.set_value_location(DebugVarLocation::FrameBase {
-                                global_index: resolved_addr,
-                                byte_offset,
-                            });
+                        let byte_offset = *byte_offset;
+                        if let Some(local_index) = decode_frame_base_local_index(*global_index) {
+                            if let Ok(local_index) = i16::try_from(local_index) {
+                                let local_offset = local_index - (aligned_num_locals as i16);
+                                info.set_value_location(DebugVarLocation::FrameBase {
+                                    global_index: encode_frame_base_local_offset(local_offset),
+                                    byte_offset,
+                                });
+                            }
+                        } else {
+                            // Resolve FrameBase: replace WASM global index with
+                            // the Miden memory address of the stack pointer global.
+                            if let Some(resolved_addr) = stack_pointer_addr {
+                                info.set_value_location(DebugVarLocation::FrameBase {
+                                    global_index: resolved_addr,
+                                    byte_offset,
+                                });
+                            }
                         }
                     }
                 }

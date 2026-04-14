@@ -250,6 +250,39 @@ pub enum DIExpressionOp {
     Unsupported(Symbol),
 }
 
+/// High-bit marker used to carry a Wasm-local frame base through the existing
+/// `FrameBase { global_index, byte_offset }` debug-location shape without
+/// changing the VM-facing `DebugVarLocation` ABI.
+///
+/// Before MASM lowering completes, the low bits hold a raw Wasm local index.
+/// After local patching, the low 16 bits hold the signed FMP-relative offset of
+/// the Miden local containing the frame-base byte address.
+pub const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
+
+pub fn encode_frame_base_local_index(local_index: u32) -> Option<u32> {
+    if local_index < FRAME_BASE_LOCAL_MARKER {
+        Some(FRAME_BASE_LOCAL_MARKER | local_index)
+    } else {
+        None
+    }
+}
+
+pub fn decode_frame_base_local_index(encoded: u32) -> Option<u32> {
+    (encoded & FRAME_BASE_LOCAL_MARKER != 0).then_some(encoded & !FRAME_BASE_LOCAL_MARKER)
+}
+
+pub fn encode_frame_base_local_offset(local_offset: i16) -> u32 {
+    FRAME_BASE_LOCAL_MARKER | u16::from_le_bytes(local_offset.to_le_bytes()) as u32
+}
+
+pub fn decode_frame_base_local_offset(encoded: u32) -> Option<i16> {
+    if encoded & FRAME_BASE_LOCAL_MARKER == 0 {
+        return None;
+    }
+    let low_bits = (encoded & 0xffff) as u16;
+    Some(i16::from_le_bytes(low_bits.to_le_bytes()))
+}
+
 /// Represents a DWARF expression that describes how to compute or locate a variable's value
 #[derive(DialectAttribute, Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[attribute(dialect = BuiltinDialect, implements(AttrPrinter))]
@@ -308,7 +341,13 @@ impl PrettyPrint for DIExpression {
                 DIExpressionOp::FrameBase {
                     global_index,
                     byte_offset,
-                } => text(format!("DW_OP_fbreg global[{}]{:+}", global_index, byte_offset)),
+                } => {
+                    if let Some(local_index) = decode_frame_base_local_index(*global_index) {
+                        text(format!("DW_OP_fbreg local[{}]{:+}", local_index, byte_offset))
+                    } else {
+                        text(format!("DW_OP_fbreg global[{}]{:+}", global_index, byte_offset))
+                    }
+                }
                 DIExpressionOp::Unsupported(name) => text(name.as_str()),
             };
         }
