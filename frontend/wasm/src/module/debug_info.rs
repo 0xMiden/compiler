@@ -591,10 +591,10 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
         frame_base_global,
     };
 
-    if let Some(ref name) = maybe_name {
-        if let Some(&func_index) = func_by_name.get(name) {
-            return Some(make_info(func_index, low_pc.unwrap_or_default(), high_pc));
-        }
+    if let Some(ref name) = maybe_name
+        && let Some(&func_index) = func_by_name.get(name)
+    {
+        return Some(make_info(func_index, low_pc.unwrap_or_default(), high_pc));
     }
 
     if let Some(base) = low_pc
@@ -605,6 +605,7 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_subprogram_variables<R: gimli::Reader<Offset = usize>>(
     dwarf: &gimli::Dwarf<R>,
     unit: &gimli::Unit<R>,
@@ -637,6 +638,7 @@ fn collect_subprogram_variables<R: gimli::Reader<Offset = usize>>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
     dwarf: &gimli::Dwarf<R>,
     unit: &gimli::Unit<R>,
@@ -707,6 +709,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
     dwarf: &gimli::Dwarf<R>,
     unit: &gimli::Unit<R>,
@@ -808,19 +811,17 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                 let storage_expr = entry.data;
                 if let Some(storage) =
                     decode_storage_from_expression(&storage_expr, unit, frame_base_global)?
+                    && (storage.as_local().is_some()
+                        || matches!(&storage, VariableStorage::FrameBase { .. }))
                 {
-                    if storage.as_local().is_some()
-                        || matches!(&storage, VariableStorage::FrameBase { .. })
-                    {
-                        if matches!(&storage, VariableStorage::FrameBase { .. }) {
-                            has_frame_base = true;
-                        }
-                        locations.push(LocationDescriptor {
-                            start: entry.range.begin,
-                            end: Some(entry.range.end),
-                            storage,
-                        });
+                    if matches!(&storage, VariableStorage::FrameBase { .. }) {
+                        has_frame_base = true;
                     }
+                    locations.push(LocationDescriptor {
+                        start: entry.range.begin,
+                        end: Some(entry.range.end),
+                        storage,
+                    });
                 }
             }
             if locations.is_empty() {
