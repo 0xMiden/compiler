@@ -14,7 +14,7 @@ use std::{
 use clap::{Parser, ValueEnum};
 use miden_core::{
     mast::MastForest,
-    operations::DebugVarInfo,
+    operations::{DebugVarInfo, DebugVarLocation},
     serde::{Deserializable, SliceReader},
 };
 use miden_mast_package::{
@@ -33,6 +33,30 @@ enum Error {
     Parse(String),
     #[error("no debug_info section found in package")]
     NoDebugInfo,
+}
+
+const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
+
+fn decode_frame_base_local_offset(encoded: u32) -> Option<i16> {
+    if encoded & FRAME_BASE_LOCAL_MARKER == 0 {
+        return None;
+    }
+
+    let low_bits = (encoded & 0xffff) as u16;
+    Some(i16::from_le_bytes(low_bits.to_le_bytes()))
+}
+
+fn format_debug_var_location(location: &DebugVarLocation) -> String {
+    if let DebugVarLocation::FrameBase {
+        global_index,
+        byte_offset,
+    } = location
+        && let Some(offset) = decode_frame_base_local_offset(*global_index)
+    {
+        format!("frame_base(FMP{offset:+}){byte_offset:+}")
+    } else {
+        location.to_string()
+    }
 }
 
 /// Holds the three debug info sections with helper accessors.
@@ -662,7 +686,7 @@ fn print_locations(mast_forest: &MastForest, debug_sections: &DebugSections, ver
             print!("    [var#{}] ", var_idx);
 
             // Print value location
-            print!("{}", info.value_location());
+            print!("{}", format_debug_var_location(info.value_location()));
 
             // Print argument info if present
             if let Some(arg_idx) = info.arg_index() {

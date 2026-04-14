@@ -8,7 +8,7 @@ use gimli::{self, AttributeValue, read::Operation};
 use log::debug;
 use midenc_hir::{
     DICompileUnit, DIExpression, DIExpressionOp, DILocalVariable, DISubprogram, FxHashMap,
-    SourceSpan, interner::Symbol,
+    SourceSpan, encode_frame_base_local_index, interner::Symbol,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic};
 
@@ -34,7 +34,11 @@ pub enum VariableStorage {
     Global(u32),
     Stack(u32),
     ConstU64(u64),
-    /// Frame base (global index) + byte offset — from DW_OP_fbreg
+    /// Frame base + byte offset — from DW_OP_fbreg.
+    ///
+    /// For Wasm-global frame bases, `global_index` is the Wasm global index.
+    /// For Wasm-local frame bases, it is encoded with
+    /// `encode_frame_base_local_index`.
     FrameBase {
         global_index: u32,
         byte_offset: i64,
@@ -260,6 +264,8 @@ fn build_local_debug_info(
 
     let total = param_count + local_count;
     let mut locals = vec![None; total];
+    let has_dwarf_locals = dwarf_locals.is_some_and(|locals| !locals.is_empty())
+        || frame_base_vars.is_some_and(|locals| !locals.is_empty());
 
     for (param_idx, wasm_ty) in wasm_signature.params().iter().enumerate() {
         let index_u32 = param_idx as u32;
@@ -274,7 +280,7 @@ fn build_local_debug_info(
         }
         let mut attr =
             DILocalVariable::new(name_symbol, subprogram.file, subprogram.line, subprogram.column);
-        attr.arg_index = Some((param_idx + 1) as u32);
+        attr.arg_index = Some(param_idx as u32);
         if let Ok(ty) = ir_type(*wasm_ty, diagnostics) {
             attr.ty = Some(ty);
         }
@@ -311,9 +317,14 @@ fn build_local_debug_info(
         for _ in 0..count {
             let index_u32 = next_local_index as u32;
             let dwarf_entry = dwarf_locals.and_then(|map| map.get(&index_u32));
-            let mut name_symbol = module
-                .local_name(func_index, index_u32)
-                .unwrap_or_else(|| Symbol::intern(format!("local{next_local_index}")));
+            let local_name = module.local_name(func_index, index_u32);
+            if has_dwarf_locals && dwarf_entry.is_none() && local_name.is_none() {
+                next_local_index += 1;
+                continue;
+            }
+
+            let mut name_symbol =
+                local_name.unwrap_or_else(|| Symbol::intern(format!("local{next_local_index}")));
             if let Some(info) = dwarf_entry
                 && let Some(symbol) = info.name
             {
@@ -512,8 +523,9 @@ struct SubprogramInfo {
     func_index: FuncIndex,
     low_pc: u64,
     high_pc: Option<u64>,
-    /// The WASM global index used as the frame base (from DW_AT_frame_base).
-    /// Typically global 0 (__stack_pointer).
+    /// The encoded WASM location used as the frame base (from DW_AT_frame_base).
+    /// Plain values are Wasm globals; values encoded with
+    /// `encode_frame_base_local_index` are Wasm locals.
     frame_base_global: Option<u32>,
 }
 
@@ -562,20 +574,20 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
                 _ => {}
             },
             gimli::DW_AT_frame_base => {
-                // Decode the frame base expression to find which WASM global
-                // provides the base address (typically __stack_pointer = global 0).
-                // Only WASM globals are supported — downstream FrameBase resolution
-                // assumes the index refers to a global in the linker's layout.
+                // Decode the frame base expression. Rust-generated Wasm commonly
+                // uses a generated Wasm local as the frame pointer; globals are
+                // still supported for producers that use __stack_pointer directly.
                 if let AttributeValue::Exprloc(expr) = attr.value() {
                     let mut ops = expr.operations(unit.encoding());
                     while let Ok(Some(op)) = ops.next() {
-                        if let Operation::WasmLocal { .. } = op {
-                            debug!(
-                                "DW_AT_frame_base uses WASM local; only globals are supported — \
-                                 ignoring"
-                            );
-                        } else if let Operation::WasmGlobal { index } = op {
-                            frame_base_global = Some(index);
+                        match op {
+                            Operation::WasmLocal { index } => {
+                                frame_base_global = encode_frame_base_local_index(index);
+                            }
+                            Operation::WasmGlobal { index } => {
+                                frame_base_global = Some(index);
+                            }
+                            _ => {}
                         }
                     }
                 }
