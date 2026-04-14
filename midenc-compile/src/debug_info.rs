@@ -244,7 +244,7 @@ impl DebugInfoBuilder {
         let mut var_info = DebugVariableInfo::new(name_idx, type_idx, line, column);
 
         if let Some(arg_index) = var.arg_index {
-            var_info = var_info.with_arg_index(arg_index);
+            var_info = var_info.with_arg_index(arg_index + 1);
         }
 
         Some(var_info)

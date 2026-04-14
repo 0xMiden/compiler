@@ -327,17 +327,9 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             let info = info.borrow();
             info.local_attr(idx).cloned()
         };
-        let Some(mut attr) = attr_opt else {
+        let Some(attr) = attr_opt else {
             return;
         };
-
-        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
-            attr.file = file_symbol;
-            if line != 0 {
-                attr.line = line;
-            }
-            attr.column = column;
-        }
 
         if let Err(err) = DebugInfoOpBuilder::builder_mut(self)
             .debug_value_with_expr(value, attr, expression, span)
