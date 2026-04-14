@@ -845,22 +845,14 @@ mod tests {
     #[test]
     fn cfg_to_scf_debug_value_preservation() -> Result<(), Report> {
         use midenc_dialect_debuginfo::{DebugInfoDialect, DebugInfoOpBuilder};
-        use midenc_hir::DILocalVariable;
+        use midenc_hir::{DILocalVariable, interner::Symbol};
 
-        let context = Rc::new(Context::default());
-        context.get_or_register_dialect::<DebugInfoDialect>();
-        let mut builder = OpBuilder::new(context.clone());
+        let mut test =
+            Test::new("cfg_to_scf_debug_value_preservation", &[Type::U32], &[Type::U32]);
+        test.context().get_or_register_dialect::<DebugInfoDialect>();
 
         let span = SourceSpan::default();
-        let function = {
-            let builder = builder.create::<builtin::Function, (_, _)>(span);
-            let name = Ident::new("test".into(), span);
-            let signature = Signature::new([AbiParam::new(Type::U32)], [AbiParam::new(Type::U32)]);
-            builder(name, signature).unwrap()
-        };
-
-        // Define function body
-        let mut builder = FunctionBuilder::new(function, &mut builder);
+        let mut builder = test.function_builder();
 
         let if_is_zero = builder.create_block();
         let if_is_nonzero = builder.create_block();
@@ -877,19 +869,16 @@ mod tests {
 
         let zero = builder.u32(0, span);
         let is_zero = builder.eq(input, zero, span)?;
-        // Track the input variable
         builder.builder_mut().debug_value(input, input_var.clone(), span)?;
         builder.cond_br(is_zero, if_is_zero, [], if_is_nonzero, [], span)?;
 
         builder.switch_to_block(if_is_zero);
         let a = builder.incr(input, span)?;
-        // Track result in then-branch
         builder.builder_mut().debug_value(a, result_var.clone(), span)?;
         builder.br(exit_block, [a], span)?;
 
         builder.switch_to_block(if_is_nonzero);
         let b = builder.mul(input, input, span)?;
-        // Track result in else-branch
         builder.builder_mut().debug_value(b, result_var.clone(), span)?;
         builder.br(exit_block, [b], span)?;
 
@@ -899,19 +888,14 @@ mod tests {
         builder.builder_mut().debug_value(return_val, result_var.clone(), span)?;
         builder.ret(Some(return_val), span)?;
 
-        let operation = function.as_operation_ref();
+        let operation = test.function().as_operation_ref();
 
-        // Verify the input IR
         let input_ir = format!("{}", &operation.borrow());
         expect_file!["expected/cfg_to_scf_debug_value_preservation_before.hir"]
             .assert_eq(&input_ir);
 
-        // Run transformation
-        let mut pm = pass::PassManager::on::<builtin::Function>(context, pass::Nesting::Implicit);
-        pm.add_pass(Box::new(LiftControlFlowToSCF));
-        pm.run(operation)?;
+        test.apply_pass::<LiftControlFlowToSCF>(true)?;
 
-        // Verify that debug values survive with updated SSA operands
         let output = format!("{}", &operation.borrow());
         expect_file!["expected/cfg_to_scf_debug_value_preservation_after.hir"].assert_eq(&output);
 
