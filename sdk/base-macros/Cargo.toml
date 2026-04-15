@@ -22,7 +22,7 @@ semver.workspace = true
 toml.workspace = true
 syn.workspace = true
 heck.workspace = true
-midenc-hir.workspace = true
+miden-formatting.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
 wit-bindgen-core = "0.46"
 wit-bindgen-rust = { version = "0.46", default-features = false }

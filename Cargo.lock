@@ -2431,6 +2431,7 @@ dependencies = [
  "heck",
  "miden-field 0.22.6",
  "miden-field-repr",
+ "miden-formatting",
  "miden-protocol",
  "midenc-frontend-wasm-metadata",
  "proc-macro2",
