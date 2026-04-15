@@ -35,15 +35,27 @@ pub enum FrontendMetadata {
     },
 }
 
+/// Semantic kind of a protocol export selected by frontend metadata.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProtocolExportKind {
+    /// The export is the component's authentication procedure.
+    AuthScript,
+    /// The export is the component's note-script entrypoint.
+    NoteScript,
+}
+
 impl FrontendMetadata {
-    /// Returns true if `export_name` is the authentication export selected by frontend metadata.
-    pub fn is_auth_export(&self, export_name: &str) -> bool {
-        matches!(self, Self::AuthScript { export_name: marked_export_name, .. } if marked_export_name == export_name)
+    /// Returns the semantic kind of protocol export selected by this metadata entry.
+    pub fn protocol_export_kind(&self) -> ProtocolExportKind {
+        match self {
+            Self::AuthScript { .. } => ProtocolExportKind::AuthScript,
+            Self::NoteScript { .. } => ProtocolExportKind::NoteScript,
+        }
     }
 
-    /// Returns true if `export_name` is the note-script export selected by frontend metadata.
-    pub fn is_note_script_export(&self, export_name: &str) -> bool {
-        matches!(self, Self::NoteScript { export_name: marked_export_name, .. } if marked_export_name == export_name)
+    /// Returns the selected protocol-export kind when `export_name` matches the marked export.
+    pub fn protocol_export_kind_for(&self, export_name: &str) -> Option<ProtocolExportKind> {
+        (self.export_name() == export_name).then(|| self.protocol_export_kind())
     }
 
     /// Returns the Rust method path marked by this metadata entry.
@@ -103,5 +115,29 @@ mod tests {
 
             assert_eq!(FrontendMetadata::from_bytes(&bytes).unwrap(), metadata);
         }
+    }
+
+    /// Ensures protocol-export matching preserves the semantic export kind.
+    #[test]
+    fn frontend_metadata_matches_protocol_export_kind() {
+        let auth_metadata = FrontendMetadata::AuthScript {
+            method_path: "crate::auth::AuthComponent::authenticate".to_string(),
+            export_name: "auth".to_string(),
+        };
+        let note_metadata = FrontendMetadata::NoteScript {
+            method_path: "crate::notes::PaymentNote::execute".to_string(),
+            export_name: "note-script".to_string(),
+        };
+
+        assert_eq!(
+            auth_metadata.protocol_export_kind_for("auth"),
+            Some(ProtocolExportKind::AuthScript)
+        );
+        assert_eq!(auth_metadata.protocol_export_kind_for("other"), None);
+        assert_eq!(
+            note_metadata.protocol_export_kind_for("note-script"),
+            Some(ProtocolExportKind::NoteScript)
+        );
+        assert_eq!(note_metadata.protocol_export_kind_for("other"), None);
     }
 }

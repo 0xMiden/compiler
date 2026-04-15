@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
-use midenc_frontend_wasm_metadata::FrontendMetadata;
+use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
     self as hir2, BuilderExt, CallConv, Context, FunctionType, FxHashMap, FxHashSet, Ident,
     SymbolNameComponent, SymbolPath,
@@ -482,21 +482,17 @@ impl<'a> ComponentTranslator<'a> {
         let func_ty =
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
-        let is_auth_procedure = self
+        let protocol_export_kind: Option<ProtocolExportKind> = self
             .component_frontend_metadata
             .as_ref()
-            .is_some_and(|metadata| metadata.is_auth_export(name));
-        let is_note_script_export = self
-            .component_frontend_metadata
-            .as_ref()
-            .is_some_and(|metadata| metadata.is_note_script_export(name));
+            .and_then(|metadata| metadata.protocol_export_kind_for(name));
+
         generate_export_lifting_function(
             &mut self.result,
             name,
             func_ty,
             core_export_func_path,
-            is_auth_procedure,
-            is_note_script_export,
+            protocol_export_kind,
             self.context.diagnostics(),
         )?;
         self.lifted_export_names.insert(name.to_owned());
