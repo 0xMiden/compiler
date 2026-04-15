@@ -4,7 +4,6 @@ use miden_field_repr::FromFeltRepr;
 use miden_stdlib_sys::{Felt, Word, felt};
 
 /// Packs a scalar felt into the leading limb of a protocol word.
-#[inline(always)]
 pub fn padded_word_from_felt(value: Felt) -> Word {
     Word::new([value, felt!(0), felt!(0), felt!(0)])
 }
