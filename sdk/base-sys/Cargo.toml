@@ -21,3 +21,7 @@ miden-field-repr = { version = "0.11.0", path = "../field-repr/repr" }
 
 [features]
 default = []
+
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+additional-targets = ["wasm32-unknown-unknown", "wasm32-wasip1", "wasm32-wasip2"]
