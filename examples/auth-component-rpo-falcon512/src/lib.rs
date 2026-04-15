@@ -21,7 +21,8 @@ struct AuthComponent {
 
 #[component]
 impl AuthComponent {
-    pub fn auth_procedure(&mut self, _arg: Word) {
+    #[auth_script]
+    pub fn check_signature(&mut self, _arg: Word) {
         let ref_block_num = tx::get_block_number();
         let final_nonce = self.incr_nonce();
 

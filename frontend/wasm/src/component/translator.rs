@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
+use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
-    self as hir2, BuilderExt, CallConv, Context, FunctionType, FxHashMap, Ident,
+    self as hir2, BuilderExt, CallConv, Context, FunctionType, FxHashMap, FxHashSet, Ident,
     SymbolNameComponent, SymbolPath,
     diagnostics::Report,
     dialects::builtin::{self, ComponentBuilder, ModuleBuilder, World, WorldBuilder},
@@ -31,7 +32,9 @@ use crate::{
     module::{
         build_ir::build_ir_module,
         instance::ModuleArgument,
-        module_env::ParsedModule,
+        module_env::{
+            ParsedModule, merge_frontend_metadata, validate_lifted_frontend_metadata_exports,
+        },
         module_translation_state::ModuleTranslationState,
         types::{EntityIndex, FuncIndex},
     },
@@ -63,6 +66,12 @@ pub struct ComponentTranslator<'a> {
     result: ComponentBuilder,
 
     context: Rc<Context>,
+
+    /// Frontend metadata merged across all core modules that feed this component translation.
+    component_frontend_metadata: Option<FrontendMetadata>,
+
+    /// Names of component exports for which a lifting shim was emitted.
+    lifted_export_names: FxHashSet<String>,
 
     /// Information about shim modules to bypass
     shim_bypass_info: ShimBypassInfo,
@@ -112,9 +121,11 @@ impl<'a> ComponentTranslator<'a> {
         nested_components: &'a PrimaryMap<StaticComponentIndex, ParsedComponent<'a>>,
         config: &'a WasmTranslationConfig,
         context: Rc<Context>,
-    ) -> Self {
+    ) -> WasmResult<Self> {
         let ns = hir2::Ident::with_empty_span(id.namespace);
         let name = hir2::Ident::with_empty_span(id.name);
+        let component_frontend_metadata =
+            merge_frontend_metadata(nested_modules.iter().map(|(_, module)| module))?;
 
         // If a world wasn't provided to us, create one
         let world_ref = match config.world {
@@ -129,7 +140,7 @@ impl<'a> ComponentTranslator<'a> {
             .expect("failed to define component");
         let result = ComponentBuilder::new(raw_entity_ref);
 
-        Self {
+        Ok(Self {
             config,
             context,
             nested_modules,
@@ -137,7 +148,9 @@ impl<'a> ComponentTranslator<'a> {
             world_builder,
             result,
             shim_bypass_info: ShimBypassInfo::default(),
-        }
+            component_frontend_metadata,
+            lifted_export_names: FxHashSet::default(),
+        })
     }
 
     pub fn translate2(
@@ -152,6 +165,11 @@ impl<'a> ComponentTranslator<'a> {
         for init in &root_component.initializers {
             self.initializer(&mut frame, types, init)?;
         }
+
+        validate_lifted_frontend_metadata_exports(
+            self.component_frontend_metadata.as_ref(),
+            &self.lifted_export_names,
+        )?;
 
         let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
             .nested_modules
@@ -464,13 +482,20 @@ impl<'a> ComponentTranslator<'a> {
         let func_ty =
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
+        let protocol_export_kind: Option<ProtocolExportKind> = self
+            .component_frontend_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.protocol_export_kind_for(name));
+
         generate_export_lifting_function(
             &mut self.result,
             name,
             func_ty,
             core_export_func_path,
+            protocol_export_kind,
             self.context.diagnostics(),
         )?;
+        self.lifted_export_names.insert(name.to_owned());
         Ok(())
     }
 

@@ -1,0 +1,16 @@
+[package]
+name = "midenc-frontend-wasm-metadata"
+description = "Shared frontend metadata codec for the Miden Wasm frontend"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }

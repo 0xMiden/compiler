@@ -121,13 +121,6 @@ interface core-types {
 }
 
 
-/// The note script interface that is expected to be implemented by note scripts.
-interface note-script {
-    use core-types.{word};
-
-    run: func(arg: word);
-}
-
 /// The transaction script interface that is expected to be implemented by transaction scripts.
 interface transaction-script {
     use core-types.{word};
@@ -135,16 +128,7 @@ interface transaction-script {
     run: func(arg: word);
 }
 
-/// The authentication component interface that is expected to export exactly one `auth__*`
-/// function
-interface authentication-component {
-    use core-types.{word};
-
-    auth-procedure: func(arg: word);
-}
-
 world base-world {
     export core-types;
-    export note-script;
     export transaction-script;
 }

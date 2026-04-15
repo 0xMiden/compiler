@@ -2,40 +2,17 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
-// However, we could still use some standard library types while
-// remaining no-std compatible, if we uncommented the following lines:
-//
-// extern crate alloc;
-// use alloc::vec::Vec;
-
-// Global allocator to use heap memory in no-std environment
-#[global_allocator]
-static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
-
-// Required for no-std crates
-#[cfg(not(test))]
-#[panic_handler]
-fn my_panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
-// Required for no-std crates
-#[cfg(not(test))]
-#[alloc_error_handler]
-fn my_alloc_error(_info: core::alloc::Layout) -> ! {
-    loop {}
-}
-
-miden::generate!();
-bindings::export!(MyNote);
-
-use bindings::{exports::miden::base::note_script::Guest, miden::cross_ctx_account_word::foo::*};
 use miden::*;
 
+use crate::bindings::miden::cross_ctx_account_word::foo::*;
+
+#[note]
 struct MyNote;
 
-impl Guest for MyNote {
-    fn run(_arg: Word) {
+#[note]
+impl MyNote {
+    #[note_script]
+    pub fn execute(self, _arg: Word) {
         let input = Word {
             a: felt!(2),
             b: felt!(3),

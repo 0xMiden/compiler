@@ -2431,7 +2431,9 @@ dependencies = [
  "heck",
  "miden-field 0.22.6",
  "miden-field-repr",
+ "miden-formatting",
  "miden-protocol",
+ "midenc-frontend-wasm-metadata",
  "proc-macro2",
  "quote",
  "semver 1.0.28",
@@ -3368,12 +3370,21 @@ dependencies = [
  "midenc-dialect-ub",
  "midenc-dialect-wasm",
  "midenc-expect-test",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-hir-symbol",
  "midenc-session",
  "wasmparser 0.227.1",
  "wasmprinter",
  "wat",
+]
+
+[[package]]
+name = "midenc-frontend-wasm-metadata"
+version = "0.8.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

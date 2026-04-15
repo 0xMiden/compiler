@@ -3,6 +3,7 @@ use core::cell::RefCell;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
+use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
     FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolPath, ValueRange, ValueRef,
     Visibility,
@@ -24,11 +25,13 @@ use crate::{
     },
 };
 
+/// Generates a lifted component export wrapper around a lowered core Wasm export.
 pub fn generate_export_lifting_function(
     component_builder: &mut ComponentBuilder,
     export_func_name: &str,
     export_func_ty: FunctionType,
     core_export_func_path: SymbolPath,
+    protocol_export_kind: Option<ProtocolExportKind>,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     let context = { component_builder.component.borrow().as_operation().context_rc() };
@@ -51,23 +54,7 @@ pub fn generate_export_lifting_function(
         return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
     }
 
-    // Miden Base expects the authentication component to export a single
-    // procedure whose name matches `auth_*` (underscore). The base WIT
-    // defines this function as `auth-procedure` (kebab-case). Until
-    // https://github.com/0xMiden/miden-base/issues/1861 lands, we map the
-    // authentication procedure name from `auth-procedure` to
-    // `auth__procedure` (double underscore) to match the current miden-base
-    // expectation.
-    //
-    // IMPORTANT: Restrict this rename to the authentication interface only.
-    // We do this by matching the exact WIT name `auth-procedure` instead of
-    // rewriting arbitrary names that merely start with `auth-`.
-    let is_auth_procedure = export_func_name == "auth-procedure";
-    let export_func_ident = if is_auth_procedure {
-        Ident::new("auth__procedure".into(), SourceSpan::default())
-    } else {
-        Ident::new(export_func_name.to_string().into(), SourceSpan::default())
-    };
+    let export_func_ident = Ident::new(export_func_name.to_string().into(), SourceSpan::default());
 
     let core_export_module_path = core_export_func_path.without_leaf();
     let core_module_ref = component_builder
@@ -95,7 +82,7 @@ pub fn generate_export_lifting_function(
             core_export_func_ref,
             core_export_func_sig,
             &core_export_func_path,
-            is_auth_procedure,
+            protocol_export_kind,
             diagnostics,
         )?;
     } else {
@@ -105,7 +92,7 @@ pub fn generate_export_lifting_function(
             core_export_func_ref,
             core_export_func_sig,
             cross_ctx_export_sig_flat,
-            is_auth_procedure,
+            protocol_export_kind,
         )?;
     }
 
@@ -150,7 +137,7 @@ fn generate_lifting_with_transformation(
     core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     core_export_func_sig: Signature,
     core_export_func_path: &SymbolPath,
-    is_auth_procedure: bool,
+    protocol_export_kind: Option<ProtocolExportKind>,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     assert_eq!(
@@ -189,9 +176,7 @@ fn generate_lifting_with_transformation(
     };
     let export_func_ref =
         component_builder.define_function(export_func_ident, Visibility::Public, new_func_sig)?;
-    if is_auth_procedure {
-        annotate_auth_script(export_func_ref);
-    }
+    annotate_protocol_export(export_func_ref, protocol_export_kind);
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -291,16 +276,14 @@ fn generate_direct_lifting(
     core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
-    is_auth_procedure: bool,
+    protocol_export_kind: Option<ProtocolExportKind>,
 ) -> WasmResult<()> {
     let export_func_ref = component_builder.define_function(
         export_func_ident,
         Visibility::Public,
         cross_ctx_export_sig_flat.clone(),
     )?;
-    if is_auth_procedure {
-        annotate_auth_script(export_func_ref);
-    }
+    annotate_protocol_export(export_func_ref, protocol_export_kind);
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -343,9 +326,26 @@ fn generate_direct_lifting(
     Ok(())
 }
 
-/// Marks the lifted authentication export with the protocol's `@auth_script` attribute.
-fn annotate_auth_script(mut export_func_ref: midenc_hir::dialects::builtin::FunctionRef) {
-    let context = export_func_ref.borrow().as_operation().context_rc();
-    let auth_attr = context.create_attribute::<UnitAttr, _>(());
-    export_func_ref.borrow_mut().set_attribute("auth_script", auth_attr);
+/// Marks lifted protocol exports with the attributes required by downstream consumers.
+fn annotate_protocol_export(
+    mut export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
+    protocol_export_kind: Option<ProtocolExportKind>,
+) {
+    let context = {
+        let export_func = export_func_ref.borrow();
+        export_func.as_operation().context_rc()
+    };
+
+    let mut export_func = export_func_ref.borrow_mut();
+    match protocol_export_kind {
+        Some(ProtocolExportKind::NoteScript) => {
+            let note_attr = context.create_attribute::<UnitAttr, _>(());
+            export_func.set_attribute("note_script", note_attr);
+        }
+        Some(ProtocolExportKind::AuthScript) => {
+            let auth_attr = context.create_attribute::<UnitAttr, _>(());
+            export_func.set_attribute("auth_script", auth_attr);
+        }
+        None => {}
+    }
 }

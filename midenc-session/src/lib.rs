@@ -73,9 +73,20 @@ pub enum ProjectType {
 impl ProjectType {
     pub fn default_for_target(target: TargetEnv) -> Self {
         match target {
-            // We default to compiling a program unless we find later
-            // that we do not have an entrypoint.
-            TargetEnv::Base | TargetEnv::Rollup { .. } => Self::Program,
+            // We default to compiling a program unless the target has a library-only ABI.
+            TargetEnv::Base => Self::Program,
+            TargetEnv::Rollup {
+                target: RollupTarget::TransactionScript,
+            } => Self::Program,
+            TargetEnv::Rollup {
+                target: RollupTarget::Account,
+            }
+            | TargetEnv::Rollup {
+                target: RollupTarget::NoteScript,
+            }
+            | TargetEnv::Rollup {
+                target: RollupTarget::AuthComponent,
+            } => Self::Library,
             // The emulator can run either programs or individual library functions,
             // so we compile as a library and delegate the choice of how to run it
             // to the emulator
