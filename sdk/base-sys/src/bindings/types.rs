@@ -9,7 +9,6 @@ pub fn padded_word_from_felt(value: Felt) -> Word {
 }
 
 /// Extracts a scalar felt from a protocol word with zero-padded trailing limbs.
-#[inline(always)]
 pub fn felt_from_padded_word(value: Word) -> Result<Felt, &'static str> {
     if value[1] != felt!(0) || value[2] != felt!(0) || value[3] != felt!(0) {
         return Err("expected zero padding in the trailing three felts");
