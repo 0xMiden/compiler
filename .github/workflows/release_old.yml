@@ -33,6 +33,10 @@ jobs:
           rustc --version
       # Publish SDK crates in dependency order. Keep these as plain
       # `cargo publish` invocations and continue if a crate is already published.
+      - name: Publish `midenc-frontend-wasm-metadata` crate
+        working-directory: sdk/wasm-metadata
+        continue-on-error: true
+        run: cargo publish
       - name: Publish `miden-field-repr-derive` crate
         working-directory: sdk/field-repr/derive
         continue-on-error: true
