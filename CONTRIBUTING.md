@@ -7,7 +7,7 @@ TBD
 ### 1. Release of the Miden SDK crates
 
 1. Create a release PR against the `next` branch naming the branch with the `release-plz-` prefix (its important to use this prefix to trigger the crate publishing on CI in the later step).
-2. Manually bump ALL the SDK crate versions and update the `sdk/sdk/CHANGELOG.md`
+2. Manually bump ALL the SDK crate versions (`sdk` folder) and update the `sdk/sdk/CHANGELOG.md`
 3. Review the changes in the release PR,  and merge it into the `next` branch.
 4. The CI will automatically run `release-plz release` after the release PR is merged to publish the new versions to crates.io.
 
