@@ -1007,7 +1007,7 @@ impl OpToOpPassAdaptor {
             if run_verifier_now
                 && let Err(verification_result) = Self::verify(&op, run_verifier_recursively)
             {
-                result = result.map_err(|_| verification_result);
+                result = Err(verification_result);
             }
         }
 
@@ -1111,5 +1111,75 @@ impl Pass for OpToOpPassAdaptor {
         _state: &mut PassExecutionState,
     ) -> Result<(), Report> {
         unreachable!("unexpected call to `Pass::run_on_operation` for OpToOpPassAdaptor")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::boxed::Box;
+
+    use crate::{
+        EntityMut, Operation, OperationName, Report, SourceSpan, Type,
+        dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
+        pass::{Pass, PassExecutionState},
+        testing::Test,
+    };
+
+    /// A pass that corrupts BinaryOp operations by clearing their operands.
+    struct CorruptBinaryOp;
+
+    impl Pass for CorruptBinaryOp {
+        type Target = Operation;
+
+        fn name(&self) -> &'static str {
+            "corrupt-binary-op"
+        }
+
+        fn can_schedule_on(&self, _name: &OperationName) -> bool {
+            true
+        }
+
+        fn run_on_operation(
+            &mut self,
+            op: EntityMut<'_, Operation>,
+            _state: &mut PassExecutionState,
+        ) -> Result<(), Report> {
+            // Navigate to the first operation with 2 operands (a BinaryOp)
+            // and remove its operands, breaking the BinaryOp invariant
+            let op_ref = op.as_operation_ref();
+            drop(op);
+            let borrowed = op_ref.borrow();
+            if let Some(region) = borrowed.regions().front().as_pointer() {
+                if let Some(block) = region.borrow().body().front().as_pointer() {
+                    let mut next_op = block.borrow().front();
+                    while let Some(mut inner) = next_op.take() {
+                        if inner.borrow().num_operands() == 2 {
+                            inner.borrow_mut().set_operands(core::iter::empty());
+                            return Ok(());
+                        }
+                        next_op = inner.next();
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn pass_manager_detects_broken_invariant() {
+        let mut test = Test::new("test_verify", &[Type::I32, Type::I32], &[Type::I32]);
+
+        {
+            let entry = test.entry_block();
+            let lhs = entry.borrow().get_argument(0).borrow().as_value_ref();
+            let rhs = entry.borrow().get_argument(1).borrow().as_value_ref();
+            let mut fb = test.function_builder();
+            let sum = fb.add(lhs, rhs, SourceSpan::UNKNOWN).unwrap();
+            fb.ret([sum], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        // Run the corrupting pass with verification enabled
+        let result = test.apply_boxed_pass(Box::new(CorruptBinaryOp), true);
+        assert!(result.is_err(), "PassManager should detect broken BinaryOp invariant");
     }
 }
