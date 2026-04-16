@@ -60,6 +60,8 @@ mod note;
 mod script;
 mod types;
 mod util;
+mod wit_builder;
+mod wit_world;
 
 /// Generates the WIT interface and storage metadata.
 ///
@@ -78,6 +80,19 @@ pub fn component(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     component_macro::component(attr, item)
+}
+
+/// Marks a component method as the authentication procedure entrypoint (`#[auth_script]`).
+///
+/// The method must be contained within an inherent `impl` block annotated with `#[component]`.
+/// Authentication components must annotate exactly one method with `#[auth_script]`.
+/// At most one method in a crate may be annotated with `#[auth_script]`.
+#[proc_macro_attribute]
+pub fn auth_script(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    component_macro::expand_auth_script(attr, item)
 }
 
 /// Generates an equvalent type in the WIT interface.
@@ -129,6 +144,8 @@ pub fn note(
 /// Marks a method as the note script entrypoint (`#[note_script]`).
 ///
 /// The method must be contained within an inherent `impl` block annotated with `#[note]`.
+/// At most one method in a crate may be annotated with `#[note_script]`.
+/// The exported component procedure keeps the annotated method name (converted to WIT kebab-case).
 ///
 /// # Supported entrypoint signature
 ///

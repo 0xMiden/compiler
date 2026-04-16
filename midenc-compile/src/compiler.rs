@@ -592,11 +592,17 @@ impl Compiler {
             output_types.insert(OutputType::Masp, output_file.clone());
         }
 
-        // Convert --exe or --lib to project type
-        let project_type = if self.is_program {
-            ProjectType::Program
-        } else {
-            ProjectType::Library
+        // Rollup note scripts and components are always packaged as libraries, even when the CLI
+        // defaulted `--exe` before the target was resolved.
+        let project_type = match self.target {
+            TargetEnv::Rollup {
+                target:
+                    midenc_session::RollupTarget::Account
+                    | midenc_session::RollupTarget::NoteScript
+                    | midenc_session::RollupTarget::AuthComponent,
+            } => ProjectType::Library,
+            _ if self.is_program => ProjectType::Program,
+            _ => ProjectType::Library,
         };
 
         let codegen = CodegenOptions::parse_argv(self.codegen);

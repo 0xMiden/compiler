@@ -20,7 +20,7 @@ use miden_protocol::{
         AccountStorage, AccountStorageMode, AccountType, StorageSlot, StorageSlotName,
     },
     asset::Asset,
-    note::PartialNote,
+    note::{NoteScript, PartialNote},
     transaction::{TransactionMeasurements, TransactionScript},
 };
 use miden_standards::{
@@ -62,6 +62,13 @@ pub(super) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Pac
 
     let mut test = builder.build();
     test.compile_package()
+}
+
+/// Returns the root of the note script exported by the compiled package.
+pub(super) fn note_script_root(package: &Package) -> Word {
+    NoteScript::from_package(package)
+        .expect("compiled package should contain exactly one note script export")
+        .root()
 }
 
 // ================================================================================================
@@ -218,8 +225,8 @@ pub(super) fn assert_counter_storage(
         .get_map_item(storage_slot, COUNTER_CONTRACT_STORAGE_KEY)
         .expect("Failed to get counter value from storage slot");
 
-    // According to the counter-contract the counter value is stored in the last element.
-    let val = word[3];
+    // `AccountStorage` exposes scalar felt values as `[felt, 0, 0, 0]`.
+    let val = word[0];
     assert_eq!(
         val.as_canonical_u64(),
         expected,
@@ -240,7 +247,7 @@ pub(super) fn build_existing_counter_account_builder_with_auth_package(
     let metadata =
         AccountComponentMetadata::new("auth", [AccountType::RegularAccountUpdatableCode]);
     let auth_component = AccountComponent::new(
-        auth_component_package.unwrap_library().as_ref().clone(),
+        auth_component_package.mast.as_ref().clone(),
         auth_storage_slots,
         metadata,
     )
@@ -264,10 +271,9 @@ pub(super) fn build_counter_account_with_rust_rpo_auth(
     seed: [u8; 32],
 ) -> (Account, AuthSecretKey) {
     let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
-    let value = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
     let mut counter_init_storage_data = InitStorageData::default();
     counter_init_storage_data
-        .insert_map_entry(counter_storage_slot_name(), key, value)
+        .insert_map_entry(counter_storage_slot_name(), key, 1_u64)
         .expect("failed to insert counter map entry");
 
     let counter_component =

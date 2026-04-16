@@ -47,7 +47,7 @@ fn test_all_templates() {
     assert!(account.is_library());
 
     let note = build_new_project_from_template("--note");
-    assert!(note.is_program());
+    assert!(note.is_library());
 
     let tx_script = build_new_project_from_template("--tx-script");
     assert!(tx_script.is_program());
@@ -57,15 +57,6 @@ fn test_all_templates() {
 
     let auth_comp = build_new_project_from_template("--auth-component");
     assert!(auth_comp.is_library());
-
-    let expected_function = "auth__procedure";
-    let lib = auth_comp.unwrap_library();
-    assert!(
-        lib.exports()
-            .any(|export| export.path().as_ref().last() == Some(expected_function)),
-        "expected one of the authentication component exports to contain  function \
-         '{expected_function}'"
-    );
 }
 
 /// Build a new project from the specified template and return its package
@@ -162,7 +153,6 @@ fn build_new_project_from_template(template: &str) -> Package {
     fs::remove_dir_all(&temp_dir).unwrap();
     package
 }
-
 #[test]
 fn new_project_integration_tests_pass() {
     let _cwd_lock = current_dir_lock();

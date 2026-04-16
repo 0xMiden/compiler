@@ -1,6 +1,6 @@
 [package]
-name = "miden-base-sys"
-description = "Miden rollup Rust bingings and MASM library"
+name = "midenc-frontend-wasm-metadata"
+description = "Shared frontend metadata codec for the Miden Wasm frontend"
 version = "0.12.0"
 rust-version.workspace = true
 authors.workspace = true
@@ -12,12 +12,7 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
-build = "build.rs"
-links = "miden_base_sys_stubs"
 
 [dependencies]
-miden-stdlib-sys = { version = "0.12.0", path = "../stdlib-sys" }
-miden-field-repr = { version = "0.12.0", path = "../field-repr/repr" }
-
-[features]
-default = []
+serde.workspace = true
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }

@@ -3,7 +3,8 @@ use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
-use midenc_hir::{Ident, interner::Symbol};
+use midenc_frontend_wasm_metadata::{FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME};
+use midenc_hir::{FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
     CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding, ExternalKind,
@@ -18,7 +19,7 @@ use super::{
 use crate::{
     WasmTranslationConfig,
     component::SignatureIndex,
-    error::WasmResult,
+    error::{WasmError, WasmResult},
     module::{
         FuncRefIndex, Module, ModuleType, TableSegment,
         types::{
@@ -79,6 +80,104 @@ pub struct ParsedModule<'data> {
 
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<&'data [u8]>,
+    /// Frontend-only component metadata emitted by SDK macros.
+    pub component_frontend_metadata: Option<FrontendMetadata>,
+}
+
+/// Aggregates frontend metadata from all core modules that participate in one component.
+pub(crate) fn merge_frontend_metadata<'data>(
+    modules: impl Iterator<Item = &'data ParsedModule<'data>>,
+) -> WasmResult<Option<FrontendMetadata>> {
+    let mut metadata = None;
+    for module in modules {
+        let Some(module_metadata) = module.component_frontend_metadata.as_ref() else {
+            continue;
+        };
+
+        merge_single_frontend_metadata(&mut metadata, module_metadata)?;
+    }
+
+    Ok(metadata)
+}
+
+/// Verifies that metadata-selected exports were emitted as lifted component exports.
+pub(crate) fn validate_lifted_frontend_metadata_exports(
+    metadata: Option<&FrontendMetadata>,
+    lifted_exports: &FxHashSet<String>,
+) -> WasmResult<()> {
+    let Some(metadata) = metadata else {
+        return Ok(());
+    };
+
+    match metadata {
+        FrontendMetadata::AuthScript {
+            method_path,
+            export_name,
+        } => validate_lifted_export(method_path, export_name, "`#[auth_script]`", lifted_exports)?,
+        FrontendMetadata::NoteScript {
+            method_path,
+            export_name,
+        } => validate_lifted_export(method_path, export_name, "`#[note_script]`", lifted_exports)?,
+    }
+
+    Ok(())
+}
+
+/// Merges a single module's frontend metadata into the component-wide metadata view.
+fn merge_single_frontend_metadata(
+    metadata: &mut Option<FrontendMetadata>,
+    module_metadata: &FrontendMetadata,
+) -> WasmResult<()> {
+    match metadata {
+        None => {
+            *metadata = Some(module_metadata.clone());
+            Ok(())
+        }
+        Some(existing_metadata) => match (&*existing_metadata, module_metadata) {
+            (FrontendMetadata::AuthScript { .. }, FrontendMetadata::AuthScript { .. }) => {
+                Err(Report::from(WasmError::Unsupported(format!(
+                    "multiple `#[auth_script]` procedures were found: `{}` and `{}`; only one is \
+                     allowed per project",
+                    existing_metadata.method_path(),
+                    module_metadata.method_path()
+                ))))
+            }
+            (FrontendMetadata::NoteScript { .. }, FrontendMetadata::NoteScript { .. }) => {
+                Err(Report::from(WasmError::Unsupported(format!(
+                    "multiple `#[note_script]` procedures were found: `{}` and `{}`; only one is \
+                     allowed per project",
+                    existing_metadata.method_path(),
+                    module_metadata.method_path()
+                ))))
+            }
+            (FrontendMetadata::AuthScript { .. }, FrontendMetadata::NoteScript { .. })
+            | (FrontendMetadata::NoteScript { .. }, FrontendMetadata::AuthScript { .. }) => {
+                Err(Report::from(WasmError::Unsupported(format!(
+                    "both `#[auth_script]` and `#[note_script]` procedures were found: `{}` and \
+                     `{}`; only one kind is allowed per project",
+                    existing_metadata.method_path(),
+                    module_metadata.method_path()
+                ))))
+            }
+        },
+    }
+}
+
+/// Validates that a metadata-selected export name was seen among the lifted component exports.
+fn validate_lifted_export(
+    method_path: &str,
+    export_name: &str,
+    attribute: &str,
+    lifted_exports: &FxHashSet<String>,
+) -> WasmResult<()> {
+    if lifted_exports.contains(export_name) {
+        return Ok(());
+    }
+
+    Err(Report::from(WasmError::MissingExportMetadata(format!(
+        "failed to find the component export marked with {attribute}: `{method_path}` (expected \
+         lifted export `{export_name}`)"
+    ))))
 }
 
 /// Contains function data: byte code and its offset in the module.
@@ -88,6 +187,9 @@ pub struct FunctionBodyData<'a> {
     /// Validator for the function body
     pub validator: FuncToValidate<ValidatorResources>,
 }
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Default)]
 pub struct DebugInfoData<'a> {
@@ -216,6 +318,26 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
             Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
             Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
                 self.result.account_component_metadata_bytes = Some(s.data());
+            }
+            Payload::CustomSection(s) if s.name() == WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME => {
+                let metadata = FrontendMetadata::from_bytes(s.data()).map_err(|err| {
+                    diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "failed to parse component frontend metadata section: {err}"
+                        ))
+                        .into_report()
+                })?;
+
+                if self.result.component_frontend_metadata.replace(metadata).is_some() {
+                    return Err(diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(
+                            "wasm error: multiple component frontend metadata sections were \
+                             found; only one is allowed per core Wasm module",
+                        )
+                        .into_report());
+                }
             }
             Payload::CustomSection { .. } => {
                 // ignore any other custom sections

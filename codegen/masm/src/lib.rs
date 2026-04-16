@@ -37,7 +37,7 @@ use midenc_hir::{dialects::builtin, inventory};
 
 pub(crate) use self::lower::HirLowering;
 pub use self::{
-    artifact::{MasmComponent, Rodata},
+    artifact::{AssemblyArtifact, MasmComponent, Rodata},
     events::{TRACE_FRAME_END, TRACE_FRAME_START, TraceEvent},
     lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},
@@ -152,6 +152,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::Cast, dyn HirLowering>();
     info.register_operation_trait::<hir::Bitcast, dyn HirLowering>();
     //info.register_operation_trait::<hir::ConstantBytes, dyn HirLowering>();
+    info.register_operation_trait::<hir::ConstantPointer, dyn HirLowering>();
     info.register_operation_trait::<hir::Exec, dyn HirLowering>();
     info.register_operation_trait::<hir::Call, dyn HirLowering>();
     info.register_operation_trait::<hir::Store, dyn HirLowering>();

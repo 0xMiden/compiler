@@ -648,10 +648,12 @@ impl MasmFunctionBuilder {
 
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
-        if function.has_attribute("auth_script") {
-            procedure
-                .attributes_mut()
-                .insert(Attribute::Marker(masm::Ident::new("auth_script").unwrap()));
+        for attribute in ["auth_script", "note_script"] {
+            if function.has_attribute(attribute) {
+                procedure
+                    .attributes_mut()
+                    .insert(Attribute::Marker(masm::Ident::new(attribute).unwrap()));
+            }
         }
         procedure.extend_invoked(invoked);
 

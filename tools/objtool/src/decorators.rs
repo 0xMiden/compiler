@@ -6,7 +6,7 @@ use miden_core::{
     mast::MastForest,
     serde::{Deserializable, Serializable},
 };
-use miden_mast_package::{MastArtifact, Package, PackageKind};
+use miden_mast_package::{Package, TargetType};
 
 #[derive(Debug, Clone, Args)]
 pub struct DecoratorsCommand {
@@ -21,10 +21,11 @@ enum ArtifactKind {
 }
 
 impl ArtifactKind {
-    fn from_mast_artifact(mast: &MastArtifact) -> Self {
-        match mast {
-            MastArtifact::Executable(_) => ArtifactKind::Program,
-            MastArtifact::Library(_) => ArtifactKind::Library,
+    fn from_package(package: &Package) -> Self {
+        if package.is_program() {
+            ArtifactKind::Program
+        } else {
+            ArtifactKind::Library
         }
     }
 }
@@ -46,7 +47,7 @@ pub fn run(command: DecoratorsCommand) -> Result<()> {
     let package = Package::read_from_bytes(&input_bytes)
         .with_context(|| format!("failed to decode package '{}'", command.path.display()))?;
 
-    let original_forest = package.mast.mast_forest().clone();
+    let original_forest = package.mast.mast_forest().as_ref().clone();
     let original_forest_size = forest_size(&original_forest);
 
     let mut stripped_forest = original_forest.clone();
@@ -57,7 +58,7 @@ pub fn run(command: DecoratorsCommand) -> Result<()> {
     let report = Report {
         input: command.path.display().to_string(),
         package_kind: package.kind,
-        artifact_kind: ArtifactKind::from_mast_artifact(&package.mast),
+        artifact_kind: ArtifactKind::from_package(&package),
         metric_points: vec![
             MetricPoint::reference("original masp", masp_size),
             MetricPoint::baseline("original forest", original_forest_size),
@@ -90,7 +91,7 @@ fn bytes_to_kb(bytes: usize) -> f64 {
 #[derive(Debug, Clone)]
 struct Report {
     input: String,
-    package_kind: PackageKind,
+    package_kind: TargetType,
     artifact_kind: ArtifactKind,
     metric_points: Vec<MetricPoint>,
 }
