@@ -1,7 +1,7 @@
 [package]
 name = "midenc-frontend-wasm-metadata"
 description = "Shared frontend metadata codec for the Miden Wasm frontend"
-version = "0.11.0"
+version = "0.12.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

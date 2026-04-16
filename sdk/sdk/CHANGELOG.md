@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### BREAKING
+- `#[auth_script]` attribute macro is required to mark the authentication procedure in the authentication component #1051
+
+## [0.11.0]
+
+### BREAKING
 - `Felt` and `Word` API changes (unified with the off-chain API).
 - `Recipient::compute` removed in favor of `build_recipient` binding.
 - Account storage `StorageMap` became `StorageMap<K,V>` and `Value` became `StorageValue<T>` where `K`, `V` and `T` have to be convertible to and from `Word` #987
