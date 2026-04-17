@@ -16,5 +16,12 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+miden-assembly = { workspace = true, features = ["std"] }
 miden-core.workspace = true
 miden-mast-package.workspace = true
+miden-package-registry = { workspace = true, features = ["std", "resolver"] }
+miden-project = { workspace = true, features = ["std", "serde"] }
+miden-protocol.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

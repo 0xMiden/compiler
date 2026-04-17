@@ -2886,8 +2886,13 @@ version = "0.8.1"
 dependencies = [
  "anyhow",
  "clap",
+ "miden-assembly",
  "miden-core",
  "miden-mast-package",
+ "miden-package-registry",
+ "miden-project",
+ "miden-protocol",
+ "tempfile",
 ]
 
 [[package]]

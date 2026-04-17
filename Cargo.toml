@@ -78,6 +78,8 @@ log = { version = "0.4", features = ["kv"] }
 
 # Miden Dependencies
 miden-assembly = { version = "0.22", default-features = false }
+miden-project = { version = "0.22", default-features = false }
+miden-package-registry = { version = "0.22", default-features = false }
 miden-core = { version = "0.22", default-features = false }
 miden-debug = { version = "0.6" }
 miden-debug-types = { version = "0.22", default-features = false }
