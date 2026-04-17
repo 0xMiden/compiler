@@ -5,7 +5,7 @@ use midenc_hir::{BuilderExt, OpBuilder, SourceSpan, interner::Symbol, print::Asm
 #[cfg(feature = "std")]
 use midenc_session::Path;
 use midenc_session::{
-    InputType, OutputMode, OutputType, ProjectType,
+    InputType, LoadedLinkLibrary, OutputMode, OutputType, ProjectType,
     diagnostics::{Severity, Spanned},
 };
 
@@ -22,27 +22,28 @@ pub struct LinkOutput {
     /// The set of Miden Assembly sources to be provided to the assembler to satisfy link-time
     /// dependencies
     pub masm: Vec<Arc<miden_assembly::ast::Module>>,
-    /// The set of MAST libraries to be provided to the assembler to satisfy link-time dependencies
+    /// The set of loaded MAST libraries to be provided to the assembler to satisfy link-time
+    /// dependencies.
     ///
-    /// These are either given via `-l`, or as inputs
-    pub mast: Vec<Arc<miden_assembly::Library>>,
+    /// These are either given via `-l`, or as inputs.
+    pub link_libraries: Vec<LoadedLinkLibrary>,
     /// The set of link libraries provided to the compiler as MAST packages
     pub packages: BTreeMap<Symbol, Arc<miden_mast_package::Package>>,
 }
 
 impl LinkOutput {
-    // Load link libraries from the given [midenc_session::Session]
+    /// Load link libraries from the given compiler session.
     pub fn link_libraries_from(&mut self, session: &Session) -> Result<(), Report> {
-        assert!(self.mast.is_empty(), "link libraries already loaded!");
-        for link_lib in session.options.link_libraries.iter() {
+        assert!(self.link_libraries.is_empty(), "link libraries already loaded!");
+        for link_lib in session.options.link_libraries.iter().cloned() {
             log::debug!(
                 "registering link library '{}' ({}, from {:#?}) with linker",
                 link_lib.name,
                 link_lib.kind,
                 link_lib.path.as_ref()
             );
-            let lib = link_lib.load(session).map(Arc::new)?;
-            self.mast.push(lib);
+            let lib = LoadedLinkLibrary::load_from_session(link_lib, session)?;
+            self.link_libraries.push(lib);
         }
 
         Ok(())
@@ -146,7 +147,7 @@ impl Stage for LinkStage {
             component,
             account_component_metadata_bytes,
             masm,
-            mast: Vec::with_capacity(context.session().options.link_libraries.len()),
+            link_libraries: Vec::with_capacity(context.session().options.link_libraries.len()),
             packages,
         };
 

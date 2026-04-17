@@ -85,7 +85,7 @@ pub fn build_empty_component_for_test(context: Rc<Context>) -> LinkOutput {
         world,
         component,
         masm: Default::default(),
-        mast: Default::default(),
+        link_libraries: Default::default(),
         packages: Default::default(),
         account_component_metadata_bytes: None,
     };

@@ -1,12 +1,12 @@
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::fmt;
 
-use miden_assembly::{Library, Path, ast::InvocationTarget};
+use miden_assembly::{Path, ast::InvocationTarget};
 use miden_core::Word;
 use miden_mast_package::Package;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
-    Emit, OutputMode, OutputType, Session, Writer,
+    Emit, LoadedLinkLibrary, OutputMode, OutputType, Session, Writer,
     diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
 };
 
@@ -174,7 +174,7 @@ impl MasmComponent {
     /// Assemble this component into a Miden package.
     pub fn assemble(
         &self,
-        link_libraries: &[Arc<Library>],
+        link_libraries: &[LoadedLinkLibrary],
         link_packages: &BTreeMap<Symbol, Arc<Package>>,
         account_component_metadata_bytes: Option<&[u8]>,
         session: &Session,

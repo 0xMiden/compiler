@@ -23,7 +23,7 @@ use miden_project::{
     Target,
 };
 use midenc_session::{
-    LinkLibrary, Session,
+    LoadedLinkLibrary, Session,
     diagnostics::{Report, Span},
 };
 
@@ -33,18 +33,13 @@ use crate::{intrinsics::INTRINSICS_MODULE_NAMES, masm};
 /// Assemble a MASM component through the VM project assembler.
 pub(super) fn assemble(
     component: &MasmComponent,
-    link_libraries: &[Arc<miden_assembly::Library>],
+    link_libraries: &[LoadedLinkLibrary],
     link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
     account_component_metadata_bytes: Option<&[u8]>,
     session: &Session,
 ) -> Result<Package, Report> {
     let mut store = InMemoryPackageRegistry::default();
-    let dependencies = register_external_dependencies(
-        &mut store,
-        &session.options.link_libraries,
-        link_libraries,
-        link_packages,
-    )?;
+    let dependencies = register_external_dependencies(&mut store, link_libraries, link_packages)?;
     let target = build_root_target(component)?;
     let mut assembler = Assembler::new(session.source_manager.clone());
     let sources = prepare_sources(
@@ -80,33 +75,25 @@ pub(super) fn assemble(
 /// Register externally-linked artifacts in an in-memory package store.
 fn register_external_dependencies(
     store: &mut InMemoryPackageRegistry,
-    link_library_specs: &[LinkLibrary],
-    link_libraries: &[Arc<miden_assembly::Library>],
+    link_libraries: &[LoadedLinkLibrary],
     link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
 ) -> Result<Vec<ProjectDependency>, Report> {
-    if link_library_specs.len() != link_libraries.len() {
-        return Err(Report::msg(
-            "loaded link libraries do not match the session link library configuration",
-        ));
-    }
-
-    let link_library_versions =
-        resolve_link_library_versions(link_library_specs, link_libraries, link_packages)?;
+    let link_library_versions = resolve_link_library_versions(link_libraries, link_packages)?;
     let mut dependencies = BTreeMap::default();
-    for ((link_lib, library), version) in link_library_specs
-        .iter()
-        .zip(link_libraries.iter())
-        .zip(link_library_versions.into_iter())
-    {
+    for (link_library, version) in link_libraries.iter().zip(link_library_versions.into_iter()) {
         let package = Arc::from(MastPackage::from_library(
-            link_lib.name.to_string().into(),
+            link_library.spec.name.to_string().into(),
             version,
             TargetType::Library,
-            library.clone(),
+            link_library.library.clone(),
             [],
         ));
         let version = publish_external_package(store, package)?;
-        push_project_dependency(&mut dependencies, Arc::from(link_lib.name.as_ref()), version)?;
+        push_project_dependency(
+            &mut dependencies,
+            Arc::from(link_library.spec.name.as_ref()),
+            version,
+        )?;
     }
     register_link_packages(store, &mut dependencies, link_packages)?;
 
@@ -120,17 +107,16 @@ fn register_external_dependencies(
 /// any linked packages that depend on the same library digest. Libraries with no discoverable
 /// version metadata fall back to `0.0.0`.
 fn resolve_link_library_versions(
-    link_library_specs: &[LinkLibrary],
-    link_libraries: &[Arc<miden_assembly::Library>],
+    link_libraries: &[LoadedLinkLibrary],
     link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
 ) -> Result<Vec<Version>, Report> {
     let mut digests = BTreeMap::default();
     let mut required_versions =
         BTreeMap::<PackageId, BTreeMap<Version, BTreeSet<PackageId>>>::default();
 
-    for (link_lib, library) in link_library_specs.iter().zip(link_libraries.iter()) {
-        let name = PackageId::from(link_lib.name.as_ref());
-        let digest = *library.digest();
+    for link_library in link_libraries {
+        let name = PackageId::from(link_library.spec.name.as_ref());
+        let digest = *link_library.library.digest();
 
         match digests.get(&name) {
             Some(existing) if existing != &digest => {
@@ -177,10 +163,10 @@ fn resolve_link_library_versions(
         }
     }
 
-    link_library_specs
+    link_libraries
         .iter()
-        .map(|link_lib| {
-            let name = PackageId::from(link_lib.name.as_ref());
+        .map(|link_library| {
+            let name = PackageId::from(link_library.spec.name.as_ref());
             let versions = required_versions
                 .get(&name)
                 .expect("session link library versions should be initialized");
@@ -358,7 +344,7 @@ fn build_root_target(component: &MasmComponent) -> Result<Target, Report> {
 fn prepare_sources(
     component: &MasmComponent,
     assembler: &mut Assembler,
-    link_libraries: &[Arc<miden_assembly::Library>],
+    link_libraries: &[LoadedLinkLibrary],
     link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
     emit_test_harness: bool,
     source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
@@ -518,12 +504,12 @@ fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExpor
 
 /// Return the set of modules already supplied by external dependencies.
 fn external_module_paths(
-    link_libraries: &[Arc<miden_assembly::Library>],
+    link_libraries: &[LoadedLinkLibrary],
     link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
 ) -> BTreeSet<miden_assembly::PathBuf> {
     let mut paths = BTreeSet::default();
-    for library in link_libraries {
-        for module in library.module_infos() {
+    for link_library in link_libraries {
+        for module in link_library.library.module_infos() {
             paths.insert(module.path().to_path_buf());
         }
     }
@@ -545,9 +531,17 @@ mod tests {
     use alloc::{collections::BTreeMap, sync::Arc, vec};
 
     use miden_mast_package::{Dependency, PackageId};
-    use midenc_session::{LinkLibrary, STDLIB};
+    use midenc_session::{LinkLibrary, LoadedLinkLibrary, STDLIB};
 
     use super::*;
+
+    /// Build a synthetic loaded link library for testing external dependency registration.
+    fn test_loaded_link_library(
+        spec: LinkLibrary,
+        library: Arc<miden_assembly::Library>,
+    ) -> LoadedLinkLibrary {
+        LoadedLinkLibrary::new(spec, library)
+    }
 
     /// Build a synthetic library package backed by the standard library MAST.
     fn test_package(
@@ -581,14 +575,10 @@ mod tests {
         let link_packages = BTreeMap::from([(Symbol::intern("dep"), dependent)]);
 
         let mut store = InMemoryPackageRegistry::default();
-        let link_library_specs = vec![LinkLibrary::std()];
-        let dependencies = register_external_dependencies(
-            &mut store,
-            &link_library_specs,
-            &[stdlib],
-            &link_packages,
-        )
-        .expect("external dependency registration should succeed");
+        let link_libraries = vec![test_loaded_link_library(LinkLibrary::std(), stdlib.clone())];
+        let dependencies =
+            register_external_dependencies(&mut store, &link_libraries, &link_packages)
+                .expect("external dependency registration should succeed");
 
         let std_version = RegistryVersion::new(Version::new(1, 2, 3), std_digest);
         assert!(store.is_version_available(&PackageId::from("std"), &std_version));
@@ -632,14 +622,9 @@ mod tests {
             BTreeMap::from([(Symbol::intern("dep-a"), dep_a), (Symbol::intern("dep-b"), dep_b)]);
 
         let mut store = InMemoryPackageRegistry::default();
-        let link_library_specs = vec![LinkLibrary::std()];
-        let error = register_external_dependencies(
-            &mut store,
-            &link_library_specs,
-            &[stdlib],
-            &link_packages,
-        )
-        .expect_err("conflicting link-library versions should fail");
+        let link_libraries = vec![test_loaded_link_library(LinkLibrary::std(), stdlib)];
+        let error = register_external_dependencies(&mut store, &link_libraries, &link_packages)
+            .expect_err("conflicting link-library versions should fail");
 
         assert!(
             error.to_string().contains("conflicting versions for session library 'std'"),

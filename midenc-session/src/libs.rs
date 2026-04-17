@@ -224,6 +224,27 @@ impl LinkLibrary {
     }
 }
 
+/// A configured link library paired with the compiled MAST library loaded for it.
+#[derive(Debug, Clone)]
+pub struct LoadedLinkLibrary {
+    /// The link-library configuration requested by the user.
+    pub spec: LinkLibrary,
+    /// The compiled MAST library loaded for `spec`.
+    pub library: Arc<CompiledLibrary>,
+}
+impl LoadedLinkLibrary {
+    /// Construct a loaded link library from its original specification and compiled library.
+    pub fn new(spec: LinkLibrary, library: Arc<CompiledLibrary>) -> Self {
+        Self { spec, library }
+    }
+
+    /// Load the configured link library in the context of the current compiler session.
+    pub fn load_from_session(spec: LinkLibrary, session: &Session) -> Result<Self, Report> {
+        let library = Arc::new(spec.load(session)?);
+        Ok(Self { spec, library })
+    }
+}
+
 #[cfg(feature = "std")]
 impl clap::builder::ValueParserFactory for LinkLibrary {
     type Parser = LinkLibraryParser;
