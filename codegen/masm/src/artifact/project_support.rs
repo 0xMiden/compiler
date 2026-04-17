@@ -11,7 +11,9 @@ use miden_assembly::{
     Assembler, Library, Path, ProjectSourceInputs, ProjectTargetSelector,
     library::{LibraryExport, ProcedureExport},
 };
-use miden_mast_package::{Package as MastPackage, Section, SectionId, TargetType, Version};
+use miden_mast_package::{
+    Package as MastPackage, PackageManifest, Section, SectionId, TargetType, Version,
+};
 use miden_package_registry::{
     InMemoryPackageRegistry, PackageId, PackageRegistry, PackageStore, Version as RegistryVersion,
     VersionRequirement,
@@ -321,8 +323,12 @@ fn normalize_library_exports(package: &mut Package) -> Result<(), Report> {
         return Ok(());
     }
 
+    let dependencies = package.manifest.dependencies().cloned().collect::<Vec<_>>();
     let exports = recover_wasm_cm_interfaces(package.mast.as_ref());
     package.mast = Arc::new(Library::new(package.mast.mast_forest().clone(), exports)?);
+    package.manifest = PackageManifest::from_library(package.mast.as_ref())
+        .with_dependencies(dependencies)
+        .map_err(|error| Report::msg(error.to_string()))?;
     Ok(())
 }
 
