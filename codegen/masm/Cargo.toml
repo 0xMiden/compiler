@@ -13,7 +13,12 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["midenc-hir/std", "midenc-dialect-hir/std", "petgraph/std"]
+std = [
+    "miden-assembly/std",
+    "midenc-hir/std",
+    "midenc-dialect-hir/std",
+    "petgraph/std",
+]
 
 [dependencies]
 anyhow.workspace = true
@@ -23,7 +28,9 @@ miden-assembly.workspace = true
 miden-assembly-syntax.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true
+miden-package-registry.workspace = true
 miden-processor.workspace = true
+miden-project.workspace = true
 miden-protocol.workspace = true
 midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true

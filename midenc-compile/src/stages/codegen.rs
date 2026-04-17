@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 
-use miden_assembly::{Library, ast::Module};
+use miden_assembly::ast::Module;
 use miden_mast_package::Package;
 use midenc_codegen_masm::{
     self as masm, MasmComponent, ToMasmComponent,
@@ -10,13 +10,13 @@ use midenc_codegen_masm::{
     },
 };
 use midenc_hir::{interner::Symbol, pass::AnalysisManager};
-use midenc_session::OutputType;
+use midenc_session::{LoadedLinkLibrary, OutputType};
 
 use super::*;
 
 pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
-    pub link_libraries: Vec<Arc<Library>>,
+    pub link_libraries: Vec<LoadedLinkLibrary>,
     pub link_packages: BTreeMap<Symbol, Arc<Package>>,
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<Vec<u8>>,
@@ -41,7 +41,7 @@ impl Stage for CodegenStage {
         let LinkOutput {
             component,
             masm: masm_modules,
-            mast: link_libraries,
+            link_libraries,
             packages: link_packages,
             ..
         } = linker_output;

@@ -1,23 +1,18 @@
-use alloc::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use alloc::{collections::BTreeMap, sync::Arc};
 use core::fmt;
 
-use miden_assembly::{
-    Library, Path, PathBuf,
-    ast::InvocationTarget,
-    library::{LibraryExport, ProcedureExport},
-};
-use miden_core::{Word, program::Program};
-use miden_mast_package::{Package, TargetType};
+use miden_assembly::{Path, ast::InvocationTarget};
+use miden_core::Word;
+use miden_mast_package::Package;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
-    Emit, OutputMode, OutputType, Session, Writer,
+    Emit, LoadedLinkLibrary, OutputMode, OutputType, Session, Writer,
     diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
 };
 
 use crate::{TraceEvent, lower::NativePtr, masm};
+
+mod project_support;
 
 pub struct MasmComponent {
     pub id: builtin::ComponentId,
@@ -175,206 +170,22 @@ impl fmt::Display for MasmComponent {
     }
 }
 
-/// The library-backed MAST produced by assembling a [`MasmComponent`].
-#[derive(Clone)]
-pub struct AssemblyArtifact {
-    kind: TargetType,
-    mast: Arc<Library>,
-}
-
-impl AssemblyArtifact {
-    fn from_library(mast: Arc<Library>) -> Self {
-        Self {
-            kind: TargetType::Library,
-            mast,
-        }
-    }
-
-    fn from_program(program: Program, entry: Arc<Path>) -> Result<Self, Report> {
-        let export = LibraryExport::Procedure(ProcedureExport {
-            node: program.entrypoint(),
-            path: entry.clone(),
-            signature: None,
-            attributes: Default::default(),
-        });
-        let mast = Arc::new(Library::new(
-            program.mast_forest().clone(),
-            BTreeMap::from_iter([(entry, export)]),
-        )?);
-
-        Ok(Self {
-            kind: TargetType::Executable,
-            mast,
-        })
-    }
-
-    /// Returns the target type represented by this assembled artifact.
-    pub fn kind(&self) -> TargetType {
-        self.kind
-    }
-
-    /// Returns the digest of the assembled MAST.
-    pub fn digest(&self) -> Word {
-        *self.mast.digest()
-    }
-
-    /// Consumes this artifact and returns its assembled library form.
-    pub fn into_mast(self) -> Arc<Library> {
-        self.mast
-    }
-}
-
 impl MasmComponent {
+    /// Assemble this component into a Miden package.
     pub fn assemble(
         &self,
-        link_libraries: &[Arc<Library>],
+        link_libraries: &[LoadedLinkLibrary],
         link_packages: &BTreeMap<Symbol, Arc<Package>>,
+        account_component_metadata_bytes: Option<&[u8]>,
         session: &Session,
-    ) -> Result<AssemblyArtifact, Report> {
-        if let Some(entrypoint) = self.entrypoint.as_ref() {
-            self.assemble_program(entrypoint, link_libraries, link_packages, session)
-                .and_then(|(program, entrypoint)| {
-                    AssemblyArtifact::from_program(program, entrypoint)
-                })
-        } else {
-            self.assemble_library(link_libraries, link_packages, session)
-                .map(AssemblyArtifact::from_library)
-        }
-    }
-
-    fn assemble_program(
-        &self,
-        entrypoint: &InvocationTarget,
-        link_libraries: &[Arc<Library>],
-        _link_packages: &BTreeMap<Symbol, Arc<Package>>,
-        session: &Session,
-    ) -> Result<(Program, Arc<Path>), Report> {
-        use miden_assembly::Assembler;
-
-        log::debug!(
-            target: "assembly",
-            "assembling executable with entrypoint '{entrypoint}'"
-        );
-        let mut assembler = Assembler::new(session.source_manager.clone());
-
-        let mut lib_modules = BTreeSet::<PathBuf>::default();
-        // Link extra libraries
-        for library in link_libraries.iter().cloned() {
-            for module in library.module_infos() {
-                log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
-                lib_modules.insert(module.path().to_path_buf());
-            }
-            assembler.link_dynamic_library(library)?;
-        }
-
-        // Assemble library
-        log::debug!(target: "assembly", "start adding the following modules with assembler: {}",
-            self.modules.iter().map(|m| m.path().to_string()).collect::<Vec<_>>().join(", "));
-
-        let mut modules = Vec::with_capacity(self.modules.len());
-        for module in self.modules.iter().cloned() {
-            if lib_modules.contains(module.path()) {
-                log::warn!(
-                    target: "assembly",
-                    "module '{}' is already registered with the assembler as library's module, \
-                     skipping",
-                    module.path()
-                );
-                continue;
-            }
-
-            if module.path().as_str().trim_start_matches("::").starts_with("intrinsics") {
-                log::debug!(target: "assembly", "adding intrinsics '{}' to assembler", module.path());
-                assembler.compile_and_statically_link(module)?;
-            } else {
-                log::debug!(target: "assembly", "adding '{}' for assembler", module.path());
-                modules.push(module);
-            }
-        }
-
-        // We need to add modules according to their dependencies (add the dependency before the dependent)
-        // Workaround until https://github.com/0xMiden/miden-vm/issues/1669 is implemented
-        for module in modules.into_iter().rev() {
-            assembler.compile_and_statically_link(module)?;
-        }
-
-        let emit_test_harness = session.get_flag("test_harness");
-        let main =
-            self.generate_main(entrypoint, emit_test_harness, session.source_manager.clone())?;
-        let entrypoint: Arc<Path> = main.path().join(&masm::ProcedureName::main()).into();
-        log::debug!(target: "assembly", "generated executable module:\n{main}");
-        let program = assembler.assemble_program(main)?;
-        let advice_map: miden_core::advice::AdviceMap =
-            self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
-        Ok((program.with_advice_map(advice_map), entrypoint))
-    }
-
-    fn assemble_library(
-        &self,
-        link_libraries: &[Arc<Library>],
-        _link_packages: &BTreeMap<Symbol, Arc<Package>>,
-        session: &Session,
-    ) -> Result<Arc<Library>, Report> {
-        use miden_assembly::Assembler;
-
-        log::debug!(
-            target: "assembly",
-            "assembling library of {} modules",
-            self.modules.len()
-        );
-
-        let mut assembler = Assembler::new(session.source_manager.clone());
-
-        let mut lib_modules = BTreeSet::<PathBuf>::default();
-        // Link extra libraries
-        for library in link_libraries.iter().cloned() {
-            for module in library.module_infos() {
-                log::debug!(target: "assembly", "registering '{}' with assembler", module.path());
-                lib_modules.insert(module.path().to_path_buf());
-            }
-            assembler.link_dynamic_library(library)?;
-        }
-
-        // Assemble library
-        log::debug!(target: "assembly", "start adding the following modules with assembler: {}",
-            self.modules.iter().map(|m| m.path().to_string()).collect::<Vec<_>>().join(", "));
-        let mut modules = Vec::with_capacity(self.modules.len());
-        for module in self.modules.iter().cloned() {
-            if lib_modules.contains(module.path()) {
-                log::warn!(
-                    target: "assembly",
-                    "module '{}' is already registered with the assembler as library's module, \
-                     skipping",
-                    module.path()
-                );
-                continue;
-            }
-            if module.path().as_str().trim_start_matches("::").starts_with("intrinsics") {
-                log::debug!(target: "assembly", "adding intrinsics '{}' to assembler", module.path());
-                assembler.compile_and_statically_link(module)?;
-            } else {
-                log::debug!(target: "assembly", "adding '{}' for assembler", module.path());
-                modules.push(module);
-            }
-        }
-        let lib = assembler.assemble_library(modules)?;
-
-        let advice_map: miden_core::advice::AdviceMap =
-            self.rodata.iter().map(|rodata| (rodata.digest, rodata.to_elements())).collect();
-
-        let converted_exports = recover_wasm_cm_interfaces(&lib);
-
-        // Get a reference to the library MAST, then drop the library so we can obtain a mutable
-        // reference so we can modify its advice map data
-        let mut mast_forest = lib.mast_forest().clone();
-        drop(lib);
-        {
-            let mast = Arc::get_mut(&mut mast_forest).expect("expected unique reference");
-            mast.advice_map_mut().extend(advice_map);
-        }
-
-        // Reconstruct the library with the updated MAST
-        Ok(Library::new(mast_forest, converted_exports).map(Arc::new)?)
+    ) -> Result<Package, Report> {
+        project_support::assemble(
+            self,
+            link_libraries,
+            link_packages,
+            account_component_metadata_bytes,
+            session,
+        )
     }
 
     /// Generate an executable module which when run expects the raw data segment data to be
@@ -501,76 +312,6 @@ impl MasmComponent {
         // Step 5: Drop `inits` after loop is evaluated
         block.push(Op::Inst(Span::new(span, Inst::Drop)));
     }
-}
-
-/// Try to recognize Wasm CM interfaces and transform those exports to have Wasm interface encoded
-/// as module name.
-///
-/// Temporary workaround for:
-///
-/// 1. Temporary exporting multiple interfaces from the same(Wasm core) module (an interface is
-///    encoded in the function name)
-///
-/// 2. Assembler using the current module name to generate exports.
-///
-fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExport> {
-    use crate::intrinsics::INTRINSICS_MODULE_NAMES;
-
-    let mut exports = BTreeMap::new();
-    for export in lib.exports() {
-        let path = export.path();
-        let Some(proc_export) = export.as_procedure() else {
-            exports.insert(path, export.clone());
-            continue;
-        };
-
-        let Some(module) = proc_export.path.parent() else {
-            exports.insert(path, export.clone());
-            continue;
-        };
-        let Some(proc_name) = proc_export.path.last() else {
-            exports.insert(path, export.clone());
-            continue;
-        };
-
-        if INTRINSICS_MODULE_NAMES.contains(&module.as_str()) || proc_name.starts_with("cabi") {
-            // Preserve intrinsics modules and internal Wasm CM `cabi_*` functions
-            exports.insert(path, export.clone());
-            continue;
-        }
-
-        if let Some((component, interface)) = proc_name.rsplit_once('/') {
-            // Wasm CM interface
-            let (interface, function) =
-                interface.rsplit_once('#').expect("invalid wasm component model identifier");
-
-            // Derive a new module path in which the Wasm CM interface name is encoded as part of
-            // the module path, rather than being encoded in the procedure name.
-            let mut module_path = component.to_string();
-            module_path.push_str("::");
-            module_path.push_str(interface);
-            let module_path = masm::LibraryPath::new(&module_path)
-                .expect("invalid wasm component model identifier");
-
-            let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
-                Span::unknown(Arc::from(function)),
-            ));
-            let qualified = masm::QualifiedProcedureName::new(module_path.as_path(), name);
-            let qualified = qualified.into_inner();
-
-            let mut new_export = ProcedureExport::new(proc_export.node, qualified.clone())
-                .with_attributes(proc_export.attributes.clone());
-            if let Some(signature) = proc_export.signature.clone() {
-                new_export = new_export.with_signature(signature);
-            }
-
-            exports.insert(qualified, LibraryExport::Procedure(new_export));
-        } else {
-            // Non-Wasm CM interface, preserve as is
-            exports.insert(path, export.clone());
-        }
-    }
-    exports
 }
 
 #[cfg(test)]

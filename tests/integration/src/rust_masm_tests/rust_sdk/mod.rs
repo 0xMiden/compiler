@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, env, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env,
+    path::PathBuf,
+};
 
 use miden_core::{
     Felt, Word,
@@ -30,6 +34,25 @@ fn note_script_program(package: &miden_mast_package::Package) -> Program {
     let note_script =
         NoteScript::from_package(package).expect("compiled package should contain a note script");
     Program::new(note_script.mast(), note_script.entrypoint())
+}
+
+/// Assert that package metadata exposes the same exported paths as the underlying library.
+fn assert_manifest_exports_match_library(package: &miden_mast_package::Package) {
+    let library_exports = package
+        .mast
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<BTreeSet<_>>();
+    let manifest_exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        manifest_exports, library_exports,
+        "package manifest exports diverged from library exports"
+    );
 }
 
 #[test]
@@ -138,6 +161,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     );
     let account_package = test.compile_package();
     assert!(account_package.is_library());
+    assert_manifest_exports_match_library(account_package.as_ref());
     let lib = account_package.mast.clone();
     let exports = lib
         .exports()
@@ -160,6 +184,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     // Test that the package loads
     let bytes = account_package.to_bytes();
     let loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
+    assert_manifest_exports_match_library(&loaded_package);
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
