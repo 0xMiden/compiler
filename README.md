@@ -28,7 +28,7 @@ This repo is broken into the following high-level components:
 
 ## Building
 
-You'll need to have Rust installed (at time of writing, we're doing development against Rust 1.73).
+You'll need to have Rust installed. This repository pins the toolchain in `rust-toolchain.toml` at the repo root (currently a nightly channel); use `rustup` to install that exact channel after cloning so local builds match CI.
 
 Additionally, you'll want to have [`cargo-make`](https://github.com/sagiegurari/cargo-make) installed:
 
