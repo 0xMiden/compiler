@@ -57,7 +57,7 @@ pub(super) fn assemble(
     )?;
 
     let selector = if component.entrypoint.is_some() {
-        ProjectTargetSelector::Executable("main")
+        ProjectTargetSelector::Executable(&component.id.to_string())
     } else {
         ProjectTargetSelector::Library
     };
@@ -236,7 +236,7 @@ fn push_project_dependency(
 /// Build the synthetic root target used to assemble compiler-generated MASM.
 fn build_root_target(component: &MasmComponent) -> Result<Target, Report> {
     if component.entrypoint.is_some() {
-        return Ok(Target::executable("main"));
+        return Ok(Target::executable(component.id.to_string()));
     }
 
     let root = component
