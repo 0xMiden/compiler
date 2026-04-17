@@ -1,6 +1,9 @@
 #![no_std]
 #![deny(warnings)]
 
+pub mod debug;
+
+pub use debug::println;
 pub use miden_base::*;
 pub use miden_base_macros::{
     auth_script, component, export_type, generate, note, note_script, tx_script,
