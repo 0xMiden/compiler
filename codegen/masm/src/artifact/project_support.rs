@@ -23,7 +23,7 @@ use miden_project::{
     Target,
 };
 use midenc_session::{
-    Session,
+    LinkLibrary, Session,
     diagnostics::{Report, Span},
 };
 
@@ -39,8 +39,12 @@ pub(super) fn assemble(
     session: &Session,
 ) -> Result<Package, Report> {
     let mut store = InMemoryPackageRegistry::default();
-    let dependencies =
-        register_external_dependencies(&mut store, link_libraries, link_packages, session)?;
+    let dependencies = register_external_dependencies(
+        &mut store,
+        &session.options.link_libraries,
+        link_libraries,
+        link_packages,
+    )?;
     let target = build_root_target(component)?;
     let mut assembler = Assembler::new(session.source_manager.clone());
     let sources = prepare_sources(
@@ -76,21 +80,27 @@ pub(super) fn assemble(
 /// Register externally-linked artifacts in an in-memory package store.
 fn register_external_dependencies(
     store: &mut InMemoryPackageRegistry,
+    link_library_specs: &[LinkLibrary],
     link_libraries: &[Arc<miden_assembly::Library>],
     link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
-    session: &Session,
 ) -> Result<Vec<ProjectDependency>, Report> {
-    if session.options.link_libraries.len() != link_libraries.len() {
+    if link_library_specs.len() != link_libraries.len() {
         return Err(Report::msg(
             "loaded link libraries do not match the session link library configuration",
         ));
     }
 
+    let link_library_versions =
+        resolve_link_library_versions(link_library_specs, link_libraries, link_packages)?;
     let mut dependencies = BTreeMap::default();
-    for (link_lib, library) in session.options.link_libraries.iter().zip(link_libraries.iter()) {
+    for ((link_lib, library), version) in link_library_specs
+        .iter()
+        .zip(link_libraries.iter())
+        .zip(link_library_versions.into_iter())
+    {
         let package = Arc::from(MastPackage::from_library(
             link_lib.name.to_string().into(),
-            Version::new(0, 0, 0),
+            version,
             TargetType::Library,
             library.clone(),
             [],
@@ -101,6 +111,102 @@ fn register_external_dependencies(
     register_link_packages(store, &mut dependencies, link_packages)?;
 
     Ok(dependencies.into_values().collect())
+}
+
+/// Determine the semantic version to associate with each raw session link library.
+///
+/// Linked package inputs record exact dependency versions in their manifests. To keep those package
+/// inputs interoperable with raw `-l` libraries, reuse the semantic version already required by
+/// any linked packages that depend on the same library digest. Libraries with no discoverable
+/// version metadata fall back to `0.0.0`.
+fn resolve_link_library_versions(
+    link_library_specs: &[LinkLibrary],
+    link_libraries: &[Arc<miden_assembly::Library>],
+    link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
+) -> Result<Vec<Version>, Report> {
+    let mut digests = BTreeMap::default();
+    let mut required_versions =
+        BTreeMap::<PackageId, BTreeMap<Version, BTreeSet<PackageId>>>::default();
+
+    for (link_lib, library) in link_library_specs.iter().zip(link_libraries.iter()) {
+        let name = PackageId::from(link_lib.name.as_ref());
+        let digest = *library.digest();
+
+        match digests.get(&name) {
+            Some(existing) if existing != &digest => {
+                return Err(Report::msg(format!(
+                    "conflicting session link libraries registered for '{name}'",
+                )));
+            }
+            Some(_) => {}
+            None => {
+                digests.insert(name.clone(), digest);
+            }
+        }
+
+        required_versions.entry(name).or_default();
+    }
+
+    for package in link_packages.values() {
+        for dependency in package.manifest.dependencies() {
+            if dependency.kind != TargetType::Library {
+                continue;
+            }
+
+            let Some(expected_digest) = digests.get(&dependency.name) else {
+                continue;
+            };
+            if &dependency.digest != expected_digest {
+                return Err(Report::msg(format!(
+                    "linked package '{}' depends on session library '{}' at '{}#{}', but the \
+                     loaded session library has digest '{}'",
+                    package.name,
+                    dependency.name,
+                    dependency.version,
+                    dependency.digest,
+                    expected_digest,
+                )));
+            }
+
+            required_versions
+                .get_mut(&dependency.name)
+                .expect("session link library versions should be initialized")
+                .entry(dependency.version.clone())
+                .or_default()
+                .insert(package.name.clone());
+        }
+    }
+
+    link_library_specs
+        .iter()
+        .map(|link_lib| {
+            let name = PackageId::from(link_lib.name.as_ref());
+            let versions = required_versions
+                .get(&name)
+                .expect("session link library versions should be initialized");
+
+            if versions.is_empty() {
+                return Ok(Version::new(0, 0, 0));
+            }
+            if versions.len() > 1 {
+                let details = versions
+                    .iter()
+                    .map(|(version, packages)| {
+                        let packages =
+                            packages.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+                        format!("{version} (required by {packages})")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                return Err(Report::msg(format!(
+                    "linked packages require conflicting versions for session library '{name}': \
+                     {details}",
+                )));
+            }
+
+            Ok(versions.keys().next().cloned().expect("non-empty map should contain a version"))
+        })
+        .collect()
 }
 
 /// Register package inputs in an order accepted by the in-memory registry.
@@ -432,4 +538,112 @@ fn external_module_paths(
 /// Return true when the module belongs to the compiler's intrinsics namespace.
 fn is_intrinsics_module(module: &miden_assembly::ast::Module) -> bool {
     module.path().as_str().trim_start_matches("::").starts_with("intrinsics")
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{collections::BTreeMap, sync::Arc, vec};
+
+    use miden_mast_package::{Dependency, PackageId};
+    use midenc_session::{LinkLibrary, STDLIB};
+
+    use super::*;
+
+    /// Build a synthetic library package backed by the standard library MAST.
+    fn test_package(
+        name: &str,
+        version: Version,
+        dependencies: impl IntoIterator<Item = Dependency>,
+    ) -> Arc<MastPackage> {
+        Arc::from(MastPackage::from_library(
+            PackageId::from(name),
+            version,
+            TargetType::Library,
+            STDLIB.clone(),
+            dependencies,
+        ))
+    }
+
+    #[test]
+    fn register_external_dependencies_reuses_link_package_library_versions() {
+        let stdlib = STDLIB.clone();
+        let std_digest = *stdlib.digest();
+        let dependent = test_package(
+            "dep",
+            Version::new(1, 0, 0),
+            [Dependency {
+                name: PackageId::from("std"),
+                kind: TargetType::Library,
+                version: Version::new(1, 2, 3),
+                digest: std_digest,
+            }],
+        );
+        let link_packages = BTreeMap::from([(Symbol::intern("dep"), dependent)]);
+
+        let mut store = InMemoryPackageRegistry::default();
+        let link_library_specs = vec![LinkLibrary::std()];
+        let dependencies = register_external_dependencies(
+            &mut store,
+            &link_library_specs,
+            &[stdlib],
+            &link_packages,
+        )
+        .expect("external dependency registration should succeed");
+
+        let std_version = RegistryVersion::new(Version::new(1, 2, 3), std_digest);
+        assert!(store.is_version_available(&PackageId::from("std"), &std_version));
+        assert!(
+            !store.is_semver_available(&PackageId::from("std"), &Version::new(0, 0, 0)),
+            "expected the inferred version to replace the synthetic 0.0.0 fallback"
+        );
+
+        let std_dependency = dependencies
+            .into_iter()
+            .find(|dependency| dependency.name().as_ref() == "std")
+            .expect("root project should register the std dependency");
+        assert_eq!(std_dependency.required_version(), VersionRequirement::Exact(std_version));
+    }
+
+    #[test]
+    fn register_external_dependencies_rejects_conflicting_library_versions() {
+        let stdlib = STDLIB.clone();
+        let std_digest = *stdlib.digest();
+        let dep_a = test_package(
+            "dep-a",
+            Version::new(1, 0, 0),
+            [Dependency {
+                name: PackageId::from("std"),
+                kind: TargetType::Library,
+                version: Version::new(1, 2, 3),
+                digest: std_digest,
+            }],
+        );
+        let dep_b = test_package(
+            "dep-b",
+            Version::new(1, 0, 0),
+            [Dependency {
+                name: PackageId::from("std"),
+                kind: TargetType::Library,
+                version: Version::new(2, 0, 0),
+                digest: std_digest,
+            }],
+        );
+        let link_packages =
+            BTreeMap::from([(Symbol::intern("dep-a"), dep_a), (Symbol::intern("dep-b"), dep_b)]);
+
+        let mut store = InMemoryPackageRegistry::default();
+        let link_library_specs = vec![LinkLibrary::std()];
+        let error = register_external_dependencies(
+            &mut store,
+            &link_library_specs,
+            &[stdlib],
+            &link_packages,
+        )
+        .expect_err("conflicting link-library versions should fail");
+
+        assert!(
+            error.to_string().contains("conflicting versions for session library 'std'"),
+            "unexpected error: {error}"
+        );
+    }
 }
