@@ -1,13 +1,9 @@
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::fmt;
 
-use miden_assembly::{
-    Library, Path,
-    ast::InvocationTarget,
-    library::{LibraryExport, ProcedureExport},
-};
+use miden_assembly::{Library, Path, ast::InvocationTarget};
 use miden_core::Word;
-use miden_mast_package::{Package, Section, SectionId};
+use miden_mast_package::Package;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
@@ -316,109 +312,6 @@ impl MasmComponent {
         // Step 5: Drop `inits` after loop is evaluated
         block.push(Op::Inst(Span::new(span, Inst::Drop)));
     }
-}
-
-/// Attach serialized account component metadata to the assembled package.
-fn attach_account_component_metadata(
-    package: &mut Package,
-    account_component_metadata_bytes: Option<&[u8]>,
-) {
-    if let Some(bytes) = account_component_metadata_bytes {
-        package
-            .sections
-            .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes.to_vec()));
-    }
-}
-
-/// Rewrite library exports to preserve Wasm component-model interface names.
-fn normalize_library_exports(package: &mut Package) -> Result<(), Report> {
-    if !package.kind.is_library() {
-        return Ok(());
-    }
-
-    let exports = recover_wasm_cm_interfaces(package.mast.as_ref());
-    package.mast = Arc::new(Library::new(package.mast.mast_forest().clone(), exports)?);
-    Ok(())
-}
-
-/// Extend the package advice map with the component's rodata segments.
-fn extend_rodata_advice_map(package: &mut Package, rodata: &[Rodata]) {
-    if rodata.is_empty() {
-        return;
-    }
-
-    let advice_map = rodata.iter().map(|segment| (segment.digest, segment.to_elements())).collect();
-    Arc::make_mut(&mut package.mast).extend_advice_map(advice_map);
-}
-
-/// Try to recognize Wasm CM interfaces and transform those exports to have Wasm interface encoded
-/// as module name.
-///
-/// Temporary workaround for:
-///
-/// 1. Temporary exporting multiple interfaces from the same(Wasm core) module (an interface is
-///    encoded in the function name)
-///
-/// 2. Assembler using the current module name to generate exports.
-///
-fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExport> {
-    use crate::intrinsics::INTRINSICS_MODULE_NAMES;
-
-    let mut exports = BTreeMap::new();
-    for export in lib.exports() {
-        let path = export.path();
-        let Some(proc_export) = export.as_procedure() else {
-            exports.insert(path, export.clone());
-            continue;
-        };
-
-        let Some(module) = proc_export.path.parent() else {
-            exports.insert(path, export.clone());
-            continue;
-        };
-        let Some(proc_name) = proc_export.path.last() else {
-            exports.insert(path, export.clone());
-            continue;
-        };
-
-        if INTRINSICS_MODULE_NAMES.contains(&module.as_str()) || proc_name.starts_with("cabi") {
-            // Preserve intrinsics modules and internal Wasm CM `cabi_*` functions
-            exports.insert(path, export.clone());
-            continue;
-        }
-
-        if let Some((component, interface)) = proc_name.rsplit_once('/') {
-            // Wasm CM interface
-            let (interface, function) =
-                interface.rsplit_once('#').expect("invalid wasm component model identifier");
-
-            // Derive a new module path in which the Wasm CM interface name is encoded as part of
-            // the module path, rather than being encoded in the procedure name.
-            let mut module_path = component.to_string();
-            module_path.push_str("::");
-            module_path.push_str(interface);
-            let module_path = masm::LibraryPath::new(&module_path)
-                .expect("invalid wasm component model identifier");
-
-            let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
-                Span::unknown(Arc::from(function)),
-            ));
-            let qualified = masm::QualifiedProcedureName::new(module_path.as_path(), name);
-            let qualified = qualified.into_inner();
-
-            let mut new_export = ProcedureExport::new(proc_export.node, qualified.clone())
-                .with_attributes(proc_export.attributes.clone());
-            if let Some(signature) = proc_export.signature.clone() {
-                new_export = new_export.with_signature(signature);
-            }
-
-            exports.insert(qualified, LibraryExport::Procedure(new_export));
-        } else {
-            // Non-Wasm CM interface, preserve as is
-            exports.insert(path, export.clone());
-        }
-    }
-    exports
 }
 
 #[cfg(test)]
