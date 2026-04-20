@@ -12,15 +12,7 @@ crate-type = ["cdylib"]
 miden = { path = "../../../../sdk/sdk" }
 
 [profile.release]
-opt-level = "z"
-panic = "abort"
-debug = true
 trim-paths = ["diagnostics", "object"]
 
 [profile.dev]
-panic = "abort"
-opt-level = 1
-debug-assertions = true
-overflow-checks = false
-debug = true
 trim-paths = ["diagnostics", "object"]
