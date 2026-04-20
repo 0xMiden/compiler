@@ -12,7 +12,11 @@ use midenc_hir::{
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
-use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project, testing::executor_with_std};
+use crate::{
+    CompilerTest, CompilerTestBuilder,
+    cargo_proj::project,
+    testing::{executor_with_std, stripped_mast_size_str},
+};
 
 /// Asserts that the exported procedure carrying `attribute` is unique and preserves its leaf
 /// export name.
@@ -321,25 +325,32 @@ fn counter_note() {
 #[test]
 fn basic_wallet_and_p2id() {
     let config = WasmTranslationConfig::default();
-    let mut test =
+    let mut account_test =
         CompilerTest::rust_source_cargo_miden("../../examples/basic-wallet", config.clone(), []);
-    let account_package = test.compile_package();
+    let account_package = account_test.compile_package();
     assert!(account_package.is_library(), "expected library");
+    expect!["29921"].assert_eq(stripped_mast_size_str(&account_package));
 
-    let mut test = CompilerTest::rust_source_cargo_miden(
+    let mut tx_script_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/basic-wallet-tx-script",
         config.clone(),
         [],
     );
-    let package = test.compile_package();
-    assert!(package.is_program(), "expected program");
+    let tx_script_package = tx_script_test.compile_package();
+    assert!(tx_script_package.is_program(), "expected program");
+    expect!["50961"].assert_eq(stripped_mast_size_str(&tx_script_package));
 
-    let mut test = CompilerTest::rust_source_cargo_miden("../../examples/p2id-note", config, []);
-    let note_package = test.compile_package();
+    let mut p2id_test =
+        CompilerTest::rust_source_cargo_miden("../../examples/p2id-note", config.clone(), []);
+    let note_package = p2id_test.compile_package();
     assert!(note_package.is_library(), "expected library");
-    let _note_script =
-        NoteScript::from_package(note_package.as_ref()).expect("expected a note-script package");
-    assert_unique_protocol_export(note_package.as_ref(), "note_script", "script");
+    expect!["44348"].assert_eq(stripped_mast_size_str(&note_package));
+
+    let mut p2ide_test =
+        CompilerTest::rust_source_cargo_miden("../../examples/p2ide-note", config, []);
+    let p2ide_package = p2ide_test.compile_package();
+    assert!(p2ide_package.is_library(), "expected library");
+    expect!["51565"].assert_eq(stripped_mast_size_str(&p2ide_package));
 }
 
 #[test]
