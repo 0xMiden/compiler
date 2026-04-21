@@ -45,9 +45,8 @@ pub(super) fn assemble(
         link_libraries,
         link_packages,
     )?;
-    let target = build_root_target(component)?;
     let mut assembler = Assembler::new(session.source_manager.clone());
-    let sources = prepare_sources(
+    let (target, sources) = prepare_sources(
         component,
         &mut assembler,
         link_libraries,
@@ -341,20 +340,7 @@ fn push_project_dependency(
     }
 }
 
-/// Build the synthetic root target used to assemble compiler-generated MASM.
-fn build_root_target(component: &MasmComponent) -> Result<Target, Report> {
-    if component.entrypoint.is_some() {
-        return Ok(Target::executable(component.id.to_string()));
-    }
-
-    let root = component
-        .modules
-        .first()
-        .ok_or_else(|| Report::msg("component does not contain any MASM modules"))?;
-    Ok(Target::library(root.path()))
-}
-
-/// Prepare project source inputs while preserving the legacy assembler behavior for intrinsics.
+/// Prepare the synthetic project target and source inputs used to assemble compiler-generated MASM.
 fn prepare_sources(
     component: &MasmComponent,
     assembler: &mut Assembler,
@@ -362,7 +348,7 @@ fn prepare_sources(
     link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
     emit_test_harness: bool,
     source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
-) -> Result<ProjectSourceInputs, Report> {
+) -> Result<(Target, ProjectSourceInputs), Report> {
     let external_modules = external_module_paths(link_libraries, link_packages);
 
     // Intrinsics must be linked into the assembler context directly so they do not become part of
@@ -393,22 +379,27 @@ fn prepare_sources(
     }
 
     if let Some(entrypoint) = component.entrypoint.as_ref() {
+        let target = Target::executable(component.id.to_string());
         let root = Box::new(Arc::unwrap_or_clone(component.generate_main(
             entrypoint,
             emit_test_harness,
             source_manager,
         )?));
-        return Ok(ProjectSourceInputs { root, support });
+        return Ok((target, ProjectSourceInputs { root, support }));
     }
 
     let mut modules = support.into_iter();
     let root = modules
         .next()
         .ok_or_else(|| Report::msg("component does not contain any user-defined MASM modules"))?;
-    Ok(ProjectSourceInputs {
-        root,
-        support: modules.collect(),
-    })
+    let target = Target::library(root.path());
+    Ok((
+        target,
+        ProjectSourceInputs {
+            root,
+            support: modules.collect(),
+        },
+    ))
 }
 
 /// Attach serialized account component metadata to the assembled package.
@@ -544,6 +535,7 @@ fn is_intrinsics_module(module: &miden_assembly::ast::Module) -> bool {
 mod tests {
     use alloc::{collections::BTreeMap, sync::Arc, vec};
 
+    use miden_assembly::DefaultSourceManager;
     use miden_mast_package::{Dependency, PackageId};
     use midenc_session::{LinkLibrary, STDLIB};
 
@@ -562,6 +554,19 @@ mod tests {
             STDLIB.clone(),
             dependencies,
         ))
+    }
+
+    fn test_component(modules: Vec<Arc<masm::Module>>) -> MasmComponent {
+        MasmComponent {
+            id: "root:root@1.0.0".parse().expect("synthetic component id should be valid"),
+            init: None,
+            entrypoint: None,
+            kernel: None,
+            rodata: Vec::new(),
+            heap_base: 0,
+            stack_pointer: None,
+            modules,
+        }
     }
 
     #[test]
@@ -645,5 +650,37 @@ mod tests {
             error.to_string().contains("conflicting versions for session library 'std'"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn prepare_sources_uses_filtered_library_root_for_target_namespace() {
+        let duplicate_path = STDLIB
+            .module_infos()
+            .next()
+            .expect("stdlib should contain at least one module")
+            .path()
+            .to_path_buf();
+        let user_path = masm::LibraryPath::new("test::user").expect("path should be valid");
+        let component = test_component(vec![
+            Arc::new(masm::Module::new(masm::ModuleKind::Library, duplicate_path)),
+            Arc::new(masm::Module::new(masm::ModuleKind::Library, user_path.clone())),
+        ]);
+        let source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync> =
+            Arc::new(DefaultSourceManager::default());
+        let mut assembler = Assembler::new(source_manager.clone());
+
+        let (target, sources) = prepare_sources(
+            &component,
+            &mut assembler,
+            core::slice::from_ref(&*STDLIB),
+            &BTreeMap::default(),
+            false,
+            source_manager,
+        )
+        .expect("source preparation should succeed");
+        let expected_root_path = user_path.as_path().to_absolute();
+
+        assert_eq!(sources.root.path().as_str(), expected_root_path.as_ref().as_str());
+        assert_eq!(target.namespace.inner().as_str(), sources.root.path().as_str());
     }
 }
