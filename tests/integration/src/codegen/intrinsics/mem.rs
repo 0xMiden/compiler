@@ -8,20 +8,26 @@ use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
 };
 use proptest::{
-    prelude::any,
+    prelude::{any, Strategy},
     prop_assert_eq,
     test_runner::{TestCaseError, TestError, TestRunner},
 };
 
 use crate::testing::*;
 
+/// Generates a random word-aligned byte address suitable for memory tests.
+///
+/// The address is guaranteed to be above the 16 pages reserved for the Rust stack
+/// (i.e. in pages 17..256), and aligned to a 4-byte boundary.
+fn random_word_aligned_addr() -> impl Strategy<Value = u32> {
+    // Page 17..256, word offset 0..1024 within that page
+    (17u32..256, 0u32..1024).prop_map(|(page, word)| page * (1 << 16) + word * 4)
+}
+
 /// Tests the memory load intrinsic for aligned loads of single-word (i.e. 32-bit) values
 #[test]
 fn load_sw() {
     setup::enable_compiler_instrumentation();
-
-    // Write address to use
-    let write_to = 17 * 2u32.pow(16);
 
     // Generate a `test` module with `main` function that invokes `load_sw` when lowered to MASM
     // Compile once outside the test loop
@@ -36,40 +42,39 @@ fn load_sw() {
         });
 
     let config = proptest::test_runner::Config::with_cases(10);
-    let res = TestRunner::new(config).run(&any::<u32>(), move |value| {
-        // Write `value` to the start of the 17th page (1 page after the 16 pages reserved for the
-        // Rust stack)
-        let value_bytes = value.to_ne_bytes();
-        let initializers = [Initializer::MemoryBytes {
-            addr: write_to,
-            bytes: &value_bytes,
-        }];
+    let res =
+        TestRunner::new(config).run(&(any::<u32>(), random_word_aligned_addr()), move |(value, write_to)| {
+            let value_bytes = value.to_ne_bytes();
+            let initializers = [Initializer::MemoryBytes {
+                addr: write_to,
+                bytes: &value_bytes,
+            }];
 
-        let args = [Felt::new(write_to as u64)];
-        let output =
-            eval_package::<u32, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let stored = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
+            let args = [Felt::new(write_to as u64)];
+            let output =
+                eval_package::<u32, _, _>(&package, initializers, &args, context.session(), |trace| {
+                    let stored = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, but \
+                             read from that address failed"
+                        ))
+                    })?;
+                    prop_assert_eq!(
+                        stored,
+                        value,
+                        "expected {} to have been written to byte address {}, but found {} there \
+                         instead",
+                        value,
+                        write_to,
+                        stored
+                    );
+                    Ok(())
                 })?;
-                prop_assert_eq!(
-                    stored,
-                    value,
-                    "expected {} to have been written to byte address {}, but found {} there \
-                     instead",
-                    value,
-                    write_to,
-                    stored
-                );
-                Ok(())
-            })?;
 
-        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
+            prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
-        Ok(())
-    });
+            Ok(())
+        });
 
     match res {
         Err(TestError::Fail(reason, value)) => {
@@ -85,9 +90,6 @@ fn load_sw() {
 fn load_dw() {
     setup::enable_compiler_instrumentation();
 
-    // Write address to use
-    let write_to = 17 * 2u32.pow(16);
-
     // Generate a `test` module with `main` function that invokes `load_dw` when lowered to MASM
     // Compile once outside the test loop
     let (package, context) =
@@ -101,54 +103,54 @@ fn load_dw() {
         });
 
     let config = proptest::test_runner::Config::with_cases(10);
-    let res = TestRunner::new(config).run(&any::<u64>(), move |value| {
-        // Write `value` to the start of the 17th page (1 page after the 16 pages reserved for the
-        // Rust stack).  Felts must be written in little-endian order: lo at lower address.
-        let value_felts = value.to_felts();
-        let initializers = [Initializer::MemoryFelts {
-            addr: write_to / 4,
-            felts: Cow::Borrowed(&value_felts),
-        }];
+    let res =
+        TestRunner::new(config).run(&(any::<u64>(), random_word_aligned_addr()), move |(value, write_to)| {
+            // Felts must be written in little-endian order: lo at lower address.
+            let value_felts = value.to_felts();
+            let initializers = [Initializer::MemoryFelts {
+                addr: write_to / 4,
+                felts: Cow::Borrowed(&value_felts),
+            }];
 
-        let args = [Felt::new(write_to as u64)];
-        let output =
-            eval_package::<u64, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let lo =
-                    trace.read_memory_element(write_to / 4).unwrap_or_default().as_canonical_u64();
-                let hi = trace
-                    .read_memory_element((write_to / 4) + 1)
-                    .unwrap_or_default()
-                    .as_canonical_u64();
+            let args = [Felt::new(write_to as u64)];
+            let output =
+                eval_package::<u64, _, _>(&package, initializers, &args, context.session(), |trace| {
+                    let lo =
+                        trace.read_memory_element(write_to / 4).unwrap_or_default().as_canonical_u64();
+                    let hi = trace
+                        .read_memory_element((write_to / 4) + 1)
+                        .unwrap_or_default()
+                        .as_canonical_u64();
 
-                log::trace!(target: "executor", "hi = {hi} ({hi:0x})");
-                log::trace!(target: "executor", "lo = {lo} ({lo:0x})");
+                    log::trace!(target: "executor", "hi = {hi} ({hi:0x})");
+                    log::trace!(target: "executor", "lo = {lo} ({lo:0x})");
 
-                prop_assert_eq!(lo, value & 0xffffffff);
-                prop_assert_eq!(hi, value >> 32);
+                    prop_assert_eq!(lo, value & 0xffffffff);
+                    prop_assert_eq!(hi, value >> 32);
 
-                let stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
+                    let stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, but \
+                             read from that address failed"
+                        ))
+                    })?;
+
+                    prop_assert_eq!(
+                        stored,
+                        value,
+                        "expected {} to have been written to byte address {}, but found {} there \
+                         instead",
+                        value,
+                        write_to,
+                        stored
+                    );
+                    Ok(())
                 })?;
 
-                prop_assert_eq!(
-                    stored,
-                    value,
-                    "expected {} to have been written to byte address {}, but found {} there \
-                     instead",
-                    value,
-                    write_to,
-                    stored
-                );
-                Ok(())
-            })?;
+            prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
-        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
-
-        Ok(())
-    });
+            Ok(())
+        });
 
     match res {
         Err(TestError::Fail(reason, value)) => {
@@ -240,9 +242,6 @@ fn global_u64_initializer_uses_immediate_store_dw() {
 fn load_u8() {
     setup::enable_compiler_instrumentation();
 
-    // Write address to use
-    let write_to = 17 * 2u32.pow(16);
-
     // Generate a `test` module with `main` function that invokes load for u8 when lowered to MASM
     // Compile once outside the test loop
     let (package, context) =
@@ -256,40 +255,39 @@ fn load_u8() {
         });
 
     let config = proptest::test_runner::Config::with_cases(10);
-    let res = TestRunner::new(config).run(&any::<u8>(), move |value| {
-        // Write `value` to the start of the 17th page (1 page after the 16 pages reserved for the
-        // Rust stack)
-        let value_bytes = [value];
-        let initializers = [Initializer::MemoryBytes {
-            addr: write_to,
-            bytes: &value_bytes,
-        }];
+    let res =
+        TestRunner::new(config).run(&(any::<u8>(), random_word_aligned_addr()), move |(value, write_to)| {
+            let value_bytes = [value];
+            let initializers = [Initializer::MemoryBytes {
+                addr: write_to,
+                bytes: &value_bytes,
+            }];
 
-        let args = [Felt::new(write_to as u64)];
-        let output =
-            eval_package::<u8, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let stored = trace.read_from_rust_memory::<u8>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
+            let args = [Felt::new(write_to as u64)];
+            let output =
+                eval_package::<u8, _, _>(&package, initializers, &args, context.session(), |trace| {
+                    let stored = trace.read_from_rust_memory::<u8>(write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, but \
+                             read from that address failed"
+                        ))
+                    })?;
+                    prop_assert_eq!(
+                        stored,
+                        value,
+                        "expected {} to have been written to byte address {}, but found {} there \
+                         instead",
+                        value,
+                        write_to,
+                        stored
+                    );
+                    Ok(())
                 })?;
-                prop_assert_eq!(
-                    stored,
-                    value,
-                    "expected {} to have been written to byte address {}, but found {} there \
-                     instead",
-                    value,
-                    write_to,
-                    stored
-                );
-                Ok(())
-            })?;
 
-        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
+            prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
-        Ok(())
-    });
+            Ok(())
+        });
 
     match res {
         Err(TestError::Fail(reason, value)) => {
@@ -305,9 +303,6 @@ fn load_u8() {
 fn load_u16() {
     setup::enable_compiler_instrumentation();
 
-    // Write address to use
-    let write_to = 17 * 2u32.pow(16);
-
     // Generate a `test` module with `main` function that invokes load for u16 when lowered to MASM
     // Compile once outside the test loop
     let (package, context) =
@@ -321,40 +316,39 @@ fn load_u16() {
         });
 
     let config = proptest::test_runner::Config::with_cases(10);
-    let res = TestRunner::new(config).run(&any::<u16>(), move |value| {
-        // Write `value` to the start of the 17th page (1 page after the 16 pages reserved for the
-        // Rust stack)
-        let value_bytes = value.to_ne_bytes();
-        let initializers = [Initializer::MemoryBytes {
-            addr: write_to,
-            bytes: &value_bytes,
-        }];
+    let res =
+        TestRunner::new(config).run(&(any::<u16>(), random_word_aligned_addr()), move |(value, write_to)| {
+            let value_bytes = value.to_ne_bytes();
+            let initializers = [Initializer::MemoryBytes {
+                addr: write_to,
+                bytes: &value_bytes,
+            }];
 
-        let args = [Felt::new(write_to as u64)];
-        let output =
-            eval_package::<u16, _, _>(&package, initializers, &args, context.session(), |trace| {
-                let stored = trace.read_from_rust_memory::<u16>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
+            let args = [Felt::new(write_to as u64)];
+            let output =
+                eval_package::<u16, _, _>(&package, initializers, &args, context.session(), |trace| {
+                    let stored = trace.read_from_rust_memory::<u16>(write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, but \
+                             read from that address failed"
+                        ))
+                    })?;
+                    prop_assert_eq!(
+                        stored,
+                        value,
+                        "expected {} to have been written to byte address {}, but found {} there \
+                         instead",
+                        value,
+                        write_to,
+                        stored
+                    );
+                    Ok(())
                 })?;
-                prop_assert_eq!(
-                    stored,
-                    value,
-                    "expected {} to have been written to byte address {}, but found {} there \
-                     instead",
-                    value,
-                    write_to,
-                    stored
-                );
-                Ok(())
-            })?;
 
-        prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
+            prop_assert_eq!(output, value, "expected 0x{:x}; found 0x{:x}", value, output,);
 
-        Ok(())
-    });
+            Ok(())
+        });
 
     match res {
         Err(TestError::Fail(reason, value)) => {
@@ -485,9 +479,6 @@ define_unaligned_16bit_load_tests!(
 fn load_bool() {
     setup::enable_compiler_instrumentation();
 
-    // Write address to use
-    let write_to = 17 * 2u32.pow(16);
-
     // Generate a `test` module with `main` function that invokes load for bool when lowered to MASM
     // Compile once outside the test loop
     let (package, context) =
@@ -501,46 +492,45 @@ fn load_bool() {
         });
 
     let config = proptest::test_runner::Config::with_cases(10);
-    let res = TestRunner::new(config).run(&any::<bool>(), move |value| {
-        // Write `value` to the start of the 17th page (1 page after the 16 pages reserved for the
-        // Rust stack)
-        let value_bytes = [value as u8];
-        let initializers = [Initializer::MemoryBytes {
-            addr: write_to,
-            bytes: &value_bytes,
-        }];
+    let res =
+        TestRunner::new(config).run(&(any::<bool>(), random_word_aligned_addr()), move |(value, write_to)| {
+            let value_bytes = [value as u8];
+            let initializers = [Initializer::MemoryBytes {
+                addr: write_to,
+                bytes: &value_bytes,
+            }];
 
-        let args = [Felt::new(write_to as u64)];
-        let output = eval_package::<bool, _, _>(
-            &package,
-            initializers,
-            &args,
-            context.session(),
-            |trace| {
-                let stored = trace.read_from_rust_memory::<u8>(write_to).ok_or_else(|| {
-                    TestCaseError::fail(format!(
-                        "expected {value} to have been written to byte address {write_to}, but \
-                         read from that address failed"
-                    ))
-                })?;
-                let stored_bool = stored != 0;
-                prop_assert_eq!(
-                    stored_bool,
-                    value,
-                    "expected {} to have been written to byte address {}, but found {} there \
-                     instead",
-                    value,
-                    write_to,
-                    stored_bool
-                );
-                Ok(())
-            },
-        )?;
+            let args = [Felt::new(write_to as u64)];
+            let output = eval_package::<bool, _, _>(
+                &package,
+                initializers,
+                &args,
+                context.session(),
+                |trace| {
+                    let stored = trace.read_from_rust_memory::<u8>(write_to).ok_or_else(|| {
+                        TestCaseError::fail(format!(
+                            "expected {value} to have been written to byte address {write_to}, but \
+                             read from that address failed"
+                        ))
+                    })?;
+                    let stored_bool = stored != 0;
+                    prop_assert_eq!(
+                        stored_bool,
+                        value,
+                        "expected {} to have been written to byte address {}, but found {} there \
+                         instead",
+                        value,
+                        write_to,
+                        stored_bool
+                    );
+                    Ok(())
+                },
+            )?;
 
-        prop_assert_eq!(output, value, "expected {}; found {}", output, value);
+            prop_assert_eq!(output, value, "expected {}; found {}", output, value);
 
-        Ok(())
-    });
+            Ok(())
+        });
 
     match res {
         Err(TestError::Fail(reason, value)) => {
