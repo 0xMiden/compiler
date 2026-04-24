@@ -52,3 +52,34 @@ Arguments:
 Options:
   -h, --help  Print help
 ```
+
+## `masm2masp`
+
+Creates a dummy project to assemble a `masm` file into a `masp` package. This can be used, for example, to compare the size of handwritten `masm` to an equivalent package produced by the compiler.
+
+**Example usage**
+
+```sh
+miden-objtool masm2masp handwritte_basic_wallet.masm account-component ./tmp-proj
+
+# then find the generated package in tmp-proj/handwritte_basic_wallet.masp
+```
+
+**Help**
+
+```sh
+miden-objtool masm2masp --help
+
+Convert a .masm file to a .masp package
+
+Usage: miden-objtool masm2masp [OPTIONS] <MASM_PATH> <TARGET_TYPE> <OUT_PATH>
+
+Arguments:
+  <MASM_PATH>    Path to the input .masm file
+  <TARGET_TYPE>  Target type (e.g. account-component)
+  <OUT_PATH>     Path of output directory to create, must *not* yet exist
+
+Options:
+      --no-protocol-lib  Don't link against the default protocol library
+  -h, --help             Print help
+```

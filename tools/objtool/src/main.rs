@@ -1,4 +1,5 @@
 mod decorators;
+mod masm2masp;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -21,6 +22,8 @@ struct Cli {
 enum Commands {
     /// Compare serialized MAST forest sizes after stripping decorators.
     Decorators(decorators::DecoratorsCommand),
+    /// Convert a .masm file to a .masp package
+    Masm2masp(masm2masp::Masm2MaspCommand),
 }
 
 fn main() -> Result<()> {
@@ -28,5 +31,6 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Decorators(command) => decorators::run(command),
+        Commands::Masm2masp(command) => masm2masp::run(command),
     }
 }
