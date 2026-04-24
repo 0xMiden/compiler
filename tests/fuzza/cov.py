@@ -2,15 +2,18 @@
 """Reduce cargo-llvm-cov JSON to a fuzza-oriented Markdown coverage report.
 
 Usage:
-    cov.py <llvm-cov-json-path> <workspace-root> > report.md
+    cov.py <json> <workspace-root> [--prev <json>] > report.md
 
-The output is designed to be handed to the fuzza case-generation agent: it
-highlights compiler functions that the current fuzz corpus has not yet
-exercised (or has covered poorly), ignoring crates that aren't "compiler"
-code (sdk, tests, examples, dev tools, etc.) and skipping trivial impls.
+When `--prev` is supplied (and points at an existing llvm-cov JSON), the
+report includes a "Delta since previous run" section so the fuzz-case
+agent can judge whether its last case actually added coverage.
+
+The output is filtered to compiler crates only; sdk/, tests/, examples/,
+dev tools, and trivial trait impls (`fmt`, `clone`, `drop`, …) are dropped.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import shutil
@@ -60,6 +63,7 @@ BORING_NAME_RE = re.compile(
 )
 
 TOP_N = 30
+DELTA_TOP_N = 15
 
 
 def classify(path: str, workspace: Path) -> str | None:
@@ -91,19 +95,13 @@ def demangle_all(names: list[str]) -> list[str]:
     return out if len(out) == len(names) else names
 
 
-def main() -> None:
-    if len(sys.argv) != 3:
-        sys.exit("usage: cov.py <llvm-cov-json> <workspace-root>")
-    json_path = Path(sys.argv[1])
-    workspace = Path(sys.argv[2]).resolve()
-
+def load_funcs(json_path: Path, workspace: Path) -> list[dict]:
+    """Parse an llvm-cov JSON and return the filtered list of compiler-function records."""
     doc = json.loads(json_path.read_text())
     exports = doc.get("data") or []
     if not exports:
-        sys.exit("cov.py: no coverage data in JSON")
-
-    # First pass: keep only entries from compiler files (names still mangled).
-    prelim = []
+        return []
+    prelim: list[dict] = []
     for raw in exports[0].get("functions", []):
         filenames = raw.get("filenames") or []
         if not filenames:
@@ -124,18 +122,108 @@ def main() -> None:
             "covered": covered,
         })
 
-    # Second pass: batch-demangle and drop boring names.
     demangled = demangle_all([f["name"] for f in prelim])
-    funcs = [
+    return [
         {**f, "name": dm}
         for f, dm in zip(prelim, demangled)
         if not BORING_NAME_RE.search(dm)
     ]
 
-    total_fns = len(funcs)
-    hit_fns = sum(1 for f in funcs if f["count"] > 0)
-    total_regions = sum(f["regions"] for f in funcs)
-    covered_regions = sum(f["covered"] for f in funcs)
+
+def emit_delta(current: list[dict], prev: list[dict], out) -> None:
+    """Print the delta section comparing `current` against `prev`."""
+    prev_by_key = {(f["file"], f["name"]): f for f in prev}
+
+    prev_hit = sum(1 for f in prev if f["count"] > 0)
+    prev_covered = sum(f["covered"] for f in prev)
+    cur_hit = sum(1 for f in current if f["count"] > 0)
+    cur_covered = sum(f["covered"] for f in current)
+
+    newly_touched = sorted(
+        (
+            f for f in current
+            if f["count"] > 0
+            and prev_by_key.get((f["file"], f["name"]), {"count": 0})["count"] == 0
+        ),
+        key=lambda f: (-f["covered"], f["file"], f["line"]),
+    )
+    gained_regions = sorted(
+        (
+            {
+                **f,
+                "gain": f["covered"]
+                - prev_by_key.get((f["file"], f["name"]), {"covered": 0})["covered"],
+            }
+            for f in current
+        ),
+        key=lambda f: -f["gain"],
+    )
+    gained_regions = [f for f in gained_regions if f["gain"] > 0]
+
+    print("## Delta since previous run\n", file=out)
+    print(f"- Functions touched: {cur_hit - prev_hit:+d} (now {cur_hit})", file=out)
+    print(
+        f"- Regions covered:   {cur_covered - prev_covered:+d} (now {cur_covered})",
+        file=out,
+    )
+    print(
+        f"- Newly-exercised functions: **{len(newly_touched)}**; "
+        f"functions that gained regions: **{len(gained_regions)}**",
+        file=out,
+    )
+    print(file=out)
+
+    if newly_touched:
+        print(f"### Newly-exercised functions (up to {DELTA_TOP_N})\n", file=out)
+        print("| Regions hit | File:line | Function |", file=out)
+        print("| --- | --- | --- |", file=out)
+        for f in newly_touched[:DELTA_TOP_N]:
+            print(
+                f"| {f['covered']}/{f['regions']} | `{f['file']}:{f['line']}` | `{f['name']}` |",
+                file=out,
+            )
+        print(file=out)
+
+    if gained_regions:
+        print(f"### Functions that gained new regions (up to {DELTA_TOP_N})\n", file=out)
+        print("| Δ regions | Now hit | File:line | Function |", file=out)
+        print("| --- | --- | --- | --- |", file=out)
+        for f in gained_regions[:DELTA_TOP_N]:
+            print(
+                f"| +{f['gain']} | {f['covered']}/{f['regions']} | "
+                f"`{f['file']}:{f['line']}` | `{f['name']}` |",
+                file=out,
+            )
+        print(file=out)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("json", type=Path, help="current llvm-cov JSON")
+    parser.add_argument("workspace", type=Path, help="workspace root")
+    parser.add_argument(
+        "--prev",
+        type=Path,
+        default=None,
+        help="previous llvm-cov JSON; if present, emit a delta section",
+    )
+    args = parser.parse_args()
+
+    workspace = args.workspace.resolve()
+    current = load_funcs(args.json, workspace)
+    if not current:
+        sys.exit("cov.py: no coverage data for compiler crates")
+
+    prev = (
+        load_funcs(args.prev, workspace)
+        if args.prev is not None and args.prev.is_file()
+        else []
+    )
+
+    total_fns = len(current)
+    hit_fns = sum(1 for f in current if f["count"] > 0)
+    total_regions = sum(f["regions"] for f in current)
+    covered_regions = sum(f["covered"] for f in current)
 
     out = sys.stdout
     print("# fuzza coverage report (compiler crates)\n", file=out)
@@ -150,8 +238,11 @@ def main() -> None:
     )
     print(file=out)
 
+    if prev:
+        emit_delta(current, prev, out)
+
     untouched = sorted(
-        (f for f in funcs if f["count"] == 0),
+        (f for f in current if f["count"] == 0),
         key=lambda f: (-f["regions"], f["file"], f["line"]),
     )
     print(f"## Top untouched functions (by size, up to {TOP_N})\n", file=out)
@@ -165,7 +256,7 @@ def main() -> None:
 
     cold = sorted(
         (
-            f for f in funcs
+            f for f in current
             if f["count"] > 0 and f["regions"] > 4 and f["covered"] * 2 < f["regions"]
         ),
         key=lambda f: (-(f["regions"] - f["covered"]), f["file"], f["line"]),
