@@ -1,0 +1,8 @@
+;; Regression test for https://github.com/0xMiden/compiler/issues/831
+;;
+;; Previously, compilation could panic during MASM codegen with:
+;; `invalid stack offset for movup: 16 is out of range`.
+;;
+;; RUN: env CARGO_TARGET_DIR=%target_dir/lit/swapp cargo miden build --release --manifest-path %S/test-project/Cargo.toml 2>&1 | filecheck %s
+
+;; CHECK-NOT: error
