@@ -1,10 +1,12 @@
 //! Differential fuzzing harness for the Miden compiler.
 //!
-//! Each test case is a self-contained `#![no_std]` Rust crate that defines
-//! `entrypoint(u32, u32) -> u32`, checked in under `src/cases/`. The harness
-//! builds every case twice — natively as a host `cdylib` and via `cargo-miden`
-//! to a MASM package — then runs both over random `(u32, u32)` inputs and
-//! asserts the results match.
+//! Each test case, checked in under `src/cases/`, is just the body of a
+//! `#[unsafe(no_mangle)] pub extern "C" fn entrypoint(u32, u32) -> u32`
+//! plus any helpers it needs. The harness prepends a fixed header
+//! (`#![no_std]` + `#[panic_handler]`) before writing the case as `src/lib.rs`
+//! of a generated cargo project, builds it twice — natively as a host `cdylib`
+//! and via `cargo-miden` to a MASM package — and compares outputs across
+//! random `(u32, u32)` inputs.
 
 use std::{path::PathBuf, process::Command};
 
@@ -22,10 +24,12 @@ use proptest::{
 /// `name` must be unique per case; it is used as the generated package name.
 pub fn run_case(name: &str, source: &str) {
     let pkg_name = format!("fuzza_{name}");
+    let manifest = cargo_toml(&pkg_name);
+    let full_source = format!("{CASE_HEADER}{source}");
 
     let masm_proj = project(&format!("{pkg_name}_masm"))
-        .file("Cargo.toml", &cargo_toml(&pkg_name))
-        .file("src/lib.rs", source)
+        .file("Cargo.toml", &manifest)
+        .file("src/lib.rs", &full_source)
         .build();
     let mut test = CompilerTest::rust_source_cargo_miden(
         masm_proj.root(),
@@ -35,8 +39,8 @@ pub fn run_case(name: &str, source: &str) {
     let package = test.compile_package();
 
     let native_proj = project(&format!("{pkg_name}_native"))
-        .file("Cargo.toml", &cargo_toml(&pkg_name))
-        .file("src/lib.rs", source)
+        .file("Cargo.toml", &manifest)
+        .file("src/lib.rs", &full_source)
         .build();
     let dylib_path = build_host_cdylib(&native_proj.root(), &pkg_name);
 
@@ -72,6 +76,18 @@ pub fn run_case(name: &str, source: &str) {
         })
         .unwrap_or_else(|err| panic!("{name}: {err}"));
 }
+
+/// Prepended to every case source before compilation — supplies the
+/// crate-level `#![no_std]` attribute and a minimal `#[panic_handler]` so each
+/// case file only has to contain the entrypoint function and its helpers.
+const CASE_HEADER: &str = r#"#![no_std]
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+"#;
 
 fn cargo_toml(pkg_name: &str) -> String {
     format!(

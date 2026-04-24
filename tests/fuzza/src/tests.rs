@@ -19,9 +19,9 @@ fn sub() {
 }
 
 #[test]
-#[ignore = "fuzzer found a native/MASM divergence on wrapping_mul; e.g. inputs \
-            (530384503, 3296201177) trigger an intrinsic panic in i32.masm — needs \
-            investigation before re-enabling"]
+#[ignore = "fuzzer found a native/MASM divergence on wrapping_mul; e.g. inputs (530384503, \
+            3296201177) trigger an intrinsic panic in i32.masm — needs investigation before \
+            re-enabling"]
 fn muladd() {
     run_case("muladd", include_str!("cases/case_muladd.rs"));
 }
