@@ -354,4 +354,24 @@ mod tests {
         assert_eq!(block3_case.arguments().len(), 1);
         assert_eq!(block3_case.arguments()[0].borrow().as_value_ref(), selector);
     }
+
+    /// Regression test for https://github.com/0xMiden/compiler/issues/1084.
+    ///
+    /// A `cf.switch` built with an empty `cases` list must still place the fallback successor
+    /// in its own group. Previously, the builder routed the fallback into group 0 when the
+    /// prior keyed-successor group was empty, causing `Switch::fallback()` to panic with
+    /// `index out of bounds` in the accessor for group 1.
+    #[test]
+    fn switch_building_with_empty_cases() {
+        let mut test = Test::new("foo", &[Type::U32], &[]);
+        let selector = test.function().borrow().entry_block().borrow().arguments()[0] as ValueRef;
+        let mut builder = test.function_builder();
+        let fallback = builder.create_block();
+
+        let op = builder.switch(selector, vec![], fallback, [], SourceSpan::UNKNOWN).unwrap();
+        let switch_op = op.borrow();
+
+        assert_eq!(switch_op.fallback().successor(), fallback);
+        assert_eq!(switch_op.cases().len(), 0);
+    }
 }
