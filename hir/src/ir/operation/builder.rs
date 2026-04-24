@@ -175,9 +175,7 @@ where
     /// Record a successor group at `group_index`, creating intervening groups as needed.
     ///
     /// The explicit `group_index` mirrors [`Self::with_operands_in_group`] and ensures the group
-    /// this call commits matches the index the macro-generated accessors use. Relying on the
-    /// successor storage's `is_empty` state to pick the target group is unsound — an earlier
-    /// empty group is indistinguishable from the pristine default state.
+    /// this call commits matches the index the macro-generated accessors use.
     pub fn with_successors_in_group<I>(&mut self, group_index: usize, succs: I)
     where
         I: IntoIterator<Item = (BlockRef, Vec<ValueRef>)>,
