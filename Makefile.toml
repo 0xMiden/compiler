@@ -538,3 +538,47 @@ args = [
     "publish",
     "--dry-run",
 ]
+
+[tasks.install-cargo-llvm-cov]
+private = true
+install_crate = { crate_name = "cargo-llvm-cov", binary = "cargo", test_arg = [
+    "llvm-cov",
+    "--version",
+] }
+
+[tasks.install-rustfilt]
+private = true
+install_crate = { crate_name = "rustfilt", binary = "rustfilt", test_arg = "--version" }
+
+[tasks.fuzza-cov]
+category = "Test"
+description = "Run the midenc-fuzza tests under cargo-llvm-cov and emit a fuzza-oriented Markdown coverage report"
+dependencies = ["install-cargo-llvm-cov", "install-rustfilt"]
+script = ['''
+#!/usr/bin/env bash
+set -euo pipefail
+WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
+OUT="${WORKSPACE}/target/fuzza-coverage"
+mkdir -p "${OUT}"
+
+cargo llvm-cov clean --workspace
+cargo llvm-cov --package midenc-fuzza --no-report -- --test-threads=1
+cargo llvm-cov report --json --output-path "${OUT}/report.json"
+cargo llvm-cov report --html --output-dir "${OUT}/html"
+
+python3 "${WORKSPACE}/tests/fuzza/cov.py" "${OUT}/report.json" "${WORKSPACE}" \
+    > "${OUT}/report.md"
+
+echo ""
+echo "Coverage report written to:"
+echo "  ${OUT}/report.md     (agent-consumable summary)"
+echo "  ${OUT}/html/         (human-readable browser view)"
+echo "  ${OUT}/report.json   (raw llvm-cov JSON)"
+''']
+
+[tasks.fuzza-cov-clean]
+category = "Test"
+description = "Clear accumulated fuzza coverage profile data"
+dependencies = ["install-cargo-llvm-cov"]
+command = "cargo"
+args = ["llvm-cov", "clean", "--workspace"]
