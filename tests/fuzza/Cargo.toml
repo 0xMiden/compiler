@@ -1,0 +1,22 @@
+[package]
+name = "midenc-fuzza"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-integration-tests = { path = "../integration" }
+miden-core = { workspace = true, features = ["testing"] }
+miden-mast-package.workspace = true
+miden-debug = { workspace = true, features = ["proptest"] }
+midenc-frontend-wasm.workspace = true
+midenc-session.workspace = true
+proptest.workspace = true
+libloading = "0.8"
