@@ -37,7 +37,7 @@ use midenc_hir::{dialects::builtin, inventory};
 
 pub(crate) use self::lower::HirLowering;
 pub use self::{
-    artifact::{AssemblyArtifact, MasmComponent, Rodata},
+    artifact::{MasmComponent, Rodata},
     events::{TRACE_FRAME_END, TRACE_FRAME_START, TraceEvent},
     lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},
