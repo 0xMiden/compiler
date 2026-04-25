@@ -76,3 +76,21 @@ pub struct MemCpy {
     #[operand]
     count: UInt32,
 }
+
+/// Prints a string to the debug output.
+///
+/// The string bytes are read from memory at the given pointer address and length.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct PrintLn {
+    // There is no write, but without `MemoryEffect::Write`, the `PrintLn` is not lowered to masm.
+    // With `Read` only, `PrintLn` probably gets eliminated since it is not producing a result.
+    #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+    ptr: PointerOf<UInt8>,
+    #[operand]
+    len: UInt32,
+}

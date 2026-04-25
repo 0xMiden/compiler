@@ -732,6 +732,53 @@ impl Eval for hir::MemCpy {
     }
 }
 
+impl Eval for hir::PrintLn {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let addr = evaluator.use_value(&self.ptr().as_value_ref())?;
+        let Immediate::U32(ptr) = addr else {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("expected pointer to be a u32 immediate, got {}", addr.ty()),
+            ));
+        };
+
+        let pointer_ty = self.ptr().ty();
+        let pointee_ty = pointer_ty
+            .pointee()
+            .expect("expected pointer type to have been verified already");
+        if *pointee_ty != Type::U8 {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("invalid println: expected pointer to u8, got pointer to {pointee_ty}"),
+            ));
+        }
+
+        let len = evaluator.use_value(&self.len().as_value_ref())?;
+        let Immediate::U32(len) = len else {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("expected length to be a u32 immediate, got {}", len.ty()),
+            ));
+        };
+
+        let bytes = evaluator.read_memory_bytes(ptr, len)?;
+        let line = String::from_utf8(bytes).map_err(|err| {
+            evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("invalid UTF-8 input to hir.println: {err}"),
+            )
+        })?;
+
+        evaluator.push_printed_line(line);
+
+        Ok(ControlFlowEffect::None)
+    }
+}
+
 impl Eval for arith::Constant {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         evaluator.set_value(self.result().as_value_ref(), *self.get_value());

@@ -144,6 +144,7 @@ fn eval_hir_dialect(info: &mut ::midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::MemSize, dyn Eval>();
     info.register_operation_trait::<hir::MemSet, dyn Eval>();
     info.register_operation_trait::<hir::MemCpy, dyn Eval>();
+    info.register_operation_trait::<hir::PrintLn, dyn Eval>();
 }
 
 fn eval_wasm_dialect(info: &mut ::midenc_hir::DialectInfo) {

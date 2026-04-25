@@ -167,6 +167,7 @@ miden-field = { version = "0.22" }
 #miden-core = { path = "../miden-vm/core" }
 # miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "0a5add565d1388f77cd182f3639c16aa8f7ec674" }
 # miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "main" }
+miden-debug = { git = "https://github.com/0xMiden/miden-debug.git", branch = "mooori/print-via-trace" }
 #miden-debug-types = { path = "../miden-vm/crates/debug/types" }
 #miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-processor = { path = "../miden-vm/processor" }
