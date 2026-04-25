@@ -1,0 +1,26 @@
+[package]
+name = "consume-asset-script"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+# Mark this as its own workspace to prevent workspace inference from parent
+[workspace]
+
+[dependencies]
+miden = "0.10.0"
+
+# Miden dependencies for cargo-miden build/linking
+[package.metadata.miden.dependencies]
+"miden:basic-wallet" = { path = "../basic-wallet" }
+
+[package.metadata.component.target.dependencies]
+"miden:basic-wallet" = { path = "../basic-wallet/target/generated-wit/" }
+
+[package.metadata.component]
+package = "miden:consume-asset-script"
+
+[package.metadata.miden]
+project-kind = "transaction-script"
