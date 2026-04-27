@@ -41,8 +41,8 @@ fn widening() {
 /// Exercises u32 bitwise / shift / rotate / comparison emitter arms in
 /// `codegen/masm/src/emit/binary.rs`.
 #[test]
-#[ignore = "fuzzer found a native/MASM divergence — inputs (4146962468, 1369714330) trigger a \
-            MASM assertion (eqz) at cycle 92; needs investigation before re-enabling"]
+#[ignore = "fuzzer found a native/MASM divergence — inputs (4146962468, 1369714330) trigger a MASM \
+            assertion (eqz) at cycle 92; needs investigation before re-enabling"]
 fn bitops() {
     run_case("bitops", include_str!("cases/case_bitops.rs"));
 }

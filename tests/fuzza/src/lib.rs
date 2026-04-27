@@ -8,7 +8,10 @@
 //! and via `cargo-miden` to a MASM package — and compares outputs across
 //! random `(u32, u32)` inputs.
 
-use std::{path::PathBuf, process::Command};
+use std::{
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 use miden_core::Felt;
 use miden_integration_tests::{CompilerTest, project, testing::executor_with_std};
@@ -111,37 +114,54 @@ panic = "abort"
 }
 
 /// Build `project_root` as a host-target release cdylib and return the produced library path.
+///
+/// The artifact path is read directly from cargo's JSON build output rather than guessed at,
+/// which keeps this robust to platform-specific naming, inherited target-dir overrides
+/// (e.g. `CARGO_TARGET_DIR` set by `cargo llvm-cov` or `cargo make`), and any future cargo
+/// changes to where cdylibs end up.
 fn build_host_cdylib(project_root: &std::path::Path, pkg_name: &str) -> PathBuf {
     // A `no_std` cdylib normally drops the platform runtime libraries, which on
     // macOS leaves `dyld_stub_binder` unresolved at link time. Force rustc to
     // link the default platform libs (libSystem/libc) so the resulting dylib is
     // loadable via `libloading`.
     //
-    // Clear `CARGO_TARGET_DIR` so we pick up the case project's own `target/`
-    // rather than the parent's redirected one (e.g. `cargo llvm-cov` sets it
-    // to `target/llvm-cov-target/`, which would put the artifact somewhere
-    // we don't look).
-    let status = Command::new("cargo")
+    // Clear `CARGO_TARGET_DIR` so the case project uses its own `target/` rather
+    // than the parent's redirected one.
+    let mut child = Command::new("cargo")
         .current_dir(project_root)
-        .args(["build", "--release", "--lib"])
+        .args(["build", "--release", "--lib", "--message-format=json-render-diagnostics"])
         .env("RUSTFLAGS", "-C default-linker-libraries=yes")
         .env_remove("CARGO_TARGET_DIR")
-        .status()
+        .stdout(Stdio::piped())
+        .spawn()
         .expect("failed to spawn cargo for native build");
-    assert!(status.success(), "native cargo build failed for `{pkg_name}`");
 
-    let base = project_root.join("target").join("release");
-    for leaf in [
-        format!("lib{pkg_name}.dylib"),
-        format!("lib{pkg_name}.so"),
-        format!("{pkg_name}.dll"),
-    ] {
-        let candidate = base.join(leaf);
-        if candidate.exists() {
-            return candidate;
+    let stdout = child.stdout.take().expect("piped stdout");
+    let reader = std::io::BufReader::new(stdout);
+    let mut artifact: Option<PathBuf> = None;
+    for msg in cargo_metadata::Message::parse_stream(reader) {
+        if let cargo_metadata::Message::CompilerArtifact(a) =
+            msg.expect("malformed cargo JSON message")
+            && a.target.name == *pkg_name
+            && a.target.kind.iter().any(|k| matches!(k, cargo_metadata::TargetKind::CDyLib))
+        {
+            artifact = a
+                .filenames
+                .into_iter()
+                .find(|p| matches!(p.extension(), Some("dylib" | "so" | "dll")))
+                .map(Into::into);
         }
     }
-    panic!("cdylib artifact for `{pkg_name}` not found under {}", base.display());
+
+    let status = child.wait().expect("failed to wait on cargo");
+    assert!(status.success(), "native cargo build failed for `{pkg_name}`");
+
+    artifact.unwrap_or_else(|| {
+        panic!(
+            "cargo emitted no cdylib artifact for `{pkg_name}` under {}",
+            project_root.display()
+        )
+    })
 }
 
 #[cfg(test)]
