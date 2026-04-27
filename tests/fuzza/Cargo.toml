@@ -20,3 +20,4 @@ midenc-frontend-wasm.workspace = true
 midenc-session.workspace = true
 proptest.workspace = true
 libloading = "0.8"
+cargo_metadata = "0.19"

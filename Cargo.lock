@@ -3624,6 +3624,7 @@ dependencies = [
 name = "midenc-fuzza"
 version = "0.8.1"
 dependencies = [
+ "cargo_metadata",
  "libloading",
  "miden-core",
  "miden-debug",
