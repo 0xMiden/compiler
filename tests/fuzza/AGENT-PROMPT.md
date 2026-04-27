@@ -69,6 +69,11 @@ fn <name>() {
      skimming `frontend/wasm/src/code_translator/` (or the relevant
      dialect/op-builder code) to confirm "Rust construct X causes HIR op Y
      which dispatches to emitter Z."
+   - Constants in Rust source do **not** generally reach `_imm` emitter
+     variants. The wasm frontend calls general builder methods
+     (`builder.add`, `builder.eq`, …) regardless of whether an operand is
+     a literal; getting to an `_imm` arm usually requires HIR-level
+     canonicalization (e.g. arith constant folding), not raw user code.
 3. **Write** `case_<name>.rs` designed to exercise that construct through the
    `(u32, u32) -> u32` entrypoint. Keep it minimal — the less incidental code,
    the easier to interpret failures.
@@ -82,7 +87,10 @@ fn <name>() {
      having; otherwise delete it and its `#[test]` entry.
    - If the test failed (native/MASM divergence): mark the `#[test]` with
      `#[ignore = "<short reason + minimal failing input>"]` so the suite stays
-     green; note it as a potential compiler bug finding.
+     green; note it as a potential compiler bug finding. The compile-side
+     coverage the case triggered before the divergence is still captured in
+     the report — a failing case is not wasted work and the delta still
+     counts.
    - If the test panicked during compile (cargo-miden error): the case
      probably hit unsupported Rust constructs — delete it, try something
      simpler.
