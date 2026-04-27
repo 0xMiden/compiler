@@ -322,6 +322,20 @@ impl Module {
             .unwrap_or(Symbol::intern(format!("func{}", index.as_u32())))
     }
 
+    /// Returns the name of the given data segment.
+    ///
+    /// If the wasm name section does not include an entry for this segment
+    /// (e.g. when the binary was built with `strip = true` or the producer
+    /// did not emit a name subsection for data segments), falls back to a
+    /// synthesized `data{index}` name.
+    pub fn data_segment_name(&self, index: DataSegmentIndex) -> Symbol {
+        self.name_section
+            .data_segment_names
+            .get(&index)
+            .cloned()
+            .unwrap_or_else(|| Symbol::intern(format!("data{}", index.as_u32())))
+    }
+
     /// Sets the fallback name of this module, used if there is no module name in the name section
     pub fn set_name_fallback(&mut self, name_fallback: Cow<'static, str>) {
         self.name_fallback = Some(Ident::from(name_fallback.as_ref()));
