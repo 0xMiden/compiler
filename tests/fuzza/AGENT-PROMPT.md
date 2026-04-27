@@ -53,6 +53,22 @@ fn <name>() {
 2. **Pick one target function.** Skim its source at `File:line` to understand
    what Rust-level construct triggers it (e.g. a particular HIR op kind, a
    specific branch in wasm translation).
+
+   **Mind the routing layer.** Between Rust source and the codegen emitter
+   sits the wasm frontend (`frontend/wasm/src/code_translator/`), which
+   translates each Wasm op into a specific HIR op; the emitter
+   (`codegen/masm/src/emit/`) then dispatches by HIR op kind. Picking a fat
+   cold emitter function only pays off if user-level Rust actually causes
+   the frontend to emit the matching HIR op — e.g. Rust `as` casts get
+   translated to HIR `trunc`/`zext`/`sext`, **not** HIR `cast`, so targeting
+   `OpEmitter::cast` via `as` won't work. Two consequences:
+   - Function-region size in the cold list is a noisy signal: a fat
+     untouched function can be unreachable from `(u32, u32) -> u32` Rust at
+     all, while a smaller neighbour may be the real win.
+   - Before betting on an emitter target, sanity-check the chain by
+     skimming `frontend/wasm/src/code_translator/` (or the relevant
+     dialect/op-builder code) to confirm "Rust construct X causes HIR op Y
+     which dispatches to emitter Z."
 3. **Write** `case_<name>.rs` designed to exercise that construct through the
    `(u32, u32) -> u32` entrypoint. Keep it minimal — the less incidental code,
    the easier to interpret failures.

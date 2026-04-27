@@ -116,10 +116,16 @@ fn build_host_cdylib(project_root: &std::path::Path, pkg_name: &str) -> PathBuf 
     // macOS leaves `dyld_stub_binder` unresolved at link time. Force rustc to
     // link the default platform libs (libSystem/libc) so the resulting dylib is
     // loadable via `libloading`.
+    //
+    // Clear `CARGO_TARGET_DIR` so we pick up the case project's own `target/`
+    // rather than the parent's redirected one (e.g. `cargo llvm-cov` sets it
+    // to `target/llvm-cov-target/`, which would put the artifact somewhere
+    // we don't look).
     let status = Command::new("cargo")
         .current_dir(project_root)
         .args(["build", "--release", "--lib"])
         .env("RUSTFLAGS", "-C default-linker-libraries=yes")
+        .env_remove("CARGO_TARGET_DIR")
         .status()
         .expect("failed to spawn cargo for native build");
     assert!(status.success(), "native cargo build failed for `{pkg_name}`");
