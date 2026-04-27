@@ -210,7 +210,7 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
         ("profile.dev.overflow-checks", "false"),
         ("profile.dev.debug", "true"),
         ("profile.dev.debug-assertions", "false"),
-        ("profile.release.opt-level", "\"z\""),
+        ("profile.release.opt-level", "\"s\""),
         ("profile.release.panic", "\"abort\""),
     ];
 

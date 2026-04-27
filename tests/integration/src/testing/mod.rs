@@ -1,11 +1,13 @@
 //! This module provides core utilities for constructing tests outside of the primary
 //! [crate::CompilerTest] infrastructure.
+
 mod eval;
 mod initializer;
 pub mod setup;
 
 use std::sync::Arc;
 
+use miden_assembly::serde::Serializable;
 use miden_core::Felt;
 use miden_debug::Executor;
 use miden_mast_package::Package;
@@ -60,4 +62,12 @@ pub fn format_report(report: miden_assembly::diagnostics::Report) -> String {
     writeln!(&mut str, "{labels_str}").unwrap();
 
     str
+}
+
+/// Returns the serialized byte size of the MastForest with stripped debug info
+pub fn stripped_mast_size_str(package: &Package) -> &str {
+    let mut note_mast = package.mast.mast_forest().as_ref().clone();
+    note_mast.clear_debug_info();
+    let compacted_size = note_mast.to_bytes().len();
+    Box::leak(compacted_size.to_string().into_boxed_str())
 }

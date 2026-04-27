@@ -18,15 +18,7 @@ package = "miden:issue-invalid-stack-offset-movup"
 project-kind = "note-script"
 
 [profile.release]
-opt-level = "z"
-panic = "abort"
-debug = false
 trim-paths = ["diagnostics", "object"]
 
 [profile.dev]
-panic = "abort"
-opt-level = 1
-debug-assertions = true
-overflow-checks = false
-debug = true
 trim-paths = ["diagnostics", "object"]
