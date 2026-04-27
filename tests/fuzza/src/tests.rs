@@ -30,3 +30,10 @@ fn branchy() {
 fn muladd() {
     run_case("muladd", include_str!("cases/case_muladd.rs"));
 }
+
+/// Exercises integer width conversions and per-width bit-counting/`bnot`
+/// arms in `codegen/masm/src/emit/unary.rs`.
+#[test]
+fn widening() {
+    run_case("widening", include_str!("cases/case_widening.rs"));
+}
