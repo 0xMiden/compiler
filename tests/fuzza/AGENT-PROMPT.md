@@ -1,24 +1,11 @@
-# fuzza agent prompt template
-
-Template for launching an agent to grow fuzza compiler coverage. Copy, fill in
-the `[area]` placeholder with the compiler directory/file you want to target
-(e.g. `codegen/masm/src/emit/`, `frontend/wasm/src/code_translator/mod.rs`,
-`dialects/scf/`), and hand the prompt to the agent.
-
-Before launching, confirm reachability: open `target/fuzza-coverage/report.md`
-and check that the target area has untouched functions whose signatures could
-plausibly be reached from a `(u32, u32) -> u32` no-std cdylib. Compiler code
-behind SDK/protocol/account/note scripts, the debug-engine UI, or anything
-gated on a `#[component]` attribute is **not reachable** from this harness —
-pick a different area if that's most of what shows up in the cold list.
-
----
+**Target area:** `[area]`
 
 ## Objective
 
-Maximize region coverage in **[area]** of the Miden compiler via the fuzza
-harness. **Stop when five consecutive new cases each add zero new regions in
-[area]**, or after twenty cases total, whichever comes first.
+Maximize region coverage in the target area of the Miden compiler via the
+fuzza harness. **Stop when five consecutive new cases each add zero new
+regions in the target area**, or after twenty cases total, whichever comes
+first.
 
 ## Case constraints
 
@@ -48,8 +35,8 @@ fn <name>() {
 ## Loop
 
 1. **Read** `target/fuzza-coverage/report.md`. Focus on entries whose `File:line`
-   is inside **[area]** — first in the "Top untouched functions" section, then
-   in "Partially-covered functions".
+   is inside the target area — first in the "Top untouched functions" section,
+   then in "Partially-covered functions".
 2. **Pick one target function.** Skim its source at `File:line` to understand
    what Rust-level construct triggers it (e.g. a particular HIR op kind, a
    specific branch in wasm translation).
@@ -82,7 +69,7 @@ fn <name>() {
    - `Regions covered: +ΔR` — was your case productive?
    - `Newly-exercised functions` — did you hit the target or adjacent code?
 5. **Record the outcome** in a scratch log so you don't repeat dead-end ideas:
-   - If `ΔR > 0` in **[area]**: keep the case, continue.
+   - If `ΔR > 0` in the target area: keep the case, continue.
    - If `ΔR == 0`: keep the case only if it hits new regions elsewhere worth
      having; otherwise delete it and its `#[test]` entry.
    - If the test failed (native/MASM divergence): mark the `#[test]` with
