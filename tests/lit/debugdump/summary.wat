@@ -1,5 +1,5 @@
 ;; Test that miden-debugdump --summary shows only summary output
-;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && bin/midenc '%s' --exe --debug full -o \"\$TMPFILE\" && target/debug/miden-debugdump \"\$TMPFILE\" --summary" | filecheck %s
+;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && midenc '%s' --exe --debug full -o \"\$TMPFILE\" && miden-debugdump \"\$TMPFILE\" --summary" | filecheck %s
 
 ;; Check summary is present
 ;; CHECK: .debug_info summary:

@@ -4,6 +4,7 @@ patterns = ["*.wat", "*.masm", "*.stderr"]
 [substitutions]
 "midenc" = "$$MIDENC_BIN_DIR/midenc"
 "hir-opt" = "$$MIDENC_BIN_DIR/hir-opt"
+"miden-debugdump" = "$$MIDENC_BIN_DIR/miden-debugdump"
 "%cargo" = "cargo +$$CARGO_MAKE_RUSTUP_TOOLCHAIN_NAME"
 "%target_dir" = "$$CARGO_TARGET_DIR"
 

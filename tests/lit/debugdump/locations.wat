@@ -1,5 +1,5 @@
 ;; Test that .debug_loc section is present and handles empty case
-;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && bin/midenc '%s' --exe --debug full -o \"\$TMPFILE\" && target/debug/miden-debugdump \"\$TMPFILE\" --section locations" | filecheck %s
+;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && midenc '%s' --exe --debug full -o \"\$TMPFILE\" && miden-debugdump \"\$TMPFILE\" --section locations" | filecheck %s
 
 ;; Check header for .debug_loc section
 ;; CHECK: .debug_loc contents (DebugVar entries from MAST):

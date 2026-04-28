@@ -2,4 +2,10 @@ name = "debugdump"
 patterns = ["*.wat"]
 working_dir = "../../../"
 
+[substitutions]
+"midenc" = "$$MIDENC_BIN_DIR/midenc"
+"miden-debugdump" = "$$MIDENC_BIN_DIR/miden-debugdump"
+"%cargo" = "cargo +$$CARGO_MAKE_RUSTUP_TOOLCHAIN_NAME"
+"%target_dir" = "$$CARGO_TARGET_DIR"
+
 [format.shtest]
