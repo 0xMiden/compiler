@@ -27,6 +27,8 @@ fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let target = env::var("TARGET").unwrap_or_else(|_| "wasm32-wasip1".to_string());
+    let shared_stub_support = manifest_dir.join("../linker_stub.rs");
+    println!("cargo:rerun-if-changed={}", shared_stub_support.display());
 
     if !target.starts_with("wasm32") {
         // track changes, but don’t build
