@@ -10,7 +10,7 @@ use core::{cell::RefCell, str::FromStr};
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
-    FunctionIdent, FunctionType, Op, SmallVec, SymbolPath, Type, ValueRef, Visibility,
+    FunctionIdent, FunctionType, Op, SmallVec, SymbolPath, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{BuiltinOpBuilder, FunctionRef, ModuleBuilder, attributes::Signature},
 };
@@ -19,7 +19,7 @@ use wasmparser::{FunctionBody, Operator};
 
 use crate::{
     error::WasmResult,
-    intrinsics::{Intrinsic, convert_intrinsics_call},
+    intrinsics::{Intrinsic, IntrinsicsConversionResult, convert_intrinsics_call},
     miden_abi::{
         is_miden_abi_module, miden_abi_function_type, transform::transform_miden_abi_call,
     },
@@ -66,44 +66,22 @@ pub fn linker_stub_import_path(function_name: &str) -> Option<SymbolPath> {
     }
 }
 
-/// Returns true when an operation intrinsic stub still has its canonical Wasm signature.
-pub fn can_inline_intrinsic_stub(intrinsic: Intrinsic, signature: &Signature) -> bool {
-    match intrinsic {
-        Intrinsic::Felt(function) => match function.as_str() {
-            "from_u64_unchecked" => signature_matches(signature, &[Type::I64], &[Type::Felt]),
-            "from_u32" => signature_matches(signature, &[Type::I32], &[Type::Felt]),
-            "as_u64" => signature_matches(signature, &[Type::Felt], &[Type::I64]),
-            "add" | "sub" | "mul" | "div" | "exp" => {
-                signature_matches(signature, &[Type::Felt, Type::Felt], &[Type::Felt])
-            }
-            "neg" | "inv" | "pow2" => signature_matches(signature, &[Type::Felt], &[Type::Felt]),
-            "eq" | "gt" | "ge" | "lt" | "le" => {
-                signature_matches(signature, &[Type::Felt, Type::Felt], &[Type::I32])
-            }
-            "is_odd" => signature_matches(signature, &[Type::Felt], &[Type::I32]),
-            "assert" | "assertz" => signature_matches(signature, &[Type::Felt], &[]),
-            "assert_eq" => signature_matches(signature, &[Type::Felt, Type::Felt], &[]),
-            _ => false,
-        },
-        Intrinsic::Debug(function) => {
-            function.as_str() == "break" && signature_matches(signature, &[], &[])
-        }
-        Intrinsic::Mem(_) | Intrinsic::Crypto(_) | Intrinsic::Advice(_) => true,
-    }
-}
-
-fn signature_matches(signature: &Signature, params: &[Type], results: &[Type]) -> bool {
-    signature.params().len() == params.len()
-        && signature.results().len() == results.len()
+/// Returns true when `signature` matches the given canonical Wasm function type.
+pub fn signature_matches_function_type(
+    signature: &Signature,
+    function_type: &FunctionType,
+) -> bool {
+    signature.params().len() == function_type.params.len()
+        && signature.results().len() == function_type.results.len()
         && signature
             .params()
             .iter()
-            .zip(params)
+            .zip(&function_type.params)
             .all(|(actual, expected)| actual.ty == *expected)
         && signature
             .results()
             .iter()
-            .zip(results)
+            .zip(&function_type.results)
             .all(|(actual, expected)| actual.ty == *expected)
 }
 
@@ -197,7 +175,13 @@ pub fn maybe_lower_linker_stub(
                 .wrap_err("failed to create intrinsic function ref")?;
             convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)?.to_vec()
         } else {
-            if !can_inline_intrinsic_stub(intr, &function_ref.borrow().get_signature()) {
+            let IntrinsicsConversionResult::MidenVmOp(function_type) = conv else {
+                unreachable!("function conversions are handled above");
+            };
+            if !signature_matches_function_type(
+                &function_ref.borrow().get_signature(),
+                &function_type,
+            ) {
                 return Ok(false);
             }
             // Inline conversion of intrinsic operation

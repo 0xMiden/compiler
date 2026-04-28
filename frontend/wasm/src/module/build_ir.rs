@@ -18,12 +18,12 @@ use super::{
 use crate::{
     WasmTranslationConfig,
     error::WasmResult,
-    intrinsics::Intrinsic,
+    intrinsics::{Intrinsic, IntrinsicsConversionResult},
     module::{
         DefinedFuncIndex,
         func_translator::FuncTranslator,
         linker_stubs::{
-            can_inline_intrinsic_stub, linker_stub_import_path, maybe_lower_linker_stub,
+            linker_stub_import_path, maybe_lower_linker_stub, signature_matches_function_type,
         },
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
         types::ir_type,
@@ -143,16 +143,14 @@ pub fn build_ir_module(
         };
 
         // Check if this intrinsic can be inlined as an operation
-        let Some(conv) = intrinsic.conversion_result() else {
+        let Some(IntrinsicsConversionResult::MidenVmOp(function_type)) =
+            intrinsic.conversion_result()
+        else {
             continue;
         };
 
-        if !conv.is_operation() {
-            continue;
-        }
-
         let callable = module_state.get_direct_func(func_index)?;
-        if !can_inline_intrinsic_stub(intrinsic, callable.signature()) {
+        if !signature_matches_function_type(callable.signature(), &function_type) {
             continue;
         }
 

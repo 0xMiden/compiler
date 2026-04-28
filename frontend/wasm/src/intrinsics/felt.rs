@@ -1,7 +1,7 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
+    Builder, CallConv, FunctionType, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
     dialects::builtin::FunctionRef,
     interner::{Symbol, symbols},
     smallvec,
@@ -14,6 +14,28 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Component(symbols::Intrinsics),
     SymbolNameComponent::Component(symbols::FeltModule),
 ];
+
+/// Gets the canonical Wasm function type of a felt operation intrinsic.
+pub(crate) fn operation_function_type(function: Symbol) -> Option<FunctionType> {
+    match function.as_str() {
+        "from_u64_unchecked" => Some(FunctionType::new(CallConv::Wasm, [Type::I64], [Type::Felt])),
+        "from_u32" => Some(FunctionType::new(CallConv::Wasm, [Type::I32], [Type::Felt])),
+        "as_u64" => Some(FunctionType::new(CallConv::Wasm, [Type::Felt], [Type::I64])),
+        "add" | "sub" | "mul" | "div" | "exp" => {
+            Some(FunctionType::new(CallConv::Wasm, [Type::Felt, Type::Felt], [Type::Felt]))
+        }
+        "neg" | "inv" | "pow2" => {
+            Some(FunctionType::new(CallConv::Wasm, [Type::Felt], [Type::Felt]))
+        }
+        "eq" | "gt" | "ge" | "lt" | "le" => {
+            Some(FunctionType::new(CallConv::Wasm, [Type::Felt, Type::Felt], [Type::I32]))
+        }
+        "is_odd" => Some(FunctionType::new(CallConv::Wasm, [Type::Felt], [Type::I32])),
+        "assert" | "assertz" => Some(FunctionType::new(CallConv::Wasm, [Type::Felt], [])),
+        "assert_eq" => Some(FunctionType::new(CallConv::Wasm, [Type::Felt, Type::Felt], [])),
+        _ => None,
+    }
+}
 
 /// Convert a call to a felt op intrinsic function into instruction(s)
 pub(crate) fn convert_felt_intrinsics<B: ?Sized + Builder>(
