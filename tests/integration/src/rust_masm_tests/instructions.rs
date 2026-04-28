@@ -305,15 +305,14 @@ fn test_overflowing_add_u64() {
     test_overflowing_arith(u64::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
-// TODO 960 should be resolved
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_add_i8() {
     test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_add_i16() {
     test_overflowing_arith(i16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
@@ -349,13 +348,13 @@ fn test_overflowing_sub_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_sub_i8() {
     test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_sub_i16() {
     test_overflowing_arith(i16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
@@ -391,7 +390,7 @@ fn test_overflowing_mul_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_mul_i8() {
     test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -584,13 +583,13 @@ fn test_checked_add_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_checked_add_i8() {
     test_checked_arith(i8::checked_add, "checked_add", NumericStrategy::full_range());
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_checked_add_i16() {
     test_checked_arith(i16::checked_add, "checked_add", NumericStrategy::full_range());
 }
@@ -626,13 +625,13 @@ fn test_checked_sub_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_checked_sub_i8() {
     test_checked_arith(i8::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_checked_sub_i16() {
     test_checked_arith(i16::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
@@ -668,7 +667,7 @@ fn test_checked_mul_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_checked_mul_i8() {
     test_checked_arith(i8::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
