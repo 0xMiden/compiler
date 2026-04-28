@@ -64,8 +64,9 @@ fn main() {
     // Ensure tools are present before invoking them.
 
     // 1) Compile object
-    // These stubs intentionally compile to `unreachable` so the frontend recognizes
-    // and lowers their exported symbol names to MASM calls.
+    // These stubs intentionally compile to small opaque functions so the frontend recognizes
+    // and lowers their exported symbol names to MASM calls without letting downstream LTO
+    // optimize callers as if those calls never return.
     // LLVM MergeFunctions pass https://llvm.org/docs/MergeFunctions.html considers some
     // functions in the stub library identical (e.g. `intrinsics::felt::add` and
     // `intrinsics::felt::mul`) because besides the same sig they have the same body

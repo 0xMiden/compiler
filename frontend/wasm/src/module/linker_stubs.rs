@@ -1,15 +1,16 @@
 //! Generic lowering for Rust linker stubs to MASM procedure calls.
-//! A linker stub is detected as a function whose body consists solely of a
-//! single `unreachable` instruction (plus the implicit `end`). The stub
-//! function name is expected to be a fully-qualified MASM function path like
-//! `miden::native_account::add_asset` and is used to locate the MASM callee.
+//!
+//! A linker stub is detected by its fully-qualified MASM function path, such as
+//! `miden::native_account::add_asset`. Older stubs also have a body consisting solely of a single
+//! `unreachable` instruction, but LTO can optimize callers incorrectly when those bodies are
+//! visible, so current stubs use opaque returning bodies instead.
 
 use alloc::rc::Rc;
 use core::{cell::RefCell, str::FromStr};
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
-    FunctionType, Op, SmallVec, SymbolPath, ValueRef, Visibility,
+    FunctionIdent, FunctionType, Op, SmallVec, SymbolPath, Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{BuiltinOpBuilder, FunctionRef, ModuleBuilder, attributes::Signature},
 };
@@ -53,6 +54,59 @@ pub fn is_unreachable_stub(body: &FunctionBody<'_>) -> bool {
     saw_unreachable
 }
 
+/// Returns the Miden ABI or intrinsic import path encoded in a linker stub function name.
+pub fn linker_stub_import_path(function_name: &str) -> Option<SymbolPath> {
+    let func_ident = FunctionIdent::from_str(function_name).ok()?;
+    let import_path = SymbolPath::from_masm_function_id(func_ident);
+    let is_intrinsic = Intrinsic::try_from(&import_path).is_ok();
+    if is_miden_abi_module(&import_path) || is_intrinsic {
+        Some(import_path)
+    } else {
+        None
+    }
+}
+
+/// Returns true when an operation intrinsic stub still has its canonical Wasm signature.
+pub fn can_inline_intrinsic_stub(intrinsic: Intrinsic, signature: &Signature) -> bool {
+    match intrinsic {
+        Intrinsic::Felt(function) => match function.as_str() {
+            "from_u64_unchecked" => signature_matches(signature, &[Type::I64], &[Type::Felt]),
+            "from_u32" => signature_matches(signature, &[Type::I32], &[Type::Felt]),
+            "as_u64" => signature_matches(signature, &[Type::Felt], &[Type::I64]),
+            "add" | "sub" | "mul" | "div" | "exp" => {
+                signature_matches(signature, &[Type::Felt, Type::Felt], &[Type::Felt])
+            }
+            "neg" | "inv" | "pow2" => signature_matches(signature, &[Type::Felt], &[Type::Felt]),
+            "eq" | "gt" | "ge" | "lt" | "le" => {
+                signature_matches(signature, &[Type::Felt, Type::Felt], &[Type::I32])
+            }
+            "is_odd" => signature_matches(signature, &[Type::Felt], &[Type::I32]),
+            "assert" | "assertz" => signature_matches(signature, &[Type::Felt], &[]),
+            "assert_eq" => signature_matches(signature, &[Type::Felt, Type::Felt], &[]),
+            _ => false,
+        },
+        Intrinsic::Debug(function) => {
+            function.as_str() == "break" && signature_matches(signature, &[], &[])
+        }
+        Intrinsic::Mem(_) | Intrinsic::Crypto(_) | Intrinsic::Advice(_) => true,
+    }
+}
+
+fn signature_matches(signature: &Signature, params: &[Type], results: &[Type]) -> bool {
+    signature.params().len() == params.len()
+        && signature.results().len() == results.len()
+        && signature
+            .params()
+            .iter()
+            .zip(params)
+            .all(|(actual, expected)| actual.ty == *expected)
+        && signature
+            .results()
+            .iter()
+            .zip(results)
+            .all(|(actual, expected)| actual.ty == *expected)
+}
+
 /// If `body` looks like a linker stub, lowers `function_ref` to a call to the
 /// MASM callee derived from the function name and applies the appropriate
 /// TransformStrategy. Returns `true` if handled, `false` otherwise.
@@ -61,22 +115,27 @@ pub fn maybe_lower_linker_stub(
     body: &FunctionBody<'_>,
     module_state: &mut ModuleTranslationState,
 ) -> WasmResult<bool> {
-    if !is_unreachable_stub(body) {
-        return Ok(false);
-    }
-
     // Parse function name as MASM function ident: "ns::...::func"
     let name_string = {
         let borrowed = function_ref.borrow();
         borrowed.name().as_str().to_string()
     };
-    // Expect stub export names to be fully-qualified MASM paths already (e.g. "intrinsics::felt::add").
-    let func_ident = match midenc_hir::FunctionIdent::from_str(&name_string) {
-        Ok(id) => id,
-        Err(_) => return Ok(false),
+    let Some(import_path) = linker_stub_import_path(&name_string) else {
+        if is_unreachable_stub(body)
+            && let Ok(func_ident) = FunctionIdent::from_str(&name_string)
+        {
+            let import_path = SymbolPath::from_masm_function_id(func_ident);
+            if import_path.namespace() == Some(symbols::Miden) {
+                panic!(
+                    "Failed to recognize miden stub: {}, check that symbols.toml (used to \
+                     generate`symbols::<Symbol>` values) has all the parts right and it's \
+                     signature is defined in the frontend/wasm/src/miden_abi/",
+                    import_path.to_library_path()
+                );
+            }
+        }
+        return Ok(false);
     };
-    let import_path: SymbolPath = SymbolPath::from_masm_function_id(func_ident);
-    // Ensure the stub targets a known Miden ABI module or a recognized intrinsic.
     let is_intrinsic = Intrinsic::try_from(&import_path).is_ok();
     if !is_miden_abi_module(&import_path) && !is_intrinsic {
         if import_path.namespace() == Some(symbols::Miden) {
@@ -121,7 +180,7 @@ pub fn maybe_lower_linker_stub(
         .collect();
 
     // Declare MASM import callee in world and exec via TransformStrategy
-    let results: Vec<ValueRef> = if let Some(intr) = intrinsic {
+    let mut results: Vec<ValueRef> = if let Some(intr) = intrinsic {
         // Decide whether the intrinsic is implemented as a function or an operation
         let Some(conv) = intr.conversion_result() else {
             return Ok(false);
@@ -138,6 +197,9 @@ pub fn maybe_lower_linker_stub(
                 .wrap_err("failed to create intrinsic function ref")?;
             convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)?.to_vec()
         } else {
+            if !can_inline_intrinsic_stub(intr, &function_ref.borrow().get_signature()) {
+                return Ok(false);
+            }
             // Inline conversion of intrinsic operation
             convert_intrinsics_call(intr, None, &args, &mut fb, span)?.to_vec()
         }
@@ -153,6 +215,8 @@ pub fn maybe_lower_linker_stub(
             .wrap_err("failed to create MASM import function ref")?;
         transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)
     };
+    let expected_results = function_ref.borrow().get_signature().results().len();
+    truncate_dead_lto_results(&name_string, &mut results, expected_results);
 
     // Return
     let exit_block = fb.create_block();
@@ -167,4 +231,23 @@ pub fn maybe_lower_linker_stub(
     fb.ret(ret_vals, span)?;
 
     Ok(true)
+}
+
+/// Truncates ABI results that LTO proved unused in the Wasm wrapper signature.
+///
+/// Linker stubs are compiled into the final Wasm module and can be optimized together with their
+/// callers under LTO. If every caller ignores a return value, LLVM can rewrite the local Wasm stub
+/// to return fewer values than the underlying MASM ABI procedure. The synthesized HIR function must
+/// follow the actual Wasm signature, so extra ABI results are left unused and dropped by later
+/// lowering.
+fn truncate_dead_lto_results(function_name: &str, results: &mut Vec<ValueRef>, expected: usize) {
+    if results.len() >= expected {
+        results.truncate(expected);
+    } else {
+        panic!(
+            "linker stub '{function_name}' produced {} result(s), but its Wasm signature expects \
+             {expected}",
+            results.len()
+        );
+    }
 }

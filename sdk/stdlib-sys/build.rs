@@ -71,10 +71,9 @@ fn main() {
     let out_stdlib_rlib = out_dir.join("libmiden_stdlib_sys_stdlib_stubs.a");
 
     // LLVM MergeFunctions pass https://llvm.org/docs/MergeFunctions.html considers some
-    // functions in the stub library identical (e.g. `intrinsics::felt::add` and
-    // `intrinsics::felt::mul`) because besides the same sig they have the same body
-    // (`unreachable`). The pass merges them which manifests in the compiled Wasm as if both
-    // `add` and `mul` are linked to the same (`add` in this case) function.
+    // functions in the stub library identical when they have the same signature and body. The
+    // pass merges them which manifests in the compiled Wasm as if both stubs are linked to the
+    // same function.
     // Setting `opt-level=1` seems to be skipping this pass and is enough on its own, but I
     // also put `-Z merge-functions=disabled` in case `opt-level=1` behaviour changes
     // in the future and runs the MergeFunctions pass.
