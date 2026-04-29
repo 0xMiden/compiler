@@ -12,7 +12,6 @@ use crate::testing::eval_package;
 
 mod abi_transform;
 mod apps;
-mod debug_executor;
 mod debug_source_locations;
 mod examples;
 mod instructions;
