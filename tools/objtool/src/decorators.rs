@@ -39,7 +39,7 @@ impl std::fmt::Display for ArtifactKind {
     }
 }
 
-pub fn run(command: DecoratorsCommand) -> Result<()> {
+pub fn run(command: &DecoratorsCommand) -> Result<()> {
     let input_bytes = fs::read(&command.path)
         .with_context(|| format!("failed to read input file '{}'", command.path.display()))?;
     let masp_size = input_bytes.len();
