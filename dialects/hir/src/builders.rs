@@ -108,6 +108,16 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    /// Create a constant byte array
+    fn bytes(&mut self, bytes: &[u8], span: SourceSpan) -> Result<ValueRef, Report> {
+        let context = self.builder().context_rc();
+        let id = context.create_constant(bytes);
+        let bytes = context.get_constant(id);
+        let op_builder = self.builder_mut().create::<crate::ops::ConstantBytes, _>(span);
+        let op = op_builder(bytes)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     /*
     /// Get a [GlobalValue] which represents the address of a global variable whose symbol is `name`
     ///
