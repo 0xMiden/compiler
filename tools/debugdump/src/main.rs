@@ -97,7 +97,7 @@ impl DebugSections {
 #[derive(Parser, Debug)]
 #[command(
     name = "miden-debugdump",
-    about = "Dump debug information from MASP packages (similar to llvm-dwarfdump)",
+    about = "Dump debug information from MASP packages",
     version,
     rename_all = "kebab-case"
 )]
