@@ -207,12 +207,13 @@ fn new_project_integration_tests_pass() {
 
     let output = std::process::Command::new("cargo")
         .arg("test")
+        .arg("--tests")
         .current_dir(&integration_dir)
         .output()
-        .expect("failed to spawn `cargo test` inside integration directory");
+        .expect("failed to spawn `cargo test --tests` inside integration directory");
     if !output.status.success() {
         panic!(
-            "`cargo test` failed in {} with status {:?}\nstdout:\n{}\nstderr:\n{}",
+            "`cargo test --tests` failed in {} with status {:?}\nstdout:\n{}\nstderr:\n{}",
             integration_dir.display(),
             output.status.code(),
             String::from_utf8_lossy(&output.stdout),
