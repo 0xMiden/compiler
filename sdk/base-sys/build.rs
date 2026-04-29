@@ -93,6 +93,8 @@ fn main() {
         .arg("debuginfo=0")
         .arg("-Z")
         .arg("merge-functions=disabled")
+        .arg("-Z")
+        .arg("location-detail=line,column")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
         .arg("-o")

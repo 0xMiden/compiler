@@ -68,7 +68,7 @@ pub fn test_counter_contract() {
         .build_tx_context(counter_account.clone(), &[counter_note.id()], &[])
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, tx_context_builder);
-    expect!["10993"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
+    expect!["10708"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).
     assert_counter_storage(
