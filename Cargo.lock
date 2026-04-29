@@ -2375,21 +2375,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-air"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
-dependencies = [
- "miden-core",
- "miden-crypto",
- "miden-utils-indexing",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
 name = "miden-assembly"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d2094e2b943f7bf955a2bc3b44b0ad7c4f45a286f170eaa7e5060871c44847a"
 dependencies = [
  "env_logger",
  "log",
@@ -2404,8 +2393,9 @@ dependencies = [
 
 [[package]]
 name = "miden-assembly-syntax"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5a3212614ad28399612f39024c1e321dc8cebc8998def06058e60462ddc3856"
 dependencies = [
  "aho-corasick",
  "env_logger",
@@ -2511,8 +2501,9 @@ dependencies = [
 
 [[package]]
 name = "miden-core"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39a4a2e2de49213ec899e88fe399d4ec568c8eb9e8c747d6ed58938c40031daa"
 dependencies = [
  "derive_more",
  "itertools 0.14.0",
@@ -2532,8 +2523,9 @@ dependencies = [
 
 [[package]]
 name = "miden-core-lib"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d2ea7e17c4382255c6e0cb1e4b90693449dcf5a286a844e2918af66b371c0ab"
 dependencies = [
  "env_logger",
  "fs-err",
@@ -2680,8 +2672,9 @@ dependencies = [
 
 [[package]]
 name = "miden-debug-types"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16570786d938b7f795921b3a84890708a7d72708442c622eb58c2fb5480821e9"
 dependencies = [
  "memchr",
  "miden-crypto",
@@ -2824,8 +2817,9 @@ dependencies = [
 
 [[package]]
 name = "miden-mast-package"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0953396dc5e575b79bccb8b7da6e0d18ce71bcde899901bb4293a433f9003b94"
 dependencies = [
  "derive_more",
  "miden-assembly-syntax",
@@ -2908,8 +2902,9 @@ dependencies = [
 
 [[package]]
 name = "miden-package-registry"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e07af92dc184a71132a34d89ad15e69633435bfd36fb5af4ce18b200bd1952e5"
 dependencies = [
  "miden-assembly-syntax",
  "miden-core",
@@ -2922,11 +2917,12 @@ dependencies = [
 
 [[package]]
 name = "miden-processor"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "340c424f9f62b56a808c9a479cef016f25478e227555ce39cb2684e8baf26542"
 dependencies = [
  "itertools 0.14.0",
- "miden-air 0.22.1 (git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash)",
+ "miden-air",
  "miden-core",
  "miden-debug-types",
  "miden-utils-diagnostics",
@@ -2940,8 +2936,9 @@ dependencies = [
 
 [[package]]
 name = "miden-project"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "541619ccdf566c2fac0d24bfc3806bc36e1d57a698a937621f1874ceb36a55d4"
 dependencies = [
  "miden-assembly-syntax",
  "miden-core",
@@ -3001,7 +2998,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6bb2c94e36f57684d7fa0cd382adeedc1728d502dbbe69ad1c12f4a931f45511"
 dependencies = [
  "bincode",
- "miden-air 0.22.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "miden-air",
  "miden-core",
  "miden-crypto",
  "miden-debug-types",
@@ -3152,8 +3149,9 @@ dependencies = [
 
 [[package]]
 name = "miden-utils-core-derive"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdd5103e9b6527ad396dce12c135cea1984dfd77ebbffa76f260f4e139906cc4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3162,8 +3160,9 @@ dependencies = [
 
 [[package]]
 name = "miden-utils-diagnostics"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72226906c968c2e7c37435d67be9e29aeba05336db30c4e57d290cc6efb1da9d"
 dependencies = [
  "miden-crypto",
  "miden-debug-types",
@@ -3174,8 +3173,9 @@ dependencies = [
 
 [[package]]
 name = "miden-utils-indexing"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cc2e62161113179a370ae0bf1fd33eb8d20b6131e8559d2dc0bead5cffae586"
 dependencies = [
  "miden-crypto",
  "serde",
@@ -3184,8 +3184,9 @@ dependencies = [
 
 [[package]]
 name = "miden-utils-sync"
-version = "0.22.1"
-source = "git+https://github.com/walnuthq/miden-vm?branch=fix%2Fdebug-var-dedup-crash#637c51aea6bc73d236fe461e95144b18ecd67ca3"
+version = "0.22.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e9210b3592b577843710daf68293087c68b53d8482c82f6875ad83d578cb51e"
 dependencies = [
  "lock_api",
  "loom",
@@ -3200,7 +3201,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4580df640d889c9f3c349cd2268968e44a99a8cf0df6c36ae5b1fb273712b00"
 dependencies = [
  "bincode",
- "miden-air 0.22.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "miden-air",
  "miden-core",
  "miden-crypto",
  "serde",
