@@ -29,4 +29,4 @@ bitvec.workspace = true
 midenc-expect-test = { path = "../../tools/expect-test" }
 midenc-hir = { path = "../../hir", features = ["logging"] }
 midenc-dialect-debuginfo = { path = "../debuginfo" }
-env_logger = "0.11"
+env_logger.workspace = true

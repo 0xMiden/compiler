@@ -235,20 +235,6 @@ args = [
     "${MIDENC_BIN_DIR}",
 ]
 
-[tasks.miden-debugdump]
-category = "Build"
-description = "Builds miden-debugdump and installs it to the bin folder"
-command = "cargo"
-args = [
-    "-Z",
-    "unstable-options",
-    "build",
-    "-p",
-    "miden-debugdump",
-    "--artifact-dir",
-    "${MIDENC_BIN_DIR}",
-]
-
 [tasks.miden-objtool]
 category = "Build"
 description = "Builds miden-objtool and installs it to the bin folder"
@@ -458,7 +444,7 @@ args = [
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit",
 ]
-dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-debugdump"]
+dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-objtool"]
 
 [tasks.lit]
 category = "Test"
@@ -469,7 +455,7 @@ args = [
     "lit",
     "${@}",
 ]
-dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-debugdump"]
+dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-objtool"]
 
 
 [tasks.litcheck]

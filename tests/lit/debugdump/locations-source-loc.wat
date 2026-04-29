@@ -2,7 +2,7 @@
 ;; from a real Rust project compiled with debug info.
 ;;
 ;; RUN: %cargo build --target-dir %target_dir/debugdump-source-location --release --target wasm32-unknown-unknown --manifest-path tests/lit/source-location/test-project/Cargo.toml 2>&1
-;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && midenc '%target_dir/debugdump-source-location/wasm32-unknown-unknown/release/source_location_test.wasm' --lib --debug full -o \"\$TMPFILE\" && miden-debugdump \"\$TMPFILE\" --section locations" | filecheck %s
+;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && midenc '%target_dir/debugdump-source-location/wasm32-unknown-unknown/release/source_location_test.wasm' --lib --debug full -o \"\$TMPFILE\" && miden-objtool dump debug-info \"\$TMPFILE\" --section locations" | filecheck %s
 
 ;; Check header
 ;; CHECK: .debug_loc contents (DebugVar entries from MAST):

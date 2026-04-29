@@ -2737,16 +2737,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-debugdump"
-version = "0.8.1"
-dependencies = [
- "clap",
- "miden-core",
- "miden-mast-package",
- "miden-thiserror",
-]
-
-[[package]]
 name = "miden-field"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2949,6 +2939,7 @@ dependencies = [
  "miden-assembly-syntax",
  "miden-core",
  "miden-mast-package",
+ "miden-thiserror",
 ]
 
 [[package]]

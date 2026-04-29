@@ -1,17 +1,10 @@
-//! miden-debugdump - A tool to dump debug information from MASP packages
+//! A command to dump debug information from MASP packages
 //!
-//! Similar to llvm-dwarfdump, this tool parses the `.debug_info` section
-//! from compiled MASP packages and displays the debug metadata in a
-//! human-readable format.
+//! Similar to llvm-dwarfdump, this tool parses the `.debug_info` section from compiled MASP
+//! packages and displays the debug metadata in a human-readable format.
+use std::{collections::BTreeMap, path::PathBuf};
 
-use std::{
-    collections::BTreeMap,
-    fs::File,
-    io::{BufReader, Read},
-    path::PathBuf,
-};
-
-use clap::{Parser, ValueEnum};
+use clap::Args;
 use miden_core::{
     mast::MastForest,
     operations::{DebugVarInfo, DebugVarLocation},
@@ -25,14 +18,115 @@ use miden_mast_package::{
     },
 };
 
-#[derive(Debug, thiserror::Error)]
-enum Error {
-    #[error("failed to read file: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("failed to parse package: {0}")]
-    Parse(String),
-    #[error("no debug_info section found in package")]
-    NoDebugInfo,
+use super::{DumpError, Section};
+
+/// Dump debug information encoded in a .masp file
+#[derive(Debug, Args)]
+pub struct Config {
+    /// The input package to dump info from
+    #[arg(required = true)]
+    input: PathBuf,
+
+    /// Filter output to a specific section
+    #[arg(short, long, value_enum)]
+    section: Option<Section>,
+
+    /// Show all available information
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// Show raw indices instead of resolved names
+    #[arg(long)]
+    raw: bool,
+
+    /// Only show summary statistics
+    #[arg(long)]
+    summary: bool,
+}
+
+pub fn dump(config: &Config) -> Result<(), DumpError> {
+    // Read the MASP file
+    let bytes = std::fs::read_to_string(&config.input)?.into_bytes();
+
+    // Parse the package
+    let package: Package = Package::read_from(&mut SliceReader::new(&bytes))
+        .map_err(|e| DumpError::Parse(e.to_string()))?;
+
+    // Get the MAST forest for location decorators
+    let mast_forest = package.mast.mast_forest();
+
+    // Find the three debug sections
+    let types_section = extract_section::<DebugTypesSection>(&package, SectionId::DEBUG_TYPES)?;
+    let sources_section =
+        extract_section::<DebugSourcesSection>(&package, SectionId::DEBUG_SOURCES)?;
+    let functions_section =
+        extract_section::<DebugFunctionsSection>(&package, SectionId::DEBUG_FUNCTIONS)?;
+
+    // We need at least one section to proceed
+    if types_section.is_none() && sources_section.is_none() && functions_section.is_none() {
+        return Err(DumpError::NoDebugInfo);
+    }
+
+    // Parse each section (use empty defaults if missing)
+    let debug_sections = DebugSections {
+        types: types_section.unwrap_or_default(),
+        sources: sources_section.unwrap_or_default(),
+        functions: functions_section.unwrap_or_default(),
+    };
+
+    // Print header
+    println!("{}", "=".repeat(80));
+    println!("Package Info:");
+    println!("  | Name:    {}", &package.name);
+    println!("  | Version: {}", &package.version);
+    println!("  | Kind:    {}", &package.kind);
+    println!("Section Versioning:");
+    println!("  | Types:     {}", debug_sections.types.version);
+    println!("  | Sources:   {}", debug_sections.sources.version);
+    println!("  | Functions: {}", debug_sections.functions.version);
+    println!("{}", "=".repeat(80));
+    println!();
+
+    if config.summary {
+        print_summary(&debug_sections, mast_forest);
+        return Ok(());
+    }
+
+    match config.section {
+        Some(Section::Strings) => print_strings(&debug_sections),
+        Some(Section::Types) => print_types(&debug_sections, config.raw),
+        Some(Section::Files) => print_files(&debug_sections, config.raw),
+        Some(Section::Functions) => print_functions(&debug_sections, config.raw, config.verbose),
+        Some(Section::Variables) => print_variables(&debug_sections, config.raw),
+        Some(Section::Locations) => print_locations(mast_forest, &debug_sections, config.verbose),
+        None => {
+            // Print everything
+            print_summary(&debug_sections, mast_forest);
+            println!();
+            print_strings(&debug_sections);
+            println!();
+            print_types(&debug_sections, config.raw);
+            println!();
+            print_files(&debug_sections, config.raw);
+            println!();
+            print_functions(&debug_sections, config.raw, config.verbose);
+            println!();
+            print_locations(mast_forest, &debug_sections, config.verbose);
+        }
+    }
+
+    Ok(())
+}
+
+fn extract_section<T>(package: &Package, id: SectionId) -> Result<Option<T>, DumpError>
+where
+    T: Deserializable,
+{
+    let Some(section) = package.sections.iter().find(|s| s.id == id) else {
+        return Ok(None);
+    };
+
+    T::read_from_bytes(&section.data).map(Some).map_err(DumpError::from)
 }
 
 const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
@@ -93,174 +187,34 @@ impl DebugSections {
     }
 }
 
-/// A tool to dump debug information from MASP packages
-#[derive(Parser, Debug)]
-#[command(
-    name = "miden-debugdump",
-    about = "Dump debug information from MASP packages",
-    version,
-    rename_all = "kebab-case"
-)]
-struct Cli {
-    /// Input MASP file to analyze
-    #[arg(required = true)]
-    input: PathBuf,
-
-    /// Filter output to specific section
-    #[arg(short, long, value_enum)]
-    section: Option<DumpSection>,
-
-    /// Show all available information (verbose)
-    #[arg(short, long)]
-    verbose: bool,
-
-    /// Show raw indices instead of resolved names
-    #[arg(long)]
-    raw: bool,
-
-    /// Only show summary statistics
-    #[arg(long)]
-    summary: bool,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum DumpSection {
-    /// Show string table
-    Strings,
-    /// Show type information
-    Types,
-    /// Show source file information
-    Files,
-    /// Show function debug information
-    Functions,
-    /// Show variable information within functions
-    Variables,
-    /// Show variable location decorators from MAST (similar to DWARF .debug_loc)
-    Locations,
-}
-
-fn main() {
-    if let Err(e) = run() {
-        eprintln!("error: {e}");
-        std::process::exit(1);
-    }
-}
-
-fn run() -> Result<(), Error> {
-    let cli = Cli::parse();
-
-    // Read the MASP file
-    let file = File::open(&cli.input)?;
-    let mut reader = BufReader::new(file);
-    let mut bytes = Vec::new();
-    reader.read_to_end(&mut bytes)?;
-
-    // Parse the package
-    let package: Package = Package::read_from(&mut SliceReader::new(&bytes))
-        .map_err(|e| Error::Parse(e.to_string()))?;
-
-    // Get the MAST forest for location decorators
-    let mast_forest = package.mast.mast_forest();
-
-    // Find the three debug sections
-    let types_section = package.sections.iter().find(|s| s.id == SectionId::DEBUG_TYPES);
-    let sources_section = package.sections.iter().find(|s| s.id == SectionId::DEBUG_SOURCES);
-    let functions_section = package.sections.iter().find(|s| s.id == SectionId::DEBUG_FUNCTIONS);
-
-    // We need at least one section to proceed
-    if types_section.is_none() && sources_section.is_none() && functions_section.is_none() {
-        return Err(Error::NoDebugInfo);
-    }
-
-    // Parse each section (use empty defaults if missing)
-    let types: DebugTypesSection = match types_section {
-        Some(s) => DebugTypesSection::read_from(&mut SliceReader::new(&s.data))
-            .map_err(|e| Error::Parse(e.to_string()))?,
-        None => DebugTypesSection::new(),
-    };
-    let sources: DebugSourcesSection = match sources_section {
-        Some(s) => DebugSourcesSection::read_from(&mut SliceReader::new(&s.data))
-            .map_err(|e| Error::Parse(e.to_string()))?,
-        None => DebugSourcesSection::new(),
-    };
-    let functions: DebugFunctionsSection = match functions_section {
-        Some(s) => DebugFunctionsSection::read_from(&mut SliceReader::new(&s.data))
-            .map_err(|e| Error::Parse(e.to_string()))?,
-        None => DebugFunctionsSection::new(),
-    };
-
-    let debug_sections = DebugSections {
-        types,
-        sources,
-        functions,
-    };
-
-    // Print header
-    println!("{}", "=".repeat(80));
-    println!("DEBUG INFO DUMP: {}", cli.input.display());
-    println!("Package: {} (version: {})", package.name, package.version);
-    println!(
-        "Debug info versions: types={}, sources={}, functions={}",
-        debug_sections.types.version,
-        debug_sections.sources.version,
-        debug_sections.functions.version,
-    );
-    println!("{}", "=".repeat(80));
+fn print_summary(debug_sections: &DebugSections, mast_forest: &MastForest) {
+    println!("Summary:");
     println!();
 
-    if cli.summary {
-        print_summary(&debug_sections, mast_forest);
-        return Ok(());
-    }
+    println!("Types:");
+    println!("  | records: {}", &debug_sections.types.types.len());
+    println!("  | strings: {}", &debug_sections.types.strings.len());
+    println!();
 
-    match cli.section {
-        Some(DumpSection::Strings) => print_strings(&debug_sections),
-        Some(DumpSection::Types) => print_types(&debug_sections, cli.raw),
-        Some(DumpSection::Files) => print_files(&debug_sections, cli.raw),
-        Some(DumpSection::Functions) => print_functions(&debug_sections, cli.raw, cli.verbose),
-        Some(DumpSection::Variables) => print_variables(&debug_sections, cli.raw),
-        Some(DumpSection::Locations) => print_locations(mast_forest, &debug_sections, cli.verbose),
-        None => {
-            // Print everything
-            print_summary(&debug_sections, mast_forest);
-            println!();
-            print_strings(&debug_sections);
-            println!();
-            print_types(&debug_sections, cli.raw);
-            println!();
-            print_files(&debug_sections, cli.raw);
-            println!();
-            print_functions(&debug_sections, cli.raw, cli.verbose);
-            println!();
-            print_locations(mast_forest, &debug_sections, cli.verbose);
-        }
-    }
-
-    Ok(())
-}
-
-fn print_summary(debug_sections: &DebugSections, mast_forest: &MastForest) {
-    println!(".debug_info summary:");
-    println!(
-        "  Strings:   {} (types) + {} (sources) + {} (functions)",
-        debug_sections.types.strings.len(),
-        debug_sections.sources.strings.len(),
-        debug_sections.functions.strings.len(),
-    );
-    println!("  Types:     {} entries", debug_sections.types.types.len());
-    println!("  Files:     {} entries", debug_sections.sources.files.len());
-    println!("  Functions: {} entries", debug_sections.functions.functions.len());
+    println!("Sources:");
+    println!("  | records: {}", &debug_sections.sources.files.len());
+    println!("  | strings: {}", &debug_sections.sources.strings.len());
+    println!();
 
     let total_vars: usize =
         debug_sections.functions.functions.iter().map(|f| f.variables.len()).sum();
     let total_inlined: usize =
         debug_sections.functions.functions.iter().map(|f| f.inlined_calls.len()).sum();
-    println!("  Variables: {} total (across all functions)", total_vars);
-    println!("  Inlined:   {} call sites", total_inlined);
+    println!("Functions:");
+    println!("  | records:   {}", &debug_sections.functions.functions.len());
+    println!("  | strings:   {}", &debug_sections.functions.strings.len());
+    println!("  | variables: {total_vars} (total across all functions)");
+    println!("  | inlined:   {total_inlined} call sites");
+    println!();
 
     // Count debug vars in MAST
     let debug_var_count = mast_forest.debug_info().debug_vars().len();
-    println!("  DebugVar entries: {} in MAST", debug_var_count);
+    println!("Found {debug_var_count} debug variable records");
 }
 
 fn print_strings(debug_sections: &DebugSections) {

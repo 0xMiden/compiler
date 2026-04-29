@@ -25,6 +25,7 @@ bench = false
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-miden-core.workspace = true
 miden-assembly-syntax = { workspace = true, features = ["std"] }
+miden-core.workspace = true
 miden-mast-package.workspace = true
+thiserror.workspace = true

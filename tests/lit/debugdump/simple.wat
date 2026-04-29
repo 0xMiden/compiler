@@ -1,5 +1,5 @@
-;; Test that miden-debugdump correctly parses and displays debug info from a .masp file
-;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && midenc '%s' --exe --debug full -o \"\$TMPFILE\" && miden-debugdump \"\$TMPFILE\"" | filecheck %s
+;; Test that miden-objtool correctly parses and displays debug info from a .masp file
+;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && midenc '%s' --exe --debug full -o \"\$TMPFILE\" && miden-objtool dump debug-info \"\$TMPFILE\"" | filecheck %s
 
 ;; Check header
 ;; CHECK: DEBUG INFO DUMP:
