@@ -1,7 +1,13 @@
 use super::*;
 
 #[allow(clippy::uninlined_format_args)]
-fn run_account_binding_test_with_struct(name: &str, account_struct: &str, method: &str) {
+fn run_account_binding_test_with_struct(
+    name: &str,
+    account_struct: &str,
+    method: &str,
+    protocol_module: &str,
+    protocol_function: &str,
+) {
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
@@ -66,12 +72,23 @@ debug = false
     )
     .build();
 
-    test.compile_package();
+    assert_masm_execs_protocol_link(&mut test, protocol_module, protocol_function);
 }
 
 #[allow(clippy::uninlined_format_args)]
-fn run_account_binding_test(name: &str, method: &str) {
-    run_account_binding_test_with_struct(name, "struct TestAccount;", method)
+fn run_account_binding_test(
+    name: &str,
+    method: &str,
+    protocol_module: &str,
+    protocol_function: &str,
+) {
+    run_account_binding_test_with_struct(
+        name,
+        "struct TestAccount;",
+        method,
+        protocol_module,
+        protocol_function,
+    )
 }
 
 #[test]
@@ -81,6 +98,8 @@ fn rust_sdk_account_get_code_commitment_binding() {
         "pub fn binding(&self) -> Word {
         self.get_code_commitment()
     }",
+        "active_account",
+        "get_code_commitment",
     );
 }
 
@@ -91,6 +110,8 @@ fn rust_sdk_account_get_initial_storage_commitment_binding() {
         "pub fn binding(&self) -> Word {
         self.get_initial_storage_commitment()
     }",
+        "active_account",
+        "get_initial_storage_commitment",
     );
 }
 
@@ -101,6 +122,8 @@ fn rust_sdk_account_compute_storage_commitment_binding() {
         "pub fn binding(&self) -> Word {
         self.compute_storage_commitment()
     }",
+        "active_account",
+        "compute_storage_commitment",
     );
 }
 
@@ -111,6 +134,8 @@ fn rust_sdk_account_compute_commitment_binding() {
         "pub fn binding(&self) -> Word {
         self.compute_commitment()
     }",
+        "active_account",
+        "compute_commitment",
     );
 }
 
@@ -121,6 +146,8 @@ fn rust_sdk_account_compute_delta_commitment_binding() {
         "pub fn binding(&self) -> Word {
         self.compute_delta_commitment()
     }",
+        "native_account",
+        "compute_delta_commitment",
     );
 }
 
@@ -132,6 +159,8 @@ fn rust_sdk_account_get_initial_balance_binding() {
         let faucet = AccountId { prefix: Felt::new(1), suffix: Felt::new(0) };
         self.get_initial_balance(faucet)
     }",
+        "active_account",
+        "get_initial_balance",
     );
 }
 
@@ -143,6 +172,8 @@ fn rust_sdk_account_get_asset_binding() {
         let asset_key = Word::from([Felt::new(0); 4]);
         self.get_asset(asset_key)
     }",
+        "active_account",
+        "get_asset",
     );
 }
 
@@ -154,6 +185,8 @@ fn rust_sdk_account_get_initial_asset_binding() {
         let asset_key = Word::from([Felt::new(0); 4]);
         self.get_initial_asset(asset_key)
     }",
+        "active_account",
+        "get_initial_asset",
     );
 }
 
@@ -169,6 +202,8 @@ fn rust_sdk_account_has_non_fungible_asset_binding() {
             Felt::new(0)
         }
     }",
+        "active_account",
+        "has_non_fungible_asset",
     );
 }
 
@@ -179,6 +214,8 @@ fn rust_sdk_account_get_initial_vault_root_binding() {
         "pub fn binding(&self) -> Word {
         self.get_initial_vault_root()
     }",
+        "active_account",
+        "get_initial_vault_root",
     );
 }
 
@@ -189,6 +226,8 @@ fn rust_sdk_account_get_vault_root_binding() {
         "pub fn binding(&self) -> Word {
         self.get_vault_root()
     }",
+        "active_account",
+        "get_vault_root",
     );
 }
 
@@ -199,6 +238,8 @@ fn rust_sdk_account_get_num_procedures_binding() {
         "pub fn binding(&self) -> Felt {
         self.get_num_procedures()
     }",
+        "active_account",
+        "get_num_procedures",
     );
 }
 
@@ -209,6 +250,8 @@ fn rust_sdk_account_get_procedure_root_binding() {
         "pub fn binding(&self) -> Word {
         self.get_procedure_root(0)
     }",
+        "active_account",
+        "get_procedure_root",
     );
 }
 
@@ -224,6 +267,8 @@ fn rust_sdk_account_has_procedure_binding() {
             Felt::new(0)
         }
     }",
+        "active_account",
+        "has_procedure",
     );
 }
 
@@ -239,6 +284,8 @@ fn rust_sdk_account_was_procedure_called_binding() {
             Felt::new(0)
         }
     }",
+        "native_account",
+        "was_procedure_called",
     );
 }
 
@@ -253,6 +300,8 @@ fn rust_sdk_account_storage_get_initial_item_binding() {
         "pub fn binding(&self) -> Word {
         storage::get_initial_item(Self::default().value.slot)
     }",
+        "active_account",
+        "get_initial_item",
     );
 }
 
@@ -268,5 +317,7 @@ fn rust_sdk_account_storage_get_initial_map_item_binding() {
         let key = Word::from([Felt::new(0); 4]);
         storage::get_initial_map_item(Self::default().map.slot, &key)
     }",
+        "active_account",
+        "get_initial_map_item",
     );
 }

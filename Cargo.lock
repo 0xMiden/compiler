@@ -2777,6 +2777,8 @@ dependencies = [
  "concat-idents",
  "filetime",
  "glob",
+ "litcheck-core",
+ "litcheck-filecheck",
  "log",
  "miden-assembly",
  "miden-core",

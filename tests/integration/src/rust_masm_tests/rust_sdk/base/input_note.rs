@@ -1,7 +1,7 @@
 use super::*;
 
 #[allow(clippy::uninlined_format_args)]
-fn run_input_note_binding_test(name: &str, method: &str) {
+fn run_input_note_binding_test(name: &str, method: &str, protocol_function: &str) {
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
@@ -67,7 +67,7 @@ trim-paths = ["diagnostics", "object"]
     )
     .build();
 
-    test.compile_package();
+    assert_masm_execs_protocol_link(&mut test, "input_note", protocol_function);
 }
 
 #[test]
@@ -78,6 +78,7 @@ fn rust_sdk_input_note_get_assets_info_binding() {
         let info = input_note::get_assets_info(NoteIdx { inner: Felt::new(0) });
         info.num_assets
     }",
+        "get_assets_info",
     );
 }
 
@@ -89,6 +90,7 @@ fn rust_sdk_input_note_get_assets_binding() {
         let assets = input_note::get_assets(NoteIdx { inner: Felt::new(0) });
         Felt::new(assets.len() as u64)
     }",
+        "get_assets",
     );
 }
 
@@ -99,6 +101,7 @@ fn rust_sdk_input_note_get_recipient_binding() {
         "pub fn binding(&self) -> Recipient {
         input_note::get_recipient(NoteIdx { inner: Felt::new(0) })
     }",
+        "get_recipient",
     );
 }
 
@@ -109,6 +112,7 @@ fn rust_sdk_input_note_get_metadata_binding() {
         "pub fn binding(&self) -> Word {
         input_note::get_metadata(NoteIdx { inner: Felt::new(0) }).header
     }",
+        "get_metadata",
     );
 }
 
@@ -119,6 +123,7 @@ fn rust_sdk_input_note_get_sender_binding() {
         "pub fn binding(&self) -> AccountId {
         input_note::get_sender(NoteIdx { inner: Felt::new(0) })
     }",
+        "get_sender",
     );
 }
 
@@ -130,6 +135,7 @@ fn rust_sdk_input_note_get_storage_info_binding() {
         let info = input_note::get_storage_info(NoteIdx { inner: Felt::new(0) });
         info.num_storage_items
     }",
+        "get_storage_info",
     );
 }
 
@@ -140,6 +146,7 @@ fn rust_sdk_input_note_get_script_root_binding() {
         "pub fn binding(&self) -> Word {
         input_note::get_script_root(NoteIdx { inner: Felt::new(0) })
     }",
+        "get_script_root",
     );
 }
 
@@ -150,5 +157,6 @@ fn rust_sdk_input_note_get_serial_number_binding() {
         "pub fn binding(&self) -> Word {
         input_note::get_serial_number(NoteIdx { inner: Felt::new(0) })
     }",
+        "get_serial_number",
     );
 }
