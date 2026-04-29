@@ -175,6 +175,7 @@ pub fn build_ir_module(
         let func_index = parsed_module.module.func_index(defined_func_idx);
         let func_name = parsed_module.module.func_name(func_index).as_str();
 
+        let callable = module_state.get_direct_func(func_index)?;
         let function_ref =
             module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
                 panic!("cannot build {func_name} function, since it is not defined in the module.")
@@ -182,7 +183,12 @@ pub fn build_ir_module(
 
         // If this is a linker stub that needs a synthesized body (function-type intrinsics
         // or Miden ABI calls), handle it here.
-        if maybe_lower_linker_stub(function_ref, &body_data.body, module_state)? {
+        if maybe_lower_linker_stub(
+            function_ref,
+            callable.signature(),
+            &body_data.body,
+            module_state,
+        )? {
             continue;
         }
 

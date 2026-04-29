@@ -90,6 +90,7 @@ pub fn signature_matches_function_type(
 /// TransformStrategy. Returns `true` if handled, `false` otherwise.
 pub fn maybe_lower_linker_stub(
     function_ref: FunctionRef,
+    stub_signature: &Signature,
     body: &FunctionBody<'_>,
     module_state: &mut ModuleTranslationState,
 ) -> WasmResult<bool> {
@@ -129,20 +130,12 @@ pub fn maybe_lower_linker_stub(
 
     let context = function_ref.borrow().as_operation().context_rc();
 
-    // Classify intrinsics and obtain signature when needed
-    let (import_sig, intrinsic): (Signature, Option<Intrinsic>) =
-        match Intrinsic::try_from(&import_path) {
-            Ok(intr) => (function_ref.borrow().get_signature().clone(), Some(intr)),
-            Err(_) => {
-                let import_ft: FunctionType = miden_abi_function_type(&import_path);
-                (Signature::new(&context, import_ft.params, import_ft.results), None)
-            }
-        };
+    let intrinsic = Intrinsic::try_from(&import_path).ok();
 
     // Build the function body for the stub and replace it with an exec to MASM
     let span = function_ref.borrow().name().span;
     let func_builder_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
-    let mut op_builder = midenc_hir::OpBuilder::new(context)
+    let mut op_builder = midenc_hir::OpBuilder::new(context.clone())
         .with_listener(SSABuilderListener::new(func_builder_ctx));
     let mut fb = FunctionBuilderExt::new(function_ref, &mut op_builder);
 
@@ -158,34 +151,37 @@ pub fn maybe_lower_linker_stub(
         .collect();
 
     // Declare MASM import callee in world and exec via TransformStrategy
-    let mut results: Vec<ValueRef> = if let Some(intr) = intrinsic {
+    let results: Vec<ValueRef> = if let Some(intr) = intrinsic {
         // Decide whether the intrinsic is implemented as a function or an operation
         let Some(conv) = intr.conversion_result() else {
             return Ok(false);
         };
-        if conv.is_function() {
-            // Declare callee and call via convert_intrinsics_call with function_ref
-            let import_module_ref = module_state
-                .world_builder
-                .declare_module_tree(&import_path.without_leaf())
-                .wrap_err("failed to create module for intrinsics imports")?;
-            let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-            let intrinsic_func_ref = import_module_builder
-                .define_function(import_path.name().into(), Visibility::Public, import_sig.clone())
-                .wrap_err("failed to create intrinsic function ref")?;
-            convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)?.to_vec()
-        } else {
-            let IntrinsicsConversionResult::MidenVmOp(function_type) = conv else {
-                unreachable!("function conversions are handled above");
-            };
-            if !signature_matches_function_type(
-                &function_ref.borrow().get_signature(),
-                &function_type,
-            ) {
-                return Ok(false);
+        match conv {
+            IntrinsicsConversionResult::FunctionType(_) => {
+                let import_sig = stub_signature.clone();
+                // Declare callee and call via convert_intrinsics_call with function_ref
+                let import_module_ref = module_state
+                    .world_builder
+                    .declare_module_tree(&import_path.without_leaf())
+                    .wrap_err("failed to create module for intrinsics imports")?;
+                let mut import_module_builder = ModuleBuilder::new(import_module_ref);
+                let intrinsic_func_ref = import_module_builder
+                    .define_function(
+                        import_path.name().into(),
+                        Visibility::Public,
+                        import_sig.clone(),
+                    )
+                    .wrap_err("failed to create intrinsic function ref")?;
+                convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)?
+                    .to_vec()
             }
-            // Inline conversion of intrinsic operation
-            convert_intrinsics_call(intr, None, &args, &mut fb, span)?.to_vec()
+            IntrinsicsConversionResult::MidenVmOp(function_type) => {
+                if !signature_matches_function_type(stub_signature, &function_type) {
+                    return Ok(false);
+                }
+                // Inline conversion of intrinsic operation
+                convert_intrinsics_call(intr, None, &args, &mut fb, span)?.to_vec()
+            }
         }
     } else {
         // Miden ABI path: exec import with TransformStrategy
@@ -194,13 +190,14 @@ pub fn maybe_lower_linker_stub(
             .declare_module_tree(&import_path.without_leaf())
             .wrap_err("failed to create module for MASM imports")?;
         let mut import_module_builder = ModuleBuilder::new(import_module_ref);
+        let import_ft: FunctionType = miden_abi_function_type(&import_path);
+        let import_sig = Signature::new(&context, import_ft.params, import_ft.results);
         let import_func_ref = import_module_builder
             .define_function(import_path.name().into(), Visibility::Public, import_sig)
             .wrap_err("failed to create MASM import function ref")?;
         transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)
     };
-    let expected_results = function_ref.borrow().get_signature().results().len();
-    truncate_dead_lto_results(&name_string, &mut results, expected_results);
+    let results = retain_stub_signature_results(&name_string, results, stub_signature);
 
     // Return
     let exit_block = fb.create_block();
@@ -217,21 +214,26 @@ pub fn maybe_lower_linker_stub(
     Ok(true)
 }
 
-/// Truncates ABI results that LTO proved unused in the Wasm wrapper signature.
+/// Retains only the results required by the parsed Wasm stub signature.
 ///
 /// Linker stubs are compiled into the final Wasm module and can be optimized together with their
 /// callers under LTO. If every caller ignores a return value, LLVM can rewrite the local Wasm stub
-/// to return fewer values than the underlying MASM ABI procedure. The synthesized HIR function must
-/// follow the actual Wasm signature, so extra ABI results are left unused and dropped by later
-/// lowering.
-fn truncate_dead_lto_results(function_name: &str, results: &mut Vec<ValueRef>, expected: usize) {
-    if results.len() >= expected {
-        results.truncate(expected);
-    } else {
+/// to return fewer values than the underlying MASM ABI procedure. The expected arity comes from
+/// the core Wasm stub signature rather than the synthesized HIR function body.
+fn retain_stub_signature_results(
+    function_name: &str,
+    mut results: Vec<ValueRef>,
+    stub_signature: &Signature,
+) -> Vec<ValueRef> {
+    let expected = stub_signature.results().len();
+    if results.len() < expected {
         panic!(
             "linker stub '{function_name}' produced {} result(s), but its Wasm signature expects \
              {expected}",
             results.len()
         );
     }
+
+    results.truncate(expected);
+    results
 }
