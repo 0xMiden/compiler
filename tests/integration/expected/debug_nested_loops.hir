@@ -26,10 +26,10 @@ builtin.component private @root_ns:root@1.0.0 {
         builtin.global_variable private @__stack_pointer : i32 {
             builtin.ret_imm #builtin.number<1048576>;
         };
-        builtin.global_variable public @gv1 : i32 {
+        builtin.global_variable public @global1 : i32 {
             builtin.ret_imm #builtin.number<1048576>;
         };
-        builtin.global_variable public @gv2 : i32 {
+        builtin.global_variable public @global2 : i32 {
             builtin.ret_imm #builtin.number<1048576>;
         };
     };
