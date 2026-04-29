@@ -111,13 +111,9 @@ impl Stage for ApplyRewritesStage {
         // Emit HIR if requested
         let session = context.session();
         if session.should_emit(midenc_session::OutputType::Hir) {
-            log::debug!(target: "driver", "emitting HIR component");
             session
                 .emit(midenc_session::OutputMode::Text, &*input.component.borrow())
                 .into_diagnostic()?;
-            log::debug!(target: "driver", "HIR component emitted successfully");
-        } else {
-            log::debug!(target: "driver", "HIR emission not requested");
         }
 
         if context.session().rewrite_only() {
