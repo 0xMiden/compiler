@@ -162,23 +162,6 @@ miden-integration-tests = { path = "tests/integration" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-field = { version = "^0.24" }
 
-[patch.crates-io]
-miden-assembly = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-assembly-syntax = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-core = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-core-lib = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-debug-types = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-mast-package = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-package-registry = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-processor = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-project = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-utils-diagnostics = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-utils-indexing = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-miden-utils-sync = { git = "https://github.com/walnuthq/miden-vm", branch = "fix/debug-var-dedup-crash" }
-# miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
-# miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
-# miden-tx        = { tag = "v0.14.0-beta.4", git = "https://github.com/0xMiden/miden-base" }
-
 [profile.dev]
 lto = false
 # Needed for 'inventory' to work
