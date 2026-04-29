@@ -3,11 +3,11 @@
 //! This module provides utilities for collecting debug information from the HIR
 //! and building debug sections that can be serialized into the MASP package.
 
-use alloc::{collections::BTreeMap, format, string::ToString, sync::Arc};
+use alloc::{collections::BTreeMap, format, string::ToString, sync::Arc, vec::Vec};
 
 use miden_debug_types::{ColumnNumber, LineNumber};
 use miden_mast_package::debug_info::{
-    DebugFileInfo, DebugFunctionInfo, DebugFunctionsSection, DebugPrimitiveType,
+    DebugFieldInfo, DebugFileInfo, DebugFunctionInfo, DebugFunctionsSection, DebugPrimitiveType,
     DebugSourcesSection, DebugTypeIdx, DebugTypeInfo, DebugTypesSection, DebugVariableInfo,
 };
 use midenc_dialect_debuginfo as debuginfo;
@@ -37,6 +37,8 @@ enum TypeKey {
     Primitive(u8), // Use discriminant instead of the enum directly
     Pointer(u32),
     Array(u32, Option<u32>),
+    Struct(u32, u32, Vec<(u32, u32, u32)>),
+    Function(Option<u32>, Vec<u32>),
     Unknown,
 }
 
@@ -185,6 +187,11 @@ impl DebugInfoBuilder {
         if let Some(linkage_idx) = linkage_name_idx {
             func_info = func_info.with_linkage_name(linkage_idx);
         }
+        if let Some(ref ty) = subprogram.ty {
+            let type_idx = self.add_type(ty);
+            func_info = func_info.with_type(type_idx);
+            self.collect_subprogram_parameters(&subprogram, ty, &mut func_info);
+        }
 
         // Collect local variables from function body
         self.collect_variables_from_function_body(function, Some(&mut func_info));
@@ -250,6 +257,32 @@ impl DebugInfoBuilder {
         Some(var_info)
     }
 
+    fn collect_subprogram_parameters(
+        &mut self,
+        subprogram: &midenc_hir::DISubprogram,
+        ty: &Type,
+        func_info: &mut DebugFunctionInfo,
+    ) {
+        let Type::Function(func_ty) = ty else {
+            return;
+        };
+
+        for (idx, param_ty) in func_ty.params().iter().enumerate() {
+            let name = subprogram
+                .param_names
+                .get(idx)
+                .copied()
+                .unwrap_or_else(|| midenc_hir::interner::Symbol::intern(format!("arg{idx}")));
+            let name_idx = self.functions.add_string(Arc::from(name.as_str()));
+            let type_idx = self.add_type(param_ty);
+            let line = LineNumber::new(subprogram.line).unwrap_or_default();
+            let column = ColumnNumber::new(subprogram.column.unwrap_or(1)).unwrap_or_default();
+            let var_info = DebugVariableInfo::new(name_idx, type_idx, line, column)
+                .with_arg_index((idx as u32) + 1);
+            func_info.add_variable(var_info);
+        }
+    }
+
     /// Builds and returns the final debug info sections.
     pub fn build(self) -> DebugInfoSections {
         DebugInfoSections {
@@ -298,10 +331,145 @@ fn hir_type_to_debug_type(ty: &Type, builder: &mut DebugInfoBuilder) -> DebugTyp
             }
         }
         // For types we don't have direct mappings for, use Unknown
-        Type::Struct(_) | Type::List(_) | Type::Function(_) | Type::Enum(_) => {
-            DebugTypeInfo::Unknown
+        Type::Struct(struct_ty) => {
+            let name = struct_ty.name();
+            if name.as_deref().is_some_and(is_component_felt_type_name) {
+                return DebugTypeInfo::Primitive(DebugPrimitiveType::Felt);
+            }
+            if name.as_deref().is_some_and(is_component_word_type_name) {
+                return DebugTypeInfo::Primitive(DebugPrimitiveType::Word);
+            }
+
+            let name_idx =
+                builder.types.add_string(Arc::from(name.as_deref().unwrap_or("<anonymous>")));
+            let use_debug_layout = name.is_some();
+            let mut next_offset = 0u32;
+            let fields: Vec<DebugFieldInfo> = struct_ty
+                .fields()
+                .iter()
+                .enumerate()
+                .map(|(idx, field)| {
+                    let field_name = field
+                        .name
+                        .as_deref()
+                        .map(Arc::<str>::from)
+                        .unwrap_or_else(|| Arc::from(format!("field{idx}").as_str()));
+                    let name_idx = builder.types.add_string(field_name);
+                    let type_idx = builder.add_type(&field.ty);
+                    let offset = if use_debug_layout {
+                        let offset = next_offset;
+                        next_offset = next_offset.saturating_add(
+                            builder
+                                .types
+                                .get_type(type_idx)
+                                .map(|ty| debug_type_size(ty, builder))
+                                .unwrap_or(0),
+                        );
+                        offset
+                    } else {
+                        field.offset
+                    };
+                    DebugFieldInfo {
+                        name_idx,
+                        type_idx,
+                        offset,
+                    }
+                })
+                .collect();
+
+            DebugTypeInfo::Struct {
+                name_idx,
+                size: if use_debug_layout {
+                    fields_size(fields.as_slice(), builder)
+                } else {
+                    struct_ty.size() as u32
+                },
+                fields,
+            }
         }
+        Type::Function(func_ty) => {
+            let return_type_idx = match func_ty.results().len() {
+                0 => None,
+                1 => Some(builder.add_type(&func_ty.results()[0])),
+                _ => Some(builder.add_tuple_type("return", func_ty.results())),
+            };
+            let param_type_indices =
+                func_ty.params().iter().map(|ty| builder.add_type(ty)).collect();
+            DebugTypeInfo::Function {
+                return_type_idx,
+                param_type_indices,
+            }
+        }
+        Type::List(_) | Type::Enum(_) => DebugTypeInfo::Unknown,
     }
+}
+
+impl DebugInfoBuilder {
+    fn add_tuple_type(&mut self, name: &str, fields: &[Type]) -> DebugTypeIdx {
+        let name_idx = self.types.add_string(Arc::from(name));
+        let mut offset = 0u32;
+        let fields: Vec<DebugFieldInfo> = fields
+            .iter()
+            .enumerate()
+            .map(|(idx, ty)| {
+                let name_idx = self.types.add_string(Arc::from(format!("field{idx}").as_str()));
+                let type_idx = self.add_type(ty);
+                let field = DebugFieldInfo {
+                    name_idx,
+                    type_idx,
+                    offset,
+                };
+                offset = offset.saturating_add(
+                    self.types.get_type(type_idx).map(|ty| debug_type_size(ty, self)).unwrap_or(0),
+                );
+                field
+            })
+            .collect();
+        self.types.add_type(DebugTypeInfo::Struct {
+            name_idx,
+            size: fields_size(fields.as_slice(), self),
+            fields,
+        })
+    }
+}
+
+fn fields_size(fields: &[DebugFieldInfo], builder: &DebugInfoBuilder) -> u32 {
+    fields
+        .iter()
+        .filter_map(|field| builder.types.get_type(field.type_idx).map(|ty| (field.offset, ty)))
+        .map(|(offset, ty)| offset.saturating_add(debug_type_size(ty, builder)))
+        .max()
+        .unwrap_or_default()
+}
+
+fn debug_type_size(ty: &DebugTypeInfo, builder: &DebugInfoBuilder) -> u32 {
+    match ty {
+        DebugTypeInfo::Primitive(prim) => prim.size_in_bytes(),
+        DebugTypeInfo::Pointer { .. } => 4,
+        DebugTypeInfo::Array {
+            element_type_idx,
+            count,
+        } => {
+            let Some(count) = count else {
+                return 0;
+            };
+            let Some(element_type) = builder.types.get_type(*element_type_idx) else {
+                return 0;
+            };
+            count.saturating_mul(debug_type_size(element_type, builder))
+        }
+        DebugTypeInfo::Struct { size, .. } => *size,
+        DebugTypeInfo::Function { .. } => 4,
+        DebugTypeInfo::Unknown => 0,
+    }
+}
+
+fn is_component_felt_type_name(name: &str) -> bool {
+    name == "felt" || name.ends_with("/felt") || name.ends_with("::felt")
+}
+
+fn is_component_word_type_name(name: &str) -> bool {
+    name == "word" || name.ends_with("/word") || name.ends_with("::word")
 }
 
 /// Creates a key for type deduplication.
@@ -313,9 +481,26 @@ fn type_to_key(ty: &DebugTypeInfo) -> TypeKey {
             element_type_idx,
             count,
         } => TypeKey::Array(element_type_idx.as_u32(), *count),
+        DebugTypeInfo::Struct {
+            name_idx,
+            size,
+            fields,
+        } => TypeKey::Struct(
+            *name_idx,
+            *size,
+            fields
+                .iter()
+                .map(|field| (field.name_idx, field.type_idx.as_u32(), field.offset))
+                .collect(),
+        ),
+        DebugTypeInfo::Function {
+            return_type_idx,
+            param_type_indices,
+        } => TypeKey::Function(
+            return_type_idx.map(DebugTypeIdx::as_u32),
+            param_type_indices.iter().map(|idx| idx.as_u32()).collect(),
+        ),
         DebugTypeInfo::Unknown => TypeKey::Unknown,
-        // For complex types like structs and functions, we don't deduplicate
-        _ => TypeKey::Unknown,
     }
 }
 

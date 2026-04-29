@@ -479,6 +479,7 @@ impl<'a> ComponentTranslator<'a> {
         let type_func_idx = types.convert_component_func_type(frame.types, canon_lift.ty).unwrap();
 
         let component_types = types.resources_mut_and_types().1;
+        let type_func = component_types[type_func_idx].clone();
         let func_ty =
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
@@ -491,6 +492,7 @@ impl<'a> ComponentTranslator<'a> {
             &mut self.result,
             name,
             func_ty,
+            &type_func.param_names,
             core_export_func_path,
             protocol_export_kind,
             self.context.diagnostics(),
@@ -688,6 +690,7 @@ impl<'a> ComponentTranslator<'a> {
             TypeDef::ComponentInstance(type_component_instance_idx) => type_component_instance_idx,
             _ => panic!("expected component instance"),
         };
+        types.register_component_instance_export_type_names(ty, Some(name.0));
         frame
             .component_instances
             .push(ComponentInstanceDef::Import(ComponentInstanceImport {
