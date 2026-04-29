@@ -1,4 +1,4 @@
-use alloc::{format, vec::Vec};
+use alloc::{format, sync::Arc, vec::Vec};
 
 use crate::{
     AttrPrinter, Type,
@@ -86,6 +86,8 @@ pub struct DISubprogram {
     pub column: Option<u32>,
     pub is_definition: bool,
     pub is_local: bool,
+    pub ty: Option<Type>,
+    pub param_names: Vec<Symbol>,
 }
 
 impl Default for DISubprogram {
@@ -98,6 +100,8 @@ impl Default for DISubprogram {
             column: None,
             is_definition: false,
             is_local: false,
+            ty: None,
+            param_names: Vec::new(),
         }
     }
 }
@@ -112,7 +116,22 @@ impl DISubprogram {
             column,
             is_definition: true,
             is_local: false,
+            ty: None,
+            param_names: Vec::new(),
         }
+    }
+
+    pub fn with_function_type(mut self, ty: crate::FunctionType) -> Self {
+        self.ty = Some(Type::Function(Arc::new(ty)));
+        self
+    }
+
+    pub fn with_param_names<I>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = Symbol>,
+    {
+        self.param_names = names.into_iter().collect();
+        self
     }
 }
 
@@ -136,6 +155,14 @@ impl PrettyPrint for DISubprogram {
         }
         if let Some(linkage) = self.linkage_name {
             doc = doc + const_text(", linkage = ") + text(linkage.as_str());
+        }
+        if let Some(ty) = &self.ty {
+            doc = doc + const_text(", ty = ") + ty.render();
+        }
+        if !self.param_names.is_empty() {
+            let names =
+                self.param_names.iter().map(|name| name.as_str()).collect::<Vec<_>>().join(", ");
+            doc = doc + const_text(", params = [") + text(names) + const_text("]");
         }
         if self.is_definition {
             doc += const_text(", definition");
