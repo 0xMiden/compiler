@@ -140,6 +140,10 @@ macro_rules! define_stub {
         $(#[$meta])*
         #[inline(never)]
         pub extern "C" fn $name($($arg: $ty),*) $(-> $ret)? {
+            // Keep the linked stub address-taken so LTO preserves its ABI and avoids
+            // specializing parameters.
+            let keep_linker_stub_abi: extern "C" fn($($ty),*) $(-> $ret)? = $name;
+            core::hint::black_box(keep_linker_stub_abi);
             $(crate::stub_arg($arg);)*
             crate::stub()
         }

@@ -34,17 +34,3 @@ define_stub! {
         end: i32,
     );
 }
-
-define_stub! {
-    #[unsafe(export_name = "intrinsics::advice::emit_and_verify_falcon")]
-    pub extern "C" fn advice_emit_and_verify_falcon_stub(
-        m0: f32,
-        m1: f32,
-        m2: f32,
-        m3: f32,
-        k0: f32,
-        k1: f32,
-        k2: f32,
-        k3: f32,
-    );
-}
