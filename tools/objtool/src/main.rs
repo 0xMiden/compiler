@@ -1,14 +1,12 @@
-mod decorators;
-
-use anyhow::Result;
 use clap::{Parser, Subcommand};
+use miden_assembly_syntax::{Report, diagnostics::reporting};
+use miden_objtool::decorators;
 
 #[derive(Debug, Parser)]
 #[command(
     name = "miden-objtool",
-    bin_name = "miden-objtool",
     version,
-    about = "Inspect Miden compilation artifact sizes",
+    about = "Common utilities for analyzing Miden artifacts",
     long_about = None,
     arg_required_else_help = true,
 )]
@@ -23,10 +21,17 @@ enum Commands {
     Decorators(decorators::DecoratorsCommand),
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Report> {
+    use reporting::ReportHandlerOpts;
+
     let cli = Cli::parse();
 
-    match cli.command {
-        Commands::Decorators(command) => decorators::run(command),
+    let result = reporting::set_hook(Box::new(|_| Box::new(ReportHandlerOpts::new().build())));
+    if result.is_ok() {
+        reporting::set_panic_hook();
+    }
+
+    match &cli.command {
+        Commands::Decorators(command) => decorators::run(command).map_err(Report::msg),
     }
 }
