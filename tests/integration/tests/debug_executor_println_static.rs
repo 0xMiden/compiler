@@ -10,7 +10,7 @@ fn test_println_static() {
         .expect("each test using DebugLogger should run in its own process");
     log::set_max_level(log::LevelFilter::Warn);
 
-    let main_fn = "() -> u32 { println(\"hello\"); 0 }";
+    let main_fn = "() -> u32 { println!(\"hello\"); 0 }";
     let mut test = CompilerTest::rust_fn_body_with_sdk(
         "test_println",
         main_fn,

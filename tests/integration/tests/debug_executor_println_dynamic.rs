@@ -15,7 +15,7 @@ fn test_println_dynamic() {
         let mut s = alloc::string::String::from("the digit is: ");
         // b'0' is zero as ASCII, then add `digit` as offset
         s.push((b'0' + (digit as u8)) as char);
-        println(&s);
+        println!(s.as_str());
         0
     }"#;
     let mut test = CompilerTest::rust_fn_body_with_sdk(
