@@ -329,7 +329,7 @@ fn basic_wallet_and_p2id() {
         CompilerTest::rust_source_cargo_miden("../../examples/basic-wallet", config.clone(), []);
     let account_package = account_test.compile_package();
     assert!(account_package.is_library(), "expected library");
-    expect!["15764"].assert_eq(stripped_mast_size_str(&account_package));
+    expect!["15796"].assert_eq(stripped_mast_size_str(&account_package));
 
     let mut tx_script_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/basic-wallet-tx-script",
@@ -344,7 +344,7 @@ fn basic_wallet_and_p2id() {
         CompilerTest::rust_source_cargo_miden("../../examples/p2id-note", config.clone(), []);
     let note_package = p2id_test.compile_package();
     assert!(note_package.is_library(), "expected library");
-    expect!["19745"].assert_eq(stripped_mast_size_str(&note_package));
+    expect!["19777"].assert_eq(stripped_mast_size_str(&note_package));
 
     let mut p2ide_test =
         CompilerTest::rust_source_cargo_miden("../../examples/p2ide-note", config, []);

@@ -12,6 +12,12 @@ define_stub! {
     pub extern "C" fn felt_from_u64_unchecked_stub(v: u64) -> f32;
 }
 
+// Keep the stub address-taken so LTO preserves its canonical `(u64) -> f32` ABI even when all
+// current callers pass a constant.
+#[used]
+static KEEP_FELT_FROM_U64_UNCHECKED_STUB_ABI: extern "C" fn(u64) -> f32 =
+    felt_from_u64_unchecked_stub;
+
 define_stub! {
     #[unsafe(export_name = "intrinsics::felt::from_u32")]
     pub extern "C" fn felt_from_u32_stub(v: u32) -> f32;

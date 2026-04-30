@@ -8,7 +8,6 @@
 use alloc::rc::Rc;
 use core::{cell::RefCell, str::FromStr};
 
-use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_hir::{
     FunctionIdent, FunctionType, Op, SmallVec, SymbolPath, ValueRef, Visibility,
@@ -106,7 +105,6 @@ pub fn maybe_lower_linker_stub(
     stub_signature: &Signature,
     body: &FunctionBody<'_>,
     module_state: &mut ModuleTranslationState,
-    specialized_felt_from_u64_arg: Option<i64>,
 ) -> WasmResult<bool> {
     // Parse function name as MASM function ident: "ns::...::func"
     let name_string = {
@@ -195,23 +193,11 @@ pub fn maybe_lower_linker_stub(
                     .to_vec()
             }
             IntrinsicsConversionResult::MidenVmOp(function_type) => {
-                let args = if stub_signature_matches_function_type(stub_signature, &function_type) {
-                    args
-                } else if let Some(value) = specialized_felt_from_u64_arg
-                    && is_felt_from_u64_unchecked(intr)
-                    && stub_signature.params().is_empty()
-                    && stub_signature_results_match_function_type(stub_signature, &function_type)
-                {
-                    vec![fb.i64(value, span)]
-                } else {
-                    require_stub_signature_matches_function_type(
-                        &name_string,
-                        stub_signature,
-                        &function_type,
-                    )?;
-                    unreachable!("signature validation returned Ok for an incompatible stub")
-                };
-
+                require_stub_signature_matches_function_type(
+                    &name_string,
+                    stub_signature,
+                    &function_type,
+                )?;
                 convert_intrinsics_call(intr, None, &args, &mut fb, span)?.to_vec()
             }
         }
@@ -251,11 +237,6 @@ fn recognized_stub_error(function_name: &str, reason: impl core::fmt::Display) -
     Report::msg(format!(
         "failed to lower recognized Miden linker stub '{function_name}': {reason}"
     ))
-}
-
-/// Returns true for the only intrinsic op stub we can lower after LTO removes its parameter.
-fn is_felt_from_u64_unchecked(intrinsic: Intrinsic) -> bool {
-    matches!(intrinsic, Intrinsic::Felt(function) if function.as_str() == "from_u64_unchecked")
 }
 
 /// Returns the registered lowering for a recognized intrinsic, or a hard lowering error.
