@@ -142,7 +142,6 @@ midenc-dialect-arith = { version = "0.8.1", path = "dialects/arith" }
 midenc-dialect-hir = { version = "0.8.1", path = "dialects/hir" }
 midenc-dialect-scf = { version = "0.8.1", path = "dialects/scf" }
 midenc-dialect-cf = { version = "0.8.1", path = "dialects/cf" }
-midenc-dialect-debuginfo = { version = "0.8.1", path = "dialects/debuginfo" }
 midenc-dialect-ub = { version = "0.8.1", path = "dialects/ub" }
 midenc-dialect-wasm = { version = "0.8.1", path = "dialects/wasm" }
 midenc-hir = { version = "0.8.1", path = "hir" }

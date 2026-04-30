@@ -116,13 +116,6 @@ impl BlockEmitter<'_> {
         //self.drop_unused_operands_at(op);
 
         let Some(lowering) = op.as_trait::<dyn HirLowering>() else {
-            // Skip debug info ops that have no lowering (e.g. debuginfo.kill,
-            // debuginfo.declare) rather than panicking. These ops carry no
-            // semantic meaning for code generation.
-            if op.name().dialect().as_str() == "debuginfo" {
-                log::trace!(target: "codegen", "skipping debug info op with no lowering: {}", op.name());
-                return;
-            }
             panic!("illegal operation: no lowering has been defined for '{}'", op.name());
         };
 

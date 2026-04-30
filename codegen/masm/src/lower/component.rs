@@ -5,8 +5,12 @@ use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use miden_core::operations::DebugVarLocation;
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
-    decode_frame_base_local_index, diagnostics::IntoDiagnostic, dialects::builtin,
-    encode_frame_base_local_offset, pass::AnalysisManager,
+    diagnostics::IntoDiagnostic,
+    dialects::{
+        builtin,
+        debuginfo::attributes::{decode_frame_base_local_index, encode_frame_base_local_offset},
+    },
+    pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::{
@@ -665,14 +669,13 @@ impl MasmFunctionBuilder {
         // This matches locaddr.N which computes -(aligned_num_locals - N).
         patch_debug_var_locals_in_block(&mut body, aligned_num_locals, stack_pointer_addr);
 
-        // Strip DebugVar-only procedure bodies.
-        // The Miden assembler rejects procedures whose bodies contain only decorators
-        // (like DebugVar) and no real instructions, because decorators don't affect
-        // MAST digests — two empty procedures with different decorators would be
-        // indistinguishable. If there are no real instructions, the debug info is
-        // meaningless anyway, so just drop it.
+        // If a function body after lowering produces a MASM procedure with an empty body aside
+        // from debug decorators, then we must emit a `nop` at the end of the block which will
+        // act as the anchor for those decorators. Such a procedure is basically useless, as it is
+        // just passing through arguments as results - but the assembler currently rejects empty
+        // procedures (not counting decorators), so we must handle this edge case.
         if !block_has_real_instructions(&body) {
-            body = masm::Block::new(body.span(), vec![]);
+            body.push(masm::Op::Inst(Span::unknown(masm::Instruction::Nop)));
         }
 
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
@@ -696,7 +699,12 @@ impl MasmFunctionBuilder {
 /// body contains only DebugVar ops, the assembler will reject it.
 fn block_has_real_instructions(block: &masm::Block) -> bool {
     block.iter().any(|op| match op {
-        masm::Op::Inst(inst) => inst.has_textual_representation(),
+        masm::Op::Inst(inst) => !matches!(
+            inst.inner(),
+            masm::Instruction::Debug(_)
+                | masm::Instruction::DebugVar(_)
+                | masm::Instruction::Trace(_)
+        ),
         masm::Op::If {
             then_blk, else_blk, ..
         } => block_has_real_instructions(then_blk) || block_has_real_instructions(else_blk),
@@ -707,12 +715,12 @@ fn block_has_real_instructions(block: &masm::Block) -> bool {
 
 /// Recursively patch DebugVar locations in a block.
 ///
-/// Converts `Local(idx)` where idx is the raw WASM local index to `Local(offset)`
-/// where offset = idx - aligned_num_locals (the FMP-relative offset, typically negative).
-/// This matches the assembler's `locaddr.N` formula: `FMP - aligned_num_locals + N`.
+/// Converts `Local(idx)` where idx is the raw WASM local index to `Local(offset)` where
+/// `offset = idx - aligned_num_locals` (the FMP-relative offset, typically negative). This matches
+/// the assembler's `locaddr.N` formula, i.e. `FMP - aligned_num_locals + N`.
 ///
-/// Also resolves `FrameBase { global_index, byte_offset }` by replacing the WASM
-/// global index with the resolved Miden memory address of the stack pointer.
+/// Also resolves `FrameBase { global_index, byte_offset }` by replacing the WASM global index with
+/// the resolved Miden memory address of the stack pointer.
 fn patch_debug_var_locals_in_block(
     block: &mut masm::Block,
     aligned_num_locals: u16,

@@ -436,6 +436,7 @@ dependencies = ["cargo-miden"]
 category = "Test"
 description = "Runs the lit/filecheck test suite"
 command = "litcheck"
+env = { MIDENC_BIN_DIR = "${MIDENC_BIN_DIR}" }
 args = [
     "lit",
     "run",

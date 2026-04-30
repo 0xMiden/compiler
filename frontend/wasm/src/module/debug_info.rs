@@ -7,8 +7,11 @@ use cranelift_entity::EntityRef;
 use gimli::{self, AttributeValue, read::Operation};
 use log::debug;
 use midenc_hir::{
-    DICompileUnit, DIExpression, DIExpressionOp, DILocalVariable, DISubprogram, FxHashMap,
-    SourceSpan, encode_frame_base_local_index, interner::Symbol,
+    FxHashMap, SourceSpan,
+    dialects::debuginfo::attributes::{
+        CompileUnit, Expression, ExpressionOp, Subprogram, Variable, encode_frame_base_local_index,
+    },
+    interner::Symbol,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic};
 
@@ -25,7 +28,7 @@ pub struct LocationDescriptor {
     pub start: u64,
     /// Exclusive end offset. `None` indicates the location is valid until the end of the function.
     pub end: Option<u64>,
-    pub storage: VariableStorage,
+    pub storage: Expression,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,21 +57,21 @@ impl VariableStorage {
         }
     }
 
-    pub fn to_expression_op(&self) -> DIExpressionOp {
+    pub fn to_expression_op(&self) -> ExpressionOp {
         match self {
-            VariableStorage::Local(idx) => DIExpressionOp::WasmLocal(*idx),
-            VariableStorage::Global(idx) => DIExpressionOp::WasmGlobal(*idx),
-            VariableStorage::Stack(idx) => DIExpressionOp::WasmStack(*idx),
-            VariableStorage::ConstU64(val) => DIExpressionOp::ConstU64(*val),
+            VariableStorage::Local(idx) => ExpressionOp::WasmLocal(*idx),
+            VariableStorage::Global(idx) => ExpressionOp::WasmGlobal(*idx),
+            VariableStorage::Stack(idx) => ExpressionOp::WasmStack(*idx),
+            VariableStorage::ConstU64(val) => ExpressionOp::ConstU64(*val),
             VariableStorage::FrameBase {
                 global_index,
                 byte_offset,
-            } => DIExpressionOp::FrameBase {
+            } => ExpressionOp::FrameBase {
                 global_index: *global_index,
                 byte_offset: *byte_offset,
             },
             VariableStorage::Unsupported => {
-                DIExpressionOp::Unsupported(Symbol::intern("unsupported"))
+                ExpressionOp::Unsupported(Symbol::intern("unsupported"))
             }
         }
     }
@@ -76,15 +79,15 @@ impl VariableStorage {
 
 #[derive(Clone)]
 pub struct LocalDebugInfo {
-    pub attr: DILocalVariable,
+    pub attr: Variable,
     pub locations: Vec<LocationDescriptor>,
-    pub expression: Option<DIExpression>,
+    pub expression: Option<Expression>,
 }
 
 #[derive(Clone)]
 pub struct FunctionDebugInfo {
-    pub compile_unit: DICompileUnit,
-    pub subprogram: DISubprogram,
+    pub compile_unit: CompileUnit,
+    pub subprogram: Subprogram,
     pub locals: Vec<Option<LocalDebugInfo>>,
     pub function_span: Option<SourceSpan>,
     pub location_schedule: Vec<LocationScheduleEntry>,
@@ -103,11 +106,11 @@ struct DwarfLocalData {
 pub struct LocationScheduleEntry {
     pub offset: u64,
     pub var_index: usize,
-    pub storage: VariableStorage,
+    pub storage: Expression,
 }
 
 impl FunctionDebugInfo {
-    pub fn local_attr(&self, index: usize) -> Option<&DILocalVariable> {
+    pub fn local_attr(&self, index: usize) -> Option<&Variable> {
         self.locals.get(index).and_then(|info| info.as_ref().map(|data| &data.attr))
     }
 }
@@ -174,11 +177,11 @@ fn build_function_debug_info(
     let (file_symbol, directory_symbol) = determine_file_symbols(parsed_module, addr2line, body);
     let (line, column) = determine_location(addr2line, body.body_offset);
 
-    let mut compile_unit = DICompileUnit::new(Symbol::intern("wasm"), file_symbol);
+    let mut compile_unit = CompileUnit::new(Symbol::intern("wasm"), file_symbol);
     compile_unit.directory = directory_symbol;
     compile_unit.producer = Some(Symbol::intern("midenc-frontend-wasm"));
 
-    let mut subprogram = DISubprogram::new(func_name, compile_unit.file, line, column);
+    let mut subprogram = Subprogram::new(func_name, compile_unit.file, line, column);
     subprogram.is_definition = true;
 
     let wasm_signature = module_types[module.functions[func_index].signature].clone();
@@ -245,7 +248,7 @@ fn build_local_debug_info(
     func_index: FuncIndex,
     wasm_signature: &WasmFuncType,
     body: &FunctionBodyData,
-    subprogram: &DISubprogram,
+    subprogram: &Subprogram,
     diagnostics: &DiagnosticsHandler,
     dwarf_locals: Option<&FxHashMap<u32, DwarfLocalData>>,
     frame_base_vars: Option<&Vec<DwarfLocalData>>,
@@ -279,7 +282,7 @@ fn build_local_debug_info(
             name_symbol = symbol;
         }
         let mut attr =
-            DILocalVariable::new(name_symbol, subprogram.file, subprogram.line, subprogram.column);
+            Variable::new(name_symbol, subprogram.file, subprogram.line, subprogram.column);
         attr.arg_index = Some(param_idx as u32);
         if let Ok(ty) = ir_type(*wasm_ty, diagnostics) {
             attr.ty = Some(ty);
@@ -299,8 +302,7 @@ fn build_local_debug_info(
 
         // Create expression from the first location if available
         let expression = if !locations.is_empty() {
-            let ops = vec![locations[0].storage.to_expression_op()];
-            Some(DIExpression::with_ops(ops))
+            Some(locations[0].storage.clone())
         } else {
             None
         };
@@ -330,12 +332,8 @@ fn build_local_debug_info(
             {
                 name_symbol = symbol;
             }
-            let mut attr = DILocalVariable::new(
-                name_symbol,
-                subprogram.file,
-                subprogram.line,
-                subprogram.column,
-            );
+            let mut attr =
+                Variable::new(name_symbol, subprogram.file, subprogram.line, subprogram.column);
             let wasm_ty = convert_valtype(ty);
             if let Ok(ir_ty) = ir_type(wasm_ty, diagnostics) {
                 attr.ty = Some(ir_ty);
@@ -356,8 +354,7 @@ fn build_local_debug_info(
 
             // Create expression from the first location if available
             let expression = if !locations.is_empty() {
-                let ops = vec![locations[0].storage.to_expression_op()];
-                Some(DIExpression::with_ops(ops))
+                Some(locations[0].storage.clone())
             } else {
                 None
             };
@@ -377,14 +374,13 @@ fn build_local_debug_info(
     if let Some(fb_vars) = frame_base_vars {
         for fb_var in fb_vars {
             let name = fb_var.name.unwrap_or_else(|| Symbol::intern("?"));
-            let mut attr =
-                DILocalVariable::new(name, subprogram.file, subprogram.line, subprogram.column);
+            let mut attr = Variable::new(name, subprogram.file, subprogram.line, subprogram.column);
             if let Some(line) = fb_var.decl_line.filter(|l| *l != 0) {
                 attr.line = line;
             }
             attr.column = fb_var.decl_column;
             let expression = if !fb_var.locations.is_empty() {
-                Some(DIExpression::with_ops(vec![fb_var.locations[0].storage.to_expression_op()]))
+                Some(fb_var.locations[0].storage.clone())
             } else {
                 None
             };
@@ -406,8 +402,11 @@ fn build_location_schedule(locals: &[Option<LocalDebugInfo>]) -> Vec<LocationSch
             continue;
         };
         for descriptor in &info.locations {
-            if descriptor.storage.as_local().is_none()
-                && !matches!(descriptor.storage, VariableStorage::FrameBase { .. })
+            if descriptor.storage.operations.len() == 1
+                && !matches!(
+                    &descriptor.storage.operations[0],
+                    ExpressionOp::WasmLocal(_) | ExpressionOp::FrameBase { .. },
+                )
             {
                 continue;
             }
@@ -776,7 +775,10 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                 // For WasmLocal storage, use the index directly.
                 // For FrameBase (DW_OP_fbreg), use the parameter order as
                 // fallback since formal params map to WASM locals 0..N.
-                let local_index = storage.as_local().or(fallback_index);
+                let local_index = match storage.operations.as_slice() {
+                    [ExpressionOp::WasmLocal(index)] => Some(*index),
+                    _ => fallback_index,
+                };
                 if let Some(local_index) = local_index {
                     locations.push(LocationDescriptor {
                         start: low_pc,
@@ -790,7 +792,8 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                         decl_column,
                     };
                     return Ok(Some((local_index, data)));
-                } else if matches!(&storage, VariableStorage::FrameBase { .. }) {
+                } else if matches!(storage.operations.as_slice(), [ExpressionOp::FrameBase { .. }])
+                {
                     // FrameBase-only variable (no WASM local index, e.g. local `sum`
                     // in debug builds). Collect separately instead of dropping.
                     locations.push(LocationDescriptor {
@@ -823,10 +826,12 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                 let storage_expr = entry.data;
                 if let Some(storage) =
                     decode_storage_from_expression(&storage_expr, unit, frame_base_global)?
-                    && (storage.as_local().is_some()
-                        || matches!(&storage, VariableStorage::FrameBase { .. }))
+                    && matches!(
+                        storage.operations.as_slice(),
+                        [ExpressionOp::WasmLocal(_) | ExpressionOp::FrameBase { .. }]
+                    )
                 {
-                    if matches!(&storage, VariableStorage::FrameBase { .. }) {
+                    if matches!(storage.operations.as_slice(), [ExpressionOp::FrameBase { .. }]) {
                         has_frame_base = true;
                     }
                     locations.push(LocationDescriptor {
@@ -840,7 +845,12 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                 return Ok(None);
             }
             // Try to find a WASM local index from any location descriptor
-            if let Some(local_index) = locations.iter().find_map(|desc| desc.storage.as_local()) {
+            if let Some(local_index) =
+                locations.iter().find_map(|desc| match desc.storage.operations.as_slice() {
+                    [ExpressionOp::WasmLocal(index)] => Some(*index),
+                    _ => None,
+                })
+            {
                 let data = DwarfLocalData {
                     name: name_symbol,
                     locations,
@@ -871,34 +881,67 @@ fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
     expr: &gimli::Expression<R>,
     unit: &gimli::Unit<R>,
     frame_base_global: Option<u32>,
-) -> gimli::Result<Option<VariableStorage>> {
+) -> gimli::Result<Option<Expression>> {
     let mut operations = expr.clone().operations(unit.encoding());
-    let mut storage = None;
+    let mut storage = vec![];
     while let Some(op) = operations.next()? {
         match op {
-            Operation::WasmLocal { index } => storage = Some(VariableStorage::Local(index)),
-            Operation::WasmGlobal { index } => storage = Some(VariableStorage::Global(index)),
-            Operation::WasmStack { index } => storage = Some(VariableStorage::Stack(index)),
+            Operation::WasmLocal { index } => storage.push(ExpressionOp::WasmLocal(index)),
+            Operation::WasmGlobal { index } => storage.push(ExpressionOp::WasmGlobal(index)),
+            Operation::WasmStack { index } => storage.push(ExpressionOp::WasmStack(index)),
             Operation::UnsignedConstant { value } => {
-                storage = Some(VariableStorage::ConstU64(value))
+                storage.push(ExpressionOp::ConstU64(value));
             }
-            Operation::StackValue => {}
+            Operation::SignedConstant { value } => {
+                storage.push(ExpressionOp::ConstS64(value));
+            }
+            Operation::PlusConstant { value } => {
+                storage.push(ExpressionOp::PlusUConst(value));
+            }
+            Operation::StackValue => {
+                storage.push(ExpressionOp::StackValue);
+            }
             Operation::FrameOffset { offset } => {
-                // DW_OP_fbreg(offset): variable is at frame_base + offset in
-                // WASM linear memory. The frame base is a WASM global
-                // (typically __stack_pointer = global 0).
+                // DW_OP_fbreg(offset): variable is at frame_base + offset in WASM linear memory.
+                // The frame base is a WASM global (typically __stack_pointer = global 0).
                 if let Some(global_index) = frame_base_global {
-                    storage = Some(VariableStorage::FrameBase {
+                    storage.push(ExpressionOp::FrameBase {
                         global_index,
                         byte_offset: offset,
                     });
                 }
             }
-            _ => {}
+            Operation::Address { address } => {
+                storage.push(ExpressionOp::Address { address });
+            }
+            Operation::Piece {
+                size_in_bits,
+                bit_offset,
+            } => {
+                storage.push(ExpressionOp::BitPiece {
+                    size: size_in_bits,
+                    offset: bit_offset.unwrap_or_default(),
+                });
+            }
+            Operation::Register { .. } => {
+                storage.push(ExpressionOp::Unsupported(Symbol::intern("DW_OP_breg(N)")));
+            }
+            Operation::RegisterOffset { .. } => {
+                storage.push(ExpressionOp::Unsupported(Symbol::intern("DW_OP_bregx")));
+            }
+            op => {
+                log::trace!(target: "dwarf", "unhandled expression op {op:?}");
+                // Bail if we observe unhandled ops, as we cannot properly represent the expression
+                return Ok(None);
+            }
         }
     }
 
-    Ok(storage)
+    if storage.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(Expression::with_ops(storage)))
+    }
 }
 
 fn func_local_index(func_index: FuncIndex, module: &Module) -> Option<usize> {

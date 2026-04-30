@@ -46,5 +46,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
-pretty_assertions = "1.0"
+midenc-expect-test = { path = "../tools/expect-test" }
 midenc-log = { path = "../midenc-log" }
+pretty_assertions = "1.0"

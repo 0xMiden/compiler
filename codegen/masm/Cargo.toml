@@ -36,7 +36,6 @@ midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true
 midenc-dialect-arith.workspace = true
 midenc-dialect-cf.workspace = true
-midenc-dialect-debuginfo.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-ub.workspace = true

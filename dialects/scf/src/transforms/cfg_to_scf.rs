@@ -844,8 +844,10 @@ mod tests {
     /// automatically updates the SSA operands of debug value ops.
     #[test]
     fn cfg_to_scf_debug_value_preservation() -> Result<(), Report> {
-        use midenc_dialect_debuginfo::{DebugInfoDialect, DebugInfoOpBuilder};
-        use midenc_hir::{DILocalVariable, interner::Symbol};
+        use midenc_hir::{
+            dialects::debuginfo::{DIBuilder, DebugInfoDialect, attributes::Variable},
+            interner::Symbol,
+        };
 
         let mut test = Test::new("cfg_to_scf_debug_value_preservation", &[Type::U32], &[Type::U32]);
         test.context().get_or_register_dialect::<DebugInfoDialect>();
@@ -862,9 +864,9 @@ mod tests {
         let input = block.borrow().arguments()[0].upcast();
 
         let input_var =
-            DILocalVariable::new(Symbol::intern("input"), Symbol::intern("test.rs"), 1, Some(1));
+            Variable::new(Symbol::intern("input"), Symbol::intern("test.rs"), 1, Some(1));
         let result_var =
-            DILocalVariable::new(Symbol::intern("result"), Symbol::intern("test.rs"), 2, Some(1));
+            Variable::new(Symbol::intern("result"), Symbol::intern("test.rs"), 2, Some(1));
 
         let zero = builder.u32(0, span);
         let is_zero = builder.eq(input, zero, span)?;

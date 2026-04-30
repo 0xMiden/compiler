@@ -2,38 +2,23 @@ use alloc::vec::Vec;
 
 use midenc_hir::{
     Backward, Builder, EntityMut, Forward, FxHashSet, OpBuilder, Operation, OperationName,
-    OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface,
-    RegionBranchTerminatorOpInterface, RegionRef, Report, SmallVec, Usable, Value, ValueRef,
+    OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface, RegionRef, Report,
+    SmallVec, Usable, Value, ValueRef,
     adt::SmallDenseMap,
     dominance::DominanceInfo,
     matchers::{self, Matcher},
     pass::{Pass, PassExecutionState, PostPassStatus},
-    traits::{ConstantLike, Terminator},
+    traits::{ConstantLike, Transparent},
 };
 
-/// Returns `true` if the given operation belongs to the debuginfo dialect.
+/// Check whether `operation` is the sole _non-transparent_ user of `value`.
 ///
-/// Debug info operations (debuginfo.value, debuginfo.kill, etc.) are purely
-/// observational and should not prevent optimizations such as sinking or DCE.
-#[inline]
-fn is_debug_info_op(op: &Operation) -> bool {
-    op.name().dialect().as_str() == "debuginfo"
-}
-
-/// Check whether `operation` is the sole *non-debug-info* user of `value`.
-///
-/// Debug uses are excluded because they are observational and should never
-/// prevent value-producing operations from being moved or eliminated.
-fn is_sole_non_debug_user(value: &dyn Value, operation: OperationRef) -> bool {
+/// Ops that implement `Transparent` are excluded, because they are purely informational and their
+/// uses are not considered for purposes of computing liveness.
+fn is_sole_non_transparent_user(value: &dyn Value, operation: OperationRef) -> bool {
     value
         .iter_uses()
-        .all(|user| user.owner == operation || is_debug_info_op(&user.owner.borrow()))
-}
-
-/// Returns `true` if the only remaining uses of the given value are debug info uses
-/// (or the value is entirely unused).
-fn has_only_debug_uses(value: &dyn Value) -> bool {
-    value.iter_uses().all(|user| is_debug_info_op(&user.owner.borrow()))
+        .all(|user| user.owner == operation && !user.owner.borrow().implements::<dyn Transparent>())
 }
 
 /// Erase all debug info operations that reference the given value.
@@ -41,12 +26,17 @@ fn has_only_debug_uses(value: &dyn Value) -> bool {
 /// This is used before erasing a defining op whose result is only kept alive by
 /// debug uses. The debug ops are simply removed; the codegen emitter is also
 /// hardened to skip orphaned debug ops, so this is a best-effort cleanup.
-fn erase_debug_users(value: ValueRef) {
-    let debug_ops: Vec<OperationRef> = {
+fn erase_transparent_users(value: ValueRef) {
+    let debug_ops: SmallVec<[OperationRef; 2]> = {
         let v = value.borrow();
         v.iter_uses()
-            .filter(|user| is_debug_info_op(&user.owner.borrow()))
-            .map(|user| user.owner)
+            .filter_map(|user| {
+                if user.owner.borrow().implements::<dyn Transparent>() {
+                    Some(user.owner)
+                } else {
+                    None
+                }
+            })
             .collect()
     };
     for mut op in debug_ops {
@@ -264,9 +254,9 @@ impl Pass for SinkOperandDefs {
             for operand in op.operands().iter().rev() {
                 let value = operand.borrow();
                 let value = value.value();
-                // Exclude debug info uses when determining whether this is the sole
-                // user — debug ops are observational and should not prevent sinking.
-                let is_sole_user = is_sole_non_debug_user(&*value, operation);
+                // Exclude debug info uses when determining whether this is the sole user —
+                // transparent ops are observational and should not prevent sinking.
+                let is_sole_user = is_sole_non_transparent_user(&*value, operation);
 
                 let Some(defining_op) = value.get_defining_op() else {
                     // Skip block arguments, nothing to move in that situation
@@ -321,23 +311,23 @@ impl Pass for SinkOperandDefs {
             let mut operation = sink_state.operation;
             let op = operation.borrow();
 
-            // If this operation is unused (or only has debug info uses), remove it
-            // now if it has no side effects.
-            let is_memory_effect_free =
-                op.is_memory_effect_free() || op.implements::<dyn ConstantLike>();
-            let only_debug_uses =
-                !op.is_used() || op.results().iter().all(|r| has_only_debug_uses(&*r.borrow()));
-            if only_debug_uses
-                && is_memory_effect_free
-                && !op.implements::<dyn Terminator>()
-                && !op.implements::<dyn RegionBranchTerminatorOpInterface>()
-                && erased.insert(operation)
-            {
+            // Ignore transparent ops - we do not sink them directly
+            if op.implements::<dyn Transparent>() {
+                continue;
+            }
+
+            // If this operation is unused (or only has debug info uses), remove it now if it has no
+            // side effects.
+            //
+            // NOTE: We explicitly DO NOT remove transparent ops here, unless we're removing the
+            // defining op of the transparent operand
+            let has_real_uses = op.results().iter().any(|result| result.borrow().has_real_uses());
+            if !has_real_uses && op.would_be_trivially_dead() && erased.insert(operation) {
                 log::debug!(target: Self::NAME, "erasing unused, effect-free, non-terminator op {op}");
                 drop(op);
                 // Erase any remaining debug uses before erasing the defining op
                 for result in operation.borrow().results().iter() {
-                    erase_debug_users(result.borrow().as_value_ref());
+                    erase_transparent_users(result.borrow().as_value_ref());
                 }
                 operation.borrow_mut().erase();
                 continue;
@@ -374,9 +364,9 @@ impl Pass for SinkOperandDefs {
                         changed = PostPassStatus::Changed;
                         // If no other non-debug uses of this value remain, then remove
                         // the original operation, as it is now dead.
-                        if has_only_debug_uses(&*operand_value.borrow()) {
+                        if !operand_value.borrow().has_real_uses() {
                             log::trace!(target: Self::NAME, "    {operand_value} is no longer used, erasing definition");
-                            erase_debug_users(operand_value);
+                            erase_transparent_users(operand_value);
                             // Replacements are only ever for op results
                             let mut defining_op = operand_value.borrow().get_defining_op().unwrap();
                             defining_op.borrow_mut().erase();
@@ -387,7 +377,7 @@ impl Pass for SinkOperandDefs {
 
                 let value = operand_value.borrow();
                 // Exclude debug info uses when determining sole-user status.
-                let is_sole_user = is_sole_non_debug_user(&*value, operation);
+                let is_sole_user = is_sole_non_transparent_user(&*value, operation);
 
                 let Some(mut defining_op) = value.get_defining_op() else {
                     // Skip block arguments, nothing to move in that situation
@@ -426,8 +416,12 @@ impl Pass for SinkOperandDefs {
                         // The original op can be moved
                         drop(def);
                         drop(value);
-                        defining_op.borrow_mut().move_to(*builder.insertion_point());
+                        let mut def_op = defining_op.borrow_mut();
+                        def_op.move_to(*builder.insertion_point());
                         sink_state.replacements.insert(operand_value, operand_value);
+
+                        // Move any transparent users of `defining_op` after it
+                        move_transparent_users_to(&def_op, &[operation]);
                     }
                 } else if !is_sole_user || def.num_results() != 1 || !def.is_memory_effect_free() {
                     // Skip this operand if the defining op cannot be safely moved
@@ -450,12 +444,16 @@ impl Pass for SinkOperandDefs {
                     drop(def);
                     drop(value);
                     log::trace!(target: Self::NAME, "    defining op can be moved and has no other uses, moving into place");
-                    defining_op.borrow_mut().move_to(*builder.insertion_point());
+                    let mut def_op = defining_op.borrow_mut();
+                    def_op.move_to(*builder.insertion_point());
                     sink_state.replacements.insert(operand_value, operand_value);
+
+                    // Move any transparent users of `defining_op` after it
+                    move_transparent_users_to(&def_op, &[operation]);
+                    drop(def_op);
 
                     // Enqueue the defining op to be visited before continuing with this op's operands
                     log::trace!(target: Self::NAME, "    enqueing defining op for immediate processing");
-                    //sink_state.ip = *builder.insertion_point();
                     sink_state.ip = ProgramPoint::before(operation);
                     worklist.push_front(sink_state);
                     worklist.push_front(OpOperandSink::new(defining_op));
@@ -466,6 +464,26 @@ impl Pass for SinkOperandDefs {
 
         state.set_post_pass_status(changed);
         Ok(())
+    }
+}
+
+fn move_transparent_users_to(op: &Operation, exclude: &[OperationRef]) {
+    use midenc_hir::adt::SmallSet;
+
+    let ip = ProgramPoint::after(op.as_operation_ref());
+    let mut visited = SmallSet::<_, 4>::from_iter(exclude.iter().copied());
+    for result in op.results().iter() {
+        let result = result.borrow();
+        for user in result.iter_uses() {
+            if !visited.insert(user.owner) {
+                continue;
+            }
+            let mut user = user.owner;
+            let mut user = user.borrow_mut();
+            if user.implements::<dyn Transparent>() {
+                user.move_to(ip);
+            }
+        }
     }
 }
 
@@ -530,12 +548,12 @@ where
         self.num_sunk
     }
 
-    /// Given a region and an op which dominates the region, returns true if all
-    /// *non-debug-info* users of the given op are dominated by the entry block
-    /// of the region, and thus the operation can be sunk into the region.
+    /// Given a region and an op which dominates the region, returns true if all _non-transparent_
+    /// users of the given op are dominated by the entry block of the region, and thus the operation
+    /// can be sunk into the region.
     ///
-    /// Debug info uses are excluded because they are observational and should
-    /// not prevent control-flow sinking.
+    /// Transparent uses are excluded because they are observational and should not prevent
+    /// control-flow sinking.
     fn all_users_dominated_by(&self, op: &Operation, region: &Region) -> bool {
         assert!(
             region.find_ancestor_op(op.as_operation_ref()).is_none(),
@@ -547,7 +565,7 @@ where
             result.iter_uses().all(|user| {
                 // Skip debug info users — they are observational and should not
                 // prevent sinking.
-                if is_debug_info_op(&user.owner.borrow()) {
+                if user.owner.borrow().implements::<dyn Transparent>() {
                     return true;
                 }
                 // The user is dominated by the region if its containing block is dominated
@@ -590,14 +608,10 @@ where
                 (all_users_dominated_by, should_move_into_region)
             };
             if all_users_dominated_by && should_move_into_region {
-                // Before moving, erase any debug info ops outside the target region
-                // that reference results of this op — they would violate dominance
-                // after the move.
-                for result in op.borrow().results().iter() {
-                    erase_debug_users(result.borrow().as_value_ref());
-                }
-
                 (self.move_into_region)(op, region);
+
+                // Move all transparent users of `op` into the region after it
+                move_transparent_users_to(&op.borrow(), &[user.as_operation_ref()]);
 
                 self.num_sunk += 1;
 

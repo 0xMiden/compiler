@@ -15,12 +15,14 @@ mod value;
 
 use midenc_dialect_arith as arith;
 use midenc_dialect_cf as cf;
-use midenc_dialect_debuginfo as debuginfo;
 use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
-use midenc_hir::{dialects::builtin, inventory};
+use midenc_hir::{
+    dialects::{builtin, debuginfo},
+    inventory,
+};
 
 pub use self::{
     eval::{ControlFlowEffect, Eval, Initialize},

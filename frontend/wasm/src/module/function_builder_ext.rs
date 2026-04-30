@@ -6,16 +6,21 @@ use cranelift_entity::{EntityRef as _, SecondaryMap};
 use log::warn;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
-use midenc_dialect_debuginfo::DebugInfoOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
     OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Type, ValueRef,
-    dialects::builtin::{
-        BuiltinOpBuilder, FunctionBuilder, FunctionRef,
-        attributes::{LocalVariable, Signature},
+    dialects::{
+        builtin::{
+            BuiltinOpBuilder, FunctionBuilder, FunctionRef,
+            attributes::{LocalVariable, Signature},
+        },
+        debuginfo::{
+            DIBuilder,
+            attributes::{CompileUnitAttr, Expression, ExpressionOp, SubprogramAttr},
+        },
     },
     interner::Symbol,
     traits::{BranchOpInterface, Terminator},
@@ -200,12 +205,12 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         // If DWARF didn't provide a location expression, synthesize one from the
         // wasm local index — we know this variable is stored as a wasm local.
         let expr = expr_opt.or_else(|| {
-            let ops = vec![midenc_hir::DIExpressionOp::WasmLocal(idx as u32)];
-            Some(midenc_hir::DIExpression::with_ops(ops))
+            let ops = vec![ExpressionOp::WasmLocal(idx as u32)];
+            Some(Expression::with_ops(ops))
         });
 
         if let Err(err) =
-            DebugInfoOpBuilder::builder_mut(self).debug_value_with_expr(value, attr, expr, span)
+            DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, expr, span)
         {
             warn!("failed to emit dbg.value for local {idx}: {err:?}");
         }
@@ -268,8 +273,6 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     }
 
     fn emit_scheduled_dbg_value(&mut self, entry: LocationScheduleEntry, span: SourceSpan) {
-        use crate::module::debug_info::VariableStorage;
-
         // Skip variables already emitted as parameters to avoid duplicates.
         if self.param_dbg_emitted
             && self.param_values.iter().any(|(v, _)| v.index() == entry.var_index)
@@ -280,7 +283,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         // Only emit debug values for variables that have already been defined.
         // Calling try_use_var on an undefined variable would insert block
         // parameters (phis) as a side effect, corrupting the CFG.
-        let is_frame_base = matches!(&entry.storage, VariableStorage::FrameBase { .. });
+        let is_frame_base =
+            matches!(entry.storage.operations.as_slice(), [ExpressionOp::FrameBase { .. }]);
         if !is_frame_base && !self.defined_vars.contains(&(entry.var_index as u32)) {
             return;
         }
@@ -291,10 +295,10 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             Err(_) => {
                 if is_frame_base {
                     // FrameBase-only variables have no WASM local, so no SSA value
-                    // exists for them. The debuginfo.value op requires an SSA operand,
-                    // so we attach an existing parameter value as an anchor. The MASM
-                    // lowering ignores this operand when the DIExpression contains
-                    // FrameBase — the location is fully described by the expression.
+                    // exists for them. The di.value op requires an SSA operand, so we attach an
+                    // existing parameter value as an anchor. The MASM lowering ignores this operand
+                    // when the DIExpression contains FrameBase — the location is fully described by
+                    // the expression.
                     if let Some((_, v)) = self.param_values.first() {
                         let anchor = *v;
                         self.def_var(var, anchor);
@@ -314,9 +318,10 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         };
 
         // Create expression from the scheduled location
-        let expression = {
-            let ops = vec![entry.storage.to_expression_op()];
-            Some(midenc_hir::DIExpression::with_ops(ops))
+        let expression = if entry.storage.is_empty() {
+            None
+        } else {
+            Some(entry.storage)
         };
 
         let Some(info) = self.debug_info.as_ref() else {
@@ -331,8 +336,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         };
 
-        if let Err(err) = DebugInfoOpBuilder::builder_mut(self)
-            .debug_value_with_expr(value, attr, expression, span)
+        if let Err(err) =
+            DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, expression, span)
         {
             warn!("failed to emit scheduled dbg.value for local {idx}: {err:?}");
         }
@@ -659,10 +664,10 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         let info = info.borrow();
         let context = self.inner.builder().context_rc();
         let cu_attr = context
-            .create_attribute::<midenc_hir::DICompileUnitAttr, _>(info.compile_unit.clone())
+            .create_attribute::<CompileUnitAttr, _>(info.compile_unit.clone())
             .as_attribute_ref();
         let sp_attr = context
-            .create_attribute::<midenc_hir::DISubprogramAttr, _>(info.subprogram.clone())
+            .create_attribute::<SubprogramAttr, _>(info.subprogram.clone())
             .as_attribute_ref();
         let mut func = self.inner.func.borrow_mut();
         let op = func.as_operation_mut();
@@ -766,7 +771,7 @@ impl<'f, B: ?Sized + Builder> BuiltinOpBuilder<'f, B> for FunctionBuilderExt<'f,
     }
 }
 
-impl<'f, B: ?Sized + Builder> DebugInfoOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+impl<'f, B: ?Sized + Builder> DIBuilder<'f, B> for FunctionBuilderExt<'f, B> {
     #[inline(always)]
     fn builder(&self) -> &B {
         self.inner.builder()

@@ -8,6 +8,7 @@ use midenc_hir::{
     RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Spanned, SymbolTable, ValueRef,
     dominance::DominanceInfo,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
+    traits::Transparent,
 };
 
 pub use self::next_use_set::NextUseSet;
@@ -21,14 +22,6 @@ use crate::{
 
 /// The distance penalty applied to an edge which exits a loop
 pub const LOOP_EXIT_DISTANCE: u32 = 100_000;
-
-/// Returns `true` if the operation belongs to the debuginfo dialect.
-///
-/// Debug info ops (debuginfo.debug_value, etc.) are purely observational — their
-/// operands are not real uses and must not keep values alive.
-fn is_debug_info_op(op: &Operation) -> bool {
-    op.name().dialect().as_str() == "debuginfo"
-}
 
 /// This analysis computes what values are live, and the distance to next use, for all program
 /// points in the given operation. It computes both live-in and live-out sets, in order to answer
@@ -369,11 +362,10 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
         }
 
         // Set the next-use distance of any operands to 0.
-        // Skip debug info ops: their operands are observational metadata and must
-        // not keep values alive, otherwise scf.if branches can end up with
-        // mismatched operand-stack sizes when one branch has a real use and the
-        // other only a debug use.
-        if !is_debug_info_op(op) {
+        //
+        // Ignore transparent operations, as such operations are purely informational, and are not
+        // considered to keep their operands live.
+        if !op.implements::<dyn Transparent>() {
             for operand in op.operands().all().iter() {
                 temp_live_in.insert(operand.borrow().as_value_ref(), 0);
             }

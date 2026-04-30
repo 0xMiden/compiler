@@ -3288,7 +3288,6 @@ dependencies = [
  "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
- "midenc-dialect-debuginfo",
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",
@@ -3342,15 +3341,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "midenc-dialect-debuginfo"
-version = "0.8.1"
-dependencies = [
- "log",
- "midenc-hir",
- "paste",
-]
-
-[[package]]
 name = "midenc-dialect-hir"
 version = "0.8.1"
 dependencies = [
@@ -3375,7 +3365,6 @@ dependencies = [
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
- "midenc-dialect-debuginfo",
  "midenc-dialect-ub",
  "midenc-expect-test",
  "midenc-hir",
@@ -3432,7 +3421,6 @@ dependencies = [
  "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
- "midenc-dialect-debuginfo",
  "midenc-dialect-hir",
  "midenc-dialect-ub",
  "midenc-dialect-wasm",
@@ -3473,6 +3461,7 @@ dependencies = [
  "memchr",
  "miden-core",
  "miden-thiserror",
+ "midenc-expect-test",
  "midenc-hir-macros",
  "midenc-hir-symbol",
  "midenc-hir-type",
@@ -3510,7 +3499,6 @@ dependencies = [
  "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
- "midenc-dialect-debuginfo",
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",

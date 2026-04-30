@@ -7,7 +7,7 @@ use crate::{
     OpOperandImpl, OpResult, Operation, OperationRef, PostOrderBlockIter, Region, RegionRef,
     Rewriter, SuccessorOperands, ValueRef,
     adt::SmallSet,
-    traits::{BranchOpInterface, Terminator},
+    traits::{BranchOpInterface, Terminator, Transparent},
 };
 
 /// Data structure used to track which values have already been proved live.
@@ -67,7 +67,12 @@ impl LiveMap {
 
     pub fn is_use_specially_known_dead(&self, user: &OpOperandImpl) -> bool {
         // DCE generally treats all uses of an op as live if the op itself is considered live.
-        // However, for successor operands to terminators we need a finer-grained notion where we
+        //
+        // However, there are two special cases:
+        //
+        // ## Successor Operands
+        //
+        // For successor operands to terminators we need a finer-grained notion where we
         // deduce liveness for operands individually. The reason for this is easiest to think about
         // in terms of a classical phi node based SSA IR, where each successor operand is really an
         // operand to a _separate_ phi node, rather than all operands to the branch itself as with
@@ -76,15 +81,25 @@ impl LiveMap {
         // And similarly, because each successor operand is really an operand to a phi node, rather
         // than to the terminator op itself, a terminator op can't e.g. "print" the value of a
         // successor operand.
-        let owner = &user.owner;
-        if owner.borrow().implements::<dyn Terminator>()
-            && let Some(branch_interface) = owner.borrow().as_trait::<dyn BranchOpInterface>()
+        //
+        // ## Debug Info
+        //
+        // The debug info dialect introduces operations that "use" SSA values, but if the use would
+        // otherwise be dead if the op didn't exist, then we want to treat both the debug op and
+        // the value use as dead, so that debug info ops do not interfere with dead-code
+        // elimination.
+        let owner_ref = &user.owner;
+        let owner = owner_ref.borrow();
+        if owner.implements::<dyn Terminator>()
+            && let Some(branch_interface) = owner.as_trait::<dyn BranchOpInterface>()
             && let Some(arg) = branch_interface.get_successor_block_argument(user.index as usize)
         {
             return !self.was_proven_live(&arg.upcast());
         }
 
-        false
+        // If the owning op is transparent, then its value uses are not considered when determining
+        // liveness
+        owner.implements::<dyn Transparent>()
     }
 
     pub fn propagate_region_liveness(&mut self, region: &Region) {
@@ -98,15 +113,6 @@ impl LiveMap {
             let block = block.borrow();
             for op in block.body().iter().rev() {
                 self.propagate_liveness(&op);
-            }
-
-            // We currently do not remove entry block arguments, so there is no need to track their
-            // liveness.
-            //
-            // TODO(pauls): We could track these and enable removing dead operands/arguments from
-            // region control flow operations in the future.
-            if block.is_entry_block() {
-                continue;
             }
 
             for arg in block.arguments().iter().copied() {
@@ -135,7 +141,36 @@ impl LiveMap {
         }
 
         // Process this op
-        if !op.would_be_trivially_dead() {
+        if op.implements::<dyn Transparent>() {
+            // If this op is Transparent, it has zero or one operands and no results.
+            //
+            // We consider such ops live IFF it either:
+            //
+            // 1. Has no operands
+            // 2. Has an operand which has at least one real use
+            if op.has_operands() {
+                for operand in op.operands().iter() {
+                    let operand = operand.borrow();
+                    if let Some(defining_op) = operand.value().get_defining_op()
+                        && self.was_op_proven_live(&defining_op)
+                    {
+                        self.set_op_proved_live(op.as_operation_ref());
+                        return;
+                    } else if self.was_proven_live(&operand.as_value_ref()) {
+                        self.set_op_proved_live(op.as_operation_ref());
+                        return;
+                    }
+                }
+            } else {
+                // Transparent ops with no SSA operands are always treated as live here, as we can
+                // not otherwise determine whether it is valid to remove it or not
+                //
+                // TODO(pauls): We may need to reject such ops, as it would otherwise not be
+                // generally possible to determine how to handle them during transformations other
+                // than DCE
+                self.set_op_proved_live(op.as_operation_ref());
+            }
+        } else if !op.would_be_trivially_dead() {
             self.set_op_proved_live(op.as_operation_ref());
         }
 
@@ -191,6 +226,11 @@ impl Region {
         rewriter: &mut dyn Rewriter,
     ) -> Result<(), RegionTransformFailed> {
         log::debug!(target: "region-simplify", "starting region dead code elimination");
+        let live_map = Self::compute_liveness(regions);
+        Self::cleanup_dead_code(regions, rewriter, &live_map)
+    }
+
+    fn compute_liveness(regions: &[RegionRef]) -> LiveMap {
         let mut live_map = LiveMap::default();
         loop {
             live_map.mark_unchanged();
@@ -206,8 +246,7 @@ impl Region {
                 break;
             }
         }
-
-        Self::cleanup_dead_code(regions, rewriter, &live_map)
+        live_map
     }
 
     /// Erase the unreachable blocks within the regions in `regions`.
@@ -394,5 +433,126 @@ impl Region {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::format;
+
+    use midenc_expect_test::expect_file;
+    use midenc_session::diagnostics::SourceSpan;
+
+    use super::*;
+    use crate::{
+        Builder, BuilderExt, Op, Type,
+        derive::{EffectOpInterface, operation},
+        dialects::{
+            builtin::BuiltinOpBuilder,
+            test::{TestDialect, TestOpBuilder},
+        },
+        effects::MemoryEffectOpInterface,
+        patterns::{NoopRewriterListener, RewriterImpl},
+        testing::Test,
+        traits::{AnyType, Transparent},
+    };
+
+    #[operation(
+        dialect = TestDialect,
+        traits(Transparent),
+        implements(MemoryEffectOpInterface)
+    )]
+    #[derive(EffectOpInterface)]
+    pub struct DebugValue {
+        #[operand]
+        #[effects(MemoryEffect())]
+        value: AnyType,
+    }
+
+    #[test]
+    fn transparent_ops_are_not_considered_dead_unless_their_referent_value_is_dead() {
+        let mut test =
+            Test::new("transparent_ops_inherit_liveness_of_referent", &[Type::U32], &[Type::U32]);
+
+        let op = test.function();
+        let mut builder = test.function_builder();
+        let entry = builder.entry_block();
+
+        let builder = builder.builder_mut();
+        builder.set_insertion_point_to_end(entry);
+
+        let input = entry.borrow().arguments()[0] as ValueRef;
+
+        let unused_output = builder.add(input, input, SourceSpan::UNKNOWN).unwrap();
+        let dead_debug_var = builder.create::<DebugValue, _>(SourceSpan::UNKNOWN);
+        let dead_debug_var_op = dead_debug_var(unused_output).unwrap();
+
+        let output = builder.add(input, input, SourceSpan::UNKNOWN).unwrap();
+        let live_debug_var = builder.create::<DebugValue, _>(SourceSpan::UNKNOWN);
+        let live_debug_var_op = live_debug_var(output).unwrap();
+        let ret_op = builder.ret([output], SourceSpan::UNKNOWN).unwrap();
+
+        let region = op.borrow().body().as_region_ref();
+        let live_map = Region::compute_liveness(&[region]);
+
+        // A ret op is always live in region dce
+        assert!(live_map.was_op_proven_live(&ret_op.as_operation_ref()));
+        // The `output` value must be live because it is an operand of the ret
+        assert!(live_map.was_proven_live(&output));
+        // `live_debug_var_op` is live because `output` is live
+        assert!(live_map.was_op_proven_live(&live_debug_var_op.as_operation_ref()));
+        // `input` is live because it is used by the live `add`
+        assert!(live_map.was_proven_live(&input));
+        // `unused_output` must be dead because it has no non-transparent users
+        assert!(!live_map.was_proven_live(&unused_output));
+        // `dead_debug_var_op` must be dead because `unused_output` is dead
+        assert!(!live_map.was_op_proven_live(&dead_debug_var_op.as_operation_ref()));
+    }
+
+    #[test]
+    fn transparent_ops_do_not_interfere_with_dead_code_elimination() {
+        let mut test = Test::new("transparent_ops_no_dce_interference", &[Type::U32], &[Type::U32]);
+
+        let op = test.function();
+        {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+
+            let builder = builder.builder_mut();
+            builder.set_insertion_point_to_end(entry);
+
+            let input = entry.borrow().arguments()[0] as ValueRef;
+
+            let unused_output = builder.add(input, input, SourceSpan::UNKNOWN).unwrap();
+            let dead_debug_var = builder.create::<DebugValue, _>(SourceSpan::UNKNOWN);
+            let _dead_debug_var_op = dead_debug_var(unused_output).unwrap();
+
+            let output = builder.add(input, input, SourceSpan::UNKNOWN).unwrap();
+            let live_debug_var = builder.create::<DebugValue, _>(SourceSpan::UNKNOWN);
+            let _live_debug_var_op = live_debug_var(output).unwrap();
+            builder.ret([output], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        let before = format!("{}", op.borrow().as_operation());
+        expect_file!["expected/transparent_ops_do_not_interfere_with_dce_before.hir"]
+            .assert_eq(&before);
+
+        let region = op.borrow().body().as_region_ref();
+
+        {
+            let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+            Region::dead_code_elimination(&[region], &mut rewriter)
+                .expect("dead code elimination failed unexpectedly");
+        }
+
+        let after = format!("{}", op.borrow().as_operation());
+        expect_file!["expected/transparent_ops_do_not_interfere_with_dce_after.hir"]
+            .assert_eq(&after);
+
+        assert_ne!(&before, &after);
+        assert_eq!(before.matches("test.debug_value").count(), 2);
+        assert_eq!(before.matches("test.add").count(), 2);
+        assert_eq!(after.matches("test.debug_value").count(), 1);
+        assert_eq!(after.matches("test.add").count(), 1);
     }
 }

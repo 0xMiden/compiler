@@ -5,11 +5,14 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
-    DICompileUnit, DISubprogram, FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolPath,
-    ValueRange, ValueRef, Visibility,
-    dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
-        attributes::{Signature, UnitAttr},
+    FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolPath, ValueRange, ValueRef,
+    Visibility,
+    dialects::{
+        builtin::{
+            BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
+            attributes::{Signature, UnitAttr},
+        },
+        debuginfo::attributes::{CompileUnit, CompileUnitAttr, Subprogram, SubprogramAttr},
     },
 };
 use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
@@ -384,14 +387,14 @@ fn annotate_component_export_debug_signature(
     };
 
     let file = midenc_hir::interner::Symbol::intern("<component>");
-    let mut compile_unit = DICompileUnit::new(midenc_hir::interner::Symbol::intern("wit"), file);
+    let mut compile_unit = CompileUnit::new(midenc_hir::interner::Symbol::intern("wit"), file);
     compile_unit.producer = Some(midenc_hir::interner::Symbol::intern("midenc-frontend-wasm"));
 
     let param_names = export_param_names
         .iter()
         .map(|name| midenc_hir::interner::Symbol::intern(name.as_str()));
     let subprogram =
-        DISubprogram::new(midenc_hir::interner::Symbol::intern(export_func_name), file, 1, Some(1))
+        Subprogram::new(midenc_hir::interner::Symbol::intern(export_func_name), file, 1, Some(1))
             .with_function_type(FunctionType {
                 abi: export_func_ty.abi,
                 params: export_func_ty.params.clone(),
@@ -399,12 +402,8 @@ fn annotate_component_export_debug_signature(
             })
             .with_param_names(param_names);
 
-    let cu_attr = context
-        .create_attribute::<midenc_hir::DICompileUnitAttr, _>(compile_unit)
-        .as_attribute_ref();
-    let sp_attr = context
-        .create_attribute::<midenc_hir::DISubprogramAttr, _>(subprogram)
-        .as_attribute_ref();
+    let cu_attr = context.create_attribute::<CompileUnitAttr, _>(compile_unit).as_attribute_ref();
+    let sp_attr = context.create_attribute::<SubprogramAttr, _>(subprogram).as_attribute_ref();
 
     let mut export_func = export_func_ref.borrow_mut();
     let op = export_func.as_operation_mut();

@@ -74,7 +74,7 @@ impl RewritePattern for IfRemoveUnusedResults {
             .results()
             .iter()
             .copied()
-            .filter(|result| result.borrow().is_used())
+            .filter(|result| result.borrow().has_real_uses())
             .collect::<SmallVec<[_; 4]>>();
 
         // Replace the operation if only a subset of its results have uses.

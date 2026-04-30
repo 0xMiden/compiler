@@ -26,6 +26,7 @@
 #![feature(extend_one)]
 #![feature(extend_one_unchecked)]
 #![feature(iter_advance_by)]
+#![feature(iter_intersperse)]
 #![feature(iter_next_chunk)]
 #![feature(iter_collect_into)]
 #![feature(trusted_len)]
@@ -83,10 +84,7 @@ pub use midenc_session::diagnostics;
 pub use self::{
     attributes::{
         Attribute, AttributeName, AttributeRef, AttributeRegistration, AttributeValue,
-        DICompileUnit, DICompileUnitAttr, DIExpression, DIExpressionAttr, DIExpressionOp,
-        DILocalVariable, DILocalVariableAttr, DISubprogram, DISubprogramAttr, NamedAttribute,
-        NamedAttributeList, decode_frame_base_local_index, decode_frame_base_local_offset,
-        encode_frame_base_local_index, encode_frame_base_local_offset,
+        NamedAttribute, NamedAttributeList,
     },
     dialects::builtin::attributes::{Location, Overflow, Visibility, version},
     direction::{Backward, Direction, Forward},
