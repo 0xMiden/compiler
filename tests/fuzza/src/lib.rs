@@ -55,6 +55,9 @@ pub fn run_case(name: &str, source: &str) {
 
     // Proptest: 16 cases, shrinking disabled — the whole case file IS the
     // reduced reproducer, so shrinking individual inputs adds no value.
+    // The shrinking generates a lot of noise that messes up the feedback for the agent. We want
+    // to capture the exact inputs that triggered the miscompilation. Shrunk inputs might
+    // trigger another code path (another miscompilation?).
     let cfg = Config {
         cases: 16,
         max_shrink_iters: 0,
