@@ -1,6 +1,7 @@
 use core::mem;
 use std::rc::Rc;
 
+use cranelift_entity::PrimaryMap;
 use midenc_hir::{
     Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, Visibility,
     constants::ConstantData,
@@ -10,7 +11,7 @@ use midenc_hir::{
     version::Version,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
-use wasmparser::Validator;
+use wasmparser::{Operator, Validator};
 
 use super::{
     MemoryIndex, module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
@@ -20,10 +21,10 @@ use crate::{
     error::WasmResult,
     intrinsics::{Intrinsic, IntrinsicsConversionResult},
     module::{
-        DefinedFuncIndex,
+        DefinedFuncIndex, FuncIndex,
         func_translator::FuncTranslator,
         linker_stubs::{
-            linker_stub_import_path, maybe_lower_linker_stub, signature_matches_function_type,
+            linker_stub_import_path, maybe_lower_linker_stub, stub_signature_matches_function_type,
         },
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
         types::ir_type,
@@ -122,6 +123,11 @@ pub fn build_ir_module(
     // bodies), we don't support multiple module instances. Thus, this
     // ParseModule will not be used again to make another module instance.
     let func_body_inputs = mem::take(&mut parsed_module.function_body_inputs);
+    let specialized_felt_from_u64_args = collect_lto_specialized_felt_from_u64_args(
+        &parsed_module.module,
+        module_types,
+        &func_body_inputs,
+    );
 
     // Two-pass approach for linker stub inlining:
     // Pass 1: Detect and register intrinsic linker stubs that can be inlined as operations.
@@ -150,7 +156,7 @@ pub fn build_ir_module(
         };
 
         let callable = module_state.get_direct_func(func_index)?;
-        if !signature_matches_function_type(callable.signature(), &function_type) {
+        if !stub_signature_matches_function_type(callable.signature(), &function_type) {
             continue;
         }
 
@@ -188,6 +194,7 @@ pub fn build_ir_module(
             callable.signature(),
             &body_data.body,
             module_state,
+            specialized_felt_from_u64_args.get(&func_index).copied(),
         )? {
             continue;
         }
@@ -207,6 +214,116 @@ pub fn build_ir_module(
         )?;
     }
     Ok(())
+}
+
+/// Finds `intrinsics::felt::from_u64_unchecked` stubs whose parameter was constant-specialized
+/// away by LTO.
+fn collect_lto_specialized_felt_from_u64_args(
+    wasm_module: &crate::module::Module,
+    module_types: &ModuleTypesBuilder,
+    func_body_inputs: &PrimaryMap<DefinedFuncIndex, FunctionBodyData<'_>>,
+) -> FxHashMap<FuncIndex, i64> {
+    let stub_arg_constants =
+        collect_zero_arg_i64_stub_arg_constants(wasm_module, module_types, func_body_inputs);
+    let mut specialized_args = FxHashMap::default();
+
+    for (defined_func_idx, body_data) in func_body_inputs {
+        let func_index = wasm_module.func_index(defined_func_idx);
+        let func_name = wasm_module.func_name(func_index);
+        let Some(import_path) = linker_stub_import_path(func_name.as_str()) else {
+            continue;
+        };
+        let Ok(Intrinsic::Felt(function)) = Intrinsic::try_from(&import_path) else {
+            continue;
+        };
+        if function.as_str() != "from_u64_unchecked" {
+            continue;
+        }
+
+        let wasm_sig = &module_types[wasm_module.functions[func_index].signature];
+        if !wasm_sig.params().is_empty() {
+            continue;
+        }
+
+        let Some(value) =
+            extract_lto_specialized_felt_from_u64_arg(&body_data.body, &stub_arg_constants)
+        else {
+            continue;
+        };
+        specialized_args.insert(func_index, value);
+    }
+
+    specialized_args
+}
+
+/// Finds zero-argument Rust `stub_arg::<u64>` helpers and extracts their embedded constant.
+fn collect_zero_arg_i64_stub_arg_constants(
+    wasm_module: &crate::module::Module,
+    module_types: &ModuleTypesBuilder,
+    func_body_inputs: &PrimaryMap<DefinedFuncIndex, FunctionBodyData<'_>>,
+) -> FxHashMap<FuncIndex, i64> {
+    let mut constants = FxHashMap::default();
+
+    for (defined_func_idx, body_data) in func_body_inputs {
+        let func_index = wasm_module.func_index(defined_func_idx);
+        let func_name = wasm_module.func_name(func_index);
+        // Rust v0-mangles `...::stubs::stub_arg` as a name containing `stubs8stub_arg`.
+        if !func_name.as_str().contains("stubs8stub_arg") {
+            continue;
+        }
+
+        let wasm_sig = &module_types[wasm_module.functions[func_index].signature];
+        if !wasm_sig.params().is_empty() || !wasm_sig.returns().is_empty() {
+            continue;
+        }
+
+        let Some(value) = extract_single_i64_const(&body_data.body) else {
+            continue;
+        };
+        constants.insert(func_index, value);
+    }
+
+    constants
+}
+
+/// Extracts the specialized `u64` argument used by a zero-argument felt conversion stub.
+fn extract_lto_specialized_felt_from_u64_arg(
+    body: &wasmparser::FunctionBody<'_>,
+    stub_arg_constants: &FxHashMap<FuncIndex, i64>,
+) -> Option<i64> {
+    let mut reader = body.get_operators_reader().ok()?;
+    let mut arg = None;
+
+    while !reader.eof() {
+        let (op, _) = reader.read_with_offset().ok()?;
+        if let Operator::Call { function_index } = op {
+            let function_index = FuncIndex::from_u32(function_index);
+            if let Some(value) = stub_arg_constants.get(&function_index)
+                && arg.replace(*value).is_some()
+            {
+                return None;
+            }
+        }
+    }
+
+    arg
+}
+
+/// Extracts the only `i64.const` in a Wasm function body.
+fn extract_single_i64_const(body: &wasmparser::FunctionBody<'_>) -> Option<i64> {
+    let mut reader = body.get_operators_reader().ok()?;
+    let mut value = None;
+
+    while !reader.eof() {
+        let (op, _) = reader.read_with_offset().ok()?;
+        if let Operator::I64Const { value: const_value } = op
+            && value.replace(const_value).is_some()
+        {
+            return None;
+        }
+    }
+
+    value
 }
 
 fn build_globals(

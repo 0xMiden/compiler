@@ -116,3 +116,16 @@ test_bool_op_total_u64!(gt, >);
 test_bool_op_total_u64!(lt, <);
 test_bool_op_total_u64!(ge, >=);
 test_bool_op_total_u64!(le, <=);
+
+#[test]
+fn ignored_felt_op_result_under_lto() {
+    let config = WasmTranslationConfig::default();
+    let mut test = CompilerTest::rust_fn_body_with_stdlib_sys(
+        "ignored_felt_op_result_under_lto",
+        "(a: Felt, b: Felt) { let _ = a + b; }",
+        config,
+        None,
+    );
+
+    test.compile_package();
+}
