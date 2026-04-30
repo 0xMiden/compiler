@@ -306,13 +306,13 @@ fn test_overflowing_add_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_add_i8() {
     test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_add_i16() {
     test_overflowing_arith(i16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
@@ -348,13 +348,13 @@ fn test_overflowing_sub_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_sub_i8() {
     test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_sub_i16() {
     test_overflowing_arith(i16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
@@ -390,13 +390,12 @@ fn test_overflowing_mul_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn test_overflowing_mul_i8() {
     test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/960"]
 fn test_overflowing_mul_i16() {
     test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -563,6 +562,220 @@ fn test_overflowing_rem_i64() {
 
 // TODO handle overflowing ops for wide types
 
+#[test]
+fn test_checked_add_u8() {
+    test_checked_arith(u8::checked_add, "checked_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_add_u16() {
+    test_checked_arith(u16::checked_add, "checked_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_add_u32() {
+    test_checked_arith(u32::checked_add, "checked_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_add_u64() {
+    test_checked_arith(u64::checked_add, "checked_add", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
+fn test_checked_add_i8() {
+    test_checked_arith(i8::checked_add, "checked_add", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
+fn test_checked_add_i16() {
+    test_checked_arith(i16::checked_add, "checked_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_add_i32() {
+    test_checked_arith(i32::checked_add, "checked_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_add_i64() {
+    test_checked_arith(i64::checked_add, "checked_add", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_sub_u8() {
+    test_checked_arith(u8::checked_sub, "checked_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_sub_u16() {
+    test_checked_arith(u16::checked_sub, "checked_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_sub_u32() {
+    test_checked_arith(u32::checked_sub, "checked_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_sub_u64() {
+    test_checked_arith(u64::checked_sub, "checked_sub", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
+fn test_checked_sub_i8() {
+    test_checked_arith(i8::checked_sub, "checked_sub", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
+fn test_checked_sub_i16() {
+    test_checked_arith(i16::checked_sub, "checked_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_sub_i32() {
+    test_checked_arith(i32::checked_sub, "checked_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_sub_i64() {
+    test_checked_arith(i64::checked_sub, "checked_sub", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_mul_u8() {
+    test_checked_arith(u8::checked_mul, "checked_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_mul_u16() {
+    test_checked_arith(u16::checked_mul, "checked_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_mul_u32() {
+    test_checked_arith(u32::checked_mul, "checked_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_mul_u64() {
+    test_checked_arith(u64::checked_mul, "checked_mul", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
+fn test_checked_mul_i8() {
+    test_checked_arith(i8::checked_mul, "checked_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_mul_i16() {
+    test_checked_arith(i16::checked_mul, "checked_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_mul_i32() {
+    test_checked_arith(i32::checked_mul, "checked_mul", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_mul_i64() {
+    test_checked_arith(i64::checked_mul, "checked_mul", NumericStrategy::full_range());
+}
+
+// When dividing by zero, `checked_div` returns `None` and doesn't panic. Therefore the full
+// range strategy can be used.
+
+#[test]
+fn test_checked_div_u8() {
+    test_checked_arith(u8::checked_div, "checked_div", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_div_u16() {
+    test_checked_arith(u16::checked_div, "checked_div", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_div_u32() {
+    test_checked_arith(u32::checked_div, "checked_div", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_div_u64() {
+    test_checked_arith(u64::checked_div, "checked_div", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
+fn test_checked_div_i8() {
+    test_checked_arith(i8::checked_div, "checked_div", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/966"]
+fn test_checked_div_i16() {
+    test_checked_arith(i16::checked_div, "checked_div", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_div_i32() {
+    test_checked_arith(i32::checked_div, "checked_div", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_div_i64() {
+    test_checked_arith(i64::checked_div, "checked_div", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_rem_u8() {
+    test_checked_arith(u8::checked_rem, "checked_rem", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_rem_u16() {
+    test_checked_arith(u16::checked_rem, "checked_rem", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_rem_u32() {
+    test_checked_arith(u32::checked_rem, "checked_rem", NumericStrategy::full_range());
+}
+
+#[test]
+fn test_checked_rem_u64() {
+    test_checked_arith(u64::checked_rem, "checked_rem", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "Mod is not supported for signed int"]
+fn test_checked_rem_i8() {
+    test_checked_arith(i8::checked_rem, "checked_rem", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "Mod is not supported for signed int"]
+fn test_checked_rem_i16() {
+    test_checked_arith(i16::checked_rem, "checked_rem", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "Mod is not supported for signed int"]
+fn test_checked_rem_i32() {
+    test_checked_arith(i32::checked_rem, "checked_rem", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
+fn test_checked_rem_i64() {
+    test_checked_arith(i64::checked_rem, "checked_rem", NumericStrategy::full_range());
+}
+
 struct NumericStrategy<T> {
     _marker: PhantomData<T>,
 }
@@ -615,6 +828,68 @@ fn test_overflowing_arith<T>(
 
     let res = TestRunner::default().run(&strategy, move |(a, b)| {
         let rust_out = op(a, b);
+
+        // Write the operation result to 20 * PAGE_SIZE.
+        let out_addr = 20u32 * 65536;
+
+        let mut args = Vec::<midenc_hir::Felt>::default();
+        out_addr.push_to_operand_stack(&mut args);
+        a.push_to_operand_stack(&mut args);
+        b.push_to_operand_stack(&mut args);
+
+        eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+            let ty_byte_size = std::mem::size_of::<T>();
+            assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
+            // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
+            let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
+            let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
+
+            let rs_out_bytes =
+                [rust_out.0.to_le_bytes().as_ref(), &[u8::from(rust_out.1)]].concat();
+
+            prop_assert_eq!(&rs_out_bytes, &vm_out_bytes, "VM output mismatch");
+            Ok(())
+        })?;
+        Ok(())
+    });
+    match res {
+        Err(TestError::Fail(reason, value)) => {
+            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
+
+fn test_checked_arith<T>(
+    op: fn(T, T) -> Option<T>,
+    fn_name: &str,
+    strategy: impl Strategy<Value = (T, T)>,
+) where
+    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary,
+{
+    // The return value of `type_name` isn't stable, but it's good enough for this test.
+    let ty_name = type_name::<T>();
+    let main_fn = format!(
+        r#"(a: {ty_name}, b: {ty_name}) -> ({ty_name}, bool) {{
+        // Convert `Option<T>` to (T, bool) bool as `Option` is not yet supported (#111)
+        match a.{fn_name}(b) {{
+            Some(value) => (value, true),
+            None => (0 as {ty_name}, false),
+        }}
+    }}"#
+    );
+    let config = WasmTranslationConfig::default();
+    let artifact_name = format!("test_{fn_name}_{ty_name}");
+    let mut test =
+        CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
+    let package = test.compile_package();
+
+    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+        let rust_out = match op(a, b) {
+            Some(value) => (value, true),
+            None => (T::zero(), false),
+        };
 
         // Write the operation result to 20 * PAGE_SIZE.
         let out_addr = 20u32 * 65536;
