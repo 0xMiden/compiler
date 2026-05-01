@@ -133,7 +133,7 @@ pub fn was_procedure_called(proc_root: Word) -> bool {
             proc_root[1],
             proc_root[2],
             proc_root[3],
-        ) != Felt::new(0)
+        ) != Felt::new(0).unwrap()
     }
 }
 

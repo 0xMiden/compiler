@@ -414,6 +414,7 @@ args = [
     "@@split(CARGO_MAKE_CARGO_BUILD_TEST_FLAGS, )",
     "${@}",
 ]
+dependencies = ["cargo-miden"]
 
 [tasks.test-release-rust]
 category = "Test"
@@ -429,6 +430,7 @@ args = [
     "@@split(CARGO_MAKE_CARGO_BUILD_TEST_FLAGS, )",
     "${@}",
 ]
+dependencies = ["cargo-miden"]
 
 [tasks.test-lit]
 category = "Test"

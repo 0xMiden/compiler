@@ -144,7 +144,7 @@ impl Tactic for Linear {
                 "found the following connected components when analyzing required operand moves: \
                  {components:?}"
             );
-            for component in components.into_iter() {
+            for component in components {
                 // A component of two or more elements indicates a cycle of operands.
                 //
                 // To determine the order in which swaps must be performed, we first look

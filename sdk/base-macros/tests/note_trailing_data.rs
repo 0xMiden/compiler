@@ -23,7 +23,7 @@ struct OneFeltNote {
 
 #[test]
 fn unit_note_rejects_trailing_data() {
-    let felts = [miden::Felt::new(0)];
+    let felts = [miden::Felt::new(0).unwrap()];
 
     let err = UnitNote::try_from(felts.as_slice()).unwrap_err();
     assert_eq!(err, miden::felt_repr::FeltReprError::TrailingData { pos: 0, len: 1 });
@@ -31,7 +31,7 @@ fn unit_note_rejects_trailing_data() {
 
 #[test]
 fn note_struct_rejects_trailing_data() {
-    let felts = [miden::Felt::new(1), miden::Felt::new(2)];
+    let felts = [miden::Felt::new(1).unwrap(), miden::Felt::new(2).unwrap()];
 
     let err = OneFeltNote::try_from(felts.as_slice()).unwrap_err();
     assert_eq!(err, miden::felt_repr::FeltReprError::TrailingData { pos: 1, len: 2 });

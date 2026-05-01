@@ -91,11 +91,11 @@ impl Rodata {
     }
 
     pub fn size_in_felts(&self) -> usize {
-        self.data.len().next_multiple_of(4) / 4
+        self.data.len().div_ceil(4)
     }
 
     pub fn size_in_words(&self) -> usize {
-        self.size_in_felts().next_multiple_of(4) / 4
+        self.size_in_felts().div_ceil(4)
     }
 
     /// Attempt to convert this rodata object to its equivalent representation in felts
@@ -125,8 +125,8 @@ impl Rodata {
             felts.push(Felt::new(u32::from_le_bytes(chunk) as u64));
         }
 
-        let size_in_felts = bytes.len().next_multiple_of(4) / 4;
-        let size_in_words = size_in_felts.next_multiple_of(4) / 4;
+        let size_in_felts = bytes.len().div_ceil(4);
+        let size_in_words = size_in_felts.div_ceil(4);
         let padding = (size_in_words * 4).abs_diff(felts.len());
         felts.resize(felts.len() + padding, Felt::ZERO);
         debug_assert_eq!(felts.len() % 4, 0, "expected to be a valid number of words");

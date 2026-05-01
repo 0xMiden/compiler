@@ -32,7 +32,7 @@ impl ManifestPackage {
                 format!("failed to read manifest '{}': {err}", manifest_path.display()),
             )
         })?;
-        let manifest: Value = manifest_content.parse().map_err(|err| {
+        let manifest = manifest_content.parse::<toml::Table>().map_err(|err| {
             syn::Error::new(
                 error_span,
                 format!("failed to parse manifest '{}': {err}", manifest_path.display()),

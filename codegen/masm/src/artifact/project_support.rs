@@ -92,10 +92,8 @@ fn register_external_dependencies(
     let link_library_versions =
         resolve_link_library_versions(link_library_specs, link_libraries, link_packages)?;
     let mut dependencies = BTreeMap::default();
-    for ((link_lib, library), version) in link_library_specs
-        .iter()
-        .zip(link_libraries.iter())
-        .zip(link_library_versions.into_iter())
+    for ((link_lib, library), version) in
+        link_library_specs.iter().zip(link_libraries.iter()).zip(link_library_versions)
     {
         let package = Arc::from(MastPackage::from_library(
             link_lib.name.to_string().into(),

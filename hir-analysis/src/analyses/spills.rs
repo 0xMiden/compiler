@@ -2152,7 +2152,7 @@ impl SpillAnalysis {
             }
             // Remove op results from `to_reload`, and replace them, as needed, with reloads of the
             // value in the predecessor which was used as the successor argument
-            ProgramPoint::Op { op: _, .. } => {
+            ProgramPoint::Op { .. } => {
                 todo!()
             }
             _ => unreachable!(),

@@ -153,6 +153,7 @@ fn build_new_project_from_template(template: &str) -> Package {
     fs::remove_dir_all(&temp_dir).unwrap();
     package
 }
+
 #[test]
 fn new_project_integration_tests_pass() {
     let _cwd_lock = current_dir_lock();

@@ -78,9 +78,9 @@ fn rust_sdk_note_build_recipient_binding() {
         "rust_sdk_note_build_recipient_binding",
         "pub fn binding(&self) -> Recipient {
         note::build_recipient(
-            Word::from([Felt::new(0); 4]),
-            Word::from([Felt::new(0); 4]),
-            alloc::vec![Felt::new(0); 4],
+            Word::from([Felt::new(0).unwrap(); 4]),
+            Word::from([Felt::new(0).unwrap(); 4]),
+            alloc::vec![Felt::new(0).unwrap(); 4],
         )
     }",
     );

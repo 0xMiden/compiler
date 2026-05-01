@@ -111,7 +111,7 @@ impl Pass for Local2Reg {
         });
 
         let mut changed = PostPassStatus::Unchanged;
-        'next_local: for local in locals.into_iter() {
+        'next_local: for local in locals {
             if let Some(loads) = loaded.get(&local) {
                 if loads.len() > 1 {
                     // Ignore locals that are loaded multiple times for now
