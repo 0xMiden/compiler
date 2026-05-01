@@ -41,7 +41,7 @@ impl Account {
             b / a
         } else if a == b {
             miden::assert_eq(a, b);
-            a + Felt::new(d)
+            a + Felt::new(d).unwrap()
         } else if a != b {
             -a
         } else if b.is_odd() {
@@ -59,7 +59,7 @@ pub struct Note;
 impl Note {
     #[unsafe(no_mangle)]
     pub fn note_script() -> Felt {
-        let mut sum = Felt::new(0);
+        let mut sum = Felt::new(0).unwrap();
         for input in miden::active_note::get_storage() {
             sum = sum + input;
         }

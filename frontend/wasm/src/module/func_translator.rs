@@ -314,8 +314,6 @@ fn parse_function_body<B: ?Sized + Builder>(
             effective_span,
         )?;
     }
-    let pos = reader.original_position();
-    func_validator.finish(pos).into_diagnostic()?;
 
     // The final `End` operator left us in the exit block where we need to manually add a return
     // instruction.

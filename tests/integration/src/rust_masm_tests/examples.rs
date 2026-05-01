@@ -3,7 +3,7 @@ use std::{borrow::Borrow, collections::VecDeque};
 use miden_core::serde::{Deserializable, Serializable};
 use miden_debug::ToMidenRepr;
 use miden_mast_package::SectionId;
-use miden_protocol::account::AccountComponentMetadata;
+use miden_protocol::{account::AccountComponentMetadata, note::NoteScript};
 use midenc_expect_test::{expect, expect_file};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
@@ -12,7 +12,42 @@ use midenc_hir::{
 use prop::test_runner::{Config, TestRunner};
 use proptest::prelude::*;
 
-use crate::{CompilerTest, CompilerTestBuilder, cargo_proj::project, testing::executor_with_std};
+use crate::{
+    CompilerTest, CompilerTestBuilder,
+    cargo_proj::project,
+    testing::{executor_with_std, stripped_mast_size_str},
+};
+
+/// Asserts that the exported procedure carrying `attribute` is unique and preserves its leaf
+/// export name.
+fn assert_unique_protocol_export(
+    package: &miden_mast_package::Package,
+    attribute: &str,
+    expected_export_name: &str,
+) {
+    let matching_exports = package
+        .mast
+        .exports()
+        .filter_map(|export| {
+            let proc_export = export.as_procedure()?;
+            proc_export.attributes.has(attribute).then_some(proc_export)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matching_exports.len(),
+        1,
+        "expected exactly one exported procedure to carry the `{attribute}` attribute",
+    );
+
+    let export_name = matching_exports[0]
+        .path
+        .last()
+        .expect("protocol export should have a procedure name");
+    assert_eq!(
+        export_name, expected_export_name,
+        "expected the `{attribute}` export to preserve the user-defined procedure name",
+    );
+}
 
 #[test]
 fn storage_example() {
@@ -269,7 +304,10 @@ fn counter_note() {
     let mut test = builder.build();
 
     let package = test.compile_package();
-    assert!(package.is_program(), "expected program");
+    assert!(package.is_library(), "expected library");
+    let _note_script =
+        NoteScript::from_package(package.as_ref()).expect("expected a note-script package");
+    assert_unique_protocol_export(package.as_ref(), "note_script", "run");
 
     // TODO: uncomment after the testing environment implemented (node, devnet, etc.)
     //
@@ -287,22 +325,32 @@ fn counter_note() {
 #[test]
 fn basic_wallet_and_p2id() {
     let config = WasmTranslationConfig::default();
-    let mut test =
+    let mut account_test =
         CompilerTest::rust_source_cargo_miden("../../examples/basic-wallet", config.clone(), []);
-    let account_package = test.compile_package();
+    let account_package = account_test.compile_package();
     assert!(account_package.is_library(), "expected library");
+    expect!["35906"].assert_eq(stripped_mast_size_str(&account_package));
 
-    let mut test = CompilerTest::rust_source_cargo_miden(
+    let mut tx_script_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/basic-wallet-tx-script",
         config.clone(),
         [],
     );
-    let package = test.compile_package();
-    assert!(package.is_program(), "expected program");
+    let tx_script_package = tx_script_test.compile_package();
+    assert!(tx_script_package.is_program(), "expected program");
+    expect!["56437"].assert_eq(stripped_mast_size_str(&tx_script_package));
 
-    let mut test = CompilerTest::rust_source_cargo_miden("../../examples/p2id-note", config, []);
-    let note_package = test.compile_package();
-    assert!(note_package.is_program(), "expected program");
+    let mut p2id_test =
+        CompilerTest::rust_source_cargo_miden("../../examples/p2id-note", config.clone(), []);
+    let note_package = p2id_test.compile_package();
+    assert!(note_package.is_library(), "expected library");
+    expect!["53082"].assert_eq(stripped_mast_size_str(&note_package));
+
+    let mut p2ide_test =
+        CompilerTest::rust_source_cargo_miden("../../examples/p2ide-note", config, []);
+    let p2ide_package = p2ide_test.compile_package();
+    assert!(p2ide_package.is_library(), "expected library");
+    expect!["62672"].assert_eq(stripped_mast_size_str(&p2ide_package));
 }
 
 #[test]
@@ -312,17 +360,7 @@ fn auth_component_no_auth() {
         CompilerTest::rust_source_cargo_miden("../../examples/auth-component-no-auth", config, []);
     let auth_comp_package = test.compile_package();
     assert!(auth_comp_package.is_library());
-    let lib = auth_comp_package.mast.clone();
-    let expected_function = "auth__procedure";
-    let exports = lib
-        .exports()
-        .map(|e| e.path().as_ref().as_str().to_string())
-        .collect::<Vec<_>>();
-    assert!(
-        lib.exports()
-            .any(|export| export.path().as_ref().last() == Some(expected_function)),
-        "expected one of the exports to contain function '{expected_function}', got: {exports:?}"
-    );
+    assert_unique_protocol_export(auth_comp_package.as_ref(), "auth_script", "auth-procedure");
 
     // Test that the package loads
     let bytes = auth_comp_package.to_bytes();
@@ -339,14 +377,7 @@ fn auth_component_rpo_falcon512() {
     );
     let auth_comp_package = test.compile_package();
     assert!(auth_comp_package.is_library());
-    let lib = auth_comp_package.mast.clone();
-    let expected_function = "auth__procedure";
-
-    assert!(
-        lib.exports()
-            .any(|export| export.path().as_ref().last() == Some(expected_function)),
-        "expected one of the exports to contain function '{expected_function}'"
-    );
+    assert_unique_protocol_export(auth_comp_package.as_ref(), "auth_script", "check-signature");
 
     // Test that the package loads
     let bytes = auth_comp_package.to_bytes();

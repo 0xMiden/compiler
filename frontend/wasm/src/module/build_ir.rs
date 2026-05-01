@@ -8,7 +8,6 @@ use midenc_hir::{
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
     },
-    interner::Symbol,
     version::Version,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
@@ -213,12 +212,7 @@ fn build_globals(
 ) -> WasmResult<()> {
     let span = SourceSpan::default();
     for (global_idx, global) in &wasm_module.globals {
-        let global_name = wasm_module
-            .name_section
-            .globals_names
-            .get(&global_idx)
-            .cloned()
-            .unwrap_or(Symbol::intern(format!("gv{}", global_idx.as_u32())));
+        let global_name = wasm_module.global_name(global_idx);
         let global_init = wasm_module.try_global_initializer(global_idx, diagnostics)?;
         let visibility = if wasm_module.is_exported(global_idx.into()) {
             Visibility::Public
@@ -260,8 +254,7 @@ fn build_data_segments(
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     for (data_segment_idx, data_segment) in &translation.data_segments {
-        let data_segment_name =
-            translation.module.name_section.data_segment_names[&data_segment_idx];
+        let data_segment_name = translation.module.data_segment_name(data_segment_idx);
         let readonly = data_segment_name.as_str().contains(".rodata");
         let offset = data_segment.offset.as_i32(&translation.module, diagnostics)? as u32;
         let init = ConstantData::from(data_segment.data.to_vec());

@@ -1,5 +1,3 @@
-#![expect(unused_assignments)]
-
 mod name;
 mod path;
 mod symbol;

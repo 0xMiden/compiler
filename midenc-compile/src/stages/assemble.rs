@@ -1,9 +1,4 @@
-use alloc::{string::ToString, vec, vec::Vec};
-
-use miden_mast_package::{
-    Dependency, Package, PackageManifest, Section, SectionId, TargetType, Version,
-};
-use midenc_session::Session;
+use miden_mast_package::Package;
 
 use super::*;
 
@@ -38,65 +33,22 @@ impl Stage for AssembleStage {
         let session = context.session();
         if session.should_assemble() {
             log::debug!("assembling mast artifact");
-            let mast =
-                input.component.assemble(&input.link_libraries, &input.link_packages, session)?;
+            let mast = input.component.assemble(
+                &input.link_libraries,
+                &input.link_packages,
+                input.account_component_metadata_bytes.as_deref(),
+                session,
+            )?;
             log::debug!(
                 "successfully assembled mast artifact with digest {}",
                 DisplayHex::new(&mast.digest().as_bytes())
             );
-            Ok(Artifact::Assembled(build_package(mast, &input, session)))
+            Ok(Artifact::Assembled(mast))
         } else {
             log::debug!(
                 "skipping assembly of mast package from masm artifact (should-assemble=false)"
             );
             Ok(Artifact::Lowered(input))
         }
-    }
-}
-
-fn build_package(
-    artifact: midenc_codegen_masm::AssemblyArtifact,
-    outputs: &CodegenOutput,
-    session: &Session,
-) -> Package {
-    let name = session.name.clone().into();
-
-    let mut dependencies = Vec::new();
-    for (link_lib, lib) in session.options.link_libraries.iter().zip(outputs.link_libraries.iter())
-    {
-        let dependency = Dependency {
-            name: link_lib.name.to_string().into(),
-            kind: TargetType::Library,
-            // proper version will be implemented in https://github.com/0xMiden/compiler/issues/1069
-            version: Version::new(0, 0, 0),
-            digest: *lib.digest(),
-        };
-        dependencies.push(dependency);
-    }
-
-    let kind = artifact.kind();
-    let mast = artifact.into_mast();
-    let manifest = PackageManifest::from_library(&mast)
-        .with_dependencies(dependencies)
-        .expect("package dependencies should be unique");
-
-    let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
-
-    let sections = match account_component_metadata_bytes {
-        Some(bytes) => {
-            vec![Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes)]
-        }
-        None => vec![],
-    };
-
-    Package {
-        name,
-        // proper version will be implemented in https://github.com/0xMiden/compiler/issues/1068
-        version: Version::new(0, 0, 0),
-        description: None,
-        kind,
-        mast,
-        manifest,
-        sections,
     }
 }

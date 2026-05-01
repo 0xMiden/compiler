@@ -19,7 +19,7 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::{WasmMemArg, WasmOpBuilder, prepare_addr};
 use midenc_hir::{
-    BlockRef, Builder, Felt, Immediate, Op,
+    BlockRef, Builder, Immediate, Op,
     Type::{self, *},
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,
@@ -149,7 +149,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let (arg1, arg2, cond) = state.pop3();
             match ty {
                 wasmparser::ValType::F32 => {
-                    let imm = builder.felt(Felt::ZERO, span);
+                    let imm = builder.felt(midenc_hir::Felt::ZERO, span);
                     let cond = builder.gt(cond, imm, span)?;
                     state.push1(builder.select(cond, arg1, arg2, span)?);
                 }

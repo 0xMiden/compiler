@@ -41,7 +41,7 @@ num-traits = "0.2"
 cargo-miden.workspace = true
 wasmprinter = "0.227"
 proptest.workspace = true
-sha2 = "0.10"
+sha2 = "0.11"
 walkdir = "2.5.0"
 
 [dev-dependencies]

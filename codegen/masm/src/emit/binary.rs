@@ -1,4 +1,4 @@
-use core::assert_matches::assert_matches;
+use core::assert_matches;
 
 use miden_core::Felt;
 use midenc_hir::{Immediate, Overflow, SourceSpan, Type};

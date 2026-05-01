@@ -362,7 +362,7 @@ impl DomTreeBase<false> {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        nodes.sort_by(|a, b| a.num_in.get().cmp(&b.num_in.get()));
+        nodes.sort_by_key(|node| node.num_in.get());
         nodes
     }
 
@@ -376,7 +376,7 @@ impl DomTreeBase<false> {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        nodes.sort_by(|a, b| a.num_out.get().cmp(&b.num_out.get()));
+        nodes.sort_by_key(|node| node.num_out.get());
         nodes
     }
 
@@ -713,15 +713,13 @@ impl<const IS_POST_DOM: bool> DomTreeBase<IS_POST_DOM> {
 
         // Extra checks depending on verification level. Up to O(n^3)
         match level {
-            DomTreeVerificationLevel::Basic => {
-                if !snca.verify_parent_property(self) {
-                    return false;
-                }
+            DomTreeVerificationLevel::Basic if !snca.verify_parent_property(self) => {
+                return false;
             }
-            DomTreeVerificationLevel::Full => {
-                if !snca.verify_parent_property(self) || !snca.verify_sibling_property(self) {
-                    return false;
-                }
+            DomTreeVerificationLevel::Full
+                if !snca.verify_parent_property(self) || !snca.verify_sibling_property(self) =>
+            {
+                return false;
             }
             _ => (),
         }

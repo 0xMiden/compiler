@@ -1,12 +1,12 @@
 #![no_std]
 #![feature(allocator_api)]
-#![feature(alloc_layout_extra)]
 #![feature(coerce_unsized)]
 #![feature(const_type_name)]
 #![feature(unsize)]
 #![feature(ptr_metadata)]
 #![feature(ptr_as_uninit)]
 #![feature(layout_for_ptr)]
+#![feature(ptr_alignment_type)]
 #![feature(slice_ptr_get)]
 #![feature(specialization)]
 #![feature(rustc_attrs)]
@@ -21,7 +21,6 @@
 #![feature(exact_size_is_empty)]
 #![feature(generic_const_exprs)]
 #![feature(clone_to_uninit)]
-#![feature(new_range_api)]
 // The following are used in impls of custom collection types based on SmallVec
 #![feature(std_internals)] // for ByRefSized
 #![feature(extend_one)]

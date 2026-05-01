@@ -676,7 +676,7 @@ pub fn convert_heap_type(ty: wasmparser::HeapType) -> WasmHeapType {
             AbstractHeapType::Extern => WasmHeapType::Extern,
             ty => unimplemented!("unsupported abstract heap type {ty:?}"),
         },
-        wasmparser::HeapType::Concrete(_) => {
+        wasmparser::HeapType::Concrete(_) | wasmparser::HeapType::Exact(_) => {
             unimplemented!("user-defined types are not supported yet")
         }
     }

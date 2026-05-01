@@ -1,5 +1,3 @@
-#![expect(unused_assignments)]
-
 use alloc::{format, vec};
 
 use midenc_hir::{

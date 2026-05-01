@@ -370,29 +370,29 @@ impl ToFeltRepr for u64 {
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         let lo = (*self & 0xffff_ffff) as u32;
         let hi = (*self >> 32) as u32;
-        writer.write(Felt::new(lo as u64));
-        writer.write(Felt::new(hi as u64));
+        writer.write(Felt::new(lo as u64).unwrap());
+        writer.write(Felt::new(hi as u64).unwrap());
     }
 }
 
 impl ToFeltRepr for u32 {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::new(*self as u64));
+        writer.write(Felt::new(*self as u64).unwrap());
     }
 }
 
 impl ToFeltRepr for u8 {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::new(*self as u64));
+        writer.write(Felt::new(*self as u64).unwrap());
     }
 }
 
 impl ToFeltRepr for bool {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
-        writer.write(Felt::new(*self as u64));
+        writer.write(Felt::new(*self as u64).unwrap());
     }
 }
 
@@ -408,9 +408,9 @@ where
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         match self {
-            None => writer.write(Felt::new(0)),
+            None => writer.write(Felt::new(0).unwrap()),
             Some(value) => {
-                writer.write(Felt::new(1));
+                writer.write(Felt::new(1).unwrap());
                 value.write_felt_repr(writer);
             }
         }
@@ -428,7 +428,7 @@ where
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         let len = self.len();
         assert!(len <= u32::MAX as usize, "Vec: length out of range");
-        writer.write(Felt::new(len as u64));
+        writer.write(Felt::new(len as u64).unwrap());
 
         let mut i = 0usize;
         while i < len {

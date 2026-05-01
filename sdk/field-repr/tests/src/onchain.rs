@@ -44,7 +44,7 @@ fn read_vec_felts(
         let elem: TestFelt = trace
             .read_from_rust_memory(byte_addr)
             .unwrap_or_else(|| panic!("Failed to read element {i}"));
-        result.push(ReprFelt::new(elem.0.as_canonical_u64()));
+        result.push(ReprFelt::new(elem.0.as_canonical_u64()).unwrap());
     }
 
     result
@@ -61,8 +61,8 @@ struct TwoFelts {
 #[test]
 fn test_felt_reader() {
     let original = TwoFelts {
-        a: Felt::new(12345),
-        b: Felt::new(67890),
+        a: Felt::new(12345).unwrap(),
+        b: Felt::new(67890).unwrap(),
     };
     let serialized = original.to_felt_repr();
 
@@ -113,8 +113,8 @@ fn test_felt_reader() {
             .expect("Failed to read result from memory");
 
         let result_felts = [
-            ReprFelt::new(result_word[0].0.as_canonical_u64()),
-            ReprFelt::new(result_word[1].0.as_canonical_u64()),
+            ReprFelt::new(result_word[0].0.as_canonical_u64()).unwrap(),
+            ReprFelt::new(result_word[1].0.as_canonical_u64()).unwrap(),
         ];
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = TwoFelts::from_felt_repr(&mut reader).unwrap();
@@ -134,8 +134,8 @@ fn test_felt_reader() {
 #[test]
 fn test_two_felts_struct_round_trip() {
     let original = TwoFelts {
-        a: Felt::new(12345),
-        b: Felt::new(67890),
+        a: Felt::new(12345).unwrap(),
+        b: Felt::new(67890).unwrap(),
     };
     let serialized = original.to_felt_repr();
 
@@ -204,16 +204,16 @@ struct FiveFelts {
 #[test]
 fn test_five_felts_struct_round_trip() {
     let original = FiveFelts {
-        a: Felt::new(11111),
-        b: Felt::new(22222),
-        c: Felt::new(33333),
-        d: Felt::new(44444),
-        e: Felt::new(55555),
+        a: Felt::new(11111).unwrap(),
+        b: Felt::new(22222).unwrap(),
+        c: Felt::new(33333).unwrap(),
+        d: Felt::new(44444).unwrap(),
+        e: Felt::new(55555).unwrap(),
     };
     let serialized = original.to_felt_repr();
 
     assert_eq!(serialized.len(), 5);
-    assert_eq!(serialized[4], Felt::new(55555));
+    assert_eq!(serialized[4], Felt::new(55555).unwrap());
 
     let onchain_code = r#"(input: [Felt; 5]) -> Vec<Felt> {
         use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
@@ -370,10 +370,10 @@ struct MixedTypesNoU64 {
 #[test]
 fn test_mixed_types_no_u64_round_trip() {
     let original = MixedTypesNoU64 {
-        f1: Felt::new(111111),
-        f2: Felt::new(222222),
-        f3: Felt::new(333333),
-        f4: Felt::new(444444),
+        f1: Felt::new(111111).unwrap(),
+        f2: Felt::new(222222).unwrap(),
+        f3: Felt::new(333333).unwrap(),
+        f4: Felt::new(444444).unwrap(),
         x: 55555,
         y: 66,
     };
@@ -461,9 +461,9 @@ struct Outer {
 #[test]
 fn test_nested_struct_round_trip() {
     let original = Outer {
-        a: Felt::new(111111),
+        a: Felt::new(111111).unwrap(),
         inner: Inner {
-            x: Felt::new(222222),
+            x: Felt::new(222222).unwrap(),
             y: 333333,
         },
         b: 44444,
@@ -555,14 +555,14 @@ fn test_enum_unit_round_trip() {
     }
 
     let original = Wrapper {
-        pad: Felt::new(999),
+        pad: Felt::new(999).unwrap(),
         value: SimpleEnum::B,
     };
     let serialized = original.to_felt_repr();
 
     assert_eq!(serialized.len(), 2);
-    assert_eq!(serialized[0], Felt::new(999));
-    assert_eq!(serialized[1], Felt::new(1));
+    assert_eq!(serialized[0], Felt::new(999).unwrap());
+    assert_eq!(serialized[1], Felt::new(1).unwrap());
 
     let onchain_code = r#"(input: [Felt; 2]) -> Vec<Felt> {
         use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
@@ -624,13 +624,13 @@ fn test_enum_tuple_round_trip() {
         Struct { x: u64, flag: bool },
     }
 
-    let original = MixedEnum::Pair(Felt::new(111), 222);
+    let original = MixedEnum::Pair(Felt::new(111).unwrap(), 222);
     let serialized = original.to_felt_repr();
 
     assert_eq!(serialized.len(), 3);
-    assert_eq!(serialized[0], Felt::new(1));
-    assert_eq!(serialized[1], Felt::new(111));
-    assert_eq!(serialized[2], Felt::new(222));
+    assert_eq!(serialized[0], Felt::new(1).unwrap());
+    assert_eq!(serialized[1], Felt::new(111).unwrap());
+    assert_eq!(serialized[2], Felt::new(222).unwrap());
 
     let onchain_code = r#"(input: [Felt; 3]) -> Vec<Felt> {
         use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
@@ -700,10 +700,10 @@ fn test_struct_with_enum_round_trip() {
     }
 
     let original = Outer {
-        prefix: Felt::new(999),
+        prefix: Felt::new(999).unwrap(),
         kind: Kind::Inline {
             inner: Inner {
-                a: Felt::new(111),
+                a: Felt::new(111).unwrap(),
                 b: 222,
             },
             ok: true,
@@ -794,8 +794,8 @@ fn test_enum_nested_with_struct_round_trip() {
     }
 
     let original = Top::Wrap(Wrapper {
-        left: Felt::new(7),
-        right: Felt::new(8),
+        left: Felt::new(7).unwrap(),
+        right: Felt::new(8).unwrap(),
         state: State::B {
             n: 999_999,
             f: false,
@@ -873,12 +873,12 @@ struct WithOption {
 #[test]
 fn test_struct_with_option_round_trip() {
     let original_none = WithOption {
-        prefix: Felt::new(7),
+        prefix: Felt::new(7).unwrap(),
         maybe: None,
         suffix: false,
     };
     let original_some = WithOption {
-        prefix: Felt::new(5),
+        prefix: Felt::new(5).unwrap(),
         maybe: Some(42),
         suffix: true,
     };
@@ -919,7 +919,7 @@ fn test_struct_with_option_round_trip() {
     // `[Felt; 4]` so we can reuse the same compiled package for both `None` and `Some`.
     // The extra trailing `0` is never read by `FromFeltRepr`.
     let mut input_none = serialized_none.clone();
-    input_none.resize(4, ReprFelt::new(0));
+    input_none.resize(4, ReprFelt::new(0).unwrap());
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
         felts: Cow::from(to_core_felts(&input_none)),
@@ -963,7 +963,7 @@ struct WithVec {
 #[test]
 fn test_struct_with_vec_round_trip() {
     let original = WithVec {
-        prefix: Felt::new(9),
+        prefix: Felt::new(9).unwrap(),
         items: vec![1, 2, 3],
         suffix: true,
     };
@@ -1021,9 +1021,16 @@ struct TupleStruct(u32, bool, Felt);
 
 #[test]
 fn test_tuple_struct_round_trip() {
-    let original = TupleStruct(22, true, Felt::new(33));
+    let original = TupleStruct(22, true, Felt::new(33).unwrap());
     let serialized = original.to_felt_repr();
-    assert_eq!(serialized, vec![ReprFelt::new(22), ReprFelt::new(1), ReprFelt::new(33),]);
+    assert_eq!(
+        serialized,
+        vec![
+            ReprFelt::new(22).unwrap(),
+            ReprFelt::new(1).unwrap(),
+            ReprFelt::new(33).unwrap(),
+        ]
+    );
 
     let onchain_code = r#"(input: [Felt; 3]) -> Vec<Felt> {
         use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};

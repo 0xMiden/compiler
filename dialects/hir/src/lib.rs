@@ -1,4 +1,3 @@
-#![feature(debug_closure_helpers)]
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 #![feature(ptr_metadata)]
@@ -91,42 +90,5 @@ impl Dialect for HirDialect {
         } else {
             None
         }
-    }
-}
-
-#[cfg(false)]
-impl DialectRegistration for HirDialect {
-    const NAMESPACE: &'static str = "hir";
-
-    #[inline]
-    fn init(info: DialectInfo) -> Self {
-        Self { info }
-    }
-
-    fn register_operations(info: &mut DialectInfo) {
-        info.register_operation::<ops::Assert>();
-        info.register_operation::<ops::Assertz>();
-        info.register_operation::<ops::AssertEq>();
-        info.register_operation::<ops::PtrToInt>();
-        info.register_operation::<ops::IntToPtr>();
-        info.register_operation::<ops::Cast>();
-        info.register_operation::<ops::Bitcast>();
-        info.register_operation::<ops::ConstantBytes>();
-        info.register_operation::<ops::Exec>();
-        info.register_operation::<ops::Call>();
-        info.register_operation::<ops::Store>();
-        info.register_operation::<ops::StoreLocal>();
-        info.register_operation::<ops::Load>();
-        info.register_operation::<ops::LoadLocal>();
-        info.register_operation::<ops::MemGrow>();
-        info.register_operation::<ops::MemSize>();
-        info.register_operation::<ops::MemSet>();
-        info.register_operation::<ops::MemCpy>();
-        info.register_operation::<ops::Spill>();
-        info.register_operation::<ops::Reload>();
-    }
-
-    fn register_attributes(info: &mut DialectInfo) {
-        info.register_attribute::<attributes::PointerAttr>();
     }
 }

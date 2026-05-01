@@ -2,7 +2,6 @@ use std::{fs, path::Path};
 
 use proc_macro::Span;
 use semver::Version;
-use toml::Value;
 
 /// Cargo metadata relevant for the `#[component]` macro expansion.
 pub struct CargoMetadata {
@@ -11,6 +10,7 @@ pub struct CargoMetadata {
     pub description: String,
     pub supported_types: Vec<String>,
     pub component_package: Option<String>,
+    pub project_kind: Option<String>,
 }
 
 /// Reads component metadata (name/description/version/supported types) from the enclosing package
@@ -27,6 +27,7 @@ pub fn get_package_metadata(call_site_span: Span) -> Result<CargoMetadata, syn::
             description: String::new(),
             supported_types: vec![],
             component_package: None,
+            project_kind: None,
         });
     }
 
@@ -36,7 +37,7 @@ pub fn get_package_metadata(call_site_span: Span) -> Result<CargoMetadata, syn::
             format!("Failed to read {}: {}", cargo_toml_path.display(), e),
         )
     })?;
-    let cargo_toml: Value = cargo_toml_content.parse::<Value>().map_err(|e| {
+    let cargo_toml = cargo_toml_content.parse::<toml::Table>().map_err(|e| {
         syn::Error::new(
             call_site_span.into(),
             format!("Failed to parse {}: {}", cargo_toml_path.display(), e),
@@ -125,11 +126,20 @@ pub fn get_package_metadata(call_site_span: Span) -> Result<CargoMetadata, syn::
         .and_then(|pkg_val| pkg_val.as_str())
         .map(|pkg| pkg.to_string());
 
+    let project_kind = cargo_toml
+        .get("package")
+        .and_then(|pkg| pkg.get("metadata"))
+        .and_then(|m| m.get("miden"))
+        .and_then(|m| m.get("project-kind"))
+        .and_then(|kind| kind.as_str())
+        .map(|kind| kind.to_string());
+
     Ok(CargoMetadata {
         name,
         version,
         description,
         supported_types,
         component_package,
+        project_kind,
     })
 }

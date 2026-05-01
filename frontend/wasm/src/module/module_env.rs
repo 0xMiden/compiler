@@ -3,7 +3,8 @@ use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
-use midenc_hir::{Ident, interner::Symbol};
+use midenc_frontend_wasm_metadata::{FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME};
+use midenc_hir::{FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
     CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding, ExternalKind,
@@ -18,7 +19,7 @@ use super::{
 use crate::{
     WasmTranslationConfig,
     component::SignatureIndex,
-    error::WasmResult,
+    error::{WasmError, WasmResult},
     module::{
         FuncRefIndex, Module, ModuleType, TableSegment,
         types::{
@@ -79,6 +80,104 @@ pub struct ParsedModule<'data> {
 
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<&'data [u8]>,
+    /// Frontend-only component metadata emitted by SDK macros.
+    pub component_frontend_metadata: Option<FrontendMetadata>,
+}
+
+/// Aggregates frontend metadata from all core modules that participate in one component.
+pub(crate) fn merge_frontend_metadata<'data>(
+    modules: impl Iterator<Item = &'data ParsedModule<'data>>,
+) -> WasmResult<Option<FrontendMetadata>> {
+    let mut metadata = None;
+    for module in modules {
+        let Some(module_metadata) = module.component_frontend_metadata.as_ref() else {
+            continue;
+        };
+
+        merge_single_frontend_metadata(&mut metadata, module_metadata)?;
+    }
+
+    Ok(metadata)
+}
+
+/// Verifies that metadata-selected exports were emitted as lifted component exports.
+pub(crate) fn validate_lifted_frontend_metadata_exports(
+    metadata: Option<&FrontendMetadata>,
+    lifted_exports: &FxHashSet<String>,
+) -> WasmResult<()> {
+    let Some(metadata) = metadata else {
+        return Ok(());
+    };
+
+    match metadata {
+        FrontendMetadata::AuthScript {
+            method_path,
+            export_name,
+        } => validate_lifted_export(method_path, export_name, "`#[auth_script]`", lifted_exports)?,
+        FrontendMetadata::NoteScript {
+            method_path,
+            export_name,
+        } => validate_lifted_export(method_path, export_name, "`#[note_script]`", lifted_exports)?,
+    }
+
+    Ok(())
+}
+
+/// Merges a single module's frontend metadata into the component-wide metadata view.
+fn merge_single_frontend_metadata(
+    metadata: &mut Option<FrontendMetadata>,
+    module_metadata: &FrontendMetadata,
+) -> WasmResult<()> {
+    match metadata {
+        None => {
+            *metadata = Some(module_metadata.clone());
+            Ok(())
+        }
+        Some(existing_metadata) => match (&*existing_metadata, module_metadata) {
+            (FrontendMetadata::AuthScript { .. }, FrontendMetadata::AuthScript { .. }) => {
+                Err(Report::from(WasmError::Unsupported(format!(
+                    "multiple `#[auth_script]` procedures were found: `{}` and `{}`; only one is \
+                     allowed per project",
+                    existing_metadata.method_path(),
+                    module_metadata.method_path()
+                ))))
+            }
+            (FrontendMetadata::NoteScript { .. }, FrontendMetadata::NoteScript { .. }) => {
+                Err(Report::from(WasmError::Unsupported(format!(
+                    "multiple `#[note_script]` procedures were found: `{}` and `{}`; only one is \
+                     allowed per project",
+                    existing_metadata.method_path(),
+                    module_metadata.method_path()
+                ))))
+            }
+            (FrontendMetadata::AuthScript { .. }, FrontendMetadata::NoteScript { .. })
+            | (FrontendMetadata::NoteScript { .. }, FrontendMetadata::AuthScript { .. }) => {
+                Err(Report::from(WasmError::Unsupported(format!(
+                    "both `#[auth_script]` and `#[note_script]` procedures were found: `{}` and \
+                     `{}`; only one kind is allowed per project",
+                    existing_metadata.method_path(),
+                    module_metadata.method_path()
+                ))))
+            }
+        },
+    }
+}
+
+/// Validates that a metadata-selected export name was seen among the lifted component exports.
+fn validate_lifted_export(
+    method_path: &str,
+    export_name: &str,
+    attribute: &str,
+    lifted_exports: &FxHashSet<String>,
+) -> WasmResult<()> {
+    if lifted_exports.contains(export_name) {
+        return Ok(());
+    }
+
+    Err(Report::from(WasmError::MissingExportMetadata(format!(
+        "failed to find the component export marked with {attribute}: `{method_path}` (expected \
+         lifted export `{export_name}`)"
+    ))))
 }
 
 /// Contains function data: byte code and its offset in the module.
@@ -88,6 +187,9 @@ pub struct FunctionBodyData<'a> {
     /// Validator for the function body
     pub validator: FuncToValidate<ValidatorResources>,
 }
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Default)]
 pub struct DebugInfoData<'a> {
@@ -217,6 +319,26 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
             Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
                 self.result.account_component_metadata_bytes = Some(s.data());
             }
+            Payload::CustomSection(s) if s.name() == WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME => {
+                let metadata = FrontendMetadata::from_bytes(s.data()).map_err(|err| {
+                    diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "failed to parse component frontend metadata section: {err}"
+                        ))
+                        .into_report()
+                })?;
+
+                if self.result.component_frontend_metadata.replace(metadata).is_some() {
+                    return Err(diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(
+                            "wasm error: multiple component frontend metadata sections were \
+                             found; only one is allowed per core Wasm module",
+                        )
+                        .into_report());
+                }
+            }
             Payload::CustomSection { .. } => {
                 // ignore any other custom sections
             }
@@ -277,36 +399,38 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         let cnt = usize::try_from(imports.count()).unwrap();
         self.result.module.imports.reserve(cnt);
         for entry in imports {
-            let import = entry.into_diagnostic()?;
-            let ty = match import.ty {
-                TypeRef::Func(index) => {
-                    let index = TypeIndex::from_u32(index);
-                    let sig_index = self.result.module.types[index].unwrap_function();
-                    self.result.module.num_imported_funcs += 1;
-                    self.result.wasm_file.imported_func_count += 1;
-                    EntityType::Function(sig_index)
-                }
-                TypeRef::Memory(ty) => {
-                    self.result.module.memories.push(super::Memory {
-                        minimum: ty.initial,
-                        maximum: ty.maximum,
-                        imported: true,
-                    });
-                    EntityType::Memory(ty.into())
-                }
-                TypeRef::Global(ty) => {
-                    self.result.module.num_imported_globals += 1;
-                    EntityType::Global(convert_global_type(&ty))
-                }
-                TypeRef::Table(ty) => {
-                    self.result.module.num_imported_tables += 1;
-                    EntityType::Table(convert_table_type(&ty))
-                }
+            for import in entry.into_diagnostic()? {
+                let (_, import) = import.into_diagnostic()?;
+                let ty = match import.ty {
+                    TypeRef::Func(index) | TypeRef::FuncExact(index) => {
+                        let index = TypeIndex::from_u32(index);
+                        let sig_index = self.result.module.types[index].unwrap_function();
+                        self.result.module.num_imported_funcs += 1;
+                        self.result.wasm_file.imported_func_count += 1;
+                        EntityType::Function(sig_index)
+                    }
+                    TypeRef::Memory(ty) => {
+                        self.result.module.memories.push(super::Memory {
+                            minimum: ty.initial,
+                            maximum: ty.maximum,
+                            imported: true,
+                        });
+                        EntityType::Memory(ty.into())
+                    }
+                    TypeRef::Global(ty) => {
+                        self.result.module.num_imported_globals += 1;
+                        EntityType::Global(convert_global_type(&ty))
+                    }
+                    TypeRef::Table(ty) => {
+                        self.result.module.num_imported_tables += 1;
+                        EntityType::Table(convert_table_type(&ty))
+                    }
 
-                // doesn't get past validation
-                TypeRef::Tag(_) => unreachable!(),
-            };
-            self.declare_import(import.module, import.name, ty);
+                    // doesn't get past validation
+                    TypeRef::Tag(_) => unreachable!(),
+                };
+                self.declare_import(import.module, import.name, ty);
+            }
         }
         Ok(())
     }
@@ -344,8 +468,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     precomputed: Vec::new(),
                 },
                 wasmparser::TableInit::Expr(cexpr) => {
-                    let mut init_expr_reader = cexpr.get_binary_reader();
-                    match init_expr_reader.read_operator().into_diagnostic()? {
+                    let mut init_expr_reader = cexpr.get_operators_reader();
+                    match init_expr_reader.read().into_diagnostic()? {
                         Operator::RefNull { hty: _ } => TableInitialValue::Null {
                             precomputed: Vec::new(),
                         },
@@ -393,8 +517,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         self.result.module.globals.reserve_exact(cnt);
         for entry in globals {
             let wasmparser::Global { ty, init_expr } = entry.into_diagnostic()?;
-            let mut init_expr_reader = init_expr.get_binary_reader();
-            let initializer = match init_expr_reader.read_operator().into_diagnostic()? {
+            let mut init_expr_reader = init_expr.get_operators_reader();
+            let initializer = match init_expr_reader.read().into_diagnostic()? {
                 Operator::I32Const { value } => GlobalInit::I32Const(value),
                 Operator::I64Const { value } => GlobalInit::I64Const(value),
                 Operator::F32Const { value } => GlobalInit::F32Const(value.bits()),
@@ -430,7 +554,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         for entry in exports {
             let wasmparser::Export { name, kind, index } = entry.into_diagnostic()?;
             let entity = match kind {
-                ExternalKind::Func => {
+                ExternalKind::Func | ExternalKind::FuncExact => {
                     let index = FuncIndex::from_u32(index);
                     self.flag_func_escaped(index);
                     EntityIndex::Function(index)
@@ -489,8 +613,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     for func in funcs {
                         let func = match func
                             .into_diagnostic()?
-                            .get_binary_reader()
-                            .read_operator()
+                            .get_operators_reader()
+                            .read()
                             .into_diagnostic()?
                         {
                             Operator::RefNull { .. } => FuncIndex::reserved_value(),
@@ -518,21 +642,20 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     offset_expr,
                 } => {
                     let table_index = TableIndex::from_u32(table_index.unwrap_or(0));
-                    let mut offset_expr_reader = offset_expr.get_binary_reader();
-                    let (base, offset) =
-                        match offset_expr_reader.read_operator().into_diagnostic()? {
-                            Operator::I32Const { value } => (None, value as u32),
-                            Operator::GlobalGet { global_index } => {
-                                (Some(GlobalIndex::from_u32(global_index)), 0)
-                            }
-                            ref s => {
-                                unsupported_diag!(
-                                    diagnostics,
-                                    "wasm error: unsupported init expr in element section: {:?}",
-                                    s
-                                );
-                            }
-                        };
+                    let mut offset_expr_reader = offset_expr.get_operators_reader();
+                    let (base, offset) = match offset_expr_reader.read().into_diagnostic()? {
+                        Operator::I32Const { value } => (None, value as u32),
+                        Operator::GlobalGet { global_index } => {
+                            (Some(GlobalIndex::from_u32(global_index)), 0)
+                        }
+                        ref s => {
+                            unsupported_diag!(
+                                diagnostics,
+                                "wasm error: unsupported init expr in element section: {:?}",
+                                s
+                            );
+                        }
+                    };
 
                     self.result.module.table_initialization.segments.push(TableSegment {
                         table_index,
@@ -556,7 +679,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
     }
 
     fn code_section_start(&mut self, count: u32, range: Range<usize>) -> Result<(), Report> {
-        self.validator.code_section_start(count, &range).into_diagnostic()?;
+        self.validator.code_section_start(&range).into_diagnostic()?;
         let cnt = usize::try_from(count).unwrap();
         self.result.function_body_inputs.reserve_exact(cnt);
         self.result.wasm_file.code_section_offset = range.start as u64;
@@ -594,7 +717,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         self.validator.data_section(&data_section).into_diagnostic()?;
         let cnt = usize::try_from(data_section.count()).unwrap();
         self.result.data_segments.reserve_exact(cnt);
-        for entry in data_section.into_iter() {
+        for entry in data_section {
             let wasmparser::Data {
                 kind,
                 data,
@@ -610,8 +733,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                         "data section memory index must be 0 (only one memory per module is \
                          supported)"
                     );
-                    let mut offset_expr_reader = offset_expr.get_binary_reader();
-                    let offset = match offset_expr_reader.read_operator().into_diagnostic()? {
+                    let mut offset_expr_reader = offset_expr.get_operators_reader();
+                    let offset = match offset_expr_reader.read().into_diagnostic()? {
                         Operator::I32Const { value } => DataSegmentOffset::I32Const(value),
                         Operator::GlobalGet { global_index } => {
                             DataSegmentOffset::GetGlobal(GlobalIndex::from_u32(global_index))

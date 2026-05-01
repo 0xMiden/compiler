@@ -32,7 +32,7 @@ let a = felt!(42);
 Otherwise, use the `Felt::new` constructor:
 
 ```rust
-let a = Felt::new(some_integer_var).unwrap();
+let a = Felt::new(some_integer_var).unwrap().unwrap();
 ```
 
 The constructor returns an error if the value is not a valid field element, e.g. if it is not in the

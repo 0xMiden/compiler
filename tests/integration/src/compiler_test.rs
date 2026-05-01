@@ -10,6 +10,7 @@ use std::{
 };
 
 use miden_assembly::PathBuf as LibraryPath;
+use miden_core::utils::ToHex;
 use midenc_compile::{
     compile_link_output_to_masm_with_pre_assembly_stage, compile_to_unoptimized_hir,
 };
@@ -1125,6 +1126,5 @@ fn sanitize_filename_component(name: &str) -> String {
 }
 
 fn hash_string(inputs: &str) -> String {
-    let hash = <sha2::Sha256 as sha2::Digest>::digest(inputs.as_bytes());
-    format!("{hash:x}")
+    <sha2::Sha256 as sha2::Digest>::digest(inputs.as_bytes()).as_slice().to_hex()
 }

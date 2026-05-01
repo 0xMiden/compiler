@@ -1,6 +1,6 @@
 [package]
 name = "miden-objtool"
-description = "Inspect Miden package MAST forest sizes"
+description = "Common utilities for analyzing Miden artifacts"
 version.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -13,8 +13,18 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "miden-objtool"
+path = "src/main.rs"
+test = false
+bench = false
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
 miden-core.workspace = true
+miden-assembly-syntax = { workspace = true, features = ["std"] }
 miden-mast-package.workspace = true

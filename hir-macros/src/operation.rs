@@ -713,12 +713,16 @@ impl quote::ToTokens for WithResults<'_> {
 struct WithSuccessors<'a>(&'a OpDefinition);
 impl quote::ToTokens for WithSuccessors<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        for group in self.0.successors.iter() {
+        for (group_index, group) in self.0.successors.iter().enumerate() {
+            let group_index = syn::Lit::Int(syn::LitInt::new(
+                &format!("{group_index}usize"),
+                proc_macro2::Span::call_site(),
+            ));
             match group {
                 SuccessorGroup::Unnamed(successors) => {
                     let successor_args = successors.iter().map(|s| format_ident!("{s}_args"));
                     tokens.extend(quote! {
-                        op_builder.with_successors([
+                        op_builder.with_successors_in_group(#group_index, [
                             #((
                                 #successors,
                                 #successor_args.into_iter().collect::<::alloc::vec::Vec<_>>(),
@@ -729,13 +733,13 @@ impl quote::ToTokens for WithSuccessors<'_> {
                 SuccessorGroup::Named(name) => {
                     let span = name.span();
                     tokens.extend(quote_spanned! { span =>
-                        op_builder.with_successors(#name);
+                        op_builder.with_successors_in_group(#group_index, #name);
                     });
                 }
                 SuccessorGroup::Keyed(name, _) => {
                     let span = name.span();
                     tokens.extend(quote_spanned! { span =>
-                        op_builder.with_keyed_successors(#name);
+                        op_builder.with_keyed_successors_in_group(#group_index, #name);
                     });
                 }
             }

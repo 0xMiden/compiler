@@ -31,8 +31,8 @@ fn test_adv_load_preimage() {
         let num_felts = intrinsics::advice::adv_push_mapvaln(key.clone());
 
         let num_felts_u64 = num_felts.as_canonical_u64();
-        assert_eq(Felt::new((num_felts_u64 % 4) as u64), felt!(0));
-        let num_words = Felt::new(num_felts_u64 / 4);
+        assert_eq(Felt::new((num_felts_u64 % 4) as u64).unwrap(), felt!(0));
+        let num_words = Felt::new(num_felts_u64 / 4).unwrap();
 
         let commitment = key;
         let input = adv_load_preimage(num_words, commitment);

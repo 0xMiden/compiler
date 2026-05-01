@@ -22,7 +22,7 @@ Currently, `midenc` (and as a result, `cargo-miden`), requires the nightly Rust 
 make sure you have it installed first:
 
 ```bash
-rustup toolchain install nightly-2025-12-10
+rustup toolchain install nightly-2026-04-29
 ```
 
 NOTE: You can also use the latest nightly, but the specific nightly shown here is known to

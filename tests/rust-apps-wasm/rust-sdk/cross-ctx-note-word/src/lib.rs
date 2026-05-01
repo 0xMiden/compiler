@@ -2,40 +2,17 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
-// However, we could still use some standard library types while
-// remaining no-std compatible, if we uncommented the following lines:
-//
-// extern crate alloc;
-// use alloc::vec::Vec;
-
-// Global allocator to use heap memory in no-std environment
-#[global_allocator]
-static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
-
-// Required for no-std crates
-#[cfg(not(test))]
-#[panic_handler]
-fn my_panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
-// Required for no-std crates
-#[cfg(not(test))]
-#[alloc_error_handler]
-fn my_alloc_error(_info: core::alloc::Layout) -> ! {
-    loop {}
-}
-
-miden::generate!();
-bindings::export!(MyNote);
-
-use bindings::{exports::miden::base::note_script::Guest, miden::cross_ctx_account_word::foo::*};
 use miden::*;
 
+use crate::bindings::miden::cross_ctx_account_word::foo::*;
+
+#[note]
 struct MyNote;
 
-impl Guest for MyNote {
-    fn run(_arg: Word) {
+#[note]
+impl MyNote {
+    #[note_script]
+    pub fn execute(self, _arg: Word) {
         let input = Word {
             a: felt!(2),
             b: felt!(3),
@@ -81,7 +58,7 @@ impl Guest for MyNote {
 
         let mixed_input = MixedStruct {
             f: u64::MAX - 1000,
-            a: Felt::new(Felt::ORDER_U64 - 1 - 6),
+            a: Felt::new(Felt::ORDER_U64 - 1 - 6).unwrap(),
             b: u32::MAX - 10,
             c: felt!(50),
             d: 111,
@@ -93,12 +70,12 @@ impl Guest for MyNote {
             // fail
             assert_eq!(0, 1);
         }
-        assert_eq(mixed_output.a, Felt::new(Felt::ORDER_U64 - 1)); // M - 1 - 6 + 6
-        assert_eq(mixed_output.b.into(), Felt::new(u32::MAX as u64)); // u32::MAX - 10 + 10
+        assert_eq(mixed_output.a, Felt::new(Felt::ORDER_U64 - 1).unwrap()); // M - 1 - 6 + 6
+        assert_eq(mixed_output.b.into(), Felt::new(u32::MAX as u64).unwrap()); // u32::MAX - 10 + 10
         assert_eq(mixed_output.c, felt!(57)); // 50 + 7
-        assert_eq(mixed_output.d.into(), Felt::new(122));
-        assert_eq(Felt::new(mixed_output.e as u64), felt!(1));
-        assert_eq(mixed_output.g.into(), Felt::new(12));
+        assert_eq(mixed_output.d.into(), Felt::new(122).unwrap());
+        assert_eq(Felt::new(mixed_output.e as u64).unwrap(), felt!(1));
+        assert_eq(mixed_output.g.into(), Felt::new(12).unwrap());
 
         let nested_input = NestedStruct {
             inner: Pair {

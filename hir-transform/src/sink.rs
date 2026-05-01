@@ -301,14 +301,11 @@ impl Pass for SinkOperandDefs {
 
             let mut builder = OpBuilder::new(op.context_rc());
             builder.set_insertion_point(sink_state.ip);
-            'next_operand: loop {
-                // The next operand index starts at `op.num_operands()` when first initialized, so
-                // we subtract 1 immediately to get the actual index of the current operand
-                let Some(next_operand_index) = sink_state.next_operand_index.checked_sub(1) else {
-                    // We're done processing this operation's operands
-                    break;
-                };
-
+            // The next operand index starts at `op.num_operands()` when first initialized, so
+            // we subtract 1 immediately to get the actual index of the current operand
+            'next_operand: while let Some(next_operand_index) =
+                sink_state.next_operand_index.checked_sub(1)
+            {
                 log::debug!(target: Self::NAME, "  sinking next operand def for {op} at index {next_operand_index}");
 
                 let mut operand = op.operands()[next_operand_index];
@@ -597,7 +594,7 @@ fn get_singly_executed_regions_to_sink(
 
     // For a simple control-flow sink, only consider regions that are executed at most once.
     for (region, bound) in branch.regions().iter().zip(bounds) {
-        use core::range::Bound;
+        use core::ops::Bound;
         match bound.max() {
             Bound::Unbounded => continue,
             Bound::Excluded(bound) if *bound > 2 => continue,
