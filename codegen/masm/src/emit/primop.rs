@@ -265,9 +265,9 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
-    /// Emit a trace marker for `hir.println`, leaving the operands intact until after the trace.
+    /// Emit a `println` trace that can be handled by the debug executor.
     pub fn println(&mut self, span: SourceSpan) {
-        // Leave them on the stack so debug executor can read them.
+        // Don't `pop` operands as the debug executor reads them from the stack to handle printing.
         let ptr = &self.stack[0];
         let len = &self.stack[1];
 
@@ -281,7 +281,7 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::Trace(TraceEvent::PrintLn.as_u32().into()), span);
         self.emit(masm::Instruction::Nop, span);
 
-        // Clean up `ptr` and `len` after they were read and the line was printed.
+        // Clean up the stack after the debug executor handled printing.
         self.dropn(2, span);
     }
 
