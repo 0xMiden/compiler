@@ -37,7 +37,7 @@ pub fn function_type(function: Symbol) -> Option<FunctionType> {
             // Signature: (key0..key3, start_ptr, end_ptr) -> ()
             Some(FunctionType::new(
                 midenc_hir::CallConv::Wasm,
-                vec![Type::Felt, Type::Felt, Type::Felt, Type::Felt, Type::Felt, Type::Felt],
+                vec![Type::Felt, Type::Felt, Type::Felt, Type::Felt, Type::I32, Type::I32],
                 vec![],
             ))
         }

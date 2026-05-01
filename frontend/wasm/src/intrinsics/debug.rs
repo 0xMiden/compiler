@@ -1,5 +1,5 @@
 use midenc_hir::{
-    Builder, SmallVec, SourceSpan, SymbolNameComponent, ValueRef,
+    Builder, CallConv, FunctionType, SmallVec, SourceSpan, SymbolNameComponent, ValueRef,
     dialects::builtin::FunctionRef,
     interner::{Symbol, symbols},
     smallvec,
@@ -12,6 +12,14 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Component(symbols::Intrinsics),
     SymbolNameComponent::Component(symbols::Debug),
 ];
+
+/// Gets the canonical Wasm function type of a debug operation intrinsic.
+pub(crate) fn operation_function_type(function: Symbol) -> Option<FunctionType> {
+    match function.as_str() {
+        "break" => Some(FunctionType::new(CallConv::Wasm, [], [])),
+        _ => None,
+    }
+}
 
 /// Convert a call to a debugging intrinsic function into instruction(s)
 pub(crate) fn convert_debug_intrinsics<B: ?Sized + Builder>(

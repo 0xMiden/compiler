@@ -1,9 +1,8 @@
-use core::{mem, str::FromStr};
+use core::mem;
 use std::rc::Rc;
 
 use midenc_hir::{
-    Builder, BuilderExt, Context, FunctionIdent, FxHashMap, Ident, Op, OpBuilder, SymbolPath,
-    Visibility,
+    Builder, BuilderExt, Context, FxHashMap, Ident, Op, OpBuilder, Visibility,
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
@@ -19,11 +18,13 @@ use super::{
 use crate::{
     WasmTranslationConfig,
     error::WasmResult,
-    intrinsics::Intrinsic,
+    intrinsics::{Intrinsic, IntrinsicsConversionResult},
     module::{
         DefinedFuncIndex,
         func_translator::FuncTranslator,
-        linker_stubs::{is_unreachable_stub, maybe_lower_linker_stub},
+        linker_stubs::{
+            linker_stub_import_path, maybe_lower_linker_stub, stub_signature_matches_function_type,
+        },
         module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
         types::ir_type,
     },
@@ -128,19 +129,13 @@ pub fn build_ir_module(
     // all inline-able stubs are known and calls to them will be inlined regardless
     // of function ordering in the WASM file.
     let mut inlined_stub_indices: Vec<DefinedFuncIndex> = Vec::new();
-    for (defined_func_idx, body_data) in &func_body_inputs {
-        if !is_unreachable_stub(&body_data.body) {
-            continue;
-        }
-
+    for (defined_func_idx, _) in &func_body_inputs {
         let func_index = parsed_module.module.func_index(defined_func_idx);
         let func_name = parsed_module.module.func_name(func_index).as_str();
 
-        // Try to parse the function name as a MASM function ident to get the symbol path
-        let Ok(func_ident) = FunctionIdent::from_str(func_name) else {
+        let Some(import_path) = linker_stub_import_path(func_name) else {
             continue;
         };
-        let import_path: SymbolPath = SymbolPath::from_masm_function_id(func_ident);
 
         // Try to recognize as an intrinsic
         let Ok(intrinsic) = Intrinsic::try_from(&import_path) else {
@@ -148,11 +143,14 @@ pub fn build_ir_module(
         };
 
         // Check if this intrinsic can be inlined as an operation
-        let Some(conv) = intrinsic.conversion_result() else {
+        let Some(IntrinsicsConversionResult::MidenVmOp(function_type)) =
+            intrinsic.conversion_result()
+        else {
             continue;
         };
 
-        if !conv.is_operation() {
+        let callable = module_state.get_direct_func(func_index)?;
+        if !stub_signature_matches_function_type(callable.signature(), &function_type) {
             continue;
         }
 
@@ -177,6 +175,7 @@ pub fn build_ir_module(
         let func_index = parsed_module.module.func_index(defined_func_idx);
         let func_name = parsed_module.module.func_name(func_index).as_str();
 
+        let callable = module_state.get_direct_func(func_index)?;
         let function_ref =
             module_state.module_builder.get_function(func_name).unwrap_or_else(|| {
                 panic!("cannot build {func_name} function, since it is not defined in the module.")
@@ -184,7 +183,12 @@ pub fn build_ir_module(
 
         // If this is a linker stub that needs a synthesized body (function-type intrinsics
         // or Miden ABI calls), handle it here.
-        if maybe_lower_linker_stub(function_ref, &body_data.body, module_state)? {
+        if maybe_lower_linker_stub(
+            function_ref,
+            callable.signature(),
+            &body_data.body,
+            module_state,
+        )? {
             continue;
         }
 

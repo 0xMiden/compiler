@@ -1,7 +1,7 @@
 use super::*;
 
 #[allow(clippy::uninlined_format_args)]
-fn run_note_binding_test(name: &str, method: &str) {
+fn run_note_binding_test(name: &str, method: &str, protocol_function: &str) {
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
@@ -69,7 +69,7 @@ trim-paths = ["diagnostics", "object"]
     )
     .build();
 
-    test.compile_package();
+    assert_masm_execs_protocol_link(&mut test, "note", protocol_function);
 }
 
 #[test]
@@ -83,5 +83,6 @@ fn rust_sdk_note_build_recipient_binding() {
             alloc::vec![Felt::new(0); 4],
         )
     }",
+        "build_recipient",
     );
 }

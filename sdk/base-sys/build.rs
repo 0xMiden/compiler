@@ -21,6 +21,8 @@ fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let target = env::var("TARGET").unwrap_or_else(|_| "wasm32-wasip1".to_string());
+    let shared_stub_support = manifest_dir.join("../linker_stub.rs");
+    println!("cargo:rerun-if-changed={}", shared_stub_support.display());
 
     if !target.starts_with("wasm32") {
         // Still track files for re-run if changed in case of cross compilation.
@@ -64,8 +66,9 @@ fn main() {
     // Ensure tools are present before invoking them.
 
     // 1) Compile object
-    // These stubs intentionally compile to `unreachable` so the frontend recognizes
-    // and lowers their exported symbol names to MASM calls.
+    // These stubs intentionally compile to small opaque functions so the frontend recognizes
+    // and lowers their exported symbol names to MASM calls without letting downstream LTO
+    // optimize callers as if those calls never return.
     // LLVM MergeFunctions pass https://llvm.org/docs/MergeFunctions.html considers some
     // functions in the stub library identical (e.g. `intrinsics::felt::add` and
     // `intrinsics::felt::mul`) because besides the same sig they have the same body
@@ -90,6 +93,8 @@ fn main() {
         .arg("debuginfo=0")
         .arg("-Z")
         .arg("merge-functions=disabled")
+        .arg("-Z")
+        .arg("location-detail=line,column")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
         .arg("-o")

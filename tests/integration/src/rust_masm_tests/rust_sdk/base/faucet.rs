@@ -1,7 +1,7 @@
 use super::*;
 
 #[allow(clippy::uninlined_format_args)]
-fn run_faucet_binding_test(name: &str, method: &str) {
+fn run_faucet_binding_test(name: &str, method: &str, protocol_function: &str) {
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
@@ -64,7 +64,7 @@ debug = false
     )
     .build();
 
-    test.compile_package();
+    assert_masm_execs_protocol_link(&mut test, "faucet", protocol_function);
 }
 
 #[test]
@@ -74,6 +74,7 @@ fn rust_sdk_account_faucet_create_fungible_asset_binding() {
         "pub fn binding(&self) -> Asset {
         faucet::create_fungible_asset(Felt::new(10))
     }",
+        "create_fungible_asset",
     );
 }
 
@@ -85,6 +86,7 @@ fn rust_sdk_account_faucet_create_non_fungible_asset_binding() {
         let hash = Word::from([Felt::new(0); 4]);
         faucet::create_non_fungible_asset(hash)
     }",
+        "create_non_fungible_asset",
     );
 }
 
@@ -96,6 +98,7 @@ fn rust_sdk_account_faucet_mint_binding() {
         let asset = Asset::new(Word::from([Felt::new(0); 4]), Word::from([Felt::new(0); 4]));
         faucet::mint(asset)
     }",
+        "mint",
     );
 }
 
@@ -107,6 +110,7 @@ fn rust_sdk_account_faucet_burn_binding() {
         let asset = Asset::new(Word::from([Felt::new(0); 4]), Word::from([Felt::new(0); 4]));
         faucet::burn(asset)
     }",
+        "burn",
     );
 }
 
@@ -118,6 +122,7 @@ fn rust_sdk_account_faucet_mint_value_binding() {
         let asset = Asset::new(Word::from([Felt::new(0); 4]), Word::from([Felt::new(0); 4]));
         faucet::mint_value(asset)
     }",
+        "mint",
     );
 }
 
@@ -129,5 +134,6 @@ fn rust_sdk_account_faucet_burn_value_binding() {
         let asset = Asset::new(Word::from([Felt::new(0); 4]), Word::from([Felt::new(0); 4]));
         faucet::burn_value(asset)
     }",
+        "burn",
     );
 }

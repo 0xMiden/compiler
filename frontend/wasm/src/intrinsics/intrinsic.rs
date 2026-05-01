@@ -148,25 +148,23 @@ impl Intrinsic {
         }
     }
 
+    /// Gets the canonical Wasm function type of this intrinsic, if it is implemented as a native
+    /// operation.
+    pub fn operation_function_type(&self) -> Option<FunctionType> {
+        match self {
+            Self::Debug(function) => debug::operation_function_type(*function),
+            Self::Felt(function) => felt::operation_function_type(*function),
+            Self::Mem(_) | Self::Crypto(_) | Self::Advice(_) => None,
+        }
+    }
+
     /// Get the [IntrinsicsConversionResult] representing how this intrinsic will be lowered.
     ///
     /// Returns `None` for intrinsics which are unknown.
     pub fn conversion_result(&self) -> Option<IntrinsicsConversionResult> {
-        match self {
-            Self::Mem(function) => {
-                mem::function_type(*function).map(IntrinsicsConversionResult::FunctionType)
-            }
-            Self::Debug(_) | Self::Felt(_) => Some(IntrinsicsConversionResult::MidenVmOp),
-            Self::Advice(_function) => self
-                .function_type()
-                .map(IntrinsicsConversionResult::FunctionType)
-                .or(Some(IntrinsicsConversionResult::MidenVmOp)),
-            // Crypto intrinsics are converted to function calls
-            Self::Crypto(_function) => self
-                .function_type()
-                .map(IntrinsicsConversionResult::FunctionType)
-                .or(Some(IntrinsicsConversionResult::MidenVmOp)),
-        }
+        self.function_type()
+            .map(IntrinsicsConversionResult::FunctionType)
+            .or_else(|| self.operation_function_type().map(IntrinsicsConversionResult::MidenVmOp))
     }
 }
 
@@ -174,8 +172,8 @@ impl Intrinsic {
 pub enum IntrinsicsConversionResult {
     /// As a function
     FunctionType(FunctionType),
-    /// As a native instruction
-    MidenVmOp,
+    /// As a native instruction with its canonical Wasm function type
+    MidenVmOp(FunctionType),
 }
 
 impl IntrinsicsConversionResult {
@@ -184,6 +182,14 @@ impl IntrinsicsConversionResult {
     }
 
     pub fn is_operation(&self) -> bool {
-        matches!(self, IntrinsicsConversionResult::MidenVmOp)
+        matches!(self, IntrinsicsConversionResult::MidenVmOp(_))
+    }
+
+    /// Gets the canonical Wasm function type associated with this conversion.
+    pub fn function_type(&self) -> &FunctionType {
+        match self {
+            IntrinsicsConversionResult::FunctionType(function_type)
+            | IntrinsicsConversionResult::MidenVmOp(function_type) => function_type,
+        }
     }
 }

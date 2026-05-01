@@ -27,6 +27,8 @@ fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let target = env::var("TARGET").unwrap_or_else(|_| "wasm32-wasip1".to_string());
+    let shared_stub_support = manifest_dir.join("../linker_stub.rs");
+    println!("cargo:rerun-if-changed={}", shared_stub_support.display());
 
     if !target.starts_with("wasm32") {
         // track changes, but don’t build
@@ -71,10 +73,9 @@ fn main() {
     let out_stdlib_rlib = out_dir.join("libmiden_stdlib_sys_stdlib_stubs.a");
 
     // LLVM MergeFunctions pass https://llvm.org/docs/MergeFunctions.html considers some
-    // functions in the stub library identical (e.g. `intrinsics::felt::add` and
-    // `intrinsics::felt::mul`) because besides the same sig they have the same body
-    // (`unreachable`). The pass merges them which manifests in the compiled Wasm as if both
-    // `add` and `mul` are linked to the same (`add` in this case) function.
+    // functions in the stub library identical when they have the same signature and body. The
+    // pass merges them which manifests in the compiled Wasm as if both stubs are linked to the
+    // same function.
     // Setting `opt-level=1` seems to be skipping this pass and is enough on its own, but I
     // also put `-Z merge-functions=disabled` in case `opt-level=1` behaviour changes
     // in the future and runs the MergeFunctions pass.
@@ -102,6 +103,8 @@ fn main() {
         .arg("debuginfo=0")
         .arg("-Z")
         .arg("merge-functions=disabled")
+        .arg("-Z")
+        .arg("location-detail=line,column")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
         .arg("-o")
@@ -129,6 +132,8 @@ fn main() {
         .arg("debuginfo=0")
         .arg("-Z")
         .arg("merge-functions=disabled")
+        .arg("-Z")
+        .arg("location-detail=line,column")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
         .arg("-o")

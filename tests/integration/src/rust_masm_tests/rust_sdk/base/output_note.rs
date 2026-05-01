@@ -3,7 +3,7 @@ use super::*;
 #[allow(clippy::uninlined_format_args)]
 /// Compiles a minimal `miden` account component which calls the specified `output_note` method, and
 /// compares the generated WAT/HIR/MASM output to the checked-in expectations.
-fn run_output_note_binding_test(name: &str, method: &str) {
+fn run_output_note_binding_test(name: &str, method: &str, protocol_function: &str) {
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
@@ -70,7 +70,7 @@ trim-paths = ["diagnostics", "object"]
     )
     .build();
 
-    test.compile_package();
+    assert_masm_execs_protocol_link(&mut test, "output_note", protocol_function);
 }
 
 #[test]
@@ -81,6 +81,7 @@ fn rust_sdk_output_note_get_assets_info_binding() {
         let info = output_note::get_assets_info(NoteIdx { inner: Felt::new(0) });
         info.num_assets
     }",
+        "get_assets_info",
     );
 }
 
@@ -92,6 +93,7 @@ fn rust_sdk_output_note_get_assets_binding() {
         let assets = output_note::get_assets(NoteIdx { inner: Felt::new(0) });
         Felt::new(assets.len() as u64)
     }",
+        "get_assets",
     );
 }
 
@@ -102,6 +104,7 @@ fn rust_sdk_output_note_get_recipient_binding() {
         "pub fn binding(&self) -> Recipient {
         output_note::get_recipient(NoteIdx { inner: Felt::new(0) })
     }",
+        "get_recipient",
     );
 }
 
@@ -112,6 +115,7 @@ fn rust_sdk_output_note_get_metadata_binding() {
         "pub fn binding(&self) -> Word {
         output_note::get_metadata(NoteIdx { inner: Felt::new(0) }).header
     }",
+        "get_metadata",
     );
 }
 
@@ -125,6 +129,7 @@ fn rust_sdk_output_note_create_binding() {
         let note_type = NoteType { inner: Felt::new(1) };
         output_note::create(tag, note_type, recipient)
     }",
+        "create",
     );
 }
 
@@ -138,6 +143,7 @@ fn rust_sdk_output_note_add_asset_binding() {
         output_note::add_asset(asset, idx);
         Felt::new(0)
     }",
+        "add_asset",
     );
 }
 
@@ -153,6 +159,7 @@ fn rust_sdk_output_note_set_attachment_binding() {
         output_note::set_attachment(idx, attachment_scheme, attachment_kind, attachment);
         Felt::new(0)
     }",
+        "set_attachment",
     );
 }
 
@@ -167,6 +174,7 @@ fn rust_sdk_output_note_set_word_attachment_binding() {
         output_note::set_word_attachment(idx, attachment_scheme, attachment);
         Felt::new(0)
     }",
+        "set_word_attachment",
     );
 }
 
@@ -181,5 +189,6 @@ fn rust_sdk_output_note_set_array_attachment_binding() {
         output_note::set_array_attachment(idx, attachment_scheme, attachment);
         Felt::new(0)
     }",
+        "set_array_attachment",
     );
 }

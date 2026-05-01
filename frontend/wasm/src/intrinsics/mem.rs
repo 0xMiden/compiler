@@ -18,7 +18,7 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 
 pub const HEAP_BASE: &str = "heap_base";
 
-const HEAP_BASE_FUNC: ([Type; 0], [Type; 1]) = ([], [Type::U32]);
+const HEAP_BASE_FUNC: ([Type; 0], [Type; 1]) = ([], [Type::I32]);
 
 pub fn function_type(function: Symbol) -> Option<FunctionType> {
     match function.as_str() {

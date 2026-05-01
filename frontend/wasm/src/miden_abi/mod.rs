@@ -22,6 +22,11 @@ fn is_miden_stdlib_module(module_path: &SymbolPath) -> bool {
 }
 
 pub fn miden_abi_function_type(path: &SymbolPath) -> FunctionType {
+    try_miden_abi_function_type(path)
+        .unwrap_or_else(|| panic!("No Miden ABI function type found for function {path}"))
+}
+
+pub fn try_miden_abi_function_type(path: &SymbolPath) -> Option<FunctionType> {
     const STD: &[SymbolNameComponent] = &[
         SymbolNameComponent::Root,
         SymbolNameComponent::Component(symbols::Miden),
@@ -29,32 +34,26 @@ pub fn miden_abi_function_type(path: &SymbolPath) -> FunctionType {
     ];
 
     if path.is_prefixed_by(STD) {
-        miden_stdlib_function_type(path)
+        try_miden_stdlib_function_type(path)
     } else {
-        miden_sdk_function_type(path)
+        try_miden_sdk_function_type(path)
     }
 }
 
 /// Get the target Miden ABI tx kernel function type for the given module and function id
 pub fn miden_sdk_function_type(path: &SymbolPath) -> FunctionType {
-    let module_path = path.without_leaf();
-    let funcs = tx_kernel::signatures()
-        .get(module_path.as_ref())
-        .unwrap_or_else(|| panic!("No Miden ABI function types found for module {module_path}"));
-    funcs
-        .get(&path.name())
-        .cloned()
+    try_miden_sdk_function_type(path)
         .unwrap_or_else(|| panic!("No Miden ABI function type found for function {path}"))
 }
 
-/// Get the target Miden ABI stdlib function type for the given module and function id
-fn miden_stdlib_function_type(path: &SymbolPath) -> FunctionType {
+fn try_miden_sdk_function_type(path: &SymbolPath) -> Option<FunctionType> {
     let module_path = path.without_leaf();
-    let funcs = stdlib::signatures()
-        .get(module_path.as_ref())
-        .unwrap_or_else(|| panic!("No Miden ABI function types found for module {module_path}"));
-    funcs
-        .get(&path.name())
-        .cloned()
-        .unwrap_or_else(|| panic!("No Miden ABI function type found for function {path}"))
+    let funcs = tx_kernel::signatures().get(module_path.as_ref())?;
+    funcs.get(&path.name()).cloned()
+}
+
+fn try_miden_stdlib_function_type(path: &SymbolPath) -> Option<FunctionType> {
+    let module_path = path.without_leaf();
+    let funcs = stdlib::signatures().get(module_path.as_ref())?;
+    funcs.get(&path.name()).cloned()
 }

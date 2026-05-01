@@ -36,7 +36,7 @@ fn main() {
 
     let out_rlib = out_dir.join("libmiden_alloc_intrinsics.a");
 
-    // Compile the stub crate into an rlib archive
+    // Compile the stub crate into an rlib archive.
     let status = Command::new("rustc")
         .arg("--crate-name")
         .arg("miden_alloc_heap_base_stub")
@@ -52,6 +52,8 @@ fn main() {
         .arg("debuginfo=0")
         .arg("-Z")
         .arg("merge-functions=disabled")
+        .arg("-Z")
+        .arg("location-detail=line,column")
         .arg("-C")
         .arg("target-feature=+bulk-memory,+wide-arithmetic")
         .arg("-o")

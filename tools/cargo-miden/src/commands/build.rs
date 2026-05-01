@@ -211,6 +211,8 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
         ("profile.dev.debug", "true"),
         ("profile.dev.debug-assertions", "false"),
         ("profile.release.opt-level", "\"s\""),
+        ("profile.release.lto", "true"),
+        ("profile.release.codegen-units", "1"),
         ("profile.release.panic", "\"abort\""),
     ];
 

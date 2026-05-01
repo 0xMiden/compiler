@@ -386,6 +386,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let val = state.pop1_bitcasted(Felt, builder, span);
             state.push1(val);
         }
+        Operator::I32ReinterpretF32 => {
+            let val = state.pop1_bitcasted(I32, builder, span);
+            state.push1(val);
+        }
         /****************************** Binary Operators ************************************/
         Operator::I32Add | Operator::I64Add => {
             let (arg1, arg2) = state.pop2();
@@ -797,7 +801,8 @@ fn translate_call<B: ?Sized + Builder>(
         } => {
             let arity = signature.arity();
             let args = func_state.peekn(arity);
-            let results = convert_intrinsics_call(intrinsic, None, args, builder, span)?;
+            let mut results = convert_intrinsics_call(intrinsic, None, args, builder, span)?;
+            results.truncate(signature.results().len());
             func_state.popn(arity);
             func_state.pushn(&results);
         }
@@ -808,8 +813,9 @@ fn translate_call<B: ?Sized + Builder>(
         } => {
             let arity = signature.arity();
             let args = func_state.peekn(arity);
-            let results =
+            let mut results =
                 convert_intrinsics_call(intrinsic, Some(function_ref), args, builder, span)?;
+            results.truncate(signature.results().len());
             func_state.popn(arity);
             func_state.pushn(&results);
         }

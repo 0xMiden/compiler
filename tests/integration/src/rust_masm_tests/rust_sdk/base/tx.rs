@@ -1,7 +1,7 @@
 use super::*;
 
 #[allow(clippy::uninlined_format_args)]
-fn run_tx_binding_test(name: &str, body: &str) {
+fn run_tx_binding_test(name: &str, body: &str, protocol_function: &str) {
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
@@ -64,7 +64,7 @@ debug = false
     )
     .build();
 
-    test.compile_package();
+    assert_masm_execs_protocol_link(&mut test, "tx", protocol_function);
 }
 
 #[test]
@@ -72,6 +72,7 @@ fn rust_sdk_account_tx_get_block_commitment_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_block_commitment_binding",
         "let commitment = tx::get_block_commitment();\n    let _ = commitment;",
+        "get_block_commitment",
     );
 }
 
@@ -80,6 +81,7 @@ fn rust_sdk_account_tx_get_block_number_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_block_number_binding",
         "let _ = tx::get_block_number();",
+        "get_block_number",
     );
 }
 
@@ -88,6 +90,7 @@ fn rust_sdk_account_tx_get_block_timestamp_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_block_timestamp_binding",
         "let _ = tx::get_block_timestamp();",
+        "get_block_timestamp",
     );
 }
 
@@ -96,6 +99,7 @@ fn rust_sdk_account_tx_get_num_input_notes_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_num_input_notes_binding",
         "let _ = tx::get_num_input_notes();",
+        "get_num_input_notes",
     );
 }
 
@@ -104,6 +108,7 @@ fn rust_sdk_account_tx_get_num_output_notes_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_num_output_notes_binding",
         "let _ = tx::get_num_output_notes();",
+        "get_num_output_notes",
     );
 }
 
@@ -112,6 +117,7 @@ fn rust_sdk_account_tx_get_expiration_block_delta_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_expiration_block_delta_binding",
         "let _ = tx::get_expiration_block_delta();",
+        "get_expiration_block_delta",
     );
 }
 
@@ -120,6 +126,7 @@ fn rust_sdk_account_tx_update_expiration_block_delta_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_update_expiration_block_delta_binding",
         "tx::update_expiration_block_delta(Felt::new(42));",
+        "update_expiration_block_delta",
     );
 }
 
@@ -128,6 +135,7 @@ fn rust_sdk_account_tx_get_input_notes_commitment_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_input_notes_commitment_binding",
         "let commitment = tx::get_input_notes_commitment();\n    let _ = commitment;",
+        "get_input_notes_commitment",
     );
 }
 
@@ -136,5 +144,6 @@ fn rust_sdk_account_tx_get_output_notes_commitment_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_output_notes_commitment_binding",
         "let commitment = tx::get_output_notes_commitment();\n    let _ = commitment;",
+        "get_output_notes_commitment",
     );
 }

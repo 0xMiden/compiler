@@ -1,7 +1,7 @@
 use super::*;
 
 #[allow(clippy::uninlined_format_args)]
-fn run_asset_binding_test(name: &str, method: &str) {
+fn run_asset_binding_test(name: &str, method: &str, protocol_function: &str) {
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
@@ -64,7 +64,7 @@ debug = false
     )
     .build();
 
-    test.compile_package();
+    assert_masm_execs_protocol_link(&mut test, "asset", protocol_function);
 }
 
 #[test]
@@ -75,6 +75,7 @@ fn rust_sdk_account_asset_create_fungible_asset_binding() {
         let faucet = AccountId { prefix: Felt::new(1), suffix: Felt::new(0) };
         asset::create_fungible_asset(faucet, Felt::new(10))
     }",
+        "create_fungible_asset",
     );
 }
 
@@ -87,5 +88,6 @@ fn rust_sdk_account_asset_create_non_fungible_asset_binding() {
         let hash = Word::from([Felt::new(0); 4]);
         asset::create_non_fungible_asset(faucet, hash)
     }",
+        "create_non_fungible_asset",
     );
 }
