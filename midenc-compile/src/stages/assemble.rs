@@ -1,9 +1,4 @@
-use alloc::{string::ToString, vec::Vec};
-
-use miden_mast_package::{
-    Dependency, Package, PackageManifest, Section, SectionId, TargetType, Version,
-};
-use midenc_session::Session;
+use miden_mast_package::Package;
 
 use super::*;
 
@@ -55,51 +50,5 @@ impl Stage for AssembleStage {
             );
             Ok(Artifact::Lowered(input))
         }
-    }
-}
-
-fn build_package(
-    artifact: midenc_codegen_masm::AssemblyArtifact,
-    outputs: &CodegenOutput,
-    session: &Session,
-) -> Package {
-    let name = session.name.clone().into();
-
-    let mut dependencies = Vec::new();
-    for (link_lib, lib) in session.options.link_libraries.iter().zip(outputs.link_libraries.iter())
-    {
-        let dependency = Dependency {
-            name: link_lib.name.to_string().into(),
-            kind: TargetType::Library,
-            // proper version will be implemented in https://github.com/0xMiden/compiler/issues/1069
-            version: Version::new(0, 0, 0),
-            digest: *lib.digest(),
-        };
-        dependencies.push(dependency);
-    }
-
-    let kind = artifact.kind();
-    let mast = artifact.into_mast();
-    let manifest = PackageManifest::from_library(&mast)
-        .with_dependencies(dependencies)
-        .expect("package dependencies should be unique");
-
-    let account_component_metadata_bytes = outputs.account_component_metadata_bytes.clone();
-
-    let mut sections = Vec::new();
-
-    if let Some(bytes) = account_component_metadata_bytes {
-        sections.push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes));
-    }
-
-    Package {
-        name,
-        // proper version will be implemented in https://github.com/0xMiden/compiler/issues/1068
-        version: Version::new(0, 0, 0),
-        description: None,
-        kind,
-        mast: mast.into(),
-        manifest,
-        sections,
     }
 }

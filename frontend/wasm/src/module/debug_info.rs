@@ -417,7 +417,7 @@ fn build_location_schedule(locals: &[Option<LocalDebugInfo>]) -> Vec<LocationSch
             });
         }
     }
-    schedule.sort_by(|a, b| a.offset.cmp(&b.offset));
+    schedule.sort_by_key(|entry| entry.offset);
     schedule
 }
 
@@ -473,7 +473,7 @@ fn collect_dwarf_local_data(
 
         let mut entries = unit.entries();
         loop {
-            let next = match entries.next_dfs() {
+            let entry = match entries.next_dfs() {
                 Ok(Some(data)) => data,
                 Ok(None) => break,
                 Err(err) => {
@@ -481,8 +481,6 @@ fn collect_dwarf_local_data(
                     break;
                 }
             };
-            let (delta, entry) = next;
-            let _ = delta; // we don't need depth deltas explicitly.
 
             if entry.tag() == gimli::DW_TAG_subprogram {
                 let Some(info) =
@@ -540,8 +538,7 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
     let mut high_pc = None;
     let mut frame_base_global = None;
 
-    let mut attrs = entry.attrs();
-    while let Ok(Some(attr)) = attrs.next() {
+    for attr in entry.attrs() {
         match attr.name() {
             gimli::DW_AT_name => {
                 if let Ok(raw) = dwarf.attr_string(unit, attr.value())
@@ -724,7 +721,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
 fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
     dwarf: &gimli::Dwarf<R>,
     unit: &gimli::Unit<R>,
-    entry: &gimli::DebuggingInformationEntry<'_, '_, R>,
+    entry: &gimli::DebuggingInformationEntry<R>,
     low_pc: u64,
     high_pc: Option<u64>,
     frame_base_global: Option<u32>,
@@ -736,8 +733,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
     let mut decl_line = None;
     let mut decl_column = None;
 
-    let mut attrs = entry.attrs();
-    while let Some(attr) = attrs.next()? {
+    for attr in entry.attrs() {
         match attr.name() {
             gimli::DW_AT_name => {
                 if let Ok(raw) = dwarf.attr_string(unit, attr.value())
