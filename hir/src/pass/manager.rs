@@ -1120,10 +1120,7 @@ mod tests {
 
     use crate::{
         EntityMut, Operation, OperationName, Report, SourceSpan, Type,
-        dialects::{
-            builtin::BuiltinOpBuilder,
-            test::TestOpBuilder,
-        },
+        dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
         pass::{Pass, PassExecutionState},
         testing::Test,
     };
@@ -1152,16 +1149,16 @@ mod tests {
             let op_ref = op.as_operation_ref();
             drop(op);
             let borrowed = op_ref.borrow();
-            if let Some(region) = borrowed.regions().front().as_pointer() {
-                if let Some(block) = region.borrow().body().front().as_pointer() {
-                    let mut next_op = block.borrow().front();
-                    while let Some(mut inner) = next_op.take() {
-                        if inner.borrow().num_operands() == 2 {
-                            inner.borrow_mut().set_operands(core::iter::empty());
-                            return Ok(());
-                        }
-                        next_op = inner.next();
+            if let Some(region) = borrowed.regions().front().as_pointer()
+                && let Some(block) = region.borrow().body().front().as_pointer()
+            {
+                let mut next_op = block.borrow().front();
+                while let Some(mut inner) = next_op.take() {
+                    if inner.borrow().num_operands() == 2 {
+                        inner.borrow_mut().set_operands(core::iter::empty());
+                        return Ok(());
                     }
+                    next_op = inner.next();
                 }
             }
             Ok(())
