@@ -96,10 +96,10 @@ impl ColorChoice {
         // On Windows, if TERM isn't set, then we shouldn't automatically
         // assume that colors aren't allowed. This is unlike Unix environments
         // where TERM is more rigorously set.
-        if let Some(k) = std::env::var_os("TERM") {
-            if k == "dumb" {
-                return false;
-            }
+        if let Some(k) = std::env::var_os("TERM")
+            && k == "dumb"
+        {
+            return false;
         }
         // If TERM != dumb, then the only way we don't allow colors at this
         // point is if NO_COLOR is set.
