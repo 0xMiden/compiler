@@ -6,6 +6,9 @@ macro_rules! println {
     ($message:expr) => {{
         $crate::debug::println($message);
     }};
+    ($format:literal, $($arg:tt),+) => {
+        compile_error!("unsupported use of println! with format arguments");
+    };
 }
 
 #[inline(always)]
