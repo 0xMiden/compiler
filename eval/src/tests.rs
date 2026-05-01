@@ -227,10 +227,10 @@ fn println_collects_printed_lines() -> Result<(), Report> {
         let ptr_ty = Type::from(PointerType::new(Type::U8));
         let base_addr = 64u32;
 
-        for (offset, byte) in [b'h', b'e', b'l', b'l', b'o'].into_iter().enumerate() {
+        for (offset, byte) in b"hello".iter().enumerate() {
             let addr = builder.u32(base_addr + offset as u32, span);
             let ptr = builder.inttoptr(addr, ptr_ty.clone(), span)?;
-            let value = builder.u8(byte, span);
+            let value = builder.u8(*byte, span);
             builder.store(ptr, value, span)?;
         }
 

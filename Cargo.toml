@@ -79,7 +79,7 @@ log = { version = "0.4", features = ["kv"] }
 # Miden Dependencies
 miden-assembly = { version = "0.22", default-features = false }
 miden-core = { version = "0.22", default-features = false }
-miden-debug = { version = "0.6" }
+miden-debug = { version = "0.7" }
 miden-debug-types = { version = "0.22", default-features = false }
 miden-assembly-syntax = { version = "0.22", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
@@ -158,7 +158,7 @@ midenc-session = { version = "0.8.1", path = "midenc-session" }
 cargo-miden = { version = "0.8.1", path = "tools/cargo-miden" }
 miden-integration-tests = { path = "tests/integration" }
 midenc-expect-test = { path = "tools/expect-test" }
-miden-field = { version = "^0.24" }
+miden-field = { version = "^0.25" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
@@ -168,7 +168,6 @@ miden-field = { version = "^0.24" }
 #miden-core = { path = "../miden-vm/core" }
 # miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "0a5add565d1388f77cd182f3639c16aa8f7ec674" }
 # miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "main" }
-miden-debug = { git = "https://github.com/0xMiden/miden-debug.git", branch = "mooori/print-via-trace" }
 #miden-debug-types = { path = "../miden-vm/crates/debug/types" }
 #miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-processor = { path = "../miden-vm/processor" }
