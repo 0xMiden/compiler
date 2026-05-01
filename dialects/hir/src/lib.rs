@@ -1,4 +1,3 @@
-#![feature(debug_closure_helpers)]
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 #![feature(ptr_metadata)]

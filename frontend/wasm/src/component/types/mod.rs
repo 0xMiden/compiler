@@ -601,7 +601,7 @@ impl ComponentTypesBuilder {
 
     fn entity_type(&mut self, types: TypesRef<'_>, ty: &types::EntityType) -> Result<EntityType> {
         Ok(match ty {
-            types::EntityType::Func(idx) => {
+            types::EntityType::Func(idx) | types::EntityType::FuncExact(idx) => {
                 let ty = types[*idx].unwrap_func();
                 let ty = convert_func_type(ty);
                 EntityType::Function(self.module_types_builder_mut().wasm_func_type(*idx, ty))
@@ -654,6 +654,10 @@ impl ComponentTypesBuilder {
             | component_types::ComponentDefinedType::Future(_) => {
                 unimplemented!("support for the async proposal is not implemented")
             }
+            component_types::ComponentDefinedType::Map(..)
+            | component_types::ComponentDefinedType::FixedLengthList(..) => {
+                todo!("support for maps/fixed-length lists has not been implemented yet")
+            }
         };
         let info = self.type_information(&ret);
         if info.depth > MAX_TYPE_DEPTH {
@@ -703,9 +707,6 @@ impl ComponentTypesBuilder {
             .cases
             .iter()
             .map(|(name, case)| {
-                if case.refines.is_some() {
-                    bail!("refines is not supported at this time");
-                }
                 Ok(VariantCase {
                     name: name.to_string(),
                     ty: match &case.ty.as_ref() {

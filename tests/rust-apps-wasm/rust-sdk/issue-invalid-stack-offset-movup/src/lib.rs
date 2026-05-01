@@ -53,7 +53,7 @@ impl InvalidStackOffsetMovupNote {
 
         let note_assets = active_note::get_assets();
         let num_assets = note_assets.len();
-        assert_eq(Felt::new(num_assets as u64), felt!(1));
+        assert_eq(Felt::new(num_assets as u64).unwrap(), felt!(1));
 
         let note_asset = note_assets[0];
         let assets_match = if offered_asset_word == note_asset {
@@ -81,10 +81,8 @@ impl InvalidStackOffsetMovupNote {
 
         // active_note::add_assets_to_account();
 
-        let routing_serial = add_word(
-            current_note_serial,
-            Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]),
-        );
+        let routing_serial =
+            add_word(current_note_serial, Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]));
 
         let aux_value = offered_out;
         let input_asset = Asset::new(
@@ -99,12 +97,7 @@ impl InvalidStackOffsetMovupNote {
             let remainder_aux = offered_out;
             let remainder_requested_asset = Asset::new(
                 requested_asset.key,
-                Word::from([
-                    requested_asset_total - input_amount,
-                    felt!(0),
-                    felt!(0),
-                    felt!(0),
-                ]),
+                Word::from([requested_asset_total - input_amount, felt!(0), felt!(0), felt!(0)]),
             );
             let remainder_offered_asset = Asset::new(
                 offered_asset_word.key,
@@ -124,7 +117,7 @@ impl InvalidStackOffsetMovupNote {
 
 /// Calculates the output amount for the given swap parameters.
 fn calculate_output_amount(offered_total: Felt, requested_total: Felt, input_amount: Felt) -> Felt {
-    let precision_factor = Felt::new(100000);
+    let precision_factor = Felt::new(100000).unwrap();
 
     if offered_total > requested_total {
         let ratio = (offered_total * precision_factor) / requested_total;
@@ -146,10 +139,10 @@ fn create_p2id_note(serial_num: Word, input_asset: Asset, recipient_id: AccountI
     let note_type = get_note_type();
 
     let _p2id_note_root_digest = Digest::from_word(Word::new([
-        Felt::new(6412241294473976817),
-        Felt::new(10671567784403105513),
-        Felt::new(4275774806771663409),
-        Felt::new(17933276983439992403),
+        Felt::new(6412241294473976817).unwrap(),
+        Felt::new(10671567784403105513).unwrap(),
+        Felt::new(4275774806771663409).unwrap(),
+        Felt::new(17933276983439992403).unwrap(),
     ]));
 
     let recipient = note::build_recipient(
@@ -220,8 +213,8 @@ fn create_swapp_note(
 /// Extracts the note tag from the active note metadata.
 fn get_note_tag() -> Tag {
     let metadata = active_note::get_metadata().header;
-    let left_shifted_32 = metadata[2] * Felt::new(2u64.pow(32));
-    let tag_felt = left_shifted_32 / (Felt::new(2u64.pow(32)));
+    let left_shifted_32 = metadata[2] * Felt::new(2u64.pow(32)).unwrap();
+    let tag_felt = left_shifted_32 / (Felt::new(2u64.pow(32)).unwrap());
     Tag::from(tag_felt)
 }
 
@@ -229,8 +222,8 @@ fn get_note_tag() -> Tag {
 fn get_note_type() -> NoteType {
     let metadata = active_note::get_metadata().header;
     let second_felt = metadata[1];
-    let pow_56 = Felt::new(2u64.pow(56));
-    let pow_62 = Felt::new(2u64.pow(62));
+    let pow_56 = Felt::new(2u64.pow(56)).unwrap();
+    let pow_62 = Felt::new(2u64.pow(62)).unwrap();
     let left_shifted_56 = second_felt * pow_56;
     let note_type_felt = left_shifted_56 / pow_62;
     NoteType::from(note_type_felt)

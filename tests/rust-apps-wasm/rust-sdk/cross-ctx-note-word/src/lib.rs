@@ -58,7 +58,7 @@ impl MyNote {
 
         let mixed_input = MixedStruct {
             f: u64::MAX - 1000,
-            a: Felt::new(Felt::ORDER_U64 - 1 - 6),
+            a: Felt::new(Felt::ORDER_U64 - 1 - 6).unwrap(),
             b: u32::MAX - 10,
             c: felt!(50),
             d: 111,
@@ -70,12 +70,12 @@ impl MyNote {
             // fail
             assert_eq!(0, 1);
         }
-        assert_eq(mixed_output.a, Felt::new(Felt::ORDER_U64 - 1)); // M - 1 - 6 + 6
-        assert_eq(mixed_output.b.into(), Felt::new(u32::MAX as u64)); // u32::MAX - 10 + 10
+        assert_eq(mixed_output.a, Felt::new(Felt::ORDER_U64 - 1).unwrap()); // M - 1 - 6 + 6
+        assert_eq(mixed_output.b.into(), Felt::new(u32::MAX as u64).unwrap()); // u32::MAX - 10 + 10
         assert_eq(mixed_output.c, felt!(57)); // 50 + 7
-        assert_eq(mixed_output.d.into(), Felt::new(122));
-        assert_eq(Felt::new(mixed_output.e as u64), felt!(1));
-        assert_eq(mixed_output.g.into(), Felt::new(12));
+        assert_eq(mixed_output.d.into(), Felt::new(122).unwrap());
+        assert_eq(Felt::new(mixed_output.e as u64).unwrap(), felt!(1));
+        assert_eq(mixed_output.g.into(), Felt::new(12).unwrap());
 
         let nested_input = NestedStruct {
             inner: Pair {

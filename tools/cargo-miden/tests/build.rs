@@ -153,7 +153,9 @@ fn build_new_project_from_template(template: &str) -> Package {
     fs::remove_dir_all(&temp_dir).unwrap();
     package
 }
+
 #[test]
+#[ignore = "pending move to project-template repo"]
 fn new_project_integration_tests_pass() {
     let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")

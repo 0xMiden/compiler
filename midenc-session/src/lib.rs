@@ -1,7 +1,6 @@
 #![no_std]
 #![feature(debug_closure_helpers)]
 #![feature(specialization)]
-#![feature(slice_split_once)]
 // Specialization
 #![allow(incomplete_features)]
 #![deny(warnings)]

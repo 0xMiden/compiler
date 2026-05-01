@@ -129,7 +129,7 @@ fn rust_sdk_account_get_initial_balance_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_initial_balance_binding",
         "pub fn binding(&self) -> Felt {
-        let faucet = AccountId { prefix: Felt::new(1), suffix: Felt::new(0) };
+        let faucet = AccountId { prefix: Felt::new(1).unwrap(), suffix: Felt::new(0).unwrap() };
         self.get_initial_balance(faucet)
     }",
     );
@@ -140,7 +140,7 @@ fn rust_sdk_account_get_asset_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_asset_binding",
         "pub fn binding(&self) -> Word {
-        let asset_key = Word::from([Felt::new(0); 4]);
+        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
         self.get_asset(asset_key)
     }",
     );
@@ -151,7 +151,7 @@ fn rust_sdk_account_get_initial_asset_binding() {
     run_account_binding_test(
         "rust_sdk_account_get_initial_asset_binding",
         "pub fn binding(&self) -> Word {
-        let asset_key = Word::from([Felt::new(0); 4]);
+        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
         self.get_initial_asset(asset_key)
     }",
     );
@@ -162,11 +162,12 @@ fn rust_sdk_account_has_non_fungible_asset_binding() {
     run_account_binding_test(
         "rust_sdk_account_has_non_fungible_asset_binding",
         "pub fn binding(&self) -> Felt {
-        let asset = Asset::new(Word::from([Felt::new(0); 4]), Word::from([Felt::new(0); 4]));
+        let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
+         Word::from([Felt::new(0).unwrap(); 4]));
         if self.has_non_fungible_asset(asset) {
-            Felt::new(1)
+            Felt::new(1).unwrap()
         } else {
-            Felt::new(0)
+            Felt::new(0).unwrap()
         }
     }",
     );
@@ -217,11 +218,11 @@ fn rust_sdk_account_has_procedure_binding() {
     run_account_binding_test(
         "rust_sdk_account_has_procedure_binding",
         "pub fn binding(&self) -> Felt {
-        let proc_root = Word::from([Felt::new(0); 4]);
+        let proc_root = Word::from([Felt::new(0).unwrap(); 4]);
         if self.has_procedure(proc_root) {
-            Felt::new(1)
+            Felt::new(1).unwrap()
         } else {
-            Felt::new(0)
+            Felt::new(0).unwrap()
         }
     }",
     );
@@ -232,11 +233,11 @@ fn rust_sdk_account_was_procedure_called_binding() {
     run_account_binding_test(
         "rust_sdk_account_was_procedure_called_binding",
         "pub fn binding(&self) -> Felt {
-        let proc_root = Word::from([Felt::new(0); 4]);
+        let proc_root = Word::from([Felt::new(0).unwrap(); 4]);
         if self.was_procedure_called(proc_root) {
-            Felt::new(1)
+            Felt::new(1).unwrap()
         } else {
-            Felt::new(0)
+            Felt::new(0).unwrap()
         }
     }",
     );
@@ -265,7 +266,7 @@ fn rust_sdk_account_storage_get_initial_map_item_binding() {
     map: StorageMap<Word, Word>,
 }"#,
         "pub fn binding(&self) -> Word {
-        let key = Word::from([Felt::new(0); 4]);
+        let key = Word::from([Felt::new(0).unwrap(); 4]);
         storage::get_initial_map_item(Self::default().map.slot, &key)
     }",
     );

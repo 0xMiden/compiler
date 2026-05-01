@@ -43,7 +43,7 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
         )
     })?;
 
-    let manifest: Value = manifest_content.parse().map_err(|err| {
+    let manifest = manifest_content.parse::<toml::Table>().map_err(|err| {
         Error::new(
             Span::call_site(),
             format!("failed to parse manifest '{}': {err}", manifest_path.display()),

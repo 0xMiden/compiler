@@ -40,7 +40,7 @@ struct MyFoo;
 
 impl foo::Guest for MyFoo {
     fn process_felt(input: Felt) -> Felt {
-        let res = input + Felt::new(unsafe { FOO } as u64);
+        let res = input + Felt::new(unsafe { FOO } as u64).unwrap();
         unsafe { FOO = res.as_canonical_u64() as u32 };
         res
     }

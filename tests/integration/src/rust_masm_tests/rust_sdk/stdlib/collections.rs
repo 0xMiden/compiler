@@ -102,10 +102,10 @@ fn test_smt_get_binding() {
         let returned_root = result.root;
 
 	        let expected = Word::new([
-	            Felt::new({ev0}),
-	            Felt::new({ev1}),
-	            Felt::new({ev2}),
-	            Felt::new({ev3}),
+	            Felt::new({ev0}).unwrap(),
+	            Felt::new({ev1}).unwrap(),
+	            Felt::new({ev2}).unwrap(),
+	            Felt::new({ev3}).unwrap(),
 	        ]);
 	        assert_eq!(value, expected, "smt_get returned unexpected value");
 	        assert_eq!(returned_root, root, "smt_get should not mutate the root");
@@ -180,16 +180,16 @@ fn test_smt_set_binding() {
         let new_root = result.new_root;
 
 	        let expected_old = Word::new([
-	            Felt::new({eo0}),
-	            Felt::new({eo1}),
-	            Felt::new({eo2}),
-	            Felt::new({eo3}),
+	            Felt::new({eo0}).unwrap(),
+	            Felt::new({eo1}).unwrap(),
+	            Felt::new({eo2}).unwrap(),
+	            Felt::new({eo3}).unwrap(),
 	        ]);
 	        let expected_new = Word::new([
-	            Felt::new({en0}),
-	            Felt::new({en1}),
-	            Felt::new({en2}),
-	            Felt::new({en3}),
+	            Felt::new({en0}).unwrap(),
+	            Felt::new({en1}).unwrap(),
+	            Felt::new({en2}).unwrap(),
+	            Felt::new({en3}).unwrap(),
 	        ]);
 	        assert_eq!(old_value, expected_old, "smt_set returned unexpected old value");
 	        assert_eq!(new_root, expected_new, "smt_set returned unexpected new root");

@@ -423,7 +423,7 @@ impl OperandMovementConstraintSolver {
             // Run the solver for more than 1 argument
             _ => {
                 let actions = self.solve()?;
-                for action in actions.into_iter() {
+                for action in actions {
                     match action {
                         Action::Copy(index) => {
                             emitter.copy_operand_to_position(index as usize, 0, false, span);
@@ -647,7 +647,7 @@ mod tests {
 
         let tests = [[v2, v1, v3, v4, v5, v6], [v2, v4, v3, v1, v5, v6]];
 
-        for test in tests.into_iter() {
+        for test in tests {
             let mut stack = crate::OperandStack::new(context.clone());
             for value in test.into_iter().rev() {
                 stack.push(value);
@@ -694,7 +694,7 @@ mod tests {
             [v4, v3, v2, v1, v5, v6],
         ];
 
-        for test in tests.into_iter() {
+        for test in tests {
             let mut stack = crate::OperandStack::new(context.clone());
             for value in test.into_iter().rev() {
                 stack.push(value);
@@ -740,7 +740,7 @@ mod tests {
             [v2, v1, v3, v4, v5, v6],
         ];
 
-        for test in tests.into_iter() {
+        for test in tests {
             let mut stack = crate::OperandStack::new(context.clone());
             for value in test.into_iter().rev() {
                 stack.push(value);
@@ -782,7 +782,7 @@ mod tests {
 
         let tests = [[v32, v7, v16, v0]];
 
-        for test in tests.into_iter() {
+        for test in tests {
             let mut stack = crate::OperandStack::new(context.clone());
             for value in test.into_iter().rev() {
                 stack.push(value);

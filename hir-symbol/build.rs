@@ -112,8 +112,7 @@ fn main() {
     println!("cargo:rustc-env=SYMBOLS_RS={}", out_file.display());
 
     let contents = fs::read_to_string("src/symbols.toml").unwrap();
-    let root = contents.parse::<Value>().unwrap();
-    let root = root.as_table().unwrap();
+    let root = contents.parse::<Table>().unwrap();
     let mut sections = vec![];
     for (name, value) in root.iter() {
         sections.push(Section::from_table(name.to_string(), value.as_table().unwrap()));

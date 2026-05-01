@@ -259,36 +259,7 @@ jobs:
       - name: Test
         # Skip running the some test since they are a disc space hog.
         run: |
-          cargo make test -E 'package(cargo-miden) - test(new_project_integration_tests_pass) - test(test_all_templates_and_examples)'
-
-  cargo_miden_tests_mpt:
-    name: cargo-miden test Miden project template
-    runs-on: ubuntu-latest
-    # We only want to run the integration tests if the unit tests pass, and that has the added
-    # benefit that we can re-use the cache from the unit test job for all integration tests
-    needs: [unit_tests]
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/cleanup-runner
-      - name: Install Rust
-        run: |
-          rustup update --no-self-update
-          rustc --version
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ github.workflow }}-shared-tests
-          prefix-key: ${{ env.RUST_CACHE_KEY }}
-          # Do not persist the cache, leave that to the unit tests, we just use the cache here
-          save-if: false
-      - name: Install cargo-make
-        run: |
-          if ! cargo make --version 2>/dev/null; then
-            cargo install cargo-make --force
-          fi
-      - name: Test
-        run: |
-          cargo make test -E 'test(new_project_integration_tests_pass)'
+          cargo make test -E 'package(cargo-miden) - test(test_all_templates_and_examples)'
 
   cargo_miden_tests_templates_and_examples:
     name: cargo-miden test new project templates and examples

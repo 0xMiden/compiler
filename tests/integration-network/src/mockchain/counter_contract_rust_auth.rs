@@ -72,7 +72,7 @@ pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
     let tx_context = tx_context_builder.build().unwrap();
     let executed_tx =
         block_on(tx_context.execute()).expect("authorized client should be able to create a note");
-    expect!["83038"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
+    expect!["86895"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
     assert_eq!(executed_tx.output_notes().get_note(0).id(), own_note.id());
 

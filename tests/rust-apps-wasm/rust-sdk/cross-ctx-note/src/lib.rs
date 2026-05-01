@@ -16,7 +16,7 @@ struct MyNote;
 impl MyNote {
     #[note_script]
     pub fn execute(self, _arg: Word) {
-        let input = Felt::new(unsafe { BAR } as u64);
+        let input = Felt::new(unsafe { BAR } as u64).unwrap();
         assert_eq(input, felt!(11));
         let output = process_felt(input);
         assert_eq(output, felt!(53));

@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, rc::Rc};
 use core::{any::Any, marker::Unsize};
 
-pub trait AsAny: Any + Unsize<dyn Any> + 'static {
+pub trait AsAny: Any + 'static {
     fn type_name(&self) -> &'static str;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;

@@ -1,7 +1,5 @@
 #![feature(debug_closure_helpers)]
-#![feature(assert_matches)]
 #![feature(iter_array_chunks)]
-#![feature(iterator_try_collect)]
 #![deny(warnings)]
 
 extern crate alloc;

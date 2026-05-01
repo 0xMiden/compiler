@@ -291,7 +291,9 @@ pub struct LocalCanonicalOptions {
     pub realloc: Option<FuncIndex>,
     pub post_return: Option<FuncIndex>,
     pub is_async: bool,
+    pub gc: bool,
     pub async_callback: Option<FuncIndex>,
+    pub core_type: Option<crate::module::types::TypeIndex>,
 }
 
 /// Action to take after parsing a payload.
@@ -455,10 +457,11 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         // Note that the push/pop of the component types scope happens above in
         // `Version` and `End` since multiple type sections can appear within a
         // component.
-        let mut component_type_index = self.validator.types(0).unwrap().component_type_count();
         self.validator.component_type_section(&s).into_diagnostic()?;
         let types = self.validator.types(0).unwrap();
-        for ty in s {
+        for (component_type_index, ty) in
+            (0..self.validator.types(0).unwrap().component_type_count()).zip(s)
+        {
             match ty.into_diagnostic()? {
                 wasmparser::ComponentType::Resource { rep, dtor } => {
                     let rep = convert_valtype(rep);
@@ -473,8 +476,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 | wasmparser::ComponentType::Instance(_)
                 | wasmparser::ComponentType::Component(_) => {}
             }
-
-            component_type_index += 1;
         }
         Ok(())
     }
@@ -563,10 +564,19 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 wasmparser::CanonicalFunction::ErrorContextNew { .. }
                 | wasmparser::CanonicalFunction::ErrorContextDrop
                 | wasmparser::CanonicalFunction::ErrorContextDebugMessage { .. }
-                | wasmparser::CanonicalFunction::ThreadSpawn { .. }
+                | wasmparser::CanonicalFunction::ThreadSpawnRef { .. }
+                | wasmparser::CanonicalFunction::ThreadSpawnIndirect { .. }
+                | wasmparser::CanonicalFunction::ThreadNewIndirect { .. }
                 | wasmparser::CanonicalFunction::ThreadAvailableParallelism
-                | wasmparser::CanonicalFunction::Yield { .. }
-                | wasmparser::CanonicalFunction::BackpressureSet
+                | wasmparser::CanonicalFunction::ThreadIndex
+                | wasmparser::CanonicalFunction::ThreadSuspend { .. }
+                | wasmparser::CanonicalFunction::ThreadSuspendTo { .. }
+                | wasmparser::CanonicalFunction::ThreadSuspendToSuspended { .. }
+                | wasmparser::CanonicalFunction::ThreadUnsuspend
+                | wasmparser::CanonicalFunction::ThreadYield { .. }
+                | wasmparser::CanonicalFunction::ThreadYieldToSuspended { .. }
+                | wasmparser::CanonicalFunction::BackpressureInc
+                | wasmparser::CanonicalFunction::BackpressureDec
                 | wasmparser::CanonicalFunction::WaitableJoin
                 | wasmparser::CanonicalFunction::WaitableSetNew
                 | wasmparser::CanonicalFunction::WaitableSetDrop
@@ -577,17 +587,21 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 | wasmparser::CanonicalFunction::FutureWrite { .. }
                 | wasmparser::CanonicalFunction::FutureCancelRead { .. }
                 | wasmparser::CanonicalFunction::FutureCancelWrite { .. }
-                | wasmparser::CanonicalFunction::FutureCloseWritable { .. }
-                | wasmparser::CanonicalFunction::FutureCloseReadable { .. }
+                | wasmparser::CanonicalFunction::FutureDropWritable { .. }
+                | wasmparser::CanonicalFunction::FutureDropReadable { .. }
                 | wasmparser::CanonicalFunction::SubtaskDrop
+                | wasmparser::CanonicalFunction::SubtaskCancel { .. }
+                | wasmparser::CanonicalFunction::ContextGet { .. }
+                | wasmparser::CanonicalFunction::ContextSet { .. }
+                | wasmparser::CanonicalFunction::TaskCancel
                 | wasmparser::CanonicalFunction::TaskReturn { .. }
                 | wasmparser::CanonicalFunction::StreamNew { .. }
                 | wasmparser::CanonicalFunction::StreamRead { .. }
                 | wasmparser::CanonicalFunction::StreamWrite { .. }
                 | wasmparser::CanonicalFunction::StreamCancelRead { .. }
                 | wasmparser::CanonicalFunction::StreamCancelWrite { .. }
-                | wasmparser::CanonicalFunction::StreamCloseWritable { .. }
-                | wasmparser::CanonicalFunction::StreamCloseReadable { .. } => unimplemented!(),
+                | wasmparser::CanonicalFunction::StreamDropWritable { .. }
+                | wasmparser::CanonicalFunction::StreamDropReadable { .. } => unimplemented!(),
             };
             log::debug!(target: "component-parser", "Adding canonical initializer: {init:?}");
             self.result.initializers.push(init);
@@ -682,9 +696,10 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         &mut self,
         s: wasmparser::ComponentInstanceSectionReader<'data>,
     ) -> WasmResult<()> {
-        let mut index = self.validator.types(0).unwrap().component_instance_count();
         self.validator.component_instance_section(&s).into_diagnostic()?;
-        for instance in s {
+        for (index, instance) in
+            (0..self.validator.types(0).unwrap().component_instance_count()).zip(s)
+        {
             let init = match instance.into_diagnostic()? {
                 wasmparser::ComponentInstance::Instantiate {
                     component_index,
@@ -700,7 +715,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 }
             };
             self.result.initializers.push(init);
-            index += 1;
         }
         Ok(())
     }
@@ -910,7 +924,7 @@ fn instantiate_module_from_exports<'data>(
     let mut map = FxHashMap::with_capacity_and_hasher(exports.len(), FxBuildHasher);
     for export in exports {
         let idx = match export.kind {
-            wasmparser::ExternalKind::Func => {
+            wasmparser::ExternalKind::Func | wasmparser::ExternalKind::FuncExact => {
                 let index = FuncIndex::from_u32(export.index);
                 EntityIndex::Function(index)
             }
@@ -943,7 +957,9 @@ fn canonical_options(opts: &[wasmparser::CanonicalOption]) -> LocalCanonicalOpti
         realloc: None,
         post_return: None,
         is_async: false,
+        gc: false,
         async_callback: None,
+        core_type: None,
     };
     for opt in opts {
         match opt {
@@ -974,6 +990,13 @@ fn canonical_options(opts: &[wasmparser::CanonicalOption]) -> LocalCanonicalOpti
             wasmparser::CanonicalOption::Callback(idx) => {
                 ret.async_callback = Some(FuncIndex::from_u32(*idx));
             }
+            wasmparser::CanonicalOption::Gc => {
+                ret.gc = true;
+            }
+            wasmparser::CanonicalOption::CoreType(ty) => {
+                // TODO(pauls): Figure out what we do with this option
+                ret.core_type = Some(crate::module::types::TypeIndex::from_u32(*ty));
+            }
         }
     }
     ret
@@ -986,7 +1009,9 @@ fn alias_module_instance_export(
     name: &str,
 ) -> LocalInitializer<'_> {
     match kind {
-        wasmparser::ExternalKind::Func => LocalInitializer::AliasExportFunc(instance, name),
+        wasmparser::ExternalKind::Func | wasmparser::ExternalKind::FuncExact => {
+            LocalInitializer::AliasExportFunc(instance, name)
+        }
         wasmparser::ExternalKind::Memory => LocalInitializer::AliasExportMemory(instance, name),
         wasmparser::ExternalKind::Table => LocalInitializer::AliasExportTable(instance, name),
         wasmparser::ExternalKind::Global => LocalInitializer::AliasExportGlobal(instance, name),

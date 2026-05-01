@@ -107,7 +107,7 @@ pub fn test_basic_wallet_p2id() {
         chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
     expect!["3216"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["20211"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
+    expect!["20072"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -127,12 +127,12 @@ pub fn test_basic_wallet_p2id() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx(&mut chain, alice_tx_context_builder);
-    expect!["25232"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["26217"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let consume_tx_context_builder = chain.build_tx_context(bob_id, &[bob_note.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["20211"].assert_eq(note_cycles(&tx_measurements, bob_note.id()));
+    expect!["20072"].assert_eq(note_cycles(&tx_measurements, bob_note.id()));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -257,7 +257,7 @@ pub fn test_basic_wallet_p2ide() {
     let consume_tx_context_builder =
         chain.build_tx_context(bob_id, &[p2ide_note.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["20686"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
+    expect!["21211"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
 
     // Step 5: verify balances
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -382,7 +382,7 @@ pub fn test_basic_wallet_p2ide_reclaim() {
     let reclaim_tx_context_builder =
         chain.build_tx_context(alice_id, &[p2ide_note.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, reclaim_tx_context_builder);
-    expect!["21699"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
+    expect!["22871"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();
