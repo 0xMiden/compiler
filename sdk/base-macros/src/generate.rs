@@ -10,7 +10,10 @@ use syn::{
     spanned::Spanned,
     visit_mut::VisitMut,
 };
-use wit_bindgen_core::wit_parser::{PackageId, Resolve, UnresolvedPackageGroup};
+use wit_bindgen_core::{
+    WorldGenerator,
+    wit_parser::{PackageId, Resolve, UnresolvedPackageGroup},
+};
 use wit_bindgen_rust::{Opts, WithOption};
 
 use crate::manifest_paths;
@@ -170,7 +173,7 @@ fn generate_bindings(
 ) -> Result<TokenStream2, Error> {
     let inline_src = args.inline.as_ref().map(|src| src.value());
     let inline_ref = inline_src.as_deref();
-    let wit_sources = load_wit_sources(&config.paths, inline_ref)?;
+    let mut wit_sources = load_wit_sources(&config.paths, inline_ref)?;
 
     let world_id = wit_sources
         .resolve
@@ -189,7 +192,7 @@ fn generate_bindings(
     let mut generated_files = wit_bindgen_core::Files::default();
     let mut generator = opts.build();
     generator
-        .generate(&wit_sources.resolve, world_id, &mut generated_files)
+        .generate(&mut wit_sources.resolve, world_id, &mut generated_files)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
 
     let (_, src_bytes) = generated_files

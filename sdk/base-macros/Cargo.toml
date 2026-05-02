@@ -24,8 +24,8 @@ syn.workspace = true
 heck.workspace = true
 miden-formatting.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
-wit-bindgen-core = "0.46"
-wit-bindgen-rust = { version = "0.46", default-features = false }
+wit-bindgen-core = "0.57"
+wit-bindgen-rust = { version = "0.57", default-features = false }
 
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging

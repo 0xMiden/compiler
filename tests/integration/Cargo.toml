@@ -25,7 +25,7 @@ miden-mast-package.workspace = true
 miden-protocol = { workspace = true, features = ["std"] }
 miden-standards = { workspace = true, features = ["std"] }
 miden-processor.workspace = true
-miden-debug = { workspace = true, features = ["proptest"] }
+miden-debug = { workspace = true, features = ["proptest", "tui"] }
 midenc-dialect-arith.workspace = true
 midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true
@@ -39,7 +39,7 @@ midenc-session.workspace = true
 midenc-compile.workspace = true
 num-traits = "0.2"
 cargo-miden.workspace = true
-wasmprinter = "0.227"
+wasmprinter.workspace = true
 proptest.workspace = true
 sha2 = "0.11"
 walkdir = "2.5.0"

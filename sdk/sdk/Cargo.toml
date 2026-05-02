@@ -22,7 +22,7 @@ miden-base-macros = { version = "0.12.0", path = "../base-macros" }
 miden-base-sys = { version = "0.12.0", path = "../base-sys" }
 miden-field-repr = { version = "0.12.0", path = "../field-repr/repr" }
 miden-field.workspace = true
-wit-bindgen = { version = "0.46", default-features = false, features = ["macros"] }
+wit-bindgen = { version = "0.57", default-features = false, features = ["macros"] }
 
 [features]
 default = []

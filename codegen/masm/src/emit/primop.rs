@@ -265,6 +265,26 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    /// Emit a `println` trace that can be handled by the debug executor.
+    pub fn println(&mut self, span: SourceSpan) {
+        // Don't `pop` operands as the debug executor reads them from the stack to handle printing.
+        let ptr = &self.stack[0];
+        let len = &self.stack[1];
+
+        assert_eq!(
+            ptr.ty(),
+            Type::from(midenc_hir::PointerType::new(Type::U8)),
+            "expected println pointer operand to be a ptr<u8>"
+        );
+        assert_eq!(len.ty(), Type::U32, "expected println length operand to be a u32");
+
+        self.emit(masm::Instruction::Trace(TraceEvent::PrintLn.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+
+        // Clean up the stack after the debug executor handled printing.
+        self.dropn(2, span);
+    }
+
     /// Execute the given procedure.
     ///
     /// A function called using this operation is invoked in the same memory context as the caller.

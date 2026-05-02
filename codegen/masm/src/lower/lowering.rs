@@ -963,6 +963,13 @@ impl HirLowering for hir::MemCpy {
     }
 }
 
+impl HirLowering for hir::PrintLn {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).println(self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for cf::Select {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).select(self.span());
