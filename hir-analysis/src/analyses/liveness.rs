@@ -8,6 +8,7 @@ use midenc_hir::{
     RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Spanned, SymbolTable, ValueRef,
     dominance::DominanceInfo,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
+    traits::Transparent,
 };
 
 pub use self::next_use_set::NextUseSet;
@@ -360,9 +361,14 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
             temp_live_in.remove(result);
         }
 
-        // Set the next-use distance of any operands to 0
-        for operand in op.operands().all().iter() {
-            temp_live_in.insert(operand.borrow().as_value_ref(), 0);
+        // Set the next-use distance of any operands to 0.
+        //
+        // Ignore transparent operations, as such operations are purely informational, and are not
+        // considered to keep their operands live.
+        if !op.implements::<dyn Transparent>() {
+            for operand in op.operands().all().iter() {
+                temp_live_in.insert(operand.borrow().as_value_ref(), 0);
+            }
         }
 
         // Determine if the state has changed, if so, then overwrite `live_in` with what we've

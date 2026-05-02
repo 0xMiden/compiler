@@ -10,7 +10,7 @@ pub use self::{
     stack::StackOperand,
 };
 use super::*;
-use crate::{DynHash, DynPartialEq, PartialEqable, any::AsAny, interner};
+use crate::{DynHash, DynPartialEq, PartialEqable, any::AsAny, interner, traits::Transparent};
 
 /// A unique identifier for a [Value] in the IR
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -174,6 +174,13 @@ pub trait Value:
     fn is_used_outside_of_block(&self, block: &BlockRef) -> bool {
         self.iter_uses()
             .any(|user| user.owner.parent().is_some_and(|blk| !BlockRef::ptr_eq(&blk, block)))
+    }
+    /// Returns true if this value has at least one user that is not a debug info op
+    fn has_real_uses(&self) -> bool {
+        // The value is used so long as at least one using op is not Transparent
+        self.uses()
+            .iter()
+            .any(|user| !user.owner.borrow().implements::<dyn Transparent>())
     }
     /// Replace all uses of `self` with `replacement`
     fn replace_all_uses_with(&mut self, mut replacement: ValueRef) {

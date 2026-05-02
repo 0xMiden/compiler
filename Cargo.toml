@@ -75,6 +75,7 @@ inventory = "0.3"
 litcheck = { package = "litcheck-core", version = "0.4" }
 litcheck-filecheck = "0.4"
 log = { version = "0.4", features = ["kv"] }
+env_logger = "0.11"
 
 # Miden Dependencies
 miden-assembly = { version = "0.22", default-features = false }
@@ -173,9 +174,9 @@ miden-field = { version = "^0.25" }
 #miden-processor = { path = "../miden-vm/processor" }
 #miden-mast-package = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-mast-package = { path = "../miden-vm/package" }
-# miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
-# miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
-# miden-tx        = { tag = "v0.14.0-beta.4", git = "https://github.com/0xMiden/miden-base" }
+#miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
+#miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
+#miden-tx = { tag = "v0.14.0-beta.4", git = "https://github.com/0xMiden/miden-base" }
 
 [profile.dev]
 lto = false

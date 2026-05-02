@@ -436,6 +436,7 @@ dependencies = ["cargo-miden"]
 category = "Test"
 description = "Runs the lit/filecheck test suite"
 command = "litcheck"
+env = { MIDENC_BIN_DIR = "${MIDENC_BIN_DIR}" }
 args = [
     "lit",
     "run",
@@ -444,7 +445,7 @@ args = [
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin",
     "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit",
 ]
-dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt"]
+dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-objtool"]
 
 [tasks.lit]
 category = "Test"
@@ -455,7 +456,7 @@ args = [
     "lit",
     "${@}",
 ]
-dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt"]
+dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-objtool"]
 
 
 [tasks.litcheck]

@@ -115,9 +115,9 @@ impl BlockEmitter<'_> {
         // operand stack space on operands that will never be used.
         //self.drop_unused_operands_at(op);
 
-        let lowering = op.as_trait::<dyn HirLowering>().unwrap_or_else(|| {
-            panic!("illegal operation: no lowering has been defined for '{}'", op.name())
-        });
+        let Some(lowering) = op.as_trait::<dyn HirLowering>() else {
+            panic!("illegal operation: no lowering has been defined for '{}'", op.name());
+        };
 
         // Schedule operands for this instruction
         lowering

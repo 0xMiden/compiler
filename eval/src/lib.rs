@@ -19,7 +19,10 @@ use midenc_dialect_hir as hir;
 use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
-use midenc_hir::{dialects::builtin, inventory};
+use midenc_hir::{
+    dialects::{builtin, debuginfo},
+    inventory,
+};
 
 pub use self::{
     eval::{ControlFlowEffect, Eval, Initialize},
@@ -47,6 +50,9 @@ inventory::submit!(::midenc_hir::DialectRegistrationHookInfo::new::<hir::HirDial
 ));
 inventory::submit!(::midenc_hir::DialectRegistrationHookInfo::new::<wasm::WasmDialect>(
     eval_wasm_dialect
+));
+inventory::submit!(::midenc_hir::DialectRegistrationHookInfo::new::<debuginfo::DebugInfoDialect>(
+    eval_debuginfo_dialect
 ));
 
 fn eval_builtin_dialect(info: &mut ::midenc_hir::DialectInfo) {
@@ -154,4 +160,8 @@ fn eval_wasm_dialect(info: &mut ::midenc_hir::DialectInfo) {
     info.register_operation_trait::<wasm::I64Load8S, dyn Eval>();
     info.register_operation_trait::<wasm::I64Load16S, dyn Eval>();
     info.register_operation_trait::<wasm::I64Load32S, dyn Eval>();
+}
+
+fn eval_debuginfo_dialect(info: &mut ::midenc_hir::DialectInfo) {
+    info.register_operation_trait::<debuginfo::DebugValue, dyn Eval>();
 }

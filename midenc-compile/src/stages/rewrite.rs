@@ -108,6 +108,14 @@ impl Stage for ApplyRewritesStage {
         log::trace!(target: "driver", "after rewrites: {}", input.world.borrow().as_operation());
         log::debug!(target: "driver", "rewrites successful");
 
+        // Emit HIR if requested
+        let session = context.session();
+        if session.should_emit(midenc_session::OutputType::Hir) {
+            session
+                .emit(midenc_session::OutputMode::Text, &*input.component.borrow())
+                .into_diagnostic()?;
+        }
+
         if context.session().rewrite_only() {
             log::debug!(target: "driver", "stopping compiler early (rewrite-only=true)");
             Err(CompilerStopped.into())

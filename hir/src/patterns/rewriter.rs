@@ -6,10 +6,11 @@ use smallvec::SmallVec;
 
 use crate::{
     BlockRef, Builder, Context, InsertionGuard, Listener, ListenerType, OpBuilder, OpOperandImpl,
-    OperationRef, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan, Usable,
+    OperationRef, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan, Usable, Value,
     ValueRef,
     formatter::{DisplayOptional, DisplayValues},
     patterns::Pattern,
+    traits::Transparent,
 };
 
 /// A [Rewriter] is a [Builder] extended with additional functionality that is of primary use when
@@ -51,7 +52,24 @@ pub trait Rewriter: Builder + RewriterListener {
 
     /// This method erases an operation that is known to have no uses.
     fn erase_op(&mut self, mut op: OperationRef) {
-        assert!(!op.borrow().is_used(), "expected op to have no uses");
+        // Assert `op` has no real uses, and erase any transparent users as they are now dead
+        {
+            let op = op.borrow();
+            for result in op.results().iter() {
+                let result = result.borrow();
+                for user in result.iter_uses() {
+                    log::info!(target: "erase_op", "{}", user.owner.borrow());
+                }
+                assert!(!result.has_real_uses(), "expected op to have no real uses");
+                // If there are remaining uses, they must be transparent, so remove them
+                for user in result.iter_uses() {
+                    let owner = user.owner;
+                    drop(user);
+                    assert!(owner.borrow().implements::<dyn Transparent>());
+                    self.erase_op(owner);
+                }
+            }
+        }
 
         // If no listener is attached, the op can be dropped all at once.
         if !self.has_listener() {
