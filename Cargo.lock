@@ -3024,46 +3024,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-integration-tests"
-version = "0.8.1"
-dependencies = [
- "anyhow",
- "blake3",
- "cargo-miden",
- "cargo-util",
- "concat-idents",
- "filetime",
- "glob",
- "log",
- "miden-assembly",
- "miden-core",
- "miden-core-lib",
- "miden-debug 0.7.0",
- "miden-mast-package",
- "miden-processor",
- "miden-protocol",
- "miden-standards",
- "midenc-codegen-masm",
- "midenc-compile",
- "midenc-dialect-arith",
- "midenc-dialect-cf",
- "midenc-dialect-hir",
- "midenc-dialect-scf",
- "midenc-dialect-wasm",
- "midenc-expect-test",
- "midenc-frontend-wasm",
- "midenc-hir",
- "midenc-hir-eval",
- "midenc-integration-test-support",
- "midenc-session",
- "num-traits",
- "proptest",
- "sha2 0.11.0",
- "walkdir",
- "wasmprinter",
-]
-
-[[package]]
 name = "miden-mast-package"
 version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3823,7 +3783,6 @@ dependencies = [
  "miden-standards",
  "midenc-codegen-masm",
  "midenc-compile",
- "midenc-dialect-hir",
  "midenc-expect-test",
  "midenc-frontend-wasm",
  "midenc-hir",
@@ -3832,6 +3791,36 @@ dependencies = [
  "sha2 0.11.0",
  "walkdir",
  "wasmprinter",
+]
+
+[[package]]
+name = "midenc-integration-tests"
+version = "0.8.1"
+dependencies = [
+ "blake3",
+ "concat-idents",
+ "log",
+ "miden-assembly",
+ "miden-core",
+ "miden-debug 0.7.0",
+ "miden-mast-package",
+ "miden-processor",
+ "miden-protocol",
+ "miden-standards",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
+ "midenc-dialect-hir",
+ "midenc-dialect-scf",
+ "midenc-dialect-wasm",
+ "midenc-expect-test",
+ "midenc-frontend-wasm",
+ "midenc-hir",
+ "midenc-hir-eval",
+ "midenc-integration-test-support",
+ "midenc-session",
+ "num-traits",
+ "proptest",
+ "sha2 0.11.0",
 ]
 
 [[package]]

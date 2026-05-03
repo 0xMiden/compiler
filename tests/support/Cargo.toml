@@ -11,6 +11,10 @@ readme.workspace = true
 edition.workspace = true
 publish = false
 
+[lib]
+test = false
+doctest = false
+
 [dependencies]
 anyhow.workspace = true
 cargo-util = "0.2"
@@ -25,7 +29,6 @@ miden-protocol = { workspace = true, features = ["std"] }
 miden-standards = { workspace = true, features = ["std"] }
 miden-processor.workspace = true
 miden-debug = { workspace = true, features = ["proptest", "tui"] }
-midenc-dialect-hir.workspace = true
 midenc-expect-test.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-hir = { workspace = true, features = ["logging"] }
