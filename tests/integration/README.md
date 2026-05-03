@@ -1,4 +1,4 @@
-# miden-integration-tests
+# midenc-integration-tests
 
 This crate contains all of the integration tests for the Miden compiler, specifically integration tests that use Rust source code as the input, so that we can validate the entire compiler pipeline from Rust through to execution of the assembled Miden artifacts.
 

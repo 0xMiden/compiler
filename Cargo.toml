@@ -158,7 +158,6 @@ midenc-log = { version = "0.8.1", path = "midenc-log", features = ["kv"] }
 midenc-session = { version = "0.8.1", path = "midenc-session" }
 cargo-miden = { version = "0.8.1", path = "tools/cargo-miden" }
 midenc-integration-test-support = { path = "tests/support" }
-miden-integration-tests = { path = "tests/integration" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-field = { version = "^0.25" }
 
