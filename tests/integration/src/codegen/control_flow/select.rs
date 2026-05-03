@@ -176,5 +176,3 @@ fn select_i128() {
         ],
     );
 }
-
-mod switch;

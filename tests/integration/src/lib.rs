@@ -10,4 +10,4 @@ pub use midenc_integration_test_support::{
 #[cfg(test)]
 mod codegen;
 #[cfg(test)]
-mod rust_masm_tests;
+mod rust_pipeline;

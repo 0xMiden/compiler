@@ -6,8 +6,10 @@ use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, FunctionBuilder},
 };
 
-use super::{compile_test_module, eval_package};
-use crate::{CompilerTest, testing::setup};
+use crate::{
+    CompilerTest,
+    testing::{compile_test_module, eval_package, setup},
+};
 
 /// Shared builder type used by the switch execution fixtures in this module.
 type TestFunctionBuilder<'a> = FunctionBuilder<'a, OpBuilder>;
