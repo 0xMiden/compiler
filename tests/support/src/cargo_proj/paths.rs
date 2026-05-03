@@ -1,3 +1,4 @@
+//! This module provides conveniences for managing paths in a Cargo project
 use std::{
     fs,
     io::{self, ErrorKind},
@@ -6,22 +7,29 @@ use std::{
 
 use filetime::FileTime;
 
+/// Common actions performed on Cargo project paths
 pub trait CargoPathExt {
+    /// Remove the file or directory this path refers to
     fn rm_rf(&self);
+
+    /// Create the directory this path refers to, including any missing ancestors
     fn mkdir_p(&self);
 
     /// Returns a list of all files and directories underneath the given
     /// directory, recursively, including the starting path.
     fn ls_r(&self) -> Vec<PathBuf>;
 
+    /// Modify the mtime of this file or directory, moving it into the past by an hour
     fn move_into_the_past(&self) {
         self.move_in_time(|sec, nsec| (sec - 3600, nsec))
     }
 
+    /// Modify the mtime of this file or directory, moving it into the future by an hour
     fn move_into_the_future(&self) {
         self.move_in_time(|sec, nsec| (sec + 3600, nsec))
     }
 
+    /// Modify the mtime of this file or directory, setting it to the result of `travel_amount`
     fn move_in_time<F>(&self, travel_amount: F)
     where
         F: Fn(i64, u32) -> (i64, u32);
@@ -148,6 +156,7 @@ pub fn get_lib_filename(name: &str, kind: &str) -> String {
     format!("{prefix}{name}.{extension}")
 }
 
+/// Get the prefix given to artifact file names, based on the crate type (e.g. `rlib`, `dylib`)
 pub fn get_lib_prefix(kind: &str) -> &str {
     match kind {
         "lib" | "rlib" => "lib",
@@ -158,10 +167,11 @@ pub fn get_lib_prefix(kind: &str) -> &str {
                 "lib"
             }
         }
-        _ => unreachable!(),
+        other => unreachable!("unsupported crate type '{other}'"),
     }
 }
 
+/// Get the extension given to artifact file names, based on the crate type (e.g. `rlib`, `dylib`)
 pub fn get_lib_extension(kind: &str) -> &str {
     match kind {
         "lib" | "rlib" => "rlib",
@@ -181,6 +191,6 @@ pub fn get_lib_extension(kind: &str) -> &str {
                 "so"
             }
         }
-        _ => unreachable!(),
+        other => unreachable!("unsupported crate type '{other}'"),
     }
 }

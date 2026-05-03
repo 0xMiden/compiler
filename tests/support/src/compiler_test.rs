@@ -954,11 +954,13 @@ fn stdlib_sys_crate_path() -> PathBuf {
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("stdlib-sys")
 }
 
+/// Get the path to the `miden-sdk-alloc` crate
 pub fn sdk_alloc_crate_path() -> PathBuf {
     let cwd = std::env::current_dir().unwrap();
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("alloc")
 }
 
+/// Get the path to the `miden-sdk` crate
 pub fn sdk_crate_path() -> PathBuf {
     let cwd = std::env::current_dir().unwrap();
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("sdk")

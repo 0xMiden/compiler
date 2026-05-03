@@ -1,6 +1,7 @@
 //! Shared support infrastructure for integration tests.
 #![feature(debug_closure_helpers)]
 #![deny(warnings)]
+#![deny(missing_docs)]
 
 /// Utilities for generating on-disk Cargo projects for tests.
 pub mod cargo_proj;

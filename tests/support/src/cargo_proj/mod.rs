@@ -28,7 +28,10 @@ macro_rules! t {
     };
 }
 
+/// Panics with `err`, printing the error chain and cause.
 #[track_caller]
+#[inline(never)]
+#[cold]
 pub fn panic_error(what: &str, err: impl Into<anyhow::Error>) -> ! {
     let err = err.into();
     pe(what, err);
@@ -537,17 +540,20 @@ pub fn project(proj_folder_name: &str) -> ProjectBuilder {
 
 /// This is the raw output from the process.
 ///
-/// This is similar to `std::process::Output`, however the `status` is
-/// translated to the raw `code`. This is necessary because `ProcessError`
-/// does not have access to the raw `ExitStatus` because `ProcessError` needs
-/// to be serializable (for the Rustc cache), and `ExitStatus` does not
-/// provide a constructor.
+/// This is similar to `std::process::Output`, however the `status` is translated to the raw `code`.
+/// This is necessary because `ProcessError` does not have access to the raw `ExitStatus` because
+/// `ProcessError` needs to be serializable (for the Rustc cache), and `ExitStatus` does not provide
+/// a constructor.
 pub struct RawOutput {
+    /// The exit code, if known
     pub code: Option<i32>,
+    /// The contents of what was printed to stdout
     pub stdout: Vec<u8>,
+    /// The contents of what was printed to stderr
     pub stderr: Vec<u8>,
 }
 
+/// Creates a basic package manifest for a crate named `name` of version `version`
 pub fn basic_manifest(name: &str, version: &str) -> String {
     format!(
         r#"
@@ -560,35 +566,33 @@ pub fn basic_manifest(name: &str, version: &str) -> String {
     )
 }
 
+/// Creates a basic package manifest for a binary crate named `name`
 pub fn basic_bin_manifest(name: &str) -> String {
     format!(
         r#"
         [package]
-
         name = "{name}"
         version = "0.5.0"
         authors = ["wycats@example.com"]
         edition = "2024"
 
         [[bin]]
-
         name = "{name}"
     "#
     )
 }
 
+/// Creates a basic package manifest for a library crate named `name`
 pub fn basic_lib_manifest(name: &str) -> String {
     format!(
         r#"
         [package]
-
         name = "{name}"
         version = "0.5.0"
         authors = ["wycats@example.com"]
         edition = "2024"
 
         [lib]
-
         name = "{name}"
     "#
     )
@@ -634,6 +638,9 @@ pub fn rustc_host_env() -> String {
     rustc_host().to_uppercase().replace('-', "_")
 }
 
+/// Returns true if the current `rustc` is a nightly or not.
+///
+/// If `CARGO_TEST_DISABLE_NIGHTLY` is set, this returns false
 pub fn is_nightly() -> bool {
     let vv = &rustc_info().verbose_version;
     // CARGO_TEST_DISABLE_NIGHTLY is set in rust-lang/rust's CI so that all
