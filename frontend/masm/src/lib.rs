@@ -106,6 +106,8 @@ fn masm_module_path_from_file(path: &Path) -> Result<miden_assembly_syntax::Path
 mod tests {
     use std::rc::Rc;
 
+    use midenc_dialect_arith::Incr as ArithIncr;
+    use midenc_dialect_scf::{If, While};
     use midenc_hir::{
         SymbolName, SymbolTable, Type,
         dialects::builtin::{self, Function},
@@ -184,6 +186,101 @@ end
     }
 
     #[test]
+    fn lifts_if_to_scf_if() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc choose(cond: u8) -> felt
+    if.true
+        push.1
+    else
+        push.2
+    end
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "choose");
+        assert_eq!(top_level_op_count::<If>(function), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_repeat_by_unrolling() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc inc3(a: felt) -> felt
+    repeat.3
+        add.1
+    end
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "inc3");
+        assert_eq!(top_level_op_count::<ArithIncr>(function), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_while_to_scf_while() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc loop_once(cond: u8) -> felt
+    while.true
+        push.0
+    end
+    push.7
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "loop_once");
+        assert_eq!(top_level_op_count::<While>(function), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_if_branch_stack_shape_mismatch() {
+        let context = Rc::new(Context::default());
+        let result = disassemble_source(
+            r#"
+pub proc bad(cond: u8) -> felt
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        );
+        let err = match result {
+            Ok(_) => panic!("expected disassembly to reject mismatched branch stack depths"),
+            Err(err) => err,
+        };
+
+        assert!(err.to_string().contains("if branches leave different stack depths"));
+    }
+
+    #[test]
     fn rejects_indirect_recursion() {
         let context = Rc::new(Context::default());
         let result = disassemble_source(
@@ -227,5 +324,16 @@ end
         }
 
         panic!("expected function '{name}'");
+    }
+
+    fn top_level_op_count<T: midenc_hir::Op + 'static>(function: builtin::FunctionRef) -> usize {
+        function
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .filter(|op| op.is::<T>())
+            .count()
     }
 }

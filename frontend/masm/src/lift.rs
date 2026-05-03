@@ -8,9 +8,10 @@ use miden_assembly_syntax::{
 };
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
-    AsSymbolRef, Builder, Context, Ident, Op as HirOp, OpBuilder, ProgramPoint, SymbolTable, Type,
-    ValueRef, Visibility,
+    AsSymbolRef, BlockRef, Builder, Context, Ident, Op as HirOp, OpBuilder, OperationRef,
+    ProgramPoint, SymbolTable, Type, ValueRef, Visibility,
     dialects::builtin::{
         BuiltinOpBuilder, FunctionBuilder, FunctionRef,
         attributes::{LocalVariable, Signature},
@@ -230,9 +231,18 @@ impl<'a> ProcedureLifter<'a> {
         for op in block.iter() {
             match op {
                 Op::Inst(inst) => self.lift_instruction(inst.inner(), inst.span(), builder)?,
-                Op::If { .. } => todo!("lift MASM if/else to scf.if"),
-                Op::While { .. } => todo!("lift MASM while to scf.while"),
-                Op::Repeat { .. } => todo!("lift MASM repeat to scf loop"),
+                Op::If {
+                    span,
+                    then_blk,
+                    else_blk,
+                } => self.lift_if(then_blk, else_blk, *span, builder)?,
+                Op::While { span, body } => self.lift_while(body, *span, builder)?,
+                Op::Repeat { count, body, .. } => {
+                    let count = immediate_u32(count)?;
+                    for _ in 0..count {
+                        self.lift_block(body, builder)?;
+                    }
+                }
             }
         }
         Ok(())
@@ -628,6 +638,108 @@ impl<'a> ProcedureLifter<'a> {
         }
     }
 
+    fn lift_if(
+        &mut self,
+        then_blk: &Block,
+        else_blk: &Block,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let cond = self.pop(span)?;
+        let cond = self.cast(builder, cond.value, Type::I1, span)?;
+        let input_stack = self.stack.clone();
+
+        let if_op = builder.r#if(cond, &[], span)?;
+        let if_ref = if_op.as_operation_ref();
+        builder.builder_mut().set_insertion_point_after(if_ref);
+
+        let then_region = { if_op.borrow().then_body().as_region_ref() };
+        let then_block = builder.create_block_in_region(then_region);
+        builder.switch_to_block(then_block);
+        self.stack = input_stack.clone();
+        self.lift_block(then_blk, builder)?;
+        let then_stack = self.stack.clone();
+
+        let else_region = { if_op.borrow().else_body().as_region_ref() };
+        let else_block = builder.create_block_in_region(else_region);
+        builder.switch_to_block(else_block);
+        self.stack = input_stack;
+        self.lift_block(else_blk, builder)?;
+        let else_stack = self.stack.clone();
+
+        if then_stack.len() != else_stack.len() {
+            return Err(error::error(format!(
+                "if branches leave different stack depths at {span:?}: then={}, else={}",
+                then_stack.len(),
+                else_stack.len()
+            )));
+        }
+
+        let result_types = stack_types(&then_stack);
+        append_results(builder, if_ref, &result_types, span);
+
+        builder.switch_to_block(then_block);
+        let yielded = self.cast_stack_to_types(builder, &then_stack, &result_types, span)?;
+        builder.r#yield(yielded, span)?;
+
+        builder.switch_to_block(else_block);
+        let yielded = self.cast_stack_to_types(builder, &else_stack, &result_types, span)?;
+        builder.r#yield(yielded, span)?;
+
+        builder.builder_mut().set_insertion_point_after(if_ref);
+        self.stack = op_results_as_stack(if_ref, span);
+        Ok(())
+    }
+
+    fn lift_while(
+        &mut self,
+        body: &Block,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        self.require_depth(0, span)?;
+
+        let init_stack = self.stack.clone();
+        let init_types = stack_types(&init_stack);
+        let result_types = init_types[..init_types.len() - 1].to_vec();
+        let inits = init_stack.iter().map(|value| value.value);
+
+        let while_op = builder.r#while(inits, &result_types, span)?;
+        let while_ref = while_op.as_operation_ref();
+        builder.builder_mut().set_insertion_point_after(while_ref);
+
+        let before_block =
+            { while_op.borrow().before().entry_block_ref().expect("scf.while before block") };
+        builder.switch_to_block(before_block);
+        self.stack = stack_from_block_args(before_block);
+        let cond = self.pop(span)?;
+        let cond = self.cast(builder, cond.value, Type::I1, span)?;
+        let forwarded =
+            self.cast_stack_to_types(builder, &self.stack.clone(), &result_types, span)?;
+        builder.condition(cond, forwarded, span)?;
+
+        let after_block =
+            { while_op.borrow().after().entry_block_ref().expect("scf.while after block") };
+        builder.switch_to_block(after_block);
+        self.stack = stack_from_block_args(after_block);
+        self.lift_block(body, builder)?;
+
+        if self.stack.len() != init_types.len() {
+            return Err(error::error(format!(
+                "while body must leave {} value(s) for the next iteration at {span:?}, but left {}",
+                init_types.len(),
+                self.stack.len()
+            )));
+        }
+
+        let yielded = self.cast_stack_to_types(builder, &self.stack.clone(), &init_types, span)?;
+        builder.r#yield(yielded, span)?;
+
+        builder.builder_mut().set_insertion_point_after(while_ref);
+        self.stack = op_results_as_stack(while_ref, span);
+        Ok(())
+    }
+
     fn push_immediate(
         &mut self,
         value: PushValue,
@@ -862,6 +974,28 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn cast_stack_to_types(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        stack: &[StackValue],
+        types: &[Type],
+        span: SourceSpan,
+    ) -> Result<Vec<ValueRef>> {
+        if stack.len() != types.len() {
+            return Err(error::error(format!(
+                "cannot cast stack of depth {} to {} type(s) at {span:?}",
+                stack.len(),
+                types.len()
+            )));
+        }
+
+        stack
+            .iter()
+            .zip(types.iter())
+            .map(|(value, ty)| self.cast(builder, value.value, ty.clone(), span))
+            .collect()
+    }
+
     fn cast(
         &mut self,
         builder: &mut FunctionBuilder<'_, OpBuilder>,
@@ -975,4 +1109,56 @@ enum InvokeKind {
     Exec,
     Call,
     Syscall,
+}
+
+fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {
+    match immediate {
+        Immediate::Value(value) => Ok(value.into_inner()),
+        Immediate::Constant(name) => Err(error::error(format!(
+            "unresolved repeat count constant '{name}' is not supported during disassembly"
+        ))),
+    }
+}
+
+fn stack_types(stack: &[StackValue]) -> Vec<Type> {
+    stack.iter().map(|value| value.value.borrow().ty().clone()).collect()
+}
+
+fn stack_from_block_args(block: BlockRef) -> Vec<StackValue> {
+    block
+        .borrow()
+        .arguments()
+        .iter()
+        .map(|arg| StackValue {
+            value: *arg as ValueRef,
+            span: arg.borrow().span(),
+        })
+        .collect()
+}
+
+fn append_results(
+    builder: &mut FunctionBuilder<'_, OpBuilder>,
+    mut owner: OperationRef,
+    result_types: &[Type],
+    span: SourceSpan,
+) {
+    let context = builder.builder().context();
+    let mut owner_mut = owner.borrow_mut();
+    for result_ty in result_types {
+        let result = context.make_result(span, result_ty.clone(), owner, 0);
+        owner_mut.results_mut().push(result);
+    }
+}
+
+fn op_results_as_stack(owner: OperationRef, span: SourceSpan) -> Vec<StackValue> {
+    owner
+        .borrow()
+        .results()
+        .all()
+        .iter()
+        .map(|result| StackValue {
+            value: result.borrow().as_value_ref(),
+            span,
+        })
+        .collect()
 }

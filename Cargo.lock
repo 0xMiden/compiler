@@ -3593,6 +3593,7 @@ dependencies = [
  "miden-project",
  "midenc-dialect-arith",
  "midenc-dialect-hir",
+ "midenc-dialect-scf",
  "midenc-hir",
  "rustc-hash",
 ]
