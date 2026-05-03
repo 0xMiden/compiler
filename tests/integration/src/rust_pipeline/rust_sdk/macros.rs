@@ -6,7 +6,7 @@ use super::*;
 fn component_macros_account_and_note() {
     let config = WasmTranslationConfig::default();
     let mut account = CompilerTest::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/component-macros-account",
+        "../fixtures/components/component-macros-account",
         config.clone(),
         [],
     );
@@ -32,7 +32,7 @@ fn component_macros_account_and_note() {
     );
 
     //    let builder = CompilerTestBuilder::rust_source_cargo_miden(
-    //        "../rust-apps-wasm/rust-sdk/component-macros-note",
+    //        "../fixtures/components/component-macros-note",
     //        config,
     //        [],
     //    assert!(

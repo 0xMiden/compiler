@@ -13,7 +13,7 @@ fn test_rust_assert_macro_source_location_with_debug_executor() {
     let config = WasmTranslationConfig::default();
 
     let mut test = CompilerTest::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/assert-debug-test",
+        "../fixtures/components/assert-debug-test",
         config,
         [],
     );

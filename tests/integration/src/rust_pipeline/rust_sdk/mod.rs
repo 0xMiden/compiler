@@ -141,7 +141,7 @@ impl Note {
 fn rust_sdk_invalid_stack_offset_movup_16_issue_831() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/issue-invalid-stack-offset-movup",
+        "../fixtures/components/issue-invalid-stack-offset-movup",
         config,
         [],
     );
@@ -155,7 +155,7 @@ fn rust_sdk_invalid_stack_offset_movup_16_issue_831() {
 fn rust_sdk_cross_ctx_account_and_note() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/cross-ctx-account",
+        "../fixtures/components/cross-ctx-account",
         config.clone(),
         [],
     );
@@ -188,7 +188,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/cross-ctx-note",
+        "../fixtures/components/cross-ctx-note",
         config,
         [],
     );
@@ -209,7 +209,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
 fn rust_sdk_cross_ctx_account_and_note_word() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/cross-ctx-account-word",
+        "../fixtures/components/cross-ctx-account-word",
         config.clone(),
         [],
     );
@@ -236,7 +236,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/cross-ctx-note-word",
+        "../fixtures/components/cross-ctx-note-word",
         config,
         [],
     );
@@ -257,7 +257,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
 fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/cross-ctx-account-word-arg",
+        "../fixtures/components/cross-ctx-account-word-arg",
         config.clone(),
         [],
     );
@@ -281,7 +281,7 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
-        "../rust-apps-wasm/rust-sdk/cross-ctx-note-word-arg",
+        "../fixtures/components/cross-ctx-note-word-arg",
         config,
         [],
     );
