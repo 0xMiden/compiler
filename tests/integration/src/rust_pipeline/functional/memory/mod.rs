@@ -1,2 +1,11 @@
-mod copy;
-mod set;
+mod copy_aligned_addresses_misaligned_count;
+mod copy_aligned_bytes;
+mod copy_multiword_fast_path;
+mod copy_u128_fast_path;
+mod copy_unaligned;
+mod copy_unaligned_dst;
+mod copy_unaligned_dst_short_count;
+mod copy_unaligned_zero_count;
+mod set_unaligned;
+mod set_unaligned_zero_count;
+mod support;
