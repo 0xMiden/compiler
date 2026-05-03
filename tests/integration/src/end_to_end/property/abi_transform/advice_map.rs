@@ -13,7 +13,7 @@ use midenc_session::STDLIB;
 use crate::CompilerTest;
 
 #[test]
-fn test_adv_load_preimage() {
+fn adv_load_preimage() {
     let main_fn = r#"
     (k0: Felt, k1: Felt, k2: Felt, k3: Felt) -> alloc::vec::Vec<Felt> {
         let key = Word::from([k0, k1, k2, k3]);

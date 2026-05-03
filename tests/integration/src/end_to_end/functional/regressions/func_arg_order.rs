@@ -5,7 +5,7 @@ use crate::{CompilerTest, testing::eval_package};
 
 #[ignore = "too fragile (depends on mem addrs), this bug is also covered by the test_hmerge test"]
 #[test]
-fn test_func_arg_order() {
+fn func_arg_order() {
     // This test reproduces the "swapped and frozen" function arguments issue
     // https://github.com/0xMiden/compiler/pull/576 discovered while working on hmerge VM op
     // The issue manifests in "intrinsic" function parameters being in the wrong order

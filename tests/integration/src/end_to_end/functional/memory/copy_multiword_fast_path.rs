@@ -1,7 +1,7 @@
 use super::support::assert_memory_test_returns_zero;
 
 #[test]
-fn test_memory_copy_multiword_fast_path() {
+fn memory_copy_multiword_fast_path() {
     let main_fn = r#"() -> Felt {
         struct Chunk([u128; 2]);
 

@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[test]
-fn test_hash_elements() {
+fn hash_elements() {
     let main_fn = r#"
 	    (input: alloc::vec::Vec<miden_stdlib_sys::Felt>) -> miden_stdlib_sys::Felt {
 	        let res = miden_stdlib_sys::hash_elements(input);

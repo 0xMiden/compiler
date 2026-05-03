@@ -12,7 +12,7 @@ use proptest::{
 use crate::{CompilerTest, testing::eval_package_with_advice_stack};
 
 #[test]
-fn test_pipe_double_words_to_memory() {
+fn pipe_double_words_to_memory() {
     let main_fn = r#"
         (h0: Felt, h1: Felt, h2: Felt, h3: Felt, num_words: Felt) -> Felt {
             let expected = Word::new([h0, h1, h2, h3]);

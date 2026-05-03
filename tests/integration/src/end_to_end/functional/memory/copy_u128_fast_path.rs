@@ -1,7 +1,7 @@
 use super::support::assert_memory_test_returns_zero;
 
 #[test]
-fn test_memory_copy_u128_fast_path() {
+fn memory_copy_u128_fast_path() {
     let main_fn = r#"() -> Felt {
         #[inline(never)]
         fn do_copy(dst: &mut [u128; 2], src: &[u128; 3]) {

@@ -118,7 +118,7 @@ where
 
 /// Tests the BLAKE3 hash helper exported by the Rust stdlib bindings.
 #[test]
-fn test_blake3_1to1_hash() {
+fn blake3_1to1_hash() {
     run_stdlib_hash_test(
         "abi_transform_stdlib_blake3_hash",
         "miden_stdlib_sys::blake3_hash(a)",
@@ -133,7 +133,7 @@ fn test_blake3_1to1_hash() {
 
 /// Tests the SHA-256 hash helper exported by the Rust stdlib bindings.
 #[test]
-fn test_sha256_1to1_hash() {
+fn sha256_1to1_hash() {
     run_stdlib_hash_test(
         "rust_sdk_stdlib_sha256_hash",
         "miden_stdlib_sys::sha256_hash(a)",
@@ -149,7 +149,7 @@ fn test_sha256_1to1_hash() {
 /// Tests the BLAKE3 hash helper (2-to-1) via the full compilation pipeline.
 #[test]
 #[ignore = "requires large stack frame; kept for reference"]
-fn test_blake3_merge() {
+fn blake3_merge() {
     run_stdlib_merge_test(
         "abi_transform_stdlib_blake3_merge",
         "miden_stdlib_sys::blake3_merge(a)",
@@ -165,7 +165,7 @@ fn test_blake3_merge() {
 /// Tests the SHA-256 hash helper (2-to-1) via the full compilation pipeline.
 #[test]
 #[ignore = "requires large stack frame; kept for reference"]
-fn test_sha256_merge() {
+fn sha256_merge() {
     run_stdlib_merge_test(
         "rust_sdk_stdlib_sha256_merge",
         "miden_stdlib_sys::sha256_merge(a)",

@@ -68,9 +68,9 @@ debug = false
 }
 
 #[test]
-fn rust_sdk_account_faucet_create_fungible_asset_binding() {
+fn account_faucet_create_fungible_asset_binding() {
     run_faucet_binding_test(
-        "rust_sdk_account_faucet_create_fungible_asset_binding",
+        "account_faucet_create_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
         faucet::create_fungible_asset(Felt::new(10).unwrap())
     }",
@@ -78,9 +78,9 @@ fn rust_sdk_account_faucet_create_fungible_asset_binding() {
 }
 
 #[test]
-fn rust_sdk_account_faucet_create_non_fungible_asset_binding() {
+fn account_faucet_create_non_fungible_asset_binding() {
     run_faucet_binding_test(
-        "rust_sdk_account_faucet_create_non_fungible_asset_binding",
+        "account_faucet_create_non_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
         let hash = Word::from([Felt::new(0).unwrap(); 4]);
         faucet::create_non_fungible_asset(hash)
@@ -89,9 +89,9 @@ fn rust_sdk_account_faucet_create_non_fungible_asset_binding() {
 }
 
 #[test]
-fn rust_sdk_account_faucet_mint_binding() {
+fn account_faucet_mint_binding() {
     run_faucet_binding_test(
-        "rust_sdk_account_faucet_mint_binding",
+        "account_faucet_mint_binding",
         "pub fn binding(&self) -> Asset {
         let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
          Word::from([Felt::new(0).unwrap(); 4]));
@@ -101,9 +101,9 @@ fn rust_sdk_account_faucet_mint_binding() {
 }
 
 #[test]
-fn rust_sdk_account_faucet_burn_binding() {
+fn account_faucet_burn_binding() {
     run_faucet_binding_test(
-        "rust_sdk_account_faucet_burn_binding",
+        "account_faucet_burn_binding",
         "pub fn binding(&self) -> Asset {
         let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
          Word::from([Felt::new(0).unwrap(); 4]));
@@ -113,9 +113,9 @@ fn rust_sdk_account_faucet_burn_binding() {
 }
 
 #[test]
-fn rust_sdk_account_faucet_mint_value_binding() {
+fn account_faucet_mint_value_binding() {
     run_faucet_binding_test(
-        "rust_sdk_account_faucet_mint_value_binding",
+        "account_faucet_mint_value_binding",
         "pub fn binding(&self) -> Word {
         let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
          Word::from([Felt::new(0).unwrap(); 4]));
@@ -125,9 +125,9 @@ fn rust_sdk_account_faucet_mint_value_binding() {
 }
 
 #[test]
-fn rust_sdk_account_faucet_burn_value_binding() {
+fn account_faucet_burn_value_binding() {
     run_faucet_binding_test(
-        "rust_sdk_account_faucet_burn_value_binding",
+        "account_faucet_burn_value_binding",
         "pub fn binding(&self) -> Word {
         let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
          Word::from([Felt::new(0).unwrap(); 4]));

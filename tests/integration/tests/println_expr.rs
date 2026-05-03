@@ -6,7 +6,7 @@ use midenc_integration_tests::{CompilerTest, testing::eval_package};
 
 // Manipulates bytes to avoid `call_indirect`, which gets triggered by Rust's formatting infra.
 #[test]
-fn test_println_dynamic() {
+fn println_dynamic() {
     DebugLogger::init_for_tests()
         .expect("each test using DebugLogger should run in its own process");
     log::set_max_level(log::LevelFilter::Warn);

@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[test]
-fn test_invalid_stack_index_4_word_1_felt_args() {
+fn invalid_stack_index_4_word_1_felt_args() {
     let main_fn = r#"
         (
             w0_0: Felt,

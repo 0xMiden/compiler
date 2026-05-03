@@ -9,7 +9,7 @@ use midenc_session::{STDLIB, diagnostics::Report};
 use crate::CompilerTestBuilder;
 
 #[test]
-fn test_get_inputs_4() -> Result<(), Report> {
+fn get_inputs_4() -> Result<(), Report> {
     test_get_inputs("4", vec![u32::MAX, 1, 2, 3])
 }
 

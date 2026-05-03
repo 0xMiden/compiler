@@ -10,7 +10,7 @@ use crate::{
 ///
 /// Previously, compilation could panic during stack manipulation with 16 live stack operands.
 #[test]
-fn test_invalid_stack_index_16_issue_872() {
+fn invalid_stack_index_16_issue_872() {
     let main_fn = r#"
         (a0: Felt, a1: Felt, a2: Felt, a3: Felt, a4: Felt, a5: Felt, a6: Felt, a7: Felt,
          a8: Felt, a9: Felt, a10: Felt, a11: Felt, a12: Felt, a13: Felt, a14: Felt, a15: Felt) -> Felt {

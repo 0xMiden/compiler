@@ -70,7 +70,7 @@ fn executor_with_std(args: Vec<Felt>) -> Executor {
 }
 
 #[test]
-fn test_smt_get_binding() {
+fn smt_get_binding() {
     let entries = [
         (word(1, 2, 3, 100), word(10, 11, 12, 13)),
         (word(5, 6, 7, 200), word(20, 21, 22, 23)),
@@ -140,7 +140,7 @@ fn test_smt_get_binding() {
 }
 
 #[test]
-fn test_smt_set_binding() {
+fn smt_set_binding() {
     let key = word(5, 6, 7, 200);
     let new_value = word(40, 41, 42, 43);
 

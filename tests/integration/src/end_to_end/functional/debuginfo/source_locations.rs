@@ -9,7 +9,7 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use crate::{CompilerTest, testing::executor_with_std};
 
 #[test]
-fn test_rust_assert_macro_source_location_with_debug_executor() {
+fn rust_assert_macro_source_location_with_debug_executor() {
     let config = WasmTranslationConfig::default();
 
     let mut test = CompilerTest::rust_source_cargo_miden(

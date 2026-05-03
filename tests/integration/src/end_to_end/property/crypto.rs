@@ -8,7 +8,7 @@ use proptest::{
 use crate::{CompilerTest, testing::eval_package};
 
 #[test]
-fn test_hmerge() {
+fn hmerge() {
     let main_fn = r#"
 	        (f0: miden_stdlib_sys::Felt, f1: miden_stdlib_sys::Felt, f2: miden_stdlib_sys::Felt, f3: miden_stdlib_sys::Felt, f4: miden_stdlib_sys::Felt, f5: miden_stdlib_sys::Felt, f6: miden_stdlib_sys::Felt, f7: miden_stdlib_sys::Felt) -> miden_stdlib_sys::Felt {
 	            let digest1 = miden_stdlib_sys::Digest::new([f0, f1, f2, f3]);

@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[test]
-fn test_func_arg_same() {
+fn func_arg_same() {
     // This test reproduces the https://github.com/0xMiden/compiler/issues/606
     let main_fn = r#"
         (x: &mut Felt, y: &mut Felt) -> i32 {

@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[test]
-fn test_note_build_recipient_matches_note_recipient_digest() -> Result<(), Report> {
+fn note_build_recipient_matches_note_recipient_digest() -> Result<(), Report> {
     let note_script_program = Assembler::default()
         .assemble_program(
             r#"

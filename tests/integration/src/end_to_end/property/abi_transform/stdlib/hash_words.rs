@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[test]
-fn test_hash_words() {
+fn hash_words() {
     // Similar to test_hash_elements, but passes Vec<Word> and uses hash_words
     let main_fn = r#"
 	    (input: alloc::vec::Vec<miden_stdlib_sys::Word>) -> miden_stdlib_sys::Felt {

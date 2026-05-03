@@ -1,7 +1,7 @@
 use super::support::assert_memory_test_returns_zero;
 
 #[test]
-fn test_memory_copy_aligned_bytes() {
+fn memory_copy_aligned_bytes() {
     let main_fn = r#"() -> Felt {
         #[inline(never)]
         fn do_copy(dst: &mut [u32; 12], src: &[u32; 16]) {

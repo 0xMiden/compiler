@@ -283,133 +283,133 @@ test_func_two_arg!(min, core::cmp::min, u8, u8, u8);
 test_func_two_arg!(max, core::cmp::max, u8, u8, u8);
 
 #[test]
-fn test_overflowing_add_u8() {
+fn overflowing_add_u8() {
     test_overflowing_arith(u8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_add_u16() {
+fn overflowing_add_u16() {
     test_overflowing_arith(u16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_add_u32() {
+fn overflowing_add_u32() {
     test_overflowing_arith(u32::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_add_u64() {
+fn overflowing_add_u64() {
     test_overflowing_arith(u64::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_overflowing_add_i8() {
+fn overflowing_add_i8() {
     test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_overflowing_add_i16() {
+fn overflowing_add_i16() {
     test_overflowing_arith(i16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_add_i32() {
+fn overflowing_add_i32() {
     test_overflowing_arith(i32::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_add_i64() {
+fn overflowing_add_i64() {
     test_overflowing_arith(i64::overflowing_add, "overflowing_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_sub_u8() {
+fn overflowing_sub_u8() {
     test_overflowing_arith(u8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_sub_u16() {
+fn overflowing_sub_u16() {
     test_overflowing_arith(u16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_sub_u32() {
+fn overflowing_sub_u32() {
     test_overflowing_arith(u32::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_sub_u64() {
+fn overflowing_sub_u64() {
     test_overflowing_arith(u64::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_overflowing_sub_i8() {
+fn overflowing_sub_i8() {
     test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_overflowing_sub_i16() {
+fn overflowing_sub_i16() {
     test_overflowing_arith(i16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_sub_i32() {
+fn overflowing_sub_i32() {
     test_overflowing_arith(i32::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_sub_i64() {
+fn overflowing_sub_i64() {
     test_overflowing_arith(i64::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_mul_u8() {
+fn overflowing_mul_u8() {
     test_overflowing_arith(u8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_mul_u16() {
+fn overflowing_mul_u16() {
     test_overflowing_arith(u16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_mul_u32() {
+fn overflowing_mul_u32() {
     test_overflowing_arith(u32::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_mul_u64() {
+fn overflowing_mul_u64() {
     test_overflowing_arith(u64::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_overflowing_mul_i8() {
+fn overflowing_mul_i8() {
     test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_overflowing_mul_i16() {
+fn overflowing_mul_i16() {
     test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_mul_i32() {
+fn overflowing_mul_i32() {
     test_overflowing_arith(i32::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_mul_i64() {
+fn overflowing_mul_i64() {
     test_overflowing_arith(i64::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_overflowing_div_u8() {
+fn overflowing_div_u8() {
     test_overflowing_arith(
         u8::overflowing_div,
         "overflowing_div",
@@ -418,7 +418,7 @@ fn test_overflowing_div_u8() {
 }
 
 #[test]
-fn test_overflowing_div_u16() {
+fn overflowing_div_u16() {
     test_overflowing_arith(
         u16::overflowing_div,
         "overflowing_div",
@@ -427,7 +427,7 @@ fn test_overflowing_div_u16() {
 }
 
 #[test]
-fn test_overflowing_div_u32() {
+fn overflowing_div_u32() {
     test_overflowing_arith(
         u32::overflowing_div,
         "overflowing_div",
@@ -436,7 +436,7 @@ fn test_overflowing_div_u32() {
 }
 
 #[test]
-fn test_overflowing_div_u64() {
+fn overflowing_div_u64() {
     test_overflowing_arith(
         u64::overflowing_div,
         "overflowing_div",
@@ -446,7 +446,7 @@ fn test_overflowing_div_u64() {
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/966"]
-fn test_overflowing_div_i8() {
+fn overflowing_div_i8() {
     test_overflowing_arith(
         i8::overflowing_div,
         "overflowing_div",
@@ -456,7 +456,7 @@ fn test_overflowing_div_i8() {
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/966"]
-fn test_overflowing_div_i16() {
+fn overflowing_div_i16() {
     test_overflowing_arith(
         i16::overflowing_div,
         "overflowing_div",
@@ -465,7 +465,7 @@ fn test_overflowing_div_i16() {
 }
 
 #[test]
-fn test_overflowing_div_i32() {
+fn overflowing_div_i32() {
     test_overflowing_arith(
         i32::overflowing_div,
         "overflowing_div",
@@ -474,7 +474,7 @@ fn test_overflowing_div_i32() {
 }
 
 #[test]
-fn test_overflowing_div_i64() {
+fn overflowing_div_i64() {
     test_overflowing_arith(
         i64::overflowing_div,
         "overflowing_div",
@@ -483,7 +483,7 @@ fn test_overflowing_div_i64() {
 }
 
 #[test]
-fn test_overflowing_rem_u8() {
+fn overflowing_rem_u8() {
     test_overflowing_arith(
         u8::overflowing_rem,
         "overflowing_rem",
@@ -492,7 +492,7 @@ fn test_overflowing_rem_u8() {
 }
 
 #[test]
-fn test_overflowing_rem_u16() {
+fn overflowing_rem_u16() {
     test_overflowing_arith(
         u16::overflowing_rem,
         "overflowing_rem",
@@ -501,7 +501,7 @@ fn test_overflowing_rem_u16() {
 }
 
 #[test]
-fn test_overflowing_rem_u32() {
+fn overflowing_rem_u32() {
     test_overflowing_arith(
         u32::overflowing_rem,
         "overflowing_rem",
@@ -510,7 +510,7 @@ fn test_overflowing_rem_u32() {
 }
 
 #[test]
-fn test_overflowing_rem_u64() {
+fn overflowing_rem_u64() {
     test_overflowing_arith(
         u64::overflowing_rem,
         "overflowing_rem",
@@ -520,7 +520,7 @@ fn test_overflowing_rem_u64() {
 
 #[test]
 #[ignore = "Mod is not supported for signed int"]
-fn test_overflowing_rem_i8() {
+fn overflowing_rem_i8() {
     test_overflowing_arith(
         i8::overflowing_rem,
         "overflowing_rem",
@@ -530,7 +530,7 @@ fn test_overflowing_rem_i8() {
 
 #[test]
 #[ignore = "Mod is not supported for signed int"]
-fn test_overflowing_rem_i16() {
+fn overflowing_rem_i16() {
     test_overflowing_arith(
         i16::overflowing_rem,
         "overflowing_rem",
@@ -540,7 +540,7 @@ fn test_overflowing_rem_i16() {
 
 #[test]
 #[ignore = "Mod is not supported for signed int"]
-fn test_overflowing_rem_i32() {
+fn overflowing_rem_i32() {
     test_overflowing_arith(
         i32::overflowing_rem,
         "overflowing_rem",
@@ -550,7 +550,7 @@ fn test_overflowing_rem_i32() {
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
-fn test_overflowing_rem_i64() {
+fn overflowing_rem_i64() {
     test_overflowing_arith(
         i64::overflowing_rem,
         "overflowing_rem",
@@ -561,128 +561,128 @@ fn test_overflowing_rem_i64() {
 // TODO handle overflowing ops for wide types
 
 #[test]
-fn test_checked_add_u8() {
+fn checked_add_u8() {
     test_checked_arith(u8::checked_add, "checked_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_add_u16() {
+fn checked_add_u16() {
     test_checked_arith(u16::checked_add, "checked_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_add_u32() {
+fn checked_add_u32() {
     test_checked_arith(u32::checked_add, "checked_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_add_u64() {
+fn checked_add_u64() {
     test_checked_arith(u64::checked_add, "checked_add", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_checked_add_i8() {
+fn checked_add_i8() {
     test_checked_arith(i8::checked_add, "checked_add", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_checked_add_i16() {
+fn checked_add_i16() {
     test_checked_arith(i16::checked_add, "checked_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_add_i32() {
+fn checked_add_i32() {
     test_checked_arith(i32::checked_add, "checked_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_add_i64() {
+fn checked_add_i64() {
     test_checked_arith(i64::checked_add, "checked_add", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_sub_u8() {
+fn checked_sub_u8() {
     test_checked_arith(u8::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_sub_u16() {
+fn checked_sub_u16() {
     test_checked_arith(u16::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_sub_u32() {
+fn checked_sub_u32() {
     test_checked_arith(u32::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_sub_u64() {
+fn checked_sub_u64() {
     test_checked_arith(u64::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_checked_sub_i8() {
+fn checked_sub_i8() {
     test_checked_arith(i8::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_checked_sub_i16() {
+fn checked_sub_i16() {
     test_checked_arith(i16::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_sub_i32() {
+fn checked_sub_i32() {
     test_checked_arith(i32::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_sub_i64() {
+fn checked_sub_i64() {
     test_checked_arith(i64::checked_sub, "checked_sub", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_mul_u8() {
+fn checked_mul_u8() {
     test_checked_arith(u8::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_mul_u16() {
+fn checked_mul_u16() {
     test_checked_arith(u16::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_mul_u32() {
+fn checked_mul_u32() {
     test_checked_arith(u32::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_mul_u64() {
+fn checked_mul_u64() {
     test_checked_arith(u64::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_checked_mul_i8() {
+fn checked_mul_i8() {
     test_checked_arith(i8::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
-fn test_checked_mul_i16() {
+fn checked_mul_i16() {
     test_checked_arith(i16::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_mul_i32() {
+fn checked_mul_i32() {
     test_checked_arith(i32::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_mul_i64() {
+fn checked_mul_i64() {
     test_checked_arith(i64::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
@@ -690,88 +690,88 @@ fn test_checked_mul_i64() {
 // range strategy can be used.
 
 #[test]
-fn test_checked_div_u8() {
+fn checked_div_u8() {
     test_checked_arith(u8::checked_div, "checked_div", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_div_u16() {
+fn checked_div_u16() {
     test_checked_arith(u16::checked_div, "checked_div", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_div_u32() {
+fn checked_div_u32() {
     test_checked_arith(u32::checked_div, "checked_div", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_div_u64() {
+fn checked_div_u64() {
     test_checked_arith(u64::checked_div, "checked_div", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/966"]
-fn test_checked_div_i8() {
+fn checked_div_i8() {
     test_checked_arith(i8::checked_div, "checked_div", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/966"]
-fn test_checked_div_i16() {
+fn checked_div_i16() {
     test_checked_arith(i16::checked_div, "checked_div", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_div_i32() {
+fn checked_div_i32() {
     test_checked_arith(i32::checked_div, "checked_div", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_div_i64() {
+fn checked_div_i64() {
     test_checked_arith(i64::checked_div, "checked_div", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_rem_u8() {
+fn checked_rem_u8() {
     test_checked_arith(u8::checked_rem, "checked_rem", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_rem_u16() {
+fn checked_rem_u16() {
     test_checked_arith(u16::checked_rem, "checked_rem", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_rem_u32() {
+fn checked_rem_u32() {
     test_checked_arith(u32::checked_rem, "checked_rem", NumericStrategy::full_range());
 }
 
 #[test]
-fn test_checked_rem_u64() {
+fn checked_rem_u64() {
     test_checked_arith(u64::checked_rem, "checked_rem", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "Mod is not supported for signed int"]
-fn test_checked_rem_i8() {
+fn checked_rem_i8() {
     test_checked_arith(i8::checked_rem, "checked_rem", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "Mod is not supported for signed int"]
-fn test_checked_rem_i16() {
+fn checked_rem_i16() {
     test_checked_arith(i16::checked_rem, "checked_rem", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "Mod is not supported for signed int"]
-fn test_checked_rem_i32() {
+fn checked_rem_i32() {
     test_checked_arith(i32::checked_rem, "checked_rem", NumericStrategy::full_range());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
-fn test_checked_rem_i64() {
+fn checked_rem_i64() {
     test_checked_arith(i64::checked_rem, "checked_rem", NumericStrategy::full_range());
 }
 

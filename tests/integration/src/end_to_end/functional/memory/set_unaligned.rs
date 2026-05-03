@@ -1,7 +1,7 @@
 use super::support::assert_memory_test_returns_zero;
 
 #[test]
-fn test_memory_set_unaligned() {
+fn memory_set_unaligned() {
     let main_fn = r#"() -> Felt {
         #[inline(never)]
         fn do_set(dst: &mut [u8; 11]) {

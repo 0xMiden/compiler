@@ -73,9 +73,9 @@ trim-paths = ["diagnostics", "object"]
 }
 
 #[test]
-fn rust_sdk_note_build_recipient_binding() {
+fn note_build_recipient_binding() {
     run_note_binding_test(
-        "rust_sdk_note_build_recipient_binding",
+        "note_build_recipient_binding",
         "pub fn binding(&self) -> Recipient {
         note::build_recipient(
             Word::from([Felt::new(0).unwrap(); 4]),

@@ -4,7 +4,7 @@ use midenc_hir::Felt;
 use crate::{CompilerTest, testing::eval_package};
 
 #[test]
-fn test_vec_alloc_vec() {
+fn vec_alloc_vec() {
     // regression test for https://github.com/0xMiden/compiler/issues/595
     let main_fn = r#"
     (a: u32) -> Felt {

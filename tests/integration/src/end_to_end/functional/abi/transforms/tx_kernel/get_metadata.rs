@@ -5,7 +5,7 @@ use midenc_session::{STDLIB, diagnostics::Report};
 use crate::CompilerTestBuilder;
 
 #[test]
-fn test_get_metadata() -> Result<(), Report> {
+fn get_metadata() -> Result<(), Report> {
     // Mock the Miden protocol `active_note::get_metadata` procedure.
     //
     // The raw protocol signature returns 8 felts on the operand stack:

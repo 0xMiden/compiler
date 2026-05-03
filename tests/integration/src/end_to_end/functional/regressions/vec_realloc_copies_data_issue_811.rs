@@ -8,7 +8,7 @@ use crate::{
 
 /// Regression test for https://github.com/0xMiden/compiler/issues/811.
 #[test]
-fn test_vec_realloc_copies_data_issue_811() {
+fn vec_realloc_copies_data_issue_811() {
     let main_fn = r#"() -> Felt {
         extern crate alloc;
         use alloc::vec::Vec;
