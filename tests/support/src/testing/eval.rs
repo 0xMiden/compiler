@@ -9,9 +9,25 @@ use miden_standards::StandardsLib;
 use midenc_compile::LinkOutput;
 use midenc_hir::{Type, dialects::builtin::attributes::Signature};
 use midenc_session::{STDLIB, Session};
-use proptest::test_runner::TestCaseError;
+use proptest::{prop_assert_eq, test_runner::TestCaseError};
 
 use super::*;
+
+/// Executes `package` with `args`, and compares the output with `rust_out`, which corresponds
+/// to the output produced from an equivalent Rust program
+pub fn run_masm_vs_rust<T>(
+    rust_out: T,
+    package: &miden_mast_package::Package,
+    args: &[Felt],
+    session: &Session,
+) -> Result<(), TestCaseError>
+where
+    T: Clone + FromMidenRepr + PartialEq + std::fmt::Debug,
+{
+    let vm_out = eval_package::<T, _, _>(package, None, args, session, |_| Ok(()))?;
+    prop_assert_eq!(rust_out, vm_out, "VM output mismatch");
+    Ok(())
+}
 
 /// Evaluates `package` using the debug executor, producing an output of type `T`
 ///
