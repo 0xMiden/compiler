@@ -6,6 +6,7 @@ use crate::{
     CompilerTest,
     testing::{eval_package, setup},
 };
+
 #[ignore = "too fragile (depends on mem addrs), this bug is also covered by the test_hmerge test"]
 #[test]
 fn test_func_arg_order() {

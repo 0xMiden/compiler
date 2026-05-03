@@ -1,7 +1,7 @@
-mod abi_transform;
-mod apps;
-mod debug_source_locations;
+mod abi;
+mod debuginfo;
 mod examples;
+mod intrinsics;
 mod memory;
 mod regressions;
-mod types;
+mod support;

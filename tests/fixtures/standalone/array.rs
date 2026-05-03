@@ -1,3 +1,4 @@
+//! This source file tests handling of arrays/slices
 #![no_std]
 #![no_main]
 

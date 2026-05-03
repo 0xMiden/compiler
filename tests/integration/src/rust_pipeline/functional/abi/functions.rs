@@ -6,16 +6,16 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
 use proptest::{prelude::*, test_runner::TestRunner};
 
-use super::support::cargo_toml;
 use crate::{
     CompilerTest, CompilerTestBuilder,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
+    rust_pipeline::functional::support::cargo_toml,
 };
 
 #[test]
-fn felt_intrinsics() {
-    let name = "felt_intrinsics";
+fn function_call() {
+    let name = "function_call_hir2";
     let cargo_proj = project(name)
         .file("Cargo.toml", &cargo_toml(name))
         .file(
@@ -23,6 +23,10 @@ fn felt_intrinsics() {
             r#"
                 #![no_std]
                 #![feature(alloc_error_handler)]
+
+                // Global allocator to use heap memory in no-std environment
+                // #[global_allocator]
+                // static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
 
                 // Required for no-std crates
                 #[panic_handler]
@@ -36,15 +40,17 @@ fn felt_intrinsics() {
                     loop {}
                 }
 
-                // Global allocator to use heap memory in no-std environment
-                #[global_allocator]
-                static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
-
-                use miden::*;
+                // use miden::Felt;
 
                 #[unsafe(no_mangle)]
-                pub fn entrypoint(a: Felt, b: Felt) -> Felt {
-                   a / (a * b - a + b)
+                #[inline(never)]
+                pub fn add(a: u32, b: u32) -> u32 {
+                    a + b
+                }
+
+                #[unsafe(no_mangle)]
+                pub fn entrypoint(a: u32, b: u32) -> u32 {
+                    add(a, b)
                 }
             "#,
         )

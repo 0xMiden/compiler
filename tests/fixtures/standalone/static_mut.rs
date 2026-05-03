@@ -1,3 +1,4 @@
+//! This source file tests the handling of mutable global variables
 #![no_std]
 #![no_main]
 

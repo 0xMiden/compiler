@@ -6,6 +6,7 @@ mod copy_unaligned;
 mod copy_unaligned_dst;
 mod copy_unaligned_dst_short_count;
 mod copy_unaligned_zero_count;
+mod global_variables;
 mod set_unaligned;
 mod set_unaligned_zero_count;
 mod support;

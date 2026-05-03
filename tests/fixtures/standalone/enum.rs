@@ -1,3 +1,4 @@
+//! This source file tests handling of enums
 #![no_std]
 #![no_main]
 
