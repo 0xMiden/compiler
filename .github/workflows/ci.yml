@@ -113,7 +113,7 @@ jobs:
           cargo make check --tests
       - name: Test
         run: |
-          cargo make test -E 'not (package(miden-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden))'
+          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden))'
 
   release_profile_tests:
     name: midenc release-profile tests
@@ -199,7 +199,7 @@ jobs:
       - name: Test
         # Skip some tests cause they are a space hog and run them in the separate job
         run: |
-          cargo make test -E 'package(miden-integration-tests) - test(~rust_masm_tests::examples)'
+          cargo make test -E 'package(midenc-integration-tests) - (test(~rust_pipeline::expect::examples) or test(~rust_pipeline::functional::examples) or test(~rust_pipeline::property::examples))'
 
   midenc_integration_tests_examples:
     name: midenc integration tests
@@ -229,7 +229,7 @@ jobs:
       - name: Test
         # Skip some tests cause they are a space hog and run them in the separate job
         run: |
-          cargo make test -E 'test(~rust_masm_tests::examples)'
+          cargo make test -E 'test(~rust_pipeline::expect::examples) or test(~rust_pipeline::functional::examples) or test(~rust_pipeline::property::examples)'
 
   cargo_miden_integration_tests:
     name: cargo-miden integration tests

@@ -1,8 +1,8 @@
 use log::Level;
 use miden_core::Felt;
 use miden_debug::logger::DebugLogger;
-use miden_integration_tests::{CompilerTest, testing::eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_tests::{CompilerTest, testing::eval_package};
 
 // Manipulates bytes to avoid `call_indirect`, which gets triggered by Rust's formatting infra.
 #[test]
