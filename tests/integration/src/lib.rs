@@ -7,6 +7,10 @@ pub use midenc_integration_test_support::{
 };
 
 #[cfg(test)]
+mod assert_helpers;
+#[cfg(test)]
 mod codegen;
 #[cfg(test)]
-mod rust_pipeline;
+mod end_to_end;
+#[cfg(test)]
+mod sdk;

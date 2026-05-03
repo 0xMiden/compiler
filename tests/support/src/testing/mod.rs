@@ -19,6 +19,7 @@ pub use self::{
     eval::{
         compile_link_output_to_package, compile_test_module, eval_link_output,
         eval_link_output_with_advice_stack, eval_package, eval_package_with_advice_stack,
+        run_masm_vs_rust,
     },
     initializer::Initializer,
 };
