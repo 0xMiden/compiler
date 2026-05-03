@@ -149,6 +149,7 @@ midenc-hir-eval = { version = "0.8.1", path = "eval" }
 midenc-hir-macros = { version = "0.8.1", path = "hir-macros" }
 midenc-hir-symbol = { version = "0.8.1", path = "hir-symbol" }
 midenc-hir-transform = { version = "0.8.1", path = "hir-transform" }
+midenc-frontend-masm = { version = "0.8.1", path = "frontend/masm" }
 midenc-frontend-wasm = { version = "0.8.1", path = "frontend/wasm" }
 midenc-frontend-wasm-metadata = { version = "0.12.0", path = "sdk/wasm-metadata" }
 midenc-compile = { version = "0.8.1", path = "midenc-compile" }

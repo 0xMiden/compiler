@@ -3586,6 +3586,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-frontend-masm"
+version = "0.8.1"
+dependencies = [
+ "miden-assembly-syntax",
+ "miden-project",
+ "midenc-dialect-arith",
+ "midenc-dialect-hir",
+ "midenc-hir",
+ "rustc-hash",
+]
+
+[[package]]
 name = "midenc-frontend-wasm"
 version = "0.8.1"
 dependencies = [
