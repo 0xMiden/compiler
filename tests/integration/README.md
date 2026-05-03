@@ -4,12 +4,19 @@ This crate contains all of the integration tests for the Miden compiler, specifi
 
 This test crate _does not_ contain tests which exercise code that requires the protocol/MockChain - see `midenc-integration-network-tests` for that.
 
-The test suite is organized into two major areas:
+The test suite is organized into three major areas:
 
-* Trivial integration tests which are compiled into a single binary and executed in parallel. These are organized under `src` as normal Rust unit tests.
+* Shared integration test support lives in `midenc-integration-test-support` (`../support`). This
+  includes `CompilerTest`, generated Cargo project support, VM execution helpers, and test harness
+  initializers. Other integration-style crates should depend on that support crate instead of
+  depending on this test crate.
+* Trivial integration tests which are compiled into a single binary and executed in parallel. These are organized under `src` as normal Rust unit tests. The main groups are:
+  * `codegen`: direct HIR/Wasm/codegen tests, grouped by functionality and testing method.
+  * `rust_pipeline`: end-to-end Rust/Cargo input tests through MASM/package execution.
 * Complex integration tests which require each test to be compiled into a separate binary, to avoid issues with global resources (e.g. the logger). Each of these tests is executed in parallel with the other separately-compiled tests, but are much more expensive to compile and execute, so writing these type of tests should be avoided unless absolutely necessary.
 
-This crate, when compiled as a library, also provides a number of useful utilities for setting up the environment, performing various types of common builds, and executing packages with the VM. Where possible, tests in the compiler suite that need to perform these types of tasks should make use of these helpers, rather than doing them manually in a way that may fall out of sync with how programs are actually built in practice.
+This crate re-exports the support helpers for compatibility, but new test crates should depend on
+`midenc-integration-test-support` directly rather than using this crate as a helper dependency.
 
 ### Notable Tests
 
