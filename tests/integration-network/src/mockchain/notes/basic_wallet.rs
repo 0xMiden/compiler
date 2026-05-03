@@ -14,12 +14,10 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
 use midenc_expect_test::expect;
 
-use super::{
-    cycle_helpers::{note_cycles, prologue_cycles, tx_script_processing_cycles},
-    helpers::{
-        assert_account_has_fungible_asset, build_asset_transfer_tx, build_send_notes_script,
-        compile_rust_package, execute_tx, note_script_root, to_core_felts,
-    },
+use super::super::support::{
+    assert_account_has_fungible_asset, build_asset_transfer_tx, build_send_notes_script,
+    compile_rust_package, execute_tx, note_cycles, note_script_root, prologue_cycles,
+    to_core_felts, tx_script_processing_cycles,
 };
 /// Converts the P2IDE note payload into protocol storage order for the basic-wallet tests.
 fn to_p2ide_storage_felts(
@@ -32,7 +30,7 @@ fn to_p2ide_storage_felts(
 
 /// Tests the basic-wallet contract deployment and p2id note consumption workflow on a mock chain.
 #[test]
-pub fn test_basic_wallet_p2id() {
+pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     // Compile the contracts first (before creating any runtime)
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
     let note_package = compile_rust_package("../../examples/p2id-note", true);
@@ -150,7 +148,7 @@ pub fn test_basic_wallet_p2id() {
 /// - Alice creates a p2ide note for Bob (with timelock=0, reclaim=0)
 /// - Bob consumes the p2ide note and receives the assets
 #[test]
-pub fn test_basic_wallet_p2ide() {
+pub fn basic_wallet_p2ide_allows_recipient_claim() {
     // Compile the contracts first (before creating any runtime)
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
     let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);
@@ -275,7 +273,7 @@ pub fn test_basic_wallet_p2ide() {
 /// - Alice reclaims the note herself (exercises the reclaim branch)
 /// - Verify Alice has her original balance back
 #[test]
-pub fn test_basic_wallet_p2ide_reclaim() {
+pub fn basic_wallet_p2ide_allows_sender_reclaim() {
     // Compile the contracts first (before creating any runtime)
     let wallet_package = compile_rust_package("../../examples/basic-wallet", true);
     let p2id_note_package = compile_rust_package("../../examples/p2id-note", true);

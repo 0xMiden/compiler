@@ -5,22 +5,22 @@
 use miden_protocol::{note::NoteId, transaction::TransactionMeasurements};
 
 /// Returns the measured prologue cycles as a string.
-pub(super) fn prologue_cycles(measurements: &TransactionMeasurements) -> &str {
+pub(crate) fn prologue_cycles(measurements: &TransactionMeasurements) -> &str {
     cycles_str(measurements.prologue)
 }
 
 /// Returns the measured transaction-script processing cycles as a string.
-pub(super) fn tx_script_processing_cycles(measurements: &TransactionMeasurements) -> &str {
+pub(crate) fn tx_script_processing_cycles(measurements: &TransactionMeasurements) -> &str {
     cycles_str(measurements.tx_script_processing)
 }
 
 /// Returns the measured authentication-procedure cycles as a string.
-pub(super) fn auth_procedure_cycles(measurements: &TransactionMeasurements) -> &str {
+pub(crate) fn auth_procedure_cycles(measurements: &TransactionMeasurements) -> &str {
     cycles_str(measurements.auth_procedure)
 }
 
 /// Returns the measured note-execution cycles for `note_id` as a string.
-pub(super) fn note_cycles(measurements: &TransactionMeasurements, note_id: NoteId) -> &str {
+pub(crate) fn note_cycles(measurements: &TransactionMeasurements, note_id: NoteId) -> &str {
     let (_, num_cycles) = measurements
         .note_execution
         .iter()

@@ -13,13 +13,10 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
 
-use super::{
-    cycle_helpers::{auth_procedure_cycles, note_cycles},
-    helpers::{
-        COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage,
-        build_existing_counter_account_builder_with_auth_package, compile_rust_package,
-        counter_storage_slot_name, execute_tx, note_script_root,
-    },
+use super::super::support::{
+    COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, auth_procedure_cycles,
+    build_existing_counter_account_builder_with_auth_package, compile_rust_package,
+    counter_storage_slot_name, execute_tx, note_cycles, note_script_root,
 };
 
 /// Tests the counter contract with a "no-auth" authentication component.
@@ -30,7 +27,7 @@ use super::{
 /// - Sender issues a counter note to the network
 /// - Counter account consumes the note without requiring authentication/signature
 #[test]
-pub fn test_counter_contract_no_auth() {
+pub fn counter_note_no_auth_increments_storage_without_signature() {
     // Compile the contracts first (before creating any runtime)
     let counter_package = compile_rust_package("../../examples/counter-contract", true);
     let note_package = compile_rust_package("../../examples/counter-note", true);

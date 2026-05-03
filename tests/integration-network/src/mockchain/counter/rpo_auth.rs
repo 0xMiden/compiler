@@ -10,18 +10,16 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::MockChain;
 use midenc_expect_test::expect;
 
-use super::{
-    cycle_helpers::auth_procedure_cycles,
-    helpers::{
-        assert_counter_storage, block_on, build_counter_account_with_rust_rpo_auth,
-        build_send_notes_script, compile_rust_package, counter_storage_slot_name, note_script_root,
-    },
+use super::super::support::{
+    assert_counter_storage, auth_procedure_cycles, block_on,
+    build_counter_account_with_rust_rpo_auth, build_send_notes_script, compile_rust_package,
+    counter_storage_slot_name, note_script_root,
 };
 
 /// Verify that another client (without the RPO-Falcon512 key) cannot create notes for
 /// the counter account which uses the Rust-compiled RPO-Falcon512 authentication component.
 #[test]
-pub fn test_counter_contract_rust_auth_blocks_unauthorized_note_creation() {
+pub fn counter_rpo_auth_rejects_unauthenticated_note_creation() {
     let contract_package = compile_rust_package("../../examples/counter-contract", true);
     let note_package = compile_rust_package("../../examples/counter-note", true);
     let rpo_auth_package =

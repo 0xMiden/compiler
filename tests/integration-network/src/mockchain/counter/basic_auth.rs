@@ -9,17 +9,14 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
 use midenc_expect_test::expect;
 
-use super::{
-    cycle_helpers::note_cycles,
-    helpers::{
-        COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, compile_rust_package,
-        counter_storage_slot_name, execute_tx, note_script_root,
-    },
+use super::super::support::{
+    COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, compile_rust_package,
+    counter_storage_slot_name, execute_tx, note_cycles, note_script_root,
 };
 
 /// Tests the counter contract deployment and note consumption workflow on a mock chain.
 #[test]
-pub fn test_counter_contract() {
+pub fn counter_note_basic_auth_increments_storage() {
     // Compile the contracts first (before creating any runtime)
     let contract_package = compile_rust_package("../../examples/counter-contract", true);
     let note_package = compile_rust_package("../../examples/counter-note", true);

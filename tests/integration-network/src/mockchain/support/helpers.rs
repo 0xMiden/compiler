@@ -32,7 +32,7 @@ use midenc_integration_test_support::CompilerTestBuilder;
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Converts a value's felt representation into `miden_core::Felt` elements.
-pub(super) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
+pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
     vec![value.prefix().as_felt(), value.suffix()]
 }
 
@@ -45,14 +45,14 @@ thread_local! {
 }
 
 /// Runs the provided future to completion on a shared Tokio runtime.
-pub(super) fn block_on<F: Future>(future: F) -> F::Output {
+pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
     TOKIO_RUNTIME.with(|rt| rt.block_on(future))
 }
 
 // COMPILATION
 // ================================================================================================
 
-pub(super) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Package> {
+pub(crate) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Package> {
     let config = WasmTranslationConfig::default();
     let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
 
@@ -65,7 +65,7 @@ pub(super) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Pac
 }
 
 /// Returns the root of the note script exported by the compiled package.
-pub(super) fn note_script_root(package: &Package) -> Word {
+pub(crate) fn note_script_root(package: &Package) -> Word {
     NoteScript::from_package(package)
         .expect("compiled package should contain exactly one note script export")
         .root()
@@ -77,7 +77,7 @@ pub(super) fn note_script_root(package: &Package) -> Word {
 
 /// Asserts that the account vault contains a fungible asset from the expected faucet with the
 /// expected total amount.
-pub(super) fn assert_account_has_fungible_asset(
+pub(crate) fn assert_account_has_fungible_asset(
     account: &Account,
     expected_faucet_id: AccountId,
     expected_amount: u64,
@@ -105,7 +105,7 @@ pub(super) fn assert_account_has_fungible_asset(
 
 /// Builds a `send_notes` transaction script for accounts that support a standard note creation
 /// interface (e.g. basic wallets and basic fungible faucets).
-pub(super) fn build_send_notes_script(account: &Account, notes: &[Note]) -> TransactionScript {
+pub(crate) fn build_send_notes_script(account: &Account, notes: &[Note]) -> TransactionScript {
     let partial_notes = notes.iter().cloned().map(PartialNote::from).collect::<Vec<_>>();
 
     AccountInterface::from_account(account)
@@ -116,7 +116,7 @@ pub(super) fn build_send_notes_script(account: &Account, notes: &[Note]) -> Tran
 /// Executes a transaction context against the chain and commits it in the next block.
 ///
 /// Returns the transaction measurements captured during execution.
-pub(super) fn execute_tx(
+pub(crate) fn execute_tx(
     chain: &mut MockChain,
     tx_context_builder: TransactionContextBuilder,
 ) -> TransactionMeasurements {
@@ -139,7 +139,7 @@ pub(super) fn execute_tx(
 ///
 /// The caller provides an RNG used to generate a unique note serial number, to avoid accidental
 /// note ID collisions across multiple transfers.
-pub(super) fn build_asset_transfer_tx(
+pub(crate) fn build_asset_transfer_tx(
     chain: &MockChain,
     sender_id: AccountId,
     recipient_id: AccountId,
@@ -202,7 +202,7 @@ pub(super) fn build_asset_transfer_tx(
 // ================================================================================================
 
 /// Returns the storage slot name used by the counter contract's storage map.
-pub(super) fn counter_storage_slot_name() -> StorageSlotName {
+pub(crate) fn counter_storage_slot_name() -> StorageSlotName {
     StorageSlotName::new("miden_counter_contract::counter_contract::count_map")
         .expect("counter storage slot name should be valid")
 }
@@ -216,7 +216,7 @@ pub const COUNTER_CONTRACT_STORAGE_KEY: Word =
     Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
 
 /// Asserts the counter value stored in the counter contract's storage map at `storage_slot`.
-pub(super) fn assert_counter_storage(
+pub(crate) fn assert_counter_storage(
     counter_account_storage: &AccountStorage,
     storage_slot: &StorageSlotName,
     expected: u64,
@@ -238,7 +238,7 @@ pub(super) fn assert_counter_storage(
 
 /// Builds an account builder for an existing public counter account containing the counter
 /// contract component and a custom authentication component compiled as a package library.
-pub(super) fn build_existing_counter_account_builder_with_auth_package(
+pub(crate) fn build_existing_counter_account_builder_with_auth_package(
     counter_component: AccountComponent,
     auth_component_package: Arc<Package>,
     auth_storage_slots: Vec<StorageSlot>,
@@ -265,7 +265,7 @@ pub(super) fn build_existing_counter_account_builder_with_auth_package(
 ///
 /// Returns the account along with the generated secret key which can authenticate transactions for
 /// this account.
-pub(super) fn build_counter_account_with_rust_rpo_auth(
+pub(crate) fn build_counter_account_with_rust_rpo_auth(
     component_package: Arc<Package>,
     auth_component_package: Arc<Package>,
     seed: [u8; 32],
