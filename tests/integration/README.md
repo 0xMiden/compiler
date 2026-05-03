@@ -12,7 +12,17 @@ The test suite is organized into three major areas:
   depending on this test crate.
 * Trivial integration tests which are compiled into a single binary and executed in parallel. These are organized under `src` as normal Rust unit tests. The main groups are:
   * `codegen`: direct HIR/Wasm/codegen tests, grouped by functionality and testing method.
-  * `rust_pipeline`: end-to-end Rust/Cargo input tests through MASM/package execution.
+  * `rust_pipeline`: end-to-end Rust/Cargo input tests through MASM/package execution, organized first by test method:
+    * `compile`: tests whose assertion is that generated Rust/Cargo projects compile to Miden packages.
+    * `expect`: tests whose primary assertion is stable text/metadata/package-size output.
+    * `functional`: deterministic execution, package shape, debug, ABI, memory, and regression tests.
+    * `property`: differential or randomized tests driven by `proptest`/`TestRunner`; macro-generated groups may keep multiple cases in one file.
+
+Within each method bucket, add the next directory or file by the functionality under test, for
+example `property/arithmetic.rs`, `property/abi_transform/stdlib.rs`,
+`functional/memory/copy.rs`, or `compile/sdk/base/account.rs`. New non-macro tests should prefer
+one behavior per file; macro-generated suites can remain grouped when the macro is the real unit of
+organization.
 * Complex integration tests which require each test to be compiled into a separate binary, to avoid issues with global resources (e.g. the logger). Each of these tests is executed in parallel with the other separately-compiled tests, but are much more expensive to compile and execute, so writing these type of tests should be avoided unless absolutely necessary.
 
 This crate re-exports the support helpers for compatibility, but new test crates should depend on

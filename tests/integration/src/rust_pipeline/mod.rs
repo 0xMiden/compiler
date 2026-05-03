@@ -1,24 +1,18 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
-use std::{collections::VecDeque, sync::Arc};
-
 use miden_core::Felt;
-use miden_debug::{Executor, FromMidenRepr, ToMidenRepr};
+use miden_debug::FromMidenRepr;
 use midenc_session::Session;
 use proptest::{prop_assert_eq, test_runner::TestCaseError};
 
 use crate::testing::eval_package;
 
-mod abi_transform;
-mod apps;
-mod debug_source_locations;
-mod examples;
-mod instructions;
-mod intrinsics;
-mod misc;
-mod rust_sdk;
-mod types;
+mod compile;
+mod expect;
+mod functional;
+mod property;
+pub(crate) mod support;
 
 pub fn run_masm_vs_rust<T>(
     rust_out: T,
