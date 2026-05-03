@@ -540,3 +540,97 @@ args = [
     "publish",
     "--dry-run",
 ]
+
+[tasks.install-cargo-llvm-cov]
+private = true
+install_crate = { crate_name = "cargo-llvm-cov", binary = "cargo", test_arg = [
+    "llvm-cov",
+    "--version",
+] }
+
+[tasks.install-rustfilt]
+private = true
+install_crate = { crate_name = "rustfilt", binary = "rustfilt", test_arg = "--version" }
+
+[tasks.fuzza-cov]
+category = "Test"
+description = "Run the midenc-fuzza tests under cargo-llvm-cov (clean slate) and emit a fuzza-oriented Markdown coverage report"
+dependencies = ["install-cargo-llvm-cov", "install-rustfilt"]
+script = ['''
+#!/usr/bin/env bash
+set -euo pipefail
+WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
+OUT="${WORKSPACE}/target/fuzza-coverage"
+mkdir -p "${OUT}"
+
+cargo llvm-cov clean --workspace
+if [[ -f "${OUT}/report.json" ]]; then
+    mv "${OUT}/report.json" "${OUT}/report.prev.json"
+fi
+
+cargo llvm-cov --package midenc-fuzza --no-report -- --test-threads=1
+cargo llvm-cov report --json --output-path "${OUT}/report.json"
+cargo llvm-cov report --html --output-dir "${OUT}/html"
+
+python3 "${WORKSPACE}/tests/fuzza/cov.py" \
+    "${OUT}/report.json" "${WORKSPACE}" \
+    --prev "${OUT}/report.prev.json" \
+    > "${OUT}/report.md"
+
+echo ""
+echo "Coverage report written to:"
+echo "  ${OUT}/report.md     (agent-consumable summary, includes delta if a prev snapshot existed)"
+echo "  ${OUT}/html/         (human-readable browser view)"
+echo "  ${OUT}/report.json   (raw llvm-cov JSON)"
+''']
+
+[tasks.fuzza-cov-step]
+category = "Test"
+description = "Incremental fuzza coverage run — reuses previous profile data and reports the delta against the last report"
+dependencies = ["install-cargo-llvm-cov", "install-rustfilt"]
+script = ['''
+#!/usr/bin/env bash
+set -euo pipefail
+WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
+OUT="${WORKSPACE}/target/fuzza-coverage"
+
+if [[ ! -f "${OUT}/report.json" ]]; then
+    echo "no baseline report at ${OUT}/report.json — run \`cargo make fuzza-cov\` first" >&2
+    exit 1
+fi
+
+mv "${OUT}/report.json" "${OUT}/report.prev.json"
+
+# `cargo llvm-cov` rejects `--no-report` together with `--no-clean`; we need
+# `--no-clean` to preserve accumulated profile data across iterations, so we
+# let it emit its default stdout report and then regenerate JSON/HTML from
+# the merged profdata in the steps below. Tolerate test failures — a failed
+# case still contributes coverage and the agent needs the delta even then.
+test_status=0
+cargo llvm-cov --no-clean --package midenc-fuzza -- --test-threads=1 || test_status=$?
+cargo llvm-cov report --json --output-path "${OUT}/report.json"
+cargo llvm-cov report --html --output-dir "${OUT}/html"
+
+python3 "${WORKSPACE}/tests/fuzza/cov.py" \
+    "${OUT}/report.json" "${WORKSPACE}" \
+    --prev "${OUT}/report.prev.json" \
+    > "${OUT}/report.md"
+
+echo ""
+if [[ "${test_status}" -ne 0 ]]; then
+    echo "NOTE: one or more fuzza tests failed; report reflects coverage up to the failures." >&2
+fi
+echo "Incremental coverage report with delta written to ${OUT}/report.md"
+''']
+
+[tasks.fuzza-cov-clean]
+category = "Test"
+description = "Clear accumulated fuzza coverage profile data and snapshot"
+dependencies = ["install-cargo-llvm-cov"]
+script = ['''
+#!/usr/bin/env bash
+set -euo pipefail
+WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
+cargo llvm-cov clean --workspace
+rm -rf "${WORKSPACE}/target/fuzza-coverage"
+''']

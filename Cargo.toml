@@ -27,6 +27,7 @@ members = [
     "tools/*",
     "tests/integration",
     "tests/integration-network",
+    "tests/fuzza",
 ]
 exclude = [
     "sdk/.cargo",
