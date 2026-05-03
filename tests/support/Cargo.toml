@@ -1,5 +1,5 @@
 [package]
-name = "miden-integration-tests"
+name = "midenc-integration-test-support"
 version.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -18,7 +18,6 @@ filetime = "0.2.23"
 glob = "0.3.1"
 log.workspace = true
 miden-assembly.workspace = true
-midenc-expect-test.workspace = true
 miden-core = { workspace = true, features = ["testing"] }
 miden-core-lib.workspace = true
 miden-mast-package.workspace = true
@@ -26,26 +25,15 @@ miden-protocol = { workspace = true, features = ["std"] }
 miden-standards = { workspace = true, features = ["std"] }
 miden-processor.workspace = true
 miden-debug = { workspace = true, features = ["proptest", "tui"] }
-midenc-dialect-arith.workspace = true
-midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true
-midenc-dialect-scf.workspace = true
-midenc-dialect-wasm.workspace = true
+midenc-expect-test.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-hir = { workspace = true, features = ["logging"] }
-midenc-hir-eval.workspace = true
 midenc-codegen-masm.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true
-midenc-integration-test-support.workspace = true
-num-traits = "0.2"
 cargo-miden.workspace = true
-wasmprinter.workspace = true
 proptest.workspace = true
 sha2 = "0.11"
 walkdir = "2.5.0"
-
-[dev-dependencies]
-# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
-blake3 = "1.5"
-concat-idents = "1.1"
+wasmprinter.workspace = true

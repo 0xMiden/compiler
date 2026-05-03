@@ -23,5 +23,5 @@ midenc-expect-test.workspace = true
 rand = "0.9"
 tokio.workspace = true
 
-# For accessing the test builder from the main integration tests
-miden-integration-tests = { path = "../integration" }
+# For accessing shared compiler test builders and helpers
+midenc-integration-test-support.workspace = true

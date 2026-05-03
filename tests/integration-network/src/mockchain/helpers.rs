@@ -12,7 +12,6 @@ use miden_client::{
     transaction::RawOutputNote,
 };
 use miden_core::Felt;
-use miden_integration_tests::CompilerTestBuilder;
 use miden_mast_package::Package;
 use miden_protocol::{
     account::{
@@ -29,6 +28,7 @@ use miden_standards::{
 };
 use miden_testing::{MockChain, TransactionContextBuilder};
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_test_support::CompilerTestBuilder;
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Converts a value's felt representation into `miden_core::Felt` elements.

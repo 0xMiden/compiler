@@ -3006,11 +3006,11 @@ dependencies = [
  "miden-debug 0.7.0",
  "miden-field 0.25.0",
  "miden-field-repr",
- "miden-integration-tests",
  "miden-processor",
  "miden-protocol",
  "midenc-expect-test",
  "midenc-frontend-wasm",
+ "midenc-integration-test-support",
  "midenc-session",
 ]
 
@@ -3054,6 +3054,7 @@ dependencies = [
  "midenc-frontend-wasm",
  "midenc-hir",
  "midenc-hir-eval",
+ "midenc-integration-test-support",
  "midenc-session",
  "num-traits",
  "proptest",
@@ -3791,15 +3792,46 @@ version = "0.8.1"
 dependencies = [
  "miden-client",
  "miden-core",
- "miden-integration-tests",
  "miden-mast-package",
  "miden-protocol",
  "miden-standards",
  "miden-testing",
  "midenc-expect-test",
  "midenc-frontend-wasm",
+ "midenc-integration-test-support",
  "rand 0.9.4",
  "tokio",
+]
+
+[[package]]
+name = "midenc-integration-test-support"
+version = "0.8.1"
+dependencies = [
+ "anyhow",
+ "cargo-miden",
+ "cargo-util",
+ "filetime",
+ "glob",
+ "log",
+ "miden-assembly",
+ "miden-core",
+ "miden-core-lib",
+ "miden-debug 0.7.0",
+ "miden-mast-package",
+ "miden-processor",
+ "miden-protocol",
+ "miden-standards",
+ "midenc-codegen-masm",
+ "midenc-compile",
+ "midenc-dialect-hir",
+ "midenc-expect-test",
+ "midenc-frontend-wasm",
+ "midenc-hir",
+ "midenc-session",
+ "proptest",
+ "sha2 0.11.0",
+ "walkdir",
+ "wasmprinter",
 ]
 
 [[package]]
