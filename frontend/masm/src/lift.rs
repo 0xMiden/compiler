@@ -282,6 +282,10 @@ impl<'a> ProcedureLifter<'a> {
             Dup13 => self.dup(13, span),
             Dup14 => self.dup(14, span),
             Dup15 => self.dup(15, span),
+            DupW0 => self.dup_word(0, span),
+            DupW1 => self.dup_word(1, span),
+            DupW2 => self.dup_word(2, span),
+            DupW3 => self.dup_word(3, span),
             Swap1 => self.swap(1, span),
             Swap2 => self.swap(2, span),
             Swap3 => self.swap(3, span),
@@ -297,6 +301,10 @@ impl<'a> ProcedureLifter<'a> {
             Swap13 => self.swap(13, span),
             Swap14 => self.swap(14, span),
             Swap15 => self.swap(15, span),
+            SwapW1 => self.swap_word(1, span),
+            SwapW2 => self.swap_word(2, span),
+            SwapW3 => self.swap_word(3, span),
+            SwapDw => self.swap_double_word(span),
             MovUp2 => self.movup(2, span),
             MovUp3 => self.movup(3, span),
             MovUp4 => self.movup(4, span),
@@ -311,6 +319,8 @@ impl<'a> ProcedureLifter<'a> {
             MovUp13 => self.movup(13, span),
             MovUp14 => self.movup(14, span),
             MovUp15 => self.movup(15, span),
+            MovUpW2 => self.movup_word(2, span),
+            MovUpW3 => self.movup_word(3, span),
             MovDn2 => self.movdn(2, span),
             MovDn3 => self.movdn(3, span),
             MovDn4 => self.movdn(4, span),
@@ -325,8 +335,20 @@ impl<'a> ProcedureLifter<'a> {
             MovDn13 => self.movdn(13, span),
             MovDn14 => self.movdn(14, span),
             MovDn15 => self.movdn(15, span),
+            MovDnW2 => self.movdn_word(2, span),
+            MovDnW3 => self.movdn_word(3, span),
             Reversew => self.reverse_word(span),
+            Reversedw => self.reverse_double_word(span),
             Push(value) => self.push_immediate(value.expect_value(), span, builder),
+            PushSlice(value, range) => {
+                self.push_word_slice(value.expect_value(), range, span, builder)
+            }
+            PushFeltList(values) => {
+                for value in values {
+                    self.push_value(builder.felt(*value, span), span);
+                }
+                Ok(())
+            }
             U32WrappingAdd => {
                 self.binary_with_type(builder, Type::U32, span, |builder, lhs, rhs, span| {
                     builder.add_wrapping(lhs, rhs, span)
@@ -496,28 +518,35 @@ impl<'a> ProcedureLifter<'a> {
             U32Cto => self.unary_with_type(builder, Type::U32, span, |builder, value, span| {
                 builder.cto(value, span)
             }),
-            U32Cast | U32Assert | U32AssertWithError(_) => {
-                let value = self.pop(span)?;
-                let value = self.cast(builder, value.value, Type::U32, span)?;
-                self.push_value(value, span);
-                Ok(())
-            }
+            U32Cast | U32Assert => self.u32_assert_n(1, span, builder),
+            U32AssertWithError(_) => todo!("lift MASM u32assert.err"),
+            U32Assert2 => self.u32_assert_n(2, span, builder),
+            U32Assert2WithError(_) => todo!("lift MASM u32assert2.err"),
+            U32AssertW => self.u32_assert_n(4, span, builder),
+            U32AssertWWithError(_) => todo!("lift MASM u32assertw.err"),
             U32Test => todo!("lift MASM u32test range check"),
+            U32TestW => todo!("lift MASM u32testw range check"),
+            U32Split => todo!("lift MASM u32split"),
             Assert => {
                 let value = self.pop(span)?;
                 builder.assert(value.value, span)?;
                 Ok(())
             }
+            AssertWithError(_) => todo!("lift MASM assert.err"),
             Assertz => {
                 let value = self.pop(span)?;
                 builder.assertz(value.value, span)?;
                 Ok(())
             }
+            AssertzWithError(_) => todo!("lift MASM assertz.err"),
             AssertEq => {
                 let (lhs, rhs) = self.pop_binary(span)?;
                 builder.assert_eq(lhs.value, rhs.value, span)?;
                 Ok(())
             }
+            AssertEqWithError(_) => todo!("lift MASM assert_eq.err"),
+            AssertEqw => self.assert_eq_word(span, builder),
+            AssertEqwWithError(_) => todo!("lift MASM assert_eqw.err"),
             LocLoad(id) => {
                 let local = self.local(id.expect_value(), span)?;
                 let value = builder.load_local(local, span)?;
@@ -611,6 +640,7 @@ impl<'a> ProcedureLifter<'a> {
                     builder.eq(lhs, rhs, span)
                 })
             }
+            Eqw => self.eq_word(span, builder),
             Neq => self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {
                 builder.neq(lhs, rhs, span)
             }),
@@ -759,7 +789,37 @@ impl<'a> ProcedureLifter<'a> {
             PushValue::Int(IntValue::Felt(value)) => {
                 self.push_value(builder.felt(value, span), span);
             }
-            PushValue::Word(_) => todo!("lift push word immediate"),
+            PushValue::Word(value) => self.push_word(value, span, builder),
+        }
+        Ok(())
+    }
+
+    fn push_word(
+        &mut self,
+        value: miden_assembly_syntax::parser::WordValue,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) {
+        for value in value.0 {
+            self.push_value(builder.felt(value, span), span);
+        }
+    }
+
+    fn push_word_slice(
+        &mut self,
+        value: miden_assembly_syntax::parser::WordValue,
+        range: &std::ops::Range<usize>,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let Some(values) = value.0.get(range.clone()) else {
+            return Err(error::error(format!(
+                "invalid push word slice range {:?} at {span:?}",
+                range
+            )));
+        };
+        for value in values {
+            self.push_value(builder.felt(*value, span), span);
         }
         Ok(())
     }
@@ -974,6 +1034,60 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn eq_word(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let rhs = self.pop_word(span)?;
+        let lhs = self.pop_word(span)?;
+        let mut result = None;
+        for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+            let lhs = self.cast(builder, lhs.value, Type::Felt, span)?;
+            let rhs = self.cast(builder, rhs.value, Type::Felt, span)?;
+            let comparison = builder.eq(lhs, rhs, span)?;
+            result = Some(match result {
+                Some(result) => builder.and(result, comparison, span)?,
+                None => comparison,
+            });
+        }
+        let result = result.ok_or_else(|| {
+            error::error(format!("word equality requires word operands at {span:?}"))
+        })?;
+        self.push_value(result, span);
+        Ok(())
+    }
+
+    fn assert_eq_word(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let rhs = self.pop_word(span)?;
+        let lhs = self.pop_word(span)?;
+        for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+            let lhs = self.cast(builder, lhs.value, Type::Felt, span)?;
+            let rhs = self.cast(builder, rhs.value, Type::Felt, span)?;
+            builder.assert_eq(lhs, rhs, span)?;
+        }
+        Ok(())
+    }
+
+    fn u32_assert_n(
+        &mut self,
+        n: usize,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        self.require_depth(n - 1, span)?;
+        let start = self.stack.len() - n;
+        for index in start..self.stack.len() {
+            let value = self.stack[index].value;
+            self.stack[index].value = self.cast(builder, value, Type::U32, span)?;
+        }
+        Ok(())
+    }
+
     fn cast_stack_to_types(
         &mut self,
         builder: &mut FunctionBuilder<'_, OpBuilder>,
@@ -1062,6 +1176,13 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn dup_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
+        for _ in 0..4 {
+            self.dup(depth * 4 + 3, span)?;
+        }
+        Ok(())
+    }
+
     fn swap(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
         let index = self.index_from_top(depth, span)?;
         let top = self.index_from_top(0, span)?;
@@ -1069,10 +1190,48 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn swap_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
+        self.swap_chunks(4, depth, span)
+    }
+
+    fn swap_double_word(&mut self, span: SourceSpan) -> Result<()> {
+        self.swap_chunks(8, 1, span)
+    }
+
+    fn swap_chunks(&mut self, chunk_len: usize, depth: usize, span: SourceSpan) -> Result<()> {
+        let total = chunk_len * (depth + 1);
+        self.require_depth(total - 1, span)?;
+        let len = self.stack.len();
+        let top_start = len - chunk_len;
+        let other_start = len - total;
+        for offset in 0..chunk_len {
+            self.stack.swap(other_start + offset, top_start + offset);
+        }
+        Ok(())
+    }
+
     fn movup(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
         let index = self.index_from_top(depth, span)?;
         let value = self.stack.remove(index);
         self.stack.push(value);
+        Ok(())
+    }
+
+    fn movup_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
+        self.move_chunk_to_top(4, depth, span)
+    }
+
+    fn move_chunk_to_top(
+        &mut self,
+        chunk_len: usize,
+        depth: usize,
+        span: SourceSpan,
+    ) -> Result<()> {
+        let total = chunk_len * (depth + 1);
+        self.require_depth(total - 1, span)?;
+        let start = self.stack.len() - total;
+        let chunk: Vec<_> = self.stack.drain(start..start + chunk_len).collect();
+        self.stack.extend(chunk);
         Ok(())
     }
 
@@ -1084,11 +1243,41 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn movdn_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
+        self.move_top_chunk_down(4, depth, span)
+    }
+
+    fn move_top_chunk_down(
+        &mut self,
+        chunk_len: usize,
+        depth: usize,
+        span: SourceSpan,
+    ) -> Result<()> {
+        self.require_depth(chunk_len * (depth + 1) - 1, span)?;
+        let len = self.stack.len();
+        let chunk: Vec<_> = self.stack.drain(len - chunk_len..).collect();
+        let index = self.stack.len() - (chunk_len * depth);
+        self.stack.splice(index..index, chunk);
+        Ok(())
+    }
+
     fn reverse_word(&mut self, span: SourceSpan) -> Result<()> {
         self.require_depth(3, span)?;
         let len = self.stack.len();
         self.stack[len - 4..].reverse();
         Ok(())
+    }
+
+    fn reverse_double_word(&mut self, span: SourceSpan) -> Result<()> {
+        self.require_depth(7, span)?;
+        let len = self.stack.len();
+        self.stack[len - 8..].reverse();
+        Ok(())
+    }
+
+    fn pop_word(&mut self, span: SourceSpan) -> Result<Vec<StackValue>> {
+        self.require_depth(3, span)?;
+        Ok(self.stack.split_off(self.stack.len() - 4))
     }
 
     fn index_from_top(&self, depth: usize, span: SourceSpan) -> Result<usize> {

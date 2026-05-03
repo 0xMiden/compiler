@@ -106,11 +106,13 @@ fn masm_module_path_from_file(path: &Path) -> Result<miden_assembly_syntax::Path
 mod tests {
     use std::rc::Rc;
 
-    use midenc_dialect_arith::Incr as ArithIncr;
+    use midenc_dialect_arith::{
+        And as ArithAnd, Constant as ArithConstant, Eq as ArithEq, Incr as ArithIncr,
+    };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
         SymbolName, SymbolTable, Type,
-        dialects::builtin::{self, Function},
+        dialects::builtin::{self, Function, UnrealizedConversionCast},
     };
 
     use super::*;
@@ -250,6 +252,125 @@ end
 
         let function = find_function(output.module, "loop_once");
         assert_eq!(top_level_op_count::<While>(function), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_word_stack_manipulation() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc shuffle(
+    a: felt, b: felt, c: felt, d: felt,
+    e: felt, f: felt, g: felt, h: felt,
+    i: felt, j: felt, k: felt, l: felt,
+    m: felt, n: felt, o: felt, p: felt
+) -> (felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt)
+    swapw.2
+    swapw.3
+    swapdw
+    movupw.2
+    movdnw.2
+    movupw.3
+    movdnw.3
+    reversedw
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "shuffle");
+        assert_eq!(function.borrow().get_signature().results().len(), 16);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_push_word_immediate() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc word() -> (felt, felt, felt, felt)
+    push.[1,2,3,4]
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "word");
+        assert_eq!(top_level_op_count::<ArithConstant>(function), 4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_eqw_to_arith_comparisons() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc words_equal(
+    a: felt, b: felt, c: felt, d: felt,
+    e: felt, f: felt, g: felt, h: felt
+) -> i1
+    eqw
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "words_equal");
+        assert_eq!(top_level_op_count::<ArithEq>(function), 4);
+        assert_eq!(top_level_op_count::<ArithAnd>(function), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_assert_eqw_to_hir_assert_eqs() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc assert_words(
+    a: felt, b: felt, c: felt, d: felt,
+    e: felt, f: felt, g: felt, h: felt
+)
+    assert_eqw
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "assert_words");
+        assert_eq!(top_level_op_count::<midenc_dialect_hir::AssertEq>(function), 4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_u32assertw_as_u32_cast_contract() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc assert_word(a: felt, b: felt, c: felt, d: felt) -> (u32, u32, u32, u32)
+    u32assertw
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "assert_word");
+        assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 4);
 
         Ok(())
     }
