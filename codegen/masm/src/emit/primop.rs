@@ -321,6 +321,22 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::Nop, span);
     }
 
+    /// Execute the given kernel procedure as a syscall.
+    pub fn syscall(
+        &mut self,
+        callee: masm::InvocationTarget,
+        signature: &Signature,
+        span: SourceSpan,
+    ) {
+        self.process_call_signature(&callee, signature, span);
+
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::SysCall(callee), span);
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+    }
+
     fn process_call_signature(
         &mut self,
         callee: &masm::InvocationTarget,

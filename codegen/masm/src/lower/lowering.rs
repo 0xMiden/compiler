@@ -904,6 +904,58 @@ impl HirLowering for hir::Call {
     }
 }
 
+impl HirLowering for hir::Syscall {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        use midenc_hir::{CallOpInterface, CallableOpInterface};
+
+        let callee = self.resolve().ok_or_else(|| {
+            let context = self.as_operation().context();
+            context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message("invalid syscall operation: unable to resolve callee")
+                .with_primary_label(
+                    self.span(),
+                    "this symbol path is not resolvable from this operation",
+                )
+                .with_help(
+                    "Make sure that all referenced symbols are reachable via the root symbol \
+                     table, and use absolute paths to refer to symbols in ancestor/sibling modules",
+                )
+                .into_report()
+        })?;
+        let callee = callee.borrow();
+        let callee_path = callee.path();
+        let signature = match callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>() {
+            Some(callable) => callable.signature(),
+            None => {
+                let context = self.as_operation().context();
+                return Err(context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid syscall operation: callee is not a callable op")
+                    .with_primary_label(
+                        self.span(),
+                        format!(
+                            "this symbol resolved to a '{}' op, which does not implement Callable",
+                            callee.as_symbol_operation().name()
+                        ),
+                    )
+                    .into_report());
+            }
+        };
+
+        // Convert the symbol path to a fully-qualified procedure path
+        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
+
+        emitter
+            .inst_emitter(self.as_operation())
+            .syscall(callee, &signature, self.span());
+
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Load {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let result = self.result();

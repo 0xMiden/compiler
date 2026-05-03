@@ -531,6 +531,21 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(callee, signature, args)
     }
 
+    fn syscall<C, A>(
+        &mut self,
+        callee: C,
+        signature: Signature,
+        args: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Syscall>, Report>
+    where
+        C: AsCallableSymbolRef,
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::Syscall, (C, _, A)>(span);
+        op_builder(callee, signature, args)
+    }
+
     /*
     fn inline_asm(
         self,
