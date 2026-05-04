@@ -7,6 +7,7 @@ use super::types::{Asset, NoteIdx, NoteMetadata, NoteType, Recipient, Tag};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::create"]
     pub fn extern_output_note_create(
         tag: Tag,
@@ -16,7 +17,7 @@ unsafe extern "C" {
         recipient_f2: Felt,
         recipient_f3: Felt,
     ) -> NoteIdx;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::add_asset"]
     pub fn extern_output_note_add_asset(
         asset_key_f0: Felt,
@@ -29,19 +30,19 @@ unsafe extern "C" {
         asset_value_f3: Felt,
         note_idx: NoteIdx,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_assets_info"]
     pub fn extern_output_note_get_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_assets"]
     pub fn extern_output_note_get_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_recipient"]
     pub fn extern_output_note_get_recipient(note_index: Felt, ptr: *mut Recipient);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_metadata"]
     pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut NoteMetadata);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::set_attachment"]
     pub fn extern_output_note_set_attachment(
         note_idx: NoteIdx,
@@ -52,7 +53,7 @@ unsafe extern "C" {
         attachment_f2: Felt,
         attachment_f3: Felt,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::set_word_attachment"]
     pub fn extern_output_note_set_word_attachment(
         note_idx: NoteIdx,
@@ -62,7 +63,7 @@ unsafe extern "C" {
         attachment_f2: Felt,
         attachment_f3: Felt,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::set_array_attachment"]
     pub fn extern_output_note_set_array_attachment(
         note_idx: NoteIdx,

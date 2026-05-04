@@ -72,6 +72,7 @@ unsafe extern "C" {
     /// Outputs: `[C, ...]` where `C = Poseidon2(A || B)`
     ///
     /// The digest output is returned to the caller via `result_ptr`.
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "miden::core::crypto::hashes::poseidon2::merge"]
     fn extern_poseidon2_merge(
         a0: Felt,

@@ -7,27 +7,28 @@ use super::types::{AccountId, Asset, NoteIdx, NoteMetadata, RawAccountId, Recipi
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_assets_info"]
     fn extern_input_note_get_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_assets"]
     fn extern_input_note_get_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_recipient"]
     fn extern_input_note_get_recipient(note_index: Felt, ptr: *mut Recipient);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_metadata"]
     fn extern_input_note_get_metadata(note_index: Felt, ptr: *mut NoteMetadata);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_sender"]
     fn extern_input_note_get_sender(note_index: Felt, ptr: *mut RawAccountId);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_storage_info"]
     fn extern_input_note_get_storage_info(note_index: Felt, ptr: *mut (Word, Felt));
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_script_root"]
     fn extern_input_note_get_script_root(note_index: Felt, ptr: *mut Word);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_serial_number"]
     fn extern_input_note_get_serial_number(note_index: Felt, ptr: *mut Word);
 }

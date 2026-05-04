@@ -4,20 +4,28 @@ use super::types::{AccountId, Asset, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_id"]
     fn extern_active_account_get_id(ptr: *mut RawAccountId);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_nonce"]
     fn extern_active_account_get_nonce() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_commitment"]
     fn extern_active_account_get_initial_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::compute_commitment"]
     fn extern_active_account_compute_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_code_commitment"]
     fn extern_active_account_get_code_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_storage_commitment"]
     fn extern_active_account_get_initial_storage_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::compute_storage_commitment"]
     fn extern_active_account_compute_storage_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_asset"]
     fn extern_active_account_get_asset(
         asset_key_0: Felt,
@@ -26,6 +34,7 @@ unsafe extern "C" {
         asset_key_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_asset"]
     fn extern_active_account_get_initial_asset(
         asset_key_0: Felt,
@@ -34,13 +43,16 @@ unsafe extern "C" {
         asset_key_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_balance"]
     fn extern_active_account_get_balance(faucet_id_suffix: Felt, faucet_id_prefix: Felt) -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_balance"]
     fn extern_active_account_get_initial_balance(
         faucet_id_suffix: Felt,
         faucet_id_prefix: Felt,
     ) -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::has_non_fungible_asset"]
     fn extern_active_account_has_non_fungible_asset(
         asset_0: Felt,
@@ -48,14 +60,19 @@ unsafe extern "C" {
         asset_2: Felt,
         asset_3: Felt,
     ) -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_vault_root"]
     fn extern_active_account_get_initial_vault_root(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_vault_root"]
     fn extern_active_account_get_vault_root(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_num_procedures"]
     fn extern_active_account_get_num_procedures() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_procedure_root"]
     fn extern_active_account_get_procedure_root(index: Felt, ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::has_procedure"]
     fn extern_active_account_has_procedure(
         proc_root_0: Felt,

@@ -10,6 +10,7 @@ const MAX_NOTE_STORAGE_ITEMS: usize = 1024;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::note::build_recipient"]
     fn extern_note_build_recipient(
         storage_ptr: *mut Felt,

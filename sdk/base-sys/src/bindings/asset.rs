@@ -4,6 +4,7 @@ use super::types::{AccountId, Asset};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::asset::create_fungible_asset"]
     pub fn extern_asset_create_fungible_asset(
         faucet_id_suffix: Felt,
@@ -11,7 +12,7 @@ unsafe extern "C" {
         amount: Felt,
         ptr: *mut Asset,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::asset::create_non_fungible_asset"]
     pub fn extern_asset_create_non_fungible_asset(
         faucet_id_suffix: Felt,

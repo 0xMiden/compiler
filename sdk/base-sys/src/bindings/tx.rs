@@ -2,30 +2,31 @@ use miden_stdlib_sys::{Felt, Word};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_block_number"]
     pub fn extern_tx_get_block_number() -> Felt;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_block_commitment"]
     pub fn extern_tx_get_block_commitment(ptr: *mut Word);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_block_timestamp"]
     pub fn extern_tx_get_block_timestamp() -> Felt;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_input_notes_commitment"]
     pub fn extern_tx_get_input_notes_commitment(ptr: *mut Word);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_output_notes_commitment"]
     pub fn extern_tx_get_output_notes_commitment(ptr: *mut Word);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_num_input_notes"]
     pub fn extern_tx_get_num_input_notes() -> Felt;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_num_output_notes"]
     pub fn extern_tx_get_num_output_notes() -> Felt;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::get_expiration_block_delta"]
     pub fn extern_tx_get_expiration_block_delta() -> Felt;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::update_expiration_block_delta"]
     pub fn extern_tx_update_expiration_block_delta(delta: Felt);
 }

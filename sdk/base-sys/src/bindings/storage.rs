@@ -6,12 +6,13 @@ use super::StorageSlotId;
 unsafe extern "C" {
     // The public SDK models storage slots as `(prefix, suffix)`, but the host ABI expects the slot
     // coordinates in storage order: `(suffix, prefix)`.
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_item"]
     pub fn extern_get_storage_item(index_suffix: Felt, index_prefix: Felt, ptr: *mut Word);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_item"]
     pub fn extern_get_initial_storage_item(index_suffix: Felt, index_prefix: Felt, ptr: *mut Word);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::set_item"]
     pub fn extern_set_storage_item(
         index_suffix: Felt,
@@ -22,7 +23,7 @@ unsafe extern "C" {
         v3: Felt,
         ptr: *mut Word,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_map_item"]
     pub fn extern_get_storage_map_item(
         index_suffix: Felt,
@@ -33,7 +34,7 @@ unsafe extern "C" {
         k3: Felt,
         ptr: *mut Word,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_map_item"]
     pub fn extern_get_initial_storage_map_item(
         index_suffix: Felt,
@@ -44,7 +45,7 @@ unsafe extern "C" {
         k3: Felt,
         ptr: *mut Word,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::set_map_item"]
     pub fn extern_set_storage_map_item(
         index_suffix: Felt,

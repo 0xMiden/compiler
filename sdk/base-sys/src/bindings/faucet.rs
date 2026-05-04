@@ -4,9 +4,10 @@ use super::types::Asset;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::faucet::create_fungible_asset"]
     pub fn extern_faucet_create_fungible_asset(amount: Felt, ptr: *mut Asset);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::faucet::create_non_fungible_asset"]
     pub fn extern_faucet_create_non_fungible_asset(
         data_hash_0: Felt,
@@ -15,7 +16,7 @@ unsafe extern "C" {
         data_hash_3: Felt,
         ptr: *mut Asset,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::faucet::mint"]
     pub fn extern_faucet_mint(
         asset_key_0: Felt,
@@ -28,7 +29,7 @@ unsafe extern "C" {
         asset_value_3: Felt,
         ptr: *mut Word,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::faucet::burn"]
     pub fn extern_faucet_burn(
         asset_key_0: Felt,

@@ -5,6 +5,7 @@ use crate::intrinsics::{Felt, Word};
 
 #[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "miden::core::crypto::dsa::falcon512_poseidon2::verify"]
     fn extern_rpo_falcon512_verify(
         pk0: Felt,

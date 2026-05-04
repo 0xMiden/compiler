@@ -4,12 +4,13 @@ pub use miden_field::Felt;
 
 #[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "intrinsics::felt::assert"]
     fn extern_assert(a: Felt);
-
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "intrinsics::felt::assertz"]
     fn extern_assertz(a: Felt);
-
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "intrinsics::felt::assert_eq"]
     fn extern_assert_eq(a: Felt, b: Felt);
 }

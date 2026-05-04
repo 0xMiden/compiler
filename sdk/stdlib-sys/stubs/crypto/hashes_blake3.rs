@@ -3,6 +3,8 @@ use core::ffi::c_void;
 /// Unreachable stubs for std::crypto::hashes::blake3
 
 #[unsafe(export_name = "miden::core::crypto::hashes::blake3::hash")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn blake3_hash_stub(
     _e1: u32,
     _e2: u32,
@@ -18,6 +20,8 @@ pub extern "C" fn blake3_hash_stub(
 }
 
 #[unsafe(export_name = "miden::core::crypto::hashes::blake3::merge")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn blake3_merge_stub(
     _e1: u32,
     _e2: u32,

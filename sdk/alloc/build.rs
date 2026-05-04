@@ -65,5 +65,5 @@ fn main() {
 
     // Link for dependents of this crate
     println!("cargo:rustc-link-search=native={}", out_dir.display());
-    println!("cargo:rustc-link-lib=static=miden_alloc_intrinsics");
+    println!("cargo:rustc-link-lib=static:+whole-archive=miden_alloc_intrinsics");
 }

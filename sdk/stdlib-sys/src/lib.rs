@@ -1,4 +1,5 @@
 #![no_std]
+#![cfg_attr(all(target_family = "wasm", miden), feature(linkage))]
 #![deny(warnings)]
 
 extern crate alloc;

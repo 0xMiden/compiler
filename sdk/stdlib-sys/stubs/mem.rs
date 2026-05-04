@@ -3,6 +3,8 @@ use core::ffi::c_void;
 /// Unreachable stubs for std::mem procedures used via SDK
 
 #[unsafe(export_name = "miden::core::mem::pipe_words_to_memory")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn std_mem_pipe_words_to_memory_stub(
     _num_words: f32,
     _write_ptr: *mut c_void,
@@ -12,6 +14,8 @@ pub extern "C" fn std_mem_pipe_words_to_memory_stub(
 }
 
 #[unsafe(export_name = "miden::core::mem::pipe_double_words_to_memory")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn std_mem_pipe_double_words_to_memory_stub(
     _r00: f32,
     _r01: f32,
@@ -33,6 +37,8 @@ pub extern "C" fn std_mem_pipe_double_words_to_memory_stub(
 }
 
 #[unsafe(export_name = "miden::core::mem::pipe_preimage_to_memory")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn std_mem_pipe_preimage_to_memory_stub(
     _num_words: f32,
     _write_ptr: *mut c_void,

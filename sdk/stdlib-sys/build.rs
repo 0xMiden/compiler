@@ -142,6 +142,6 @@ fn main() {
 
     // Emit link directives for dependents
     println!("cargo:rustc-link-search=native={}", out_dir.display());
-    println!("cargo:rustc-link-lib=static=miden_stdlib_sys_intrinsics_stubs");
-    println!("cargo:rustc-link-lib=static=miden_stdlib_sys_stdlib_stubs");
+    println!("cargo:rustc-link-lib=static:+whole-archive=miden_stdlib_sys_intrinsics_stubs");
+    println!("cargo:rustc-link-lib=static:+whole-archive=miden_stdlib_sys_stdlib_stubs");
 }
