@@ -82,12 +82,11 @@ impl LiveMap {
         // than to the terminator op itself, a terminator op can't e.g. "print" the value of a
         // successor operand.
         //
-        // ## Debug Info
+        // ## Transparent Metadata
         //
-        // The debug info dialect introduces operations that "use" SSA values, but if the use would
-        // otherwise be dead if the op didn't exist, then we want to treat both the debug op and
-        // the value use as dead, so that debug info ops do not interfere with dead-code
-        // elimination.
+        // Some Transparent operations "use" SSA values only as metadata. If the use would
+        // otherwise be dead if the op didn't exist, then we treat both the metadata op and the
+        // value use as dead, so that these ops do not interfere with dead-code elimination.
         let owner_ref = &user.owner;
         let owner = owner_ref.borrow();
         if owner.implements::<dyn Terminator>()
@@ -98,7 +97,7 @@ impl LiveMap {
         }
 
         // If the owning op is transparent, then its value uses are not considered when determining
-        // liveness
+        // liveness.
         owner.implements::<dyn Transparent>()
     }
 

@@ -175,9 +175,9 @@ pub trait Value:
         self.iter_uses()
             .any(|user| user.owner.parent().is_some_and(|blk| !BlockRef::ptr_eq(&blk, block)))
     }
-    /// Returns true if this value has at least one user that is not a debug info op
+    /// Returns true if this value has at least one non-transparent user that should keep it alive
     fn has_real_uses(&self) -> bool {
-        // The value is used so long as at least one using op is not Transparent
+        // The value is used so long as at least one using op is not Transparent.
         self.uses()
             .iter()
             .any(|user| !user.owner.borrow().implements::<dyn Transparent>())
