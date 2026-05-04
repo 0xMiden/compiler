@@ -4,6 +4,17 @@ use midenc_expect_test::expect_file;
 
 use crate::{CompilerTestBuilder, testing::setup};
 
+fn debug_rustflags() -> [Cow<'static, str>; 6] {
+    [
+        Cow::Borrowed("-C"),
+        Cow::Borrowed("debuginfo=2"),
+        Cow::Borrowed("-C"),
+        Cow::Borrowed("opt-level=0"),
+        Cow::Borrowed("-C"),
+        Cow::Borrowed("overflow-checks=off"),
+    ]
+}
+
 #[test]
 fn variable_locations_schedule() {
     setup::enable_compiler_instrumentation();
@@ -21,7 +32,7 @@ fn variable_locations_schedule() {
     "#;
 
     let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
-    builder.with_rustflags([Cow::Borrowed("-C"), Cow::Borrowed("debuginfo=2")]);
+    builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["../../expected/debug_variable_locations.hir"]);
 }
@@ -37,7 +48,7 @@ fn debug_simple_params() {
     "#;
 
     let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
-    builder.with_rustflags([Cow::Borrowed("-C"), Cow::Borrowed("debuginfo=2")]);
+    builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["../../expected/debug_simple_params.hir"]);
 }
@@ -54,7 +65,7 @@ fn debug_conditional_assignment() {
     "#;
 
     let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
-    builder.with_rustflags([Cow::Borrowed("-C"), Cow::Borrowed("debuginfo=2")]);
+    builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["../../expected/debug_conditional_assignment.hir"]);
 }
@@ -73,7 +84,7 @@ fn debug_multiple_locals() {
     "#;
 
     let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
-    builder.with_rustflags([Cow::Borrowed("-C"), Cow::Borrowed("debuginfo=2")]);
+    builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["../../expected/debug_multiple_locals.hir"]);
 }
@@ -99,7 +110,7 @@ fn debug_nested_loops() {
     "#;
 
     let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
-    builder.with_rustflags([Cow::Borrowed("-C"), Cow::Borrowed("debuginfo=2")]);
+    builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["../../expected/debug_nested_loops.hir"]);
 }

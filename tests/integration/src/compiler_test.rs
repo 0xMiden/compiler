@@ -420,6 +420,7 @@ impl CompilerTestBuilder {
                     fs::remove_dir_all(&working_dir).unwrap();
                 }
                 fs::create_dir_all(&working_dir).unwrap();
+                let working_dir = working_dir.canonicalize().unwrap_or(working_dir);
 
                 // Prepare inputs
                 let basename = working_dir.join(config.name.as_ref());
@@ -429,9 +430,29 @@ impl CompilerTestBuilder {
                 // Output is the same name as the input, just with a different extension
                 let output_file = basename.with_extension("wasm");
 
+                // `RUSTFLAGS` is a Cargo convention; direct `rustc` invocations
+                // need these flags passed as argv. `panic=immediate-abort` only
+                // works when rebuilding core, so keep it Cargo-only.
+                let mut rustc_flags = Vec::with_capacity(self.rustflags.len());
+                let mut flags = self.rustflags.iter().map(|flag| flag.as_ref());
+                while let Some(flag) = flags.next() {
+                    if flag == "-C"
+                        && let Some(value) = flags.next()
+                    {
+                        if value != "panic=immediate-abort" {
+                            rustc_flags.extend([flag, value]);
+                        }
+                        continue;
+                    }
+                    rustc_flags.push(flag);
+                }
+
                 let output = command
+                    .arg("--remap-path-prefix")
+                    .arg(format!("{}=.", working_dir.display()))
                     .args(["-C", "opt-level=z"]) // optimize for size
                     .args(["-C", "target-feature=+wide-arithmetic"])
+                    .args(rustc_flags)
                     .arg("--target")
                     .arg(config.target.as_ref())
                     .arg("-o")

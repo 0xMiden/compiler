@@ -97,6 +97,7 @@ pub struct FunctionDebugInfo {
 #[derive(Default, Clone)]
 struct DwarfLocalData {
     name: Option<Symbol>,
+    decl_file: Option<Symbol>,
     locations: Vec<LocationDescriptor>,
     decl_line: Option<u32>,
     decl_column: Option<u32>,
@@ -289,6 +290,9 @@ fn build_local_debug_info(
         }
         let dwarf_info = dwarf_entry.cloned();
         if let Some(info) = dwarf_info.as_ref() {
+            if let Some(file) = info.decl_file {
+                attr.file = file;
+            }
             if let Some(line) = info.decl_line
                 && line != 0
             {
@@ -340,6 +344,9 @@ fn build_local_debug_info(
             }
             let dwarf_info = dwarf_entry.cloned();
             if let Some(info) = dwarf_info.as_ref() {
+                if let Some(file) = info.decl_file {
+                    attr.file = file;
+                }
                 if let Some(line) = info.decl_line
                     && line != 0
                 {
@@ -375,6 +382,9 @@ fn build_local_debug_info(
         for fb_var in fb_vars {
             let name = fb_var.name.unwrap_or_else(|| Symbol::intern("?"));
             let mut attr = Variable::new(name, subprogram.file, subprogram.line, subprogram.column);
+            if let Some(file) = fb_var.decl_file {
+                attr.file = file;
+            }
             if let Some(line) = fb_var.decl_line.filter(|l| *l != 0) {
                 attr.line = line;
             }
@@ -686,6 +696,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
                 let local_map = results.entry(func_index).or_default();
                 let entry = local_map.entry(local_index).or_insert_with(DwarfLocalData::default);
                 entry.name = entry.name.or(data.name);
+                entry.decl_file = entry.decl_file.or(data.decl_file);
                 entry.decl_line = entry.decl_line.or(data.decl_line);
                 entry.decl_column = entry.decl_column.or(data.decl_column);
                 if !data.locations.is_empty() {
@@ -729,6 +740,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
     frame_base_vars: &mut Vec<DwarfLocalData>,
 ) -> gimli::Result<Option<(u32, DwarfLocalData)>> {
     let mut name_symbol = None;
+    let mut decl_file = None;
     let mut location_attr = None;
     let mut decl_line = None;
     let mut decl_column = None;
@@ -743,6 +755,11 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                 }
             }
             gimli::DW_AT_location => location_attr = Some(attr.value()),
+            gimli::DW_AT_decl_file => {
+                if let Some(file_index) = attr.udata_value() {
+                    decl_file = resolve_decl_file(dwarf, unit, file_index);
+                }
+            }
             gimli::DW_AT_decl_line => {
                 if let Some(line) = attr.udata_value() {
                     decl_line = Some(line as u32);
@@ -783,6 +800,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                     });
                     let data = DwarfLocalData {
                         name: name_symbol,
+                        decl_file,
                         locations,
                         decl_line,
                         decl_column,
@@ -799,6 +817,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                     });
                     let data = DwarfLocalData {
                         name: name_symbol,
+                        decl_file,
                         locations,
                         decl_line,
                         decl_column,
@@ -849,6 +868,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
             {
                 let data = DwarfLocalData {
                     name: name_symbol,
+                    decl_file,
                     locations,
                     decl_line,
                     decl_column,
@@ -858,6 +878,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                 // FrameBase-only location list variable
                 let data = DwarfLocalData {
                     name: name_symbol,
+                    decl_file,
                     locations,
                     decl_line,
                     decl_column,
@@ -871,6 +892,19 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
     }
 
     Ok(None)
+}
+
+fn resolve_decl_file<R: gimli::Reader<Offset = usize>>(
+    dwarf: &gimli::Dwarf<R>,
+    unit: &gimli::Unit<R>,
+    file_index: u64,
+) -> Option<Symbol> {
+    let line_program = unit.line_program.as_ref()?;
+    let header = line_program.header();
+    let file = header.file(file_index)?;
+    let raw = dwarf.attr_string(unit, file.path_name()).ok()?;
+    let path = raw.to_string_lossy().ok()?;
+    Some(Symbol::intern(path.as_ref()))
 }
 
 fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
