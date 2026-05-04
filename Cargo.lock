@@ -3592,6 +3592,7 @@ dependencies = [
  "miden-assembly-syntax",
  "miden-core",
  "miden-mast-package",
+ "miden-package-registry",
  "miden-project",
  "midenc-dialect-arith",
  "midenc-dialect-hir",

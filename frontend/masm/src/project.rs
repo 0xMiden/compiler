@@ -9,7 +9,10 @@ use miden_assembly_syntax::{
 };
 use miden_core::serde::Deserializable;
 use miden_mast_package::{Package as MastPackage, PackageExport};
-use miden_project::{DependencyVersionScheme, Package as ProjectPackage, Project, Target};
+use miden_project::{
+    DependencyVersionScheme, Package as ProjectPackage, Project, ProjectDependencyGraph,
+    ProjectDependencyNode, ProjectDependencyNodeProvenance, ProjectSource, Target,
+};
 use midenc_hir::Context;
 
 use crate::{ExternalSignatureMap, Result, error, signatures};
@@ -69,11 +72,76 @@ pub(crate) fn resolve_project_target(
     let module_path = target.namespace.inner().as_ref().to_path_buf();
     let external_signatures = collect_dependency_signatures(&project, context)?;
 
-    Ok(ProjectTargetInput {
+    Ok(project_target_input(source_path, module_path, external_signatures))
+}
+
+pub(crate) fn resolve_project_target_with_dependency_graph(
+    manifest_path: &Path,
+    target_name: Option<&str>,
+    dependency_graph: &ProjectDependencyGraph,
+    context: &Context,
+) -> Result<ProjectTargetInput> {
+    let source_manager = context.session().source_manager.clone();
+    let project = Project::load(manifest_path, source_manager.as_ref())?;
+    let package = project.package();
+    let package_name = package.name();
+    if dependency_graph.root() != package_name.inner() {
+        return Err(error::error(format!(
+            "dependency graph root '{}' does not match project package '{}'",
+            dependency_graph.root(),
+            package_name.inner()
+        )));
+    }
+
+    let target = package
+        .library_target()
+        .into_iter()
+        .chain(package.executable_targets().iter())
+        .find(|target| target_name.is_none_or(|name| target.name.as_ref().inner().as_ref() == name))
+        .ok_or_else(|| match target_name {
+            Some(name) => error::error(format!("project has no target named '{name}'")),
+            None => error::error("project has no build targets"),
+        })?;
+
+    let target_path = target.path.as_ref().ok_or_else(|| {
+        error::error(format!(
+            "target '{}' does not specify a MASM source path",
+            target.name.inner()
+        ))
+    })?;
+
+    let target_path = Path::new(target_path.inner().path());
+    if target_path.extension().and_then(|ext| ext.to_str()) != Some("masm") {
+        return Err(error::error(format!(
+            "target '{}' path '{}' is not a .masm file",
+            target.name.inner(),
+            target_path.display()
+        )));
+    }
+
+    let base_dir = package_base_dir(package.as_ref())?;
+    let source_path = resolve_uri_path(
+        base_dir,
+        target_path.to_str().ok_or_else(|| {
+            error::error(format!("target path '{}' is not valid UTF-8", target_path.display()))
+        })?,
+    );
+    let module_path = target.namespace.inner().as_ref().to_path_buf();
+    let external_signatures = collect_dependency_graph_signatures(dependency_graph, context)?;
+
+    Ok(project_target_input(source_path, module_path, external_signatures))
+}
+
+fn project_target_input(
+    source_path: PathBuf,
+    module_path: MasmPathBuf,
+    external_signatures: ExternalSignatureMap,
+) -> ProjectTargetInput {
+    ProjectTargetInput {
         source_path,
         module_path,
         external_signatures,
-    })
+    }
 }
 
 fn collect_dependency_signatures(
@@ -94,6 +162,63 @@ fn collect_dependency_signatures(
         )?;
     }
     Ok(signatures)
+}
+
+fn collect_dependency_graph_signatures(
+    dependency_graph: &ProjectDependencyGraph,
+    context: &Context,
+) -> Result<ExternalSignatureMap> {
+    let mut signatures = ExternalSignatureMap::new();
+    let source_manager = context.session().source_manager.clone();
+
+    for (package, node) in dependency_graph.nodes() {
+        if package == dependency_graph.root() {
+            continue;
+        }
+        collect_dependency_graph_node_signatures(
+            &mut signatures,
+            node,
+            context,
+            source_manager.clone(),
+        )?;
+    }
+
+    Ok(signatures)
+}
+
+fn collect_dependency_graph_node_signatures(
+    signatures: &mut ExternalSignatureMap,
+    node: &ProjectDependencyNode,
+    context: &Context,
+    source_manager: Arc<dyn SourceManager>,
+) -> Result<()> {
+    match &node.provenance {
+        ProjectDependencyNodeProvenance::Preassembled { path, .. } => {
+            collect_mast_package_signatures(signatures, path)
+        }
+        ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
+            manifest_path,
+            library_path: Some(_),
+            ..
+        }) => {
+            let project = Project::load_project_reference(
+                node.name.as_ref(),
+                manifest_path,
+                source_manager.as_ref(),
+            )?;
+            let package = project.package();
+            collect_source_package_signatures(signatures, context, package.as_ref(), source_manager)
+        }
+        ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
+            library_path: None, ..
+        })
+        | ProjectDependencyNodeProvenance::Source(ProjectSource::Virtual { .. }) => Ok(()),
+        ProjectDependencyNodeProvenance::Registry { selected, .. } => Err(error::error(format!(
+            "dependency graph node '{}' resolved to registry package '{}', but registry package \
+             artifacts are not available from the dependency graph",
+            node.name, selected
+        ))),
+    }
 }
 
 fn collect_dependency_signature(

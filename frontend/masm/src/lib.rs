@@ -144,6 +144,30 @@ pub fn disassemble_project_target(
     )
 }
 
+/// Disassemble a target from a `miden-project.toml` package manifest, using a precomputed
+/// dependency graph to discover external procedure signatures.
+pub fn disassemble_project_target_with_dependency_graph(
+    manifest_path: impl AsRef<Path>,
+    target: Option<&str>,
+    dependency_graph: &miden_project::ProjectDependencyGraph,
+    config: &DisassemblerConfig,
+    context: Rc<Context>,
+) -> Result<DisassembledModule> {
+    let target = project::resolve_project_target_with_dependency_graph(
+        manifest_path.as_ref(),
+        target,
+        dependency_graph,
+        &context,
+    )?;
+    disassemble_file_with_module_path_and_external_signatures(
+        target.source_path,
+        target.module_path,
+        config,
+        &target.external_signatures,
+        context,
+    )
+}
+
 /// Disassemble a parsed MASM AST module into HIR.
 pub fn disassemble_module(
     module: &Module,
@@ -164,11 +188,16 @@ fn masm_module_path_from_file(path: &Path) -> Result<miden_assembly_syntax::Path
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::BTreeMap,
         fs,
         rc::Rc,
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use miden_package_registry::{
+        NoPackageStore, PackageId, PackageRecord, PackageRegistry, PackageVersions, Version,
+    };
+    use miden_project::ProjectDependencyGraphBuilder;
     use midenc_dialect_arith::{
         And as ArithAnd, Constant as ArithConstant, Eq as ArithEq, Incr as ArithIncr,
     };
@@ -418,35 +447,52 @@ end
 
     #[test]
     fn project_disassembly_uses_source_dependency_signatures() -> Result<()> {
-        let root = temp_project_dir("midenc_frontend_masm_source_dep");
+        let (root, app_dir) = write_source_dependency_project("midenc_frontend_masm_source_dep");
+
+        let context = Rc::new(Context::default());
+        let output = disassemble_project_target(
+            app_dir.join("miden-project.toml"),
+            None,
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+        let function = find_function(output.module, "entry");
+        assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+        let _ = fs::remove_dir_all(root);
+
+        Ok(())
+    }
+
+    #[test]
+    fn project_disassembly_consumes_precomputed_dependency_graph() -> Result<()> {
+        let (root, app_dir) = write_source_dependency_project("midenc_frontend_masm_graph_dep");
+        let context = Rc::new(Context::default());
+        let registry = NoPackageStore::default();
+        let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+            .with_source_manager(context.session().source_manager.clone())
+            .build_from_path(app_dir.join("miden-project.toml"))?;
+
+        let output = disassemble_project_target_with_dependency_graph(
+            app_dir.join("miden-project.toml"),
+            None,
+            &dependency_graph,
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+        let function = find_function(output.module, "entry");
+        assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+        let _ = fs::remove_dir_all(root);
+
+        Ok(())
+    }
+
+    #[test]
+    fn project_graph_registry_nodes_require_artifacts() -> Result<()> {
+        let root = temp_project_dir("midenc_frontend_masm_registry_graph");
         let app_dir = root.join("app");
-        let dep_dir = root.join("dep");
         fs::create_dir_all(&app_dir).unwrap();
-        fs::create_dir_all(&dep_dir).unwrap();
-
-        fs::write(
-            dep_dir.join("miden-project.toml"),
-            r#"[package]
-name = "dep"
-version = "0.0.1"
-
-[lib]
-path = "lib.masm"
-"#,
-        )
-        .unwrap();
-        fs::write(
-            dep_dir.join("lib.masm"),
-            r#"
-type Scalar = felt
-
-pub proc callee(a: Scalar) -> Scalar
-    add.1
-end
-"#,
-        )
-        .unwrap();
-
         fs::write(
             app_dir.join("miden-project.toml"),
             r#"[package]
@@ -457,7 +503,7 @@ version = "0.0.1"
 path = "main.masm"
 
 [dependencies]
-dep = { path = "../dep" }
+dep = "1.0.0"
 "#,
         )
         .unwrap();
@@ -472,15 +518,24 @@ end
         .unwrap();
 
         let context = Rc::new(Context::default());
-        let output = disassemble_project_target(
+        let mut registry = TestRegistry::default();
+        registry.insert("dep", "1.0.0");
+        let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+            .with_source_manager(context.session().source_manager.clone())
+            .build_from_path(app_dir.join("miden-project.toml"))?;
+
+        let err = match disassemble_project_target_with_dependency_graph(
             app_dir.join("miden-project.toml"),
             None,
+            &dependency_graph,
             &DisassemblerConfig::default(),
             context,
-        )?;
-        let function = find_function(output.module, "entry");
-        assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+        ) {
+            Ok(_) => panic!("registry-only graph nodes should not provide external signatures"),
+            Err(err) => err,
+        };
 
+        assert!(err.to_string().contains("registry package artifacts"));
         let _ = fs::remove_dir_all(root);
 
         Ok(())
@@ -790,5 +845,84 @@ end
     fn temp_project_dir(prefix: &str) -> std::path::PathBuf {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         std::env::temp_dir().join(format!("{prefix}_{}_{}", std::process::id(), nanos))
+    }
+
+    fn write_source_dependency_project(prefix: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = temp_project_dir(prefix);
+        let app_dir = root.join("app");
+        let dep_dir = root.join("dep");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&dep_dir).unwrap();
+
+        fs::write(
+            dep_dir.join("miden-project.toml"),
+            r#"[package]
+name = "dep"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dep_dir.join("lib.masm"),
+            r#"
+type Scalar = felt
+
+pub proc callee(a: Scalar) -> Scalar
+    add.1
+end
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            app_dir.join("miden-project.toml"),
+            r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+
+[dependencies]
+dep = { path = "../dep" }
+"#,
+        )
+        .unwrap();
+        fs::write(
+            app_dir.join("main.masm"),
+            r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+        )
+        .unwrap();
+
+        (root, app_dir)
+    }
+
+    #[derive(Default)]
+    struct TestRegistry {
+        packages: BTreeMap<PackageId, PackageVersions>,
+    }
+
+    impl TestRegistry {
+        fn insert(&mut self, name: &str, version: &str) {
+            let version = version.parse::<Version>().unwrap();
+            let record = PackageRecord::new(version, std::iter::empty());
+            self.packages
+                .entry(PackageId::from(name))
+                .or_default()
+                .insert(record.semantic_version().clone(), record);
+        }
+    }
+
+    impl PackageRegistry for TestRegistry {
+        fn available_versions(&self, package: &PackageId) -> Option<&PackageVersions> {
+            self.packages.get(package)
+        }
     }
 }
