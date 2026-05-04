@@ -35,6 +35,13 @@ pub(crate) fn convert_hir_function_type(
     )
 }
 
+pub(crate) fn convert_ast_function_type(signature: &FunctionType) -> Result<HirFunctionType> {
+    let params = signature.args.iter().map(convert_type_expr).collect::<Result<Vec<_>>>()?;
+    let results = signature.results.iter().map(convert_type_expr).collect::<Result<Vec<_>>>()?;
+
+    Ok(HirFunctionType::new(convert_callconv(signature.cc), params, results))
+}
+
 fn convert_callconv(cc: CallConv) -> CallConv {
     cc
 }

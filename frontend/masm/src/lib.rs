@@ -67,11 +67,28 @@ pub fn disassemble_file_with_external_signatures(
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
     let path = path.as_ref();
+    let module_path = masm_module_path_from_file(path)?;
+    disassemble_file_with_module_path_and_external_signatures(
+        path,
+        module_path,
+        config,
+        external_signatures,
+        context,
+    )
+}
+
+fn disassemble_file_with_module_path_and_external_signatures(
+    path: impl AsRef<Path>,
+    module_path: impl AsRef<miden_assembly_syntax::Path>,
+    config: &DisassemblerConfig,
+    external_signatures: &ExternalSignatureMap,
+    context: Rc<Context>,
+) -> Result<DisassembledModule> {
+    let path = path.as_ref();
     let source_manager = context.session().source_manager.clone();
     let source_file = source_manager.load_file(path).map_err(|err| {
         error::error(format!("failed to load MASM source '{}': {err}", path.display()))
     })?;
-    let module_path = masm_module_path_from_file(path)?;
     let module = source_file
         .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))?;
     lift::lift_module(&module, config, external_signatures, context)
@@ -118,8 +135,9 @@ pub fn disassemble_project_target(
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
     let target = project::resolve_project_target(manifest_path.as_ref(), target, &context)?;
-    disassemble_file_with_external_signatures(
+    disassemble_file_with_module_path_and_external_signatures(
         target.source_path,
+        target.module_path,
         config,
         &target.external_signatures,
         context,
@@ -145,7 +163,11 @@ fn masm_module_path_from_file(path: &Path) -> Result<miden_assembly_syntax::Path
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+    use std::{
+        fs,
+        rc::Rc,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     use midenc_dialect_arith::{
         And as ArithAnd, Constant as ArithConstant, Eq as ArithEq, Incr as ArithIncr,
@@ -365,6 +387,74 @@ end
         assert_eq!(signature.params()[0].ty, Type::U32);
         assert_eq!(signature.results().len(), 1);
         assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        Ok(())
+    }
+
+    #[test]
+    fn project_disassembly_uses_source_dependency_signatures() -> Result<()> {
+        let root = temp_project_dir("midenc_frontend_masm_source_dep");
+        let app_dir = root.join("app");
+        let dep_dir = root.join("dep");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&dep_dir).unwrap();
+
+        fs::write(
+            dep_dir.join("miden-project.toml"),
+            r#"[package]
+name = "dep"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dep_dir.join("lib.masm"),
+            r#"
+pub proc callee(a: felt) -> felt
+    add.1
+end
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            app_dir.join("miden-project.toml"),
+            r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+
+[dependencies]
+dep = { path = "../dep" }
+"#,
+        )
+        .unwrap();
+        fs::write(
+            app_dir.join("main.masm"),
+            r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+        )
+        .unwrap();
+
+        let context = Rc::new(Context::default());
+        let output = disassemble_project_target(
+            app_dir.join("miden-project.toml"),
+            None,
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+        let function = find_function(output.module, "entry");
+        assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+        let _ = fs::remove_dir_all(root);
 
         Ok(())
     }
@@ -668,5 +758,10 @@ end
         results: impl IntoIterator<Item = Type>,
     ) -> FunctionType {
         FunctionType::new(CallConv::Fast, params, results)
+    }
+
+    fn temp_project_dir(prefix: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("{prefix}_{}_{}", std::process::id(), nanos))
     }
 }
