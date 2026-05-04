@@ -1,11 +1,11 @@
 use log::Level;
 use miden_core::Felt;
 use miden_debug::logger::DebugLogger;
-use miden_integration_tests::{CompilerTest, testing::eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_tests::{CompilerTest, testing::eval_package};
 
 #[test]
-fn test_println_static() {
+fn println_static() {
     DebugLogger::init_for_tests()
         .expect("each test using DebugLogger should run in its own process");
     log::set_max_level(log::LevelFilter::Warn);

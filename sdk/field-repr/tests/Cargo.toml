@@ -19,7 +19,7 @@ miden-field.workspace = true
 
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
-miden-integration-tests = { path = "../../../tests/integration" }
+midenc-integration-test-support.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-session.workspace = true
 midenc-expect-test.workspace = true

@@ -1,0 +1,299 @@
+//! Common helper functions for mock-chain integration tests.
+
+use std::{future::Future, sync::Arc};
+
+use miden_client::{
+    Word,
+    account::component::{BasicWallet, InitStorageData},
+    asset::FungibleAsset,
+    auth::AuthSecretKey,
+    crypto::FeltRng,
+    note::{Note, NoteType},
+    transaction::RawOutputNote,
+};
+use miden_core::Felt;
+use miden_mast_package::Package;
+use miden_protocol::{
+    account::{
+        Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
+        AccountStorage, AccountStorageMode, AccountType, StorageSlot, StorageSlotName,
+    },
+    asset::Asset,
+    note::{NoteScript, PartialNote},
+    transaction::{TransactionMeasurements, TransactionScript},
+};
+use miden_standards::{
+    account::interface::{AccountInterface, AccountInterfaceExt},
+    testing::note::NoteBuilder,
+};
+use miden_testing::{MockChain, TransactionContextBuilder};
+use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_test_support::CompilerTestBuilder;
+use rand::{SeedableRng, rngs::StdRng};
+
+/// Converts a value's felt representation into `miden_core::Felt` elements.
+pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
+    vec![value.prefix().as_felt(), value.suffix()]
+}
+
+// ASYNC HELPERS
+// ================================================================================================
+
+thread_local! {
+    static TOKIO_RUNTIME: tokio::runtime::Runtime = tokio::runtime::Runtime::new()
+        .expect("failed to build tokio runtime for integration-network tests");
+}
+
+/// Runs the provided future to completion on a shared Tokio runtime.
+pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
+    TOKIO_RUNTIME.with(|rt| rt.block_on(future))
+}
+
+// COMPILATION
+// ================================================================================================
+
+pub(crate) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Package> {
+    let config = WasmTranslationConfig::default();
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
+
+    if release {
+        builder.with_release(true);
+    }
+
+    let mut test = builder.build();
+    test.compile_package()
+}
+
+/// Returns the root of the note script exported by the compiled package.
+pub(crate) fn note_script_root(package: &Package) -> Word {
+    NoteScript::from_package(package)
+        .expect("compiled package should contain exactly one note script export")
+        .root()
+}
+
+// ================================================================================================
+// ACCOUNT COMPONENT HELPERS
+// ================================================================================================
+
+/// Asserts that the account vault contains a fungible asset from the expected faucet with the
+/// expected total amount.
+pub(crate) fn assert_account_has_fungible_asset(
+    account: &Account,
+    expected_faucet_id: AccountId,
+    expected_amount: u64,
+) {
+    let found_asset = account.vault().assets().find_map(|asset| match asset {
+        Asset::Fungible(fungible_asset) if fungible_asset.faucet_id() == expected_faucet_id => {
+            Some(fungible_asset)
+        }
+        _ => None,
+    });
+
+    match found_asset {
+        Some(fungible_asset) => assert_eq!(
+            fungible_asset.amount(),
+            expected_amount,
+            "Found asset from faucet {expected_faucet_id} but amount {} doesn't match expected \
+             {expected_amount}",
+            fungible_asset.amount()
+        ),
+        None => {
+            panic!("Account does not contain a fungible asset from faucet {expected_faucet_id}")
+        }
+    }
+}
+
+/// Builds a `send_notes` transaction script for accounts that support a standard note creation
+/// interface (e.g. basic wallets and basic fungible faucets).
+pub(crate) fn build_send_notes_script(account: &Account, notes: &[Note]) -> TransactionScript {
+    let partial_notes = notes.iter().cloned().map(PartialNote::from).collect::<Vec<_>>();
+
+    AccountInterface::from_account(account)
+        .build_send_notes_script(&partial_notes, None)
+        .expect("failed to build send_notes transaction script")
+}
+
+/// Executes a transaction context against the chain and commits it in the next block.
+///
+/// Returns the transaction measurements captured during execution.
+pub(crate) fn execute_tx(
+    chain: &mut MockChain,
+    tx_context_builder: TransactionContextBuilder,
+) -> TransactionMeasurements {
+    let tx_context = tx_context_builder.build().unwrap();
+    let executed_tx = block_on(tx_context.execute()).unwrap_or_else(|err| panic!("{err}"));
+
+    let measurements = executed_tx.measurements().clone();
+
+    chain.add_pending_executed_transaction(&executed_tx).unwrap();
+    chain.prove_next_block().unwrap();
+
+    measurements
+}
+
+/// Builds a transaction context which transfers an asset from `sender_id` to `recipient_id` using
+/// the custom transaction script package.
+///
+/// Builds the transaction context by constructing the same advice-map + script-arg commitment
+/// expected by the tx script, without requiring a `miden_client::Client`.
+///
+/// The caller provides an RNG used to generate a unique note serial number, to avoid accidental
+/// note ID collisions across multiple transfers.
+pub(crate) fn build_asset_transfer_tx(
+    chain: &MockChain,
+    sender_id: AccountId,
+    recipient_id: AccountId,
+    asset: FungibleAsset,
+    p2id_note_package: Arc<Package>,
+    tx_script_package: Arc<Package>,
+    rng: &mut impl FeltRng,
+) -> (TransactionContextBuilder, Note) {
+    let tx_script_program = tx_script_package.unwrap_program();
+    let tx_script = TransactionScript::from_parts(
+        tx_script_program.mast_forest().clone(),
+        tx_script_program.entrypoint(),
+    );
+
+    let serial_num = rng.draw_word();
+
+    let asset: Asset = asset.into();
+    let output_note = NoteBuilder::new(sender_id, rng)
+        .serial_number(serial_num)
+        .package((*p2id_note_package).clone())
+        .note_storage(to_core_felts(&recipient_id))
+        .unwrap()
+        .add_assets([asset])
+        .tag(0)
+        .build()
+        .unwrap();
+
+    // Prepare commitment data
+    // This must match the input layout expected by `examples/basic-wallet-tx-script`.
+    let mut commitment_input: Vec<Felt> = vec![
+        // The output's note tag
+        Felt::new(0u64),
+        // The output's note type
+        Felt::from(NoteType::Public),
+    ];
+    let recipient_digest: [Felt; 4] = output_note.recipient().digest().into();
+    commitment_input.extend(recipient_digest);
+
+    let asset_elements = asset.as_elements();
+    commitment_input.extend(asset_elements);
+    // Ensure word alignment for `adv_load_preimage` in the tx script.
+    commitment_input.extend([Felt::ZERO, Felt::ZERO]);
+
+    let commitment_key: Word =
+        miden_core::crypto::hash::Poseidon2::hash_elements(&commitment_input);
+    assert_eq!(commitment_input.len() % 4, 0, "commitment input needs to be word-aligned");
+
+    let tx_context_builder = chain
+        .build_tx_context(sender_id, &[], &[])
+        .unwrap()
+        .tx_script(tx_script)
+        .tx_script_args(commitment_key)
+        .extend_advice_map([(commitment_key, commitment_input)])
+        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())]);
+
+    (tx_context_builder, output_note)
+}
+
+// COUNTER CONTRACT HELPERS
+// ================================================================================================
+
+/// Returns the storage slot name used by the counter contract's storage map.
+pub(crate) fn counter_storage_slot_name() -> StorageSlotName {
+    StorageSlotName::new("miden_counter_contract::counter_contract::count_map")
+        .expect("counter storage slot name should be valid")
+}
+
+fn auth_public_key_slot_name() -> StorageSlotName {
+    StorageSlotName::new("miden_auth_component_rpo_falcon512::auth_component::owner_public_key")
+        .expect("auth component storage slot name should be valid")
+}
+
+pub const COUNTER_CONTRACT_STORAGE_KEY: Word =
+    Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+
+/// Asserts the counter value stored in the counter contract's storage map at `storage_slot`.
+pub(crate) fn assert_counter_storage(
+    counter_account_storage: &AccountStorage,
+    storage_slot: &StorageSlotName,
+    expected: u64,
+) {
+    let word = counter_account_storage
+        .get_map_item(storage_slot, COUNTER_CONTRACT_STORAGE_KEY)
+        .expect("Failed to get counter value from storage slot");
+
+    // `AccountStorage` exposes scalar felt values as `[felt, 0, 0, 0]`.
+    let val = word[0];
+    assert_eq!(
+        val.as_canonical_u64(),
+        expected,
+        "Counter value mismatch. Expected: {}, Got: {}",
+        expected,
+        val.as_canonical_u64()
+    );
+}
+
+/// Builds an account builder for an existing public counter account containing the counter
+/// contract component and a custom authentication component compiled as a package library.
+pub(crate) fn build_existing_counter_account_builder_with_auth_package(
+    counter_component: AccountComponent,
+    auth_component_package: Arc<Package>,
+    auth_storage_slots: Vec<StorageSlot>,
+    seed: [u8; 32],
+) -> AccountBuilder {
+    let metadata =
+        AccountComponentMetadata::new("auth", [AccountType::RegularAccountUpdatableCode]);
+    let auth_component = AccountComponent::new(
+        auth_component_package.mast.as_ref().clone(),
+        auth_storage_slots,
+        metadata,
+    )
+    .unwrap();
+
+    AccountBuilder::new(seed)
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_auth_component(auth_component)
+        .with_component(BasicWallet)
+        .with_component(counter_component)
+}
+
+/// Builds an existing counter account using a Rust-compiled RPO-Falcon512 authentication component.
+///
+/// Returns the account along with the generated secret key which can authenticate transactions for
+/// this account.
+pub(crate) fn build_counter_account_with_rust_rpo_auth(
+    component_package: Arc<Package>,
+    auth_component_package: Arc<Package>,
+    seed: [u8; 32],
+) -> (Account, AuthSecretKey) {
+    let key = Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
+    let mut counter_init_storage_data = InitStorageData::default();
+    counter_init_storage_data
+        .insert_map_entry(counter_storage_slot_name(), key, 1_u64)
+        .expect("failed to insert counter map entry");
+
+    let counter_component =
+        AccountComponent::from_package(&component_package, &counter_init_storage_data).unwrap();
+
+    let mut rng = StdRng::seed_from_u64(1);
+    let secret_key = AuthSecretKey::new_falcon512_poseidon2_with_rng(&mut rng);
+    let pk_commitment: Word = secret_key.public_key().to_commitment().into();
+
+    let auth_storage_slots =
+        vec![StorageSlot::with_value(auth_public_key_slot_name(), pk_commitment)];
+
+    let account = build_existing_counter_account_builder_with_auth_package(
+        counter_component,
+        auth_component_package,
+        auth_storage_slots,
+        seed,
+    )
+    .build_existing()
+    .expect("failed to build counter account");
+
+    (account, secret_key)
+}

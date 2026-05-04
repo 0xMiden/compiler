@@ -8,8 +8,8 @@ use std::borrow::Cow;
 use miden_debug::{ExecutionTrace, Felt as TestFelt, FromMidenRepr};
 use miden_field::Felt;
 use miden_field_repr::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
-use miden_integration_tests::testing::{Initializer, eval_package};
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_test_support::testing::{Initializer, eval_package};
 
 use crate::build_felt_repr_test;
 
