@@ -1,9 +1,9 @@
 use crate::CompilerTest;
 
 #[test]
-fn enum_matching() {
+fn global_variable_static_mut() {
     let _ = CompilerTest::rust_source_program(include_str!(
-        "../../../../../fixtures/standalone/enum.rs"
+        "../../../../fixtures/standalone/static_mut.rs"
     ))
     .compile_package();
 }

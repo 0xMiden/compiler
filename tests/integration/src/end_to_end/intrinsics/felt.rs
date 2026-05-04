@@ -1,12 +1,10 @@
 use midenc_frontend_wasm::WasmTranslationConfig;
 
-use crate::{
-    CompilerTestBuilder, cargo_proj::project, end_to_end::functional::support::cargo_toml,
-};
+use crate::{CompilerTestBuilder, cargo_proj::project, end_to_end::support::cargo_toml};
 
 #[test]
-fn function_call() {
-    let name = "function_call_hir2";
+fn basic_felt_arithmetic() {
+    let name = "felt_intrinsics";
     let cargo_proj = project(name)
         .file("Cargo.toml", &cargo_toml(name))
         .file(
@@ -14,10 +12,6 @@ fn function_call() {
             r#"
                 #![no_std]
                 #![feature(alloc_error_handler)]
-
-                // Global allocator to use heap memory in no-std environment
-                // #[global_allocator]
-                // static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
 
                 // Required for no-std crates
                 #[panic_handler]
@@ -31,17 +25,15 @@ fn function_call() {
                     loop {}
                 }
 
-                // use miden::Felt;
+                // Global allocator to use heap memory in no-std environment
+                #[global_allocator]
+                static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
+
+                use miden::*;
 
                 #[unsafe(no_mangle)]
-                #[inline(never)]
-                pub fn add(a: u32, b: u32) -> u32 {
-                    a + b
-                }
-
-                #[unsafe(no_mangle)]
-                pub fn entrypoint(a: u32, b: u32) -> u32 {
-                    add(a, b)
+                pub fn entrypoint(a: Felt, b: Felt) -> Felt {
+                   a / (a * b - a + b)
                 }
             "#,
         )

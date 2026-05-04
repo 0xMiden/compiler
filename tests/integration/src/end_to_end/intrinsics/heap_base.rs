@@ -1,8 +1,6 @@
 use midenc_frontend_wasm::WasmTranslationConfig;
 
-use crate::{
-    CompilerTestBuilder, cargo_proj::project, end_to_end::functional::support::cargo_toml,
-};
+use crate::{CompilerTestBuilder, cargo_proj::project, end_to_end::support::cargo_toml};
 
 #[test]
 fn heap_base() {

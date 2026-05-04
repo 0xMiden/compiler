@@ -1,3 +1,9 @@
-mod expect;
-mod functional;
-mod property;
+mod abi;
+mod arithmetic;
+mod crypto;
+mod debuginfo;
+mod examples;
+mod intrinsics;
+mod memory;
+mod regressions;
+mod support;
