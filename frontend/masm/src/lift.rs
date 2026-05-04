@@ -19,7 +19,7 @@ use midenc_hir::{
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{DisassembledModule, DisassemblerConfig, Result, error, signatures};
+use crate::{DisassembledModule, DisassemblerConfig, Result, error, infer, signatures};
 
 pub(crate) fn lift_module(
     module: &Module,
@@ -35,20 +35,48 @@ pub(crate) fn lift_module(
     let body_block = builder.create_block(body, None, &[]);
     builder.set_insertion_point_to_end(body_block);
 
-    let mut functions = FxHashMap::<String, FunctionRef>::default();
     let mut signatures = FxHashMap::<String, Signature>::default();
     for procedure in module.procedures() {
-        let signature = procedure.signature().ok_or_else(|| {
-            if config.infer_missing_signatures {
-                error::error(format!(
-                    "signature inference is not implemented yet for procedure '{}'",
-                    procedure.name()
-                ))
-            } else {
-                error::error(format!("procedure '{}' is missing a signature", procedure.name()))
-            }
-        })?;
+        let Some(signature) = procedure.signature() else {
+            continue;
+        };
         let signature = signatures::convert_signature(&context, signature)?;
+        signatures.insert(procedure.name().as_str().to_owned(), signature);
+    }
+
+    if !config.infer_missing_signatures {
+        if let Some(procedure) = module
+            .procedures()
+            .find(|procedure| !signatures.contains_key(procedure.name().as_str()))
+        {
+            return Err(error::error(format!(
+                "procedure '{}' is missing a signature",
+                procedure.name()
+            )));
+        }
+    }
+
+    reject_recursive_calls(module)?;
+
+    if config.infer_missing_signatures {
+        for name in callee_first_order(module)? {
+            if signatures.contains_key(name.as_str()) {
+                continue;
+            }
+            let procedure = module
+                .procedures()
+                .find(|procedure| procedure.name().as_str() == name)
+                .expect("callee-first order must contain local procedures only");
+            let signature = infer::infer_signature(&context, procedure, &signatures)?;
+            signatures.insert(name, signature);
+        }
+    }
+
+    let mut functions = FxHashMap::<String, FunctionRef>::default();
+    for procedure in module.procedures() {
+        let signature = signatures.get(procedure.name().as_str()).cloned().ok_or_else(|| {
+            error::error(format!("procedure '{}' is missing a signature", procedure.name()))
+        })?;
         let visibility = if procedure.visibility().is_public() {
             Visibility::Public
         } else {
@@ -64,10 +92,7 @@ pub(crate) fn lift_module(
             .borrow_mut()
             .insert_new(function.as_symbol_ref(), ProgramPoint::default());
         functions.insert(procedure.name().as_str().to_owned(), function);
-        signatures.insert(procedure.name().as_str().to_owned(), signature);
     }
-
-    reject_recursive_calls(module)?;
 
     for procedure in module.procedures() {
         let function = *functions.get(procedure.name().as_str()).unwrap();
@@ -91,6 +116,16 @@ fn ensure_op_region(context: &Rc<Context>, op: &mut dyn HirOp) {
 }
 
 fn reject_recursive_calls(module: &Module) -> Result<()> {
+    let graph = local_call_graph(module);
+    let mut states = FxHashMap::<String, VisitState>::default();
+    let mut stack = Vec::<String>::new();
+    for name in graph.keys() {
+        reject_recursive_calls_from(name, &graph, &mut states, &mut stack)?;
+    }
+    Ok(())
+}
+
+fn local_call_graph(module: &Module) -> FxHashMap<String, Vec<String>> {
     let local_names: FxHashSet<_> = module
         .procedures()
         .map(|procedure| procedure.name().as_str().to_owned())
@@ -110,12 +145,7 @@ fn reject_recursive_calls(module: &Module) -> Result<()> {
         graph.insert(procedure.name().as_str().to_owned(), callees);
     }
 
-    let mut states = FxHashMap::<String, VisitState>::default();
-    let mut stack = Vec::<String>::new();
-    for name in graph.keys() {
-        reject_recursive_calls_from(name, &graph, &mut states, &mut stack)?;
-    }
-    Ok(())
+    graph
 }
 
 fn reject_recursive_calls_from(
@@ -147,6 +177,57 @@ fn reject_recursive_calls_from(
     }
     stack.pop();
     states.insert(name.to_owned(), VisitState::Done);
+    Ok(())
+}
+
+fn callee_first_order(module: &Module) -> Result<Vec<String>> {
+    let graph = local_call_graph(module);
+    let mut states = FxHashMap::<String, VisitState>::default();
+    let mut stack = Vec::<String>::new();
+    let mut order = Vec::<String>::new();
+    for procedure in module.procedures() {
+        callee_first_order_from(
+            procedure.name().as_str(),
+            &graph,
+            &mut states,
+            &mut stack,
+            &mut order,
+        )?;
+    }
+    Ok(order)
+}
+
+fn callee_first_order_from(
+    name: &str,
+    graph: &FxHashMap<String, Vec<String>>,
+    states: &mut FxHashMap<String, VisitState>,
+    stack: &mut Vec<String>,
+    order: &mut Vec<String>,
+) -> Result<()> {
+    match states.get(name).copied() {
+        Some(VisitState::Done) => return Ok(()),
+        Some(VisitState::Visiting) => {
+            let cycle_start = stack.iter().position(|entry| entry == name).unwrap_or(0);
+            let mut cycle = stack[cycle_start..].to_vec();
+            cycle.push(name.to_owned());
+            return Err(error::error(format!(
+                "recursive MASM procedure calls are not supported: {}",
+                cycle.join(" -> ")
+            )));
+        }
+        None => (),
+    }
+
+    states.insert(name.to_owned(), VisitState::Visiting);
+    stack.push(name.to_owned());
+    if let Some(callees) = graph.get(name) {
+        for callee in callees {
+            callee_first_order_from(callee, graph, states, stack, order)?;
+        }
+    }
+    stack.pop();
+    states.insert(name.to_owned(), VisitState::Done);
+    order.push(name.to_owned());
     Ok(())
 }
 

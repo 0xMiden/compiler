@@ -1,6 +1,7 @@
 //! MASM-to-HIR disassembler.
 
 mod error;
+mod infer;
 mod lift;
 mod project;
 mod signatures;
@@ -21,7 +22,7 @@ pub use self::error::Result;
 pub struct DisassemblerConfig {
     /// Infer signatures for procedures whose MASM AST/package metadata does not provide one.
     ///
-    /// Phase 1 only supports known signatures, so enabling this currently has no effect.
+    /// When enabled, missing signatures are inferred from stack underflow and final stack shape.
     pub infer_missing_signatures: bool,
 }
 
@@ -162,6 +163,115 @@ end
         };
 
         assert!(err.to_string().contains("missing a signature"));
+    }
+
+    #[test]
+    fn infers_straight_line_signature() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc inc
+    add.1
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "inc").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::Felt);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_local_callee_before_caller() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+proc inc
+    add.1
+end
+
+pub proc entry
+    exec.inc
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "entry").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::Felt);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_control_flow_join_signature() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc choose
+    if.true
+        add.1
+    else
+        add.2
+    end
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "choose").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 2);
+        assert_eq!(signature.params()[0].ty, Type::I1);
+        assert_eq!(signature.params()[1].ty, Type::Felt);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_u32_signature() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc add
+    u32wrapping_add
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "add").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 2);
+        assert!(signature.params().iter().all(|param| param.ty == Type::U32));
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::U32);
+
+        Ok(())
     }
 
     #[test]
