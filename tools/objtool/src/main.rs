@@ -1,24 +1,19 @@
-use clap::{Parser, Subcommand};
-use miden_assembly_syntax::{Report, diagnostics::reporting};
-use miden_objtool::decorators;
+use clap::Parser;
+use miden_assembly_syntax::{
+    Report,
+    diagnostics::{IntoDiagnostic, reporting},
+};
+use miden_objtool::{decorators, dump};
 
+/// Common utilities for analyzing Miden artifacts
 #[derive(Debug, Parser)]
-#[command(
-    name = "miden-objtool",
-    version,
-    about = "Common utilities for analyzing Miden artifacts",
-    long_about = None,
-    arg_required_else_help = true,
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Debug, Subcommand)]
-enum Commands {
+#[command(name = "miden-objtool", version, arg_required_else_help = true)]
+enum Cli {
     /// Compare serialized MAST forest sizes after stripping decorators.
     Decorators(decorators::DecoratorsCommand),
+    /// Dump various types of information from assembled packages
+    #[command(subcommand)]
+    Dump(dump::Dump),
 }
 
 fn main() -> Result<(), Report> {
@@ -31,7 +26,8 @@ fn main() -> Result<(), Report> {
         reporting::set_panic_hook();
     }
 
-    match &cli.command {
-        Commands::Decorators(command) => decorators::run(command).map_err(Report::msg),
+    match &cli {
+        Cli::Decorators(command) => decorators::run(command).map_err(Report::msg),
+        Cli::Dump(command) => dump::run(command).into_diagnostic(),
     }
 }

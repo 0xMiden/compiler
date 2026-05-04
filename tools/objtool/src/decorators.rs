@@ -9,8 +9,10 @@ use miden_core::{
 use miden_mast_package::{Package, TargetType};
 
 #[derive(Debug, Clone, Args)]
+#[command(arg_required_else_help = true)]
 pub struct DecoratorsCommand {
     /// Path to the input .masp file
+    #[arg(required = true)]
     pub path: PathBuf,
 }
 

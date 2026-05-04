@@ -12,7 +12,8 @@ use midenc_dialect_wasm::{self as wasm};
 use midenc_hir::{
     AttributeRef, Felt, Immediate, ImmediateAttr, Op, OperationRef, Overflow, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorInfo, Type,
-    Value as _, ValueRange, dialects::builtin,
+    Value as _, ValueRange,
+    dialects::{builtin, debuginfo},
 };
 use midenc_session::diagnostics::Severity;
 
@@ -103,6 +104,13 @@ impl Eval for ub::Unreachable {
             span: self.span(),
             reason: "control reached an unreachable program point".to_string(),
         })
+    }
+}
+
+// Debug info operations are purely observational and have no runtime semantics.
+impl Eval for debuginfo::DebugValue {
+    fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        Ok(ControlFlowEffect::None)
     }
 }
 

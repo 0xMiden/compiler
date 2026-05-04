@@ -46,7 +46,13 @@ impl RewritePattern for WhileRemoveUnusedArgs {
             return Ok(false);
         };
 
-        if while_op.before().entry().arguments().iter().all(|arg| arg.borrow().is_used()) {
+        if while_op
+            .before()
+            .entry()
+            .arguments()
+            .iter()
+            .all(|arg| arg.borrow().has_real_uses())
+        {
             // All the arguments are used (nothing to remove)
             return Ok(false);
         }
@@ -67,7 +73,7 @@ impl RewritePattern for WhileRemoveUnusedArgs {
                 let before_arg = before_arg.borrow();
                 let yield_value = yield_op.yielded()[i];
                 let init_value = while_op.inits()[i];
-                if before_arg.is_used() {
+                if before_arg.has_real_uses() {
                     args_to_erase.push(false);
                     new_yields.push(yield_value.borrow().as_value_ref());
                     new_inits.push(init_value.borrow().as_value_ref());

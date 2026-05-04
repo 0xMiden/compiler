@@ -282,6 +282,7 @@ pub struct ComponentTypes {
     options: PrimaryMap<TypeOptionIndex, TypeOption>,
     results: PrimaryMap<TypeResultIndex, TypeResult>,
     resource_tables: PrimaryMap<TypeResourceTableIndex, TypeResourceTable>,
+    interface_type_names: FxHashMap<InterfaceType, String>,
 
     module_types: ModuleTypes,
 }
@@ -324,6 +325,10 @@ impl ComponentTypes {
             InterfaceType::Option(i) => &self[*i].abi,
             InterfaceType::Result(i) => &self[*i].abi,
         }
+    }
+
+    pub fn interface_type_name(&self, ty: &InterfaceType) -> Option<&str> {
+        self.interface_type_names.get(ty).map(String::as_str)
     }
 }
 
@@ -473,6 +478,7 @@ impl ComponentTypesBuilder {
         id: component_types::ComponentFuncTypeId,
     ) -> Result<TypeFuncIndex> {
         let ty = &types[id];
+        let param_names = ty.params.iter().map(|(name, _ty)| name.to_string()).collect();
         let params = ty
             .params
             .iter()
@@ -485,8 +491,51 @@ impl ComponentTypesBuilder {
         let ty = TypeFunc {
             params: self.new_tuple_type(params),
             results: self.new_tuple_type(results),
+            param_names,
         };
         Ok(self.add_func_type(ty))
+    }
+
+    pub fn register_component_instance_export_type_names(
+        &mut self,
+        instance_idx: TypeComponentInstanceIndex,
+        namespace: Option<&str>,
+    ) {
+        let exports = self.component_types[instance_idx]
+            .exports
+            .iter()
+            .map(|(name, ty)| (name.clone(), *ty))
+            .collect::<Vec<_>>();
+
+        for (name, ty) in exports {
+            let qualified_name = namespace
+                .filter(|namespace| !namespace.is_empty())
+                .map(|namespace| format!("{}/{}", namespace.trim_end_matches('/'), name))
+                .unwrap_or(name);
+            self.register_type_name(ty, qualified_name);
+        }
+    }
+
+    fn register_type_name(&mut self, ty: TypeDef, name: String) {
+        match ty {
+            TypeDef::Interface(interface_ty) => {
+                self.component_types.interface_type_names.entry(interface_ty).or_insert(name);
+            }
+            TypeDef::ComponentInstance(instance_idx) => {
+                self.register_component_instance_export_type_names(instance_idx, Some(&name));
+            }
+            TypeDef::Component(component_idx) => {
+                let exports = self.component_types[component_idx]
+                    .exports
+                    .iter()
+                    .map(|(export_name, ty)| (export_name.clone(), *ty))
+                    .collect::<Vec<_>>();
+                for (export_name, ty) in exports {
+                    self.register_type_name(ty, format!("{}/{}", name, export_name));
+                }
+            }
+            TypeDef::ComponentFunc(_) | TypeDef::Module(_) | TypeDef::Resource(_) => {}
+        }
     }
 
     /// Converts a wasmparser `ComponentEntityType`
@@ -1005,6 +1054,8 @@ pub struct TypeFunc {
     pub params: TypeTupleIndex,
     /// Results of the function represented as a tuple.
     pub results: TypeTupleIndex,
+    /// Source/component names of the parameters, in declaration order.
+    pub param_names: Box<[String]>,
 }
 
 /// All possible interface types that values can have.
@@ -1756,11 +1807,15 @@ pub fn interface_type_to_ir(
         InterfaceType::String => todo!(),
         InterfaceType::ErrorContext => todo!("the async proposal is not currently supported"),
         InterfaceType::Record(idx) => {
-            let tys = component_types.records[*idx]
-                .fields
-                .iter()
-                .map(|f| interface_type_to_ir(&f.ty, component_types));
-            midenc_hir::Type::from(midenc_hir::StructType::new(tys))
+            let fields = component_types.records[*idx].fields.iter().map(|f| {
+                (Arc::<str>::from(f.name.as_str()), interface_type_to_ir(&f.ty, component_types))
+            });
+            let struct_ty = if let Some(name) = component_types.interface_type_name(ty) {
+                midenc_hir::StructType::named(Arc::from(name), fields)
+            } else {
+                midenc_hir::StructType::new(fields)
+            };
+            midenc_hir::Type::from(struct_ty)
         }
         // TODO: This is a stub to make `enum` in WIT generation work. Use proper type when ready.
         InterfaceType::Variant(_) => midenc_hir::Type::U32,

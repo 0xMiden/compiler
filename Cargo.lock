@@ -3107,6 +3107,7 @@ dependencies = [
  "miden-assembly-syntax",
  "miden-core",
  "miden-mast-package",
+ "miden-thiserror",
 ]
 
 [[package]]
@@ -3528,6 +3529,7 @@ name = "midenc-dialect-scf"
 version = "0.8.1"
 dependencies = [
  "bitvec",
+ "env_logger",
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
@@ -3627,6 +3629,7 @@ dependencies = [
  "memchr",
  "miden-core",
  "miden-thiserror",
+ "midenc-expect-test",
  "midenc-hir-macros",
  "midenc-hir-symbol",
  "midenc-hir-type",

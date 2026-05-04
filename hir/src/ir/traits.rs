@@ -319,3 +319,55 @@ pub trait SingleRegion {
 
 // pub trait HasParent<T> {}
 // pub trait ParentOneOf<(T,...)> {}
+
+/// Marker trait for ops which:
+///
+/// * Represent the attachment of metadata to values in the IR
+/// * Should not be considered as a "real" user for purposes of determining liveness of its operands
+/// * Should not be considered dead unless all of its operands are also dead
+/// * Does not result in any code being emitted during codegen
+///
+/// The goal of such operations is to attach important metadata, such as debug information, to
+/// values in the IR, ensuring that the metadata is preserved through transformations, while not
+/// interfering with optimizations that may make the original value dead except for the uses by
+/// transparent ops.
+#[operation_trait]
+pub trait Transparent {
+    #[verifier]
+    fn has_no_results(op: &Operation, context: &Context) -> Result<(), Report> {
+        if op.results().is_empty() {
+            Ok(())
+        } else {
+            Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(::alloc::format!("invalid operation {}", op.name()))
+                .with_primary_label(op.span(), "expected operation to have no results")
+                .with_help(
+                    "this operator implements 'Transparent', which requires it to have no results",
+                )
+                .into_report())
+        }
+    }
+
+    #[verifier]
+    fn has_no_more_than_one_operand(op: &Operation, context: &Context) -> Result<(), Report> {
+        if op.num_operands() > 1 {
+            Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(::alloc::format!("invalid operation {}", op.name()))
+                .with_primary_label(
+                    op.span(),
+                    "expected operation to have no more than one operand",
+                )
+                .with_help(
+                    "this operator implements 'Transparent', which requires it to have an arity < \
+                     2",
+                )
+                .into_report())
+        } else {
+            Ok(())
+        }
+    }
+}

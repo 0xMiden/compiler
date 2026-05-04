@@ -7,9 +7,12 @@ use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
     FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolPath, ValueRange, ValueRef,
     Visibility,
-    dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
-        attributes::{Signature, UnitAttr},
+    dialects::{
+        builtin::{
+            BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
+            attributes::{Signature, UnitAttr},
+        },
+        debuginfo::attributes::{CompileUnit, CompileUnitAttr, Subprogram, SubprogramAttr},
     },
 };
 use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
@@ -25,11 +28,18 @@ use crate::{
     },
 };
 
+struct ComponentExportMetadata<'a> {
+    ty: &'a FunctionType,
+    param_names: &'a [String],
+    protocol_export_kind: Option<ProtocolExportKind>,
+}
+
 /// Generates a lifted component export wrapper around a lowered core Wasm export.
 pub fn generate_export_lifting_function(
     component_builder: &mut ComponentBuilder,
     export_func_name: &str,
     export_func_ty: FunctionType,
+    export_param_names: &[String],
     core_export_func_path: SymbolPath,
     protocol_export_kind: Option<ProtocolExportKind>,
     diagnostics: &DiagnosticsHandler,
@@ -55,6 +65,11 @@ pub fn generate_export_lifting_function(
     }
 
     let export_func_ident = Ident::new(export_func_name.to_string().into(), SourceSpan::default());
+    let export_metadata = ComponentExportMetadata {
+        ty: &export_func_ty,
+        param_names: export_param_names,
+        protocol_export_kind,
+    };
 
     let core_export_module_path = core_export_func_path.without_leaf();
     let core_module_ref = component_builder
@@ -77,22 +92,21 @@ pub fn generate_export_lifting_function(
         generate_lifting_with_transformation(
             component_builder,
             export_func_ident,
-            &export_func_ty,
+            &export_metadata,
             cross_ctx_export_sig_flat,
             core_export_func_ref,
             core_export_func_sig,
             &core_export_func_path,
-            protocol_export_kind,
             diagnostics,
         )?;
     } else {
         generate_direct_lifting(
             component_builder,
             export_func_ident,
+            &export_metadata,
             core_export_func_ref,
             core_export_func_sig,
             cross_ctx_export_sig_flat,
-            protocol_export_kind,
         )?;
     }
 
@@ -132,12 +146,11 @@ pub fn generate_export_lifting_function(
 fn generate_lifting_with_transformation(
     component_builder: &mut ComponentBuilder,
     export_func_ident: Ident,
-    export_func_ty: &FunctionType,
+    export_metadata: &ComponentExportMetadata<'_>,
     cross_ctx_export_sig_flat: Signature,
     core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     core_export_func_sig: Signature,
     core_export_func_path: &SymbolPath,
-    protocol_export_kind: Option<ProtocolExportKind>,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     assert_eq!(
@@ -154,7 +167,7 @@ fn generate_lifting_with_transformation(
 
     // Extract flattened result types from the exported component-level function type
     let context = { core_export_func_ref.borrow().as_operation().context_rc() };
-    let flattened_results = flatten_types(&context, &export_func_ty.results).map_err(|e| {
+    let flattened_results = flatten_types(&context, &export_metadata.ty.results).map_err(|e| {
         let message = format!(
             "Failed to flatten result types for exported function {core_export_func_path}: {e}"
         );
@@ -176,7 +189,13 @@ fn generate_lifting_with_transformation(
     };
     let export_func_ref =
         component_builder.define_function(export_func_ident, Visibility::Public, new_func_sig)?;
-    annotate_protocol_export(export_func_ref, protocol_export_kind);
+    annotate_protocol_export(export_func_ref, export_metadata.protocol_export_kind);
+    annotate_component_export_debug_signature(
+        export_func_ref,
+        export_func_ident.name.as_str(),
+        export_metadata.ty,
+        export_metadata.param_names,
+    );
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -216,11 +235,11 @@ fn generate_lifting_with_transformation(
 
     // Load results using the recursive function from canon_abi_utils
     assert_eq!(
-        export_func_ty.results.len(),
+        export_metadata.ty.results.len(),
         1,
         "expected a single result in the component-level export function"
     );
-    let result_type = &export_func_ty.results[0];
+    let result_type = &export_metadata.ty.results[0];
 
     load(&mut fb, result_ptr, result_type, &mut return_values, span)?;
 
@@ -273,17 +292,23 @@ fn generate_lifting_with_transformation(
 fn generate_direct_lifting(
     component_builder: &mut ComponentBuilder,
     export_func_ident: Ident,
+    export_metadata: &ComponentExportMetadata<'_>,
     core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
-    protocol_export_kind: Option<ProtocolExportKind>,
 ) -> WasmResult<()> {
     let export_func_ref = component_builder.define_function(
         export_func_ident,
         Visibility::Public,
         cross_ctx_export_sig_flat.clone(),
     )?;
-    annotate_protocol_export(export_func_ref, protocol_export_kind);
+    annotate_protocol_export(export_func_ref, export_metadata.protocol_export_kind);
+    annotate_component_export_debug_signature(
+        export_func_ref,
+        export_func_ident.name.as_str(),
+        export_metadata.ty,
+        export_metadata.param_names,
+    );
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -348,4 +373,40 @@ fn annotate_protocol_export(
         }
         None => {}
     }
+}
+
+fn annotate_component_export_debug_signature(
+    mut export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
+    export_func_name: &str,
+    export_func_ty: &FunctionType,
+    export_param_names: &[String],
+) {
+    let context = {
+        let export_func = export_func_ref.borrow();
+        export_func.as_operation().context_rc()
+    };
+
+    let file = midenc_hir::interner::Symbol::intern("<component>");
+    let mut compile_unit = CompileUnit::new(midenc_hir::interner::Symbol::intern("wit"), file);
+    compile_unit.producer = Some(midenc_hir::interner::Symbol::intern("midenc-frontend-wasm"));
+
+    let param_names = export_param_names
+        .iter()
+        .map(|name| midenc_hir::interner::Symbol::intern(name.as_str()));
+    let subprogram =
+        Subprogram::new(midenc_hir::interner::Symbol::intern(export_func_name), file, 1, Some(1))
+            .with_function_type(FunctionType {
+                abi: export_func_ty.abi,
+                params: export_func_ty.params.clone(),
+                results: export_func_ty.results.clone(),
+            })
+            .with_param_names(param_names);
+
+    let cu_attr = context.create_attribute::<CompileUnitAttr, _>(compile_unit).as_attribute_ref();
+    let sp_attr = context.create_attribute::<SubprogramAttr, _>(subprogram).as_attribute_ref();
+
+    let mut export_func = export_func_ref.borrow_mut();
+    let op = export_func.as_operation_mut();
+    op.set_attribute("di.compile_unit", cu_attr);
+    op.set_attribute("di.subprogram", sp_attr);
 }

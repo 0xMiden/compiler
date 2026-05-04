@@ -336,28 +336,27 @@ impl CompilerTestBuilder {
             }
         }
 
-        // All test source types support custom RUSTFLAGS
-        let mut rustflags_env = None::<String>;
-        if !self.rustflags.is_empty() {
-            let mut flags = String::with_capacity(
-                self.rustflags.iter().map(|flag| flag.len()).sum::<usize>() + self.rustflags.len(),
-            );
-            for (i, flag) in self.rustflags.iter().enumerate() {
-                if i > 0 {
-                    flags.push(' ');
-                }
-                flags.push_str(flag.as_ref());
-            }
-            command.env("RUSTFLAGS", &flags);
-            rustflags_env = Some(flags);
-        }
-
         // Pipe output of command to terminal
         command.stdout(Stdio::piped());
 
         // Build test
         match source {
             CompilerTestInputType::CargoMiden(config) => {
+                let mut rustflags_env = None::<String>;
+                if !self.rustflags.is_empty() {
+                    let mut flags = String::with_capacity(
+                        self.rustflags.iter().map(|flag| flag.len()).sum::<usize>()
+                            + self.rustflags.len(),
+                    );
+                    for (i, flag) in self.rustflags.iter().enumerate() {
+                        if i > 0 {
+                            flags.push(' ');
+                        }
+                        flags.push_str(flag.as_ref());
+                    }
+                    command.env("RUSTFLAGS", &flags);
+                    rustflags_env = Some(flags);
+                }
                 maybe_dump_cargo_expand(&config, rustflags_env.as_deref());
 
                 let mut args = vec![command.get_program().to_str().unwrap().to_string()];
@@ -416,6 +415,7 @@ impl CompilerTestBuilder {
                     .target_dir
                     .clone()
                     .unwrap_or_else(|| std::env::temp_dir().join(config.name.as_ref()));
+                let working_dir = working_dir.canonicalize().unwrap_or(working_dir);
                 if working_dir.exists() {
                     fs::remove_dir_all(&working_dir).unwrap();
                 }
@@ -429,9 +429,29 @@ impl CompilerTestBuilder {
                 // Output is the same name as the input, just with a different extension
                 let output_file = basename.with_extension("wasm");
 
+                // `RUSTFLAGS` is for Cargo, direct `rustc` invocations need those flags
+                // passed via argv.
+                let mut rustc_flags = Vec::with_capacity(self.rustflags.len());
+                let mut flags = self.rustflags.iter().map(|flag| flag.as_ref());
+                while let Some(flag) = flags.next() {
+                    if flag == "-C"
+                        && let Some(value) = flags.next()
+                    {
+                        if value == "panic=immediate-abort" {
+                            continue;
+                        }
+                        rustc_flags.extend([flag, value]);
+                    } else {
+                        rustc_flags.push(flag);
+                    }
+                }
+
                 let output = command
-                    .args(["-C", "opt-level=z"]) // optimize for size
+                    .arg("--remap-path-prefix")
+                    .arg(format!("{}=.", working_dir.display()))
+                    .args(["-C", "opt-level=s"]) // optimize for size
                     .args(["-C", "target-feature=+wide-arithmetic"])
+                    .args(rustc_flags)
                     .arg("--target")
                     .arg(config.target.as_ref())
                     .arg("-o")

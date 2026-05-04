@@ -1937,6 +1937,7 @@ impl quote::ToTokens for OpBuilderImpl {
                 {
                     #op_builder_new_doc
                     #[inline(always)]
+                    #[allow(unused)]
                     pub fn new(builder: &'a mut B, span: ::midenc_hir::diagnostics::SourceSpan) -> Self {
                         Self {
                             builder,
@@ -2237,6 +2238,7 @@ impl quote::ToTokens for OpVerifierImpl {
                         _derived: ::core::marker::PhantomData<(#(&'a dyn #derived_traits,)* #(&'a dyn #implemented_traits),*)>,
                     }
                     impl<'a, T> OpVerifierImpl<'a, T> {
+                        #[allow(unused)]
                         const fn new(op: &'a ::midenc_hir::Operation) -> Self {
                             Self {
                                 op,
