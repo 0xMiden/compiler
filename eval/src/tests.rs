@@ -5,7 +5,7 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
-    Builder, Op, Report, SourceSpan, Type, ValueRef,
+    Builder, Op, PointerType, Report, SourceSpan, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, FunctionBuilder},
     testing::Test,
 };
@@ -212,6 +212,68 @@ fn inv_zero_reports_error() -> Result<(), Report> {
         .evaluator
         .eval_callable(&*callable, [])
         .expect_err("zero inverse should produce an evaluation error");
+
+    Ok(())
+}
+
+#[test]
+fn println_collects_printed_lines() -> Result<(), Report> {
+    let mut test = EvalTest::named("println_collects_printed_lines");
+    test.with_function(&[], &[]);
+
+    {
+        let span = SourceSpan::default();
+        let mut builder = test.function_builder();
+        let ptr_ty = Type::from(PointerType::new(Type::U8));
+        let base_addr = 64u32;
+
+        for (offset, byte) in b"hello".iter().enumerate() {
+            let addr = builder.u32(base_addr + offset as u32, span);
+            let ptr = builder.inttoptr(addr, ptr_ty.clone(), span)?;
+            let value = builder.u8(*byte, span);
+            builder.store(ptr, value, span)?;
+        }
+
+        let addr = builder.u32(base_addr, span);
+        let ptr = builder.inttoptr(addr, ptr_ty, span)?;
+        let len = builder.u32(5, span);
+        builder.println(ptr, len, span)?;
+        builder.ret(None, span)?;
+    }
+
+    let callable = test.function().borrow();
+    let results = test.evaluator.eval_callable(&*callable, [])?;
+    assert!(results.is_empty());
+    assert_eq!(test.evaluator.printed_lines(), ["hello"]);
+
+    Ok(())
+}
+
+#[test]
+fn println_reports_invalid_utf8() -> Result<(), Report> {
+    let mut test = EvalTest::named("println_reports_invalid_utf8");
+    test.with_function(&[], &[]);
+
+    {
+        let span = SourceSpan::default();
+        let mut builder = test.function_builder();
+        let ptr_ty = Type::from(PointerType::new(Type::U8));
+        let addr = builder.u32(96, span);
+        let ptr = builder.inttoptr(addr, ptr_ty.clone(), span)?;
+        let invalid_utf8 = builder.u8(0xff, span);
+        builder.store(ptr, invalid_utf8, span)?;
+
+        let ptr = builder.inttoptr(addr, ptr_ty, span)?;
+        let len = builder.u32(1, span);
+        builder.println(ptr, len, span)?;
+        builder.ret(None, span)?;
+    }
+
+    let callable = test.function().borrow();
+    test.evaluator
+        .eval_callable(&*callable, [])
+        .expect_err("invalid UTF-8 should produce an evaluation error");
+    assert!(test.evaluator.printed_lines().is_empty());
 
     Ok(())
 }

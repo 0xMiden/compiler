@@ -57,7 +57,7 @@ General type | C Type | IR Type | `sizeof` | Alignment (bytes) | Miden Type
  Pointer | *`any-type *`* / *`any-type (*)()`* | `Ptr(_)` | 4 | 4 | u32[^6][^7]
  Floating point | `float` | `F32` | 4 | 4 | u32[^4]
  Floating point | `double` | `F64` | 8 | 8 | u64[^4]
- Floating point | `long double` | 16 | 16 | (none)[^5]
+ Floating point | `long double` | (none) | 16 | 16 | (none)[^5]
 
 [^1]: i32 is not a native Miden type, but is implemented using compiler intrinsics on top of the native u32 type
 

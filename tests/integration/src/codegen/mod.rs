@@ -1,3 +1,3 @@
-mod intrinsics;
-mod operations;
+mod control_flow;
+mod memory;
 mod wasm;

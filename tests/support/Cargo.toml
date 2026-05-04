@@ -1,0 +1,42 @@
+[package]
+name = "midenc-integration-test-support"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+anyhow.workspace = true
+cargo-util = "0.2"
+filetime = "0.2.23"
+glob = "0.3.1"
+log.workspace = true
+miden-assembly.workspace = true
+miden-core = { workspace = true, features = ["testing"] }
+miden-core-lib.workspace = true
+miden-mast-package.workspace = true
+miden-protocol = { workspace = true, features = ["std"] }
+miden-standards = { workspace = true, features = ["std"] }
+miden-processor.workspace = true
+miden-debug = { workspace = true, features = ["proptest", "tui"] }
+midenc-expect-test.workspace = true
+midenc-frontend-wasm.workspace = true
+midenc-hir = { workspace = true, features = ["logging"] }
+midenc-codegen-masm.workspace = true
+midenc-session.workspace = true
+midenc-compile.workspace = true
+cargo-miden.workspace = true
+proptest.workspace = true
+sha2 = "0.11"
+walkdir = "2.5.0"
+wasmprinter.workspace = true

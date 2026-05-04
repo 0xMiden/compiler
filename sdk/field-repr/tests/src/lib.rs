@@ -13,8 +13,8 @@ extern crate alloc;
 
 use std::path::PathBuf;
 
-use miden_integration_tests::{CompilerTest, project};
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_test_support::{CompilerTest, project};
 
 /// Get the path to the `miden-field-repr` crate.
 fn felt_repr_path() -> PathBuf {

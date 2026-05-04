@@ -198,9 +198,14 @@ fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
 
     // Add build-std flags required for Miden compilation
     args.extend(
-        ["-Z", "build-std=core,alloc,panic_abort", "-Z", "build-std-features="]
-            .into_iter()
-            .map(|s| s.to_string()),
+        [
+            "-Z",
+            "build-std=core,alloc,panic_abort",
+            "-Z",
+            "build-std-features=optimize_for_size",
+        ]
+        .into_iter()
+        .map(|s| s.to_string()),
     );
 
     // Configure profile settings
