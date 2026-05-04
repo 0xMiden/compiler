@@ -19,6 +19,9 @@ use super::ops::*;
 /// // With a custom expression (e.g., value needs a deref):
 /// builder.debug_value_with_expr(ssa_value, variable_attr, Some(expr), span)?;
 ///
+/// // Emit a debug declaration for storage described by an expression:
+/// builder.debug_declare(variable_attr, expr, span)?;
+///
 /// // Mark a variable as dead:
 /// builder.debug_kill(variable_attr, span)?;
 /// ```
@@ -54,15 +57,16 @@ pub trait DIBuilder<'f, B: ?Sized + Builder> {
         op_builder(value, variable, expr)
     }
 
-    /// Emit a `di.declare` operation that records the storage address of a source-level variable.
+    /// Emit a `di.debug_declare` operation that records the storage location of a source-level
+    /// variable.
     fn debug_declare(
         &mut self,
-        address: ValueRef,
         variable: Variable,
+        expression: Expression,
         span: SourceSpan,
     ) -> Result<DebugDeclareRef, Report> {
         let op_builder = self.builder_mut().create::<DebugDeclare, (_, _)>(span);
-        op_builder(address, variable)
+        op_builder(variable, expression)
     }
 
     /// Emit a `di.kill` operation that marks a variable as dead.

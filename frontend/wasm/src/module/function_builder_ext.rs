@@ -290,31 +290,21 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         }
 
         let var = Variable::new(entry.var_index);
-        let value = match self.try_use_var(var) {
-            Ok(v) => v,
-            Err(_) => {
-                if is_frame_base {
-                    // FrameBase-only variables have no WASM local, so no SSA value
-                    // exists for them. The di.value op requires an SSA operand, so we attach an
-                    // existing parameter value as an anchor. The MASM lowering ignores this operand
-                    // when the DIExpression contains FrameBase — the location is fully described by
-                    // the expression.
-                    if let Some((_, v)) = self.param_values.first() {
-                        let anchor = *v;
-                        self.def_var(var, anchor);
-                        anchor
-                    } else {
-                        warn!(
-                            "cannot track FrameBase variable (index {}): no SSA value available \
-                             (function has no parameters)",
-                            entry.var_index
-                        );
-                        return;
-                    }
-                } else {
+        let is_defined = self.defined_vars.contains(&(entry.var_index as u32));
+        if !is_defined && is_frame_base {
+            self.emit_scheduled_dbg_declare(entry, span);
+            return;
+        }
+
+        let value = if is_defined {
+            match self.try_use_var(var) {
+                Ok(v) => v,
+                Err(_) => {
                     return;
                 }
             }
+        } else {
+            return;
         };
 
         // Create expression from the scheduled location
@@ -340,6 +330,28 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, expression, span)
         {
             warn!("failed to emit scheduled dbg.value for local {idx}: {err:?}");
+        }
+    }
+
+    fn emit_scheduled_dbg_declare(&mut self, entry: LocationScheduleEntry, span: SourceSpan) {
+        if entry.storage.is_empty() {
+            return;
+        }
+
+        let Some(info) = self.debug_info.as_ref() else {
+            return;
+        };
+        let idx = entry.var_index;
+        let attr_opt = {
+            let info = info.borrow();
+            info.local_attr(idx).cloned()
+        };
+        let Some(attr) = attr_opt else {
+            return;
+        };
+
+        if let Err(err) = DIBuilder::builder_mut(self).debug_declare(attr, entry.storage, span) {
+            warn!("failed to emit scheduled dbg.declare for local {idx}: {err:?}");
         }
     }
 

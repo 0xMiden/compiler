@@ -13,33 +13,24 @@ use midenc_hir::{
 
 /// Check whether `operation` is the sole _non-transparent_ user of `value`.
 ///
-/// Transparent users that do not carry debug effects are excluded, because they are purely
-/// informational and their uses are not considered for purposes of computing liveness.
-///
-/// Debug-effect ops are also Transparent, but they must keep their operands alive until codegen
-/// turns them into VM debug decorators.
+/// Transparent users are excluded, because they are purely informational and their uses are not
+/// considered for purposes of computing liveness.
 fn is_sole_non_transparent_user(value: &dyn Value, operation: OperationRef) -> bool {
-    value.iter_uses().all(|user| {
-        let owner = user.owner.borrow();
-        user.owner == operation
-            || (owner.implements::<dyn Transparent>()
-                && owner.as_trait::<dyn midenc_hir::effects::DebugEffectOpInterface>().is_none())
-    })
+    value
+        .iter_uses()
+        .all(|user| user.owner == operation || user.owner.borrow().implements::<dyn Transparent>())
 }
 
-/// Erase all non-debug transparent operations that reference the given value.
+/// Erase all transparent operations that reference the given value.
 ///
 /// This is used before erasing a defining op whose result is only kept alive by
-/// non-debug transparent uses.
+/// transparent uses.
 fn erase_transparent_users(value: ValueRef) {
     let transparent_ops: SmallVec<[OperationRef; 2]> = {
         let v = value.borrow();
         v.iter_uses()
             .filter_map(|user| {
-                let owner = user.owner.borrow();
-                if owner.implements::<dyn Transparent>()
-                    && owner.as_trait::<dyn midenc_hir::effects::DebugEffectOpInterface>().is_none()
-                {
+                if user.owner.borrow().implements::<dyn Transparent>() {
                     Some(user.owner)
                 } else {
                     None
@@ -262,8 +253,7 @@ impl Pass for SinkOperandDefs {
             for operand in op.operands().iter().rev() {
                 let value = operand.borrow();
                 let value = value.value();
-                // Exclude non-debug transparent uses when determining whether this is the sole
-                // user.
+                // Exclude transparent uses when determining whether this is the sole user.
                 let is_sole_user = is_sole_non_transparent_user(&*value, operation);
 
                 let Some(defining_op) = value.get_defining_op() else {
@@ -332,7 +322,7 @@ impl Pass for SinkOperandDefs {
             if !has_real_uses && op.would_be_trivially_dead() && erased.insert(operation) {
                 log::debug!(target: Self::NAME, "erasing unused, effect-free, non-terminator op {op}");
                 drop(op);
-                // Erase any remaining non-debug transparent uses before erasing the defining op.
+                // Erase any remaining transparent uses before erasing the defining op.
                 for result in operation.borrow().results().iter() {
                     erase_transparent_users(result.borrow().as_value_ref());
                 }
@@ -383,7 +373,7 @@ impl Pass for SinkOperandDefs {
                 }
 
                 let value = operand_value.borrow();
-                // Exclude non-debug transparent uses when determining sole-user status.
+                // Exclude transparent uses when determining sole-user status.
                 let is_sole_user = is_sole_non_transparent_user(&*value, operation);
 
                 let Some(mut defining_op) = value.get_defining_op() else {
@@ -559,8 +549,8 @@ where
     /// users of the given op are dominated by the entry block of the region, and thus the operation
     /// can be sunk into the region.
     ///
-    /// Non-debug transparent uses are excluded because they are observational and should not
-    /// prevent control-flow sinking.
+    /// Transparent uses are excluded because they are observational and should not prevent
+    /// control-flow sinking.
     fn all_users_dominated_by(&self, op: &Operation, region: &Region) -> bool {
         assert!(
             region.find_ancestor_op(op.as_operation_ref()).is_none(),
@@ -570,10 +560,7 @@ where
         op.results().iter().all(|result| {
             let result = result.borrow();
             result.iter_uses().all(|user| {
-                let owner = user.owner.borrow();
-                if owner.implements::<dyn Transparent>()
-                    && owner.as_trait::<dyn midenc_hir::effects::DebugEffectOpInterface>().is_none()
-                {
+                if user.owner.borrow().implements::<dyn Transparent>() {
                     return true;
                 }
                 // The user is dominated by the region if its containing block is dominated

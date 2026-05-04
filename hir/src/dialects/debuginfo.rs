@@ -21,8 +21,8 @@
 //! - **`di.value`** — Records the current value of a source variable. Uses an SSA value operand,
 //!   so deleting the value without updating debug uses is a hard error.
 //!
-//! - **`di.declare`** — Records the storage address of a source variable. Similarly uses an SSA
-//!   operand for the address.
+//! - **`di.debug_declare`** — Records the storage location of a source variable using a debug
+//!   expression.
 //!
 //! - **`di.kill`** — Marks a variable as dead, giving the debugger precise lifetime boundaries
 //!   instead of scope-based heuristics.

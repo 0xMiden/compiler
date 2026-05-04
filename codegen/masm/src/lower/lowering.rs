@@ -1262,6 +1262,74 @@ impl HirLowering for arith::Split {
     }
 }
 
+fn debug_var_location_from_expression(
+    expr: &midenc_hir::dialects::debuginfo::attributes::Expression,
+    value: Option<ValueRef>,
+    emitter: &BlockEmitter<'_>,
+) -> Option<miden_core::operations::DebugVarLocation> {
+    use miden_core::{Felt, operations::DebugVarLocation, serde::Serializable};
+    use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
+
+    match expr.operations.as_slice() {
+        [] => value
+            .as_ref()
+            .and_then(|value| emitter.stack.find(value))
+            .map(|pos| emitter.stack.effective_index(pos) as u8)
+            .map(DebugVarLocation::Stack),
+        [first] => match first {
+            ExpressionOp::WasmStack(offset) => Some(DebugVarLocation::Stack(*offset as u8)),
+            ExpressionOp::WasmLocal(idx) => {
+                // WASM locals are always stored in memory via FMP in Miden.
+                // Store raw WASM local index; the FMP offset will be computed later in
+                // MasmFunctionBuilder::build() when num_locals is known.
+                i16::try_from(*idx).ok().map(DebugVarLocation::Local)
+            }
+            ExpressionOp::WasmGlobal(_) | ExpressionOp::Deref => value
+                .as_ref()
+                .and_then(|value| emitter.stack.find(value))
+                .map(|pos| emitter.stack.effective_index(pos) as u8)
+                .map(DebugVarLocation::Stack),
+            ExpressionOp::ConstU64(val) => Some(DebugVarLocation::Const(Felt::new(*val))),
+            ExpressionOp::ConstS64(val) => Some(DebugVarLocation::Const(Felt::new(*val as u64))),
+            ExpressionOp::FrameBase {
+                global_index,
+                byte_offset,
+            } => Some(DebugVarLocation::FrameBase {
+                global_index: *global_index,
+                byte_offset: *byte_offset,
+            }),
+            _ => value
+                .as_ref()
+                .and_then(|value| emitter.stack.find(value))
+                .map(|pos| emitter.stack.effective_index(pos) as u8)
+                .map(DebugVarLocation::Stack),
+        },
+        _ => Some(DebugVarLocation::Expression(expr.to_bytes())),
+    }
+}
+
+fn apply_debug_var_metadata(
+    debug_var: &mut miden_core::operations::DebugVarInfo,
+    var: &midenc_hir::dialects::debuginfo::attributes::Variable,
+) {
+    // Set arg_index if this is a parameter
+    if let Some(arg_index) = var.arg_index {
+        debug_var.set_arg_index(arg_index + 1); // Convert to 1-based
+    }
+
+    // Set source location
+    if let Some(line) = core::num::NonZeroU32::new(var.line) {
+        use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
+        let uri = Uri::new(var.file.as_str());
+        let file_line_col = FileLineCol::new(
+            uri,
+            LineNumber::new(line.get()).unwrap_or_default(),
+            var.column.and_then(ColumnNumber::new).unwrap_or_default(),
+        );
+        debug_var.set_location(file_line_col);
+    }
+}
+
 impl HirLowering for debuginfo::DebugValue {
     fn schedule_operands(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         // Debug value operations are purely observational — they do not consume their
@@ -1276,10 +1344,7 @@ impl HirLowering for debuginfo::DebugValue {
     }
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use miden_core::{
-            Felt,
-            operations::{DebugVarInfo, DebugVarLocation},
-        };
+        use miden_core::operations::DebugVarInfo;
         use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
 
         // Get the variable info
@@ -1305,74 +1370,17 @@ impl HirLowering for debuginfo::DebugValue {
             // Value has been dropped and we have no other location info, skip
             return Ok(());
         }
-        // Resolve the runtime location. Returns None when the location cannot
-        // be determined (value dropped and no expression info), in which case
-        // we skip emitting the decorator entirely rather than emitting a
-        // placeholder — the debugger would have nothing useful to show.
-        let value_location = match expr.operations.as_slice() {
-            [] => emitter
-                .stack
-                .find(&value)
-                .map(|pos| emitter.stack.effective_index(pos) as u8)
-                .map(DebugVarLocation::Stack),
-            [first] => match first {
-                ExpressionOp::WasmStack(offset) => Some(DebugVarLocation::Stack(*offset as u8)),
-                ExpressionOp::WasmLocal(idx) => {
-                    // WASM locals are always stored in memory via FMP in Miden.
-                    // Store raw WASM local index; the FMP offset will be computed later in
-                    // MasmFunctionBuilder::build() when num_locals is known.
-                    i16::try_from(*idx).ok().map(DebugVarLocation::Local)
-                }
-                ExpressionOp::WasmGlobal(_) | ExpressionOp::Deref => emitter
-                    .stack
-                    .find(&value)
-                    .map(|pos| emitter.stack.effective_index(pos) as u8)
-                    .map(DebugVarLocation::Stack),
-                ExpressionOp::ConstU64(val) => Some(DebugVarLocation::Const(Felt::new(*val))),
-                ExpressionOp::ConstS64(val) => {
-                    Some(DebugVarLocation::Const(Felt::new(*val as u64)))
-                }
-                ExpressionOp::FrameBase {
-                    global_index,
-                    byte_offset,
-                } => Some(DebugVarLocation::FrameBase {
-                    global_index: *global_index,
-                    byte_offset: *byte_offset,
-                }),
-                _ => emitter
-                    .stack
-                    .find(&value)
-                    .map(|pos| emitter.stack.effective_index(pos) as u8)
-                    .map(DebugVarLocation::Stack),
-            },
-            _ => {
-                use miden_core::serde::Serializable;
-                Some(DebugVarLocation::Expression(expr.as_value().to_bytes()))
-            }
-        };
+        // Resolve the runtime location. Returns None when the location cannot be determined, in
+        // which case we skip the decorator rather than emitting a placeholder.
+        let value_location =
+            debug_var_location_from_expression(expr.as_value(), Some(value), emitter);
 
         let Some(value_location) = value_location else {
             return Ok(());
         };
 
         let mut debug_var = DebugVarInfo::new(var.name.to_string(), value_location);
-
-        // Set arg_index if this is a parameter
-        if let Some(arg_index) = var.arg_index {
-            debug_var.set_arg_index(arg_index + 1); // Convert to 1-based
-        }
-
-        // Set source location
-        if let Some(line) = core::num::NonZeroU32::new(var.line) {
-            use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
-            let uri = Uri::new(var.file.as_str());
-            let file_line_col = FileLineCol::new(
-                uri,
-                LineNumber::new(line.get()).unwrap_or_default(),
-                var.column.and_then(ColumnNumber::new).unwrap_or_default(),
-            );
-            debug_var.set_location(file_line_col);
-        }
+        apply_debug_var_metadata(&mut debug_var, var.as_value());
 
         // Emit the instruction
         let inst = masm::Instruction::DebugVar(debug_var);
@@ -1384,49 +1392,28 @@ impl HirLowering for debuginfo::DebugValue {
 
 impl HirLowering for debuginfo::DebugDeclare {
     fn schedule_operands(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        // Debug value operations are purely observational — they do not consume their
-        // operand from the stack. Skip operand scheduling entirely; the emit() method
-        // will look up the value's current stack position (if any) on its own.
         Ok(())
     }
 
     fn required_operands(&self) -> ValueRange<'_, 4> {
-        // No operands need to be scheduled on the stack for debug ops.
         ValueRange::Empty
     }
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use miden_core::operations::{DebugVarInfo, DebugVarLocation};
+        use miden_core::operations::DebugVarInfo;
 
         let var = self.variable();
-        let address = self.address().as_value_ref();
+        let expr = self.expression();
 
-        let Some(index) = emitter.stack.find(&address) else {
-            // Do nothing if the stack value is no longer live at this point
+        let Some(value_location) =
+            debug_var_location_from_expression(expr.as_value(), None, emitter)
+        else {
             return Ok(());
         };
 
-        let mut debug_var =
-            DebugVarInfo::new(var.name.to_string(), DebugVarLocation::Stack(index as u8));
+        let mut debug_var = DebugVarInfo::new(var.name.to_string(), value_location);
+        apply_debug_var_metadata(&mut debug_var, var.as_value());
 
-        // Set arg_index if this is a parameter
-        if let Some(arg_index) = var.arg_index {
-            debug_var.set_arg_index(arg_index + 1); // Convert to 1-based
-        }
-
-        // Set source location
-        if let Some(line) = core::num::NonZeroU32::new(var.line) {
-            use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
-            let uri = Uri::new(var.file.as_str());
-            let file_line_col = FileLineCol::new(
-                uri,
-                LineNumber::new(line.get()).unwrap_or_default(),
-                var.column.and_then(ColumnNumber::new).unwrap_or_default(),
-            );
-            debug_var.set_location(file_line_col);
-        }
-
-        // Emit the instruction
         let inst = masm::Instruction::DebugVar(debug_var);
         emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));
 

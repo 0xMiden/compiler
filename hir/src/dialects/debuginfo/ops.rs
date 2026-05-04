@@ -18,13 +18,14 @@ pub type DebugKillRef = UnsafeIntrusiveEntityRef<DebugKill>;
 
 /// Records the current value of a source-level variable.
 ///
-/// This is the core operation of the debuginfo dialect. It creates a first-class SSA use of the
+/// This is the core operation of the debuginfo dialect. It records a transparent SSA use of the
 /// value, which means:
 ///
 /// - If a transform deletes the value without updating its debug uses, that's a hard error (not a
 ///   silent drop like with metadata-based approaches).
 /// - Standard MLIR-style use-def tracking automatically enforces this — transforms must call
-///   `replace_all_uses_with` or explicitly handle debug uses.
+///   `replace_all_uses_with`, explicitly handle debug uses, or drop the debug op when its referent
+///   is dead.
 ///
 /// The `variable` attribute identifies the source variable, and the `expression` attribute
 /// describes how to recover the source-level value from the IR value (e.g., "dereference this
@@ -61,12 +62,9 @@ impl EffectOpInterface<MemoryEffect> for DebugValue {
 
 /// Records the storage location (address) of a source-level variable.
 ///
-/// Unlike [DebugValue] which tracks values, [DebugDeclare] tracks the address where a variable is
-/// stored. This is useful for variables that live in memory (e.g., stack allocations) where the
-/// address itself doesn't change, but the value at that address may be updated through stores.
-///
-/// Like `DebugValue`, this creates a real SSA use of the address value, preventing silent drops
-/// during transforms.
+/// Unlike [DebugValue] which tracks values, [DebugDeclare] tracks the location where a variable is
+/// stored. This is useful for variables that live in memory (e.g., stack slots) where the address is
+/// described by a debug expression such as `DW_OP_fbreg`.
 #[derive(EffectOpInterface, OpParser, OpPrinter)]
 #[operation(
     dialect = DebugInfoDialect,
@@ -74,12 +72,12 @@ impl EffectOpInterface<MemoryEffect> for DebugValue {
     implements(DebugEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct DebugDeclare {
-    #[operand]
-    #[effects(DebugEffect(DebugEffect::Read))]
-    address: AnyType,
     #[attr]
     #[effects(DebugEffect(DebugEffect::Allocate))]
     variable: VariableAttr,
+    #[attr]
+    #[effects(DebugEffect(DebugEffect::Write))]
+    expression: ExpressionAttr,
 }
 
 impl EffectOpInterface<MemoryEffect> for DebugDeclare {
@@ -95,7 +93,7 @@ impl EffectOpInterface<MemoryEffect> for DebugDeclare {
 /// scope-based heuristics which can be inaccurate after optimizations.
 ///
 /// After a `debuginfo.kill`, the debugger should report the variable as "optimized out" or "not
-/// available" until the next `di.value` or `di.declare` for the same variable.
+/// available" until the next `di.value` or `di.debug_declare` for the same variable.
 ///
 /// # Example
 ///
