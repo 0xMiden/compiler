@@ -1,6 +1,7 @@
 use std::{cell::RefCell, ops::Range, rc::Rc};
 
 use miden_assembly_syntax::{
+    Path as MasmPath,
     ast::{Block, Immediate, Instruction, InvocationTarget, Op, Procedure},
     debuginfo::SourceSpan,
     parser::{IntValue, PushValue, WordValue},
@@ -14,8 +15,9 @@ pub(crate) fn infer_signature(
     context: &Rc<Context>,
     procedure: &Procedure,
     signatures: &FxHashMap<String, Signature>,
+    external_signatures: &FxHashMap<String, Signature>,
 ) -> Result<Signature> {
-    let mut state = InferState::new(signatures);
+    let mut state = InferState::new(signatures, external_signatures);
     state.infer_block(procedure.body())?;
 
     let params = state.inputs.iter().map(AbstractValue::ty_or_felt);
@@ -66,14 +68,19 @@ struct InferState<'a> {
     stack: Vec<AbstractValue>,
     inputs: Vec<AbstractValue>,
     signatures: &'a FxHashMap<String, Signature>,
+    external_signatures: &'a FxHashMap<String, Signature>,
 }
 
 impl<'a> InferState<'a> {
-    fn new(signatures: &'a FxHashMap<String, Signature>) -> Self {
+    fn new(
+        signatures: &'a FxHashMap<String, Signature>,
+        external_signatures: &'a FxHashMap<String, Signature>,
+    ) -> Self {
         Self {
             stack: Vec::new(),
             inputs: Vec::new(),
             signatures,
+            external_signatures,
         }
     }
 
@@ -82,6 +89,7 @@ impl<'a> InferState<'a> {
             stack: self.stack.clone(),
             inputs: Vec::new(),
             signatures: self.signatures,
+            external_signatures: self.external_signatures,
         }
     }
 
@@ -444,16 +452,29 @@ impl<'a> InferState<'a> {
     }
 
     fn invoke(&mut self, target: &InvocationTarget, span: SourceSpan) -> Result<()> {
-        let InvocationTarget::Symbol(name) = target else {
-            return Err(error::error(format!(
-                "signature inference requires resolved local invoke targets at {span:?}"
-            )));
+        let signature = match target {
+            InvocationTarget::Symbol(name) => {
+                self.signatures.get(name.as_str()).ok_or_else(|| {
+                    error::error(format!(
+                        "signature inference could not resolve local callee '{name}' at {span:?}"
+                    ))
+                })?
+            }
+            InvocationTarget::Path(path) => {
+                let key = invocation_path_key(path.inner());
+                self.external_signatures.get(&key).ok_or_else(|| {
+                    error::error(format!(
+                        "signature inference could not resolve external callee '{}' at {span:?}",
+                        path.inner()
+                    ))
+                })?
+            }
+            InvocationTarget::MastRoot(_) => {
+                return Err(error::error(format!(
+                    "signature inference does not support MAST root invoke targets at {span:?}"
+                )));
+            }
         };
-        let signature = self.signatures.get(name.as_str()).ok_or_else(|| {
-            error::error(format!(
-                "signature inference could not resolve local callee '{name}' at {span:?}"
-            ))
-        })?;
 
         for param in signature.params() {
             self.pop_with_type(param.ty.clone(), span)?;
@@ -618,6 +639,10 @@ impl<'a> InferState<'a> {
             self.stack.insert(0, input.clone());
         }
     }
+}
+
+fn invocation_path_key(path: &MasmPath) -> String {
+    path.to_absolute().to_string()
 }
 
 fn merge_branch_inputs(lhs: &[AbstractValue], rhs: &[AbstractValue]) -> Vec<AbstractValue> {

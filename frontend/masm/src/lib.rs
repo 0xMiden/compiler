@@ -6,16 +6,23 @@ mod lift;
 mod project;
 mod signatures;
 
-use std::{path::Path, rc::Rc};
+use std::{collections::BTreeMap, path::Path, rc::Rc};
 
 use miden_assembly_syntax::{
     Parse, ParseOptions,
     ast::{Module, ModuleKind},
     debuginfo::{SourceLanguage, SourceManager, SourceManagerExt, Uri},
 };
-use midenc_hir::{Context, dialects::builtin};
+use midenc_hir::{Context, FunctionType, dialects::builtin};
 
 pub use self::error::Result;
+
+/// External procedure signatures keyed by absolute MASM procedure path.
+///
+/// These entries are used for calls to procedures outside the module being disassembled. Project
+/// disassembly can populate this from package metadata; tests or embedding tools can provide it
+/// directly when they already know the callee contracts.
+pub type ExternalSignatureMap = BTreeMap<String, FunctionType>;
 
 /// Configuration for MASM disassembly.
 #[derive(Debug, Clone, Copy)]
@@ -48,6 +55,17 @@ pub fn disassemble_file(
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
+    disassemble_file_with_external_signatures(path, config, &ExternalSignatureMap::new(), context)
+}
+
+/// Disassemble a MASM file into an HIR module, using externally-provided procedure signatures for
+/// path-based invoke targets.
+pub fn disassemble_file_with_external_signatures(
+    path: impl AsRef<Path>,
+    config: &DisassemblerConfig,
+    external_signatures: &ExternalSignatureMap,
+    context: Rc<Context>,
+) -> Result<DisassembledModule> {
     let path = path.as_ref();
     let source_manager = context.session().source_manager.clone();
     let source_file = source_manager.load_file(path).map_err(|err| {
@@ -56,7 +74,7 @@ pub fn disassemble_file(
     let module_path = masm_module_path_from_file(path)?;
     let module = source_file
         .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))?;
-    disassemble_module(&module, config, context)
+    lift::lift_module(&module, config, external_signatures, context)
 }
 
 /// Disassemble a MASM source string into an HIR module.
@@ -66,12 +84,30 @@ pub fn disassemble_source(
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
+    disassemble_source_with_external_signatures(
+        source,
+        module_path,
+        config,
+        &ExternalSignatureMap::new(),
+        context,
+    )
+}
+
+/// Disassemble a MASM source string into an HIR module, using externally-provided procedure
+/// signatures for path-based invoke targets.
+pub fn disassemble_source_with_external_signatures(
+    source: impl Into<String>,
+    module_path: impl AsRef<miden_assembly_syntax::Path>,
+    config: &DisassemblerConfig,
+    external_signatures: &ExternalSignatureMap,
+    context: Rc<Context>,
+) -> Result<DisassembledModule> {
     let source_manager = context.session().source_manager.clone();
     let uri = Uri::from(module_path.as_ref().as_str().to_string().into_boxed_str());
     let source_file = source_manager.load(SourceLanguage::Masm, uri, source.into());
     let module = source_file
         .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))?;
-    disassemble_module(&module, config, context)
+    lift::lift_module(&module, config, external_signatures, context)
 }
 
 /// Disassemble a target from a `miden-project.toml` package manifest.
@@ -81,9 +117,13 @@ pub fn disassemble_project_target(
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
-    let source_path =
-        project::resolve_project_target_path(manifest_path.as_ref(), target, &context)?;
-    disassemble_file(source_path, config, context)
+    let target = project::resolve_project_target(manifest_path.as_ref(), target, &context)?;
+    disassemble_file_with_external_signatures(
+        target.source_path,
+        config,
+        &target.external_signatures,
+        context,
+    )
 }
 
 /// Disassemble a parsed MASM AST module into HIR.
@@ -92,7 +132,7 @@ pub fn disassemble_module(
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
-    lift::lift_module(module, config, context)
+    lift::lift_module(module, config, &ExternalSignatureMap::new(), context)
 }
 
 fn masm_module_path_from_file(path: &Path) -> Result<miden_assembly_syntax::PathBuf> {
@@ -112,7 +152,7 @@ mod tests {
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
-        SymbolName, SymbolTable, Type,
+        CallConv, FunctionType, SymbolName, SymbolTable, Type,
         dialects::builtin::{self, Function, UnrealizedConversionCast},
     };
 
@@ -270,6 +310,61 @@ end
         assert!(signature.params().iter().all(|param| param.ty == Type::U32));
         assert_eq!(signature.results().len(), 1);
         assert_eq!(signature.results()[0].ty, Type::U32);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_external_path_call_with_known_signature() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let mut external_signatures = ExternalSignatureMap::new();
+        external_signatures
+            .insert("::dep::callee".to_owned(), masm_signature([Type::Felt], [Type::Felt]));
+
+        let output = disassemble_source_with_external_signatures(
+            r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            &external_signatures,
+            context,
+        )?;
+
+        let function = find_function(output.module, "entry");
+        assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_signature_through_external_path_call() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let mut external_signatures = ExternalSignatureMap::new();
+        external_signatures
+            .insert("::dep::callee".to_owned(), masm_signature([Type::U32], [Type::Felt]));
+
+        let output = disassemble_source_with_external_signatures(
+            r#"
+pub proc entry
+    exec.::dep::callee
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            &external_signatures,
+            context,
+        )?;
+
+        let signature = find_function(output.module, "entry").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::U32);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
 
         Ok(())
     }
@@ -566,5 +661,12 @@ end
             .iter()
             .filter(|op| op.is::<T>())
             .count()
+    }
+
+    fn masm_signature(
+        params: impl IntoIterator<Item = Type>,
+        results: impl IntoIterator<Item = Type>,
+    ) -> FunctionType {
+        FunctionType::new(CallConv::Fast, params, results)
     }
 }

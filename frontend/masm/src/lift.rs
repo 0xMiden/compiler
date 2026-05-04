@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, rc::Rc};
 
 use miden_assembly_syntax::{
-    Felt,
+    Felt, Path as MasmPath,
     ast::{Block, Immediate, Instruction, InvocationTarget, Module, Op, Procedure},
     debuginfo::{SourceSpan, Spanned},
     parser::{IntValue, PushValue},
@@ -19,11 +19,14 @@ use midenc_hir::{
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::{DisassembledModule, DisassemblerConfig, Result, error, infer, signatures};
+use crate::{
+    DisassembledModule, DisassemblerConfig, ExternalSignatureMap, Result, error, infer, signatures,
+};
 
 pub(crate) fn lift_module(
     module: &Module,
     config: &DisassemblerConfig,
+    external_signatures: &ExternalSignatureMap,
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
     let mut builder = OpBuilder::new(context.clone());
@@ -43,6 +46,7 @@ pub(crate) fn lift_module(
         let signature = signatures::convert_signature(&context, signature)?;
         signatures.insert(procedure.name().as_str().to_owned(), signature);
     }
+    let external_signatures = convert_external_signatures(&context, external_signatures)?;
 
     if !config.infer_missing_signatures {
         if let Some(procedure) = module
@@ -67,9 +71,25 @@ pub(crate) fn lift_module(
                 .procedures()
                 .find(|procedure| procedure.name().as_str() == name)
                 .expect("callee-first order must contain local procedures only");
-            let signature = infer::infer_signature(&context, procedure, &signatures)?;
+            let signature =
+                infer::infer_signature(&context, procedure, &signatures, &external_signatures)?;
             signatures.insert(name, signature);
         }
+    }
+
+    let mut external_functions = FxHashMap::<String, FunctionRef>::default();
+    for (index, (path, signature)) in external_signatures.iter().enumerate() {
+        let function = builder.create_function(
+            Ident::with_empty_span(midenc_hir::interner::Symbol::intern(&external_symbol_name(
+                index, path,
+            ))),
+            Visibility::Public,
+            signature.clone(),
+        )?;
+        hir_module
+            .borrow_mut()
+            .insert_new(function.as_symbol_ref(), ProgramPoint::default());
+        external_functions.insert(path.clone(), function);
     }
 
     let mut functions = FxHashMap::<String, FunctionRef>::default();
@@ -98,7 +118,8 @@ pub(crate) fn lift_module(
         let function = *functions.get(procedure.name().as_str()).unwrap();
         let signature = signatures.get(procedure.name().as_str()).unwrap().clone();
         let mut function_builder = FunctionBuilder::new(function, &mut builder);
-        let mut lifter = ProcedureLifter::new(procedure, signature, &functions);
+        let mut lifter =
+            ProcedureLifter::new(procedure, signature, &functions, &external_functions);
         lifter.lift(&mut function_builder)?;
     }
 
@@ -106,6 +127,43 @@ pub(crate) fn lift_module(
         context,
         module: hir_module,
     })
+}
+
+fn convert_external_signatures(
+    context: &Rc<Context>,
+    external_signatures: &ExternalSignatureMap,
+) -> Result<FxHashMap<String, Signature>> {
+    external_signatures
+        .iter()
+        .map(|(path, signature)| {
+            let path = normalize_external_path(path)?;
+            let signature = signatures::convert_hir_function_type(context, signature);
+            Ok((path, signature))
+        })
+        .collect()
+}
+
+fn normalize_external_path(path: &str) -> Result<String> {
+    let path = path
+        .parse::<miden_assembly_syntax::PathBuf>()
+        .map_err(|err| error::error(format!("invalid external MASM path '{path}': {err}")))?;
+    Ok(path.as_path().to_absolute().to_string())
+}
+
+fn invocation_path_key(path: &MasmPath) -> String {
+    path.to_absolute().to_string()
+}
+
+fn external_symbol_name(index: usize, path: &str) -> String {
+    let mut name = format!("__masm_external_{index}");
+    for ch in path.chars() {
+        if ch.is_ascii_alphanumeric() {
+            name.push(ch);
+        } else {
+            name.push('_');
+        }
+    }
+    name
 }
 
 fn ensure_op_region(context: &Rc<Context>, op: &mut dyn HirOp) {
@@ -248,6 +306,7 @@ struct ProcedureLifter<'a> {
     procedure: &'a Procedure,
     signature: Signature,
     functions: &'a FxHashMap<String, FunctionRef>,
+    external_functions: &'a FxHashMap<String, FunctionRef>,
     locals: BTreeMap<u16, LocalVariable>,
     stack: Vec<StackValue>,
 }
@@ -257,11 +316,13 @@ impl<'a> ProcedureLifter<'a> {
         procedure: &'a Procedure,
         signature: Signature,
         functions: &'a FxHashMap<String, FunctionRef>,
+        external_functions: &'a FxHashMap<String, FunctionRef>,
     ) -> Self {
         Self {
             procedure,
             signature,
             functions,
+            external_functions,
             locals: BTreeMap::new(),
             stack: Vec::new(),
         }
@@ -1218,10 +1279,15 @@ impl<'a> ProcedureLifter<'a> {
                 .get(name.as_str())
                 .copied()
                 .ok_or_else(|| error::error(format!("unresolved local callee '{name}'"))),
-            InvocationTarget::Path(path) => Err(error::error(format!(
-                "external callee resolution is not implemented yet for '{}'",
-                path.inner()
-            ))),
+            InvocationTarget::Path(path) => {
+                let key = invocation_path_key(path.inner());
+                self.external_functions.get(&key).copied().ok_or_else(|| {
+                    error::error(format!(
+                        "unresolved external callee '{}'; no external signature was provided",
+                        path.inner()
+                    ))
+                })
+            }
             InvocationTarget::MastRoot(_) => {
                 Err(error::error("MAST root invocation targets are not supported"))
             }
