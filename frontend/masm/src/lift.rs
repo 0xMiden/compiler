@@ -43,7 +43,7 @@ pub(crate) fn lift_module(
         let Some(signature) = procedure.signature() else {
             continue;
         };
-        let signature = signatures::convert_signature(&context, signature)?;
+        let signature = signatures::convert_signature(&context, module, signature)?;
         signatures.insert(procedure.name().as_str().to_owned(), signature);
     }
     let external_signatures = convert_external_signatures(&context, external_signatures)?;

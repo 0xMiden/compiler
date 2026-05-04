@@ -392,6 +392,31 @@ end
     }
 
     #[test]
+    fn lifts_known_signature_with_local_type_alias() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+type Scalar = felt
+
+pub proc inc(a: Scalar) -> Scalar
+    add.1
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let signature = find_function(output.module, "inc").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::Felt);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        Ok(())
+    }
+
+    #[test]
     fn project_disassembly_uses_source_dependency_signatures() -> Result<()> {
         let root = temp_project_dir("midenc_frontend_masm_source_dep");
         let app_dir = root.join("app");
@@ -413,7 +438,9 @@ path = "lib.masm"
         fs::write(
             dep_dir.join("lib.masm"),
             r#"
-pub proc callee(a: felt) -> felt
+type Scalar = felt
+
+pub proc callee(a: Scalar) -> Scalar
     add.1
 end
 "#,

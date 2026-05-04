@@ -87,6 +87,7 @@ fn collect_dependency_signatures(
         collect_dependency_signature(
             &mut signatures,
             project,
+            context,
             dependency.name().as_ref(),
             dependency.scheme(),
             source_manager.clone(),
@@ -98,6 +99,7 @@ fn collect_dependency_signatures(
 fn collect_dependency_signature(
     signatures: &mut ExternalSignatureMap,
     project: &Project,
+    context: &Context,
     dependency_name: &str,
     scheme: &DependencyVersionScheme,
     source_manager: Arc<dyn SourceManager>,
@@ -106,14 +108,26 @@ fn collect_dependency_signature(
         DependencyVersionScheme::Path { path, .. } => {
             let package = project.package();
             let path = resolve_uri_path(package_base_dir(package.as_ref())?, path.inner().path());
-            collect_path_dependency_signatures(signatures, dependency_name, &path, source_manager)
+            collect_path_dependency_signatures(
+                signatures,
+                context,
+                dependency_name,
+                &path,
+                source_manager,
+            )
         }
         DependencyVersionScheme::WorkspacePath { path, .. } => {
             let Some(base_dir) = workspace_base_dir(project) else {
                 return Ok(());
             };
             let path = resolve_uri_path(base_dir, path.inner().path());
-            collect_path_dependency_signatures(signatures, dependency_name, &path, source_manager)
+            collect_path_dependency_signatures(
+                signatures,
+                context,
+                dependency_name,
+                &path,
+                source_manager,
+            )
         }
         DependencyVersionScheme::Workspace { member, .. } => {
             let Project::WorkspacePackage { workspace, .. } = project else {
@@ -125,7 +139,7 @@ fn collect_dependency_signature(
                     member.inner().path()
                 )));
             };
-            collect_source_package_signatures(signatures, package.as_ref(), source_manager)
+            collect_source_package_signatures(signatures, context, package.as_ref(), source_manager)
         }
         DependencyVersionScheme::Registry(_) | DependencyVersionScheme::Git { .. } => Ok(()),
     }
@@ -133,6 +147,7 @@ fn collect_dependency_signature(
 
 fn collect_path_dependency_signatures(
     signatures: &mut ExternalSignatureMap,
+    context: &Context,
     dependency_name: &str,
     path: &Path,
     source_manager: Arc<dyn SourceManager>,
@@ -143,7 +158,7 @@ fn collect_path_dependency_signatures(
 
     let project = Project::load_project_reference(dependency_name, path, source_manager.as_ref())?;
     let package = project.package();
-    collect_source_package_signatures(signatures, package.as_ref(), source_manager)
+    collect_source_package_signatures(signatures, context, package.as_ref(), source_manager)
 }
 
 fn collect_mast_package_signatures(
@@ -169,6 +184,7 @@ fn collect_mast_package_signatures(
 
 fn collect_source_package_signatures(
     signatures: &mut ExternalSignatureMap,
+    context: &Context,
     package: &ProjectPackage,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
@@ -196,7 +212,7 @@ fn collect_source_package_signatures(
         let Some(signature) = module.procedure_signature(index) else {
             continue;
         };
-        let signature = signatures::convert_ast_function_type(signature)?;
+        let signature = signatures::convert_ast_function_type(context, &module, signature)?;
         insert_external_signature(signatures, path.as_path().to_absolute().to_string(), signature)?;
     }
 
