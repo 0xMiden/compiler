@@ -33,6 +33,7 @@ exclude = [
     "sdk/.cargo",
     "tests/",
     "examples",
+    "tools/fuzza-agent",
 ]
 
 [workspace.package]
