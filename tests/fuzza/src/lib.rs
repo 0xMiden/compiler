@@ -14,8 +14,8 @@ use std::{
 };
 
 use miden_core::Felt;
-use miden_integration_tests::{CompilerTest, project, testing::executor_with_std};
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_tests::{CompilerTest, project, testing::executor_with_std};
 use proptest::{
     prelude::*,
     test_runner::{Config, FileFailurePersistence, TestRunner},

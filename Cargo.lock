@@ -512,7 +512,7 @@ name = "cargo-miden"
 version = "0.8.1"
 dependencies = [
  "anyhow",
- "cargo_metadata",
+ "cargo_metadata 0.23.1",
  "clap",
  "liquid",
  "log",
@@ -527,6 +527,15 @@ dependencies = [
  "tempfile",
  "toml_edit 0.25.11+spec-1.1.0",
  "walkdir",
+]
+
+[[package]]
+name = "cargo-platform"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e35af189006b9c0f00a064685c727031e3ed2d8020f7ba284d78cc2671bd36ea"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -564,12 +573,26 @@ dependencies = [
 
 [[package]]
 name = "cargo_metadata"
+version = "0.19.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd5eb614ed4c27c5d706420e4320fbe3216ab31fa1c33cd8246ac36dae4479ba"
+dependencies = [
+ "camino",
+ "cargo-platform 0.1.9",
+ "semver 1.0.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "cargo_metadata"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef987d17b0a113becdd19d3d0022d04d7ef41f9efe4f3fb63ac44ba61df3ade9"
 dependencies = [
  "camino",
- "cargo-platform",
+ "cargo-platform 0.3.3",
  "semver 1.0.28",
  "serde",
  "serde_json",
@@ -3624,13 +3647,13 @@ dependencies = [
 name = "midenc-fuzza"
 version = "0.8.1"
 dependencies = [
- "cargo_metadata",
+ "cargo_metadata 0.19.2",
  "libloading",
  "miden-core",
- "miden-debug",
- "miden-integration-tests",
+ "miden-debug 0.7.0",
  "miden-mast-package",
  "midenc-frontend-wasm",
+ "midenc-integration-tests",
  "midenc-session",
  "proptest",
 ]
