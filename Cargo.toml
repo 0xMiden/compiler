@@ -28,12 +28,12 @@ members = [
     "tests/support",
     "tests/integration",
     "tests/integration-network",
-    "tests/fuzza",
 ]
 exclude = [
     "sdk/.cargo",
     "tests/",
     "examples",
+    "tools/fuzza-agent",
 ]
 
 [workspace.package]

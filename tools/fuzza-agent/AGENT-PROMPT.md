@@ -10,7 +10,7 @@ first.
 ## Case constraints
 
 Each new case is a single `.rs` file at
-`tests/fuzza/src/cases/case_<name>.rs` and MUST:
+`tests/integration/src/end_to_end/differential/cases/case_<name>.rs` and MUST:
 
 - Contain only a `#[unsafe(no_mangle)] pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32`
   (plus any helper `fn`s / `const`s it needs). The harness prepends
@@ -23,7 +23,7 @@ Each new case is a single `.rs` file at
   zero, use `wrapping_*` for arithmetic). The harness fuzzes with random
   `u32` pairs; a native-side panic is a case failure.
 
-Wire the new case in `tests/fuzza/src/tests.rs`:
+Wire the new case in `tests/integration/src/end_to_end/differential/tests.rs`:
 
 ```rust
 #[test]

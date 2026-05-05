@@ -1,6 +1,6 @@
-//! Fuzz cases. One `#[test]` per file under `cases/`, driven by `run_case`.
+//! Differential cases. One `#[test]` per file under `cases/`, driven by `run_case`.
 
-use super::run_case;
+use super::harness::run_case;
 
 #[test]
 fn add() {

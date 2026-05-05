@@ -41,4 +41,6 @@ sha2 = "0.11"
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 blake3 = "1.5"
+cargo_metadata = "0.19"
 concat-idents = "1.1"
+libloading = "0.8"

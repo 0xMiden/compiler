@@ -1,8 +1,8 @@
 //! Differential fuzzing harness for the Miden compiler.
 //!
-//! Each test case, checked in under `src/cases/`, is just the body of a
+//! Each test case under `cases/` is just the body of a
 //! `#[unsafe(no_mangle)] pub extern "C" fn entrypoint(u32, u32) -> u32`
-//! plus any helpers it needs. The harness prepends a fixed header
+//! plus any helpers it needs. [`run_case`] prepends a fixed header
 //! (`#![no_std]` + `#[panic_handler]`) before writing the case as `src/lib.rs`
 //! of a generated cargo project, builds it twice — natively as a host `cdylib`
 //! and via `cargo-miden` to a MASM package — and compares outputs across
@@ -15,18 +15,19 @@ use std::{
 
 use miden_core::Felt;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_tests::{CompilerTest, project, testing::executor_with_std};
 use proptest::{
     prelude::*,
     test_runner::{Config, FileFailurePersistence, TestRunner},
 };
 
+use crate::{CompilerTest, project, testing::executor_with_std};
+
 /// Compiles `source` for the host and for MASM, then compares the
 /// `entrypoint(u32, u32) -> u32` outputs across 16 random input pairs.
 ///
 /// `name` must be unique per case; it is used as the generated package name.
-pub fn run_case(name: &str, source: &str) {
-    let pkg_name = format!("fuzza_{name}");
+pub(super) fn run_case(name: &str, source: &str) {
+    let pkg_name = format!("differential_{name}");
     let manifest = cargo_toml(&pkg_name);
     let full_source = format!("{CASE_HEADER}{source}");
 
@@ -166,6 +167,3 @@ fn build_host_cdylib(project_root: &std::path::Path, pkg_name: &str) -> PathBuf 
         )
     })
 }
-
-#[cfg(test)]
-mod tests;

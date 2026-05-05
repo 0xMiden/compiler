@@ -3644,21 +3644,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "midenc-fuzza"
-version = "0.8.1"
-dependencies = [
- "cargo_metadata 0.19.2",
- "libloading",
- "miden-core",
- "miden-debug 0.7.0",
- "miden-mast-package",
- "midenc-frontend-wasm",
- "midenc-integration-tests",
- "midenc-session",
- "proptest",
-]
-
-[[package]]
 name = "midenc-hir"
 version = "0.8.1"
 dependencies = [
@@ -3849,7 +3834,9 @@ name = "midenc-integration-tests"
 version = "0.8.1"
 dependencies = [
  "blake3",
+ "cargo_metadata 0.19.2",
  "concat-idents",
+ "libloading",
  "log",
  "miden-assembly",
  "miden-core",

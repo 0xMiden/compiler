@@ -1,10 +1,14 @@
-# midenc-fuzza
+# fuzza-agent
 
-Differential fuzzing harness for the Miden compiler.
+Coverage-guided case-generation harness for the Miden compiler's differential
+fuzzing tests. The differential test harness itself lives in
+`tests/integration/src/end_to_end/differential/`; this directory only holds
+the agent-facing tooling that grows the case set.
 
-## How it works
+## How the differential tests work
 
-Each test case under `src/cases/` is a single `.rs` file containing only a
+Each case under `tests/integration/src/end_to_end/differential/cases/` is a
+single `.rs` file containing only a
 `#[unsafe(no_mangle)] pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32`
 plus any helpers it needs. The harness prepends `#![no_std]` and a panic
 handler, then for each case:
@@ -20,19 +24,21 @@ reproducer (proptest shrinking is disabled).
 ## Running the tests
 
 ```bash
-cargo test -p midenc-fuzza
+cargo test -p midenc-integration-tests differential
 # or
-cargo nextest run -p midenc-fuzza
+cargo nextest run -p midenc-integration-tests -E 'test(/differential::/)'
 ```
 
-Cases known to surface compiler divergences are marked `#[ignore = "..."]`
-in `src/tests.rs` with the failing inputs noted. Run them explicitly with
-`--ignored` (or `--run-ignored all` under nextest) to investigate.
+Cases known to surface compiler divergences are marked `#[ignore = "..."]` in
+`tests/integration/src/end_to_end/differential/tests.rs` with the failing
+inputs noted. Run them explicitly with `--ignored` (or `--run-ignored all`
+under nextest) to investigate.
 
 ## Adding a case manually
 
-1. Create `src/cases/case_<name>.rs` with the `entrypoint` function.
-2. Wire it up in `src/tests.rs`:
+1. Create `tests/integration/src/end_to_end/differential/cases/case_<name>.rs`
+   with the `entrypoint` function.
+2. Wire it up in `tests/integration/src/end_to_end/differential/tests.rs`:
    ```rust
    #[test]
    fn <name>() {
@@ -47,10 +53,10 @@ panic is treated as a case failure.
 
 ## Coverage-guided case generation
 
-The `cargo make` tasks below produce a Markdown report of which compiler
-functions and regions are covered by the current case set. The intended
-workflow is to hand `AGENT-PROMPT.md` to an agent and let it use the report
-to pick new cases.
+The `cargo make` tasks below produce a Markdown report (via `cov.py`) of
+which compiler functions and regions are covered by the current case set.
+The intended workflow is to hand `AGENT-PROMPT.md` to an agent and let it
+use the report to pick new cases.
 
 ```bash
 # First run (clean-slate baseline; takes several minutes for the
