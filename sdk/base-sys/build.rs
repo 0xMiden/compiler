@@ -104,5 +104,5 @@ fn main() {
     // Emit link directives for dependents
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     // `lib` prefix is adde by the linker automatically when it searches for the file
-    println!("cargo:rustc-link-lib=miden_base_sys_stubs");
+    println!("cargo:rustc-link-lib=static:+whole-archive=miden_base_sys_stubs");
 }

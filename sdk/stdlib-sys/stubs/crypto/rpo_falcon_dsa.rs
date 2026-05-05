@@ -4,6 +4,8 @@
 ///
 /// This satisfies link-time references and allows the compiler to lower calls to MASM.
 #[unsafe(export_name = "miden::core::crypto::dsa::falcon512_poseidon2::verify")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn rpo_falcon512_verify_stub(
     _pk1: f32,
     _pk2: f32,

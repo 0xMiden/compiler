@@ -2,6 +2,8 @@ use core::ffi::c_void;
 
 /// Output note interface stubs
 #[unsafe(export_name = "miden::protocol::output_note::create")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn output_note_create_plain(
     _tag: f32,
     _note_type: f32,
@@ -14,6 +16,8 @@ pub extern "C" fn output_note_create_plain(
 }
 
 #[unsafe(export_name = "miden::protocol::output_note::add_asset")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn output_note_add_asset_plain(
     _k0: f32,
     _k1: f32,
@@ -29,26 +33,36 @@ pub extern "C" fn output_note_add_asset_plain(
 }
 
 #[unsafe(export_name = "miden::protocol::output_note::get_assets_info")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn output_note_get_assets_info_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[unsafe(export_name = "miden::protocol::output_note::get_assets")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn output_note_get_assets_plain(_dest_ptr: *mut c_void, _note_index: f32) -> usize {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[unsafe(export_name = "miden::protocol::output_note::get_recipient")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn output_note_get_recipient_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[unsafe(export_name = "miden::protocol::output_note::get_metadata")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn output_note_get_metadata_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[unsafe(export_name = "miden::protocol::output_note::set_attachment")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn output_note_set_attachment_plain(
     _note_index: f32,
     _attachment_scheme: f32,
@@ -62,6 +76,8 @@ pub extern "C" fn output_note_set_attachment_plain(
 }
 
 #[unsafe(export_name = "miden::protocol::output_note::set_word_attachment")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn output_note_set_word_attachment_plain(
     _note_index: f32,
     _attachment_scheme: f32,
@@ -74,6 +90,8 @@ pub extern "C" fn output_note_set_word_attachment_plain(
 }
 
 #[unsafe(export_name = "miden::protocol::output_note::set_array_attachment")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn output_note_set_array_attachment_plain(
     _note_index: f32,
     _attachment_scheme: f32,

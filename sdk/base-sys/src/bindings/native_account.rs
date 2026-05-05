@@ -4,6 +4,7 @@ use super::types::Asset;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::add_asset"]
     fn extern_native_account_add_asset(
         asset_key_0: Felt,
@@ -16,6 +17,7 @@ unsafe extern "C" {
         asset_value_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::remove_asset"]
     fn extern_native_account_remove_asset(
         asset_key_0: Felt,
@@ -28,10 +30,13 @@ unsafe extern "C" {
         asset_value_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::incr_nonce"]
     fn extern_native_account_incr_nonce() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::compute_delta_commitment"]
     fn extern_native_account_compute_delta_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::was_procedure_called"]
     fn extern_native_account_was_procedure_called(
         proc_root_0: Felt,

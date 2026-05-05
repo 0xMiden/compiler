@@ -1,8 +1,9 @@
 #[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "intrinsics::debug::break"]
     fn extern_break();
-
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "intrinsics::debug::println"]
     fn extern_println(ptr: *const u8, len: usize);
 }

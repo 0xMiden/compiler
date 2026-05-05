@@ -21,6 +21,7 @@ unsafe extern "C" {
     /// Cycles:
     /// - Even num_words: 43 + 9 * num_words / 2
     /// - Odd num_words: 60 + 9 * round_down(num_words / 2)
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "miden::core::mem::pipe_words_to_memory"]
     fn extern_pipe_words_to_memory(num_words: Felt, write_ptr: *mut Felt, out_ptr: *mut Felt);
 
@@ -36,6 +37,7 @@ unsafe extern "C" {
     /// - The value num_words = end_ptr - write_ptr must be positive and even
     ///
     /// Cycles: 9 + 6 * (num_words / 2)
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "miden::core::mem::pipe_double_words_to_memory"]
     fn extern_pipe_double_words_to_memory(
         r00: Felt,
@@ -63,6 +65,7 @@ unsafe extern "C" {
     /// Cycles:
     /// - Even num_words: 58 + 9 * (num_words / 2)
     /// - Odd num_words: 75 + 9 * round_down(num_words / 2)
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "miden::core::mem::pipe_preimage_to_memory"]
     pub(crate) fn extern_pipe_preimage_to_memory(
         num_words: Felt,

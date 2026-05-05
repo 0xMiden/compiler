@@ -1,6 +1,8 @@
 /// Unreachable stubs for intrinsics::advice interface
 
 #[unsafe(export_name = "intrinsics::advice::adv_push_mapvaln")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn advice_adv_push_mapvaln_stub(
     _key0: f32,
     _key1: f32,
@@ -11,6 +13,8 @@ pub extern "C" fn advice_adv_push_mapvaln_stub(
 }
 
 #[unsafe(export_name = "intrinsics::advice::emit_falcon_sig_to_stack")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn advice_emit_falcon_sig_to_stack_stub(
     _m0: f32,
     _m1: f32,
@@ -25,6 +29,8 @@ pub extern "C" fn advice_emit_falcon_sig_to_stack_stub(
 }
 
 #[unsafe(export_name = "intrinsics::advice::adv_insert_mem")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn advice_adv_insert_mem_stub(
     _k0: f32,
     _k1: f32,
@@ -37,6 +43,8 @@ pub extern "C" fn advice_adv_insert_mem_stub(
 }
 
 #[unsafe(export_name = "intrinsics::advice::emit_and_verify_falcon")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn advice_emit_and_verify_falcon_stub(
     _m0: f32,
     _m1: f32,

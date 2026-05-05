@@ -8,18 +8,25 @@ use super::{AccountId, Asset, NoteMetadata, RawAccountId, Recipient};
 #[allow(improper_ctypes)]
 unsafe extern "C" {
     // NOTE: In protocol v0.14, note "inputs" are exposed via `active_note::get_storage`.
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_storage"]
     fn extern_note_get_storage(ptr: *mut Felt) -> usize;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_assets"]
     fn extern_note_get_assets(ptr: *mut Felt) -> usize;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_sender"]
     fn extern_note_get_sender(ptr: *mut RawAccountId);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_recipient"]
     fn extern_note_get_recipient(ptr: *mut Recipient);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_script_root"]
     fn extern_note_get_script_root(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_serial_number"]
     fn extern_note_get_serial_number(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_metadata"]
     fn extern_note_get_metadata(ptr: *mut NoteMetadata);
 }
