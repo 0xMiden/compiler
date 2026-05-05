@@ -23,4 +23,5 @@ midenc-hir.workspace = true
 rustc-hash.workspace = true
 
 [dev-dependencies]
+miden-assembly = { workspace = true, features = ["std"] }
 miden-package-registry.workspace = true

@@ -194,6 +194,8 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use miden_assembly::Assembler;
+    use miden_core::serde::Serializable;
     use miden_package_registry::{
         NoPackageStore, PackageId, PackageRecord, PackageRegistry, PackageVersions, Version,
     };
@@ -799,6 +801,32 @@ end
     }
 
     #[test]
+    fn project_disassembly_uses_preassembled_dependency_graph_signatures() -> Result<()> {
+        let (root, app_dir) =
+            write_preassembled_dependency_project("midenc_frontend_masm_preassembled_graph_dep");
+
+        let context = Rc::new(Context::default());
+        let registry = NoPackageStore::default();
+        let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+            .with_source_manager(context.session().source_manager.clone())
+            .build_from_path(app_dir.join("miden-project.toml"))?;
+
+        let output = disassemble_project_target_with_dependency_graph(
+            app_dir.join("miden-project.toml"),
+            None,
+            &dependency_graph,
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+        let function = find_function(output.module, "entry");
+        assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+        let _ = fs::remove_dir_all(root);
+
+        Ok(())
+    }
+
+    #[test]
     fn project_graph_registry_nodes_require_artifacts() -> Result<()> {
         let root = temp_project_dir("midenc_frontend_masm_registry_graph");
         let app_dir = root.join("app");
@@ -1344,6 +1372,61 @@ dep = { path = "../dep" }
             r#"
 pub proc entry(a: felt) -> felt
     exec.::dep::callee
+end
+"#,
+        )
+        .unwrap();
+
+        (root, app_dir)
+    }
+
+    fn write_preassembled_dependency_project(
+        prefix: &str,
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = temp_project_dir(prefix);
+        let app_dir = root.join("app");
+        let dep_src_dir = root.join("dep-src");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&dep_src_dir).unwrap();
+
+        fs::write(
+            dep_src_dir.join("api.masm"),
+            r#"
+pub proc callee(a: felt) -> felt
+    add.1
+end
+"#,
+        )
+        .unwrap();
+        let library = Assembler::default().assemble_library_from_dir(&dep_src_dir, "dep").unwrap();
+        let package = miden_mast_package::Package::from_library(
+            miden_mast_package::PackageId::from("dep"),
+            "1.0.0".parse::<miden_mast_package::Version>().unwrap(),
+            miden_mast_package::TargetType::Library,
+            library,
+            std::iter::empty(),
+        );
+        fs::write(root.join("dep.masp"), package.to_bytes()).unwrap();
+
+        fs::write(
+            app_dir.join("miden-project.toml"),
+            r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+
+[dependencies]
+dep = { path = "../dep.masp" }
+"#,
+        )
+        .unwrap();
+        fs::write(
+            app_dir.join("main.masm"),
+            r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::api::callee
 end
 "#,
         )

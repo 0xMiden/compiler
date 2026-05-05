@@ -3589,6 +3589,7 @@ dependencies = [
 name = "midenc-frontend-masm"
 version = "0.8.1"
 dependencies = [
+ "miden-assembly",
  "miden-assembly-syntax",
  "miden-core",
  "miden-mast-package",
