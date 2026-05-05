@@ -305,6 +305,268 @@ end
     }
 
     #[test]
+    fn supported_instruction_matrix_lifts() {
+        let mut cases = vec![
+            instruction_case("nop", &[], &[], "nop"),
+            instruction_case("drop", &["felt"], &[], "drop"),
+            instruction_case("dropw", &["felt", "felt", "felt", "felt"], &[], "dropw"),
+            felt_instruction_case("padw", 0, 4, "padw"),
+            felt_instruction_case("push", 0, 0, "push.1 drop"),
+            felt_instruction_case("push_word", 0, 0, "push.[1,2,3,4] dropw"),
+            felt_instruction_case("push_slice", 0, 0, "push.[1,2,3,4][1..3] drop drop"),
+            felt_instruction_case("push_felt_list", 0, 0, "push.1.2.3 drop drop drop"),
+            instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
+            instruction_case_with_locals("loc_store", 1, &["felt"], &[], "loc_store.0"),
+            felt_instruction_case("add", 2, 1, "add"),
+            felt_instruction_case("add_imm", 1, 1, "add.2"),
+            felt_instruction_case("sub", 2, 1, "sub"),
+            felt_instruction_case("sub_imm", 1, 1, "sub.2"),
+            felt_instruction_case("mul", 2, 1, "mul"),
+            felt_instruction_case("mul_imm", 1, 1, "mul.2"),
+            felt_instruction_case("div", 2, 1, "div"),
+            felt_instruction_case("div_imm", 1, 1, "div.2"),
+            felt_instruction_case("neg", 1, 1, "neg"),
+            felt_instruction_case("ilog2", 1, 1, "ilog2"),
+            felt_instruction_case("inv", 1, 1, "inv"),
+            felt_instruction_case("incr", 1, 1, "add.1"),
+            felt_instruction_case("pow2", 1, 1, "pow2"),
+            felt_instruction_case("exp", 2, 1, "exp"),
+            felt_instruction_case("exp_imm", 1, 1, "exp.2"),
+            felt_instruction_case("exp_bit_length", 2, 1, "exp.u8"),
+            instruction_case("not", &["i1"], &["i1"], "not"),
+            instruction_case("and", &["i1", "i1"], &["i1"], "and"),
+            instruction_case("or", &["i1", "i1"], &["i1"], "or"),
+            instruction_case("xor", &["i1", "i1"], &["i1"], "xor"),
+            instruction_case("eq", &["felt", "felt"], &["i1"], "eq"),
+            instruction_case("eq_imm", &["felt"], &["i1"], "eq.2"),
+            instruction_case("neq", &["felt", "felt"], &["i1"], "neq"),
+            instruction_case("neq_imm", &["felt"], &["i1"], "neq.2"),
+            instruction_case("eqw", &felt_types(8), &["i1"], "eqw"),
+            instruction_case("lt", &["felt", "felt"], &["i1"], "lt"),
+            instruction_case("lte", &["felt", "felt"], &["i1"], "lte"),
+            instruction_case("gt", &["felt", "felt"], &["i1"], "gt"),
+            instruction_case("gte", &["felt", "felt"], &["i1"], "gte"),
+            instruction_case("is_odd", &["felt"], &["i1"], "is_odd"),
+            instruction_case("assert", &["i1"], &[], "assert"),
+            instruction_case("assertz", &["i1"], &[], "assertz"),
+            instruction_case("assert_eq", &["felt", "felt"], &[], "assert_eq"),
+            instruction_case("assert_eqw", &felt_types(8), &[], "assert_eqw"),
+            instruction_case("u32cast", &["felt"], &["u32"], "u32cast"),
+            instruction_case("u32assert", &["felt"], &["u32"], "u32assert"),
+            instruction_case("u32assert2", &["felt", "felt"], &["u32", "u32"], "u32assert2"),
+            instruction_case("u32assertw", &felt_types(4), &u32_types(4), "u32assertw"),
+            instruction_case("u32wrapping_add", &["u32", "u32"], &["u32"], "u32wrapping_add"),
+            instruction_case("u32wrapping_add_imm", &["u32"], &["u32"], "u32wrapping_add.2"),
+            instruction_case(
+                "u32overflowing_add",
+                &["u32", "u32"],
+                &["felt", "felt"],
+                "u32overflowing_add",
+            ),
+            instruction_case(
+                "u32overflowing_add_imm",
+                &["u32"],
+                &["felt", "felt"],
+                "u32overflowing_add.2",
+            ),
+            instruction_case("u32wrapping_sub", &["u32", "u32"], &["u32"], "u32wrapping_sub"),
+            instruction_case("u32wrapping_sub_imm", &["u32"], &["u32"], "u32wrapping_sub.2"),
+            instruction_case(
+                "u32overflowing_sub",
+                &["u32", "u32"],
+                &["felt", "felt"],
+                "u32overflowing_sub",
+            ),
+            instruction_case(
+                "u32overflowing_sub_imm",
+                &["u32"],
+                &["felt", "felt"],
+                "u32overflowing_sub.2",
+            ),
+            instruction_case("u32wrapping_mul", &["u32", "u32"], &["u32"], "u32wrapping_mul"),
+            instruction_case("u32wrapping_mul_imm", &["u32"], &["u32"], "u32wrapping_mul.2"),
+            instruction_case("u32div", &["u32", "u32"], &["u32"], "u32div"),
+            instruction_case("u32div_imm", &["u32"], &["u32"], "u32div.2"),
+            instruction_case("u32mod", &["u32", "u32"], &["u32"], "u32mod"),
+            instruction_case("u32mod_imm", &["u32"], &["u32"], "u32mod.2"),
+            instruction_case("u32divmod", &["u32", "u32"], &["u32", "u32"], "u32divmod"),
+            instruction_case("u32divmod_imm", &["u32"], &["u32", "u32"], "u32divmod.2"),
+            instruction_case("u32and", &["u32", "u32"], &["u32"], "u32and"),
+            instruction_case("u32or", &["u32", "u32"], &["u32"], "u32or"),
+            instruction_case("u32xor", &["u32", "u32"], &["u32"], "u32xor"),
+            instruction_case("u32not", &["u32"], &["u32"], "u32not"),
+            instruction_case("u32shr", &["u32", "u32"], &["u32"], "u32shr"),
+            instruction_case("u32shr_imm", &["u32"], &["u32"], "u32shr.2"),
+            instruction_case("u32shl", &["u32", "u32"], &["u32"], "u32shl"),
+            instruction_case("u32shl_imm", &["u32"], &["u32"], "u32shl.2"),
+            instruction_case("u32rotr", &["u32", "u32"], &["u32"], "u32rotr"),
+            instruction_case("u32rotr_imm", &["u32"], &["u32"], "u32rotr.2"),
+            instruction_case("u32rotl", &["u32", "u32"], &["u32"], "u32rotl"),
+            instruction_case("u32rotl_imm", &["u32"], &["u32"], "u32rotl.2"),
+            instruction_case("u32popcnt", &["u32"], &["u32"], "u32popcnt"),
+            instruction_case("u32ctz", &["u32"], &["u32"], "u32ctz"),
+            instruction_case("u32clz", &["u32"], &["u32"], "u32clz"),
+            instruction_case("u32clo", &["u32"], &["u32"], "u32clo"),
+            instruction_case("u32cto", &["u32"], &["u32"], "u32cto"),
+            instruction_case("u32lt", &["u32", "u32"], &["i1"], "u32lt"),
+            instruction_case("u32lte", &["u32", "u32"], &["i1"], "u32lte"),
+            instruction_case("u32gt", &["u32", "u32"], &["i1"], "u32gt"),
+            instruction_case("u32gte", &["u32", "u32"], &["i1"], "u32gte"),
+            instruction_case("u32min", &["u32", "u32"], &["u32"], "u32min"),
+            instruction_case("u32max", &["u32", "u32"], &["u32"], "u32max"),
+            felt_instruction_case("reversew", 4, 4, "reversew"),
+            felt_instruction_case("reversedw", 8, 8, "reversedw"),
+            felt_instruction_case("swapdw", 16, 16, "swapdw"),
+        ];
+
+        for depth in 0..=15 {
+            cases.push(felt_instruction_case(
+                format!("dup_{depth}"),
+                depth + 1,
+                depth + 2,
+                format!("dup.{depth}"),
+            ));
+        }
+        for depth in 1..=15 {
+            cases.push(felt_instruction_case(
+                format!("swap_{depth}"),
+                depth + 1,
+                depth + 1,
+                format!("swap.{depth}"),
+            ));
+        }
+        for depth in 2..=15 {
+            cases.push(felt_instruction_case(
+                format!("movup_{depth}"),
+                depth + 1,
+                depth + 1,
+                format!("movup.{depth}"),
+            ));
+            cases.push(felt_instruction_case(
+                format!("movdn_{depth}"),
+                depth + 1,
+                depth + 1,
+                format!("movdn.{depth}"),
+            ));
+        }
+        for depth in 0..=3 {
+            cases.push(felt_instruction_case(
+                format!("dupw_{depth}"),
+                4 * (depth + 1),
+                4 * (depth + 2),
+                format!("dupw.{depth}"),
+            ));
+        }
+        for depth in 1..=3 {
+            cases.push(felt_instruction_case(
+                format!("swapw_{depth}"),
+                4 * (depth + 1),
+                4 * (depth + 1),
+                format!("swapw.{depth}"),
+            ));
+        }
+        for depth in 2..=3 {
+            cases.push(felt_instruction_case(
+                format!("movupw_{depth}"),
+                4 * (depth + 1),
+                4 * (depth + 1),
+                format!("movupw.{depth}"),
+            ));
+            cases.push(felt_instruction_case(
+                format!("movdnw_{depth}"),
+                4 * (depth + 1),
+                4 * (depth + 1),
+                format!("movdnw.{depth}"),
+            ));
+        }
+
+        for case in &cases {
+            assert_instruction_case_lifts(case);
+        }
+    }
+
+    #[test]
+    fn supported_invocation_instruction_matrix_lifts() {
+        for (name, instruction) in [("exec", "exec.callee"), ("call", "call.callee")] {
+            let source = format!(
+                r#"
+proc callee(value: felt) -> felt
+    add.1
+end
+
+pub proc matrix_{name}(value: felt) -> felt
+    {instruction}
+end
+"#
+            );
+
+            let context = Rc::new(Context::default());
+            if let Err(err) =
+                disassemble_source(source.clone(), "test", &DisassemblerConfig::default(), context)
+            {
+                panic!("expected invocation matrix case '{name}' to lift\n{source}\nerror: {err}");
+            }
+        }
+
+        let source = r#"
+pub proc matrix_syscall(value: felt) -> felt
+    syscall.callee
+end
+"#;
+        let context = Rc::new(Context::default());
+        let mut external_signatures = ExternalSignatureMap::new();
+        external_signatures
+            .insert("::$kernel::callee".to_owned(), masm_signature([Type::Felt], [Type::Felt]));
+        if let Err(err) = disassemble_source_with_external_signatures(
+            source,
+            "test",
+            &DisassemblerConfig::default(),
+            &external_signatures,
+            context,
+        ) {
+            panic!("expected invocation matrix case 'syscall' to lift\n{source}\nerror: {err}");
+        }
+    }
+
+    #[test]
+    fn unsupported_instruction_matrix_reports_diagnostics() {
+        let cases = [
+            unsupported_instruction_case("assert_err", 0, "assert.err=\"boom\""),
+            unsupported_instruction_case("assert_eq_err", 0, "assert_eq.err=\"boom\""),
+            unsupported_instruction_case("assert_eqw_err", 0, "assert_eqw.err=\"boom\""),
+            unsupported_instruction_case("assertz_err", 0, "assertz.err=\"boom\""),
+            unsupported_instruction_case("u32assert_err", 0, "u32assert.err=\"boom\""),
+            unsupported_instruction_case("u32assert2_err", 0, "u32assert2.err=\"boom\""),
+            unsupported_instruction_case("u32assertw_err", 0, "u32assertw.err=\"boom\""),
+            unsupported_instruction_case("u32test", 0, "u32test"),
+            unsupported_instruction_case("u32testw", 0, "u32testw"),
+            unsupported_instruction_case("u32split", 0, "u32split"),
+            unsupported_instruction_case("ext2add", 0, "ext2add"),
+            unsupported_instruction_case("u32widening_add", 0, "u32widening_add"),
+            unsupported_instruction_case("u32overflowing_add3", 0, "u32overflowing_add3"),
+            unsupported_instruction_case("u32widening_mul", 0, "u32widening_mul"),
+            unsupported_instruction_case("cswap", 0, "cswap"),
+            unsupported_instruction_case("cdrop", 0, "cdrop"),
+            unsupported_instruction_case("locaddr", 1, "locaddr.0"),
+            unsupported_instruction_case("sdepth", 0, "sdepth"),
+            unsupported_instruction_case("caller", 0, "caller"),
+            unsupported_instruction_case("clk", 0, "clk"),
+            unsupported_instruction_case("mem_load", 0, "mem_load"),
+            unsupported_instruction_case("loc_loadw_be", 4, "loc_loadw_be.0"),
+            unsupported_instruction_case("loc_storew_le", 4, "loc_storew_le.0"),
+            unsupported_instruction_case("hash", 0, "hash"),
+            unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
+            unsupported_instruction_case("dynexec", 0, "dynexec"),
+            unsupported_instruction_case("emit", 0, "emit"),
+            unsupported_instruction_case("trace", 0, "trace.1"),
+        ];
+
+        for case in &cases {
+            assert_instruction_case_is_unsupported(case);
+        }
+    }
+
+    #[test]
     fn infers_straight_line_signature() -> Result<()> {
         let context = Rc::new(Context::default());
         let output = disassemble_source(
@@ -849,6 +1111,144 @@ end
         };
 
         assert!(err.to_string().contains("recursive MASM procedure calls"));
+    }
+
+    struct InstructionCase {
+        name: String,
+        locals: usize,
+        params: Vec<&'static str>,
+        results: Vec<&'static str>,
+        body: String,
+    }
+
+    fn felt_instruction_case(
+        name: impl Into<String>,
+        params: usize,
+        results: usize,
+        body: impl Into<String>,
+    ) -> InstructionCase {
+        instruction_case(name, &felt_types(params), &felt_types(results), body)
+    }
+
+    fn instruction_case(
+        name: impl Into<String>,
+        params: &[&'static str],
+        results: &[&'static str],
+        body: impl Into<String>,
+    ) -> InstructionCase {
+        instruction_case_with_locals(name, 0, params, results, body)
+    }
+
+    fn instruction_case_with_locals(
+        name: impl Into<String>,
+        locals: usize,
+        params: &[&'static str],
+        results: &[&'static str],
+        body: impl Into<String>,
+    ) -> InstructionCase {
+        InstructionCase {
+            name: name.into(),
+            locals,
+            params: params.to_vec(),
+            results: results.to_vec(),
+            body: body.into(),
+        }
+    }
+
+    fn unsupported_instruction_case(
+        name: impl Into<String>,
+        locals: usize,
+        body: impl Into<String>,
+    ) -> InstructionCase {
+        instruction_case_with_locals(name, locals, &[], &[], body)
+    }
+
+    fn felt_types(count: usize) -> Vec<&'static str> {
+        vec!["felt"; count]
+    }
+
+    fn u32_types(count: usize) -> Vec<&'static str> {
+        vec!["u32"; count]
+    }
+
+    fn assert_instruction_case_lifts(case: &InstructionCase) {
+        let source = instruction_case_source(case);
+        let context = Rc::new(Context::default());
+        if let Err(err) =
+            disassemble_source(source.clone(), "test", &DisassemblerConfig::default(), context)
+        {
+            panic!(
+                "expected instruction matrix case '{}' to lift\n{}\nerror: {}",
+                case.name, source, err
+            );
+        }
+    }
+
+    fn assert_instruction_case_is_unsupported(case: &InstructionCase) {
+        let source = instruction_case_source(case);
+        let context = Rc::new(Context::default());
+        let err = match disassemble_source(
+            source.clone(),
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        ) {
+            Ok(_) => panic!(
+                "expected instruction matrix case '{}' to be unsupported\n{}",
+                case.name, source
+            ),
+            Err(err) => err,
+        };
+
+        let err = err.to_string();
+        assert!(
+            err.contains("not supported during disassembly"),
+            "expected unsupported-instruction diagnostic for '{}'\n{}\nerror: {}",
+            case.name,
+            source,
+            err
+        );
+    }
+
+    fn instruction_case_source(case: &InstructionCase) -> String {
+        let attrs = if case.locals == 0 {
+            String::new()
+        } else {
+            format!("@locals({})\n", case.locals)
+        };
+        let params = masm_params(&case.params);
+        let results = masm_results(&case.results);
+        let body = indent_masm_body(&case.body);
+        format!(
+            r#"
+{attrs}pub proc matrix_{name}{params}{results}
+{body}
+end
+"#,
+            name = case.name
+        )
+    }
+
+    fn masm_params(params: &[&str]) -> String {
+        let params = params
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| format!("p{index}: {ty}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("({params})")
+    }
+
+    fn masm_results(results: &[&str]) -> String {
+        match results {
+            [] => String::new(),
+            [ty] => format!(" -> {ty}"),
+            many => format!(" -> ({})", many.join(", ")),
+        }
+    }
+
+    fn indent_masm_body(body: &str) -> String {
+        body.lines().map(|line| format!("    {line}")).collect::<Vec<_>>().join("\n")
     }
 
     fn find_function(module: builtin::ModuleRef, name: &str) -> builtin::FunctionRef {
