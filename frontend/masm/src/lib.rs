@@ -257,6 +257,54 @@ end
     }
 
     #[test]
+    fn rejects_unsupported_instruction_during_known_signature_lifting() {
+        let context = Rc::new(Context::default());
+        let result = disassemble_source(
+            r#"
+pub proc unsupported(value: u32) -> u32
+    u32test
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        );
+        let err = match result {
+            Ok(_) => panic!("expected disassembly to reject unsupported instruction"),
+            Err(err) => err,
+        };
+
+        let err = err.to_string();
+        assert!(err.contains("not supported during disassembly"));
+        assert!(err.contains("U32Test"));
+    }
+
+    #[test]
+    fn rejects_unsupported_instruction_during_signature_inference() {
+        let context = Rc::new(Context::default());
+        let result = disassemble_source(
+            r#"
+pub proc unsupported
+    u32test
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        );
+        let err = match result {
+            Ok(_) => panic!("expected inference to reject unsupported instruction"),
+            Err(err) => err,
+        };
+
+        let err = err.to_string();
+        assert!(err.contains("signature inference is not implemented"));
+        assert!(err.contains("U32Test"));
+    }
+
+    #[test]
     fn infers_straight_line_signature() -> Result<()> {
         let context = Rc::new(Context::default());
         let output = disassemble_source(

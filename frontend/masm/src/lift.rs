@@ -481,9 +481,9 @@ impl<'a> ProcedureLifter<'a> {
             MovDnW3 => self.movdn_word(3, span),
             Reversew => self.reverse_word(span),
             Reversedw => self.reverse_double_word(span),
-            Push(value) => self.push_immediate(value.expect_value(), span, builder),
+            Push(value) => self.push_immediate(immediate_value(value)?, span, builder),
             PushSlice(value, range) => {
-                self.push_word_slice(value.expect_value(), range, span, builder)
+                self.push_word_slice(immediate_value(value)?, range, span, builder)
             }
             PushFeltList(values) => {
                 for value in values {
@@ -569,7 +569,7 @@ impl<'a> ProcedureLifter<'a> {
             U32DivModImm(value) => {
                 let lhs = self.pop(span)?;
                 let lhs = self.cast(builder, lhs.value, Type::U32, span)?;
-                let rhs = builder.u32(value.expect_value(), span);
+                let rhs = builder.u32(immediate_value(value)?, span);
                 let (quotient, remainder) = builder.divmod(lhs, rhs, span)?;
                 self.push_value(quotient, span);
                 self.push_value(remainder, span);
@@ -592,7 +592,7 @@ impl<'a> ProcedureLifter<'a> {
             }),
             U32ShrImm(value) => self.u32_binary_const(
                 builder,
-                value.expect_value() as u32,
+                immediate_value(value)? as u32,
                 span,
                 |builder, lhs, rhs, span| builder.shr(lhs, rhs, span),
             ),
@@ -601,7 +601,7 @@ impl<'a> ProcedureLifter<'a> {
             }),
             U32ShlImm(value) => self.u32_binary_const(
                 builder,
-                value.expect_value() as u32,
+                immediate_value(value)? as u32,
                 span,
                 |builder, lhs, rhs, span| builder.shl(lhs, rhs, span),
             ),
@@ -612,7 +612,7 @@ impl<'a> ProcedureLifter<'a> {
             }
             U32RotrImm(value) => self.u32_binary_const(
                 builder,
-                value.expect_value() as u32,
+                immediate_value(value)? as u32,
                 span,
                 |builder, lhs, rhs, span| builder.rotr(lhs, rhs, span),
             ),
@@ -623,7 +623,7 @@ impl<'a> ProcedureLifter<'a> {
             }
             U32RotlImm(value) => self.u32_binary_const(
                 builder,
-                value.expect_value() as u32,
+                immediate_value(value)? as u32,
                 span,
                 |builder, lhs, rhs, span| builder.rotl(lhs, rhs, span),
             ),
@@ -661,42 +661,42 @@ impl<'a> ProcedureLifter<'a> {
                 builder.cto(value, span)
             }),
             U32Cast | U32Assert => self.u32_assert_n(1, span, builder),
-            U32AssertWithError(_) => todo!("lift MASM u32assert.err"),
+            U32AssertWithError(_) => unsupported_instruction(inst, span),
             U32Assert2 => self.u32_assert_n(2, span, builder),
-            U32Assert2WithError(_) => todo!("lift MASM u32assert2.err"),
+            U32Assert2WithError(_) => unsupported_instruction(inst, span),
             U32AssertW => self.u32_assert_n(4, span, builder),
-            U32AssertWWithError(_) => todo!("lift MASM u32assertw.err"),
-            U32Test => todo!("lift MASM u32test range check"),
-            U32TestW => todo!("lift MASM u32testw range check"),
-            U32Split => todo!("lift MASM u32split"),
+            U32AssertWWithError(_) => unsupported_instruction(inst, span),
+            U32Test => unsupported_instruction(inst, span),
+            U32TestW => unsupported_instruction(inst, span),
+            U32Split => unsupported_instruction(inst, span),
             Assert => {
                 let value = self.pop(span)?;
                 builder.assert(value.value, span)?;
                 Ok(())
             }
-            AssertWithError(_) => todo!("lift MASM assert.err"),
+            AssertWithError(_) => unsupported_instruction(inst, span),
             Assertz => {
                 let value = self.pop(span)?;
                 builder.assertz(value.value, span)?;
                 Ok(())
             }
-            AssertzWithError(_) => todo!("lift MASM assertz.err"),
+            AssertzWithError(_) => unsupported_instruction(inst, span),
             AssertEq => {
                 let (lhs, rhs) = self.pop_binary(span)?;
                 builder.assert_eq(lhs.value, rhs.value, span)?;
                 Ok(())
             }
-            AssertEqWithError(_) => todo!("lift MASM assert_eq.err"),
+            AssertEqWithError(_) => unsupported_instruction(inst, span),
             AssertEqw => self.assert_eq_word(span, builder),
-            AssertEqwWithError(_) => todo!("lift MASM assert_eqw.err"),
+            AssertEqwWithError(_) => unsupported_instruction(inst, span),
             LocLoad(id) => {
-                let local = self.local(id.expect_value(), span)?;
+                let local = self.local(immediate_value(id)?, span)?;
                 let value = builder.load_local(local, span)?;
                 self.push_value(value, span);
                 Ok(())
             }
             LocStore(id) => {
-                let local = self.local(id.expect_value(), span)?;
+                let local = self.local(immediate_value(id)?, span)?;
                 let value = self.pop(span)?;
                 let value = self.cast(builder, value.value, local.ty(), span)?;
                 builder.store_local(local, value, span)?;
@@ -806,7 +806,7 @@ impl<'a> ProcedureLifter<'a> {
             IsOdd => self.unary_with_type(builder, Type::Felt, span, |builder, value, span| {
                 builder.is_odd(value, span)
             }),
-            _ => todo!("lift unsupported MASM instruction {inst:?}"),
+            _ => unsupported_instruction(inst, span),
         }
     }
 
@@ -1065,7 +1065,7 @@ impl<'a> ProcedureLifter<'a> {
     {
         let lhs = self.pop(span)?;
         let lhs = self.cast(builder, lhs.value, Type::Felt, span)?;
-        let rhs = builder.felt(immediate.expect_value(), span);
+        let rhs = builder.felt(immediate_value(immediate)?, span);
         let result = f(builder, lhs, rhs, span)?;
         self.push_value(result, span);
         Ok(())
@@ -1086,7 +1086,7 @@ impl<'a> ProcedureLifter<'a> {
             SourceSpan,
         ) -> Result<ValueRef>,
     {
-        self.u32_binary_const(builder, immediate.expect_value(), span, f)
+        self.u32_binary_const(builder, immediate_value(immediate)?, span, f)
     }
 
     fn u32_binary_const<F>(
@@ -1152,7 +1152,7 @@ impl<'a> ProcedureLifter<'a> {
     {
         let lhs = self.pop(span)?;
         let lhs = self.cast(builder, lhs.value, Type::U32, span)?;
-        let rhs = builder.u32(immediate.expect_value(), span);
+        let rhs = builder.u32(immediate_value(immediate)?, span);
         let (overflowed, result) = f(builder, lhs, rhs, span)?;
         self.push_value(result, span);
         self.push_value(overflowed, span);
@@ -1447,11 +1447,26 @@ enum InvokeKind {
     Syscall,
 }
 
+fn unsupported_instruction(inst: &Instruction, span: SourceSpan) -> Result<()> {
+    Err(error::error(format!(
+        "MASM instruction {inst:?} is not supported during disassembly at {span:?}"
+    )))
+}
+
 fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {
     match immediate {
         Immediate::Value(value) => Ok(value.into_inner()),
         Immediate::Constant(name) => Err(error::error(format!(
             "unresolved repeat count constant '{name}' is not supported during disassembly"
+        ))),
+    }
+}
+
+fn immediate_value<T: Copy>(immediate: &Immediate<T>) -> Result<T> {
+    match immediate {
+        Immediate::Value(value) => Ok(value.into_inner()),
+        Immediate::Constant(name) => Err(error::error(format!(
+            "unresolved immediate constant '{name}' is not supported during disassembly"
         ))),
     }
 }
