@@ -1,6 +1,7 @@
 ;; RUN: midenc %s --entrypoint=test_felt_add --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR-ADD
 ;; RUN: midenc %s --entrypoint=test_felt_assert_eq --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR-ASSERT
 ;; RUN: midenc %s --entrypoint=test_felt_arithmetic --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR-ARITH
+;; RUN: midenc %s --entrypoint=inline_stubs_test::test_felt_add -Zprint-hir-source-locations --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR-LOC
 ;;
 ;; This test verifies that linker stubs (intrinsic functions like felt::add, felt::assert_eq)
 ;; are inlined at call sites rather than being emitted as separate function definitions.
@@ -16,6 +17,12 @@
 
 ;; Verify NO separate stub function is created for felt::add
 ;; HIR-ADD-NOT: builtin.function {{.+}} @intrinsics::felt::add
+
+;; Verify inlined compiler-generated stub ops are marked with synthetic source locations.
+;; HIR-LOC-LABEL: builtin.function public extern("C") @test_felt_add
+;; HIR-LOC: hir.load_local {{.*}} loc(synthetic);
+;; HIR-LOC: arith.add {{.*}} loc(synthetic);
+;; HIR-LOC: builtin.ret {{.*}} loc(synthetic);
 
 ;; === Test 2: felt::assert_eq should be inlined ===
 ;; The hir.assert_eq operation should appear directly in test_felt_assert_eq.
