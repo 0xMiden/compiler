@@ -434,7 +434,7 @@ fn overflowing_mul_i64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1111"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1115"]
 fn overflowing_mul_i128() {
     test_overflowing_arith(i128::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -620,7 +620,7 @@ fn overflowing_rem_i64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1111"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1115"]
 fn overflowing_rem_i128() {
     test_overflowing_arith(
         i128::overflowing_rem,
