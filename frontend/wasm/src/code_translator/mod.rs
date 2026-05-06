@@ -528,7 +528,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
-            let (res_hi, res_lo) = builder.split2(res, Type::U64, span)?;
+            let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
             state.pushn(&[res_hi, res_lo]);
         }
         Operator::I64MulWideS => {
