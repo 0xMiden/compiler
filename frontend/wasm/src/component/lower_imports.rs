@@ -80,6 +80,8 @@ pub fn generate_import_lowering_function(
     if is_fpi_import(&import_func_path) {
         return generate_fpi_lowering(
             world_builder,
+            import_func_ty,
+            &import_lowered_sig,
             core_func_path,
             core_func_sig,
             core_func_ref,
@@ -121,6 +123,8 @@ pub fn generate_import_lowering_function(
 #[allow(clippy::too_many_arguments)]
 fn generate_fpi_lowering(
     world_builder: &mut WorldBuilder,
+    import_func_ty: &FunctionType,
+    import_lowered_sig: &Signature,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
     core_func_ref: midenc_hir::dialects::builtin::FunctionRef,
@@ -128,15 +132,21 @@ fn generate_fpi_lowering(
     args: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
-    validate_fpi_core_signature(&core_func_path, &core_func_sig, args)?;
+    let output_ptr = fpi_output_ptr(import_lowered_sig, args);
+    let fpi_args = if output_ptr.is_some() {
+        &args[..args.len() - 1]
+    } else {
+        args
+    };
+    validate_fpi_core_signature(&core_func_path, &core_func_sig, fpi_args, output_ptr.is_some())?;
 
     let exec_func_ref = declare_execute_foreign_procedure(world_builder)?;
 
     let mut exec_args = Vec::with_capacity(2 + 4 + FPI_EXEC_INPUTS);
-    let account_id_prefix = args[0];
-    let account_id_suffix = args[1];
-    let foreign_proc_root = &args[2..6];
-    let procedure_inputs = &args[FPI_ABI_PREFIX_ARGS..];
+    let account_id_prefix = fpi_args[0];
+    let account_id_suffix = fpi_args[1];
+    let foreign_proc_root = &fpi_args[2..6];
+    let procedure_inputs = &fpi_args[FPI_ABI_PREFIX_ARGS..];
 
     exec_args.push(account_id_suffix);
     exec_args.push(account_id_prefix);
@@ -151,17 +161,35 @@ fn generate_fpi_lowering(
         vec![Type::Felt; FPI_EXEC_RESULTS],
     );
     let exec = fb.exec(exec_func_ref, exec_sig, exec_args, span)?;
-    let borrow = exec.borrow();
-    let results_storage = borrow.results();
-    let mut results: Vec<ValueRef> =
-        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
-    results.truncate(core_func_sig.results().len());
+    let mut results: Vec<ValueRef> = {
+        let borrow = exec.borrow();
+        borrow.results().iter().map(|op_res| op_res.borrow().as_value_ref()).collect()
+    };
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span)?;
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
-    fb.ret(results, span)?;
+    if let Some(output_ptr) = output_ptr {
+        assert_eq!(import_func_ty.results.len(), 1, "expected a single FPI result type");
+        let flattened_results =
+            flatten_types(&context, &import_func_ty.results).wrap_err_with(|| {
+                format!("failed to flatten FPI import results for `{core_func_path}`")
+            })?;
+        if flattened_results.len() > FPI_EXEC_RESULTS {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "FPI import `{core_func_path}` returns more than {FPI_EXEC_RESULTS} felts"
+            )));
+        }
+
+        results.truncate(flattened_results.len());
+        let mut results_iter = results.into_iter();
+        store(fb, output_ptr, &import_func_ty.results[0], &mut results_iter, span)?;
+        fb.ret([], span)?;
+    } else {
+        results.truncate(core_func_sig.results().len());
+        fb.ret(results, span)?;
+    }
 
     Ok(CallableFunction::Function {
         wasm_id: core_func_path,
@@ -175,30 +203,46 @@ fn is_fpi_import(import_func_path: &SymbolPath) -> bool {
     import_func_path.name().as_str().starts_with(FPI_IMPORT_PREFIX)
 }
 
+/// Returns the canonical ABI out-pointer argument for an FPI import with flattened results.
+fn fpi_output_ptr(import_lowered_sig: &Signature, args: &[ValueRef]) -> Option<ValueRef> {
+    import_lowered_sig
+        .params()
+        .last()
+        .is_some_and(|param| param.is_sret_param())
+        .then(|| *args.last().expect("expected FPI output pointer argument"))
+}
+
 /// Validates the flattened FPI import ABI that the Rust wrapper generates.
 fn validate_fpi_core_signature(
     core_func_path: &SymbolPath,
     core_func_sig: &Signature,
-    args: &[ValueRef],
+    fpi_args: &[ValueRef],
+    has_output_ptr: bool,
 ) -> WasmResult<()> {
-    let procedure_input_count = args.len().saturating_sub(FPI_ABI_PREFIX_ARGS);
-    if args.len() < FPI_ABI_PREFIX_ARGS || procedure_input_count > FPI_EXEC_INPUTS {
+    let procedure_input_count = fpi_args.len().saturating_sub(FPI_ABI_PREFIX_ARGS);
+    if fpi_args.len() < FPI_ABI_PREFIX_ARGS || procedure_input_count > FPI_EXEC_INPUTS {
         return Err(midenc_session::diagnostics::Report::msg(format!(
             "FPI import `{core_func_path}` must pass account id, procedure root, and at most \
              {FPI_EXEC_INPUTS} procedure input felts"
         )));
     }
 
-    if core_func_sig.results().len() > FPI_EXEC_RESULTS {
+    if !has_output_ptr && core_func_sig.results().len() > FPI_EXEC_RESULTS {
         return Err(midenc_session::diagnostics::Report::msg(format!(
             "FPI import `{core_func_path}` returns more than {FPI_EXEC_RESULTS} felts"
         )));
     }
 
-    let all_params_are_felts = core_func_sig.params().iter().all(|param| param.ty == Type::Felt);
+    if has_output_ptr && !core_func_sig.results().is_empty() {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "FPI import `{core_func_path}` with an output pointer must not also return values"
+        )));
+    }
+
+    let all_fpi_params_are_felts = fpi_args.iter().all(|arg| arg.borrow().ty() == &Type::Felt);
     let all_results_are_felts =
         core_func_sig.results().iter().all(|result| result.ty == Type::Felt);
-    if !all_params_are_felts || !all_results_are_felts {
+    if !all_fpi_params_are_felts || !all_results_are_felts {
         return Err(midenc_session::diagnostics::Report::msg(format!(
             "FPI import `{core_func_path}` must lower to felt-only parameters and results"
         )));
