@@ -25,9 +25,20 @@ midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-ub.workspace = true
+midenc-dialect-wasm.workspace = true
 midenc-session.workspace = true
 midenc-log.workspace = true
 log.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
+
+[package.metadata.cargo-shear]
+ignored = [
+    "midenc-dialect-arith",
+    "midenc-dialect-cf",
+    "midenc-dialect-hir",
+    "midenc-dialect-scf",
+    "midenc-dialect-ub",
+    "midenc-dialect-wasm",
+]

@@ -13,7 +13,7 @@ edition.workspace = true
 
 [features]
 default = ["std"]
-std = ["base64/std", "compact_str/std", "memchr/std", "rustc-demangle/std", "semver/std"]
+std = ["base64/std", "compact_str/std", "rustc-demangle/std", "semver/std"]
 debug_refcell = []
 logging = ["dep:midenc-log", "std"]
 
@@ -27,10 +27,8 @@ compact_str.workspace = true
 hashbrown.workspace = true
 intrusive-collections.workspace = true
 inventory.workspace = true
-litcheck.workspace = true
 litcheck-filecheck.workspace = true
 log.workspace = true
-memchr = { version = "2.8", default-features = false, features = ["alloc"] }
 miden-core.workspace = true
 midenc-log = { workspace = true, optional = true }
 midenc-hir-symbol = { workspace = true, features = ["compact_str"] }
@@ -49,3 +47,9 @@ thiserror.workspace = true
 midenc-expect-test = { path = "../tools/expect-test" }
 midenc-log = { path = "../midenc-log" }
 pretty_assertions = "1.0"
+
+[package.metadata.cargo-shear]
+ignored-paths = [
+    "src/dialects/builtin/attributes/map.rs",
+    "src/dialects/builtin/attributes/set.rs",
+]

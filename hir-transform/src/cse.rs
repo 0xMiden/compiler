@@ -465,7 +465,7 @@ impl PartialEq for OpKey {
 mod tests {
     use alloc::{format, string::ToString, sync::Arc};
 
-    use litcheck_filecheck::filecheck;
+    use litcheck_filecheck::{filecheck, litcheck};
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
         PointerType, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, print::AsmPrinter,

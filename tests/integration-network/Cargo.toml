@@ -11,6 +11,9 @@ readme.workspace = true
 edition.workspace = true
 publish = false
 
+[lib]
+doctest = false
+
 [dependencies]
 miden-client = { version = "0.14", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true

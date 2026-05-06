@@ -239,7 +239,7 @@ impl Pass for Local2Reg {
 mod tests {
     use alloc::{format, string::ToString};
 
-    use litcheck_filecheck::filecheck;
+    use litcheck_filecheck::{filecheck, litcheck};
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
         SourceSpan, Type, ValueRef,

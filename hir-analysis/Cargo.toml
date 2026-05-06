@@ -11,6 +11,9 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
+[lib]
+doctest = false
+
 [dependencies]
 blink-alloc.workspace = true
 bitvec.workspace = true

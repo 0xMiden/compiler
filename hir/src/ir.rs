@@ -2,7 +2,6 @@ mod block;
 mod builder;
 mod callable;
 pub mod cfg;
-mod component;
 mod context;
 mod dialect;
 pub mod dominance;

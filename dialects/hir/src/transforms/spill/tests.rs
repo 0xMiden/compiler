@@ -1,5 +1,6 @@
 use alloc::{format, string::ToString, sync::Arc};
 
+use litcheck_filecheck::{filecheck, litcheck};
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
@@ -386,7 +387,7 @@ fn materializes_spills_nested_scf_if() -> TestResult<()> {
     let after = func.as_operation_ref().borrow().to_string();
     std::println!("{after}");
 
-    litcheck_filecheck::filecheck!(
+    filecheck!(
         &after,
         r#"
 ; COM: Spill before call

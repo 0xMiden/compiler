@@ -11,6 +11,9 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
+[lib]
+doctest = false
+
 [features]
 default = ["std"]
 std = ["midenc-hir/std"]
@@ -25,7 +28,6 @@ midenc-hir-transform.workspace = true
 
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
-litcheck.workspace = true
 litcheck-filecheck.workspace = true
 midenc-dialect-scf = { path = "../scf" }
 midenc-expect-test = { path = "../../tools/expect-test" }

@@ -1309,7 +1309,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1894,7 +1894,7 @@ dependencies = [
  "hyper",
  "libc",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2842,42 +2842,29 @@ dependencies = [
 
 [[package]]
 name = "miden-debug"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d7ccbb8d8b6035dac8246bd08fbccedfd265d8f719bd04bd996e83ff143a210"
+checksum = "d80d7ddedcde678eaaf8ef1f77b2a4e019cb991e7906ddbc618497c2b741eb3e"
 dependencies = [
  "clap",
  "compact_str",
  "crossterm",
  "env_logger",
  "futures",
- "glob",
  "log",
  "miden-assembly",
  "miden-assembly-syntax",
  "miden-core",
- "miden-crypto",
- "miden-debug-dap 0.7.0",
- "miden-debug-engine 0.7.0",
+ "miden-debug-engine 0.7.1",
  "miden-debug-types",
  "miden-mast-package",
  "miden-processor",
- "miden-protocol",
- "miden-thiserror",
- "miden-tx",
- "num-traits",
- "proptest",
  "ratatui",
- "rustc-demangle",
- "serde",
- "serde_json",
  "signal-hook 0.4.4",
- "smallvec",
- "socket2 0.6.3",
  "syntect",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-util",
- "toml 1.1.2+spec-1.1.0",
  "tui-input",
 ]
 
@@ -2894,13 +2881,13 @@ dependencies = [
 
 [[package]]
 name = "miden-debug-dap"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d84f5c0770c3a67cb4631bf51e3e3608173f8fbb37e60795d2225475f0500743"
+checksum = "c8279a25a0a199f3ddbc8054193f3a80e193b94d1c308704062602adafe76de7"
 dependencies = [
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2932,9 +2919,9 @@ dependencies = [
 
 [[package]]
 name = "miden-debug-engine"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bab251d59d1817fe017dea595d46cf0606d3932aaac9067d8e4e217091f63e5"
+checksum = "a10c9e9e718b92d3fb1f3dfc28059d733778f58e09080c3ed721bf94058420f4"
 dependencies = [
  "clap",
  "glob",
@@ -2942,12 +2929,10 @@ dependencies = [
  "miden-assembly",
  "miden-assembly-syntax",
  "miden-core",
- "miden-debug-dap 0.7.0",
+ "miden-debug-dap 0.7.1",
  "miden-debug-types",
  "miden-mast-package",
  "miden-processor",
- "miden-thiserror",
- "miden-tx",
  "num-traits",
  "proptest",
  "rustc-demangle",
@@ -2955,6 +2940,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "socket2 0.6.3",
+ "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
 ]
 
@@ -3017,7 +3003,6 @@ dependencies = [
 name = "miden-field-repr"
 version = "0.12.0"
 dependencies = [
- "miden-core",
  "miden-field 0.25.0",
  "miden-field-repr-derive",
 ]
@@ -3036,15 +3021,11 @@ name = "miden-field-repr-tests"
 version = "0.12.0"
 dependencies = [
  "miden-core",
- "miden-debug 0.7.0",
+ "miden-debug 0.7.1",
  "miden-field 0.25.0",
  "miden-field-repr",
- "miden-processor",
- "miden-protocol",
- "midenc-expect-test",
  "midenc-frontend-wasm",
  "midenc-integration-test-support",
- "midenc-session",
 ]
 
 [[package]]
@@ -3507,9 +3488,7 @@ dependencies = [
 name = "midenc-compile"
 version = "0.8.1"
 dependencies = [
- "anyhow",
  "clap",
- "inventory",
  "log",
  "miden-assembly",
  "miden-mast-package",
@@ -3545,7 +3524,6 @@ dependencies = [
 name = "midenc-dialect-hir"
 version = "0.8.1"
 dependencies = [
- "litcheck-core",
  "litcheck-filecheck",
  "log",
  "midenc-dialect-arith",
@@ -3562,7 +3540,6 @@ name = "midenc-dialect-scf"
 version = "0.8.1"
 dependencies = [
  "bitvec",
- "env_logger",
  "log",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
@@ -3656,10 +3633,8 @@ dependencies = [
  "hashbrown 0.17.0",
  "intrusive-collections",
  "inventory",
- "litcheck-core",
  "litcheck-filecheck",
  "log",
- "memchr",
  "miden-core",
  "miden-thiserror",
  "midenc-expect-test",
@@ -3733,6 +3708,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-dialect-ub",
+ "midenc-dialect-wasm",
  "midenc-hir",
  "midenc-log",
  "midenc-session",
@@ -3757,7 +3733,6 @@ dependencies = [
 name = "midenc-hir-transform"
 version = "0.8.1"
 dependencies = [
- "litcheck-core",
  "litcheck-filecheck",
  "log",
  "midenc-dialect-arith",
@@ -3812,7 +3787,7 @@ dependencies = [
  "miden-assembly",
  "miden-core",
  "miden-core-lib",
- "miden-debug 0.7.0",
+ "miden-debug 0.7.1",
  "miden-mast-package",
  "miden-processor",
  "miden-protocol",
@@ -3840,7 +3815,7 @@ dependencies = [
  "log",
  "miden-assembly",
  "miden-core",
- "miden-debug 0.7.0",
+ "miden-debug 0.7.1",
  "miden-mast-package",
  "miden-processor",
  "miden-protocol",
@@ -4973,7 +4948,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "petgraph 0.8.3",
@@ -4994,7 +4969,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5450,7 +5425,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6129,7 +6104,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7289,7 +7264,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

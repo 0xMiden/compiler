@@ -13,6 +13,7 @@ edition.workspace = true
 
 [lib]
 proc-macro = true
+doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

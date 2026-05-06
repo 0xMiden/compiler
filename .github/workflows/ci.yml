@@ -82,6 +82,37 @@ jobs:
         run: |
           cargo make check-format
 
+  check_unused:
+    name: check for unused items/dependencies
+    runs-on: ubuntu-latest
+    # Run this job after the linter, so the cache is hot
+    needs: [lint]
+    # But run this check even if the lint check failed
+    if: ${{ always() }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Use a common cache for the basic compilation/formatter/clippy checks
+          shared-key: ${{ github.workflow }}-shared
+          prefix-key: ${{ env.RUST_CACHE_KEY }}
+          # But do not save this cache, just use it
+          save-if: false
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+      - name: Clippy
+        run: |
+          cargo make unused
+
   unit_tests:
     name: midenc unit tests
     runs-on: ubuntu-latest
