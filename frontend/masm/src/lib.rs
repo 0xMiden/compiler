@@ -190,6 +190,8 @@ mod tests {
     use std::{
         collections::BTreeMap,
         fs,
+        path::Path,
+        process::Command,
         rc::Rc,
         time::{SystemTime, UNIX_EPOCH},
     };
@@ -827,6 +829,32 @@ end
     }
 
     #[test]
+    fn project_disassembly_uses_git_dependency_graph_signatures() -> Result<()> {
+        let (root, app_dir) = write_git_dependency_project("midenc_frontend_masm_git_graph_dep");
+
+        let context = Rc::new(Context::default());
+        let registry = NoPackageStore::default();
+        let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+            .with_source_manager(context.session().source_manager.clone())
+            .with_git_cache_root(root.join("git-cache"))
+            .build_from_path(app_dir.join("miden-project.toml"))?;
+
+        let output = disassemble_project_target_with_dependency_graph(
+            app_dir.join("miden-project.toml"),
+            None,
+            &dependency_graph,
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+        let function = find_function(output.module, "entry");
+        assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+        let _ = fs::remove_dir_all(root);
+
+        Ok(())
+    }
+
+    #[test]
     fn project_graph_registry_nodes_require_artifacts() -> Result<()> {
         let root = temp_project_dir("midenc_frontend_masm_registry_graph");
         let app_dir = root.join("app");
@@ -1380,6 +1408,72 @@ end
         (root, app_dir)
     }
 
+    fn write_git_dependency_project(prefix: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = temp_project_dir(prefix);
+        let app_dir = root.join("app");
+        let dep_repo_dir = root.join("dep-repo");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&dep_repo_dir).unwrap();
+
+        fs::write(
+            dep_repo_dir.join("miden-project.toml"),
+            r#"[package]
+name = "dep"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dep_repo_dir.join("lib.masm"),
+            r#"
+type Scalar = felt
+
+pub proc callee(a: Scalar) -> Scalar
+    add.1
+end
+"#,
+        )
+        .unwrap();
+        run_git(&dep_repo_dir, &["init", "-b", "main"]);
+        run_git(&dep_repo_dir, &["config", "user.email", "test@example.com"]);
+        run_git(&dep_repo_dir, &["config", "user.name", "Test"]);
+        run_git(&dep_repo_dir, &["config", "commit.gpgsign", "false"]);
+        run_git(&dep_repo_dir, &["add", "."]);
+        run_git(&dep_repo_dir, &["commit", "-m", "init"]);
+
+        let dep_git_uri = format!("file://{}", dep_repo_dir.display());
+        fs::write(
+            app_dir.join("miden-project.toml"),
+            format!(
+                r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+
+[dependencies]
+dep = {{ git = "{dep_git_uri}", branch = "main" }}
+"#
+            ),
+        )
+        .unwrap();
+        fs::write(
+            app_dir.join("main.masm"),
+            r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+        )
+        .unwrap();
+
+        (root, app_dir)
+    }
+
     fn write_preassembled_dependency_project(
         prefix: &str,
     ) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -1433,6 +1527,15 @@ end
         .unwrap();
 
         (root, app_dir)
+    }
+
+    fn run_git(dir: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .status()
+            .unwrap_or_else(|err| panic!("failed to run git {}: {err}", args.join(" ")));
+        assert!(status.success(), "git {} failed with {status}", args.join(" "));
     }
 
     #[derive(Default)]
