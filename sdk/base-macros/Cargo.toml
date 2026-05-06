@@ -32,7 +32,7 @@ wit-bindgen-rust = { version = "0.57", default-features = false }
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 miden-protocol = { workspace = true, features = ["std"] }
 miden-field.workspace = true
-miden-field-repr = { version = "0.12.0", path = "../field-repr/repr" }
+miden-field-repr.workspace = true
 
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"

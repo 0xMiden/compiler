@@ -18,11 +18,11 @@ doctest = false
 
 [dependencies]
 miden-sdk-alloc = { version = "0.12.0", path = "../alloc" }
-miden-stdlib-sys = { version = "0.12.0", path = "../stdlib-sys" }
+miden-stdlib-sys.workspace = true
 miden-base = { version = "0.12.0", path = "../base" }
 miden-base-macros = { version = "0.12.0", path = "../base-macros" }
-miden-base-sys = { version = "0.12.0", path = "../base-sys" }
-miden-field-repr = { version = "0.12.0", path = "../field-repr/repr" }
+miden-base-sys.workspace = true
+miden-field-repr.workspace = true
 miden-field.workspace = true
 wit-bindgen = { version = "0.57", default-features = false, features = ["macros"] }
 

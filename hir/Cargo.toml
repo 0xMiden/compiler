@@ -46,7 +46,7 @@ thiserror.workspace = true
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 midenc-expect-test = { path = "../tools/expect-test" }
 midenc-log = { path = "../midenc-log" }
-pretty_assertions = "1.0"
+pretty_assertions.workspace = true
 
 [package.metadata.cargo-shear]
 ignored-paths = [

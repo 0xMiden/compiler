@@ -19,8 +19,8 @@ links = "miden_base_sys_stubs"
 doctest = false
 
 [dependencies]
-miden-stdlib-sys = { version = "0.12.0", path = "../stdlib-sys" }
-miden-field-repr = { version = "0.12.0", path = "../field-repr/repr" }
+miden-stdlib-sys.workspace = true
+miden-field-repr.workspace = true
 
 [features]
 default = []
