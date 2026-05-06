@@ -54,6 +54,7 @@ mod account_component_metadata;
 mod boilerplate;
 mod component_macro;
 mod export_type;
+mod fpi;
 mod generate;
 mod manifest_paths;
 mod note;
