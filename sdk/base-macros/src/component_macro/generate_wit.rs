@@ -63,6 +63,10 @@ pub fn build_component_wit(
         exported_types.iter().map(|def| def.wit_name.clone()).collect();
 
     let mut combined_core_imports = type_imports.clone();
+    if !methods.is_empty() {
+        combined_core_imports.insert("felt".to_string());
+        combined_core_imports.insert("word".to_string());
+    }
     for exported in exported_types {
         match &exported.kind {
             ExportedTypeKind::Record { fields } => {
@@ -147,6 +151,11 @@ pub fn build_component_wit(
             interface.line(&signature);
         }
 
+        for method in methods {
+            let signature = fpi_method_signature(method, &exported_type_names)?;
+            interface.line(&signature);
+        }
+
         Ok::<(), syn::Error>(())
     })?;
     wit.blank_line();
@@ -188,6 +197,42 @@ fn component_method_signature(
             MethodReturn::Type { type_ref, .. } => {
                 format!("{}: func({params}) -> {};", method.wit_name, type_ref.wit_name)
             }
+        }
+    };
+
+    Ok(signature)
+}
+
+/// Renders the WIT function signature used by callers to invoke this method through FPI.
+fn fpi_method_signature(
+    method: &ComponentMethod,
+    exported_type_names: &HashSet<String>,
+) -> Result<String, syn::Error> {
+    for param in &method.params {
+        ensure_custom_type_defined(&param.type_ref, exported_type_names, param.user_ty.span())?;
+    }
+    if let MethodReturn::Type { type_ref, user_ty } = &method.return_info {
+        ensure_custom_type_defined(type_ref, exported_type_names, user_ty.span())?;
+    }
+
+    let mut params = vec![
+        "account-id-prefix: felt".to_string(),
+        "account-id-suffix: felt".to_string(),
+        "foreign-proc-root: word".to_string(),
+    ];
+    params.extend(
+        method
+            .params
+            .iter()
+            .map(|param| format!("{}: {}", param.wit_param_name, param.type_ref.wit_name)),
+    );
+    let params = params.join(", ");
+    let name = format!("fpi-{}", method.wit_name);
+
+    let signature = match &method.return_info {
+        MethodReturn::Unit => format!("{name}: func({params});"),
+        MethodReturn::Type { type_ref, .. } => {
+            format!("{name}: func({params}) -> {};", type_ref.wit_name)
         }
     };
 

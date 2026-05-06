@@ -355,6 +355,10 @@ fn expand_component_impl(
         .iter()
         .map(|method| render_guest_method(method, &component_type))
         .collect();
+    let fpi_guest_methods: Vec<TokenStream2> = methods
+        .iter()
+        .map(|method| render_guest_fpi_method(method, &component_type))
+        .collect();
 
     let interface_path = format!("{}/{}@{}", component_package, interface_name, metadata.version);
     let module_prefix = component_module_prefix(&component_type);
@@ -398,6 +402,7 @@ fn expand_component_impl(
         #impl_block
         impl #guest_trait_path for #component_type {
             #(#guest_methods)*
+            #(#fpi_guest_methods)*
         }
         #frontend_link_section
         // Use the fully-qualified component type here so the export macro works even when
@@ -513,6 +518,65 @@ fn render_guest_method(method: &ComponentMethod, component_type: &Type) -> Token
     quote! {
         #(#doc_attrs)*
         fn #fn_ident(#fn_inputs) #output {
+            #body
+        }
+    }
+}
+
+/// Emits the FPI guest trait method required by the generated WIT exports.
+fn render_guest_fpi_method(method: &ComponentMethod, component_type: &Type) -> TokenStream2 {
+    let fn_ident = &method.fn_ident;
+    let fpi_fn_ident = format_ident!("fpi_{}", fn_ident);
+    let component_ident = format_ident!("__component_instance");
+
+    let mut param_tokens = vec![
+        quote!(_account_id_prefix: ::miden::Felt),
+        quote!(_account_id_suffix: ::miden::Felt),
+        quote!(_foreign_proc_root: ::miden::Word),
+    ];
+    let mut call_args = Vec::new();
+
+    for param in &method.params {
+        let ident = &param.ident;
+        call_args.push(quote!(#ident));
+
+        let param_ty = &param.user_ty;
+        param_tokens.push(quote!(#ident: #param_ty));
+    }
+
+    let component_init = match method.receiver_kind {
+        ReceiverKind::Ref => quote! { let #component_ident = #component_type::default(); },
+        ReceiverKind::RefMut | ReceiverKind::Value => {
+            quote! { let mut #component_ident = #component_type::default(); }
+        }
+    };
+
+    let call_expr = quote! { #component_ident.#fn_ident(#(#call_args),*) };
+
+    let output = match &method.return_info {
+        MethodReturn::Unit => quote!(),
+        MethodReturn::Type { user_ty, .. } => {
+            let user_ty = user_ty.as_ref();
+            quote!(-> #user_ty)
+        }
+    };
+
+    let body = match &method.return_info {
+        MethodReturn::Unit => quote! {
+            #component_init
+            #call_expr;
+        },
+        MethodReturn::Type { .. } => {
+            quote! {
+                #component_init
+                #call_expr
+            }
+        }
+    };
+
+    quote! {
+        #[doc(hidden)]
+        fn #fpi_fn_ident(#(#param_tokens),*) #output {
             #body
         }
     }

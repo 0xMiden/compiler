@@ -6,12 +6,14 @@ use core::cell::RefCell;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    AsValueRange, Builder, FunctionType, Op, SourceSpan, SymbolPath, ValueRef, Visibility,
+    AsValueRange, Builder, CallConv, FunctionType, Op, SourceSpan, SymbolNameComponent, SymbolPath,
+    Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
+        BuiltinOpBuilder, ComponentBuilder, ComponentId, FunctionRef, ModuleBuilder, WorldBuilder,
         attributes::Signature,
     },
+    interner::Symbol,
 };
 
 use super::{
@@ -21,10 +23,16 @@ use super::{
 use crate::{
     callable::CallableFunction,
     error::WasmResult,
+    miden_abi::tx_kernel::tx,
     module::function_builder_ext::{
         FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
     },
 };
+
+const FPI_IMPORT_PREFIX: &str = "fpi-";
+const FPI_ABI_PREFIX_ARGS: usize = 6;
+const FPI_EXEC_INPUTS: usize = 16;
+const FPI_EXEC_RESULTS: usize = 16;
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import function.
 pub fn generate_import_lowering_function(
@@ -69,6 +77,18 @@ pub fn generate_import_lowering_function(
         .map(|ba| ba as ValueRef)
         .collect();
 
+    if is_fpi_import(&import_func_path) {
+        return generate_fpi_lowering(
+            world_builder,
+            core_func_path,
+            core_func_sig,
+            core_func_ref,
+            &mut fb,
+            &args,
+            span,
+        );
+    }
+
     if needs_transformation(&import_lowered_sig) {
         generate_lowering_with_transformation(
             world_builder,
@@ -95,6 +115,133 @@ pub fn generate_import_lowering_function(
             span,
         )
     }
+}
+
+/// Generates a lowering function for FPI imports backed by `execute_foreign_procedure`.
+#[allow(clippy::too_many_arguments)]
+fn generate_fpi_lowering(
+    world_builder: &mut WorldBuilder,
+    core_func_path: SymbolPath,
+    core_func_sig: Signature,
+    core_func_ref: midenc_hir::dialects::builtin::FunctionRef,
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
+    args: &[ValueRef],
+    span: SourceSpan,
+) -> WasmResult<CallableFunction> {
+    validate_fpi_core_signature(&core_func_path, &core_func_sig, args)?;
+
+    let exec_func_ref = declare_execute_foreign_procedure(world_builder)?;
+
+    let mut exec_args = Vec::with_capacity(2 + 4 + FPI_EXEC_INPUTS);
+    let account_id_prefix = args[0];
+    let account_id_suffix = args[1];
+    let foreign_proc_root = &args[2..6];
+    let procedure_inputs = &args[FPI_ABI_PREFIX_ARGS..];
+
+    exec_args.push(account_id_suffix);
+    exec_args.push(account_id_prefix);
+    exec_args.extend(foreign_proc_root.iter().copied());
+    exec_args.extend(procedure_inputs.iter().copied());
+
+    let context = world_builder.context_rc();
+    let exec_sig = Signature::with_convention(
+        &context,
+        CallConv::Wasm,
+        vec![Type::Felt; exec_args.len()],
+        vec![Type::Felt; FPI_EXEC_RESULTS],
+    );
+    let exec = fb.exec(exec_func_ref, exec_sig, exec_args, span)?;
+    let borrow = exec.borrow();
+    let results_storage = borrow.results();
+    let mut results: Vec<ValueRef> =
+        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+    results.truncate(core_func_sig.results().len());
+
+    let exit_block = fb.create_block();
+    fb.br(exit_block, vec![], span)?;
+    fb.seal_block(exit_block);
+    fb.switch_to_block(exit_block);
+    fb.ret(results, span)?;
+
+    Ok(CallableFunction::Function {
+        wasm_id: core_func_path,
+        function_ref: core_func_ref,
+        signature: core_func_sig,
+    })
+}
+
+/// Returns true for WIT imports generated for foreign procedure invocation.
+fn is_fpi_import(import_func_path: &SymbolPath) -> bool {
+    import_func_path.name().as_str().starts_with(FPI_IMPORT_PREFIX)
+}
+
+/// Validates the flattened FPI import ABI that the Rust wrapper generates.
+fn validate_fpi_core_signature(
+    core_func_path: &SymbolPath,
+    core_func_sig: &Signature,
+    args: &[ValueRef],
+) -> WasmResult<()> {
+    let procedure_input_count = args.len().saturating_sub(FPI_ABI_PREFIX_ARGS);
+    if args.len() < FPI_ABI_PREFIX_ARGS || procedure_input_count > FPI_EXEC_INPUTS {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "FPI import `{core_func_path}` must pass account id, procedure root, and at most \
+             {FPI_EXEC_INPUTS} procedure input felts"
+        )));
+    }
+
+    if core_func_sig.results().len() > FPI_EXEC_RESULTS {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "FPI import `{core_func_path}` returns more than {FPI_EXEC_RESULTS} felts"
+        )));
+    }
+
+    let all_params_are_felts = core_func_sig.params().iter().all(|param| param.ty == Type::Felt);
+    let all_results_are_felts =
+        core_func_sig.results().iter().all(|result| result.ty == Type::Felt);
+    if !all_params_are_felts || !all_results_are_felts {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "FPI import `{core_func_path}` must lower to felt-only parameters and results"
+        )));
+    }
+
+    Ok(())
+}
+
+/// Declares the tx kernel FPI executor and returns its HIR function reference and signature.
+fn declare_execute_foreign_procedure(world_builder: &mut WorldBuilder) -> WasmResult<FunctionRef> {
+    let exec_path = execute_foreign_procedure_path();
+    let context = world_builder.context_rc();
+    let signature = Signature::with_convention(
+        &context,
+        CallConv::Wasm,
+        vec![Type::Felt; 2 + 4 + FPI_EXEC_INPUTS],
+        vec![Type::Felt; FPI_EXEC_RESULTS],
+    );
+    let import_module_ref = world_builder
+        .declare_module_tree(&exec_path.without_leaf())
+        .wrap_err("failed to create tx module for FPI imports")?;
+    let mut import_module_builder = ModuleBuilder::new(import_module_ref);
+    let function_name = exec_path.name().as_str();
+    let function_ref = if let Some(function_ref) = import_module_builder.get_function(function_name)
+    {
+        function_ref
+    } else {
+        import_module_builder
+            .define_function(exec_path.name().into(), Visibility::Public, signature.clone())
+            .wrap_err("failed to create FPI executor function ref")?
+    };
+
+    Ok(function_ref)
+}
+
+/// Fully-qualified MASM path for `miden::protocol::tx::execute_foreign_procedure`.
+fn execute_foreign_procedure_path() -> SymbolPath {
+    SymbolPath::from_iter(
+        tx::MODULE_PREFIX
+            .iter()
+            .copied()
+            .chain([SymbolNameComponent::Leaf(Symbol::intern(tx::EXECUTE_FOREIGN_PROCEDURE))]),
+    )
 }
 
 /// Generates a lowering function for component imports that require transformation.

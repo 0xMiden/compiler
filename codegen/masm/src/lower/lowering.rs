@@ -5,8 +5,10 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
+    Felt, Immediate, Op, OpExt, Span, SymbolNameComponent, SymbolPath, SymbolTable, Type, Value,
+    ValueRange, ValueRef,
     dialects::{builtin, debuginfo},
+    interner::symbols,
     traits::{BinaryOp, Commutative},
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
@@ -16,6 +18,10 @@ use super::*;
 use crate::{
     Constraint, emit::OpEmitter, emitter::BlockEmitter, masm, opt::operands::SolverOptions,
 };
+
+const EXECUTE_FOREIGN_PROCEDURE: &str = "execute_foreign_procedure";
+const FPI_EXEC_TOTAL_INPUTS: usize = 22;
+const FPI_MAX_PADDED_ARGS: usize = 15;
 
 /// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
 fn invocation_target_from_symbol_path(
@@ -29,6 +35,63 @@ fn invocation_target_from_symbol_path(
     let module = callee_path.without_leaf().to_library_path();
     let qualified = masm::QualifiedProcedureName::new(module.as_path(), proc_name);
     masm::InvocationTarget::Path(masm::Span::new(span, qualified.into_inner()))
+}
+
+fn is_execute_foreign_procedure_path(path: &SymbolPath) -> bool {
+    let mut components = path.components().peekable();
+    components.next_if_eq(&SymbolNameComponent::Root);
+
+    matches!(
+        (
+            components.next().map(|component| component.as_symbol_name()),
+            components.next().map(|component| component.as_symbol_name()),
+            components.next().map(|component| component.as_symbol_name()),
+            components.next_if(|component| component.is_leaf()).map(|component| component.as_symbol_name()),
+            components.next(),
+        ),
+        (
+            Some(symbols::Miden),
+            Some(symbols::Protocol),
+            Some(symbols::Tx),
+            Some(function),
+            None,
+        ) if function.as_str() == EXECUTE_FOREIGN_PROCEDURE
+    )
+}
+
+fn append_fpi_padding(
+    emitter: &mut BlockEmitter<'_>,
+    actual_arg_count: usize,
+    span: midenc_hir::SourceSpan,
+) -> Result<(), Report> {
+    let padding = FPI_EXEC_TOTAL_INPUTS.checked_sub(actual_arg_count).ok_or_else(|| {
+        Report::msg(format!(
+            "`{EXECUTE_FOREIGN_PROCEDURE}` received {actual_arg_count} operands, but accepts at \
+             most {FPI_EXEC_TOTAL_INPUTS}"
+        ))
+    })?;
+
+    if padding == 0 {
+        return Ok(());
+    }
+
+    if actual_arg_count > FPI_MAX_PADDED_ARGS {
+        return Err(Report::msg(format!(
+            "`{EXECUTE_FOREIGN_PROCEDURE}` lowering currently supports at most {} flattened \
+             procedure input felts when padding is required",
+            FPI_MAX_PADDED_ARGS - 6
+        )));
+    }
+
+    let mut inst_emitter = emitter.emitter();
+    for _ in 0..padding {
+        inst_emitter.literal(Immediate::Felt(Felt::ZERO), span);
+        for _ in 0..actual_arg_count {
+            inst_emitter.movup(actual_arg_count as u8, span);
+        }
+    }
+
+    Ok(())
 }
 
 /// This trait is registered with all ops, of all dialects, which are legal for lowering to MASM.
@@ -805,6 +868,55 @@ impl HirLowering for arith::Sext {
 }
 
 impl HirLowering for hir::Exec {
+    fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let op = self.as_operation();
+        let args = self.required_operands();
+        if args.is_empty() {
+            return Ok(());
+        }
+
+        // FPI calls target `execute_foreign_procedure`, whose protocol ABI always expects 22
+        // inputs. The frontend passes only the real operands so the generic scheduler does not have
+        // to solve a 22-operand call; we synthesize the unused zero slots here after those operands
+        // are scheduled.
+        let is_fpi = is_execute_foreign_procedure_path(self.callee().path());
+        let actual_arg_count = args.len();
+        if is_fpi && actual_arg_count > FPI_MAX_PADDED_ARGS {
+            return Err(Report::msg(format!(
+                "`{EXECUTE_FOREIGN_PROCEDURE}` lowering currently supports at most {} flattened \
+                 procedure input felts",
+                FPI_MAX_PADDED_ARGS - 6
+            )));
+        }
+
+        let constraints = emitter.constraints_for(op, &args);
+        let args = args.into_smallvec();
+        emitter
+            .schedule_operands(
+                &args,
+                &constraints,
+                op.span(),
+                SolverOptions {
+                    strict: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
+                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
+                    op.name(),
+                    &emitter.stack,
+                )
+            });
+
+        if is_fpi {
+            append_fpi_padding(emitter, actual_arg_count, self.span())?;
+        }
+
+        Ok(())
+    }
+
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use midenc_hir::{CallOpInterface, CallableOpInterface};
 

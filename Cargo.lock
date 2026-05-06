@@ -2646,6 +2646,7 @@ dependencies = [
  "miden-field 0.25.0",
  "miden-field-repr",
  "miden-formatting",
+ "miden-mast-package",
  "miden-protocol",
  "midenc-frontend-wasm-metadata",
  "proc-macro2",

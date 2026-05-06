@@ -78,8 +78,32 @@ impl ManifestPackage {
         &self,
         error_span: Span,
     ) -> Result<Vec<String>, syn::Error> {
-        collect_miden_dependency_imports(&self.manifest_dir, &self.package_table, error_span)
+        let mut imports = self
+            .collect_miden_dependencies(error_span)?
+            .into_iter()
+            .map(|dependency| dependency.import)
+            .collect::<Vec<_>>();
+        imports.sort();
+        Ok(imports)
     }
+
+    /// Resolves metadata for dependencies declared under `package.metadata.miden.dependencies`.
+    pub(crate) fn collect_miden_dependencies(
+        &self,
+        error_span: Span,
+    ) -> Result<Vec<MidenDependency>, syn::Error> {
+        collect_miden_dependencies(&self.manifest_dir, &self.package_table, error_span)
+    }
+}
+
+/// Resolved metadata for one `package.metadata.miden.dependencies` entry.
+pub(crate) struct MidenDependency {
+    /// Manifest key used for this dependency.
+    pub(crate) name: String,
+    /// Canonical project root or precompiled package path.
+    pub(crate) root: PathBuf,
+    /// Fully-qualified WIT import path, including package version.
+    pub(crate) import: String,
 }
 
 /// Writes a WIT world block with the provided imports and exports.
@@ -103,11 +127,11 @@ pub(crate) fn write_world_block(
 }
 
 /// Collects fully-qualified imports from `[package.metadata.miden.dependencies]`.
-fn collect_miden_dependency_imports(
+fn collect_miden_dependencies(
     manifest_dir: &Path,
     package_table: &Table,
     error_span: Span,
-) -> Result<Vec<String>, syn::Error> {
+) -> Result<Vec<MidenDependency>, syn::Error> {
     let dependencies = package_table
         .get("metadata")
         .and_then(Value::as_table)
@@ -116,7 +140,7 @@ fn collect_miden_dependency_imports(
         .and_then(|miden| miden.get("dependencies"))
         .and_then(Value::as_table);
 
-    let mut imports = Vec::new();
+    let mut resolved = Vec::new();
 
     if let Some(dep_table) = dependencies {
         for (dep_name, dep_value) in dep_table {
@@ -159,12 +183,16 @@ fn collect_miden_dependency_imports(
                 )
             })?;
 
-            imports.push(qualify_dependency_export(&dependency_wit, error_span)?);
+            resolved.push(MidenDependency {
+                name: dep_name.clone(),
+                root: canonical,
+                import: qualify_dependency_export(&dependency_wit, error_span)?,
+            });
         }
     }
 
-    imports.sort();
-    Ok(imports)
+    resolved.sort_by(|a, b| a.import.cmp(&b.import));
+    Ok(resolved)
 }
 
 /// Parses the first exported WIT world exposed by a dependency root or WIT file.
