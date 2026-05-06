@@ -1,12 +1,5 @@
-use std::{
-    collections::{HashMap, HashSet},
-    env, fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, env, fs, path::PathBuf};
 
-use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
-use miden_mast_package::{Package, PackageExport};
-use miden_protocol::utils::serde::Deserializable;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use syn::{
@@ -19,17 +12,11 @@ use syn::{
 };
 use wit_bindgen_core::{
     WorldGenerator,
-    wit_parser::{
-        Docs, Function, FunctionKind, InterfaceId, PackageId, Param, Resolve, Span as WitSpan,
-        Type as WitType, UnresolvedPackageGroup, WorldId, WorldItem,
-    },
+    wit_parser::{PackageId, Resolve, UnresolvedPackageGroup},
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
-use crate::{
-    fpi, manifest_paths,
-    wit_world::{ManifestPackage, MidenDependency},
-};
+use crate::{fpi, manifest_paths, wit_world::ManifestPackage};
 
 /// Name of the wrapper struct generated to aggregate imported interface methods.
 const WRAPPER_STRUCT_NAME: &str = "Account";
@@ -194,7 +181,7 @@ fn generate_bindings(
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
     let fpi_imports = ManifestPackage::load(Span::call_site())?
         .collect_miden_dependency_imports(Span::call_site())?;
-    inject_fpi_imports(&mut wit_sources.resolve, world_id, &fpi_imports)?;
+    fpi::inject_imports(&mut wit_sources.resolve, world_id, &fpi_imports)?;
 
     let mut opts = Opts {
         generate_all: true,
@@ -266,12 +253,9 @@ fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2>
     let mut file: File = syn::parse2(tokens)?;
     let mut collected_methods = Vec::new();
     collect_wrapper_methods(&file.items, &mut Vec::new(), &mut collected_methods)?;
-    let mut fpi_modules = Vec::new();
-    collect_fpi_modules(&file.items, &mut Vec::new(), &mut fpi_modules)?;
 
     // Check for method name collisions across different interfaces
     check_method_name_collisions(&collected_methods)?;
-    check_fpi_struct_name_collisions(&fpi_modules)?;
 
     if !collected_methods.is_empty() {
         let struct_ident = syn::Ident::new(WRAPPER_STRUCT_NAME, Span::call_site());
@@ -294,41 +278,7 @@ fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2>
         file.items.push(Item::Impl(impl_item));
     }
 
-    if !fpi_modules.is_empty() {
-        let dependencies = load_fpi_dependencies(Span::call_site())?;
-        let mut include_paths = Vec::new();
-        for module in fpi_modules {
-            let Some(dependency) = dependencies
-                .iter()
-                .find(|dependency| dependency.module_path == module.path_string)
-            else {
-                return Err(Error::new(
-                    Span::call_site(),
-                    format!(
-                        "failed to resolve FPI dependency metadata for generated module `{}`",
-                        module.path_string
-                    ),
-                ));
-            };
-
-            include_paths.push(dependency.package_path.clone());
-            let (struct_item, impl_item) = build_fpi_struct(&module, dependency)?;
-            file.items.push(Item::Struct(struct_item));
-            file.items.push(Item::Impl(impl_item));
-        }
-
-        for path in include_paths {
-            let utf8_path = path.to_str().ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!("path '{}' contains invalid UTF-8", path.display()),
-                )
-            })?;
-            file.items.push(parse_quote! {
-                const _: &[u8] = include_bytes!(#utf8_path);
-            });
-        }
-    }
+    fpi::augment_bindings(&mut file)?;
 
     Ok(file.into_token_stream())
 }
@@ -400,157 +350,6 @@ fn load_wit_sources(
     })
 }
 
-/// Core WIT types needed to synthesize caller-only FPI imports.
-#[derive(Clone, Copy)]
-struct FpiCoreTypes {
-    felt: WitType,
-    word: WitType,
-}
-
-/// Adds `fpi-` functions to imported Miden dependency interfaces in the selected world.
-fn inject_fpi_imports(
-    resolve: &mut Resolve,
-    world_id: WorldId,
-    dependency_imports: &[String],
-) -> syn::Result<()> {
-    if dependency_imports.is_empty() {
-        return Ok(());
-    }
-
-    let dependency_imports = dependency_imports.iter().map(String::as_str).collect::<HashSet<_>>();
-    let imported_interfaces = resolve.worlds[world_id]
-        .imports
-        .values()
-        .filter_map(|item| match item {
-            WorldItem::Interface { id, .. } => Some(*id),
-            _ => None,
-        })
-        .filter(|id| {
-            interface_import_path(resolve, *id)
-                .as_ref()
-                .is_some_and(|path| dependency_imports.contains(path.as_str()))
-        })
-        .collect::<Vec<_>>();
-
-    if imported_interfaces.is_empty() {
-        return Ok(());
-    }
-
-    let core_types = resolve_fpi_core_types(resolve)?;
-    for interface_id in imported_interfaces {
-        inject_fpi_functions_into_interface(resolve, interface_id, core_types);
-    }
-
-    Ok(())
-}
-
-/// Returns the fully-qualified import path used for a resolved interface.
-fn interface_import_path(resolve: &Resolve, interface_id: InterfaceId) -> Option<String> {
-    let interface = &resolve.interfaces[interface_id];
-    let interface_name = interface.name.as_deref()?;
-    let package_id = interface.package?;
-    Some(resolve.packages[package_id].name.interface_id(interface_name))
-}
-
-/// Resolves `felt` and `word` from `miden:base/core-types`.
-fn resolve_fpi_core_types(resolve: &Resolve) -> syn::Result<FpiCoreTypes> {
-    let core_types = resolve
-        .packages
-        .iter()
-        .find_map(|(_, package)| {
-            if package.name.namespace != "miden" || package.name.name != "base" {
-                return None;
-            }
-
-            package.interfaces.get("core-types").map(|interface_id| {
-                let interface = &resolve.interfaces[*interface_id];
-                (interface.types.get("felt").copied(), interface.types.get("word").copied())
-            })
-        })
-        .ok_or_else(|| {
-            Error::new(
-                Span::call_site(),
-                "failed to resolve miden:base/core-types package for FPI imports",
-            )
-        })?;
-
-    let (Some(felt), Some(word)) = core_types else {
-        return Err(Error::new(
-            Span::call_site(),
-            "miden:base/core-types is missing felt or word type definitions",
-        ));
-    };
-
-    Ok(FpiCoreTypes {
-        felt: WitType::Id(felt),
-        word: WitType::Id(word),
-    })
-}
-
-/// Injects FPI variants of every freestanding function in an imported interface.
-fn inject_fpi_functions_into_interface(
-    resolve: &mut Resolve,
-    interface_id: InterfaceId,
-    core_types: FpiCoreTypes,
-) {
-    let interface = &mut resolve.interfaces[interface_id];
-    let functions = interface
-        .functions
-        .values()
-        .filter(|function| {
-            matches!(function.kind, FunctionKind::Freestanding)
-                && !function.name.starts_with(fpi::WIT_FUNCTION_PREFIX)
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-
-    for function in functions {
-        let fpi_name = format!("{}{}", fpi::WIT_FUNCTION_PREFIX, function.name);
-        if interface.functions.contains_key(&fpi_name) {
-            continue;
-        }
-
-        interface
-            .functions
-            .insert(fpi_name.clone(), build_fpi_import_function(function, fpi_name, core_types));
-    }
-}
-
-/// Builds the caller-side WIT import that forwards through `execute_foreign_procedure`.
-fn build_fpi_import_function(
-    function: Function,
-    fpi_name: String,
-    core_types: FpiCoreTypes,
-) -> Function {
-    let mut params = Vec::with_capacity(function.params.len() + 3);
-    params.push(Param {
-        name: "account-id-prefix".to_string(),
-        ty: core_types.felt,
-        span: WitSpan::default(),
-    });
-    params.push(Param {
-        name: "account-id-suffix".to_string(),
-        ty: core_types.felt,
-        span: WitSpan::default(),
-    });
-    params.push(Param {
-        name: "foreign-proc-root".to_string(),
-        ty: core_types.word,
-        span: WitSpan::default(),
-    });
-    params.extend(function.params);
-
-    Function {
-        name: fpi_name,
-        kind: FunctionKind::Freestanding,
-        params,
-        result: function.result,
-        docs: Docs::default(),
-        stability: function.stability,
-        span: WitSpan::default(),
-    }
-}
-
 /// Pushes user-provided `with` entries to the wit-bindgen options.
 fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
     opts.with.extend(entries.iter().cloned());
@@ -581,34 +380,6 @@ struct CollectedMethod {
     source_path: String,
 }
 
-/// FPI-capable generated import module.
-struct FpiModule {
-    /// Rust module path where the generated `fpi_*` free functions live.
-    module_path: Vec<syn::Ident>,
-    /// String form of `module_path` used for dependency lookup.
-    path_string: String,
-    /// Generated FPI free functions from this import module.
-    functions: Vec<ItemFn>,
-}
-
-/// Resolved package data needed to generate FPI caller wrappers.
-struct FpiDependency {
-    /// Rust module path generated by wit-bindgen for the dependency import.
-    module_path: String,
-    /// Miden package artifact read for procedure roots.
-    package_path: PathBuf,
-    /// Fully-qualified WIT import path.
-    import: String,
-    /// Procedure roots keyed by WIT function name.
-    roots: HashMap<String, ProcedureRoot>,
-}
-
-/// Four field elements that make up a foreign procedure root.
-#[derive(Clone, Copy)]
-struct ProcedureRoot {
-    felts: [u64; 4],
-}
-
 /// Recursively walks all modules and collects wrapper methods from leaf modules.
 ///
 /// The `path` parameter tracks the current module path for generating correct call paths.
@@ -632,55 +403,6 @@ fn collect_wrapper_methods(
     Ok(())
 }
 
-/// Recursively walks all modules and collects FPI functions from leaf import modules.
-fn collect_fpi_modules(
-    items: &[Item],
-    path: &mut Vec<syn::Ident>,
-    modules_out: &mut Vec<FpiModule>,
-) -> syn::Result<()> {
-    for item in items.iter() {
-        if let Item::Mod(module) = item {
-            path.push(module.ident.clone());
-            if let Some((_, ref content)) = module.content {
-                collect_fpi_modules(content, path, modules_out)?;
-                collect_fpi_functions_from_module(content, path, modules_out);
-            }
-            path.pop();
-        }
-    }
-
-    Ok(())
-}
-
-/// Collects generated `fpi_*` free functions from a leaf import module.
-fn collect_fpi_functions_from_module(
-    items: &[Item],
-    path: &[syn::Ident],
-    modules_out: &mut Vec<FpiModule>,
-) {
-    if !should_generate_struct(path, items) {
-        return;
-    }
-
-    let functions = items
-        .iter()
-        .filter_map(|item| match item {
-            Item::Fn(func) if is_fpi_function(func) => Some(func.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-
-    if functions.is_empty() {
-        return;
-    }
-
-    modules_out.push(FpiModule {
-        module_path: path.to_vec(),
-        path_string: format_module_path(path),
-        functions,
-    });
-}
-
 /// Collects wrapper methods from a leaf module's public functions.
 ///
 /// A leaf module is one that contains no nested modules. Only leaf modules contribute
@@ -698,7 +420,7 @@ fn collect_methods_from_module(
     let functions: Vec<&ItemFn> = items
         .iter()
         .filter_map(|item| match item {
-            Item::Fn(func) if is_target_function(func) && !is_fpi_function(func) => Some(func),
+            Item::Fn(func) if is_target_function(func) && !fpi::is_function(func) => Some(func),
             _ => None,
         })
         .collect();
@@ -749,107 +471,12 @@ fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Resul
     })
 }
 
-/// Builds a `CounterContract`-style FPI caller wrapper for a generated import module.
-fn build_fpi_struct(
-    module: &FpiModule,
-    dependency: &FpiDependency,
-) -> syn::Result<(ItemStruct, ItemImpl)> {
-    let struct_ident = fpi_struct_ident(module)?;
-    let struct_doc = format!("FPI caller for procedures imported from `{}`.", dependency.import);
-    let struct_item: ItemStruct = parse_quote! {
-        #[doc = #struct_doc]
-        #[derive(Clone, Copy, Debug)]
-        pub struct #struct_ident(::miden::AccountId);
-    };
-
-    let mut impl_item: ItemImpl = parse_quote! {
-        impl #struct_ident {
-            /// Creates a caller bound to the given foreign account.
-            #[inline(always)]
-            pub fn from_account(account_id: ::miden::AccountId) -> Self {
-                Self(account_id)
-            }
-        }
-    };
-
-    for func in &module.functions {
-        let wit_name = fpi_function_wit_name(func)?;
-        let root = dependency.roots.get(&wit_name).ok_or_else(|| {
-            Error::new(
-                func.sig.ident.span(),
-                format!(
-                    "failed to find procedure root for `{wit_name}` in package '{}'",
-                    dependency.package_path.display()
-                ),
-            )
-        })?;
-        impl_item.items.push(ImplItem::Fn(build_fpi_wrapper_method(
-            func,
-            &module.module_path,
-            *root,
-        )?));
-    }
-
-    Ok((struct_item, impl_item))
-}
-
-/// Builds a method on an FPI caller wrapper that delegates to the generated `fpi_*` import.
-fn build_fpi_wrapper_method(
-    func: &ItemFn,
-    module_path: &[syn::Ident],
-    procedure_root: ProcedureRoot,
-) -> syn::Result<ImplItemFn> {
-    let original_fn_ident = func.sig.ident.clone();
-    let method_ident = fpi_method_ident(func)?;
-    let mut sig = func.sig.clone();
-    sig.ident = method_ident;
-
-    let retained_inputs = sig.inputs.iter().skip(3).cloned().collect::<Vec<_>>();
-    if sig.inputs.len() < 3 {
-        return Err(Error::new(
-            sig.ident.span(),
-            "generated FPI function is missing account id and procedure root parameters",
-        ));
-    }
-
-    sig.inputs.clear();
-    sig.inputs.push(parse_quote!(&self));
-    sig.inputs.extend(retained_inputs);
-    qualify_signature_types(&mut sig, module_path);
-
-    let arg_idents = collect_arg_idents(func)?.into_iter().skip(3).collect::<Vec<_>>();
-    let root_tokens = procedure_root_tokens(procedure_root);
-    let call_expr =
-        fpi_wrapper_call_tokens(module_path, &original_fn_ident, root_tokens, &arg_idents);
-
-    let method_doc = format!(
-        "Invokes `{}` through `execute_foreign_procedure`.",
-        sig.ident.to_string().to_kebab_case()
-    );
-    let doc_attr: Attribute = parse_quote!(#[doc = #method_doc]);
-    let inline_attr: Attribute = parse_quote!(#[inline(always)]);
-
-    let body_tokens = match &sig.output {
-        ReturnType::Default => quote!({ #call_expr; }),
-        _ => quote!({ #call_expr }),
-    };
-    let block = syn::parse2(body_tokens)?;
-
-    Ok(ImplItemFn {
-        attrs: vec![doc_attr, inline_attr],
-        vis: func.vis.clone(),
-        defaultness: None,
-        sig,
-        block,
-    })
-}
-
 /// Qualifies type paths in a function signature with the module path prefix.
 ///
 /// This transforms simple type names (e.g., `StructA`) into fully qualified paths
 /// (e.g., `miden::component::component::StructA`) so they resolve correctly when
 /// the method is placed at the bindings root level.
-fn qualify_signature_types(sig: &mut syn::Signature, module_path: &[syn::Ident]) {
+pub(crate) fn qualify_signature_types(sig: &mut syn::Signature, module_path: &[syn::Ident]) {
     struct TypeQualifier<'a> {
         module_path: &'a [syn::Ident],
     }
@@ -933,7 +560,7 @@ fn is_primitive_or_std_type(name: &str) -> bool {
 ///
 /// Returns an error if the function contains a receiver (`self`) or uses
 /// unsupported argument patterns (e.g., destructuring patterns).
-fn collect_arg_idents(func: &ItemFn) -> syn::Result<Vec<syn::Ident>> {
+pub(crate) fn collect_arg_idents(func: &ItemFn) -> syn::Result<Vec<syn::Ident>> {
     func.sig
         .inputs
         .iter()
@@ -969,283 +596,6 @@ fn wrapper_call_tokens(
     quote! { #path_tokens :: #fn_ident(#(#args),*) }
 }
 
-/// Generates tokens for calling a generated FPI free function from its typed wrapper.
-fn fpi_wrapper_call_tokens(
-    module_path: &[syn::Ident],
-    fn_ident: &syn::Ident,
-    procedure_root: TokenStream2,
-    args: &[syn::Ident],
-) -> TokenStream2 {
-    let mut path_tokens = quote! { crate::bindings };
-    for ident in module_path {
-        path_tokens = quote! { #path_tokens :: #ident };
-    }
-
-    quote! {
-        #path_tokens :: #fn_ident(self.0.prefix, self.0.suffix, #procedure_root, #(#args),*)
-    }
-}
-
-/// Returns the user-facing struct identifier for a generated FPI import module.
-fn fpi_struct_ident(module: &FpiModule) -> syn::Result<syn::Ident> {
-    let Some(last) = module.module_path.last() else {
-        return Err(Error::new(Span::call_site(), "empty FPI module path"));
-    };
-    Ok(syn::Ident::new(&last.to_string().to_upper_camel_case(), last.span()))
-}
-
-/// Returns the wrapper method name for a generated FPI free function.
-fn fpi_method_ident(func: &ItemFn) -> syn::Result<syn::Ident> {
-    let fn_name = func.sig.ident.to_string();
-    let Some(method_name) = fn_name.strip_prefix(fpi::RUST_FUNCTION_PREFIX) else {
-        return Err(Error::new(
-            func.sig.ident.span(),
-            format!(
-                "expected generated FPI function name to start with `{}`",
-                fpi::RUST_FUNCTION_PREFIX
-            ),
-        ));
-    };
-    Ok(syn::Ident::new(method_name, func.sig.ident.span()))
-}
-
-/// Returns the original WIT function name represented by a generated FPI free function.
-fn fpi_function_wit_name(func: &ItemFn) -> syn::Result<String> {
-    Ok(fpi_method_ident(func)?.to_string().to_kebab_case())
-}
-
-/// Converts a procedure root into SDK `Word` construction tokens.
-fn procedure_root_tokens(root: ProcedureRoot) -> TokenStream2 {
-    let felts = root.felts.into_iter().map(|value| quote!(::miden::felt!(#value)));
-    quote!(::miden::Word::new([#(#felts),*]))
-}
-
-/// Loads all Miden dependency packages needed by generated FPI wrappers.
-fn load_fpi_dependencies(error_span: Span) -> syn::Result<Vec<FpiDependency>> {
-    let manifest = ManifestPackage::load(error_span)?;
-    manifest
-        .collect_miden_dependencies(error_span)?
-        .into_iter()
-        .map(load_fpi_dependency)
-        .collect()
-}
-
-/// Loads a single dependency package and extracts exported procedure roots.
-fn load_fpi_dependency(dependency: MidenDependency) -> syn::Result<FpiDependency> {
-    let module_path = import_module_path(&dependency.import);
-    let package_path = resolve_dependency_package_path(&dependency)?;
-    let package_bytes = fs::read(&package_path).map_err(|err| {
-        Error::new(
-            Span::call_site(),
-            format!("failed to read dependency package '{}': {err}", package_path.display()),
-        )
-    })?;
-    let package = Package::read_from_bytes(&package_bytes).map_err(|err| {
-        Error::new(
-            Span::call_site(),
-            format!("failed to deserialize dependency package '{}': {err}", package_path.display()),
-        )
-    })?;
-
-    let mut roots = HashMap::new();
-    for export in package.manifest.exports() {
-        let PackageExport::Procedure(proc_export) = export else {
-            continue;
-        };
-        let Some(function_name) = proc_export.path.last() else {
-            continue;
-        };
-        if !procedure_path_matches_import(proc_export.path.as_ref().as_str(), &dependency.import) {
-            continue;
-        }
-        roots.insert(function_name.to_string(), procedure_root_from_digest(&proc_export.digest));
-    }
-
-    Ok(FpiDependency {
-        module_path,
-        package_path,
-        import: dependency.import,
-        roots,
-    })
-}
-
-/// Converts a fully-qualified WIT import path into the Rust module path generated by wit-bindgen.
-fn import_module_path(import: &str) -> String {
-    let without_version = import.split('@').next().unwrap_or(import);
-    without_version
-        .split([':', '/'])
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| segment.to_snake_case())
-        .collect::<Vec<_>>()
-        .join("::")
-}
-
-/// Finds the `.masp` package artifact corresponding to a manifest dependency entry.
-fn resolve_dependency_package_path(dependency: &MidenDependency) -> syn::Result<PathBuf> {
-    if dependency.root.is_file() {
-        return Ok(dependency.root.clone());
-    }
-
-    let preferred_profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-    let mut profiles = vec![preferred_profile.clone()];
-    if preferred_profile != "release" {
-        profiles.push("release".to_string());
-    }
-    if preferred_profile != "debug" {
-        profiles.push("debug".to_string());
-    }
-
-    let package_stems = dependency_package_stems(dependency);
-    let output_dirs = dependency_output_dirs(dependency, &profiles);
-    for dir in &output_dirs {
-        if let Some(package) = find_dependency_package_in_dir(dir, &package_stems)? {
-            return Ok(package.clone());
-        }
-    }
-
-    let searched = output_dirs
-        .iter()
-        .map(|dir| format!("'{}'", dir.display()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    Err(Error::new(
-        Span::call_site(),
-        format!(
-            "failed to find built `.masp` artifact for dependency '{}'; searched {searched}; \
-             build the dependency with `cargo miden build` first",
-            dependency.name,
-        ),
-    ))
-}
-
-/// Returns candidate output directories where a dependency `.masp` may have been written.
-fn dependency_output_dirs(dependency: &MidenDependency, profiles: &[String]) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    push_profile_dirs(&mut dirs, dependency.root.join("target"), profiles);
-
-    if let Ok(target_dir) = env::var("CARGO_TARGET_DIR") {
-        push_profile_dirs(&mut dirs, PathBuf::from(target_dir), profiles);
-    }
-
-    if let Ok(out_dir) = env::var("OUT_DIR") {
-        for ancestor in Path::new(&out_dir).ancestors() {
-            push_profile_dirs(&mut dirs, ancestor.to_path_buf(), profiles);
-        }
-    }
-
-    dirs
-}
-
-/// Adds `target/miden/<profile>` directories while preserving insertion order.
-fn push_profile_dirs(dirs: &mut Vec<PathBuf>, target_root: PathBuf, profiles: &[String]) {
-    for profile in profiles {
-        let dir = target_root.join("miden").join(profile);
-        if !dirs.iter().any(|existing| existing == &dir) {
-            dirs.push(dir);
-        }
-    }
-}
-
-/// Finds a dependency package in `dir`, preferring filenames that match the package name.
-fn find_dependency_package_in_dir(
-    dir: &Path,
-    package_stems: &[String],
-) -> syn::Result<Option<PathBuf>> {
-    if !dir.is_dir() {
-        return Ok(None);
-    }
-
-    let mut packages = fs::read_dir(dir)
-        .map_err(|err| {
-            Error::new(
-                Span::call_site(),
-                format!("failed to read dependency output directory '{}': {err}", dir.display()),
-            )
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            Error::new(
-                Span::call_site(),
-                format!("failed to iterate dependency output directory '{}': {err}", dir.display()),
-            )
-        })?
-        .into_iter()
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "masp"))
-        .collect::<Vec<_>>();
-    packages.sort();
-
-    for stem in package_stems {
-        if let Some(package) = packages.iter().find(|path| {
-            path.file_stem()
-                .and_then(|value| value.to_str())
-                .is_some_and(|file_stem| file_stem == stem)
-        }) {
-            return Ok(Some(package.clone()));
-        }
-    }
-
-    Ok((packages.len() == 1).then(|| packages[0].clone()))
-}
-
-/// Returns likely `.masp` filename stems for a dependency.
-fn dependency_package_stems(dependency: &MidenDependency) -> Vec<String> {
-    let mut stems = Vec::new();
-
-    if let Some(package_name) = dependency_manifest_package_name(&dependency.root) {
-        push_dependency_stem(&mut stems, &package_name);
-    }
-
-    if let Some(name) = dependency.name.split([':', '/']).next_back() {
-        push_dependency_stem(&mut stems, name);
-    }
-
-    if let Some(name) = dependency.root.file_name().and_then(|name| name.to_str()) {
-        push_dependency_stem(&mut stems, name);
-    }
-
-    stems
-}
-
-/// Reads the Cargo package name for dependency directories.
-fn dependency_manifest_package_name(root: &Path) -> Option<String> {
-    let manifest_path = root.join("Cargo.toml");
-    let manifest = fs::read_to_string(manifest_path).ok()?;
-    let manifest = manifest.parse::<toml::Table>().ok()?;
-    manifest
-        .get("package")
-        .and_then(toml::Value::as_table)
-        .and_then(|package| package.get("name"))
-        .and_then(toml::Value::as_str)
-        .map(ToOwned::to_owned)
-}
-
-/// Adds a normalized Miden package stem if it has not already been added.
-fn push_dependency_stem(stems: &mut Vec<String>, name: &str) {
-    let stem = name.replace('-', "_");
-    if !stem.is_empty() && !stems.iter().any(|existing| existing == &stem) {
-        stems.push(stem);
-    }
-}
-
-/// Returns true when an exported procedure belongs to the dependency import interface.
-fn procedure_path_matches_import(path: &str, import: &str) -> bool {
-    path.contains(import)
-}
-
-/// Converts a MAST digest word into literal field elements.
-fn procedure_root_from_digest(digest: &miden_protocol::Word) -> ProcedureRoot {
-    let elements = digest.as_elements();
-    ProcedureRoot {
-        felts: [
-            elements[0].as_canonical_u64(),
-            elements[1].as_canonical_u64(),
-            elements[2].as_canonical_u64(),
-            elements[3].as_canonical_u64(),
-        ],
-    }
-}
-
 /// Determines whether a wrapper struct should be generated for the given module.
 ///
 /// Returns `false` for:
@@ -1253,7 +603,7 @@ fn procedure_root_from_digest(digest: &miden_protocol::Word) -> ProcedureRoot {
 /// - `exports` modules (these are user-implemented exports, not imports)
 /// - Modules starting with underscore (internal/private modules)
 /// - Non-leaf modules (modules that contain nested modules)
-fn should_generate_struct(path: &[syn::Ident], items: &[Item]) -> bool {
+pub(crate) fn should_generate_struct(path: &[syn::Ident], items: &[Item]) -> bool {
     if path.is_empty() {
         return false;
     }
@@ -1281,15 +631,8 @@ fn is_target_function(func: &ItemFn) -> bool {
         && !func.sig.ident.to_string().starts_with('_')
 }
 
-/// Determines whether a generated free function represents an FPI WIT import.
-fn is_fpi_function(func: &ItemFn) -> bool {
-    matches!(func.vis, syn::Visibility::Public(_))
-        && func.sig.unsafety.is_none()
-        && func.sig.ident.to_string().starts_with(fpi::RUST_FUNCTION_PREFIX)
-}
-
 /// Formats a module path as a `::` separated string for use in documentation.
-fn format_module_path(path: &[syn::Ident]) -> String {
+pub(crate) fn format_module_path(path: &[syn::Ident]) -> String {
     path.iter().map(|ident| ident.to_string()).collect::<Vec<_>>().join("::")
 }
 
@@ -1317,29 +660,6 @@ fn check_method_name_collisions(methods: &[CollectedMethod]) -> syn::Result<()> 
         }
 
         seen.insert(method_name, &collected.source_path);
-    }
-
-    Ok(())
-}
-
-/// Checks for wrapper struct name collisions across FPI import modules.
-fn check_fpi_struct_name_collisions(modules: &[FpiModule]) -> syn::Result<()> {
-    let mut seen: HashMap<String, &str> = HashMap::new();
-
-    for module in modules {
-        let struct_name = fpi_struct_ident(module)?.to_string();
-        if let Some(existing_path) = seen.get(&struct_name) {
-            return Err(Error::new(
-                Span::call_site(),
-                format!(
-                    "FPI wrapper struct name collision: `{struct_name}` is generated for both \
-                     `{existing_path}` and `{}`",
-                    module.path_string
-                ),
-            ));
-        }
-
-        seen.insert(struct_name, &module.path_string);
     }
 
     Ok(())
