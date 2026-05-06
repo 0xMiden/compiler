@@ -1,7 +1,10 @@
 //! Foreign procedure invocation tests on a mock chain.
 
 use miden_client::{
-    account::{AccountComponent, component::InitStorageData},
+    account::{
+        AccountComponent,
+        component::{BasicWallet, InitStorageData},
+    },
     note::NoteTag,
     transaction::RawOutputNote,
 };
@@ -9,12 +12,11 @@ use miden_protocol::{
     account::{AccountBuilder, AccountStorageMode, AccountType, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
-use miden_standards::testing::note::NoteBuilder;
+use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
 
 use super::support::{
-    COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage,
-    build_existing_counter_account_builder_with_auth_package, compile_rust_package,
+    COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, compile_rust_package,
     counter_storage_slot_name, execute_tx, note_script_root, to_core_felts,
 };
 
@@ -23,8 +25,6 @@ use super::support::{
 pub fn counter_caller_note_reads_counter_through_fpi() {
     let counter_package = compile_rust_package("../../examples/counter-contract", true);
     let caller_note_package = compile_rust_package("../../examples/counter-caller", true);
-    let no_auth_auth_component =
-        compile_rust_package("../../examples/auth-component-no-auth", true);
 
     let counter_storage_slot = counter_storage_slot_name();
     let counter_component = {
@@ -36,14 +36,14 @@ pub fn counter_caller_note_reads_counter_through_fpi() {
     };
 
     let mut builder = MockChain::builder();
-    let counter_account = build_existing_counter_account_builder_with_auth_package(
-        counter_component,
-        no_auth_auth_component,
-        vec![],
-        [0_u8; 32],
-    )
-    .build_existing()
-    .expect("failed to build counter account");
+    let counter_account = AccountBuilder::new([0_u8; 32])
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_auth_component(NoAuth)
+        .with_component(BasicWallet)
+        .with_component(counter_component)
+        .build_existing()
+        .expect("failed to build counter account");
     builder
         .add_account(counter_account.clone())
         .expect("failed to add counter account to mock chain builder");
@@ -51,7 +51,7 @@ pub fn counter_caller_note_reads_counter_through_fpi() {
     let caller_builder = AccountBuilder::new([1_u8; 32])
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Public)
-        .with_component(miden_client::account::component::BasicWallet);
+        .with_component(BasicWallet);
     let caller_account = builder
         .add_account_from_builder(
             Auth::BasicAuth {
