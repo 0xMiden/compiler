@@ -23,8 +23,6 @@ env:
   # Set the new value when the cache grows too much and we hit the runner's disk space limit
   # via https://github.com/rust-lang/docs.rs/pull/2433
   RUST_CACHE_KEY: rust-cache-20251212
-  # Reduce cache size by not storing debug info in dev-profile artifacts.
-  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   workspace_inheritance:
@@ -109,16 +107,30 @@ jobs:
   check_unused:
     name: check for unused items/dependencies
     runs-on: ubuntu-latest
+    # Run this job after the linter, so the cache is hot
+    needs: [lint]
+    # But run this check even if the lint check failed
+    if: ${{ always() }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
       - name: Install cargo-shear
         uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
         with:
           tool: cargo-shear@1.11.2
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
       - name: Check for unused dependencies
-        run: cargo shear
+        run: cargo make unused
 
   unit_tests:
     name: midenc unit tests
