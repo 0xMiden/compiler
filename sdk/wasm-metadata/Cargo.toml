@@ -13,6 +13,9 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
+[lib]
+doctest = false
+
 [dependencies]
 serde.workspace = true
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }

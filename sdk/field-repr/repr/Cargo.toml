@@ -13,13 +13,12 @@ edition.workspace = true
 
 [lib]
 crate-type = ["rlib"]
+test = false
+doctest = false
 
 [dependencies]
 miden-field-repr-derive = { path = "../derive", version = "0.12.0" }
 miden-field.workspace = true
-
-[target.'cfg(not(target_family = "wasm"))'.dependencies]
-miden-core.workspace = true
 
 [features]
 default = []

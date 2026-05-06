@@ -11,6 +11,9 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
+[lib]
+doctest = false
+
 [features]
 default = ["std"]
 std = ["midenc-hir/std"]

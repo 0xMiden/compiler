@@ -1,7 +1,7 @@
 use alloc::{format, rc::Rc, string::ToString};
 use core::ops::{Deref, DerefMut};
 
-use litcheck_filecheck::filecheck;
+use litcheck_filecheck::{filecheck, litcheck};
 use pretty_assertions::assert_eq;
 
 use crate::{
