@@ -1,0 +1,9 @@
+rules:
+  use-trusted-publishing:
+    ignore:
+      - release_old.yml
+  secrets-outside-env:
+    ignore:
+      - release.yml
+      - release_old.yml
+      - trigger-deploy-docs.yml

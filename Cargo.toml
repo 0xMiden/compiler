@@ -108,6 +108,7 @@ serde = { version = "1.0", default-features = false, features = [
     "alloc",
     "rc",
 ] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 heck = "0.5"
 smallvec = { version = "1.15", default-features = false, features = [
     "union",
@@ -158,6 +159,9 @@ cargo-miden = { version = "0.8.1", path = "tools/cargo-miden" }
 midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-field = { version = "^0.25" }
+miden-base-sys = { version = "0.12.0", path = "sdk/base-sys" }
+miden-field-repr = { version = "0.12.0", path = "sdk/field-repr/repr" }
+miden-stdlib-sys = { version = "0.12.0", path = "sdk/stdlib-sys" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }

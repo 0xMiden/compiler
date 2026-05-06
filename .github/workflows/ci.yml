@@ -25,23 +25,43 @@ env:
   RUST_CACHE_KEY: rust-cache-20251212
 
 jobs:
-  lint:
-    name: lint
+  workspace_inheritance:
+    name: Workspace inheritance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      # Pin install-action to a release and request the tool explicitly; shortcut
+      # tags can trip zizmor's impostor-commit audit when they are later retagged.
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: cargo-binstall
+      - name: Install workspace inheritance checker
+        run: cargo binstall --no-confirm cargo-workspace-inheritance-check@1.2.0
+      - name: Check workspace inheritance
+        run: cargo workspace-inheritance-check --promotion-threshold 2 --promotion-failure
+
+  lint:
+    name: lint
+    runs-on: warp-ubuntu-latest-x64-8x
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           # Use a common cache for the basic compilation/formatter/clippy checks
           shared-key: ${{ github.workflow }}-shared
           prefix-key: ${{ env.RUST_CACHE_KEY }}
-          save-if: ${{ github.ref == 'refs/heads/next' }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install cargo-make
         run: |
           if ! cargo make --version 2>/dev/null; then
@@ -53,20 +73,22 @@ jobs:
 
   check_format:
     name: check formatting
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     # Run this job after the linter, so the cache is hot
     needs: [lint]
     # But run this check even if the lint check failed
     if: ${{ always() }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           # Use a common cache for the basic compilation/formatter/clippy checks
           shared-key: ${{ github.workflow }}-shared
@@ -90,47 +112,46 @@ jobs:
     # But run this check even if the lint check failed
     if: ${{ always() }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-shear
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
         with:
-          # Use a common cache for the basic compilation/formatter/clippy checks
-          shared-key: ${{ github.workflow }}-shared
-          prefix-key: ${{ env.RUST_CACHE_KEY }}
-          # But do not save this cache, just use it
-          save-if: false
+          tool: cargo-shear@1.11.2
       - name: Install cargo-make
         run: |
           if ! cargo make --version 2>/dev/null; then
             cargo install cargo-make --force
           fi
-      - name: Clippy
-        run: |
-          cargo make unused
+      - name: Check for unused dependencies
+        run: cargo make unused
 
   unit_tests:
     name: midenc unit tests
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           # NOTE: We use a different cache for the tests, so they can be run in parallel, but we
           # also share the cache for the tests for efficiency
           shared-key: ${{ github.workflow }}-shared-tests
           prefix-key: ${{ env.RUST_CACHE_KEY }}
-          save-if: ${{ github.ref == 'refs/heads/next' }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install cargo-make
         run: |
           if ! cargo make --version 2>/dev/null; then
@@ -148,22 +169,24 @@ jobs:
 
   release_profile_tests:
     name: midenc release-profile tests
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           # NOTE: Keep a separate cache because the workspace is rebuilt under
           # the custom test-release profile.
           shared-key: ${{ github.workflow }}-shared-release-tests
           prefix-key: ${{ env.RUST_CACHE_KEY }}
-          save-if: ${{ github.ref == 'refs/heads/next' }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install cargo-make
         run: |
           if ! cargo make --version 2>/dev/null; then
@@ -175,19 +198,21 @@ jobs:
 
   lit_tests:
     name: midenc lit/filecheck tests
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     # We only want to run our lit tests if the unit tests pass, and that has the added
     # benefit that we can re-use the cache from the unit test job
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           # NOTE: We use a different cache for the tests, so they can be run in parallel, but we
           # also share the cache for the tests for efficiency
@@ -204,19 +229,21 @@ jobs:
 
   midenc_integration_tests:
     name: midenc integration tests
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     # We only want to run the integration tests if the unit tests pass, and that has the added
     # benefit that we can re-use the cache from the unit test job for all integration tests
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           shared-key: ${{ github.workflow }}-shared-tests
           prefix-key: ${{ env.RUST_CACHE_KEY }}
@@ -234,19 +261,21 @@ jobs:
 
   midenc_integration_tests_examples:
     name: midenc integration tests
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     # We only want to run the integration tests if the unit tests pass, and that has the added
     # benefit that we can re-use the cache from the unit test job for all integration tests
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           shared-key: ${{ github.workflow }}-shared-tests
           prefix-key: ${{ env.RUST_CACHE_KEY }}
@@ -264,19 +293,21 @@ jobs:
 
   cargo_miden_integration_tests:
     name: cargo-miden integration tests
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     # We only want to run the integration tests if the unit tests pass, and that has the added
     # benefit that we can re-use the cache from the unit test job for all integration tests
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           shared-key: ${{ github.workflow }}-shared-tests
           prefix-key: ${{ env.RUST_CACHE_KEY }}
@@ -294,19 +325,21 @@ jobs:
 
   cargo_miden_tests_templates_and_examples:
     name: cargo-miden test new project templates and examples
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     # We only want to run the integration tests if the unit tests pass, and that has the added
     # benefit that we can re-use the cache from the unit test job for all integration tests
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           shared-key: ${{ github.workflow }}-shared-tests
           prefix-key: ${{ env.RUST_CACHE_KEY }}
@@ -323,19 +356,21 @@ jobs:
 
   miden_integration_node_tests:
     name: miden integration node tests
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     # We only want to run the integration tests if the unit tests pass, and that has the added
     # benefit that we can re-use the cache from the unit test job for all integration tests
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           shared-key: ${{ github.workflow }}-shared-tests
           prefix-key: ${{ env.RUST_CACHE_KEY }}
@@ -352,21 +387,23 @@ jobs:
 
   check_release:
     name: release checks
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           # NOTE: We use a different cache for the these release checks
           shared-key: ${{ github.workflow }}-shared-release-checks
           prefix-key: ${{ env.RUST_CACHE_KEY }}
-          save-if: ${{ github.ref == 'refs/heads/next' }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install cargo-make
         run: |
           if ! cargo make --version 2>/dev/null; then
@@ -385,22 +422,24 @@ jobs:
 
   cargo_publish_dry_run:
     name: cargo publish dry run
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     needs: [unit_tests]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
       - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
           # Use a common cache for the basic compilation/formatter/clippy checks
           shared-key: ${{ github.workflow }}-shared
           prefix-key: ${{ env.RUST_CACHE_KEY }}
-          save-if: ${{ github.ref == 'refs/heads/next' }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
       - name: Install cargo-make
         run: |
           if ! cargo make --version 2>/dev/null; then

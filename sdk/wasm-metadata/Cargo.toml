@@ -18,4 +18,4 @@ doctest = false
 
 [dependencies]
 serde.workspace = true
-serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+serde_json.workspace = true
