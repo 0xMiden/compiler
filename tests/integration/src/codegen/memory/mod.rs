@@ -22,6 +22,7 @@ mod load_u16;
 mod load_u64_unaligned;
 mod load_u8;
 mod regressions;
+mod store_u128_unaligned;
 mod store_u16;
 mod store_u32_unaligned;
 mod store_u64_unaligned;

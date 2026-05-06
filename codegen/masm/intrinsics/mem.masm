@@ -533,6 +533,76 @@ pub proc store_dw # [addr, offset, value_hi, value_lo]
     end
 end
 
+# Store four 32-bit words to the given native pointer tuple.
+#
+# A native pointer tuple consists of an element address where the data begins, and a byte offset,
+# which is the offset of the first byte, in the 32-bit representation of that element.
+pub proc store_qw # [addr, offset, value_0, value_1, value_2, value_3]
+    # check for alignment and offset validity
+    dup.1 eq.0                # [offset == 0, addr, offset, value_0, value_1, value_2, value_3]
+    # offset must be < 4
+    dup.2 push.4 u32lt assert # [offset == 0, addr, offset, value_0, value_1, value_2, value_3]
+    # if the pointer is naturally aligned..
+    if.true  # [addr, offset, value_0, value_1, value_2, value_3]
+        # drop byte offset
+        swap.1 drop                    # [addr, value_0, value_1, value_2, value_3]
+
+        swap.1 dup.1 mem_store         # [addr, value_1, value_2, value_3]
+        push.1 u32overflowing_add assertz # [addr + 1, value_1, value_2, value_3]
+        swap.1 dup.1 mem_store         # [addr + 1, value_2, value_3]
+        push.1 u32overflowing_add assertz # [addr + 2, value_2, value_3]
+        swap.1 dup.1 mem_store         # [addr + 2, value_3]
+        push.1 u32overflowing_add assertz # [addr + 3, value_3]
+        mem_store                      # []
+    else     # [addr, offset, value_0, value_1, value_2, value_3]
+        # unaligned; an unaligned quad-word spans five elements
+        #
+        # convert offset from bytes to bits
+        swap.1 push.8 u32wrapping_mul swap.1 # [addr, bit_offset, value_0, value_1, value_2, value_3]
+
+        # compute rshift = 32 - bit_offset
+        dup.1 push.32 swap.1 u32overflowing_sub assertz # [rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+
+        # compute start_mask = u32::MAX >> rshift, end_mask = !start_mask
+        push.4294967295 dup.1 u32shr # [start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+        dup.0 u32not                  # [end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+
+        # Load the two boundary elements whose unaffected bytes must be preserved.
+        dup.3 push.4 u32overflowing_add assertz mem_load # [old4, end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+        dup.4 mem_load                                   # [old0, old4, end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+
+        # c0 = (old0 & start_mask) | (value_0 << bit_offset)
+        movup.3 u32and               # [old0_masked, old4, end_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+        dup.6 dup.6 u32shl           # [value_0 << bit_offset, old0_masked, old4, end_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+        u32or                        # [c0, old4, end_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+        dup.4 mem_store              # [old4, end_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+
+        # c1 = (value_0 >> rshift) | (value_1 << bit_offset)
+        movup.5 dup.3 u32shr         # [value_0 >> rshift, old4, end_mask, rshift, addr, bit_offset, value_1, value_2, value_3]
+        dup.6 dup.6 u32shl           # [value_1 << bit_offset, value_0 >> rshift, old4, end_mask, rshift, addr, bit_offset, value_1, value_2, value_3]
+        u32or                        # [c1, old4, end_mask, rshift, addr, bit_offset, value_1, value_2, value_3]
+        dup.4 push.1 u32overflowing_add assertz mem_store # [old4, end_mask, rshift, addr, bit_offset, value_1, value_2, value_3]
+
+        # c2 = (value_1 >> rshift) | (value_2 << bit_offset)
+        movup.5 dup.3 u32shr         # [value_1 >> rshift, old4, end_mask, rshift, addr, bit_offset, value_2, value_3]
+        dup.6 dup.6 u32shl           # [value_2 << bit_offset, value_1 >> rshift, old4, end_mask, rshift, addr, bit_offset, value_2, value_3]
+        u32or                        # [c2, old4, end_mask, rshift, addr, bit_offset, value_2, value_3]
+        dup.4 push.2 u32overflowing_add assertz mem_store # [old4, end_mask, rshift, addr, bit_offset, value_2, value_3]
+
+        # c3 = (value_2 >> rshift) | (value_3 << bit_offset)
+        movup.5 dup.3 u32shr         # [value_2 >> rshift, old4, end_mask, rshift, addr, bit_offset, value_3]
+        dup.6 movup.6 u32shl         # [value_3 << bit_offset, value_2 >> rshift, old4, end_mask, rshift, addr, value_3]
+        u32or                        # [c3, old4, end_mask, rshift, addr, value_3]
+        dup.4 push.3 u32overflowing_add assertz mem_store # [old4, end_mask, rshift, addr, value_3]
+
+        # c4 = (old4 & end_mask) | (value_3 >> rshift)
+        swap.1 u32and                # [old4_masked, rshift, addr, value_3]
+        movup.3 movup.2 u32shr       # [value_3 >> rshift, old4_masked, addr]
+        u32or                        # [c4, addr]
+        swap.1 push.4 u32overflowing_add assertz mem_store # []
+    end
+end
+
 # Write `count` copies of `value` to memory, starting at `dst`.
 #
 # * `dst` is expected to be an address in byte-addressable space, _not_ an element address.
