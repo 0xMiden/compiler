@@ -104,7 +104,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     let consume_tx_context_builder =
         chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["3225"].assert_eq(prologue_cycles(&tx_measurements));
+    expect!["3216"].assert_eq(prologue_cycles(&tx_measurements));
     expect!["20072"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
