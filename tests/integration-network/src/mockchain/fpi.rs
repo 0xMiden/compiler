@@ -1,5 +1,7 @@
 //! Foreign procedure invocation tests on a mock chain.
 
+use std::{path::Path, sync::Arc};
+
 use miden_client::{
     account::{
         AccountComponent,
@@ -8,12 +10,14 @@ use miden_client::{
     note::NoteTag,
     transaction::RawOutputNote,
 };
+use miden_mast_package::Package;
 use miden_protocol::{
     account::{AccountBuilder, AccountStorageMode, AccountType, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
+use midenc_integration_test_support::{compiler_test::sdk_crate_path, project};
 
 use super::support::{
     COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, compile_rust_package,
@@ -23,8 +27,7 @@ use super::support::{
 /// Deploys a counter contract and consumes a note which reads it through FPI.
 #[test]
 pub fn counter_caller_note_reads_counter_through_fpi() {
-    let counter_package = compile_rust_package("../../examples/counter-contract", true);
-    let caller_note_package = compile_rust_package("../../examples/counter-caller", true);
+    let (counter_package, caller_note_package) = build_fpi_test_packages();
 
     let counter_storage_slot = counter_storage_slot_name();
     let counter_component = {
@@ -95,3 +98,161 @@ pub fn counter_caller_note_reads_counter_through_fpi() {
         42,
     );
 }
+
+/// Builds isolated counter contract and caller note projects for the FPI test.
+fn build_fpi_test_packages() -> (Arc<Package>, Arc<Package>) {
+    let counter_project = project("fpi-counter-contract")
+        .file("Cargo.toml", &counter_contract_cargo_toml())
+        .file("src/lib.rs", COUNTER_CONTRACT_SOURCE)
+        .build();
+    let counter_package = compile_rust_package(counter_project.root(), true);
+
+    let caller_project = project("fpi-counter-caller")
+        .file("Cargo.toml", &counter_caller_cargo_toml(counter_project.root().as_path()))
+        .file("src/lib.rs", COUNTER_CALLER_SOURCE)
+        .build();
+    let caller_note_package = compile_rust_package(caller_project.root(), true);
+
+    (counter_package, caller_note_package)
+}
+
+/// Returns the generated counter contract manifest used by the FPI test.
+fn counter_contract_cargo_toml() -> String {
+    let sdk_path = sdk_crate_path();
+    format!(
+        r#"
+[package]
+name = "counter-contract"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.component]
+package = "miden:counter-contract"
+
+[package.metadata.miden]
+project-kind = "account"
+supported-types = ["RegularAccountUpdatableCode"]
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = false
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug-assertions = true
+overflow-checks = false
+debug = false
+"#,
+        sdk_path = sdk_path.display(),
+    )
+}
+
+/// Returns the generated counter caller note manifest used by the FPI test.
+fn counter_caller_cargo_toml(counter_project_root: &Path) -> String {
+    let sdk_path = sdk_crate_path();
+    let counter_wit_path = counter_project_root.join("target/generated-wit");
+    format!(
+        r#"
+[package]
+name = "fpi-counter-caller"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.miden]
+project-kind = "note-script"
+
+[package.metadata.component]
+package = "miden:counter-caller"
+
+[package.metadata.miden.dependencies]
+"miden:counter-contract" = {{ path = "{counter_project_root}" }}
+
+[package.metadata.component.target.dependencies]
+"miden:counter-account" = {{ path = "{counter_wit_path}" }}
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = false
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug-assertions = true
+overflow-checks = false
+debug = false
+"#,
+        sdk_path = sdk_path.display(),
+        counter_project_root = counter_project_root.display(),
+        counter_wit_path = counter_wit_path.display(),
+    )
+}
+
+/// Minimal counter account component source used by the FPI test.
+const COUNTER_CONTRACT_SOURCE: &str = r#"
+#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, felt, Felt, StorageMap, Word};
+
+/// Account component whose storage map holds one counter value.
+#[component]
+struct CounterContract {
+    /// Storage map holding the counter value.
+    #[storage(description = "counter contract storage map")]
+    count_map: StorageMap<Word, Felt>,
+}
+
+#[component]
+impl CounterContract {
+    /// Returns the current counter value.
+    pub fn get_count(&self) -> Felt {
+        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+        self.count_map.get(key)
+    }
+}
+"#;
+
+/// Minimal note script source which reads the generated counter account through FPI.
+const COUNTER_CALLER_SOURCE: &str = r#"
+#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::*;
+
+use crate::bindings::CounterContract;
+
+/// Note script input containing the foreign counter account id.
+#[note]
+struct CounterCaller {
+    /// Account id of the counter contract to invoke through FPI.
+    counter_account_id: AccountId,
+}
+
+#[note]
+impl CounterCaller {
+    /// Checks that the foreign counter account stores the initialized value.
+    #[note_script]
+    pub fn run(self, _arg: Word) {
+        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count = count_acc.get_count();
+        assert_eq(count, felt!(42));
+    }
+}
+"#;

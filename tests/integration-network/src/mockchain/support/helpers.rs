@@ -1,6 +1,6 @@
 //! Common helper functions for mock-chain integration tests.
 
-use std::{future::Future, sync::Arc};
+use std::{future::Future, path::Path, sync::Arc};
 
 use miden_client::{
     Word,
@@ -52,7 +52,8 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
 // COMPILATION
 // ================================================================================================
 
-pub(crate) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Package> {
+/// Compiles a Cargo Miden project into a MAST package.
+pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool) -> Arc<Package> {
     let config = WasmTranslationConfig::default();
     let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
 
