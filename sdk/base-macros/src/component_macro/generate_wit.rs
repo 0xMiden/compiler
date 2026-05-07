@@ -13,7 +13,28 @@ use crate::{
     types::{ExportedTypeDef, ExportedTypeKind, ensure_custom_type_defined},
     util::generated_wit_folder,
     wit_builder::WitBuilder,
+    wit_world::write_world_block,
 };
+
+/// Inputs used to render the WIT interface and world for a component implementation.
+pub(super) struct ComponentWitSpec<'a> {
+    /// Fully-qualified WIT package name for the component.
+    pub(super) component_package: &'a str,
+    /// Component package version.
+    pub(super) component_version: &'a Version,
+    /// Interface exported by the component world.
+    pub(super) interface_name: &'a str,
+    /// World generated for the component package.
+    pub(super) world_name: &'a str,
+    /// Fully-qualified interfaces imported by the component world.
+    pub(super) dependency_imports: &'a [String],
+    /// Core type names imported by the exported interface.
+    pub(super) type_imports: &'a BTreeSet<String>,
+    /// Public component methods exported in the interface.
+    pub(super) methods: &'a [ComponentMethod],
+    /// Custom types exported alongside the methods.
+    pub(super) exported_types: &'a [ExportedTypeDef],
+}
 
 /// Writes the generated component WIT to the crate's `wit` directory so that dependent targets can
 /// reference it via manifest metadata.
@@ -49,21 +70,13 @@ pub fn write_component_wit_file(
     Ok(())
 }
 
-/// Renders the inline WIT source describing the component interface exported by the `impl` block.
-pub fn build_component_wit(
-    component_package: &str,
-    component_version: &Version,
-    interface_name: &str,
-    world_name: &str,
-    type_imports: &BTreeSet<String>,
-    methods: &[ComponentMethod],
-    exported_types: &[ExportedTypeDef],
-) -> Result<String, syn::Error> {
+/// Renders the WIT source describing the component interface exported by the `impl` block.
+pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, syn::Error> {
     let exported_type_names: HashSet<String> =
-        exported_types.iter().map(|def| def.wit_name.clone()).collect();
+        spec.exported_types.iter().map(|def| def.wit_name.clone()).collect();
 
-    let mut combined_core_imports = type_imports.clone();
-    for exported in exported_types {
+    let mut combined_core_imports = spec.type_imports.clone();
+    for exported in spec.exported_types {
         match &exported.kind {
             ExportedTypeKind::Record { fields } => {
                 for field in fields {
@@ -94,17 +107,17 @@ pub fn build_component_wit(
         }
     }
 
-    let mut wit = WitBuilder::new("#[component]", component_package, component_version);
+    let mut wit = WitBuilder::new("#[component]", spec.component_package, spec.component_version);
     wit.use_path(CORE_TYPES_PACKAGE);
     wit.blank_line();
-    wit.interface(interface_name, |interface| {
+    wit.interface(spec.interface_name, |interface| {
         if !combined_core_imports.is_empty() {
             let imports = combined_core_imports.iter().cloned().collect::<Vec<_>>().join(", ");
             interface.line(&format!("use core-types.{{{imports}}};"));
             interface.blank_line();
         }
 
-        for (index, exported) in exported_types.iter().enumerate() {
+        for (index, exported) in spec.exported_types.iter().enumerate() {
             if index > 0 {
                 interface.blank_line();
             }
@@ -138,11 +151,11 @@ pub fn build_component_wit(
             }
         }
 
-        if !exported_types.is_empty() && !methods.is_empty() {
+        if !spec.exported_types.is_empty() && !spec.methods.is_empty() {
             interface.blank_line();
         }
 
-        for method in methods {
+        for method in spec.methods {
             let signature = component_method_signature(method, &exported_type_names)?;
             interface.line(&signature);
         }
@@ -150,9 +163,8 @@ pub fn build_component_wit(
         Ok::<(), syn::Error>(())
     })?;
     wit.blank_line();
-    wit.world(world_name, |world| {
-        world.line(&format!("export {interface_name};"));
-    });
+    let exports = [spec.interface_name.to_string()];
+    write_world_block(&mut wit, spec.world_name, spec.dependency_imports, &exports);
 
     Ok(wit.finish())
 }

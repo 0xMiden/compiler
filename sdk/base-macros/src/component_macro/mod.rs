@@ -20,7 +20,7 @@ use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
     boilerplate::runtime_boilerplate,
     component_macro::{
-        generate_wit::{build_component_wit, write_component_wit_file},
+        generate_wit::{ComponentWitSpec, build_component_wit, write_component_wit_file},
         metadata::get_package_metadata,
         storage::process_storage_fields,
     },
@@ -28,6 +28,7 @@ use crate::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
     util::generate_frontend_link_section,
+    wit_world::ManifestPackage,
 };
 
 mod generate_wit;
@@ -338,17 +339,33 @@ fn expand_component_impl(
         impl_block.span(),
     )?;
 
-    let wit_source = build_component_wit(
-        &component_package,
-        &metadata.version,
-        &interface_name,
-        &world_name,
-        &type_imports,
-        &methods,
-        &exported_types,
-    )?;
-    write_component_wit_file(call_site_span, &wit_source, &component_package)?;
-    let inline_literal = Literal::string(&wit_source);
+    let dependency_imports = ManifestPackage::load(Span2::call_site())?
+        .collect_miden_dependency_imports(Span2::call_site())?;
+    let inline_wit_source = build_component_wit(ComponentWitSpec {
+        component_package: &component_package,
+        component_version: &metadata.version,
+        interface_name: &interface_name,
+        world_name: &world_name,
+        dependency_imports: &dependency_imports,
+        type_imports: &type_imports,
+        methods: &methods,
+        exported_types: &exported_types,
+    })?;
+    // Dependency imports are only needed while generating this crate's bindings. The public WIT
+    // file stays export-only so downstream crates can depend on this account without also
+    // materializing all of its transitive FPI dependencies next to the generated WIT.
+    let public_wit_source = build_component_wit(ComponentWitSpec {
+        component_package: &component_package,
+        component_version: &metadata.version,
+        interface_name: &interface_name,
+        world_name: &world_name,
+        dependency_imports: &[],
+        type_imports: &type_imports,
+        methods: &methods,
+        exported_types: &exported_types,
+    })?;
+    write_component_wit_file(call_site_span, &public_wit_source, &component_package)?;
+    let inline_literal = Literal::string(&inline_wit_source);
 
     let guest_trait_path = build_guest_trait_path(&component_package, &interface_module)?;
     let guest_methods: Vec<TokenStream2> = methods

@@ -49,6 +49,57 @@ pub(super) fn build_fpi_test_packages(
     (counter_package, caller_note_package, counter_storage_slot)
 }
 
+/// Builds isolated callee account, caller account, and note projects for an account-to-account FPI
+/// test case.
+pub(super) fn build_account_to_account_fpi_test_packages(
+    test_name: &str,
+    callee_source: &str,
+    caller_source: &str,
+    note_source: &str,
+) -> (Arc<Package>, Arc<Package>, Arc<Package>, StorageSlotName) {
+    let names = FpiAccountToAccountProjectNames::new(test_name);
+    let callee_storage_slot = counter_storage_slot_name_for_package(&names.callee_account_package);
+
+    let callee_project = project(&names.callee_account_name)
+        .file(
+            "Cargo.toml",
+            &account_cargo_toml_for(&names.callee_account_name, &names.callee_account_package),
+        )
+        .file("src/lib.rs", callee_source)
+        .build();
+    let callee_package = compile_rust_package(callee_project.root(), true);
+
+    let caller_project = project(&names.caller_account_name)
+        .file(
+            "Cargo.toml",
+            &dependent_account_cargo_toml(
+                &names.caller_account_name,
+                &names.caller_account_package,
+                &names.callee_account_package,
+                callee_project.root().as_path(),
+            ),
+        )
+        .file("src/lib.rs", caller_source)
+        .build();
+    let caller_package = compile_rust_package(caller_project.root(), true);
+
+    let note_project = project(&names.note_name)
+        .file(
+            "Cargo.toml",
+            &note_cargo_toml_for_dependency(
+                &names.note_name,
+                &names.note_package,
+                &names.caller_account_package,
+                caller_project.root().as_path(),
+            ),
+        )
+        .file("src/lib.rs", note_source)
+        .build();
+    let note_package = compile_rust_package(note_project.root(), true);
+
+    (callee_package, caller_package, note_package, callee_storage_slot)
+}
+
 /// Names derived from an FPI test function for the generated account and note projects.
 struct FpiTestProjectNames {
     account_name: String,
@@ -70,6 +121,38 @@ impl FpiTestProjectNames {
             account_name,
             note_name,
             account_package,
+            note_package,
+        }
+    }
+}
+
+/// Names derived from an FPI account-to-account test function.
+struct FpiAccountToAccountProjectNames {
+    callee_account_name: String,
+    caller_account_name: String,
+    note_name: String,
+    callee_account_package: String,
+    caller_account_package: String,
+    note_package: String,
+}
+
+impl FpiAccountToAccountProjectNames {
+    /// Builds Cargo crate names, WIT package names, and project paths from `test_name`.
+    fn new(test_name: &str) -> Self {
+        let name = test_name.replace('_', "-");
+        let callee_account_name = format!("{name}-callee-account");
+        let caller_account_name = format!("{name}-caller-account");
+        let note_name = format!("{name}-note");
+        let callee_account_package = format!("miden:{callee_account_name}");
+        let caller_account_package = format!("miden:{caller_account_name}");
+        let note_package = format!("miden:{note_name}");
+
+        Self {
+            callee_account_name,
+            caller_account_name,
+            note_name,
+            callee_account_package,
+            caller_account_package,
             note_package,
         }
     }
@@ -187,9 +270,12 @@ fn sanitize_slot_name_component(component: &str) -> String {
 
 /// Returns the generated account manifest used by an FPI test.
 fn account_cargo_toml(names: &FpiTestProjectNames) -> String {
+    account_cargo_toml_for(&names.account_name, &names.account_package)
+}
+
+/// Returns the generated account manifest for a package without FPI dependencies.
+fn account_cargo_toml_for(account_name: &str, account_package: &str) -> String {
     let sdk_path = sdk_crate_path();
-    let account_name = &names.account_name;
-    let account_package = &names.account_package;
     format!(
         r#"
 [package]
@@ -229,13 +315,50 @@ debug = false
     )
 }
 
+/// Returns the generated account manifest for a package with one FPI account dependency.
+fn dependent_account_cargo_toml(
+    account_name: &str,
+    account_package: &str,
+    dependency_package: &str,
+    dependency_root: &Path,
+) -> String {
+    let mut manifest = account_cargo_toml_for(account_name, account_package);
+    let dependency_wit_path = dependency_root.join("target/generated-wit");
+    manifest.push_str(&format!(
+        r#"
+[package.metadata.miden.dependencies]
+"{dependency_package}" = {{ path = "{dependency_root}" }}
+
+[package.metadata.component.target.dependencies]
+"{dependency_package}" = {{ path = "{dependency_wit_path}" }}
+"#,
+        dependency_package = dependency_package,
+        dependency_root = dependency_root.display(),
+        dependency_wit_path = dependency_wit_path.display(),
+    ));
+    manifest
+}
+
 /// Returns the generated caller note manifest used by an FPI test.
 fn note_cargo_toml(names: &FpiTestProjectNames, account_project_root: &Path) -> String {
+    note_cargo_toml_for_dependency(
+        &names.note_name,
+        &names.note_package,
+        &names.account_package,
+        account_project_root,
+    )
+}
+
+/// Returns the generated note manifest with one Miden dependency.
+fn note_cargo_toml_for_dependency(
+    note_name: &str,
+    note_package: &str,
+    dependency_package: &str,
+    dependency_root: &Path,
+) -> String {
     let sdk_path = sdk_crate_path();
-    let account_wit_path = account_project_root.join("target/generated-wit");
-    let account_package = &names.account_package;
-    let note_name = &names.note_name;
-    let note_package = &names.note_package;
+    let dependency_wit_path = dependency_root.join("target/generated-wit");
+
     format!(
         r#"
 [package]
@@ -257,10 +380,10 @@ project-kind = "note-script"
 package = "{note_package}"
 
 [package.metadata.miden.dependencies]
-"{account_package}" = {{ path = "{account_project_root}" }}
+"{dependency_package}" = {{ path = "{dependency_root}" }}
 
 [package.metadata.component.target.dependencies]
-"{account_package}" = {{ path = "{account_wit_path}" }}
+"{dependency_package}" = {{ path = "{dependency_wit_path}" }}
 
 [profile.release]
 opt-level = "z"
@@ -275,11 +398,11 @@ overflow-checks = false
 debug = false
 "#,
         sdk_path = sdk_path.display(),
-        account_package = account_package,
+        dependency_package = dependency_package,
         note_name = note_name,
         note_package = note_package,
-        account_project_root = account_project_root.display(),
-        account_wit_path = account_wit_path.display(),
+        dependency_root = dependency_root.display(),
+        dependency_wit_path = dependency_wit_path.display(),
     )
 }
 
