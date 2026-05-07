@@ -205,11 +205,6 @@ fn generate_fpi_lowering(
             flatten_types(&context, &import_func_ty.results).wrap_err_with(|| {
                 format!("failed to flatten FPI import results for `{core_func_path}`")
             })?;
-        if flattened_results.len() > FPI_EXEC_RESULTS {
-            return Err(midenc_session::diagnostics::Report::msg(format!(
-                "FPI import `{core_func_path}` returns more than {FPI_EXEC_RESULTS} felts"
-            )));
-        }
 
         results.truncate(flattened_results.len());
         let mut results_iter = results.into_iter();
@@ -331,6 +326,15 @@ fn validate_fpi_core_signature(
         return Err(midenc_session::diagnostics::Report::msg(format!(
             "FPI import `{core_func_path}` passes {procedure_input_count} procedure input felts, \
              but `execute_foreign_procedure` supports at most {FPI_EXEC_INPUTS}"
+        )));
+    }
+
+    let flattened_results = flatten_types(context, &import_func_ty.results)?;
+    if flattened_results.len() > FPI_EXEC_RESULTS {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "FPI import `{core_func_path}` returns {} result felts, but \
+             `execute_foreign_procedure` supports at most {FPI_EXEC_RESULTS}",
+            flattened_results.len()
         )));
     }
 
@@ -735,6 +739,59 @@ mod tests {
 
         assert!(
             message.contains("passes 17 procedure input felts")
+                && message.contains("`execute_foreign_procedure` supports at most 16"),
+            "unexpected error message: {message}"
+        );
+    }
+
+    #[test]
+    fn validate_fpi_core_signature_rejects_too_many_results() {
+        let context = Rc::new(Context::default());
+        let block = context.create_block_with_params(
+            (0..FPI_ABI_PREFIX_ARGS).map(|_| Type::Felt).chain([Type::I32]),
+        );
+        let args = block
+            .borrow()
+            .arguments()
+            .iter()
+            .take(FPI_ABI_PREFIX_ARGS)
+            .map(|arg| *arg as ValueRef)
+            .collect::<Vec<_>>();
+        let output_ptr = block.borrow().arguments()[FPI_ABI_PREFIX_ARGS] as ValueRef;
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            vec![Type::Felt; FPI_ABI_PREFIX_ARGS],
+            vec![Type::Felt; FPI_EXEC_RESULTS + 1],
+        );
+        let core_func_path = SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(Symbol::intern("miden")),
+            SymbolNameComponent::Component(Symbol::intern("too-many-results-account")),
+            SymbolNameComponent::Leaf(Symbol::intern("fpi-get-count-words")),
+        ]);
+        let core_func_sig = Signature::with_convention(
+            &context,
+            CallConv::Wasm,
+            vec![Type::Felt; FPI_ABI_PREFIX_ARGS + 1],
+            vec![],
+        );
+        let fpi_abi = LoweredFpiAbi {
+            args: FpiExecArgs::Direct(args),
+            output_ptr: Some(output_ptr),
+        };
+
+        let err = validate_fpi_core_signature(
+            &context,
+            &import_func_ty,
+            &core_func_path,
+            &core_func_sig,
+            &fpi_abi,
+        )
+        .expect_err("expected FPI validation to reject more than sixteen result felts");
+        let message = err.to_string();
+
+        assert!(
+            message.contains("returns 17 result felts")
                 && message.contains("`execute_foreign_procedure` supports at most 16"),
             "unexpected error message: {message}"
         );
