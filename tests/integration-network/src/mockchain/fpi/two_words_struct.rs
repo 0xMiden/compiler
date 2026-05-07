@@ -1,4 +1,4 @@
-//! Foreign procedure invocation tests for methods that accept two words and return a word record.
+//! Foreign procedure invocation tests for methods that accept and return word records.
 
 use std::sync::Arc;
 
@@ -28,7 +28,7 @@ use super::{
     common::build_fpi_test_packages,
 };
 
-/// Deploys a counter contract and consumes a note which reads two words through FPI.
+/// Deploys a counter contract and consumes a note which passes a word record through FPI.
 #[test]
 pub fn two_words_struct() {
     let (counter_package, caller_note_package, counter_storage_slot) =
@@ -158,12 +158,21 @@ fn assert_counter_storage_word_entries(
     }
 }
 
-/// Minimal counter account component source used by the two-word FPI test.
+/// Minimal counter account component source used by the word-record FPI test.
 const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
 use miden::{component, export_type, StorageMap, Word};
+
+/// Pair of storage keys passed through the FPI boundary.
+#[export_type]
+pub struct KeyPair {
+    /// First storage key to read.
+    pub first_key: Word,
+    /// Second storage key to read.
+    pub second_key: Word,
+}
 
 /// Pair of counter words returned through the FPI boundary.
 #[export_type]
@@ -184,11 +193,11 @@ struct CounterContract {
 
 #[component]
 impl CounterContract {
-    /// Returns the counter words stored under `first_key` and `second_key`.
-    pub fn get_count_pair_by_keys(&self, first_key: Word, second_key: Word) -> WordPair {
+    /// Returns the counter words stored under `keys`.
+    pub fn get_count_pair_by_keys(&self, keys: KeyPair) -> WordPair {
         WordPair {
-            first: self.count_map.get(first_key),
-            second: self.count_map.get(second_key),
+            first: self.count_map.get(keys.first_key),
+            second: self.count_map.get(keys.second_key),
         }
     }
 }
@@ -201,6 +210,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
+use crate::bindings::miden::two_words_struct_account::two_words_struct_account::KeyPair;
 use crate::bindings::TwoWordsStructAccount as CounterContract;
 
 /// Note script input containing the foreign counter account id.
@@ -212,7 +222,7 @@ struct CounterCaller {
 
 #[note]
 impl CounterCaller {
-    /// Checks that two `Word` arguments and a two-`Word` record cross the FPI boundary.
+    /// Checks that two `Word` values in one record and a two-`Word` record cross the FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
         let count_acc = CounterContract::from_account(self.counter_account_id);
@@ -221,7 +231,11 @@ impl CounterCaller {
         let expected_first = Word::new([felt!(901), felt!(802), felt!(703), felt!(604)]);
         let expected_second = Word::new([felt!(505), felt!(406), felt!(307), felt!(208)]);
 
-        let pair = count_acc.get_count_pair_by_keys(first_key, second_key);
+        let keys = KeyPair {
+            first_key,
+            second_key,
+        };
+        let pair = count_acc.get_count_pair_by_keys(keys);
 
         assert_word_eq(pair.first, expected_first);
         assert_word_eq(pair.second, expected_second);
