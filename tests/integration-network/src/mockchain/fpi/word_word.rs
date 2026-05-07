@@ -24,19 +24,20 @@ use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
 
 use super::{
-    super::support::{counter_storage_slot_name, execute_tx, note_script_root, to_core_felts},
+    super::support::{execute_tx, note_script_root, to_core_felts},
     common::build_fpi_test_packages,
 };
 
 /// Deploys a counter contract and consumes a note which reads it through `Word -> Word` FPI.
 #[test]
-pub fn counter_caller_note_reads_word_through_fpi_word_arg() {
-    let (counter_package, caller_note_package) =
-        build_fpi_test_packages("fpi-word-word", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
+pub fn word_word() {
+    let (counter_package, caller_note_package, counter_storage_slot) =
+        build_fpi_test_packages("word_word", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
 
     execute_word_word_counter_caller_note(
         counter_package,
         caller_note_package,
+        counter_storage_slot,
         word_word_storage_key(),
         expected_count_word(),
     );
@@ -46,10 +47,10 @@ pub fn counter_caller_note_reads_word_through_fpi_word_arg() {
 fn execute_word_word_counter_caller_note(
     counter_package: Arc<Package>,
     caller_note_package: Arc<Package>,
+    counter_storage_slot: StorageSlotName,
     counter_storage_key: Word,
     expected_count: Word,
 ) {
-    let counter_storage_slot = counter_storage_slot_name();
     let counter_component = {
         let mut init_storage_data = InitStorageData::default();
         init_storage_data
@@ -176,7 +177,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::CounterContract;
+use crate::bindings::WordWordAccount as CounterContract;
 
 /// Note script input containing the foreign counter account id.
 #[note]

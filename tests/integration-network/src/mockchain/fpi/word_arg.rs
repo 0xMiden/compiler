@@ -7,11 +7,17 @@ use super::common::{build_fpi_test_packages, execute_counter_caller_note};
 
 /// Deploys a counter contract and consumes a note which reads it through `Word -> Felt` FPI.
 #[test]
-pub fn counter_caller_note_reads_counter_through_fpi_word_arg() {
-    let (counter_package, caller_note_package) =
-        build_fpi_test_packages("fpi-word-arg", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
+pub fn word_arg() {
+    let (counter_package, caller_note_package, counter_storage_slot) =
+        build_fpi_test_packages("word_arg", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
 
-    execute_counter_caller_note(counter_package, caller_note_package, word_arg_storage_key(), 42);
+    execute_counter_caller_note(
+        counter_package,
+        caller_note_package,
+        counter_storage_slot,
+        word_arg_storage_key(),
+        42,
+    );
 }
 
 /// Returns the non-zero storage key used by the `Word` argument FPI test.
@@ -50,7 +56,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::CounterContract;
+use crate::bindings::WordArgAccount as CounterContract;
 
 /// Note script input containing the foreign counter account id.
 #[note]

@@ -24,22 +24,20 @@ use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
 
 use super::{
-    super::support::{counter_storage_slot_name, execute_tx, note_script_root, to_core_felts},
+    super::support::{execute_tx, note_script_root, to_core_felts},
     common::build_fpi_test_packages,
 };
 
 /// Deploys a counter contract and consumes a note which reads two words through FPI.
 #[test]
-pub fn counter_caller_note_reads_word_pair_through_fpi_two_word_args() {
-    let (counter_package, caller_note_package) = build_fpi_test_packages(
-        "fpi-two-words-struct",
-        COUNTER_CONTRACT_SOURCE,
-        COUNTER_CALLER_SOURCE,
-    );
+pub fn two_words_struct() {
+    let (counter_package, caller_note_package, counter_storage_slot) =
+        build_fpi_test_packages("two_words_struct", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
 
     execute_two_words_struct_counter_caller_note(
         counter_package,
         caller_note_package,
+        counter_storage_slot,
         [
             (first_storage_key(), expected_first_word()),
             (second_storage_key(), expected_second_word()),
@@ -51,9 +49,9 @@ pub fn counter_caller_note_reads_word_pair_through_fpi_two_word_args() {
 fn execute_two_words_struct_counter_caller_note(
     counter_package: Arc<Package>,
     caller_note_package: Arc<Package>,
+    counter_storage_slot: StorageSlotName,
     expected_entries: [(Word, Word); 2],
 ) {
-    let counter_storage_slot = counter_storage_slot_name();
     let counter_component = {
         let mut init_storage_data = InitStorageData::default();
         for (storage_key, expected_word) in expected_entries {
@@ -203,7 +201,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::CounterContract;
+use crate::bindings::TwoWordsStructAccount as CounterContract;
 
 /// Note script input containing the foreign counter account id.
 #[note]

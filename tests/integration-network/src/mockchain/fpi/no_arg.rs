@@ -7,13 +7,14 @@ use super::{
 
 /// Deploys a counter contract and consumes a note which reads it through no-arg FPI.
 #[test]
-pub fn counter_caller_note_reads_counter_through_fpi() {
-    let (counter_package, caller_note_package) =
-        build_fpi_test_packages("fpi-no-arg", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
+pub fn no_arg() {
+    let (counter_package, caller_note_package, counter_storage_slot) =
+        build_fpi_test_packages("no_arg", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
 
     execute_counter_caller_note(
         counter_package,
         caller_note_package,
+        counter_storage_slot,
         COUNTER_CONTRACT_STORAGE_KEY,
         42,
     );
@@ -51,7 +52,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::CounterContract;
+use crate::bindings::NoArgAccount as CounterContract;
 
 /// Note script input containing the foreign counter account id.
 #[note]
