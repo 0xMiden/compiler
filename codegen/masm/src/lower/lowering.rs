@@ -5,10 +5,16 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Felt, Immediate, Op, OpExt, Span, SymbolNameComponent, SymbolPath, SymbolTable, Type, Value,
-    ValueRange, ValueRef,
-    dialects::{builtin, debuginfo},
-    interner::symbols,
+    AddressSpace, CallConv, Felt, Immediate, Op, OpExt, PointerType, Span, SymbolNameComponent,
+    SymbolPath, SymbolTable, Type, Value, ValueRange, ValueRef,
+    dialects::{
+        builtin::{
+            self,
+            attributes::{Signature, U32Attr},
+        },
+        debuginfo,
+    },
+    interner::{Symbol, symbols},
     traits::{BinaryOp, Commutative},
 };
 use midenc_session::diagnostics::{Report, Severity, Spanned};
@@ -20,8 +26,11 @@ use crate::{
 };
 
 const EXECUTE_FOREIGN_PROCEDURE: &str = "execute_foreign_procedure";
+const EXECUTE_FOREIGN_PROCEDURE_INDIRECT: &str = "execute_foreign_procedure_indirect";
+const FPI_ABI_PREFIX_ARGS: usize = 6;
 const FPI_EXEC_TOTAL_INPUTS: usize = 22;
 const FPI_MAX_PADDED_ARGS: usize = 15;
+const FPI_FLATTENED_ARG_COUNT_ATTR: &str = "fpi.flattened_arg_count";
 
 /// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
 fn invocation_target_from_symbol_path(
@@ -59,6 +68,54 @@ fn is_execute_foreign_procedure_path(path: &SymbolPath) -> bool {
     )
 }
 
+/// Returns true for the compiler-internal indirect FPI executor path.
+fn is_execute_foreign_procedure_indirect_path(path: &SymbolPath) -> bool {
+    let mut components = path.components().peekable();
+    components.next_if_eq(&SymbolNameComponent::Root);
+
+    matches!(
+        (
+            components.next().map(|component| component.as_symbol_name()),
+            components.next().map(|component| component.as_symbol_name()),
+            components.next().map(|component| component.as_symbol_name()),
+            components.next_if(|component| component.is_leaf()).map(|component| component.as_symbol_name()),
+            components.next(),
+        ),
+        (
+            Some(symbols::Miden),
+            Some(symbols::Protocol),
+            Some(symbols::Tx),
+            Some(function),
+            None,
+        ) if function.as_str() == EXECUTE_FOREIGN_PROCEDURE_INDIRECT
+    )
+}
+
+/// Returns the flattened argument count attached to a compiler-internal indirect FPI call.
+fn indirect_fpi_input_count(op: &hir::Exec) -> Result<usize, Report> {
+    let attr = op
+        .as_operation()
+        .get_typed_attribute::<U32Attr>(FPI_FLATTENED_ARG_COUNT_ATTR)
+        .ok_or_else(|| {
+            Report::msg(format!(
+                "`{EXECUTE_FOREIGN_PROCEDURE_INDIRECT}` call is missing \
+                 `{FPI_FLATTENED_ARG_COUNT_ATTR}`"
+            ))
+        })?;
+    Ok(*attr.borrow().as_value() as usize)
+}
+
+/// Returns the protocol executor path used after expanding an indirect FPI argument tuple.
+fn execute_foreign_procedure_path() -> SymbolPath {
+    SymbolPath::from_iter([
+        SymbolNameComponent::Root,
+        SymbolNameComponent::Component(symbols::Miden),
+        SymbolNameComponent::Component(symbols::Protocol),
+        SymbolNameComponent::Component(symbols::Tx),
+        SymbolNameComponent::Leaf(Symbol::intern(EXECUTE_FOREIGN_PROCEDURE)),
+    ])
+}
+
 fn append_fpi_padding(
     emitter: &mut BlockEmitter<'_>,
     actual_arg_count: usize,
@@ -90,6 +147,63 @@ fn append_fpi_padding(
             inst_emitter.movup(actual_arg_count as u8, span);
         }
     }
+
+    Ok(())
+}
+
+/// Emits MASM for an FPI call whose canonical ABI lowered the argument list to one pointer.
+fn emit_execute_foreign_procedure_indirect(
+    op: &hir::Exec,
+    emitter: &mut BlockEmitter<'_>,
+    flattened_arg_count: usize,
+) -> Result<(), Report> {
+    if !(FPI_ABI_PREFIX_ARGS..=FPI_EXEC_TOTAL_INPUTS).contains(&flattened_arg_count) {
+        return Err(Report::msg(format!(
+            "`{EXECUTE_FOREIGN_PROCEDURE}` indirect lowering received {flattened_arg_count} \
+             flattened operands, but accepts between {FPI_ABI_PREFIX_ARGS} and \
+             {FPI_EXEC_TOTAL_INPUTS}"
+        )));
+    }
+
+    let span = op.span();
+    let padding = FPI_EXEC_TOTAL_INPUTS - flattened_arg_count;
+    let ptr_ty = Type::from(PointerType::new_with_address_space(Type::Felt, AddressSpace::Byte));
+    let exec_path = execute_foreign_procedure_path();
+    let callee = invocation_target_from_symbol_path(&exec_path, span);
+
+    let mut inst_emitter = emitter.inst_emitter(op.as_operation());
+
+    for _ in 0..padding {
+        inst_emitter.literal(Immediate::Felt(Felt::ZERO), span);
+        inst_emitter.swap(1, span);
+    }
+
+    // The Rust wrapper stores the account id as prefix then suffix, while the protocol executor
+    // expects suffix then prefix. The rest of the flattened arguments are already in ABI order.
+    let fpi_arg_order = core::iter::once(1)
+        .chain(core::iter::once(0))
+        .chain(2..flattened_arg_count)
+        .collect::<Vec<_>>();
+    for index in fpi_arg_order.into_iter().rev() {
+        inst_emitter.dup(0, span);
+        if index > 0 {
+            let byte_offset = i32::try_from(index * 4)
+                .expect("FPI canonical ABI tuple byte offset must fit in i32");
+            inst_emitter.add_imm(Immediate::I32(byte_offset), midenc_hir::Overflow::Wrapping, span);
+        }
+        inst_emitter.inttoptr(&ptr_ty, span);
+        inst_emitter.load(Type::Felt, span);
+        inst_emitter.swap(1, span);
+    }
+    OpEmitter::drop(&mut inst_emitter, span);
+
+    let signature = Signature::with_convention(
+        &inst_emitter.context_rc(),
+        CallConv::Wasm,
+        vec![Type::Felt; FPI_EXEC_TOTAL_INPUTS],
+        vec![Type::Felt; FPI_EXEC_TOTAL_INPUTS - FPI_ABI_PREFIX_ARGS],
+    );
+    inst_emitter.exec(callee, &signature, span);
 
     Ok(())
 }
@@ -919,6 +1033,11 @@ impl HirLowering for hir::Exec {
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use midenc_hir::{CallOpInterface, CallableOpInterface};
+
+        if is_execute_foreign_procedure_indirect_path(self.callee().path()) {
+            let flattened_arg_count = indirect_fpi_input_count(self)?;
+            return emit_execute_foreign_procedure_indirect(self, emitter, flattened_arg_count);
+        }
 
         let callee = self.resolve().ok_or_else(|| {
             let context = self.as_operation().context();
