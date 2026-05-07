@@ -322,10 +322,15 @@ fn validate_fpi_core_signature(
         } => *flattened_arg_count,
     };
     let procedure_input_count = flattened_arg_count.saturating_sub(FPI_ABI_PREFIX_ARGS);
-    if flattened_arg_count < FPI_ABI_PREFIX_ARGS || procedure_input_count > FPI_EXEC_INPUTS {
+    if flattened_arg_count < FPI_ABI_PREFIX_ARGS {
         return Err(midenc_session::diagnostics::Report::msg(format!(
-            "FPI import `{core_func_path}` must pass account id, procedure root, and at most \
-             {FPI_EXEC_INPUTS} procedure input felts"
+            "FPI import `{core_func_path}` must pass account id and procedure root"
+        )));
+    }
+    if procedure_input_count > FPI_EXEC_INPUTS {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "FPI import `{core_func_path}` passes {procedure_input_count} procedure input felts, \
+             but `execute_foreign_procedure` supports at most {FPI_EXEC_INPUTS}"
         )));
     }
 
@@ -677,4 +682,61 @@ fn generate_direct_lowering(
         function_ref: core_func_ref,
         signature: core_func_sig,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::rc::Rc;
+
+    use midenc_hir::Context;
+
+    use super::*;
+
+    #[test]
+    fn validate_fpi_core_signature_rejects_too_many_procedure_inputs() {
+        let context = Rc::new(Context::default());
+        let arg_block = context.create_block_with_params([Type::I32]);
+        let arg_ptr = arg_block.borrow().arguments()[0] as ValueRef;
+        let flattened_arg_count = FPI_ABI_PREFIX_ARGS + FPI_EXEC_INPUTS + 1;
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            vec![Type::Felt; flattened_arg_count],
+            vec![Type::Felt],
+        );
+        let core_func_path = SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(Symbol::intern("miden")),
+            SymbolNameComponent::Component(Symbol::intern("too-many-args-account")),
+            SymbolNameComponent::Leaf(Symbol::intern("fpi-get-count-sum-by-keys")),
+        ]);
+        let core_func_sig = Signature::with_convention(
+            &context,
+            CallConv::Wasm,
+            vec![Type::I32],
+            vec![Type::Felt; FPI_EXEC_RESULTS],
+        );
+        let fpi_abi = LoweredFpiAbi {
+            args: FpiExecArgs::Indirect {
+                arg_ptr,
+                flattened_arg_count,
+            },
+            output_ptr: None,
+        };
+
+        let err = validate_fpi_core_signature(
+            &context,
+            &import_func_ty,
+            &core_func_path,
+            &core_func_sig,
+            &fpi_abi,
+        )
+        .expect_err("expected FPI validation to reject more than sixteen procedure input felts");
+        let message = err.to_string();
+
+        assert!(
+            message.contains("passes 17 procedure input felts")
+                && message.contains("`execute_foreign_procedure` supports at most 16"),
+            "unexpected error message: {message}"
+        );
+    }
 }
