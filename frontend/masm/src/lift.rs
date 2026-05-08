@@ -668,7 +668,7 @@ impl<'a> ProcedureLifter<'a> {
             U32AssertWWithError(_) => unsupported_instruction(inst, span),
             U32Test => unsupported_instruction(inst, span),
             U32TestW => unsupported_instruction(inst, span),
-            U32Split => unsupported_instruction(inst, span),
+            U32Split => self.u32_split(span, builder),
             Assert => {
                 let value = self.pop(span)?;
                 builder.assert(value.value, span)?;
@@ -1227,6 +1227,19 @@ impl<'a> ProcedureLifter<'a> {
             let value = self.stack[index].value;
             self.stack[index].value = self.cast(builder, value, Type::U32, span)?;
         }
+        Ok(())
+    }
+
+    fn u32_split(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let value = self.pop(span)?;
+        let value = self.cast(builder, value.value, Type::U64, span)?;
+        let (high, low) = builder.split2(value, Type::U32, span)?;
+        self.push_value(high, span);
+        self.push_value(low, span);
         Ok(())
     }
 

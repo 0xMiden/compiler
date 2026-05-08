@@ -204,6 +204,7 @@ mod tests {
     use miden_project::ProjectDependencyGraphBuilder;
     use midenc_dialect_arith::{
         And as ArithAnd, Constant as ArithConstant, Eq as ArithEq, Incr as ArithIncr,
+        Split as ArithSplit,
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
@@ -359,6 +360,7 @@ end
             instruction_case("u32assert", &["felt"], &["u32"], "u32assert"),
             instruction_case("u32assert2", &["felt", "felt"], &["u32", "u32"], "u32assert2"),
             instruction_case("u32assertw", &felt_types(4), &u32_types(4), "u32assertw"),
+            instruction_case("u32split", &["felt"], &["u32", "u32"], "u32split"),
             instruction_case("u32wrapping_add", &["u32", "u32"], &["u32"], "u32wrapping_add"),
             instruction_case("u32wrapping_add_imm", &["u32"], &["u32"], "u32wrapping_add.2"),
             instruction_case(
@@ -544,7 +546,6 @@ end
             unsupported_instruction_case("u32assertw_err", 0, "u32assertw.err=\"boom\""),
             unsupported_instruction_case("u32test", 0, "u32test"),
             unsupported_instruction_case("u32testw", 0, "u32testw"),
-            unsupported_instruction_case("u32split", 0, "u32split"),
             unsupported_instruction_case("ext2add", 0, "ext2add"),
             unsupported_instruction_case("u32widening_add", 0, "u32widening_add"),
             unsupported_instruction_case("u32overflowing_add3", 0, "u32overflowing_add3"),
@@ -675,6 +676,33 @@ end
         assert!(signature.params().iter().all(|param| param.ty == Type::U32));
         assert_eq!(signature.results().len(), 1);
         assert_eq!(signature.results()[0].ty, Type::U32);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_u32split_signature() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc split
+    u32split
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let function = find_function(output.module, "split");
+        let signature = function.borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::Felt);
+        assert_eq!(signature.results().len(), 2);
+        assert_eq!(signature.results()[0].ty, Type::U32);
+        assert_eq!(signature.results()[1].ty, Type::U32);
 
         Ok(())
     }
@@ -1160,6 +1188,27 @@ end
 
         let function = find_function(output.module, "assert_word");
         assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_u32split_to_arith_split() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc split(value: felt) -> (u32, u32)
+    u32split
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "split");
+        assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 1);
+        assert_eq!(top_level_op_count::<ArithSplit>(function), 1);
 
         Ok(())
     }

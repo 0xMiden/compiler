@@ -303,6 +303,12 @@ impl<'a> InferState<'a> {
             U32Cast | U32Assert => self.constrain_top_n(1, Type::U32, span),
             U32Assert2 => self.constrain_top_n(2, Type::U32, span),
             U32AssertW => self.constrain_top_n(4, Type::U32, span),
+            U32Split => {
+                self.pop_with_type(Type::Felt, span)?;
+                self.push(Type::U32);
+                self.push(Type::U32);
+                Ok(())
+            }
             Assert => {
                 self.pop_with_type(Type::I1, span)?;
                 Ok(())
