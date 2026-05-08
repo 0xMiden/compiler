@@ -319,6 +319,10 @@ impl<'a> InferState<'a> {
                 self.push(Type::U32);
                 Ok(())
             }
+            CSwap => self.conditional_swap(1, span),
+            CSwapW => self.conditional_swap(4, span),
+            CDrop => self.conditional_drop(1, span),
+            CDropW => self.conditional_drop(4, span),
             Assert => {
                 self.pop_with_type(Type::I1, span)?;
                 Ok(())
@@ -467,6 +471,31 @@ impl<'a> InferState<'a> {
         Ok(())
     }
 
+    fn conditional_drop(&mut self, chunk_len: usize, span: SourceSpan) -> Result<()> {
+        self.pop_with_type(Type::I1, span)?;
+        let if_true = self.pop_chunk(chunk_len, span);
+        let if_false = self.pop_chunk(chunk_len, span);
+        for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
+            self.stack.push(merge_values(if_false, if_true));
+        }
+        Ok(())
+    }
+
+    fn conditional_swap(&mut self, chunk_len: usize, span: SourceSpan) -> Result<()> {
+        self.pop_with_type(Type::I1, span)?;
+        let if_true = self.pop_chunk(chunk_len, span);
+        let if_false = self.pop_chunk(chunk_len, span);
+        let mut lower = Vec::with_capacity(chunk_len);
+        let mut upper = Vec::with_capacity(chunk_len);
+        for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
+            lower.push(merge_values(if_false.clone(), if_true.clone()));
+            upper.push(merge_values(if_true, if_false));
+        }
+        self.stack.extend(lower);
+        self.stack.extend(upper);
+        Ok(())
+    }
+
     fn invoke(&mut self, target: &InvocationTarget, span: SourceSpan) -> Result<()> {
         let signature = match target {
             InvocationTarget::Symbol(name) => {
@@ -521,6 +550,11 @@ impl<'a> InferState<'a> {
             self.pop_with_type(ty.clone(), span)?;
         }
         Ok(())
+    }
+
+    fn pop_chunk(&mut self, chunk_len: usize, span: SourceSpan) -> Vec<AbstractValue> {
+        self.ensure_depth(chunk_len - 1, span);
+        self.stack.split_off(self.stack.len() - chunk_len)
     }
 
     fn constrain_top_n(&mut self, n: usize, ty: Type, span: SourceSpan) -> Result<()> {
@@ -682,6 +716,11 @@ fn merge_stacks(lhs: Vec<AbstractValue>, rhs: Vec<AbstractValue>) -> Vec<Abstrac
             lhs
         })
         .collect()
+}
+
+fn merge_values(lhs: AbstractValue, rhs: AbstractValue) -> AbstractValue {
+    lhs.merge_type_from(&rhs);
+    lhs
 }
 
 fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {

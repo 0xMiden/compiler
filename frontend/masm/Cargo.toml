@@ -17,6 +17,7 @@ miden-assembly-syntax = { workspace = true, features = ["std"] }
 miden-mast-package.workspace = true
 miden-project = { workspace = true, features = ["std", "serde"] }
 midenc-dialect-arith.workspace = true
+midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-hir.workspace = true

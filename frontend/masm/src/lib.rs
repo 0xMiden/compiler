@@ -206,6 +206,7 @@ mod tests {
         And as ArithAnd, Constant as ArithConstant, Eq as ArithEq, Incr as ArithIncr,
         Split as ArithSplit,
     };
+    use midenc_dialect_cf::Select as CfSelect;
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
         CallConv, FunctionType, SymbolName, SymbolTable, Type,
@@ -368,6 +369,10 @@ end
                 "u32testw",
             ),
             instruction_case("u32split", &["felt"], &["u32", "u32"], "u32split"),
+            instruction_case("cdrop", &["i1", "felt", "felt"], &["felt"], "cdrop"),
+            instruction_case("cswap", &["i1", "felt", "felt"], &["felt", "felt"], "cswap"),
+            instruction_case("cdropw", &felt_word_select_params(), &felt_types(4), "cdropw"),
+            instruction_case("cswapw", &felt_word_select_params(), &felt_types(8), "cswapw"),
             instruction_case("u32wrapping_add", &["u32", "u32"], &["u32"], "u32wrapping_add"),
             instruction_case("u32wrapping_add_imm", &["u32"], &["u32"], "u32wrapping_add.2"),
             instruction_case(
@@ -555,8 +560,6 @@ end
             unsupported_instruction_case("u32widening_add", 0, "u32widening_add"),
             unsupported_instruction_case("u32overflowing_add3", 0, "u32overflowing_add3"),
             unsupported_instruction_case("u32widening_mul", 0, "u32widening_mul"),
-            unsupported_instruction_case("cswap", 0, "cswap"),
-            unsupported_instruction_case("cdrop", 0, "cdrop"),
             unsupported_instruction_case("locaddr", 1, "locaddr.0"),
             unsupported_instruction_case("sdepth", 0, "sdepth"),
             unsupported_instruction_case("caller", 0, "caller"),
@@ -747,6 +750,68 @@ end
         assert_eq!(word_signature.results().len(), 5);
         assert_eq!(word_signature.results()[0].ty, Type::I1);
         assert!(word_signature.results()[1..].iter().all(|result| result.ty == Type::Felt));
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_conditional_stack_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc choose
+    cdrop
+end
+
+pub proc swap
+    cswap
+end
+
+pub proc choose_word
+    cdropw
+end
+
+pub proc swap_word
+    cswapw
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let choose_signature =
+            find_function(output.module, "choose").borrow().get_signature().clone();
+        assert_eq!(choose_signature.params().len(), 3);
+        assert_eq!(choose_signature.params()[0].ty, Type::I1);
+        assert!(choose_signature.params()[1..].iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(choose_signature.results().len(), 1);
+        assert_eq!(choose_signature.results()[0].ty, Type::Felt);
+
+        let swap_signature = find_function(output.module, "swap").borrow().get_signature().clone();
+        assert_eq!(swap_signature.params().len(), 3);
+        assert_eq!(swap_signature.params()[0].ty, Type::I1);
+        assert!(swap_signature.params()[1..].iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(swap_signature.results().len(), 2);
+        assert!(swap_signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        let choose_word_signature =
+            find_function(output.module, "choose_word").borrow().get_signature().clone();
+        assert_eq!(choose_word_signature.params().len(), 9);
+        assert_eq!(choose_word_signature.params()[0].ty, Type::I1);
+        assert!(choose_word_signature.params()[1..].iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(choose_word_signature.results().len(), 4);
+        assert!(choose_word_signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        let swap_word_signature =
+            find_function(output.module, "swap_word").borrow().get_signature().clone();
+        assert_eq!(swap_word_signature.params().len(), 9);
+        assert_eq!(swap_word_signature.params()[0].ty, Type::I1);
+        assert!(swap_word_signature.params()[1..].iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(swap_word_signature.results().len(), 8);
+        assert!(swap_word_signature.results().iter().all(|result| result.ty == Type::Felt));
 
         Ok(())
     }
@@ -1303,6 +1368,48 @@ end
     }
 
     #[test]
+    fn lifts_conditional_stack_ops_to_cf_selects() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc choose(cond: i1, b: felt, a: felt) -> felt
+    cdrop
+end
+
+pub proc swap(cond: i1, b: felt, a: felt) -> (felt, felt)
+    cswap
+end
+
+pub proc choose_word(
+    cond: i1,
+    b0: felt, b1: felt, b2: felt, b3: felt,
+    a0: felt, a1: felt, a2: felt, a3: felt
+) -> (felt, felt, felt, felt)
+    cdropw
+end
+
+pub proc swap_word(
+    cond: i1,
+    b0: felt, b1: felt, b2: felt, b3: felt,
+    a0: felt, a1: felt, a2: felt, a3: felt
+) -> (felt, felt, felt, felt, felt, felt, felt, felt)
+    cswapw
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        assert_eq!(top_level_op_count::<CfSelect>(find_function(output.module, "choose")), 1);
+        assert_eq!(top_level_op_count::<CfSelect>(find_function(output.module, "swap")), 2);
+        assert_eq!(top_level_op_count::<CfSelect>(find_function(output.module, "choose_word")), 4);
+        assert_eq!(top_level_op_count::<CfSelect>(find_function(output.module, "swap_word")), 8);
+
+        Ok(())
+    }
+
+    #[test]
     fn rejects_if_branch_stack_shape_mismatch() {
         let context = Rc::new(Context::default());
         let result = disassemble_source(
@@ -1405,6 +1512,13 @@ end
 
     fn felt_types(count: usize) -> Vec<&'static str> {
         vec!["felt"; count]
+    }
+
+    fn felt_word_select_params() -> Vec<&'static str> {
+        let mut params = Vec::with_capacity(9);
+        params.push("i1");
+        params.extend(felt_types(8));
+        params
     }
 
     fn u32_types(count: usize) -> Vec<&'static str> {

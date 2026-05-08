@@ -3596,6 +3596,7 @@ dependencies = [
  "miden-package-registry",
  "miden-project",
  "midenc-dialect-arith",
+ "midenc-dialect-cf",
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-hir",

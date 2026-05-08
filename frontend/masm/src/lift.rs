@@ -7,6 +7,7 @@ use miden_assembly_syntax::{
     parser::{IntValue, PushValue},
 };
 use midenc_dialect_arith::ArithOpBuilder;
+use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
@@ -669,6 +670,10 @@ impl<'a> ProcedureLifter<'a> {
             U32Test => self.u32_test(span, builder),
             U32TestW => self.u32_testw(span, builder),
             U32Split => self.u32_split(span, builder),
+            CSwap => self.conditional_swap(1, span, builder),
+            CSwapW => self.conditional_swap(4, span, builder),
+            CDrop => self.conditional_drop(1, span, builder),
+            CDropW => self.conditional_drop(4, span, builder),
             Assert => {
                 let value = self.pop(span)?;
                 builder.assert(value.value, span)?;
@@ -1215,6 +1220,66 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn conditional_drop(
+        &mut self,
+        chunk_len: usize,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let cond = self.pop_condition(span, builder)?;
+        let if_true = self.pop_chunk(chunk_len, span)?;
+        let if_false = self.pop_chunk(chunk_len, span)?;
+        for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
+            let result_ty = if_false.value.borrow().ty().clone();
+            let selected =
+                self.select_as_type(builder, cond, if_true.value, if_false.value, result_ty, span)?;
+            self.push_value(selected, span);
+        }
+        Ok(())
+    }
+
+    fn conditional_swap(
+        &mut self,
+        chunk_len: usize,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let cond = self.pop_condition(span, builder)?;
+        let if_true = self.pop_chunk(chunk_len, span)?;
+        let if_false = self.pop_chunk(chunk_len, span)?;
+
+        let mut lower = Vec::with_capacity(chunk_len);
+        let mut upper = Vec::with_capacity(chunk_len);
+        for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
+            let lower_ty = if_false.value.borrow().ty().clone();
+            let upper_ty = if_true.value.borrow().ty().clone();
+            lower.push(self.select_as_type(
+                builder,
+                cond,
+                if_true.value,
+                if_false.value,
+                lower_ty,
+                span,
+            )?);
+            upper.push(self.select_as_type(
+                builder,
+                cond,
+                if_false.value,
+                if_true.value,
+                upper_ty,
+                span,
+            )?);
+        }
+
+        for value in lower {
+            self.push_value(value, span);
+        }
+        for value in upper {
+            self.push_value(value, span);
+        }
+        Ok(())
+    }
+
     fn u32_assert_n(
         &mut self,
         n: usize,
@@ -1287,6 +1352,29 @@ impl<'a> ProcedureLifter<'a> {
         let (high, _low) = builder.split2(value, Type::U32, span)?;
         let zero = builder.u32(0, span);
         builder.eq(high, zero, span).map_err(Into::into)
+    }
+
+    fn pop_condition(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<ValueRef> {
+        let cond = self.pop(span)?;
+        self.cast(builder, cond.value, Type::I1, span)
+    }
+
+    fn select_as_type(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        cond: ValueRef,
+        if_true: ValueRef,
+        if_false: ValueRef,
+        result_ty: Type,
+        span: SourceSpan,
+    ) -> Result<ValueRef> {
+        let if_true = self.cast(builder, if_true, result_ty.clone(), span)?;
+        let if_false = self.cast(builder, if_false, result_ty, span)?;
+        builder.select(cond, if_true, if_false, span).map_err(Into::into)
     }
 
     fn cast_stack_to_types(
@@ -1482,8 +1570,12 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn pop_word(&mut self, span: SourceSpan) -> Result<Vec<StackValue>> {
-        self.require_depth(3, span)?;
-        Ok(self.stack.split_off(self.stack.len() - 4))
+        self.pop_chunk(4, span)
+    }
+
+    fn pop_chunk(&mut self, chunk_len: usize, span: SourceSpan) -> Result<Vec<StackValue>> {
+        self.require_depth(chunk_len - 1, span)?;
+        Ok(self.stack.split_off(self.stack.len() - chunk_len))
     }
 
     fn index_from_top(&self, depth: usize, span: SourceSpan) -> Result<usize> {
