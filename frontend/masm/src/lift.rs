@@ -666,8 +666,8 @@ impl<'a> ProcedureLifter<'a> {
             U32Assert2WithError(_) => unsupported_instruction(inst, span),
             U32AssertW => self.u32_assert_n(4, span, builder),
             U32AssertWWithError(_) => unsupported_instruction(inst, span),
-            U32Test => unsupported_instruction(inst, span),
-            U32TestW => unsupported_instruction(inst, span),
+            U32Test => self.u32_test(span, builder),
+            U32TestW => self.u32_testw(span, builder),
             U32Split => self.u32_split(span, builder),
             Assert => {
                 let value = self.pop(span)?;
@@ -1230,6 +1230,40 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn u32_test(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        self.require_depth(0, span)?;
+        let value = self.stack.last().unwrap().value;
+        let in_range = self.u32_range_check(value, span, builder)?;
+        self.push_value(in_range, span);
+        Ok(())
+    }
+
+    fn u32_testw(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        self.require_depth(3, span)?;
+        let start = self.stack.len() - 4;
+        let values: Vec<_> = self.stack[start..].iter().map(|value| value.value).collect();
+        let mut result = None;
+        for value in values {
+            let in_range = self.u32_range_check(value, span, builder)?;
+            result = Some(match result {
+                Some(result) => builder.and(result, in_range, span)?,
+                None => in_range,
+            });
+        }
+        let result = result
+            .ok_or_else(|| error::error(format!("u32testw requires word operands at {span:?}")))?;
+        self.push_value(result, span);
+        Ok(())
+    }
+
     fn u32_split(
         &mut self,
         span: SourceSpan,
@@ -1241,6 +1275,18 @@ impl<'a> ProcedureLifter<'a> {
         self.push_value(high, span);
         self.push_value(low, span);
         Ok(())
+    }
+
+    fn u32_range_check(
+        &mut self,
+        value: ValueRef,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<ValueRef> {
+        let value = self.cast(builder, value, Type::U64, span)?;
+        let (high, _low) = builder.split2(value, Type::U32, span)?;
+        let zero = builder.u32(0, span);
+        builder.eq(high, zero, span).map_err(Into::into)
     }
 
     fn cast_stack_to_types(

@@ -267,7 +267,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported(value: u32) -> u32
-    u32test
+    u32widening_add
 end
 "#,
             "test",
@@ -281,7 +281,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("not supported during disassembly"));
-        assert!(err.contains("U32Test"));
+        assert!(err.contains("U32WideningAdd"));
     }
 
     #[test]
@@ -290,7 +290,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported
-    u32test
+    u32widening_add
 end
 "#,
             "test",
@@ -306,7 +306,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("signature inference is not implemented"));
-        assert!(err.contains("U32Test"));
+        assert!(err.contains("U32WideningAdd"));
     }
 
     #[test]
@@ -360,6 +360,13 @@ end
             instruction_case("u32assert", &["felt"], &["u32"], "u32assert"),
             instruction_case("u32assert2", &["felt", "felt"], &["u32", "u32"], "u32assert2"),
             instruction_case("u32assertw", &felt_types(4), &u32_types(4), "u32assertw"),
+            instruction_case("u32test", &["felt"], &["i1", "felt"], "u32test"),
+            instruction_case(
+                "u32testw",
+                &felt_types(4),
+                &["i1", "felt", "felt", "felt", "felt"],
+                "u32testw",
+            ),
             instruction_case("u32split", &["felt"], &["u32", "u32"], "u32split"),
             instruction_case("u32wrapping_add", &["u32", "u32"], &["u32"], "u32wrapping_add"),
             instruction_case("u32wrapping_add_imm", &["u32"], &["u32"], "u32wrapping_add.2"),
@@ -544,8 +551,6 @@ end
             unsupported_instruction_case("u32assert_err", 0, "u32assert.err=\"boom\""),
             unsupported_instruction_case("u32assert2_err", 0, "u32assert2.err=\"boom\""),
             unsupported_instruction_case("u32assertw_err", 0, "u32assertw.err=\"boom\""),
-            unsupported_instruction_case("u32test", 0, "u32test"),
-            unsupported_instruction_case("u32testw", 0, "u32testw"),
             unsupported_instruction_case("ext2add", 0, "ext2add"),
             unsupported_instruction_case("u32widening_add", 0, "u32widening_add"),
             unsupported_instruction_case("u32overflowing_add3", 0, "u32overflowing_add3"),
@@ -703,6 +708,45 @@ end
         assert_eq!(signature.results().len(), 2);
         assert_eq!(signature.results()[0].ty, Type::U32);
         assert_eq!(signature.results()[1].ty, Type::U32);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_u32test_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc test_one
+    u32test
+end
+
+pub proc test_word
+    u32testw
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let one_signature =
+            find_function(output.module, "test_one").borrow().get_signature().clone();
+        assert_eq!(one_signature.params().len(), 1);
+        assert_eq!(one_signature.params()[0].ty, Type::Felt);
+        assert_eq!(one_signature.results().len(), 2);
+        assert_eq!(one_signature.results()[0].ty, Type::I1);
+        assert_eq!(one_signature.results()[1].ty, Type::Felt);
+
+        let word_signature =
+            find_function(output.module, "test_word").borrow().get_signature().clone();
+        assert_eq!(word_signature.params().len(), 4);
+        assert!(word_signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(word_signature.results().len(), 5);
+        assert_eq!(word_signature.results()[0].ty, Type::I1);
+        assert!(word_signature.results()[1..].iter().all(|result| result.ty == Type::Felt));
 
         Ok(())
     }
@@ -1209,6 +1253,51 @@ end
         let function = find_function(output.module, "split");
         assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 1);
         assert_eq!(top_level_op_count::<ArithSplit>(function), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_u32test_to_range_check() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc test(value: felt) -> (i1, felt)
+    u32test
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "test");
+        assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 1);
+        assert_eq!(top_level_op_count::<ArithSplit>(function), 1);
+        assert_eq!(top_level_op_count::<ArithEq>(function), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_u32testw_to_range_checks() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc testw(a: felt, b: felt, c: felt, d: felt) -> (i1, felt, felt, felt, felt)
+    u32testw
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "testw");
+        assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 4);
+        assert_eq!(top_level_op_count::<ArithSplit>(function), 4);
+        assert_eq!(top_level_op_count::<ArithEq>(function), 4);
+        assert_eq!(top_level_op_count::<ArithAnd>(function), 3);
 
         Ok(())
     }
