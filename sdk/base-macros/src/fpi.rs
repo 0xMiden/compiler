@@ -552,7 +552,6 @@ fn resolve_dependency_package_path(dependency: &MidenDependency) -> syn::Result<
 /// Returns candidate output directories where a dependency `.masp` may have been written.
 fn dependency_output_dirs(dependency: &MidenDependency, profiles: &[String]) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    push_profile_dirs(&mut dirs, dependency.root.join("target"), profiles);
 
     if let Ok(target_dir) = env::var("CARGO_TARGET_DIR") {
         push_profile_dirs(&mut dirs, PathBuf::from(target_dir), profiles);
@@ -563,6 +562,11 @@ fn dependency_output_dirs(dependency: &MidenDependency, profiles: &[String]) -> 
             push_profile_dirs(&mut dirs, ancestor.to_path_buf(), profiles);
         }
     }
+
+    // When Cargo builds a dependency with `CARGO_TARGET_DIR` set, `cargo miden build` writes the
+    // fresh `.masp` there. Keep the dependency-local target as a fallback so stale restored
+    // artifacts cannot shadow the package that was just built for this compilation.
+    push_profile_dirs(&mut dirs, dependency.root.join("target"), profiles);
 
     dirs
 }
