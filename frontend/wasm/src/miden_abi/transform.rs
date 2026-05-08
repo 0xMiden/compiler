@@ -8,16 +8,6 @@ use midenc_hir::{
 use super::{stdlib, tx_kernel};
 use crate::module::function_builder_ext::FunctionBuilderExt;
 
-/// Returns a synthetic SourceSpan for compiler-generated code.
-///
-/// This uses SourceSpan::SYNTHETIC from miden-debug-types which is identified
-/// by having an unknown source_id and both start and end set to u32::MAX.
-/// This differentiates it from UNKNOWN spans (which have start and end at 0)
-/// and indicates the code doesn't correspond to any specific user source location.
-fn synthetic_span() -> SourceSpan {
-    SourceSpan::SYNTHETIC
-}
-
 /// The strategy to use for transforming a function call
 enum TransformStrategy {
     /// The Miden ABI function returns a length and a pointer and we only want the length
@@ -340,7 +330,7 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     // Use synthetic span for all compiler-generated ABI transformation operations
     // These operations are part of the return-via-pointer calling convention
     // and don't correspond to any specific user source code
-    let span = synthetic_span();
+    let span = SourceSpan::SYNTHETIC;
     let ptr_u32 = builder.bitcast(ptr_arg, Type::U32, span).expect("failed bitcast to U32");
 
     let result_ty = midenc_hir::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone()));

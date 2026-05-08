@@ -365,7 +365,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         // but reference the embedded module's code. We need to:
         // 1. Copy the DWARF data to the module's debuginfo
         // 2. Store the module's base offset for address translation
-        // TODO: Add test for this!!
         if let Some(first_module) = self.static_modules.values_mut().next() {
             // Only inject if DWARF was actually parsed
             if !self.component_debuginfo.dwarf.debug_info.reader().is_empty() {
@@ -938,7 +937,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
     /// Parses a DWARF debug section from the component.
     /// These sections are stored at the component level but contain debug info
     /// for the embedded modules.
-    /// TODO: Add tests for this!!!
     fn dwarf_section(&mut self, section: &wasmparser::CustomSectionReader<'data>) {
         let name = section.name();
         if !self.config.generate_native_debuginfo && !self.config.parse_wasm_debuginfo {
@@ -985,6 +983,45 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
 
         dwarf.ranges = gimli::RangeLists::new(info.debug_ranges, info.debug_rnglists);
         dwarf.locations = gimli::LocationLists::new(info.debug_loc, info.debug_loclists);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_hir::Context;
+    use wasmparser::Validator;
+
+    use super::*;
+    use crate::supported_component_model_features;
+
+    #[test]
+    fn injects_component_level_dwarf_into_first_module() {
+        let component = wat::parse_str(
+            r#"
+            (component
+                (@custom ".debug_info" "\01\02\03")
+                (core module
+                    (func (export "f"))
+                )
+            )
+            "#,
+        )
+        .expect("component wat should compile");
+        let context = Context::default();
+        let config = WasmTranslationConfig::default();
+        let mut validator = Validator::new_with_features(supported_component_model_features());
+        let mut types = ComponentTypesBuilder::default();
+        let parser = ComponentParser::new(&config, context.session(), &mut validator, &mut types);
+
+        let parsed = parser.parse(&component).expect("component should parse");
+        let first_module = parsed
+            .static_modules
+            .values()
+            .next()
+            .expect("component should contain a core module");
+
+        assert_eq!(first_module.debuginfo.dwarf.debug_info.reader().len(), 3);
+        assert!(first_module.wasm_file.module_base_offset > 0);
     }
 }
 

@@ -12,16 +12,6 @@ use crate::{
     error::WasmResult, module::function_builder_ext::FunctionBuilderExt, unsupported_diag,
 };
 
-/// Returns a synthetic SourceSpan for compiler-generated code.
-///
-/// This uses SourceSpan::SYNTHETIC from miden-debug-types which is identified
-/// by having an unknown source_id and both start and end set to u32::MAX.
-/// This differentiates it from UNKNOWN spans (which have start and end at 0)
-/// and indicates the code doesn't correspond to any specific user source location.
-fn synthetic_span() -> SourceSpan {
-    SourceSpan::SYNTHETIC
-}
-
 /// Represents the possible sizes in bytes of the discriminant of a variant type in the component
 /// model
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -121,7 +111,7 @@ pub fn emit_zero<B: ?Sized + Builder>(
     builder: &mut FunctionBuilderExt<'_, B>,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<ValueRef> {
-    let span = synthetic_span();
+    let span = SourceSpan::SYNTHETIC;
     Ok(match ty {
         Type::I1 => builder.i1(false, span),
         Type::I8 => builder.i8(0, span),
