@@ -930,6 +930,63 @@ fn test_overflowing_arith<T>(
     }
 }
 
+fn test_binary_fn<T, U>(op: fn(T, U) -> T, fn_name: &str, strategy: impl Strategy<Value = (T, U)>)
+where
+    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + std::fmt::Debug,
+    U: ToMidenRepr + PrimInt + Arbitrary,
+{
+    // The return value of `type_name` isn't stable, but it's good enough for this test.
+    let lhs_ty_name = type_name::<T>();
+    let rhs_ty_name = type_name::<U>();
+
+    // Write the result to memory to handle all integer widths with one `main_fn`.
+    // If the result were to be returned, it would be written to memory for 128 bit wide ints
+    // and returned on the stack for smaller ints.
+    let main_fn = format!(
+        r#"(out: *mut {lhs_ty_name}, a: {lhs_ty_name}, b: {rhs_ty_name}) -> u32 {{
+        unsafe {{ core::ptr::write(out, a.{fn_name}(b)); }}
+        0
+    }}"#
+    );
+    let config = WasmTranslationConfig::default();
+    let artifact_name = format!("test_{fn_name}_{lhs_ty_name}_{rhs_ty_name}");
+    let mut test =
+        CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
+    let package = test.compile_package();
+
+    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+        let rust_out = op(a, b);
+
+        // Write the operation result to 20 * PAGE_SIZE.
+        let out_addr = 20u32 * 65536;
+        let mut args = Vec::<midenc_hir::Felt>::default();
+        out_addr.push_to_operand_stack(&mut args);
+        a.push_to_operand_stack(&mut args);
+        b.push_to_operand_stack(&mut args);
+
+        eval_package::<u32, _, _>(&package, None, &args, &test.session, |trace| {
+            let ty_byte_size = std::mem::size_of::<T>();
+            // At most 16 bytes are written to memory.
+            assert!(ty_byte_size <= 16, "cannot handle types larger than 16 bytes");
+            let x: [u8; 16] =
+                trace.read_from_rust_memory(out_addr).expect("output was not written");
+            let vm_out_bytes = x[..ty_byte_size].to_vec(); // only take what's written
+            let rs_out_bytes = rust_out.to_le_bytes();
+
+            prop_assert_eq!(rs_out_bytes.as_ref(), &vm_out_bytes, "VM output mismatch");
+            Ok(())
+        })?;
+        Ok(())
+    });
+    match res {
+        Err(TestError::Fail(reason, value)) => {
+            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
+
 fn test_checked_arith<T>(
     op: fn(T, T) -> Option<T>,
     fn_name: &str,
@@ -1081,6 +1138,62 @@ test_int_op!(shl, <<, i32, 0..i32::MAX, 0u32..32);
 test_int_op!(shl, <<, i16, 0..i16::MAX, 0u16..16);
 test_int_op!(shl, <<, i8, 0..i8::MAX, 0u8..8);
 
+#[test]
+fn wrapping_shl_u8() {
+    test_binary_fn(u8::wrapping_shl, "wrapping_shl", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn wrapping_shl_u16() {
+    test_binary_fn(u16::wrapping_shl, "wrapping_shl", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shl_u32() {
+    test_binary_fn(u32::wrapping_shl, "wrapping_shl", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shl_u64() {
+    test_binary_fn(u64::wrapping_shl, "wrapping_shl", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shl_u128() {
+    test_binary_fn(u128::wrapping_shl, "wrapping_shl", (any::<u128>(), any::<u32>()));
+}
+
+#[test]
+fn wrapping_shl_i8() {
+    test_binary_fn(i8::wrapping_shl, "wrapping_shl", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+fn wrapping_shl_i16() {
+    test_binary_fn(i16::wrapping_shl, "wrapping_shl", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shl_i32() {
+    test_binary_fn(i32::wrapping_shl, "wrapping_shl", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shl_i64() {
+    test_binary_fn(i64::wrapping_shl, "wrapping_shl", (any::<i64>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shl_i128() {
+    test_binary_fn(i128::wrapping_shl, "wrapping_shl", (any::<i128>(), any::<u32>()));
+}
+
 test_int_op!(shr, >>, i64, i64::MIN..=i64::MAX, 0u64..=63);
 test_int_op!(shr, >>, u64, 0..=u64::MAX, 0u64..=63);
 test_int_op!(shr, >>, u32, 0..u32::MAX, 0u32..32);
@@ -1090,6 +1203,64 @@ test_int_op!(shr, >>, u8, 0..u8::MAX, 0u32..8);
 //test_int_op!(shr, >>, i8, i8::MIN..=i8::MAX, 0..=7);
 //test_int_op!(shr, >>, i16, i16::MIN..=i16::MAX, 0..=15);
 //test_int_op!(shr, >>, i32, i32::MIN..=i32::MAX, 0..=31);
+
+#[test]
+fn wrapping_shr_u8() {
+    test_binary_fn(u8::wrapping_shr, "wrapping_shr", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn wrapping_shr_u16() {
+    test_binary_fn(u16::wrapping_shr, "wrapping_shr", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shr_u32() {
+    test_binary_fn(u32::wrapping_shr, "wrapping_shr", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shr_u64() {
+    test_binary_fn(u64::wrapping_shr, "wrapping_shr", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shr_u128() {
+    test_binary_fn(u128::wrapping_shr, "wrapping_shr", (any::<u128>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shr_i8() {
+    test_binary_fn(i8::wrapping_shr, "wrapping_shr", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shr_i16() {
+    test_binary_fn(i16::wrapping_shr, "wrapping_shr", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shr_i32() {
+    test_binary_fn(i32::wrapping_shr, "wrapping_shr", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shr_i64() {
+    test_binary_fn(i64::wrapping_shr, "wrapping_shr", (any::<i64>(), any::<u32>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+fn wrapping_shr_i128() {
+    test_binary_fn(i128::wrapping_shr, "wrapping_shr", (any::<i128>(), any::<u32>()));
+}
 
 test_unary_op!(neg, -, i32, (i32::MIN + 1)..=i32::MAX);
 test_unary_op!(neg, -, i16, (i16::MIN + 1)..=i16::MAX);
