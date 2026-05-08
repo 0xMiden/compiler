@@ -1,6 +1,6 @@
 //! Foreign procedure invocation tests for methods without user arguments.
 
-use super::{
+use super::super::{
     super::support::COUNTER_CONTRACT_STORAGE_KEY,
     common::{build_fpi_test_packages, execute_counter_caller_note},
 };

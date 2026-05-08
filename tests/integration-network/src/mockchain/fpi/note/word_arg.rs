@@ -3,7 +3,7 @@
 use miden_client::Word;
 use miden_core::Felt;
 
-use super::common::{build_fpi_test_packages, execute_counter_caller_note};
+use super::super::common::{build_fpi_test_packages, execute_counter_caller_note};
 
 /// Deploys a counter contract and consumes a note which reads it through `Word -> Felt` FPI.
 #[test]

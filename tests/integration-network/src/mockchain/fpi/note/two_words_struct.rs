@@ -1,4 +1,4 @@
-//! Foreign procedure invocation tests for multiple methods called from one note.
+//! Foreign procedure invocation tests for methods that accept and return word records.
 
 use std::sync::Arc;
 
@@ -23,35 +23,34 @@ use miden_protocol::{
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
 
-use super::{
+use super::super::{
     super::support::{execute_tx, note_script_root, to_core_felts},
     common::build_fpi_test_packages,
 };
 
-/// Deploys a counter contract and consumes a note which makes multiple FPI calls.
+/// Deploys a counter contract and consumes a note which passes a word record through FPI.
 #[test]
-pub fn multi_call() {
+pub fn two_words_struct() {
     let (counter_package, caller_note_package, counter_storage_slot) =
-        build_fpi_test_packages("multi_call", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
+        build_fpi_test_packages("two_words_struct", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
 
-    execute_multi_call_counter_caller_note(
+    execute_two_words_struct_counter_caller_note(
         counter_package,
         caller_note_package,
         counter_storage_slot,
         [
             (first_storage_key(), expected_first_word()),
             (second_storage_key(), expected_second_word()),
-            (third_storage_key(), expected_third_word()),
         ],
     );
 }
 
 /// Deploys a `Word`-valued counter contract and consumes the caller note.
-fn execute_multi_call_counter_caller_note(
+fn execute_two_words_struct_counter_caller_note(
     counter_package: Arc<Package>,
     caller_note_package: Arc<Package>,
     counter_storage_slot: StorageSlotName,
-    expected_entries: [(Word, Word); 3],
+    expected_entries: [(Word, Word); 2],
 ) {
     let counter_component = {
         let mut init_storage_data = InitStorageData::default();
@@ -124,41 +123,31 @@ fn execute_multi_call_counter_caller_note(
     );
 }
 
-/// Returns the first non-zero storage key used by the multi-call FPI test.
+/// Returns the first non-zero storage key used by the two-word FPI test.
 fn first_storage_key() -> Word {
     Word::new([Felt::new(17), Felt::new(34), Felt::new(51), Felt::new(68)])
 }
 
-/// Returns the second non-zero storage key used by the multi-call FPI test.
+/// Returns the second non-zero storage key used by the two-word FPI test.
 fn second_storage_key() -> Word {
     Word::new([Felt::new(85), Felt::new(102), Felt::new(119), Felt::new(136)])
 }
 
-/// Returns the third non-zero storage key used by the multi-call FPI test.
-fn third_storage_key() -> Word {
-    Word::new([Felt::new(153), Felt::new(170), Felt::new(187), Felt::new(204)])
-}
-
-/// Returns the first expected `Word` value used by the multi-call FPI test.
+/// Returns the first expected `Word` value used by the two-word FPI test.
 fn expected_first_word() -> Word {
     Word::new([Felt::new(901), Felt::new(802), Felt::new(703), Felt::new(604)])
 }
 
-/// Returns the second expected `Word` value used by the multi-call FPI test.
+/// Returns the second expected `Word` value used by the two-word FPI test.
 fn expected_second_word() -> Word {
     Word::new([Felt::new(505), Felt::new(406), Felt::new(307), Felt::new(208)])
-}
-
-/// Returns the third expected `Word` value used by the multi-call FPI test.
-fn expected_third_word() -> Word {
-    Word::new([Felt::new(109), Felt::new(210), Felt::new(311), Felt::new(412)])
 }
 
 /// Asserts the stored `Word` entries under their storage keys.
 fn assert_counter_storage_word_entries(
     counter_account_storage: &AccountStorage,
     storage_slot: &StorageSlotName,
-    expected_entries: [(Word, Word); 3],
+    expected_entries: [(Word, Word); 2],
 ) {
     for (storage_key, expected_word) in expected_entries {
         let word = counter_account_storage
@@ -169,12 +158,12 @@ fn assert_counter_storage_word_entries(
     }
 }
 
-/// Minimal counter account component source used by the multi-call FPI test.
+/// Minimal counter account component source used by the word-record FPI test.
 const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, export_type, Felt, StorageMap, Word};
+use miden::{component, export_type, StorageMap, Word};
 
 /// Pair of storage keys passed through the FPI boundary.
 #[export_type]
@@ -204,18 +193,6 @@ struct CounterContract {
 
 #[component]
 impl CounterContract {
-    /// Returns the sum of the first felt in the three words stored under the provided keys.
-    pub fn sum_first_elements_by_keys(
-        &self,
-        first_key: Word,
-        second_key: Word,
-        third_key: Word,
-    ) -> Felt {
-        self.count_map.get(first_key)[0]
-            + self.count_map.get(second_key)[0]
-            + self.count_map.get(third_key)[0]
-    }
-
     /// Returns the counter words stored under `keys`.
     pub fn get_count_pair_by_keys(&self, keys: KeyPair) -> WordPair {
         WordPair {
@@ -226,15 +203,15 @@ impl CounterContract {
 }
 "#;
 
-/// Minimal note script source which invokes multiple FPI methods on one account.
+/// Minimal note script source which reads the generated counter account through FPI.
 const COUNTER_CALLER_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
 use miden::*;
 
-use crate::bindings::miden::multi_call_account::multi_call_account::KeyPair;
-use crate::bindings::MultiCallAccount as CounterContract;
+use crate::bindings::miden::two_words_struct_account::two_words_struct_account::KeyPair;
+use crate::bindings::TwoWordsStructAccount as CounterContract;
 
 /// Note script input containing the foreign counter account id.
 #[note]
@@ -245,23 +222,21 @@ struct CounterCaller {
 
 #[note]
 impl CounterCaller {
-    /// Checks that multiple FPI calls on one account preserve per-call ABI metadata.
+    /// Checks that two `Word` values in one record and a two-`Word` record cross the FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
         let count_acc = CounterContract::from_account(self.counter_account_id);
         let first_key = Word::new([felt!(17), felt!(34), felt!(51), felt!(68)]);
         let second_key = Word::new([felt!(85), felt!(102), felt!(119), felt!(136)]);
-        let third_key = Word::new([felt!(153), felt!(170), felt!(187), felt!(204)]);
         let expected_first = Word::new([felt!(901), felt!(802), felt!(703), felt!(604)]);
         let expected_second = Word::new([felt!(505), felt!(406), felt!(307), felt!(208)]);
 
-        let sum = count_acc.sum_first_elements_by_keys(first_key, second_key, third_key);
-        assert_eq(sum, felt!(1515));
-
-        let pair = count_acc.get_count_pair_by_keys(KeyPair {
+        let keys = KeyPair {
             first_key,
             second_key,
-        });
+        };
+        let pair = count_acc.get_count_pair_by_keys(keys);
+
         assert_word_eq(pair.first, expected_first);
         assert_word_eq(pair.second, expected_second);
     }

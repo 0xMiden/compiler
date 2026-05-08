@@ -1,4 +1,4 @@
-//! Foreign procedure invocation tests for methods that accept and return word records.
+//! Foreign procedure invocation tests for methods that accept a four-word record.
 
 use std::sync::Arc;
 
@@ -11,7 +11,6 @@ use miden_client::{
     note::NoteTag,
     transaction::RawOutputNote,
 };
-use miden_core::Felt;
 use miden_mast_package::Package;
 use miden_protocol::{
     account::{
@@ -23,40 +22,45 @@ use miden_protocol::{
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
 
-use super::{
+use super::super::{
     super::support::{execute_tx, note_script_root, to_core_felts},
     common::build_fpi_test_packages,
 };
 
-/// Deploys a counter contract and consumes a note which passes a word record through FPI.
+/// Deploys a counter contract and consumes a note which passes a four-word record through FPI.
 #[test]
-pub fn two_words_struct() {
-    let (counter_package, caller_note_package, counter_storage_slot) =
-        build_fpi_test_packages("two_words_struct", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
+pub fn four_words_struct() {
+    let (counter_package, caller_note_package, counter_storage_slot) = build_fpi_test_packages(
+        "four_words_struct",
+        COUNTER_CONTRACT_SOURCE,
+        COUNTER_CALLER_SOURCE,
+    );
 
-    execute_two_words_struct_counter_caller_note(
+    execute_four_words_struct_counter_caller_note(
         counter_package,
         caller_note_package,
         counter_storage_slot,
         [
-            (first_storage_key(), expected_first_word()),
-            (second_storage_key(), expected_second_word()),
+            (first_storage_key(), FIRST_COUNT),
+            (second_storage_key(), SECOND_COUNT),
+            (third_storage_key(), THIRD_COUNT),
+            (fourth_storage_key(), FOURTH_COUNT),
         ],
     );
 }
 
-/// Deploys a `Word`-valued counter contract and consumes the caller note.
-fn execute_two_words_struct_counter_caller_note(
+/// Deploys a `Felt`-valued counter contract and consumes the caller note.
+fn execute_four_words_struct_counter_caller_note(
     counter_package: Arc<Package>,
     caller_note_package: Arc<Package>,
     counter_storage_slot: StorageSlotName,
-    expected_entries: [(Word, Word); 2],
+    expected_entries: [(Word, u64); 4],
 ) {
     let counter_component = {
         let mut init_storage_data = InitStorageData::default();
-        for (storage_key, expected_word) in expected_entries {
+        for (storage_key, expected_count) in expected_entries {
             init_storage_data
-                .insert_map_entry(counter_storage_slot.clone(), storage_key, expected_word)
+                .insert_map_entry(counter_storage_slot.clone(), storage_key, expected_count)
                 .unwrap();
         }
         AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
@@ -103,7 +107,7 @@ fn execute_two_words_struct_counter_caller_note(
     chain.prove_next_block().unwrap();
     chain.prove_next_block().unwrap();
 
-    assert_counter_storage_word_entries(
+    assert_counter_storage_felt_entries(
         chain.committed_account(counter_account.id()).unwrap().storage(),
         &counter_storage_slot,
         expected_entries,
@@ -116,89 +120,103 @@ fn execute_two_words_struct_counter_caller_note(
         .foreign_accounts([foreign_account_inputs]);
     execute_tx(&mut chain, tx_context_builder);
 
-    assert_counter_storage_word_entries(
+    assert_counter_storage_felt_entries(
         chain.committed_account(counter_account.id()).unwrap().storage(),
         &counter_storage_slot,
         expected_entries,
     );
 }
 
-/// Returns the first non-zero storage key used by the two-word FPI test.
+/// Returns the first non-zero storage key used by the four-word record FPI test.
 fn first_storage_key() -> Word {
-    Word::new([Felt::new(17), Felt::new(34), Felt::new(51), Felt::new(68)])
+    Word::new([17_u32.into(), 34_u32.into(), 51_u32.into(), 68_u32.into()])
 }
 
-/// Returns the second non-zero storage key used by the two-word FPI test.
+/// Returns the second non-zero storage key used by the four-word record FPI test.
 fn second_storage_key() -> Word {
-    Word::new([Felt::new(85), Felt::new(102), Felt::new(119), Felt::new(136)])
+    Word::new([85_u32.into(), 102_u32.into(), 119_u32.into(), 136_u32.into()])
 }
 
-/// Returns the first expected `Word` value used by the two-word FPI test.
-fn expected_first_word() -> Word {
-    Word::new([Felt::new(901), Felt::new(802), Felt::new(703), Felt::new(604)])
+/// Returns the third non-zero storage key used by the four-word record FPI test.
+fn third_storage_key() -> Word {
+    Word::new([153_u32.into(), 170_u32.into(), 187_u32.into(), 204_u32.into()])
 }
 
-/// Returns the second expected `Word` value used by the two-word FPI test.
-fn expected_second_word() -> Word {
-    Word::new([Felt::new(505), Felt::new(406), Felt::new(307), Felt::new(208)])
+/// Returns the fourth non-zero storage key used by the four-word record FPI test.
+fn fourth_storage_key() -> Word {
+    Word::new([221_u32.into(), 238_u32.into(), 255_u32.into(), 272_u32.into()])
 }
 
-/// Asserts the stored `Word` entries under their storage keys.
-fn assert_counter_storage_word_entries(
+/// Asserts the stored `Felt` entries under their storage keys.
+fn assert_counter_storage_felt_entries(
     counter_account_storage: &AccountStorage,
     storage_slot: &StorageSlotName,
-    expected_entries: [(Word, Word); 2],
+    expected_entries: [(Word, u64); 4],
 ) {
-    for (storage_key, expected_word) in expected_entries {
+    for (storage_key, expected_count) in expected_entries {
         let word = counter_account_storage
             .get_map_item(storage_slot, storage_key)
             .expect("Failed to get counter value from storage slot");
+        let val = word[0];
 
-        assert_eq!(word, expected_word, "Counter word value mismatch");
+        assert_eq!(
+            val.as_canonical_u64(),
+            expected_count,
+            "Counter felt value mismatch. Expected: {}, Got: {}",
+            expected_count,
+            val.as_canonical_u64()
+        );
     }
 }
 
-/// Minimal counter account component source used by the word-record FPI test.
+/// First counter value used by the four-word record FPI test.
+const FIRST_COUNT: u64 = 101;
+
+/// Second counter value used by the four-word record FPI test.
+const SECOND_COUNT: u64 = 202;
+
+/// Third counter value used by the four-word record FPI test.
+const THIRD_COUNT: u64 = 303;
+
+/// Fourth counter value used by the four-word record FPI test.
+const FOURTH_COUNT: u64 = 404;
+
+/// Minimal counter account component source used by the four-word record FPI test.
 const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, export_type, StorageMap, Word};
+use miden::{component, export_type, Felt, StorageMap, Word};
 
-/// Pair of storage keys passed through the FPI boundary.
+/// Four storage keys passed through the FPI boundary.
 #[export_type]
-pub struct KeyPair {
+pub struct KeyQuad {
     /// First storage key to read.
     pub first_key: Word,
     /// Second storage key to read.
     pub second_key: Word,
+    /// Third storage key to read.
+    pub third_key: Word,
+    /// Fourth storage key to read.
+    pub fourth_key: Word,
 }
 
-/// Pair of counter words returned through the FPI boundary.
-#[export_type]
-pub struct WordPair {
-    /// Word associated with the first key.
-    pub first: Word,
-    /// Word associated with the second key.
-    pub second: Word,
-}
-
-/// Account component whose storage map holds counter words.
+/// Account component whose storage map holds counter values.
 #[component]
 struct CounterContract {
-    /// Storage map holding counter words.
+    /// Storage map holding counter values.
     #[storage(description = "counter contract storage map")]
-    count_map: StorageMap<Word, Word>,
+    count_map: StorageMap<Word, Felt>,
 }
 
 #[component]
 impl CounterContract {
-    /// Returns the counter words stored under `keys`.
-    pub fn get_count_pair_by_keys(&self, keys: KeyPair) -> WordPair {
-        WordPair {
-            first: self.count_map.get(keys.first_key),
-            second: self.count_map.get(keys.second_key),
-        }
+    /// Returns the sum of the counter values stored under `keys`.
+    pub fn get_count_sum_by_keys(&self, keys: KeyQuad) -> Felt {
+        self.count_map.get(keys.first_key)
+            + self.count_map.get(keys.second_key)
+            + self.count_map.get(keys.third_key)
+            + self.count_map.get(keys.fourth_key)
     }
 }
 "#;
@@ -210,8 +228,8 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::two_words_struct_account::two_words_struct_account::KeyPair;
-use crate::bindings::TwoWordsStructAccount as CounterContract;
+use crate::bindings::miden::four_words_struct_account::four_words_struct_account::KeyQuad;
+use crate::bindings::FourWordsStructAccount as CounterContract;
 
 /// Note script input containing the foreign counter account id.
 #[note]
@@ -222,31 +240,24 @@ struct CounterCaller {
 
 #[note]
 impl CounterCaller {
-    /// Checks that two `Word` values in one record and a two-`Word` record cross the FPI boundary.
+    /// Checks that four `Word` values in one record cross the FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
         let count_acc = CounterContract::from_account(self.counter_account_id);
         let first_key = Word::new([felt!(17), felt!(34), felt!(51), felt!(68)]);
         let second_key = Word::new([felt!(85), felt!(102), felt!(119), felt!(136)]);
-        let expected_first = Word::new([felt!(901), felt!(802), felt!(703), felt!(604)]);
-        let expected_second = Word::new([felt!(505), felt!(406), felt!(307), felt!(208)]);
+        let third_key = Word::new([felt!(153), felt!(170), felt!(187), felt!(204)]);
+        let fourth_key = Word::new([felt!(221), felt!(238), felt!(255), felt!(272)]);
 
-        let keys = KeyPair {
+        let keys = KeyQuad {
             first_key,
             second_key,
+            third_key,
+            fourth_key,
         };
-        let pair = count_acc.get_count_pair_by_keys(keys);
+        let count = count_acc.get_count_sum_by_keys(keys);
 
-        assert_word_eq(pair.first, expected_first);
-        assert_word_eq(pair.second, expected_second);
+        assert_eq(count, felt!(1010));
     }
-}
-
-/// Asserts that two words contain the same field elements.
-fn assert_word_eq(actual: Word, expected: Word) {
-    assert_eq(actual[0], expected[0]);
-    assert_eq(actual[1], expected[1]);
-    assert_eq(actual[2], expected[2]);
-    assert_eq(actual[3], expected[3]);
 }
 "#;

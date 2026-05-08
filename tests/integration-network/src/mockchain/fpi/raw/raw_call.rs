@@ -20,7 +20,9 @@ use miden_standards::{
 use miden_testing::{AccountState, Auth, MockChain};
 use midenc_integration_test_support::{compiler_test::sdk_crate_path, project};
 
-use super::super::support::{compile_rust_package, execute_tx, note_script_root, to_core_felts};
+use super::super::super::support::{
+    compile_rust_package, execute_tx, note_script_root, to_core_felts,
+};
 
 /// Deploys a MASM account and consumes a note which calls it through the raw SDK FPI binding.
 #[test]

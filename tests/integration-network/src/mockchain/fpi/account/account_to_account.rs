@@ -23,7 +23,7 @@ use miden_protocol::{
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
 
-use super::{
+use super::super::{
     super::support::{execute_tx, note_script_root, to_core_felts},
     common::build_account_to_account_fpi_test_packages,
 };

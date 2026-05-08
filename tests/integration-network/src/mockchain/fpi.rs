@@ -1,12 +1,6 @@
 //! Foreign procedure invocation tests on a mock chain.
 
-mod account_to_account;
+mod account;
 mod common;
-mod four_words_struct;
-mod multi_call;
-mod no_arg;
-mod raw_call;
-mod three_words_struct;
-mod two_words_struct;
-mod word_arg;
-mod word_word;
+mod note;
+mod raw;
