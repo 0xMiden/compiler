@@ -68,6 +68,34 @@ mod wit_world;
 ///
 /// **NOTE:** Mark each type used in the public method with `#[export_type]` attribute macro.
 ///
+/// # Foreign Procedure Invocation (FPI)
+///
+/// If this account component declares account dependencies under
+/// `[package.metadata.miden.dependencies]` and makes their generated WIT available through
+/// `[package.metadata.component.target.dependencies]`, `#[component]` also generates typed FPI
+/// caller wrappers in `crate::bindings`.
+///
+/// Each wrapper is named after the dependency's account type name, for example
+/// `CounterContract`. Create one with `CounterContract::from_account(account_id)`, then call the
+/// dependency's exported methods with their normal Rust signatures:
+///
+/// ```rust,ignore
+/// use crate::bindings::CounterContract;
+/// use miden::{AccountId, Felt};
+///
+/// #[component]
+/// impl CallerAccount {
+///     pub fn read_counter(&self, counter_account_id: AccountId) -> Felt {
+///         let counter = CounterContract::from_account(counter_account_id);
+///         counter.get_count()
+///     }
+/// }
+/// ```
+///
+/// The generated methods invoke the foreign account through the transaction kernel's
+/// `execute_foreign_procedure` operation. The callee account must be deployed with code matching
+/// the dependency package used while compiling the caller.
+///
 /// To disable WIT interface generation:
 /// - don't use `#[component]` attribute macro in the `impl MyAccountType` section;
 ///
@@ -114,6 +142,42 @@ pub fn export_type(
 /// - a note input type definition (`struct MyNote { ... }`)
 /// - the associated inherent `impl` block that contains an entrypoint method annotated with
 ///   `#[note_script]`
+///
+/// # Foreign Procedure Invocation (FPI)
+///
+/// If this note script declares account dependencies under `[package.metadata.miden.dependencies]`
+/// and makes their generated WIT available through
+/// `[package.metadata.component.target.dependencies]`, `#[note]` also generates typed FPI caller
+/// wrappers in `crate::bindings`.
+///
+///
+/// Each wrapper is named after the dependency's account type name, for example
+/// `CounterContract`. Create one with `CounterContract::from_account(account_id)`, then call the
+/// dependency's exported methods with their normal Rust signatures:
+///
+/// ```rust,ignore
+/// use miden::*;
+/// use crate::bindings::CounterContract;
+///
+/// #[note]
+/// struct CounterCaller {
+///     counter_account_id: AccountId,
+/// }
+///
+/// #[note]
+/// impl CounterCaller {
+///     #[note_script]
+///     pub fn run(self, _arg: Word) {
+///         let counter = CounterContract::from_account(self.counter_account_id);
+///         let count = counter.get_count();
+///         assert_eq(count, felt!(1));
+///     }
+/// }
+/// ```
+///
+/// The generated methods invoke the foreign account through the transaction kernel's
+/// `execute_foreign_procedure` operation. The callee account must be deployed with code matching
+/// the dependency package used while compiling the note.
 ///
 /// # Example
 ///
