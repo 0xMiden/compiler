@@ -21,6 +21,7 @@ use super::{
     flat::{CanonicalAbiMode, flatten_function_type, flatten_types, needs_transformation},
 };
 use crate::{
+    FPI_FLATTENED_ARG_COUNT_ATTR,
     callable::CallableFunction,
     error::WasmResult,
     miden_abi::tx_kernel::tx,
@@ -35,7 +36,6 @@ const FPI_EXEC_INPUTS: usize = 16;
 const FPI_EXEC_RESULTS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_PARAMS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_RESULTS: usize = 1;
-const FPI_FLATTENED_ARG_COUNT_ATTR: &str = "fpi.flattened_arg_count";
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import function.
 pub fn generate_import_lowering_function(

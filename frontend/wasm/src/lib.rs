@@ -34,6 +34,9 @@ use wasmparser::WasmFeatures;
 pub use self::emit::wasm_to_wat;
 pub use self::{config::*, emit::WatEmit, error::WasmError};
 
+/// HIR exec-op attribute storing the flattened input count for indirect FPI calls.
+pub(crate) const FPI_FLATTENED_ARG_COUNT_ATTR: &str = "fpi.flattened_arg_count";
+
 /// The output of the frontend Wasm translation stage
 pub struct FrontendOutput {
     /// The IR component translated from the Wasm

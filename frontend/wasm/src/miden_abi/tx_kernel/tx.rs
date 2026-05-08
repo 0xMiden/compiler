@@ -23,6 +23,7 @@ pub const GET_NUM_OUTPUT_NOTES: &str = "get_num_output_notes";
 pub const GET_EXPIRATION_BLOCK_DELTA: &str = "get_expiration_block_delta";
 pub const UPDATE_EXPIRATION_BLOCK_DELTA: &str = "update_expiration_block_delta";
 pub const EXECUTE_FOREIGN_PROCEDURE: &str = "execute_foreign_procedure";
+pub const EXECUTE_FOREIGN_PROCEDURE_INDIRECT: &str = "execute_foreign_procedure_indirect";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -57,6 +58,12 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     tx.insert(
         Symbol::from(EXECUTE_FOREIGN_PROCEDURE),
         FunctionType::new(CallConv::Wasm, vec![Felt; 22], vec![Felt; 16]),
+    );
+    tx.insert(
+        Symbol::from(EXECUTE_FOREIGN_PROCEDURE_INDIRECT),
+        // Raw FPI calls pass the full 22-felt executor ABI through one pointer so Rust callers
+        // avoid materializing more arguments than the frontend spill/lowering pipeline supports.
+        FunctionType::new(CallConv::Wasm, [I32], vec![Felt; 16]),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), tx);
     m

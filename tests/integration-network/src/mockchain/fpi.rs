@@ -5,6 +5,7 @@ mod common;
 mod four_words_struct;
 mod multi_call;
 mod no_arg;
+mod raw_call;
 mod three_words_struct;
 mod two_words_struct;
 mod word_arg;

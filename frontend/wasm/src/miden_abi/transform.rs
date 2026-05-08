@@ -1,12 +1,15 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, Immediate, Op, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
-    dialects::builtin::FunctionRef, interner::symbols,
+    Builder, Immediate, Op, OpExt, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
+    dialects::builtin::{FunctionRef, attributes::U32Attr},
+    interner::symbols,
 };
 
 use super::{stdlib, tx_kernel};
-use crate::module::function_builder_ext::FunctionBuilderExt;
+use crate::{FPI_FLATTENED_ARG_COUNT_ATTR, module::function_builder_ext::FunctionBuilderExt};
+
+const RAW_FPI_FLATTENED_ARG_COUNT: u32 = 22;
 
 /// The strategy to use for transforming a function call
 enum TransformStrategy {
@@ -14,6 +17,8 @@ enum TransformStrategy {
     ListReturn,
     /// The Miden ABI function returns on the stack and we want to return via a pointer argument
     ReturnViaPointer,
+    /// The Miden ABI function is the compiler-internal indirect FPI executor.
+    FpiIndirectReturnViaPointer,
     /// No transformation needed
     NoTransform,
 }
@@ -233,6 +238,9 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     | tx_kernel::tx::GET_BLOCK_COMMITMENT => {
                         Some(TransformStrategy::ReturnViaPointer)
                     }
+                    tx_kernel::tx::EXECUTE_FOREIGN_PROCEDURE_INDIRECT => {
+                        Some(TransformStrategy::FpiIndirectReturnViaPointer)
+                    }
                     _ => None,
                 },
                 _ => None,
@@ -258,6 +266,9 @@ pub fn transform_miden_abi_call<B: ?Sized + Builder>(
     match get_transform_strategy(import_path) {
         Some(ListReturn) => list_return(import_func_ref, args, builder),
         Some(ReturnViaPointer) => return_via_pointer(import_func_ref, args, builder),
+        Some(FpiIndirectReturnViaPointer) => {
+            fpi_indirect_return_via_pointer(import_func_ref, args, builder)
+        }
         Some(NoTransform) => no_transform(import_func_ref, args, builder),
         None => panic!("no transform strategy implemented for '{import_path}'"),
     }
@@ -325,6 +336,53 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
     let ptr_arg = *args.last().expect("empty args");
+    store_results_to_pointer(&results, ptr_arg, builder, span);
+
+    Vec::new()
+}
+
+/// The indirect FPI executor returns felts on the stack and needs its flattened input count set.
+pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
+    import_func_ref: FunctionRef,
+    args: &[ValueRef],
+    builder: &mut FunctionBuilderExt<'_, B>,
+) -> Vec<ValueRef> {
+    let span = import_func_ref.borrow().name().span;
+    // Omit the last argument (pointer)
+    let args_wo_pointer = &args[0..args.len() - 1];
+    assert_eq!(
+        args_wo_pointer.len(),
+        1,
+        "indirect FPI return strategy expects exactly one input tuple pointer"
+    );
+    let signature = import_func_ref.borrow().get_signature().clone();
+    let mut exec = builder
+        .exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)
+        .expect("failed to build an exec op in fpi_indirect_return_via_pointer strategy");
+    let context = import_func_ref.borrow().as_operation().context_rc();
+    let flattened_arg_count_attr =
+        context.create_attribute::<U32Attr, _>(RAW_FPI_FLATTENED_ARG_COUNT);
+    exec.borrow_mut()
+        .set_attribute(FPI_FLATTENED_ARG_COUNT_ATTR, flattened_arg_count_attr);
+
+    let borrow = exec.borrow();
+    let results_storage = borrow.results();
+    let results: Vec<ValueRef> =
+        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+
+    let ptr_arg = *args.last().expect("empty args");
+    store_results_to_pointer(&results, ptr_arg, builder, span);
+
+    Vec::new()
+}
+
+/// Stores flattened stack results into the Rust return pointer used by linker stubs.
+fn store_results_to_pointer<B: ?Sized + Builder>(
+    results: &[ValueRef],
+    ptr_arg: ValueRef,
+    builder: &mut FunctionBuilderExt<'_, B>,
+    span: midenc_hir::SourceSpan,
+) {
     let ptr_arg_ty = ptr_arg.borrow().ty().clone();
     assert_eq!(ptr_arg_ty, Type::I32);
     let ptr_u32 = builder.bitcast(ptr_arg, Type::U32, span).expect("failed bitcast to U32");
@@ -345,5 +403,4 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
             .expect("failed inttoptr");
         builder.store(addr, *value, span).expect("failed store");
     }
-    Vec::new()
 }
