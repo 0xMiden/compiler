@@ -561,6 +561,54 @@ end
     }
 
     #[test]
+    fn rejects_declared_signature_body_drift() {
+        let cases = [
+            (
+                "extra_value",
+                r#"
+pub proc extra_value(value: felt) -> felt
+    dup.0
+end
+"#,
+                "leaves 1 extra value(s) on the stack",
+            ),
+            (
+                "missing_value",
+                r#"
+pub proc missing_value(value: felt) -> (felt, felt)
+    nop
+end
+"#,
+                "stack underflow",
+            ),
+            (
+                "undeclared_input",
+                r#"
+pub proc undeclared_input(value: felt) -> felt
+    add
+end
+"#,
+                "stack underflow",
+            ),
+        ];
+
+        for (name, source, expected) in cases {
+            let context = Rc::new(Context::default());
+            let result =
+                disassemble_source(source, "test", &DisassemblerConfig::default(), context);
+            let err = match result {
+                Ok(_) => panic!("expected disassembly to reject signature drift in {name}"),
+                Err(err) => err.to_string(),
+            };
+
+            assert!(
+                err.contains(expected),
+                "expected diagnostic for {name} to contain {expected:?}, got:\n{err}"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_unsupported_instruction_during_known_signature_lifting() {
         let context = Rc::new(Context::default());
         let result = disassemble_source(
