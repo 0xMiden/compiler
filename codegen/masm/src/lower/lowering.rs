@@ -1047,6 +1047,38 @@ impl HirLowering for hir::Clk {
     }
 }
 
+impl HirLowering for hir::AdvicePop {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).advice_pop(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::AdviceLoadWord {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).advice_load_word(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::EmitEvent {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).emit_event(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::EmitEventImm {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let event_id = match *self.get_event_id() {
+            midenc_hir::Immediate::Felt(event_id) => event_id,
+            event_id => panic!("expected hir.emit_event_imm event_id to be felt, got {event_id}"),
+        };
+        emitter.emitter().emit_event_imm(event_id, self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Store {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.emitter().store(self.span());

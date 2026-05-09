@@ -811,6 +811,13 @@ impl<'a> ProcedureLifter<'a> {
                 self.push_value(value, span);
                 Ok(())
             }
+            AdvPush(count) => self.advice_push(immediate_value(count)?, span, builder),
+            AdvLoadW => self.advice_load_word(span, builder),
+            Emit => self.emit_event(span, builder),
+            EmitImm(event_id) => {
+                builder.emit_event_imm(immediate_value(event_id)?, span)?;
+                Ok(())
+            }
             Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),
@@ -1492,6 +1499,52 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn advice_push(
+        &mut self,
+        count: u8,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        validate_advice_read_count(count, span)?;
+        for _ in 0..count {
+            let value = builder.advice_pop(span)?;
+            self.push_value(value, span);
+        }
+        Ok(())
+    }
+
+    fn advice_load_word(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let old = self.pop_word(span)?;
+        let (result0, result1, result2, result3) = builder.advice_load_word(
+            old[3].value,
+            old[2].value,
+            old[1].value,
+            old[0].value,
+            span,
+        )?;
+        self.push_value(result3, span);
+        self.push_value(result2, span);
+        self.push_value(result1, span);
+        self.push_value(result0, span);
+        Ok(())
+    }
+
+    fn emit_event(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let event_id = self.pop(span)?;
+        let event_id = self.cast(builder, event_id.value, Type::Felt, span)?;
+        let event_id = builder.emit_event(event_id, span)?;
+        self.push_value(event_id, span);
+        Ok(())
+    }
+
     fn load_memory(
         &mut self,
         immediate_addr: Option<u32>,
@@ -2169,6 +2222,15 @@ fn validate_memory_word_address(addr: Option<u32>, span: SourceSpan) -> Result<(
     {
         return Err(error::error(format!(
             "memory word address {addr} is not word-aligned at {span:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_advice_read_count(count: u8, span: SourceSpan) -> Result<()> {
+    if !(1..=16).contains(&count) {
+        return Err(error::error(format!(
+            "advice read count {count} is out of range at {span:?}; expected 1..=16"
         )));
     }
     Ok(())

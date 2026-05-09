@@ -1,6 +1,6 @@
 use midenc_hir::{
-    AsCallableSymbolRef, Builder, CompactString, Immediate, Op, OpBuilder, PointerType, Report,
-    SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
+    AsCallableSymbolRef, Builder, CompactString, Felt, Immediate, Op, OpBuilder, PointerType,
+    Report, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
     dialects::builtin::{
         attributes::{LocalVariable, Signature},
         *,
@@ -163,6 +163,50 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         let op_builder = self.builder_mut().create::<crate::ops::Clk, _>(span);
         let op = op_builder()?;
         Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Pop one field element from the VM advice stack.
+    fn advice_pop(&mut self, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::AdvicePop, _>(span);
+        let op = op_builder()?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Pop one word from the VM advice stack, overwriting four stack slots.
+    fn advice_load_word(
+        &mut self,
+        old0: ValueRef,
+        old1: ValueRef,
+        old2: ValueRef,
+        old3: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef, ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::AdviceLoadWord, _>(span);
+        let op = op_builder(old0, old1, old2, old3)?;
+        let op = op.borrow();
+        Ok((
+            op.result0().as_value_ref(),
+            op.result1().as_value_ref(),
+            op.result2().as_value_ref(),
+            op.result3().as_value_ref(),
+        ))
+    }
+
+    /// Emit an event whose ID is already on the operand stack.
+    fn emit_event(&mut self, event_id: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::EmitEvent, _>(span);
+        let op = op_builder(event_id)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Emit an immediate event.
+    fn emit_event_imm(
+        &mut self,
+        event_id: Felt,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::EmitEventImm>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::EmitEventImm, _>(span);
+        op_builder(Immediate::Felt(event_id))
     }
 
     /// Create a constant byte array

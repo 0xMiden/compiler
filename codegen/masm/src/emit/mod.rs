@@ -79,7 +79,9 @@ macro_rules! assert_valid_stack_index {
     };
 }
 
+pub mod advice;
 pub mod binary;
+pub mod events;
 pub mod ext2;
 pub mod felt;
 pub mod int128;

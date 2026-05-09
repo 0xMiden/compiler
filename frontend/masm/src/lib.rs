@@ -211,9 +211,11 @@ mod tests {
     };
     use midenc_dialect_cf::Select as CfSelect;
     use midenc_dialect_hir::{
-        Assert as HirAssert, AssertEq as HirAssertEq, Assertz as HirAssertz, Caller as HirCaller,
-        Clk as HirClk, IntToPtr as HirIntToPtr, Load as HirLoad, LoadLocal as HirLoadLocal,
-        LocalAddress as HirLocalAddress, Store as HirStore, StoreLocal as HirStoreLocal,
+        AdviceLoadWord as HirAdviceLoadWord, AdvicePop as HirAdvicePop, Assert as HirAssert,
+        AssertEq as HirAssertEq, Assertz as HirAssertz, Caller as HirCaller, Clk as HirClk,
+        EmitEvent as HirEmitEvent, EmitEventImm as HirEmitEventImm, IntToPtr as HirIntToPtr,
+        Load as HirLoad, LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress,
+        Store as HirStore, StoreLocal as HirStoreLocal,
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
@@ -470,18 +472,20 @@ mod tests {
             Instruction::LocStoreWLe(_),
             Instruction::Caller,
             Instruction::Clk,
+            Instruction::AdvPush(_),
+            Instruction::AdvLoadW,
             Instruction::Exec(_),
             Instruction::Call(_),
             Instruction::SysCall(_),
             Instruction::Debug(_),
             Instruction::DebugVar(_),
             Instruction::Trace(_),
+            Instruction::Emit,
+            Instruction::EmitImm(_),
         ],
         unsupported: [
             Instruction::MemStream,
             Instruction::AdvPipe,
-            Instruction::AdvPush(_),
-            Instruction::AdvLoadW,
             Instruction::SysEvent(_),
             Instruction::Hash,
             Instruction::HMerge,
@@ -500,8 +504,6 @@ mod tests {
             Instruction::DynExec,
             Instruction::DynCall,
             Instruction::ProcRef(_),
-            Instruction::Emit,
-            Instruction::EmitImm(_),
         ],
     }
 
@@ -614,6 +616,10 @@ end
             instruction_case("sdepth", &["felt", "felt"], &felt_types(3), "sdepth"),
             instruction_case("caller", &[], &["[felt; 4]"], "caller"),
             instruction_case("clk", &[], &["felt"], "clk"),
+            instruction_case("adv_push", &[], &felt_types(3), "adv_push.3"),
+            instruction_case("adv_loadw", &felt_types(4), &felt_types(4), "adv_loadw"),
+            instruction_case("emit", &["felt"], &["felt"], "emit"),
+            instruction_case("emit_imm", &[], &[], r#"emit.event("phase28")"#),
             instruction_case("debug", &["felt"], &["felt"], "debug.stack"),
             instruction_case("trace", &["felt"], &["felt"], "trace.1"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
@@ -1019,12 +1025,54 @@ end
     }
 
     #[test]
+    fn lifts_advice_and_event_ops_to_first_class_hir_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc advice_values() -> (felt, felt, felt)
+    adv_push.3
+end
+
+pub proc advice_word(a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
+    adv_loadw
+end
+
+pub proc emitted(event_id: felt) -> felt
+    emit
+end
+
+pub proc emitted_imm()
+    emit.event("phase28")
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        assert_eq!(
+            top_level_op_count::<HirAdvicePop>(find_function(output.module, "advice_values")),
+            3
+        );
+        assert_eq!(
+            top_level_op_count::<HirAdviceLoadWord>(find_function(output.module, "advice_word")),
+            1
+        );
+        assert_eq!(top_level_op_count::<HirEmitEvent>(find_function(output.module, "emitted")), 1);
+        assert_eq!(
+            top_level_op_count::<HirEmitEventImm>(find_function(output.module, "emitted_imm")),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
             unsupported_instruction_case("hash", 0, "hash"),
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
-            unsupported_instruction_case("emit", 0, "emit"),
+            unsupported_instruction_case("sys_event", 0, "adv.push_mapval"),
         ];
 
         for case in &cases {
@@ -1034,8 +1082,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 214);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 24);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 218);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 20);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1137,6 +1185,60 @@ end
         assert_eq!(signature.params().len(), 0);
         assert_eq!(signature.results().len(), 1);
         assert_eq!(signature.results()[0].ty, Type::Felt);
+        Ok(())
+    }
+
+    #[test]
+    fn infers_advice_and_event_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc advice_values
+    adv_push.2
+end
+
+pub proc advice_word
+    adv_loadw
+end
+
+pub proc emitted
+    emit
+end
+
+pub proc emitted_imm
+    emit.event("phase28")
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature =
+            find_function(output.module, "advice_values").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 0);
+        assert_eq!(signature.results().len(), 2);
+        assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        let signature =
+            find_function(output.module, "advice_word").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 4);
+        assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(signature.results().len(), 4);
+        assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        let signature = find_function(output.module, "emitted").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::Felt);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        let signature =
+            find_function(output.module, "emitted_imm").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 0);
+        assert_eq!(signature.results().len(), 0);
         Ok(())
     }
 

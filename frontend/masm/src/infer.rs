@@ -445,6 +445,27 @@ impl<'a> InferState<'a> {
                 self.push(Type::Felt);
                 Ok(())
             }
+            AdvPush(count) => {
+                let count = immediate_value(count)?;
+                validate_advice_read_count(count, span)?;
+                for _ in 0..count {
+                    self.push(Type::Felt);
+                }
+                Ok(())
+            }
+            AdvLoadW => {
+                self.drop_n(4, span)?;
+                for _ in 0..4 {
+                    self.push(Type::Felt);
+                }
+                Ok(())
+            }
+            Emit => {
+                self.pop_with_type(Type::Felt, span)?;
+                self.push(Type::Felt);
+                Ok(())
+            }
+            EmitImm(_) => Ok(()),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
             _ => Err(error::error(format!(
@@ -883,6 +904,15 @@ fn validate_memory_word_address(addr: u32, span: SourceSpan) -> Result<()> {
     if addr % 4 != 0 {
         return Err(error::error(format!(
             "memory word address {addr} is not word-aligned at {span:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_advice_read_count(count: u8, span: SourceSpan) -> Result<()> {
+    if !(1..=16).contains(&count) {
+        return Err(error::error(format!(
+            "advice read count {count} is out of range at {span:?}; expected 1..=16"
         )));
     }
     Ok(())
