@@ -279,3 +279,83 @@ pub struct CryptoStream {
 }
 
 infer_felt_outputs!(CryptoStream, "hir.crypto_stream", 14, 14);
+
+/// Perform one FRI ext2 layer fold by a factor of four.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+pub struct FriExt2Fold4 {
+    #[operands]
+    stack: IntFelt,
+    #[results]
+    outputs: IntFelt,
+}
+
+infer_felt_outputs!(FriExt2Fold4, "hir.fri_ext2fold4", 17, 16);
+
+/// Perform eight Horner evaluation steps over base-field coefficients.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+pub struct HornerBase {
+    #[operands]
+    stack: IntFelt,
+    #[results]
+    outputs: IntFelt,
+}
+
+infer_felt_outputs!(HornerBase, "hir.horner_eval_base", 16, 16);
+
+/// Perform four Horner evaluation steps over extension-field coefficients.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+pub struct HornerExt {
+    #[operands]
+    stack: IntFelt,
+    #[results]
+    outputs: IntFelt,
+}
+
+infer_felt_outputs!(HornerExt, "hir.horner_eval_ext", 16, 16);
+
+/// Evaluate a memory-encoded arithmetic circuit and assert it evaluates to zero.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+pub struct EvalCircuit {
+    #[operands]
+    stack: IntFelt,
+    #[results]
+    outputs: IntFelt,
+}
+
+infer_felt_outputs!(EvalCircuit, "hir.eval_circuit", 3, 3);
+
+/// Log a precompile event into the VM precompile transcript.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+pub struct LogPrecompile {
+    #[operands]
+    stack: IntFelt,
+    #[results]
+    outputs: IntFelt,
+}
+
+infer_felt_outputs!(LogPrecompile, "hir.log_precompile", 12, 12);

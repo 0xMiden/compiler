@@ -394,6 +394,81 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
     }
 
+    /// Perform one FRI ext2 layer fold by a factor of four.
+    fn fri_ext2fold4<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 16]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::FriExt2Fold4, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Perform eight Horner evaluation steps over base-field coefficients.
+    fn horner_base<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 16]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::HornerBase, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Perform four Horner evaluation steps over extension-field coefficients.
+    fn horner_ext<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 16]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::HornerExt, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Evaluate a memory-encoded arithmetic circuit and assert it evaluates to zero.
+    fn eval_circuit<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 3]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::EvalCircuit, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Log a precompile event into the VM precompile transcript.
+    fn log_precompile<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 12]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::LogPrecompile, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
     /// Load two VM words from memory and update the affected VM stack window.
     fn mem_stream<A>(
         &mut self,

@@ -1153,6 +1153,41 @@ impl HirLowering for hir::CryptoStream {
     }
 }
 
+impl HirLowering for hir::FriExt2Fold4 {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).fri_ext2fold4(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::HornerBase {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).horner_base(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::HornerExt {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).horner_ext(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::EvalCircuit {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).eval_circuit(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::LogPrecompile {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).log_precompile(self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::MemStream {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).mem_stream(self.span());

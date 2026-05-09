@@ -510,6 +510,18 @@ impl<'a> InferState<'a> {
             MTreeVerify | MTreeVerifyWithError(_) => self.constrain_top_n(10, Type::Felt, span),
             CryptoStream => self.constrain_top_n(14, Type::Felt, span),
             MemStream | AdvPipe => self.constrain_top_n(13, Type::Felt, span),
+            FriExt2Fold4 => {
+                for _ in 0..17 {
+                    self.pop_with_type(Type::Felt, span)?;
+                }
+                for _ in 0..16 {
+                    self.push(Type::Felt);
+                }
+                Ok(())
+            }
+            HornerBase | HornerExt => self.constrain_top_n(16, Type::Felt, span),
+            EvalCircuit => self.constrain_top_n(3, Type::Felt, span),
+            LogPrecompile => self.constrain_top_n(12, Type::Felt, span),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
             _ => Err(error::error(format!(

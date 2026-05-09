@@ -835,6 +835,11 @@ impl<'a> ProcedureLifter<'a> {
                 self.mtree_verify(Some(message), span, builder)
             }
             CryptoStream => self.crypto_stream(span, builder),
+            FriExt2Fold4 => self.fri_ext2fold4(span, builder),
+            HornerBase => self.horner_base(span, builder),
+            HornerExt => self.horner_ext(span, builder),
+            EvalCircuit => self.eval_circuit(span, builder),
+            LogPrecompile => self.log_precompile(span, builder),
             Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),
@@ -1687,6 +1692,61 @@ impl<'a> ProcedureLifter<'a> {
     ) -> Result<()> {
         let operands = self.pop_cast_felt_window(14, span, builder)?;
         let results = builder.crypto_stream(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn fri_ext2fold4(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(17, span, builder)?;
+        let results = builder.fri_ext2fold4(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn horner_base(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(16, span, builder)?;
+        let results = builder.horner_base(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn horner_ext(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(16, span, builder)?;
+        let results = builder.horner_ext(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn eval_circuit(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(3, span, builder)?;
+        let results = builder.eval_circuit(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn log_precompile(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(12, span, builder)?;
+        let results = builder.log_precompile(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }

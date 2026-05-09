@@ -23,6 +23,31 @@ impl OpEmitter<'_> {
         self.felt_stack_transform(masm::Instruction::CryptoStream, 14, 14, span);
     }
 
+    /// Perform one FRI ext2 layer fold by a factor of four.
+    pub fn fri_ext2fold4(&mut self, span: SourceSpan) {
+        self.felt_stack_transform(masm::Instruction::FriExt2Fold4, 17, 16, span);
+    }
+
+    /// Perform eight Horner evaluation steps over base-field coefficients.
+    pub fn horner_base(&mut self, span: SourceSpan) {
+        self.felt_stack_transform(masm::Instruction::HornerBase, 16, 16, span);
+    }
+
+    /// Perform four Horner evaluation steps over extension-field coefficients.
+    pub fn horner_ext(&mut self, span: SourceSpan) {
+        self.felt_stack_transform(masm::Instruction::HornerExt, 16, 16, span);
+    }
+
+    /// Evaluate a memory-encoded arithmetic circuit and assert it evaluates to zero.
+    pub fn eval_circuit(&mut self, span: SourceSpan) {
+        self.felt_stack_transform(masm::Instruction::EvalCircuit, 3, 3, span);
+    }
+
+    /// Log a precompile event into the VM precompile transcript.
+    pub fn log_precompile(&mut self, span: SourceSpan) {
+        self.felt_stack_transform(masm::Instruction::LogPrecompile, 12, 12, span);
+    }
+
     fn felt_stack_transform(
         &mut self,
         instruction: masm::Instruction,
@@ -124,5 +149,47 @@ mod tests {
         assert_eq!(emitter.stack_len(), 14);
         assert!(emitter.stack().iter().all(|ty| *ty == Type::Felt));
         assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::CryptoStream)));
+    }
+
+    #[test]
+    fn proof_primitives_emit_vm_instructions_and_update_stack_shapes() {
+        fn assert_transform(
+            instruction: masm::Instruction,
+            inputs: usize,
+            outputs: usize,
+            emit: impl FnOnce(&mut OpEmitter<'_>, SourceSpan),
+        ) {
+            let mut block = Vec::default();
+            let context = Rc::new(Context::default());
+            let mut stack = OperandStack::new(context);
+            let mut invoked = BTreeSet::default();
+            let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+            for _ in 0..inputs {
+                emitter.push(Type::Felt);
+            }
+
+            let span = SourceSpan::default();
+            emit(&mut emitter, span);
+
+            assert_eq!(emitter.stack_len(), outputs);
+            assert!(emitter.stack().iter().all(|ty| *ty == Type::Felt));
+            assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, instruction)));
+        }
+
+        assert_transform(masm::Instruction::FriExt2Fold4, 17, 16, |emitter, span| {
+            emitter.fri_ext2fold4(span);
+        });
+        assert_transform(masm::Instruction::HornerBase, 16, 16, |emitter, span| {
+            emitter.horner_base(span);
+        });
+        assert_transform(masm::Instruction::HornerExt, 16, 16, |emitter, span| {
+            emitter.horner_ext(span);
+        });
+        assert_transform(masm::Instruction::EvalCircuit, 3, 3, |emitter, span| {
+            emitter.eval_circuit(span);
+        });
+        assert_transform(masm::Instruction::LogPrecompile, 12, 12, |emitter, span| {
+            emitter.log_precompile(span);
+        });
     }
 }

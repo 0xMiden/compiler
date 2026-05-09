@@ -215,12 +215,13 @@ mod tests {
         AdviceLoadWord as HirAdviceLoadWord, AdvicePipe as HirAdvicePipe,
         AdvicePop as HirAdvicePop, Assert as HirAssert, AssertEq as HirAssertEq,
         Assertz as HirAssertz, Caller as HirCaller, Clk as HirClk, CryptoStream as HirCryptoStream,
-        EmitEvent as HirEmitEvent, EmitEventImm as HirEmitEventImm, HMerge as HirHMerge,
-        HPerm as HirHPerm, Hash as HirHash, IntToPtr as HirIntToPtr, Load as HirLoad,
-        LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress, MTreeGet as HirMTreeGet,
-        MTreeMerge as HirMTreeMerge, MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify,
-        MemStream as HirMemStream, Store as HirStore, StoreLocal as HirStoreLocal,
-        SystemEvent as HirSystemEvent,
+        EmitEvent as HirEmitEvent, EmitEventImm as HirEmitEventImm, EvalCircuit as HirEvalCircuit,
+        FriExt2Fold4 as HirFriExt2Fold4, HMerge as HirHMerge, HPerm as HirHPerm, Hash as HirHash,
+        HornerBase as HirHornerBase, HornerExt as HirHornerExt, IntToPtr as HirIntToPtr,
+        Load as HirLoad, LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress,
+        LogPrecompile as HirLogPrecompile, MTreeGet as HirMTreeGet, MTreeMerge as HirMTreeMerge,
+        MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify, MemStream as HirMemStream,
+        Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
@@ -499,13 +500,13 @@ mod tests {
             Instruction::MTreeVerify,
             Instruction::MTreeVerifyWithError(_),
             Instruction::CryptoStream,
-        ],
-        unsupported: [
             Instruction::FriExt2Fold4,
             Instruction::HornerBase,
             Instruction::HornerExt,
             Instruction::EvalCircuit,
             Instruction::LogPrecompile,
+        ],
+        unsupported: [
             Instruction::DynExec,
             Instruction::DynCall,
             Instruction::ProcRef(_),
@@ -565,7 +566,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported(value: u32) -> u32
-    fri_ext2fold4
+    dynexec
 end
 "#,
             "test",
@@ -579,7 +580,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("not supported during disassembly"));
-        assert!(err.contains("FriExt2Fold4"));
+        assert!(err.contains("DynExec"));
     }
 
     #[test]
@@ -588,7 +589,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported
-    fri_ext2fold4
+    dynexec
 end
 "#,
             "test",
@@ -604,7 +605,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("signature inference is not implemented"));
-        assert!(err.contains("FriExt2Fold4"));
+        assert!(err.contains("DynExec"));
     }
 
     #[test]
@@ -692,6 +693,21 @@ end
                 "mtree_verify.err=\"bad path\"",
             ),
             instruction_case("crypto_stream", &felt_types(14), &felt_types(14), "crypto_stream"),
+            instruction_case("fri_ext2fold4", &felt_types(17), &felt_types(16), "fri_ext2fold4"),
+            instruction_case(
+                "horner_eval_base",
+                &felt_types(16),
+                &felt_types(16),
+                "horner_eval_base",
+            ),
+            instruction_case(
+                "horner_eval_ext",
+                &felt_types(16),
+                &felt_types(16),
+                "horner_eval_ext",
+            ),
+            instruction_case("eval_circuit", &felt_types(3), &felt_types(3), "eval_circuit"),
+            instruction_case("log_precompile", &felt_types(12), &felt_types(12), "log_precompile"),
             instruction_case("debug", &["felt"], &["felt"], "debug.stack"),
             instruction_case("trace", &["felt"], &["felt"], "trace.1"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
@@ -1293,12 +1309,71 @@ end
     }
 
     #[test]
+    fn lifts_proof_primitives_to_first_class_hir_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let params3 = (0..3).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let params12 = (0..12).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let params16 = (0..16).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let params17 = (0..17).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let results3 = vec!["felt"; 3].join(", ");
+        let results12 = vec!["felt"; 12].join(", ");
+        let results16 = vec!["felt"; 16].join(", ");
+        let source = format!(
+            r#"
+pub proc fold_fri({params17}) -> ({results16})
+    fri_ext2fold4
+end
+
+pub proc horner_base({params16}) -> ({results16})
+    horner_eval_base
+end
+
+pub proc horner_ext({params16}) -> ({results16})
+    horner_eval_ext
+end
+
+pub proc eval_circuit_case({params3}) -> ({results3})
+    eval_circuit
+end
+
+pub proc log_precompile_case({params12}) -> ({results12})
+    log_precompile
+end
+"#
+        );
+        let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
+
+        assert_eq!(
+            top_level_op_count::<HirFriExt2Fold4>(find_function(output.module, "fold_fri")),
+            1
+        );
+        assert_eq!(
+            top_level_op_count::<HirHornerBase>(find_function(output.module, "horner_base")),
+            1
+        );
+        assert_eq!(
+            top_level_op_count::<HirHornerExt>(find_function(output.module, "horner_ext")),
+            1
+        );
+        assert_eq!(
+            top_level_op_count::<HirEvalCircuit>(find_function(output.module, "eval_circuit_case")),
+            1
+        );
+        assert_eq!(
+            top_level_op_count::<HirLogPrecompile>(find_function(
+                output.module,
+                "log_precompile_case"
+            )),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
-            unsupported_instruction_case("horner_eval_base", 0, "horner_eval_base"),
-            unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
-            unsupported_instruction_case("log_precompile", 0, "log_precompile"),
+            unsupported_instruction_case("dyncall", 0, "dyncall"),
         ];
 
         for case in &cases {
@@ -1308,8 +1383,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 230);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 8);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 235);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 3);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1642,6 +1717,54 @@ end
             assert_eq!(signature.params().len(), 13);
             assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
             assert_eq!(signature.results().len(), 13);
+            assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn infers_proof_primitive_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc fold_fri
+    fri_ext2fold4
+end
+
+pub proc horner_base
+    horner_eval_base
+end
+
+pub proc horner_ext
+    horner_eval_ext
+end
+
+pub proc eval_circuit_case
+    eval_circuit
+end
+
+pub proc log_precompile_case
+    log_precompile
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        for (name, params, results) in [
+            ("fold_fri", 17, 16),
+            ("horner_base", 16, 16),
+            ("horner_ext", 16, 16),
+            ("eval_circuit_case", 3, 3),
+            ("log_precompile_case", 12, 12),
+        ] {
+            let signature = find_function(output.module, name).borrow().get_signature().clone();
+            assert_eq!(signature.params().len(), params);
+            assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+            assert_eq!(signature.results().len(), results);
             assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
         }
         Ok(())
