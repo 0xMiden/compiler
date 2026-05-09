@@ -21,7 +21,7 @@ use midenc_hir::{
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    DisassembledModule, DisassemblerConfig, ExternalSignatureMap, Result, error,
+    DisassembledModule, DisassemblerConfig, ExternalSignatureMap, ExternalTypeMap, Result, error,
     events::{system_event_id, system_event_read_count},
     infer, signatures,
 };
@@ -30,6 +30,7 @@ pub(crate) fn lift_module(
     module: &Module,
     config: &DisassemblerConfig,
     external_signatures: &ExternalSignatureMap,
+    external_types: &ExternalTypeMap,
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
     let mut builder = OpBuilder::new(context.clone());
@@ -46,7 +47,16 @@ pub(crate) fn lift_module(
         let Some(signature) = procedure.signature() else {
             continue;
         };
-        let signature = signatures::convert_signature(&context, module, signature)?;
+        let signature = if external_types.is_empty() {
+            signatures::convert_signature(&context, module, signature)?
+        } else {
+            signatures::convert_signature_with_external_types(
+                &context,
+                module,
+                signature,
+                external_types,
+            )?
+        };
         signatures.insert(procedure.name().as_str().to_owned(), signature);
     }
     let external_signatures = convert_external_signatures(&context, external_signatures)?;
@@ -167,6 +177,22 @@ fn external_symbol_name(index: usize, path: &str) -> String {
         }
     }
     name
+}
+
+fn external_signature_metadata_hint(external_functions: &FxHashMap<String, FunctionRef>) -> String {
+    if external_functions.is_empty() {
+        return "; no external signature metadata is available".to_string();
+    }
+
+    let mut paths = external_functions.keys().cloned().collect::<Vec<_>>();
+    paths.sort();
+    let omitted = paths.len().saturating_sub(8);
+    paths.truncate(8);
+    let mut hint = format!("; available external signatures: {}", paths.join(", "));
+    if omitted > 0 {
+        hint.push_str(&format!(" (+{omitted} more)"));
+    }
+    hint
 }
 
 fn ensure_op_region(context: &Rc<Context>, op: &mut dyn HirOp) {
@@ -2221,8 +2247,9 @@ impl<'a> ProcedureLifter<'a> {
                 let key = invocation_path_key(path.inner());
                 self.external_functions.get(&key).copied().ok_or_else(|| {
                     error::error(format!(
-                        "unresolved external callee '{}'; no external signature was provided",
-                        path.inner()
+                        "unresolved external callee '{}'; external signature metadata is missing{}",
+                        path.inner(),
+                        external_signature_metadata_hint(self.external_functions)
                     ))
                 })
             }

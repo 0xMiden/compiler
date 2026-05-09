@@ -5,7 +5,9 @@ use std::{
 };
 
 use miden_assembly_syntax::{
-    Parse, ParseOptions, PathBuf as MasmPathBuf, ast::ModuleKind, debuginfo::SourceManager,
+    Parse, ParseOptions, PathBuf as MasmPathBuf,
+    ast::{Export, Module, ModuleKind},
+    debuginfo::SourceManager,
 };
 use miden_core::serde::Deserializable;
 use miden_mast_package::{Package as MastPackage, PackageExport};
@@ -13,14 +15,21 @@ use miden_project::{
     DependencyVersionScheme, Package as ProjectPackage, Project, ProjectDependencyGraph,
     ProjectDependencyNode, ProjectDependencyNodeProvenance, ProjectSource, Target,
 };
-use midenc_hir::Context;
+use midenc_hir::{Context, Type};
 
-use crate::{ExternalSignatureMap, Result, error, signatures};
+use crate::{ExternalSignatureMap, ExternalTypeMap, Result, error, signatures};
 
 pub(crate) struct ProjectTargetInput {
     pub source_path: PathBuf,
     pub module_path: MasmPathBuf,
     pub external_signatures: ExternalSignatureMap,
+    pub external_types: ExternalTypeMap,
+}
+
+#[derive(Default)]
+struct ExternalMetadata {
+    signatures: ExternalSignatureMap,
+    types: ExternalTypeMap,
 }
 
 pub(crate) fn resolve_project_target(
@@ -70,9 +79,9 @@ pub(crate) fn resolve_project_target(
     };
 
     let module_path = target.namespace.inner().as_ref().to_path_buf();
-    let external_signatures = collect_dependency_signatures(&project, context)?;
+    let external_metadata = collect_dependency_metadata(&project, context)?;
 
-    Ok(project_target_input(source_path, module_path, external_signatures))
+    Ok(project_target_input(source_path, module_path, external_metadata))
 }
 
 pub(crate) fn resolve_project_target_with_dependency_graph(
@@ -127,33 +136,31 @@ pub(crate) fn resolve_project_target_with_dependency_graph(
         })?,
     );
     let module_path = target.namespace.inner().as_ref().to_path_buf();
-    let external_signatures = collect_dependency_graph_signatures(dependency_graph, context)?;
+    let external_metadata = collect_dependency_graph_metadata(dependency_graph, context)?;
 
-    Ok(project_target_input(source_path, module_path, external_signatures))
+    Ok(project_target_input(source_path, module_path, external_metadata))
 }
 
 fn project_target_input(
     source_path: PathBuf,
     module_path: MasmPathBuf,
-    external_signatures: ExternalSignatureMap,
+    external_metadata: ExternalMetadata,
 ) -> ProjectTargetInput {
     ProjectTargetInput {
         source_path,
         module_path,
-        external_signatures,
+        external_signatures: external_metadata.signatures,
+        external_types: external_metadata.types,
     }
 }
 
-fn collect_dependency_signatures(
-    project: &Project,
-    context: &Context,
-) -> Result<ExternalSignatureMap> {
-    let mut signatures = ExternalSignatureMap::new();
+fn collect_dependency_metadata(project: &Project, context: &Context) -> Result<ExternalMetadata> {
+    let mut metadata = ExternalMetadata::default();
     let package = project.package();
     let source_manager = context.session().source_manager.clone();
     for dependency in package.dependencies() {
-        collect_dependency_signature(
-            &mut signatures,
+        collect_dependency_metadata_for_scheme(
+            &mut metadata,
             project,
             context,
             dependency.name().as_ref(),
@@ -161,40 +168,51 @@ fn collect_dependency_signatures(
             source_manager.clone(),
         )?;
     }
-    Ok(signatures)
+    Ok(metadata)
 }
 
-fn collect_dependency_graph_signatures(
+fn collect_dependency_graph_metadata(
     dependency_graph: &ProjectDependencyGraph,
     context: &Context,
-) -> Result<ExternalSignatureMap> {
-    let mut signatures = ExternalSignatureMap::new();
+) -> Result<ExternalMetadata> {
+    let mut metadata = ExternalMetadata::default();
+    let mut source_modules = Vec::<Box<Module>>::new();
     let source_manager = context.session().source_manager.clone();
 
     for (package, node) in dependency_graph.nodes() {
         if package == dependency_graph.root() {
             continue;
         }
-        collect_dependency_graph_node_signatures(
-            &mut signatures,
+        collect_dependency_graph_node_metadata(
+            &mut metadata,
+            &mut source_modules,
             node,
-            context,
             source_manager.clone(),
         )?;
     }
 
-    Ok(signatures)
+    collect_source_modules_types(&mut metadata.types, context, &source_modules)?;
+    for module in &source_modules {
+        collect_source_module_signatures(
+            &mut metadata.signatures,
+            context,
+            module,
+            &metadata.types,
+        )?;
+    }
+
+    Ok(metadata)
 }
 
-fn collect_dependency_graph_node_signatures(
-    signatures: &mut ExternalSignatureMap,
+fn collect_dependency_graph_node_metadata(
+    metadata: &mut ExternalMetadata,
+    source_modules: &mut Vec<Box<Module>>,
     node: &ProjectDependencyNode,
-    context: &Context,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
     match &node.provenance {
         ProjectDependencyNodeProvenance::Preassembled { path, .. } => {
-            collect_mast_package_signatures(signatures, path)
+            collect_mast_package_metadata(metadata, path)
         }
         ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
             manifest_path,
@@ -207,7 +225,10 @@ fn collect_dependency_graph_node_signatures(
                 source_manager.as_ref(),
             )?;
             let package = project.package();
-            collect_source_package_signatures(signatures, context, package.as_ref(), source_manager)
+            if let Some(module) = parse_source_package_module(package.as_ref(), source_manager)? {
+                source_modules.push(module);
+            }
+            Ok(())
         }
         ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
             library_path: None, ..
@@ -221,8 +242,8 @@ fn collect_dependency_graph_node_signatures(
     }
 }
 
-fn collect_dependency_signature(
-    signatures: &mut ExternalSignatureMap,
+fn collect_dependency_metadata_for_scheme(
+    metadata: &mut ExternalMetadata,
     project: &Project,
     context: &Context,
     dependency_name: &str,
@@ -233,8 +254,8 @@ fn collect_dependency_signature(
         DependencyVersionScheme::Path { path, .. } => {
             let package = project.package();
             let path = resolve_uri_path(package_base_dir(package.as_ref())?, path.inner().path());
-            collect_path_dependency_signatures(
-                signatures,
+            collect_path_dependency_metadata(
+                metadata,
                 context,
                 dependency_name,
                 &path,
@@ -246,8 +267,8 @@ fn collect_dependency_signature(
                 return Ok(());
             };
             let path = resolve_uri_path(base_dir, path.inner().path());
-            collect_path_dependency_signatures(
-                signatures,
+            collect_path_dependency_metadata(
+                metadata,
                 context,
                 dependency_name,
                 &path,
@@ -264,61 +285,78 @@ fn collect_dependency_signature(
                     member.inner().path()
                 )));
             };
-            collect_source_package_signatures(signatures, context, package.as_ref(), source_manager)
+            collect_source_package_metadata(metadata, context, package.as_ref(), source_manager)
         }
         DependencyVersionScheme::Registry(_) | DependencyVersionScheme::Git { .. } => Ok(()),
     }
 }
 
-fn collect_path_dependency_signatures(
-    signatures: &mut ExternalSignatureMap,
+fn collect_path_dependency_metadata(
+    metadata: &mut ExternalMetadata,
     context: &Context,
     dependency_name: &str,
     path: &Path,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
     if path.extension().and_then(|ext| ext.to_str()) == Some(MastPackage::EXTENSION) {
-        return collect_mast_package_signatures(signatures, path);
+        return collect_mast_package_metadata(metadata, path);
     }
 
     let project = Project::load_project_reference(dependency_name, path, source_manager.as_ref())?;
     let package = project.package();
-    collect_source_package_signatures(signatures, context, package.as_ref(), source_manager)
+    collect_source_package_metadata(metadata, context, package.as_ref(), source_manager)
 }
 
-fn collect_mast_package_signatures(
-    signatures: &mut ExternalSignatureMap,
-    path: &Path,
-) -> Result<()> {
+fn collect_mast_package_metadata(metadata: &mut ExternalMetadata, path: &Path) -> Result<()> {
     let package = load_mast_package(path)?;
     for export in package.manifest.exports() {
-        let PackageExport::Procedure(export) = export else {
-            continue;
-        };
-        let Some(signature) = &export.signature else {
-            continue;
-        };
-        insert_external_signature(
-            signatures,
-            export.path.to_absolute().to_string(),
-            signature.clone(),
-        )?;
+        match export {
+            PackageExport::Procedure(export) => {
+                let Some(signature) = &export.signature else {
+                    continue;
+                };
+                insert_external_signature(
+                    &mut metadata.signatures,
+                    export.path.to_absolute().to_string(),
+                    signature.clone(),
+                )?;
+            }
+            PackageExport::Type(export) => {
+                insert_external_type(
+                    &mut metadata.types,
+                    export.path.to_absolute().to_string(),
+                    export.ty.clone(),
+                )?;
+            }
+            PackageExport::Constant(_) => {}
+        }
     }
     Ok(())
 }
 
-fn collect_source_package_signatures(
-    signatures: &mut ExternalSignatureMap,
+fn collect_source_package_metadata(
+    metadata: &mut ExternalMetadata,
     context: &Context,
     package: &ProjectPackage,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
-    let Some(target) = package.library_target() else {
+    let Some(module) = parse_source_package_module(package, source_manager)? else {
         return Ok(());
+    };
+    collect_source_module_types(&mut metadata.types, context, &module)?;
+    collect_source_module_signatures(&mut metadata.signatures, context, &module, &metadata.types)
+}
+
+fn parse_source_package_module(
+    package: &ProjectPackage,
+    source_manager: Arc<dyn SourceManager>,
+) -> Result<Option<Box<Module>>> {
+    let Some(target) = package.library_target() else {
+        return Ok(None);
     };
     let target = target.inner();
     let Some(source_path) = resolve_target_source_path(package, target)? else {
-        return Ok(());
+        return Ok(None);
     };
     if source_path.extension().and_then(|ext| ext.to_str()) != Some("masm") {
         return Err(error::error(format!(
@@ -332,12 +370,103 @@ fn collect_source_package_signatures(
     let module = source_path
         .as_path()
         .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))?;
+    Ok(Some(module))
+}
 
+fn collect_source_module_types(
+    types: &mut ExternalTypeMap,
+    context: &Context,
+    module: &Module,
+) -> Result<()> {
+    for (index, path) in module.exported() {
+        let Export::Type(decl) = &module[index] else {
+            continue;
+        };
+        let ty =
+            signatures::convert_type_expr_with_external_types(context, module, &decl.ty(), types)?;
+        insert_external_type(types, path.as_path().to_absolute().to_string(), ty)?;
+    }
+
+    Ok(())
+}
+
+fn collect_source_modules_types(
+    types: &mut ExternalTypeMap,
+    context: &Context,
+    modules: &[Box<Module>],
+) -> Result<()> {
+    let mut pending = Vec::new();
+    for (module_index, module) in modules.iter().enumerate() {
+        for (index, path) in module.exported() {
+            if matches!(&module[index], Export::Type(_)) {
+                pending.push((module_index, index, path.as_path().to_absolute().to_string()));
+            }
+        }
+    }
+
+    while !pending.is_empty() {
+        let mut progress = false;
+        let mut next = Vec::new();
+        let mut last_unresolved = None;
+
+        for (module_index, index, path) in pending {
+            let module = &modules[module_index];
+            let Export::Type(decl) = &module[index] else {
+                continue;
+            };
+            match signatures::convert_type_expr_with_external_types(
+                context,
+                module,
+                &decl.ty(),
+                types,
+            ) {
+                Ok(ty) => {
+                    insert_external_type(types, path, ty)?;
+                    progress = true;
+                }
+                Err(err) if is_unresolved_external_type_metadata(&err) => {
+                    last_unresolved = Some(err);
+                    next.push((module_index, index, path));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        if !progress {
+            return Err(last_unresolved.unwrap_or_else(|| {
+                error::error("failed to resolve source dependency type metadata")
+            }));
+        }
+        pending = next;
+    }
+
+    Ok(())
+}
+
+fn is_unresolved_external_type_metadata(err: &miden_assembly_syntax::diagnostics::Report) -> bool {
+    err.to_string().contains("external type metadata")
+}
+
+fn collect_source_module_signatures(
+    signatures: &mut ExternalSignatureMap,
+    context: &Context,
+    module: &Module,
+    external_types: &ExternalTypeMap,
+) -> Result<()> {
     for (index, path) in module.exported() {
         let Some(signature) = module.procedure_signature(index) else {
             continue;
         };
-        let signature = signatures::convert_ast_function_type(context, &module, signature)?;
+        let signature = if external_types.is_empty() {
+            signatures::convert_ast_function_type(context, module, signature)?
+        } else {
+            signatures::convert_ast_function_type_with_external_types(
+                context,
+                module,
+                signature,
+                external_types,
+            )?
+        };
         insert_external_signature(signatures, path.as_path().to_absolute().to_string(), signature)?;
     }
 
@@ -371,6 +500,17 @@ fn insert_external_signature(
     {
         return Err(error::error(format!(
             "conflicting package metadata signatures for external procedure '{path}'"
+        )));
+    }
+    Ok(())
+}
+
+fn insert_external_type(types: &mut ExternalTypeMap, path: String, ty: Type) -> Result<()> {
+    if let Some(existing) = types.insert(path.clone(), ty.clone())
+        && existing != ty
+    {
+        return Err(error::error(format!(
+            "conflicting package metadata types for external type '{path}'"
         )));
     }
     Ok(())

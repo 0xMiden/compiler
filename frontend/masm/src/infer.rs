@@ -724,8 +724,10 @@ impl<'a> InferState<'a> {
                 let key = invocation_path_key(path.inner());
                 self.external_signatures.get(&key).ok_or_else(|| {
                     error::error(format!(
-                        "signature inference could not resolve external callee '{}' at {span:?}",
-                        path.inner()
+                        "signature inference could not resolve external callee '{}' at {span:?}; \
+                         external signature metadata is missing{}",
+                        path.inner(),
+                        external_signature_metadata_hint(self.external_signatures)
                     ))
                 })?
             }
@@ -908,6 +910,22 @@ impl<'a> InferState<'a> {
 
 fn invocation_path_key(path: &MasmPath) -> String {
     path.to_absolute().to_string()
+}
+
+fn external_signature_metadata_hint(external_signatures: &FxHashMap<String, Signature>) -> String {
+    if external_signatures.is_empty() {
+        return "; no external signature metadata is available".to_string();
+    }
+
+    let mut paths = external_signatures.keys().cloned().collect::<Vec<_>>();
+    paths.sort();
+    let omitted = paths.len().saturating_sub(8);
+    paths.truncate(8);
+    let mut hint = format!("; available external signatures: {}", paths.join(", "));
+    if omitted > 0 {
+        hint.push_str(&format!(" (+{omitted} more)"));
+    }
+    hint
 }
 
 fn merge_branch_inputs(lhs: &[AbstractValue], rhs: &[AbstractValue]) -> Vec<AbstractValue> {

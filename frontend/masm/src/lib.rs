@@ -14,7 +14,7 @@ use miden_assembly_syntax::{
     ast::{Module, ModuleKind},
     debuginfo::{SourceLanguage, SourceManager, SourceManagerExt, Uri},
 };
-use midenc_hir::{Context, FunctionType, dialects::builtin};
+use midenc_hir::{Context, FunctionType, Type, dialects::builtin};
 
 pub use self::error::Result;
 
@@ -24,6 +24,13 @@ pub use self::error::Result;
 /// disassembly can populate this from package metadata; tests or embedding tools can provide it
 /// directly when they already know the callee contracts.
 pub type ExternalSignatureMap = BTreeMap<String, FunctionType>;
+
+/// External type definitions keyed by absolute MASM type path.
+///
+/// These entries are used when MASM procedure signatures refer to imported types. Project
+/// disassembly populates this from dependency package metadata/source exports so signatures can be
+/// lowered without requiring the MASM AST resolver to load external modules.
+pub type ExternalTypeMap = BTreeMap<String, Type>;
 
 /// Configuration for MASM disassembly.
 #[derive(Debug, Clone, Copy)]
@@ -74,6 +81,7 @@ pub fn disassemble_file_with_external_signatures(
         module_path,
         config,
         external_signatures,
+        &ExternalTypeMap::new(),
         context,
     )
 }
@@ -83,6 +91,7 @@ fn disassemble_file_with_module_path_and_external_signatures(
     module_path: impl AsRef<miden_assembly_syntax::Path>,
     config: &DisassemblerConfig,
     external_signatures: &ExternalSignatureMap,
+    external_types: &ExternalTypeMap,
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
     let path = path.as_ref();
@@ -92,7 +101,7 @@ fn disassemble_file_with_module_path_and_external_signatures(
     })?;
     let module = source_file
         .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))?;
-    lift::lift_module(&module, config, external_signatures, context)
+    lift::lift_module(&module, config, external_signatures, external_types, context)
 }
 
 /// Disassemble a MASM source string into an HIR module.
@@ -125,7 +134,7 @@ pub fn disassemble_source_with_external_signatures(
     let source_file = source_manager.load(SourceLanguage::Masm, uri, source.into());
     let module = source_file
         .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))?;
-    lift::lift_module(&module, config, external_signatures, context)
+    lift::lift_module(&module, config, external_signatures, &ExternalTypeMap::new(), context)
 }
 
 /// Disassemble a target from a `miden-project.toml` package manifest.
@@ -141,6 +150,7 @@ pub fn disassemble_project_target(
         target.module_path,
         config,
         &target.external_signatures,
+        &target.external_types,
         context,
     )
 }
@@ -165,6 +175,7 @@ pub fn disassemble_project_target_with_dependency_graph(
         target.module_path,
         config,
         &target.external_signatures,
+        &target.external_types,
         context,
     )
 }
@@ -175,7 +186,13 @@ pub fn disassemble_module(
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledModule> {
-    lift::lift_module(module, config, &ExternalSignatureMap::new(), context)
+    lift::lift_module(
+        module,
+        config,
+        &ExternalSignatureMap::new(),
+        &ExternalTypeMap::new(),
+        context,
+    )
 }
 
 fn masm_module_path_from_file(path: &Path) -> Result<miden_assembly_syntax::PathBuf> {
@@ -2438,6 +2455,65 @@ end
     }
 
     #[test]
+    fn missing_external_callee_diagnostic_lists_available_metadata() {
+        let context = Rc::new(Context::default());
+        let mut external_signatures = ExternalSignatureMap::new();
+        external_signatures
+            .insert("::dep::callee".to_owned(), masm_signature([Type::Felt], [Type::Felt]));
+
+        let err = match disassemble_source_with_external_signatures(
+            r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::missing
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            &external_signatures,
+            context,
+        ) {
+            Ok(_) => panic!("missing external metadata should be rejected"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+        assert!(message.contains("unresolved external callee '::dep::missing'"));
+        assert!(message.contains("available external signatures"));
+        assert!(message.contains("::dep::callee"));
+    }
+
+    #[test]
+    fn missing_external_callee_inference_diagnostic_lists_available_metadata() {
+        let context = Rc::new(Context::default());
+        let mut external_signatures = ExternalSignatureMap::new();
+        external_signatures
+            .insert("::dep::callee".to_owned(), masm_signature([Type::Felt], [Type::Felt]));
+
+        let err = match disassemble_source_with_external_signatures(
+            r#"
+pub proc entry
+    exec.::dep::missing
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            &external_signatures,
+            context,
+        ) {
+            Ok(_) => panic!("missing external metadata should be rejected during inference"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+        assert!(
+            message
+                .contains("signature inference could not resolve external callee '::dep::missing'")
+        );
+        assert!(message.contains("available external signatures"));
+        assert!(message.contains("::dep::callee"));
+    }
+
+    #[test]
     fn lifts_known_signature_with_local_type_alias() -> Result<()> {
         let context = Rc::new(Context::default());
         let output = disassemble_source(
@@ -2475,6 +2551,87 @@ end
         )?;
         let function = find_function(output.module, "entry");
         assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+        let _ = fs::remove_dir_all(root);
+
+        Ok(())
+    }
+
+    #[test]
+    fn project_dependency_graph_resolves_imported_external_type_metadata() -> Result<()> {
+        let (root, app_dir) = write_imported_type_dependency_project(
+            "midenc_frontend_masm_graph_type_metadata",
+            true,
+        );
+        let context = Rc::new(Context::default());
+        let registry = NoPackageStore::default();
+        let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+            .with_source_manager(context.session().source_manager.clone())
+            .build_from_path(app_dir.join("miden-project.toml"))?;
+
+        let output = disassemble_project_target_with_dependency_graph(
+            app_dir.join("miden-project.toml"),
+            None,
+            &dependency_graph,
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+        let function = find_function(output.module, "entry");
+        assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+        let _ = fs::remove_dir_all(root);
+
+        Ok(())
+    }
+
+    #[test]
+    fn project_dependency_graph_reports_unresolved_external_type_metadata() -> Result<()> {
+        let (root, app_dir) = write_imported_type_dependency_project(
+            "midenc_frontend_masm_graph_missing_type_metadata",
+            false,
+        );
+        let context = Rc::new(Context::default());
+        let registry = NoPackageStore::default();
+        let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+            .with_source_manager(context.session().source_manager.clone())
+            .build_from_path(app_dir.join("miden-project.toml"))?;
+
+        let err = match disassemble_project_target_with_dependency_graph(
+            app_dir.join("miden-project.toml"),
+            None,
+            &dependency_graph,
+            &DisassemblerConfig::default(),
+            context,
+        ) {
+            Ok(_) => panic!("missing external type metadata should be rejected"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+        assert!(message.contains("external type '::types::Scalar'"));
+        assert!(message.contains("no external type metadata"));
+
+        let _ = fs::remove_dir_all(root);
+
+        Ok(())
+    }
+
+    #[test]
+    fn project_target_resolves_imported_external_type_in_declared_signature() -> Result<()> {
+        let (root, app_dir) =
+            write_root_imported_type_project("midenc_frontend_masm_root_type_metadata");
+
+        let context = Rc::new(Context::default());
+        let output = disassemble_project_target(
+            app_dir.join("miden-project.toml"),
+            None,
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+        let signature = find_function(output.module, "entry").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::Felt);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
 
         let _ = fs::remove_dir_all(root);
 
@@ -3623,6 +3780,154 @@ dep = { path = "../dep" }
             r#"
 pub proc entry(a: felt) -> felt
     exec.::dep::callee
+end
+"#,
+        )
+        .unwrap();
+
+        (root, app_dir)
+    }
+
+    fn write_imported_type_dependency_project(
+        prefix: &str,
+        include_type_dependency: bool,
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = temp_project_dir(prefix);
+        let app_dir = root.join("app");
+        let dep_dir = root.join("dep");
+        let types_dir = root.join("types");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&dep_dir).unwrap();
+        fs::create_dir_all(&types_dir).unwrap();
+
+        fs::write(
+            types_dir.join("miden-project.toml"),
+            r#"[package]
+name = "types"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            types_dir.join("lib.masm"),
+            r#"
+pub type Scalar = felt
+"#,
+        )
+        .unwrap();
+
+        let dep_manifest = if include_type_dependency {
+            r#"[package]
+name = "dep"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+
+[dependencies]
+types = { path = "../types" }
+"#
+        } else {
+            r#"[package]
+name = "dep"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+"#
+        };
+        fs::write(dep_dir.join("miden-project.toml"), dep_manifest).unwrap();
+        fs::write(
+            dep_dir.join("lib.masm"),
+            r#"
+use ::types::Scalar
+
+pub type Wrapped = Scalar
+
+pub proc callee(a: Wrapped) -> Wrapped
+    add.1
+end
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            app_dir.join("miden-project.toml"),
+            r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+
+[dependencies]
+dep = { path = "../dep" }
+"#,
+        )
+        .unwrap();
+        fs::write(
+            app_dir.join("main.masm"),
+            r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+        )
+        .unwrap();
+
+        (root, app_dir)
+    }
+
+    fn write_root_imported_type_project(prefix: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = temp_project_dir(prefix);
+        let app_dir = root.join("app");
+        let types_dir = root.join("types");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&types_dir).unwrap();
+
+        fs::write(
+            types_dir.join("miden-project.toml"),
+            r#"[package]
+name = "types"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            types_dir.join("lib.masm"),
+            r#"
+pub type Scalar = felt
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            app_dir.join("miden-project.toml"),
+            r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+
+[dependencies]
+types = { path = "../types" }
+"#,
+        )
+        .unwrap();
+        fs::write(
+            app_dir.join("main.masm"),
+            r#"
+use ::types::Scalar
+
+pub proc entry(a: Scalar) -> Scalar
+    add.1
 end
 "#,
         )
