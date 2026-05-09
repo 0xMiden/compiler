@@ -461,6 +461,9 @@ mod tests {
             Instruction::Exec(_),
             Instruction::Call(_),
             Instruction::SysCall(_),
+            Instruction::Debug(_),
+            Instruction::DebugVar(_),
+            Instruction::Trace(_),
         ],
         unsupported: [
             Instruction::Ext2Add,
@@ -494,11 +497,8 @@ mod tests {
             Instruction::DynExec,
             Instruction::DynCall,
             Instruction::ProcRef(_),
-            Instruction::Debug(_),
-            Instruction::DebugVar(_),
             Instruction::Emit,
             Instruction::EmitImm(_),
-            Instruction::Trace(_),
         ],
     }
 
@@ -609,6 +609,8 @@ end
             felt_instruction_case("push_slice", 0, 0, "push.[1,2,3,4][1..3] drop drop"),
             felt_instruction_case("push_felt_list", 0, 0, "push.1.2.3 drop drop drop"),
             instruction_case("sdepth", &["felt", "felt"], &felt_types(3), "sdepth"),
+            instruction_case("debug", &["felt"], &["felt"], "debug.stack"),
+            instruction_case("trace", &["felt"], &["felt"], "trace.1"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
             instruction_case_with_locals("loc_store", 1, &["felt"], &[], "loc_store.0"),
             instruction_case_with_locals("loc_loadw_be", 4, &[], &felt_types(4), "loc_loadw_be.0"),
@@ -934,7 +936,6 @@ end
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
             unsupported_instruction_case("emit", 0, "emit"),
-            unsupported_instruction_case("trace", 0, "trace.1"),
         ];
 
         for case in &cases {
@@ -944,8 +945,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 202);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 36);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 205);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 33);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1046,6 +1047,30 @@ end
         assert_eq!(signature.params().len(), 0);
         assert_eq!(signature.results().len(), 1);
         assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_debug_decorator_signature() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc debugged
+    debug.stack
+    trace.1
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "debugged").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 0);
+        assert_eq!(signature.results().len(), 0);
 
         Ok(())
     }

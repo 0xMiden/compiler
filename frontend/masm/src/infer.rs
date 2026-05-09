@@ -425,6 +425,7 @@ impl<'a> InferState<'a> {
                 self.store_memory_word(false, span)
             }
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
+            Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
             _ => Err(error::error(format!(
                 "signature inference is not implemented for MASM instruction {inst:?} at {span:?}"
             ))),

@@ -899,6 +899,7 @@ impl<'a> ProcedureLifter<'a> {
             IsOdd => self.unary_with_type(builder, Type::Felt, span, |builder, value, span| {
                 builder.is_odd(value, span)
             }),
+            Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
             _ => unsupported_instruction(inst, span),
         }
     }
