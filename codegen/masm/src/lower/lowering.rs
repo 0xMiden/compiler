@@ -414,8 +414,9 @@ impl HirLowering for arith::Constant {
 impl HirLowering for hir::Assert {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let code = *self.get_code();
+        let message = self.get_message();
 
-        emitter.emitter().assert(Some(code), self.span());
+        emitter.emitter().assert(Some(code), Some(message.as_str()), self.span());
 
         Ok(())
     }
@@ -424,8 +425,9 @@ impl HirLowering for hir::Assert {
 impl HirLowering for hir::Assertz {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let code = *self.get_code();
+        let message = self.get_message();
 
-        emitter.emitter().assertz(Some(code), self.span());
+        emitter.emitter().assertz(Some(code), Some(message.as_str()), self.span());
 
         Ok(())
     }
@@ -434,8 +436,9 @@ impl HirLowering for hir::Assertz {
 impl HirLowering for hir::AssertEq {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let code = *self.get_code();
+        let message = self.get_message();
 
-        emitter.emitter().assert_eq(Some(code), self.span());
+        emitter.emitter().assert_eq(Some(code), Some(message.as_str()), self.span());
 
         Ok(())
     }

@@ -10,7 +10,15 @@ use crate::TraceEvent;
 
 impl OpEmitter<'_> {
     /// Format a diagnostic message for a HIR assertion code when one is available.
-    fn assertion_message(code: Option<u32>, default: impl Into<String>) -> String {
+    fn assertion_message(
+        code: Option<u32>,
+        message: Option<&str>,
+        default: impl Into<String>,
+    ) -> String {
+        if let Some(message) = message.filter(|message| !message.is_empty()) {
+            return message.to_owned();
+        }
+
         let default = default.into();
         match code.filter(|code| *code != 0) {
             Some(assertions::ASSERT_FAILED_ALIGNMENT) => {
@@ -24,10 +32,11 @@ impl OpEmitter<'_> {
     /// Assert that an integer value on the stack has the value 1
     ///
     /// This operation consumes the input value.
-    pub fn assert(&mut self, code: Option<u32>, span: SourceSpan) {
+    pub fn assert(&mut self, code: Option<u32>, message: Option<&str>, span: SourceSpan) {
         let arg = self.stack.pop().expect("operand stack is empty");
         let ty = arg.ty().clone();
-        let message = Self::assertion_message(code, format!("expected {ty} value to equal 1"));
+        let message =
+            Self::assertion_message(code, message, format!("expected {ty} value to equal 1"));
         match ty {
             Type::Felt
             | Type::U32
@@ -70,10 +79,11 @@ impl OpEmitter<'_> {
     /// Assert that an integer value on the stack has the value 0
     ///
     /// This operation consumes the input value.
-    pub fn assertz(&mut self, code: Option<u32>, span: SourceSpan) {
+    pub fn assertz(&mut self, code: Option<u32>, message: Option<&str>, span: SourceSpan) {
         let arg = self.stack.pop().expect("operand stack is empty");
         let ty = arg.ty().clone();
-        let message = Self::assertion_message(code, format!("expected {ty} value to equal 0"));
+        let message =
+            Self::assertion_message(code, message, format!("expected {ty} value to equal 0"));
         match ty {
             Type::Felt
             | Type::U32
@@ -116,12 +126,13 @@ impl OpEmitter<'_> {
     /// Assert that the top two integer values on the stack have the same value
     ///
     /// This operation consumes the input values.
-    pub fn assert_eq(&mut self, code: Option<u32>, span: SourceSpan) {
+    pub fn assert_eq(&mut self, code: Option<u32>, message: Option<&str>, span: SourceSpan) {
         let rhs = self.pop().expect("operand stack is empty");
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty().clone();
         assert_eq!(ty, rhs.ty(), "expected assert_eq operands to have the same type");
-        let message = Self::assertion_message(code, format!("expected {ty} values to be equal"));
+        let message =
+            Self::assertion_message(code, message, format!("expected {ty} values to be equal"));
         match ty {
             Type::Felt
             | Type::U32

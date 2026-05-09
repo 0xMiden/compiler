@@ -1,6 +1,6 @@
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
-    dialects::builtin::attributes::U32Attr,
+    dialects::builtin::attributes::{StringAttr, U32Attr},
     effects::*,
     traits::*,
     *,
@@ -20,6 +20,9 @@ pub struct Assert {
     #[attr]
     #[default]
     code: U32Attr,
+    #[attr]
+    #[default]
+    message: StringAttr,
 }
 
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
@@ -34,6 +37,9 @@ pub struct Assertz {
     #[attr]
     #[default]
     code: U32Attr,
+    #[attr]
+    #[default]
+    message: StringAttr,
 }
 
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
@@ -51,4 +57,7 @@ pub struct AssertEq {
     #[attr]
     #[default]
     code: U32Attr,
+    #[attr]
+    #[default]
+    message: StringAttr,
 }

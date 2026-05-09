@@ -209,6 +209,7 @@ mod tests {
     };
     use midenc_dialect_cf::Select as CfSelect;
     use midenc_dialect_hir::{
+        Assert as HirAssert, AssertEq as HirAssertEq, Assertz as HirAssertz,
         IntToPtr as HirIntToPtr, Load as HirLoad, LoadLocal as HirLoadLocal, Store as HirStore,
         StoreLocal as HirStoreLocal,
     };
@@ -260,9 +261,13 @@ mod tests {
         supported: [
             Instruction::Nop,
             Instruction::Assert,
+            Instruction::AssertWithError(_),
             Instruction::AssertEq,
+            Instruction::AssertEqWithError(_),
             Instruction::AssertEqw,
+            Instruction::AssertEqwWithError(_),
             Instruction::Assertz,
+            Instruction::AssertzWithError(_),
             Instruction::Add,
             Instruction::AddImm(_),
             Instruction::Sub,
@@ -296,8 +301,11 @@ mod tests {
             Instruction::U32Test,
             Instruction::U32TestW,
             Instruction::U32Assert,
+            Instruction::U32AssertWithError(_),
             Instruction::U32Assert2,
+            Instruction::U32Assert2WithError(_),
             Instruction::U32AssertW,
+            Instruction::U32AssertWWithError(_),
             Instruction::U32Split,
             Instruction::U32Cast,
             Instruction::U32WrappingAdd,
@@ -455,19 +463,12 @@ mod tests {
             Instruction::SysCall(_),
         ],
         unsupported: [
-            Instruction::AssertWithError(_),
-            Instruction::AssertEqWithError(_),
-            Instruction::AssertEqwWithError(_),
-            Instruction::AssertzWithError(_),
             Instruction::Ext2Add,
             Instruction::Ext2Sub,
             Instruction::Ext2Mul,
             Instruction::Ext2Div,
             Instruction::Ext2Neg,
             Instruction::Ext2Inv,
-            Instruction::U32AssertWithError(_),
-            Instruction::U32Assert2WithError(_),
-            Instruction::U32AssertWWithError(_),
             Instruction::Locaddr(_),
             Instruction::Caller,
             Instruction::Clk,
@@ -699,13 +700,30 @@ end
             instruction_case("gte", &["felt", "felt"], &["i1"], "gte"),
             instruction_case("is_odd", &["felt"], &["i1"], "is_odd"),
             instruction_case("assert", &["i1"], &[], "assert"),
+            instruction_case("assert_err", &["i1"], &[], "assert.err=\"boom\""),
             instruction_case("assertz", &["i1"], &[], "assertz"),
+            instruction_case("assertz_err", &["i1"], &[], "assertz.err=\"boom\""),
             instruction_case("assert_eq", &["felt", "felt"], &[], "assert_eq"),
+            instruction_case("assert_eq_err", &["felt", "felt"], &[], "assert_eq.err=\"boom\""),
             instruction_case("assert_eqw", &felt_types(8), &[], "assert_eqw"),
+            instruction_case("assert_eqw_err", &felt_types(8), &[], "assert_eqw.err=\"boom\""),
             instruction_case("u32cast", &["felt"], &["u32"], "u32cast"),
             instruction_case("u32assert", &["felt"], &["u32"], "u32assert"),
+            instruction_case("u32assert_err", &["felt"], &["u32"], "u32assert.err=\"boom\""),
             instruction_case("u32assert2", &["felt", "felt"], &["u32", "u32"], "u32assert2"),
+            instruction_case(
+                "u32assert2_err",
+                &["felt", "felt"],
+                &["u32", "u32"],
+                "u32assert2.err=\"boom\"",
+            ),
             instruction_case("u32assertw", &felt_types(4), &u32_types(4), "u32assertw"),
+            instruction_case(
+                "u32assertw_err",
+                &felt_types(4),
+                &u32_types(4),
+                "u32assertw.err=\"boom\"",
+            ),
             instruction_case("u32test", &["felt"], &["i1", "felt"], "u32test"),
             instruction_case(
                 "u32testw",
@@ -908,13 +926,6 @@ end
     #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
-            unsupported_instruction_case("assert_err", 0, "assert.err=\"boom\""),
-            unsupported_instruction_case("assert_eq_err", 0, "assert_eq.err=\"boom\""),
-            unsupported_instruction_case("assert_eqw_err", 0, "assert_eqw.err=\"boom\""),
-            unsupported_instruction_case("assertz_err", 0, "assertz.err=\"boom\""),
-            unsupported_instruction_case("u32assert_err", 0, "u32assert.err=\"boom\""),
-            unsupported_instruction_case("u32assert2_err", 0, "u32assert2.err=\"boom\""),
-            unsupported_instruction_case("u32assertw_err", 0, "u32assertw.err=\"boom\""),
             unsupported_instruction_case("ext2add", 0, "ext2add"),
             unsupported_instruction_case("locaddr", 1, "locaddr.0"),
             unsupported_instruction_case("caller", 0, "caller"),
@@ -933,8 +944,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 195);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 43);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 202);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 36);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -966,6 +977,51 @@ end
         assert_eq!(signature.params()[0].ty, Type::Felt);
         assert_eq!(signature.results().len(), 1);
         assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_error_annotated_assertion_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc assert_msg
+    assert.err="plain"
+end
+
+pub proc assert_eqw_msg
+    assert_eqw.err="word"
+end
+
+pub proc u32assert_msg
+    u32assert.err="u32"
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "assert_msg").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::I1);
+        assert_eq!(signature.results().len(), 0);
+
+        let signature =
+            find_function(output.module, "assert_eqw_msg").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 8);
+        assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(signature.results().len(), 0);
+
+        let signature =
+            find_function(output.module, "u32assert_msg").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::U32);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::U32);
 
         Ok(())
     }
@@ -1893,6 +1949,55 @@ end
     }
 
     #[test]
+    fn preserves_error_messages_on_hir_assertions() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc assert_msg(value: i1)
+    assert.err="plain"
+end
+
+pub proc assertz_msg(value: i1)
+    assertz.err="zero"
+end
+
+pub proc assert_eq_msg(a: felt, b: felt)
+    assert_eq.err="equal"
+end
+
+pub proc assert_eqw_msg(
+    a: felt, b: felt, c: felt, d: felt,
+    e: felt, f: felt, g: felt, h: felt
+)
+    assert_eqw.err="word"
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        assert_eq!(
+            top_level_assert_messages(find_function(output.module, "assert_msg")),
+            ["plain"]
+        );
+        assert_eq!(
+            top_level_assertz_messages(find_function(output.module, "assertz_msg")),
+            ["zero"]
+        );
+        assert_eq!(
+            top_level_assert_eq_messages(find_function(output.module, "assert_eq_msg")),
+            ["equal"]
+        );
+        assert_eq!(
+            top_level_assert_eq_messages(find_function(output.module, "assert_eqw_msg")),
+            ["word", "word", "word", "word"]
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn lifts_u32assertw_as_u32_cast_contract() -> Result<()> {
         let context = Rc::new(Context::default());
         let output = disassemble_source(
@@ -2477,6 +2582,45 @@ end
             .body()
             .iter()
             .filter_map(|op| op.downcast_ref::<ArithConstant>().map(|op| *op.get_value()))
+            .collect()
+    }
+
+    fn top_level_assert_messages(function: builtin::FunctionRef) -> Vec<String> {
+        function
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .filter_map(|op| {
+                op.downcast_ref::<HirAssert>().map(|op| op.get_message().as_str().to_owned())
+            })
+            .collect()
+    }
+
+    fn top_level_assertz_messages(function: builtin::FunctionRef) -> Vec<String> {
+        function
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .filter_map(|op| {
+                op.downcast_ref::<HirAssertz>().map(|op| op.get_message().as_str().to_owned())
+            })
+            .collect()
+    }
+
+    fn top_level_assert_eq_messages(function: builtin::FunctionRef) -> Vec<String> {
+        function
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .filter_map(|op| {
+                op.downcast_ref::<HirAssertEq>().map(|op| op.get_message().as_str().to_owned())
+            })
             .collect()
     }
 

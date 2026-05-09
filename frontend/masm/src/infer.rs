@@ -340,9 +340,9 @@ impl<'a> InferState<'a> {
                 self.push(Type::I1);
                 Ok(())
             }
-            U32Cast | U32Assert => self.constrain_top_n(1, Type::U32, span),
-            U32Assert2 => self.constrain_top_n(2, Type::U32, span),
-            U32AssertW => self.constrain_top_n(4, Type::U32, span),
+            U32Cast | U32Assert | U32AssertWithError(_) => self.constrain_top_n(1, Type::U32, span),
+            U32Assert2 | U32Assert2WithError(_) => self.constrain_top_n(2, Type::U32, span),
+            U32AssertW | U32AssertWWithError(_) => self.constrain_top_n(4, Type::U32, span),
             U32Test => {
                 self.constrain_top_n(1, Type::Felt, span)?;
                 self.push(Type::I1);
@@ -363,20 +363,20 @@ impl<'a> InferState<'a> {
             CSwapW => self.conditional_swap(4, span),
             CDrop => self.conditional_drop(1, span),
             CDropW => self.conditional_drop(4, span),
-            Assert => {
+            Assert | AssertWithError(_) => {
                 self.pop_with_type(Type::I1, span)?;
                 Ok(())
             }
-            Assertz => {
+            Assertz | AssertzWithError(_) => {
                 self.pop_with_type(Type::I1, span)?;
                 Ok(())
             }
-            AssertEq => {
+            AssertEq | AssertEqWithError(_) => {
                 self.pop_any(span)?;
                 self.pop_any(span)?;
                 Ok(())
             }
-            AssertEqw => {
+            AssertEqw | AssertEqwWithError(_) => {
                 self.pop_word_with_type(Type::Felt, span)?;
                 self.pop_word_with_type(Type::Felt, span)?;
                 Ok(())

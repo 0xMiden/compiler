@@ -1172,7 +1172,7 @@ mod tests {
         assert_eq!(emitter.stack()[0], Type::I1);
         assert_eq!(emitter.stack()[1], one);
 
-        emitter.assert(None, SourceSpan::default());
+        emitter.assert(None, None, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], one);
 
@@ -1180,6 +1180,27 @@ mod tests {
         emitter.eq(SourceSpan::default());
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], Type::I1);
+    }
+
+    #[test]
+    fn op_emitter_assert_uses_explicit_message() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.literal(Immediate::I1(true), SourceSpan::default());
+        emitter.assert(None, Some("preserved MASM assertion"), SourceSpan::default());
+
+        let Some(Op::Inst(inst)) = block.last() else {
+            panic!("expected emitted assert instruction");
+        };
+        let masm::Instruction::AssertWithError(masm::Immediate::Value(message)) = inst.inner()
+        else {
+            panic!("expected assert.err instruction, got {:?}", inst.inner());
+        };
+        assert_eq!(message.inner().as_ref(), "preserved MASM assertion");
     }
 
     #[test]
@@ -1201,7 +1222,7 @@ mod tests {
         assert_eq!(emitter.stack()[0], Type::I1);
         assert_eq!(emitter.stack()[1], one);
 
-        emitter.assertz(None, SourceSpan::default());
+        emitter.assertz(None, None, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], one);
 
@@ -2080,7 +2101,7 @@ mod tests {
         emitter.literal(ten, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 1);
 
-        emitter.assert(None, SourceSpan::default());
+        emitter.assert(None, None, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 0);
     }
 
@@ -2097,7 +2118,7 @@ mod tests {
         emitter.literal(ten, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 1);
 
-        emitter.assertz(None, SourceSpan::default());
+        emitter.assertz(None, None, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 0);
     }
 
@@ -2119,7 +2140,7 @@ mod tests {
         emitter.assert_eq_imm(ten, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 2);
 
-        emitter.assert_eq(None, SourceSpan::default());
+        emitter.assert_eq(None, None, SourceSpan::default());
         assert_eq!(emitter.stack_len(), 0);
     }
 

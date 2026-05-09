@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, rc::Rc};
+use std::{collections::BTreeMap, rc::Rc, sync::Arc};
 
 use miden_assembly_syntax::{
     Felt, Path as MasmPath,
@@ -11,8 +11,8 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
-    AddressSpace, AsSymbolRef, BlockRef, Builder, Context, Ident, Op as HirOp, OpBuilder,
-    OperationRef, PointerType, ProgramPoint, SymbolTable, Type, ValueRef, Visibility,
+    AddressSpace, AsSymbolRef, BlockRef, Builder, CompactString, Context, Ident, Op as HirOp,
+    OpBuilder, OperationRef, PointerType, ProgramPoint, SymbolTable, Type, ValueRef, Visibility,
     dialects::builtin::{
         BuiltinOpBuilder, FunctionBuilder, FunctionRef,
         attributes::{LocalVariable, Signature},
@@ -696,12 +696,9 @@ impl<'a> ProcedureLifter<'a> {
             U32Cto => self.unary_with_type(builder, Type::U32, span, |builder, value, span| {
                 builder.cto(value, span)
             }),
-            U32Cast | U32Assert => self.u32_assert_n(1, span, builder),
-            U32AssertWithError(_) => unsupported_instruction(inst, span),
-            U32Assert2 => self.u32_assert_n(2, span, builder),
-            U32Assert2WithError(_) => unsupported_instruction(inst, span),
-            U32AssertW => self.u32_assert_n(4, span, builder),
-            U32AssertWWithError(_) => unsupported_instruction(inst, span),
+            U32Cast | U32Assert | U32AssertWithError(_) => self.u32_assert_n(1, span, builder),
+            U32Assert2 | U32Assert2WithError(_) => self.u32_assert_n(2, span, builder),
+            U32AssertW | U32AssertWWithError(_) => self.u32_assert_n(4, span, builder),
             U32Test => self.u32_test(span, builder),
             U32TestW => self.u32_testw(span, builder),
             U32Split => self.u32_split(span, builder),
@@ -714,21 +711,39 @@ impl<'a> ProcedureLifter<'a> {
                 builder.assert(value.value, span)?;
                 Ok(())
             }
-            AssertWithError(_) => unsupported_instruction(inst, span),
+            AssertWithError(message) => {
+                let message = immediate_error_message(message)?;
+                let value = self.pop(span)?;
+                builder.assert_with_message(value.value, message, span)?;
+                Ok(())
+            }
             Assertz => {
                 let value = self.pop(span)?;
                 builder.assertz(value.value, span)?;
                 Ok(())
             }
-            AssertzWithError(_) => unsupported_instruction(inst, span),
+            AssertzWithError(message) => {
+                let message = immediate_error_message(message)?;
+                let value = self.pop(span)?;
+                builder.assertz_with_message(value.value, message, span)?;
+                Ok(())
+            }
             AssertEq => {
                 let (lhs, rhs) = self.pop_binary(span)?;
                 builder.assert_eq(lhs.value, rhs.value, span)?;
                 Ok(())
             }
-            AssertEqWithError(_) => unsupported_instruction(inst, span),
+            AssertEqWithError(message) => {
+                let message = immediate_error_message(message)?;
+                let (lhs, rhs) = self.pop_binary(span)?;
+                builder.assert_eq_with_message(lhs.value, rhs.value, message, span)?;
+                Ok(())
+            }
             AssertEqw => self.assert_eq_word(span, builder),
-            AssertEqwWithError(_) => unsupported_instruction(inst, span),
+            AssertEqwWithError(message) => {
+                let message = immediate_error_message(message)?;
+                self.assert_eq_word_with_message(message, span, builder)
+            }
             LocLoad(id) => {
                 let local = self.local(immediate_value(id)?, span)?;
                 let value = builder.load_local(local, span)?;
@@ -1601,6 +1616,22 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn assert_eq_word_with_message(
+        &mut self,
+        message: CompactString,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let rhs = self.pop_word(span)?;
+        let lhs = self.pop_word(span)?;
+        for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+            let lhs = self.cast(builder, lhs.value, Type::Felt, span)?;
+            let rhs = self.cast(builder, rhs.value, Type::Felt, span)?;
+            builder.assert_eq_with_message(lhs, rhs, message.clone(), span)?;
+        }
+        Ok(())
+    }
+
     fn conditional_drop(
         &mut self,
         chunk_len: usize,
@@ -2013,6 +2044,15 @@ fn immediate_value<T: Copy>(immediate: &Immediate<T>) -> Result<T> {
         Immediate::Value(value) => Ok(value.into_inner()),
         Immediate::Constant(name) => Err(error::error(format!(
             "unresolved immediate constant '{name}' is not supported during disassembly"
+        ))),
+    }
+}
+
+fn immediate_error_message(immediate: &Immediate<Arc<str>>) -> Result<CompactString> {
+    match immediate {
+        Immediate::Value(value) => Ok(CompactString::from(value.clone().into_inner().as_ref())),
+        Immediate::Constant(name) => Err(error::error(format!(
+            "unresolved error message constant '{name}' is not supported during disassembly"
         ))),
     }
 }
