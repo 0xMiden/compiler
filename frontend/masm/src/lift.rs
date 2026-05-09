@@ -303,6 +303,13 @@ struct StackValue {
     span: SourceSpan,
 }
 
+#[derive(Copy, Clone)]
+enum U32Add3Output {
+    Widening,
+    Overflowing,
+    Wrapping,
+}
+
 struct ProcedureLifter<'a> {
     procedure: &'a Procedure,
     signature: Signature,
@@ -512,6 +519,17 @@ impl<'a> ProcedureLifter<'a> {
                     builder.add_overflowing(lhs, rhs, span)
                 })
             }
+            U32WideningAdd => self.u32_widening_binary(builder, span, |builder, lhs, rhs, span| {
+                builder.add(lhs, rhs, span)
+            }),
+            U32WideningAddImm(value) => {
+                self.u32_widening_binary_imm(builder, value, span, |builder, lhs, rhs, span| {
+                    builder.add(lhs, rhs, span)
+                })
+            }
+            U32WideningAdd3 => self.u32_add3(builder, span, U32Add3Output::Widening),
+            U32OverflowingAdd3 => self.u32_add3(builder, span, U32Add3Output::Overflowing),
+            U32WrappingAdd3 => self.u32_add3(builder, span, U32Add3Output::Wrapping),
             U32WrappingSub => {
                 self.binary_with_type(builder, Type::U32, span, |builder, lhs, rhs, span| {
                     builder.sub_wrapping(lhs, rhs, span)
@@ -540,6 +558,14 @@ impl<'a> ProcedureLifter<'a> {
             U32WrappingMulImm(value) => {
                 self.u32_binary_imm(builder, value, span, |builder, lhs, rhs, span| {
                     builder.mul_wrapping(lhs, rhs, span)
+                })
+            }
+            U32WideningMul => self.u32_widening_binary(builder, span, |builder, lhs, rhs, span| {
+                builder.mul(lhs, rhs, span)
+            }),
+            U32WideningMulImm(value) => {
+                self.u32_widening_binary_imm(builder, value, span, |builder, lhs, rhs, span| {
+                    builder.mul(lhs, rhs, span)
                 })
             }
             U32Div => self.binary_with_type(builder, Type::U32, span, |builder, lhs, rhs, span| {
@@ -1161,6 +1187,117 @@ impl<'a> ProcedureLifter<'a> {
         let (overflowed, result) = f(builder, lhs, rhs, span)?;
         self.push_value(result, span);
         self.push_value(overflowed, span);
+        Ok(())
+    }
+
+    fn u32_widening_binary<F>(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        span: SourceSpan,
+        f: F,
+    ) -> Result<()>
+    where
+        F: FnOnce(
+            &mut FunctionBuilder<'_, OpBuilder>,
+            ValueRef,
+            ValueRef,
+            SourceSpan,
+        ) -> Result<ValueRef>,
+    {
+        let (lhs, rhs) = self.pop_binary(span)?;
+        let lhs = self.cast(builder, lhs.value, Type::U32, span)?;
+        let rhs = self.cast(builder, rhs.value, Type::U32, span)?;
+        let result = self.u32_widened_binary_result(builder, lhs, rhs, span, f)?;
+        self.push_u64_as_u32_widening_result(builder, result, span)
+    }
+
+    fn u32_widening_binary_imm<F>(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        immediate: &Immediate<u32>,
+        span: SourceSpan,
+        f: F,
+    ) -> Result<()>
+    where
+        F: FnOnce(
+            &mut FunctionBuilder<'_, OpBuilder>,
+            ValueRef,
+            ValueRef,
+            SourceSpan,
+        ) -> Result<ValueRef>,
+    {
+        let lhs = self.pop(span)?;
+        let lhs = self.cast(builder, lhs.value, Type::U32, span)?;
+        let rhs = builder.u32(immediate_value(immediate)?, span);
+        let result = self.u32_widened_binary_result(builder, lhs, rhs, span, f)?;
+        self.push_u64_as_u32_widening_result(builder, result, span)
+    }
+
+    fn u32_widened_binary_result<F>(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+        f: F,
+    ) -> Result<ValueRef>
+    where
+        F: FnOnce(
+            &mut FunctionBuilder<'_, OpBuilder>,
+            ValueRef,
+            ValueRef,
+            SourceSpan,
+        ) -> Result<ValueRef>,
+    {
+        let lhs = builder.zext(lhs, Type::U64, span)?;
+        let rhs = builder.zext(rhs, Type::U64, span)?;
+        f(builder, lhs, rhs, span)
+    }
+
+    fn u32_add3(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        span: SourceSpan,
+        output: U32Add3Output,
+    ) -> Result<()> {
+        let c = self.pop(span)?;
+        let b = self.pop(span)?;
+        let a = self.pop(span)?;
+        let c = self.cast(builder, c.value, Type::U32, span)?;
+        let b = self.cast(builder, b.value, Type::U32, span)?;
+        let a = self.cast(builder, a.value, Type::U32, span)?;
+        let c = builder.zext(c, Type::U64, span)?;
+        let b = builder.zext(b, Type::U64, span)?;
+        let a = builder.zext(a, Type::U64, span)?;
+        let ab = builder.add(a, b, span)?;
+        let sum = builder.add(ab, c, span)?;
+        let (high, low) = builder.split2(sum, Type::U32, span)?;
+
+        match output {
+            U32Add3Output::Widening => {
+                self.push_value(high, span);
+                self.push_value(low, span);
+            }
+            U32Add3Output::Overflowing => {
+                self.push_value(low, span);
+                self.push_value(high, span);
+            }
+            U32Add3Output::Wrapping => {
+                self.push_value(low, span);
+            }
+        }
+        Ok(())
+    }
+
+    fn push_u64_as_u32_widening_result(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        result: ValueRef,
+        span: SourceSpan,
+    ) -> Result<()> {
+        let (high, low) = builder.split2(result, Type::U32, span)?;
+        self.push_value(high, span);
+        self.push_value(low, span);
         Ok(())
     }
 

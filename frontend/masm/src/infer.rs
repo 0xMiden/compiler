@@ -276,6 +276,34 @@ impl<'a> InferState<'a> {
                 self.push(Type::I1);
                 Ok(())
             }
+            U32WideningAdd | U32WideningMul => {
+                self.pop_with_type(Type::U32, span)?;
+                self.pop_with_type(Type::U32, span)?;
+                self.push(Type::U32);
+                self.push(Type::U32);
+                Ok(())
+            }
+            U32WideningAddImm(_) | U32WideningMulImm(_) => {
+                self.pop_with_type(Type::U32, span)?;
+                self.push(Type::U32);
+                self.push(Type::U32);
+                Ok(())
+            }
+            U32WideningAdd3 | U32OverflowingAdd3 => {
+                self.pop_with_type(Type::U32, span)?;
+                self.pop_with_type(Type::U32, span)?;
+                self.pop_with_type(Type::U32, span)?;
+                self.push(Type::U32);
+                self.push(Type::U32);
+                Ok(())
+            }
+            U32WrappingAdd3 => {
+                self.pop_with_type(Type::U32, span)?;
+                self.pop_with_type(Type::U32, span)?;
+                self.pop_with_type(Type::U32, span)?;
+                self.push(Type::U32);
+                Ok(())
+            }
             U32DivMod => {
                 self.pop_with_type(Type::U32, span)?;
                 self.pop_with_type(Type::U32, span)?;

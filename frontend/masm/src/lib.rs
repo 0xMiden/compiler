@@ -203,8 +203,8 @@ mod tests {
     };
     use miden_project::ProjectDependencyGraphBuilder;
     use midenc_dialect_arith::{
-        And as ArithAnd, Constant as ArithConstant, Eq as ArithEq, Incr as ArithIncr,
-        Split as ArithSplit,
+        Add as ArithAdd, And as ArithAnd, Constant as ArithConstant, Eq as ArithEq,
+        Incr as ArithIncr, Mul as ArithMul, Split as ArithSplit, Zext as ArithZext,
     };
     use midenc_dialect_cf::Select as CfSelect;
     use midenc_dialect_scf::{If, While};
@@ -268,7 +268,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported(value: u32) -> u32
-    u32widening_add
+    ext2add
 end
 "#,
             "test",
@@ -282,7 +282,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("not supported during disassembly"));
-        assert!(err.contains("U32WideningAdd"));
+        assert!(err.contains("Ext2Add"));
     }
 
     #[test]
@@ -291,7 +291,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported
-    u32widening_add
+    ext2add
 end
 "#,
             "test",
@@ -307,7 +307,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("signature inference is not implemented"));
-        assert!(err.contains("U32WideningAdd"));
+        assert!(err.contains("Ext2Add"));
     }
 
     #[test]
@@ -375,6 +375,7 @@ end
             instruction_case("cswapw", &felt_word_select_params(), &felt_types(8), "cswapw"),
             instruction_case("u32wrapping_add", &["u32", "u32"], &["u32"], "u32wrapping_add"),
             instruction_case("u32wrapping_add_imm", &["u32"], &["u32"], "u32wrapping_add.2"),
+            instruction_case("u32wrapping_add3", &u32_types(3), &["u32"], "u32wrapping_add3"),
             instruction_case(
                 "u32overflowing_add",
                 &["u32", "u32"],
@@ -386,6 +387,15 @@ end
                 &["u32"],
                 &["felt", "felt"],
                 "u32overflowing_add.2",
+            ),
+            instruction_case("u32widening_add", &u32_types(2), &u32_types(2), "u32widening_add"),
+            instruction_case("u32widening_add_imm", &["u32"], &u32_types(2), "u32widening_add.2"),
+            instruction_case("u32widening_add3", &u32_types(3), &u32_types(2), "u32widening_add3"),
+            instruction_case(
+                "u32overflowing_add3",
+                &u32_types(3),
+                &u32_types(2),
+                "u32overflowing_add3",
             ),
             instruction_case("u32wrapping_sub", &["u32", "u32"], &["u32"], "u32wrapping_sub"),
             instruction_case("u32wrapping_sub_imm", &["u32"], &["u32"], "u32wrapping_sub.2"),
@@ -403,6 +413,8 @@ end
             ),
             instruction_case("u32wrapping_mul", &["u32", "u32"], &["u32"], "u32wrapping_mul"),
             instruction_case("u32wrapping_mul_imm", &["u32"], &["u32"], "u32wrapping_mul.2"),
+            instruction_case("u32widening_mul", &u32_types(2), &u32_types(2), "u32widening_mul"),
+            instruction_case("u32widening_mul_imm", &["u32"], &u32_types(2), "u32widening_mul.2"),
             instruction_case("u32div", &["u32", "u32"], &["u32"], "u32div"),
             instruction_case("u32div_imm", &["u32"], &["u32"], "u32div.2"),
             instruction_case("u32mod", &["u32", "u32"], &["u32"], "u32mod"),
@@ -557,9 +569,6 @@ end
             unsupported_instruction_case("u32assert2_err", 0, "u32assert2.err=\"boom\""),
             unsupported_instruction_case("u32assertw_err", 0, "u32assertw.err=\"boom\""),
             unsupported_instruction_case("ext2add", 0, "ext2add"),
-            unsupported_instruction_case("u32widening_add", 0, "u32widening_add"),
-            unsupported_instruction_case("u32overflowing_add3", 0, "u32overflowing_add3"),
-            unsupported_instruction_case("u32widening_mul", 0, "u32widening_mul"),
             unsupported_instruction_case("locaddr", 1, "locaddr.0"),
             unsupported_instruction_case("sdepth", 0, "sdepth"),
             unsupported_instruction_case("caller", 0, "caller"),
@@ -750,6 +759,64 @@ end
         assert_eq!(word_signature.results().len(), 5);
         assert_eq!(word_signature.results()[0].ty, Type::I1);
         assert!(word_signature.results()[1..].iter().all(|result| result.ty == Type::Felt));
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_u32_widening_arithmetic_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc add_wide
+    u32widening_add
+end
+
+pub proc add3_wide
+    u32widening_add3
+end
+
+pub proc add3_overflow
+    u32overflowing_add3
+end
+
+pub proc add3_wrapping
+    u32wrapping_add3
+end
+
+pub proc mul_wide
+    u32widening_mul
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        for name in ["add_wide", "mul_wide"] {
+            let signature = find_function(output.module, name).borrow().get_signature().clone();
+            assert_eq!(signature.params().len(), 2);
+            assert!(signature.params().iter().all(|param| param.ty == Type::U32));
+            assert_eq!(signature.results().len(), 2);
+            assert!(signature.results().iter().all(|result| result.ty == Type::U32));
+        }
+
+        for name in ["add3_wide", "add3_overflow"] {
+            let signature = find_function(output.module, name).borrow().get_signature().clone();
+            assert_eq!(signature.params().len(), 3);
+            assert!(signature.params().iter().all(|param| param.ty == Type::U32));
+            assert_eq!(signature.results().len(), 2);
+            assert!(signature.results().iter().all(|result| result.ty == Type::U32));
+        }
+
+        let signature =
+            find_function(output.module, "add3_wrapping").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 3);
+        assert!(signature.params().iter().all(|param| param.ty == Type::U32));
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::U32);
 
         Ok(())
     }
@@ -1363,6 +1430,46 @@ end
         assert_eq!(top_level_op_count::<ArithSplit>(function), 4);
         assert_eq!(top_level_op_count::<ArithEq>(function), 4);
         assert_eq!(top_level_op_count::<ArithAnd>(function), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn lifts_u32_widening_arithmetic() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc add_wide(a: u32, b: u32) -> (u32, u32)
+    u32widening_add
+end
+
+pub proc add3_overflow(a: u32, b: u32, c: u32) -> (u32, u32)
+    u32overflowing_add3
+end
+
+pub proc mul_wide(a: u32, b: u32) -> (u32, u32)
+    u32widening_mul
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let add = find_function(output.module, "add_wide");
+        assert_eq!(top_level_op_count::<ArithZext>(add), 2);
+        assert_eq!(top_level_op_count::<ArithAdd>(add), 1);
+        assert_eq!(top_level_op_count::<ArithSplit>(add), 1);
+
+        let add3 = find_function(output.module, "add3_overflow");
+        assert_eq!(top_level_op_count::<ArithZext>(add3), 3);
+        assert_eq!(top_level_op_count::<ArithAdd>(add3), 2);
+        assert_eq!(top_level_op_count::<ArithSplit>(add3), 1);
+
+        let mul = find_function(output.module, "mul_wide");
+        assert_eq!(top_level_op_count::<ArithZext>(mul), 2);
+        assert_eq!(top_level_op_count::<ArithMul>(mul), 1);
+        assert_eq!(top_level_op_count::<ArithSplit>(mul), 1);
 
         Ok(())
     }
