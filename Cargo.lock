@@ -3594,12 +3594,15 @@ dependencies = [
  "miden-core",
  "miden-mast-package",
  "miden-package-registry",
+ "miden-processor",
  "miden-project",
+ "midenc-codegen-masm",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-hir",
+ "midenc-session",
  "rustc-hash",
 ]
 

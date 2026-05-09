@@ -870,27 +870,27 @@ impl<'a> ProcedureLifter<'a> {
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),
             Add => self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {
-                builder.add(lhs, rhs, span)
+                builder.add_wrapping(lhs, rhs, span)
             }),
             AddImm(value) => {
                 self.felt_binary_imm(builder, value, span, |builder, lhs, rhs, span| {
-                    builder.add(lhs, rhs, span)
+                    builder.add_wrapping(lhs, rhs, span)
                 })
             }
             Sub => self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {
-                builder.sub(lhs, rhs, span)
+                builder.sub_wrapping(lhs, rhs, span)
             }),
             SubImm(value) => {
                 self.felt_binary_imm(builder, value, span, |builder, lhs, rhs, span| {
-                    builder.sub(lhs, rhs, span)
+                    builder.sub_wrapping(lhs, rhs, span)
                 })
             }
             Mul => self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {
-                builder.mul(lhs, rhs, span)
+                builder.mul_wrapping(lhs, rhs, span)
             }),
             MulImm(value) => {
                 self.felt_binary_imm(builder, value, span, |builder, lhs, rhs, span| {
-                    builder.mul(lhs, rhs, span)
+                    builder.mul_wrapping(lhs, rhs, span)
                 })
             }
             Div => self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {

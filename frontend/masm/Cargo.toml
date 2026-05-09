@@ -26,3 +26,6 @@ rustc-hash.workspace = true
 [dev-dependencies]
 miden-assembly = { workspace = true, features = ["std"] }
 miden-package-registry.workspace = true
+miden-processor = { workspace = true, features = ["std"] }
+midenc-codegen-masm.workspace = true
+midenc-session.workspace = true
