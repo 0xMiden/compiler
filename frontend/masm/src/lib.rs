@@ -207,6 +207,7 @@ mod tests {
         Incr as ArithIncr, Mul as ArithMul, Split as ArithSplit, Zext as ArithZext,
     };
     use midenc_dialect_cf::Select as CfSelect;
+    use midenc_dialect_hir::{LoadLocal as HirLoadLocal, StoreLocal as HirStoreLocal};
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
         CallConv, FunctionType, SymbolName, SymbolTable, Type,
@@ -323,6 +324,22 @@ end
             felt_instruction_case("push_felt_list", 0, 0, "push.1.2.3 drop drop drop"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
             instruction_case_with_locals("loc_store", 1, &["felt"], &[], "loc_store.0"),
+            instruction_case_with_locals("loc_loadw_be", 4, &[], &felt_types(4), "loc_loadw_be.0"),
+            instruction_case_with_locals("loc_loadw_le", 4, &[], &felt_types(4), "loc_loadw_le.0"),
+            instruction_case_with_locals(
+                "loc_storew_be",
+                4,
+                &felt_types(4),
+                &felt_types(4),
+                "loc_storew_be.0",
+            ),
+            instruction_case_with_locals(
+                "loc_storew_le",
+                4,
+                &felt_types(4),
+                &felt_types(4),
+                "loc_storew_le.0",
+            ),
             felt_instruction_case("add", 2, 1, "add"),
             felt_instruction_case("add_imm", 1, 1, "add.2"),
             felt_instruction_case("sub", 2, 1, "sub"),
@@ -574,8 +591,6 @@ end
             unsupported_instruction_case("caller", 0, "caller"),
             unsupported_instruction_case("clk", 0, "clk"),
             unsupported_instruction_case("mem_load", 0, "mem_load"),
-            unsupported_instruction_case("loc_loadw_be", 4, "loc_loadw_be.0"),
-            unsupported_instruction_case("loc_storew_le", 4, "loc_storew_le.0"),
             unsupported_instruction_case("hash", 0, "hash"),
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
@@ -879,6 +894,44 @@ end
         assert!(swap_word_signature.params()[1..].iter().all(|param| param.ty == Type::Felt));
         assert_eq!(swap_word_signature.results().len(), 8);
         assert!(swap_word_signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_local_word_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+@locals(4)
+pub proc load_word
+    loc_loadw_le.0
+end
+
+@locals(4)
+pub proc store_word
+    loc_storew_be.0
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let load_signature =
+            find_function(output.module, "load_word").borrow().get_signature().clone();
+        assert_eq!(load_signature.params().len(), 0);
+        assert_eq!(load_signature.results().len(), 4);
+        assert!(load_signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        let store_signature =
+            find_function(output.module, "store_word").borrow().get_signature().clone();
+        assert_eq!(store_signature.params().len(), 4);
+        assert!(store_signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(store_signature.results().len(), 4);
+        assert!(store_signature.results().iter().all(|result| result.ty == Type::Felt));
 
         Ok(())
     }
@@ -1514,6 +1567,76 @@ end
         assert_eq!(top_level_op_count::<CfSelect>(find_function(output.module, "swap_word")), 8);
 
         Ok(())
+    }
+
+    #[test]
+    fn lifts_local_word_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+@locals(4)
+pub proc load_word() -> (felt, felt, felt, felt)
+    loc_loadw_be.0
+end
+
+@locals(4)
+pub proc store_word(a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
+    loc_storew_le.0
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        assert_eq!(
+            top_level_op_count::<HirLoadLocal>(find_function(output.module, "load_word")),
+            4
+        );
+        assert_eq!(
+            top_level_op_count::<HirStoreLocal>(find_function(output.module, "store_word")),
+            4
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_invalid_local_word_indices() {
+        let context = Rc::new(Context::default());
+        let unaligned = disassemble_source(
+            r#"
+@locals(8)
+pub proc bad() -> (felt, felt, felt, felt)
+    loc_loadw_le.1
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context.clone(),
+        );
+        let err = match unaligned {
+            Ok(_) => panic!("expected disassembly to reject an unaligned local word index"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("not word-aligned"));
+
+        let out_of_range = disassemble_source(
+            r#"
+@locals(4)
+pub proc bad() -> (felt, felt, felt, felt)
+    loc_loadw_le.4
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        );
+        let err = match out_of_range {
+            Ok(_) => panic!("expected disassembly to reject an out-of-range local word index"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("invalid local index 4"));
     }
 
     #[test]

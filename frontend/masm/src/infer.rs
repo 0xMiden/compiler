@@ -373,10 +373,17 @@ impl<'a> InferState<'a> {
                 self.push(Type::Felt);
                 Ok(())
             }
+            LocLoadWBe(_) | LocLoadWLe(_) => {
+                for _ in 0..4 {
+                    self.push(Type::Felt);
+                }
+                Ok(())
+            }
             LocStore(_) => {
                 self.pop_with_type(Type::Felt, span)?;
                 Ok(())
             }
+            LocStoreWBe(_) | LocStoreWLe(_) => self.constrain_top_n(4, Type::Felt, span),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             _ => Err(error::error(format!(
                 "signature inference is not implemented for MASM instruction {inst:?} at {span:?}"

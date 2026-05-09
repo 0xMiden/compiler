@@ -310,6 +310,12 @@ enum U32Add3Output {
     Wrapping,
 }
 
+#[derive(Copy, Clone)]
+enum WordEndian {
+    Big,
+    Little,
+}
+
 struct ProcedureLifter<'a> {
     procedure: &'a Procedure,
     signature: Signature,
@@ -726,12 +732,24 @@ impl<'a> ProcedureLifter<'a> {
                 self.push_value(value, span);
                 Ok(())
             }
+            LocLoadWBe(id) => {
+                self.load_local_word(immediate_value(id)?, WordEndian::Big, span, builder)
+            }
+            LocLoadWLe(id) => {
+                self.load_local_word(immediate_value(id)?, WordEndian::Little, span, builder)
+            }
             LocStore(id) => {
                 let local = self.local(immediate_value(id)?, span)?;
                 let value = self.pop(span)?;
                 let value = self.cast(builder, value.value, local.ty(), span)?;
                 builder.store_local(local, value, span)?;
                 Ok(())
+            }
+            LocStoreWBe(id) => {
+                self.store_local_word(immediate_value(id)?, WordEndian::Big, span, builder)
+            }
+            LocStoreWLe(id) => {
+                self.store_local_word(immediate_value(id)?, WordEndian::Little, span, builder)
             }
             Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
@@ -1301,6 +1319,50 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn load_local_word(
+        &mut self,
+        id: u16,
+        endian: WordEndian,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let locals = self.local_word(id, span)?;
+        let offsets = match endian {
+            WordEndian::Big => [0, 1, 2, 3],
+            WordEndian::Little => [3, 2, 1, 0],
+        };
+        for offset in offsets {
+            let value = builder.load_local(locals[offset], span)?;
+            self.push_value(value, span);
+        }
+        Ok(())
+    }
+
+    fn store_local_word(
+        &mut self,
+        id: u16,
+        endian: WordEndian,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let locals = self.local_word(id, span)?;
+        let values = self.pop_word(span)?;
+        let mut casted_values = Vec::with_capacity(4);
+        for (offset, value) in values.into_iter().enumerate() {
+            let local = match endian {
+                WordEndian::Big => locals[offset],
+                WordEndian::Little => locals[3 - offset],
+            };
+            let value = self.cast(builder, value.value, local.ty(), span)?;
+            builder.store_local(local, value, span)?;
+            casted_values.push(value);
+        }
+        for value in casted_values {
+            self.push_value(value, span);
+        }
+        Ok(())
+    }
+
     fn unary_with_type<F>(
         &mut self,
         builder: &mut FunctionBuilder<'_, OpBuilder>,
@@ -1556,6 +1618,20 @@ impl<'a> ProcedureLifter<'a> {
             .ok_or_else(|| error::error(format!("invalid local index {id} at {span:?}")))
     }
 
+    fn local_word(&self, id: u16, span: SourceSpan) -> Result<[LocalVariable; 4]> {
+        if id % 4 != 0 {
+            return Err(error::error(format!(
+                "local word index {id} is not word-aligned at {span:?}"
+            )));
+        }
+        Ok([
+            self.local(id, span)?,
+            self.local(local_offset(id, 1, span)?, span)?,
+            self.local(local_offset(id, 2, span)?, span)?,
+            self.local(local_offset(id, 3, span)?, span)?,
+        ])
+    }
+
     fn resolve_local_target(&self, target: &InvocationTarget) -> Result<FunctionRef> {
         match target {
             InvocationTarget::Symbol(name) => self
@@ -1757,6 +1833,14 @@ fn immediate_value<T: Copy>(immediate: &Immediate<T>) -> Result<T> {
             "unresolved immediate constant '{name}' is not supported during disassembly"
         ))),
     }
+}
+
+fn local_offset(id: u16, offset: u16, span: SourceSpan) -> Result<u16> {
+    id.checked_add(offset).ok_or_else(|| {
+        error::error(format!(
+            "local word index {id} with offset {offset} overflows local index space at {span:?}"
+        ))
+    })
 }
 
 fn stack_types(stack: &[StackValue]) -> Vec<Type> {
