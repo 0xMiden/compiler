@@ -197,6 +197,7 @@ mod tests {
     };
 
     use miden_assembly::Assembler;
+    use miden_assembly_syntax::ast::Instruction;
     use miden_core::serde::Serializable;
     use miden_package_registry::{
         NoPackageStore, PackageId, PackageRecord, PackageRegistry, PackageVersions, Version,
@@ -218,6 +219,287 @@ mod tests {
     };
 
     use super::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum InstructionInventoryStatus {
+        Supported,
+        Unsupported,
+    }
+
+    macro_rules! count_inventory_patterns {
+        ($($pattern:pat),* $(,)?) => {
+            <[()]>::len(&[$(count_inventory_patterns!(@unit $pattern)),*])
+        };
+        (@unit $pattern:pat) => {
+            ()
+        };
+    }
+
+    macro_rules! define_instruction_inventory {
+        (
+            supported: [$($supported:pat),* $(,)?],
+            unsupported: [$($unsupported:pat),* $(,)?],
+        ) => {
+            const SUPPORTED_INSTRUCTION_VARIANT_COUNT: usize =
+                count_inventory_patterns!($($supported),*);
+            const UNSUPPORTED_INSTRUCTION_VARIANT_COUNT: usize =
+                count_inventory_patterns!($($unsupported),*);
+
+            fn instruction_inventory_status(
+                instruction: &Instruction,
+            ) -> InstructionInventoryStatus {
+                match instruction {
+                    $($supported => InstructionInventoryStatus::Supported,)*
+                    $($unsupported => InstructionInventoryStatus::Unsupported,)*
+                }
+            }
+        };
+    }
+
+    define_instruction_inventory! {
+        supported: [
+            Instruction::Nop,
+            Instruction::Assert,
+            Instruction::AssertEq,
+            Instruction::AssertEqw,
+            Instruction::Assertz,
+            Instruction::Add,
+            Instruction::AddImm(_),
+            Instruction::Sub,
+            Instruction::SubImm(_),
+            Instruction::Mul,
+            Instruction::MulImm(_),
+            Instruction::Div,
+            Instruction::DivImm(_),
+            Instruction::Neg,
+            Instruction::ILog2,
+            Instruction::Inv,
+            Instruction::Incr,
+            Instruction::Pow2,
+            Instruction::Exp,
+            Instruction::ExpImm(_),
+            Instruction::ExpBitLength(_),
+            Instruction::Not,
+            Instruction::And,
+            Instruction::Or,
+            Instruction::Xor,
+            Instruction::Eq,
+            Instruction::EqImm(_),
+            Instruction::Neq,
+            Instruction::NeqImm(_),
+            Instruction::Eqw,
+            Instruction::Lt,
+            Instruction::Lte,
+            Instruction::Gt,
+            Instruction::Gte,
+            Instruction::IsOdd,
+            Instruction::U32Test,
+            Instruction::U32TestW,
+            Instruction::U32Assert,
+            Instruction::U32Assert2,
+            Instruction::U32AssertW,
+            Instruction::U32Split,
+            Instruction::U32Cast,
+            Instruction::U32WrappingAdd,
+            Instruction::U32WrappingAddImm(_),
+            Instruction::U32OverflowingAdd,
+            Instruction::U32OverflowingAddImm(_),
+            Instruction::U32WideningAdd,
+            Instruction::U32WideningAddImm(_),
+            Instruction::U32OverflowingAdd3,
+            Instruction::U32WideningAdd3,
+            Instruction::U32WrappingAdd3,
+            Instruction::U32WrappingSub,
+            Instruction::U32WrappingSubImm(_),
+            Instruction::U32OverflowingSub,
+            Instruction::U32OverflowingSubImm(_),
+            Instruction::U32WrappingMul,
+            Instruction::U32WrappingMulImm(_),
+            Instruction::U32WideningMul,
+            Instruction::U32WideningMulImm(_),
+            Instruction::U32Div,
+            Instruction::U32DivImm(_),
+            Instruction::U32Mod,
+            Instruction::U32ModImm(_),
+            Instruction::U32DivMod,
+            Instruction::U32DivModImm(_),
+            Instruction::U32And,
+            Instruction::U32Or,
+            Instruction::U32Xor,
+            Instruction::U32Not,
+            Instruction::U32Shr,
+            Instruction::U32ShrImm(_),
+            Instruction::U32Shl,
+            Instruction::U32ShlImm(_),
+            Instruction::U32Rotr,
+            Instruction::U32RotrImm(_),
+            Instruction::U32Rotl,
+            Instruction::U32RotlImm(_),
+            Instruction::U32Popcnt,
+            Instruction::U32Ctz,
+            Instruction::U32Clz,
+            Instruction::U32Clo,
+            Instruction::U32Cto,
+            Instruction::U32Lt,
+            Instruction::U32Lte,
+            Instruction::U32Gt,
+            Instruction::U32Gte,
+            Instruction::U32Min,
+            Instruction::U32Max,
+            Instruction::Drop,
+            Instruction::DropW,
+            Instruction::PadW,
+            Instruction::Dup0,
+            Instruction::Dup1,
+            Instruction::Dup2,
+            Instruction::Dup3,
+            Instruction::Dup4,
+            Instruction::Dup5,
+            Instruction::Dup6,
+            Instruction::Dup7,
+            Instruction::Dup8,
+            Instruction::Dup9,
+            Instruction::Dup10,
+            Instruction::Dup11,
+            Instruction::Dup12,
+            Instruction::Dup13,
+            Instruction::Dup14,
+            Instruction::Dup15,
+            Instruction::DupW0,
+            Instruction::DupW1,
+            Instruction::DupW2,
+            Instruction::DupW3,
+            Instruction::Swap1,
+            Instruction::Swap2,
+            Instruction::Swap3,
+            Instruction::Swap4,
+            Instruction::Swap5,
+            Instruction::Swap6,
+            Instruction::Swap7,
+            Instruction::Swap8,
+            Instruction::Swap9,
+            Instruction::Swap10,
+            Instruction::Swap11,
+            Instruction::Swap12,
+            Instruction::Swap13,
+            Instruction::Swap14,
+            Instruction::Swap15,
+            Instruction::SwapW1,
+            Instruction::SwapW2,
+            Instruction::SwapW3,
+            Instruction::SwapDw,
+            Instruction::MovUp2,
+            Instruction::MovUp3,
+            Instruction::MovUp4,
+            Instruction::MovUp5,
+            Instruction::MovUp6,
+            Instruction::MovUp7,
+            Instruction::MovUp8,
+            Instruction::MovUp9,
+            Instruction::MovUp10,
+            Instruction::MovUp11,
+            Instruction::MovUp12,
+            Instruction::MovUp13,
+            Instruction::MovUp14,
+            Instruction::MovUp15,
+            Instruction::MovUpW2,
+            Instruction::MovUpW3,
+            Instruction::MovDn2,
+            Instruction::MovDn3,
+            Instruction::MovDn4,
+            Instruction::MovDn5,
+            Instruction::MovDn6,
+            Instruction::MovDn7,
+            Instruction::MovDn8,
+            Instruction::MovDn9,
+            Instruction::MovDn10,
+            Instruction::MovDn11,
+            Instruction::MovDn12,
+            Instruction::MovDn13,
+            Instruction::MovDn14,
+            Instruction::MovDn15,
+            Instruction::MovDnW2,
+            Instruction::MovDnW3,
+            Instruction::Reversew,
+            Instruction::Reversedw,
+            Instruction::CSwap,
+            Instruction::CSwapW,
+            Instruction::CDrop,
+            Instruction::CDropW,
+            Instruction::Push(_),
+            Instruction::PushSlice(_, _),
+            Instruction::PushFeltList(_),
+            Instruction::Sdepth,
+            Instruction::MemLoad,
+            Instruction::MemLoadImm(_),
+            Instruction::MemLoadWBe,
+            Instruction::MemLoadWBeImm(_),
+            Instruction::MemLoadWLe,
+            Instruction::MemLoadWLeImm(_),
+            Instruction::LocLoad(_),
+            Instruction::LocLoadWBe(_),
+            Instruction::LocLoadWLe(_),
+            Instruction::MemStore,
+            Instruction::MemStoreImm(_),
+            Instruction::MemStoreWBe,
+            Instruction::MemStoreWBeImm(_),
+            Instruction::MemStoreWLe,
+            Instruction::MemStoreWLeImm(_),
+            Instruction::LocStore(_),
+            Instruction::LocStoreWBe(_),
+            Instruction::LocStoreWLe(_),
+            Instruction::Exec(_),
+            Instruction::Call(_),
+            Instruction::SysCall(_),
+        ],
+        unsupported: [
+            Instruction::AssertWithError(_),
+            Instruction::AssertEqWithError(_),
+            Instruction::AssertEqwWithError(_),
+            Instruction::AssertzWithError(_),
+            Instruction::Ext2Add,
+            Instruction::Ext2Sub,
+            Instruction::Ext2Mul,
+            Instruction::Ext2Div,
+            Instruction::Ext2Neg,
+            Instruction::Ext2Inv,
+            Instruction::U32AssertWithError(_),
+            Instruction::U32Assert2WithError(_),
+            Instruction::U32AssertWWithError(_),
+            Instruction::U32WideningMadd,
+            Instruction::U32WrappingMadd,
+            Instruction::Locaddr(_),
+            Instruction::Caller,
+            Instruction::Clk,
+            Instruction::MemStream,
+            Instruction::AdvPipe,
+            Instruction::AdvPush(_),
+            Instruction::AdvLoadW,
+            Instruction::SysEvent(_),
+            Instruction::Hash,
+            Instruction::HMerge,
+            Instruction::HPerm,
+            Instruction::MTreeGet,
+            Instruction::MTreeSet,
+            Instruction::MTreeMerge,
+            Instruction::MTreeVerify,
+            Instruction::MTreeVerifyWithError(_),
+            Instruction::CryptoStream,
+            Instruction::FriExt2Fold4,
+            Instruction::HornerBase,
+            Instruction::HornerExt,
+            Instruction::EvalCircuit,
+            Instruction::LogPrecompile,
+            Instruction::DynExec,
+            Instruction::DynCall,
+            Instruction::ProcRef(_),
+            Instruction::Debug(_),
+            Instruction::DebugVar(_),
+            Instruction::Emit,
+            Instruction::EmitImm(_),
+            Instruction::Trace(_),
+        ],
+    }
 
     #[test]
     fn lifts_known_signature_u32_add() -> Result<()> {
@@ -645,6 +927,20 @@ end
         for case in &cases {
             assert_instruction_case_is_unsupported(case);
         }
+    }
+
+    #[test]
+    fn instruction_inventory_classifies_all_masm_instruction_variants() {
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 193);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 45);
+        assert_eq!(
+            SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
+            238
+        );
+        assert_eq!(
+            instruction_inventory_status(&Instruction::Nop),
+            InstructionInventoryStatus::Supported
+        );
     }
 
     #[test]
