@@ -205,6 +205,8 @@ mod tests {
     use miden_project::ProjectDependencyGraphBuilder;
     use midenc_dialect_arith::{
         Add as ArithAdd, And as ArithAnd, Constant as ArithConstant, Eq as ArithEq,
+        Ext2Add as ArithExt2Add, Ext2Div as ArithExt2Div, Ext2Inv as ArithExt2Inv,
+        Ext2Mul as ArithExt2Mul, Ext2Neg as ArithExt2Neg, Ext2Sub as ArithExt2Sub,
         Incr as ArithIncr, Mul as ArithMul, Split as ArithSplit, Zext as ArithZext,
     };
     use midenc_dialect_cf::Select as CfSelect;
@@ -276,6 +278,12 @@ mod tests {
             Instruction::MulImm(_),
             Instruction::Div,
             Instruction::DivImm(_),
+            Instruction::Ext2Add,
+            Instruction::Ext2Sub,
+            Instruction::Ext2Mul,
+            Instruction::Ext2Div,
+            Instruction::Ext2Neg,
+            Instruction::Ext2Inv,
             Instruction::Neg,
             Instruction::ILog2,
             Instruction::Inv,
@@ -466,12 +474,6 @@ mod tests {
             Instruction::Trace(_),
         ],
         unsupported: [
-            Instruction::Ext2Add,
-            Instruction::Ext2Sub,
-            Instruction::Ext2Mul,
-            Instruction::Ext2Div,
-            Instruction::Ext2Neg,
-            Instruction::Ext2Inv,
             Instruction::Locaddr(_),
             Instruction::Caller,
             Instruction::Clk,
@@ -555,7 +557,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported(value: u32) -> u32
-    ext2add
+    hash
 end
 "#,
             "test",
@@ -569,7 +571,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("not supported during disassembly"));
-        assert!(err.contains("Ext2Add"));
+        assert!(err.contains("Hash"));
     }
 
     #[test]
@@ -578,7 +580,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported
-    ext2add
+    hash
 end
 "#,
             "test",
@@ -594,7 +596,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("signature inference is not implemented"));
-        assert!(err.contains("Ext2Add"));
+        assert!(err.contains("Hash"));
     }
 
     #[test]
@@ -679,6 +681,12 @@ end
             felt_instruction_case("mul_imm", 1, 1, "mul.2"),
             felt_instruction_case("div", 2, 1, "div"),
             felt_instruction_case("div_imm", 1, 1, "div.2"),
+            felt_instruction_case("ext2add", 4, 2, "ext2add"),
+            felt_instruction_case("ext2sub", 4, 2, "ext2sub"),
+            felt_instruction_case("ext2mul", 4, 2, "ext2mul"),
+            felt_instruction_case("ext2div", 4, 2, "ext2div"),
+            felt_instruction_case("ext2neg", 2, 2, "ext2neg"),
+            felt_instruction_case("ext2inv", 2, 2, "ext2inv"),
             felt_instruction_case("neg", 1, 1, "neg"),
             felt_instruction_case("ilog2", 1, 1, "ilog2"),
             felt_instruction_case("inv", 1, 1, "inv"),
@@ -926,9 +934,51 @@ end
     }
 
     #[test]
+    fn lifts_ext2_instructions_to_first_class_arith_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc ext2_add(rhs0: felt, rhs1: felt, lhs0: felt, lhs1: felt) -> (felt, felt)
+    ext2add
+end
+
+pub proc ext2_sub(rhs0: felt, rhs1: felt, lhs0: felt, lhs1: felt) -> (felt, felt)
+    ext2sub
+end
+
+pub proc ext2_mul(rhs0: felt, rhs1: felt, lhs0: felt, lhs1: felt) -> (felt, felt)
+    ext2mul
+end
+
+pub proc ext2_div(rhs0: felt, rhs1: felt, lhs0: felt, lhs1: felt) -> (felt, felt)
+    ext2div
+end
+
+pub proc ext2_neg(operand0: felt, operand1: felt) -> (felt, felt)
+    ext2neg
+end
+
+pub proc ext2_inv(operand0: felt, operand1: felt) -> (felt, felt)
+    ext2inv
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        assert_eq!(top_level_op_count::<ArithExt2Add>(find_function(output.module, "ext2_add")), 1);
+        assert_eq!(top_level_op_count::<ArithExt2Sub>(find_function(output.module, "ext2_sub")), 1);
+        assert_eq!(top_level_op_count::<ArithExt2Mul>(find_function(output.module, "ext2_mul")), 1);
+        assert_eq!(top_level_op_count::<ArithExt2Div>(find_function(output.module, "ext2_div")), 1);
+        assert_eq!(top_level_op_count::<ArithExt2Neg>(find_function(output.module, "ext2_neg")), 1);
+        assert_eq!(top_level_op_count::<ArithExt2Inv>(find_function(output.module, "ext2_inv")), 1);
+        Ok(())
+    }
+
+    #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
-            unsupported_instruction_case("ext2add", 0, "ext2add"),
             unsupported_instruction_case("locaddr", 1, "locaddr.0"),
             unsupported_instruction_case("caller", 0, "caller"),
             unsupported_instruction_case("clk", 0, "clk"),
@@ -945,8 +995,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 205);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 33);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 211);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 27);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -979,6 +1029,31 @@ end
         assert_eq!(signature.results().len(), 1);
         assert_eq!(signature.results()[0].ty, Type::Felt);
 
+        Ok(())
+    }
+
+    #[test]
+    fn infers_ext2_signature() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc ext2_product
+    ext2mul
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature =
+            find_function(output.module, "ext2_product").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 4);
+        assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(signature.results().len(), 2);
+        assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
         Ok(())
     }
 

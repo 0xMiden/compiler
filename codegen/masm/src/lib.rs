@@ -85,6 +85,10 @@ fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<arith::MulOverflowing, dyn HirLowering>();
     info.register_operation_trait::<arith::Exp, dyn HirLowering>();
     info.register_operation_trait::<arith::Div, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Add, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Sub, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Mul, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Div, dyn HirLowering>();
     info.register_operation_trait::<arith::Sdiv, dyn HirLowering>();
     info.register_operation_trait::<arith::Mod, dyn HirLowering>();
     info.register_operation_trait::<arith::Smod, dyn HirLowering>();
@@ -115,6 +119,8 @@ fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<arith::Incr, dyn HirLowering>();
     info.register_operation_trait::<arith::Neg, dyn HirLowering>();
     info.register_operation_trait::<arith::Inv, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Neg, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Inv, dyn HirLowering>();
     info.register_operation_trait::<arith::Ilog2, dyn HirLowering>();
     info.register_operation_trait::<arith::Pow2, dyn HirLowering>();
     info.register_operation_trait::<arith::Not, dyn HirLowering>();

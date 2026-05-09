@@ -830,6 +830,24 @@ impl<'a> ProcedureLifter<'a> {
                     builder.div(lhs, rhs, span)
                 })
             }
+            Ext2Add => self.ext2_binary(builder, span, |builder, lhs0, lhs1, rhs0, rhs1, span| {
+                builder.ext2add(lhs0, lhs1, rhs0, rhs1, span)
+            }),
+            Ext2Sub => self.ext2_binary(builder, span, |builder, lhs0, lhs1, rhs0, rhs1, span| {
+                builder.ext2sub(lhs0, lhs1, rhs0, rhs1, span)
+            }),
+            Ext2Mul => self.ext2_binary(builder, span, |builder, lhs0, lhs1, rhs0, rhs1, span| {
+                builder.ext2mul(lhs0, lhs1, rhs0, rhs1, span)
+            }),
+            Ext2Div => self.ext2_binary(builder, span, |builder, lhs0, lhs1, rhs0, rhs1, span| {
+                builder.ext2div(lhs0, lhs1, rhs0, rhs1, span)
+            }),
+            Ext2Neg => self.ext2_unary(builder, span, |builder, operand0, operand1, span| {
+                builder.ext2neg(operand0, operand1, span)
+            }),
+            Ext2Inv => self.ext2_unary(builder, span, |builder, operand0, operand1, span| {
+                builder.ext2inv(operand0, operand1, span)
+            }),
             Neg => self.unary_with_type(builder, Type::Felt, span, |builder, value, span| {
                 builder.neg(value, span)
             }),
@@ -1162,6 +1180,55 @@ impl<'a> ProcedureLifter<'a> {
         let rhs = builder.felt(immediate_value(immediate)?, span);
         let result = f(builder, lhs, rhs, span)?;
         self.push_value(result, span);
+        Ok(())
+    }
+
+    fn ext2_binary<F>(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        span: SourceSpan,
+        f: F,
+    ) -> Result<()>
+    where
+        F: FnOnce(
+            &mut FunctionBuilder<'_, OpBuilder>,
+            ValueRef,
+            ValueRef,
+            ValueRef,
+            ValueRef,
+            SourceSpan,
+        ) -> Result<(ValueRef, ValueRef)>,
+    {
+        let (rhs0, rhs1) = self.pop_ext2(span)?;
+        let (lhs0, lhs1) = self.pop_ext2(span)?;
+        let lhs0 = self.cast(builder, lhs0.value, Type::Felt, span)?;
+        let lhs1 = self.cast(builder, lhs1.value, Type::Felt, span)?;
+        let rhs0 = self.cast(builder, rhs0.value, Type::Felt, span)?;
+        let rhs1 = self.cast(builder, rhs1.value, Type::Felt, span)?;
+        let (result0, result1) = f(builder, lhs0, lhs1, rhs0, rhs1, span)?;
+        self.push_ext2(result0, result1, span);
+        Ok(())
+    }
+
+    fn ext2_unary<F>(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        span: SourceSpan,
+        f: F,
+    ) -> Result<()>
+    where
+        F: FnOnce(
+            &mut FunctionBuilder<'_, OpBuilder>,
+            ValueRef,
+            ValueRef,
+            SourceSpan,
+        ) -> Result<(ValueRef, ValueRef)>,
+    {
+        let (operand0, operand1) = self.pop_ext2(span)?;
+        let operand0 = self.cast(builder, operand0.value, Type::Felt, span)?;
+        let operand1 = self.cast(builder, operand1.value, Type::Felt, span)?;
+        let (result0, result1) = f(builder, operand0, operand1, span)?;
+        self.push_ext2(result0, result1, span);
         Ok(())
     }
 
@@ -1998,6 +2065,16 @@ impl<'a> ProcedureLifter<'a> {
 
     fn pop_word(&mut self, span: SourceSpan) -> Result<Vec<StackValue>> {
         self.pop_chunk(4, span)
+    }
+
+    fn pop_ext2(&mut self, span: SourceSpan) -> Result<(StackValue, StackValue)> {
+        let values = self.pop_chunk(2, span)?;
+        Ok((values[1], values[0]))
+    }
+
+    fn push_ext2(&mut self, result0: ValueRef, result1: ValueRef, span: SourceSpan) {
+        self.push_value(result1, span);
+        self.push_value(result0, span);
     }
 
     fn pop_chunk(&mut self, chunk_len: usize, span: SourceSpan) -> Result<Vec<StackValue>> {

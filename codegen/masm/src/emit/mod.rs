@@ -80,6 +80,7 @@ macro_rules! assert_valid_stack_index {
 }
 
 pub mod binary;
+pub mod ext2;
 pub mod felt;
 pub mod int128;
 pub mod int32;

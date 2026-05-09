@@ -126,6 +126,34 @@ pub trait HirLowering: Op {
     }
 }
 
+fn schedule_ext2_operands<T: HirLowering>(
+    inst: &T,
+    emitter: &mut BlockEmitter<'_>,
+) -> Result<(), Report> {
+    let op = inst.as_operation();
+    let args = inst.required_operands();
+    let mut constraints = emitter.constraints_for(op, &args);
+    let mut args = args.into_smallvec();
+
+    // MASM extension-field ops consume limbs in stack order: rhs0, rhs1, lhs0, lhs1.
+    // The HIR op operands use semantic order: lhs0, lhs1, rhs0, rhs1.
+    args.rotate_left(2);
+    constraints.rotate_left(2);
+
+    emitter
+        .schedule_operands(&args, &constraints, op.span(), SolverOptions::default())
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to schedule ext2 operands: {args:?}\nfor inst '{}'\nwith error: \
+                 {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
+                op.name(),
+                &emitter.stack,
+            )
+        });
+
+    Ok(())
+}
+
 impl HirLowering for builtin::Ret {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let span = self.span();
@@ -584,6 +612,26 @@ impl HirLowering for arith::Div {
         Ok(())
     }
 }
+
+macro_rules! impl_ext2_binary_lowering {
+    ($Op:ident, $emit:ident) => {
+        impl HirLowering for arith::$Op {
+            fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+                emitter.inst_emitter(self.as_operation()).$emit(self.span());
+                Ok(())
+            }
+
+            fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+                schedule_ext2_operands(self, emitter)
+            }
+        }
+    };
+}
+
+impl_ext2_binary_lowering!(Ext2Add, ext2add);
+impl_ext2_binary_lowering!(Ext2Sub, ext2sub);
+impl_ext2_binary_lowering!(Ext2Mul, ext2mul);
+impl_ext2_binary_lowering!(Ext2Div, ext2div);
 
 impl HirLowering for arith::Sdiv {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
@@ -1181,6 +1229,20 @@ impl HirLowering for arith::Neg {
 impl HirLowering for arith::Inv {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).inv(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for arith::Ext2Neg {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).ext2neg(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for arith::Ext2Inv {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).ext2inv(self.span());
         Ok(())
     }
 }

@@ -215,6 +215,8 @@ impl<'a> InferState<'a> {
             Add | Sub | Mul | Div | Neg | ILog2 | Inv | Incr | Pow2 => {
                 self.unary_or_binary_felt(inst, span)
             }
+            Ext2Add | Ext2Sub | Ext2Mul | Ext2Div => self.ext2_binary(span),
+            Ext2Neg | Ext2Inv => self.ext2_unary(span),
             AddImm(_) | SubImm(_) | MulImm(_) | DivImm(_) | ExpImm(_) => {
                 self.pop_with_type(Type::Felt, span)?;
                 self.push(Type::Felt);
@@ -499,6 +501,24 @@ impl<'a> InferState<'a> {
         for _ in 0..arity {
             self.pop_with_type(Type::Felt, span)?;
         }
+        self.push(Type::Felt);
+        Ok(())
+    }
+
+    fn ext2_binary(&mut self, span: SourceSpan) -> Result<()> {
+        for _ in 0..4 {
+            self.pop_with_type(Type::Felt, span)?;
+        }
+        self.push(Type::Felt);
+        self.push(Type::Felt);
+        Ok(())
+    }
+
+    fn ext2_unary(&mut self, span: SourceSpan) -> Result<()> {
+        for _ in 0..2 {
+            self.pop_with_type(Type::Felt, span)?;
+        }
+        self.push(Type::Felt);
         self.push(Type::Felt);
         Ok(())
     }
