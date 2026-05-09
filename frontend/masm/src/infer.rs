@@ -480,6 +480,34 @@ impl<'a> InferState<'a> {
                 Ok(())
             }
             HPerm => self.constrain_top_n(12, Type::Felt, span),
+            MTreeGet => {
+                for _ in 0..6 {
+                    self.pop_with_type(Type::Felt, span)?;
+                }
+                for _ in 0..8 {
+                    self.push(Type::Felt);
+                }
+                Ok(())
+            }
+            MTreeSet => {
+                for _ in 0..10 {
+                    self.pop_with_type(Type::Felt, span)?;
+                }
+                for _ in 0..8 {
+                    self.push(Type::Felt);
+                }
+                Ok(())
+            }
+            MTreeMerge => {
+                for _ in 0..8 {
+                    self.pop_with_type(Type::Felt, span)?;
+                }
+                for _ in 0..4 {
+                    self.push(Type::Felt);
+                }
+                Ok(())
+            }
+            MTreeVerify | MTreeVerifyWithError(_) => self.constrain_top_n(10, Type::Felt, span),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
             _ => Err(error::error(format!(

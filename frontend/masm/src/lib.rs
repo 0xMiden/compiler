@@ -216,8 +216,9 @@ mod tests {
         AssertEq as HirAssertEq, Assertz as HirAssertz, Caller as HirCaller, Clk as HirClk,
         EmitEvent as HirEmitEvent, EmitEventImm as HirEmitEventImm, HMerge as HirHMerge,
         HPerm as HirHPerm, Hash as HirHash, IntToPtr as HirIntToPtr, Load as HirLoad,
-        LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress, Store as HirStore,
-        StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
+        LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress, MTreeGet as HirMTreeGet,
+        MTreeMerge as HirMTreeMerge, MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify,
+        Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
@@ -488,15 +489,15 @@ mod tests {
             Instruction::Hash,
             Instruction::HMerge,
             Instruction::HPerm,
-        ],
-        unsupported: [
-            Instruction::MemStream,
-            Instruction::AdvPipe,
             Instruction::MTreeGet,
             Instruction::MTreeSet,
             Instruction::MTreeMerge,
             Instruction::MTreeVerify,
             Instruction::MTreeVerifyWithError(_),
+        ],
+        unsupported: [
+            Instruction::MemStream,
+            Instruction::AdvPipe,
             Instruction::CryptoStream,
             Instruction::FriExt2Fold4,
             Instruction::HornerBase,
@@ -562,7 +563,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported(value: u32) -> u32
-    mtree_get
+    crypto_stream
 end
 "#,
             "test",
@@ -576,7 +577,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("not supported during disassembly"));
-        assert!(err.contains("MTreeGet"));
+        assert!(err.contains("CryptoStream"));
     }
 
     #[test]
@@ -585,7 +586,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported
-    mtree_get
+    crypto_stream
 end
 "#,
             "test",
@@ -601,7 +602,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("signature inference is not implemented"));
-        assert!(err.contains("MTreeGet"));
+        assert!(err.contains("CryptoStream"));
     }
 
     #[test]
@@ -677,6 +678,16 @@ end
             instruction_case("hash", &felt_types(4), &felt_types(4), "hash"),
             instruction_case("hmerge", &felt_types(8), &felt_types(4), "hmerge"),
             instruction_case("hperm", &felt_types(12), &felt_types(12), "hperm"),
+            instruction_case("mtree_get", &felt_types(6), &felt_types(8), "mtree_get"),
+            instruction_case("mtree_set", &felt_types(10), &felt_types(8), "mtree_set"),
+            instruction_case("mtree_merge", &felt_types(8), &felt_types(4), "mtree_merge"),
+            instruction_case("mtree_verify", &felt_types(10), &felt_types(10), "mtree_verify"),
+            instruction_case(
+                "mtree_verify_err",
+                &felt_types(10),
+                &felt_types(10),
+                "mtree_verify.err=\"bad path\"",
+            ),
             instruction_case("debug", &["felt"], &["felt"], "debug.stack"),
             instruction_case("trace", &["felt"], &["felt"], "trace.1"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
@@ -1184,9 +1195,52 @@ end
     }
 
     #[test]
+    fn lifts_merkle_ops_to_first_class_hir_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let params6 = (0..6).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let params8 = (0..8).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let params10 = (0..10).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let results4 = vec!["felt"; 4].join(", ");
+        let results8 = vec!["felt"; 8].join(", ");
+        let results10 = vec!["felt"; 10].join(", ");
+        let source = format!(
+            r#"
+pub proc get_node({params6}) -> ({results8})
+    mtree_get
+end
+
+pub proc set_node({params10}) -> ({results8})
+    mtree_set
+end
+
+pub proc merge_roots({params8}) -> ({results4})
+    mtree_merge
+end
+
+pub proc verify_node({params10}) -> ({results10})
+    mtree_verify.err="bad path"
+end
+"#
+        );
+        let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
+
+        assert_eq!(top_level_op_count::<HirMTreeGet>(find_function(output.module, "get_node")), 1);
+        assert_eq!(top_level_op_count::<HirMTreeSet>(find_function(output.module, "set_node")), 1);
+        assert_eq!(
+            top_level_op_count::<HirMTreeMerge>(find_function(output.module, "merge_roots")),
+            1
+        );
+        assert_eq!(
+            top_level_op_count::<HirMTreeVerify>(find_function(output.module, "verify_node")),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
-            unsupported_instruction_case("mtree_get", 0, "mtree_get"),
+            unsupported_instruction_case("crypto_stream", 0, "crypto_stream"),
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
             unsupported_instruction_case("adv_pipe", 0, "adv_pipe"),
@@ -1199,8 +1253,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 222);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 16);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 227);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 11);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1437,6 +1491,49 @@ end
         assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
         assert_eq!(signature.results().len(), 12);
         assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+        Ok(())
+    }
+
+    #[test]
+    fn infers_merkle_op_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc get_node
+    mtree_get
+end
+
+pub proc set_node
+    mtree_set
+end
+
+pub proc merge_roots
+    mtree_merge
+end
+
+pub proc verify_node
+    mtree_verify.err="bad path"
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        for (name, params, results) in [
+            ("get_node", 6, 8),
+            ("set_node", 10, 8),
+            ("merge_roots", 8, 4),
+            ("verify_node", 10, 10),
+        ] {
+            let signature = find_function(output.module, name).borrow().get_signature().clone();
+            assert_eq!(signature.params().len(), params);
+            assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+            assert_eq!(signature.results().len(), results);
+            assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+        }
         Ok(())
     }
 

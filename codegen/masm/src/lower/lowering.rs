@@ -1115,6 +1115,37 @@ impl HirLowering for hir::HPerm {
     }
 }
 
+impl HirLowering for hir::MTreeGet {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).mtree_get(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::MTreeSet {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).mtree_set(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::MTreeMerge {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).mtree_merge(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::MTreeVerify {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let message = self.get_message();
+        emitter
+            .inst_emitter(self.as_operation())
+            .mtree_verify(Some(message.as_str()), self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Store {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.emitter().store(self.span());

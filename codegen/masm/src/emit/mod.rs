@@ -89,6 +89,7 @@ pub mod int128;
 pub mod int32;
 pub mod int64;
 pub mod mem;
+pub mod merkle;
 pub mod primop;
 pub mod smallint;
 pub mod unary;

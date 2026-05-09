@@ -824,6 +824,14 @@ impl<'a> ProcedureLifter<'a> {
             Hash => self.hash(span, builder),
             HMerge => self.hmerge(span, builder),
             HPerm => self.hperm(span, builder),
+            MTreeGet => self.mtree_get(span, builder),
+            MTreeSet => self.mtree_set(span, builder),
+            MTreeMerge => self.mtree_merge(span, builder),
+            MTreeVerify => self.mtree_verify(None, span, builder),
+            MTreeVerifyWithError(message) => {
+                let message = immediate_error_message(message)?;
+                self.mtree_verify(Some(message), span, builder)
+            }
             Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),
@@ -1617,6 +1625,54 @@ impl<'a> ProcedureLifter<'a> {
             operands[11],
             span,
         )?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn mtree_get(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(6, span, builder)?;
+        let results = builder.mtree_get(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn mtree_set(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(10, span, builder)?;
+        let results = builder.mtree_set(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn mtree_merge(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(8, span, builder)?;
+        let results = builder.mtree_merge(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn mtree_verify(
+        &mut self,
+        message: Option<CompactString>,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(10, span, builder)?;
+        let results = match message {
+            Some(message) => builder.mtree_verify_with_message(operands, message, span)?,
+            None => builder.mtree_verify(operands, span)?,
+        };
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }

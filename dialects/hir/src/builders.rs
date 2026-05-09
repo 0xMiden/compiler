@@ -287,6 +287,83 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
     }
 
+    /// Read a Merkle tree node from the advice provider and verify it against a root.
+    fn mtree_get<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 8]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MTreeGet, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Update a Merkle tree node, producing the old node value and new root.
+    fn mtree_set<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 8]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MTreeSet, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Merge two Merkle tree roots in the advice provider.
+    fn mtree_merge<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 4]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MTreeMerge, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Verify a Merkle path for a node/root pair.
+    fn mtree_verify<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 10]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MTreeVerify, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Verify a Merkle path with an inline diagnostic message.
+    fn mtree_verify_with_message<A>(
+        &mut self,
+        stack: A,
+        message: impl Into<CompactString>,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 10]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder =
+            self.builder_mut().create::<crate::ops::MTreeVerify, (A, CompactString)>(span);
+        let op = op_builder(stack, message.into())?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
     /// Create a constant byte array
     fn bytes(&mut self, bytes: &[u8], span: SourceSpan) -> Result<ValueRef, Report> {
         let context = self.builder().context_rc();
