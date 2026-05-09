@@ -11,8 +11,8 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
-    AsSymbolRef, BlockRef, Builder, Context, Ident, Op as HirOp, OpBuilder, OperationRef,
-    ProgramPoint, SymbolTable, Type, ValueRef, Visibility,
+    AddressSpace, AsSymbolRef, BlockRef, Builder, Context, Ident, Op as HirOp, OpBuilder,
+    OperationRef, PointerType, ProgramPoint, SymbolTable, Type, ValueRef, Visibility,
     dialects::builtin::{
         BuiltinOpBuilder, FunctionBuilder, FunctionRef,
         attributes::{LocalVariable, Signature},
@@ -752,6 +752,32 @@ impl<'a> ProcedureLifter<'a> {
             LocStoreWLe(id) => {
                 self.store_local_word(immediate_value(id)?, WordEndian::Little, span, builder)
             }
+            MemLoad => self.load_memory(None, span, builder),
+            MemLoadImm(addr) => self.load_memory(Some(immediate_value(addr)?), span, builder),
+            MemLoadWBe => self.load_memory_word(None, WordEndian::Big, span, builder),
+            MemLoadWBeImm(addr) => {
+                self.load_memory_word(Some(immediate_value(addr)?), WordEndian::Big, span, builder)
+            }
+            MemLoadWLe => self.load_memory_word(None, WordEndian::Little, span, builder),
+            MemLoadWLeImm(addr) => self.load_memory_word(
+                Some(immediate_value(addr)?),
+                WordEndian::Little,
+                span,
+                builder,
+            ),
+            MemStore => self.store_memory(None, span, builder),
+            MemStoreImm(addr) => self.store_memory(Some(immediate_value(addr)?), span, builder),
+            MemStoreWBe => self.store_memory_word(None, WordEndian::Big, span, builder),
+            MemStoreWBeImm(addr) => {
+                self.store_memory_word(Some(immediate_value(addr)?), WordEndian::Big, span, builder)
+            }
+            MemStoreWLe => self.store_memory_word(None, WordEndian::Little, span, builder),
+            MemStoreWLeImm(addr) => self.store_memory_word(
+                Some(immediate_value(addr)?),
+                WordEndian::Little,
+                span,
+                builder,
+            ),
             Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),
@@ -1333,6 +1359,114 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
+    fn load_memory(
+        &mut self,
+        immediate_addr: Option<u32>,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let addr = self.memory_address(immediate_addr, span, builder)?;
+        let ptr = self.memory_pointer_at(builder, addr, 0, span)?;
+        let value = builder.load(ptr, span)?;
+        self.push_value(value, span);
+        Ok(())
+    }
+
+    fn load_memory_word(
+        &mut self,
+        immediate_addr: Option<u32>,
+        endian: WordEndian,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        validate_memory_word_address(immediate_addr, span)?;
+        let addr = self.memory_address(immediate_addr, span, builder)?;
+        self.drop_n(4, span)?;
+
+        let offsets = match endian {
+            WordEndian::Big => [0, 1, 2, 3],
+            WordEndian::Little => [3, 2, 1, 0],
+        };
+        for offset in offsets {
+            let ptr = self.memory_pointer_at(builder, addr, offset, span)?;
+            let value = builder.load(ptr, span)?;
+            self.push_value(value, span);
+        }
+        Ok(())
+    }
+
+    fn store_memory(
+        &mut self,
+        immediate_addr: Option<u32>,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let addr = self.memory_address(immediate_addr, span, builder)?;
+        let ptr = self.memory_pointer_at(builder, addr, 0, span)?;
+        let value = self.pop(span)?;
+        let value = self.cast(builder, value.value, Type::Felt, span)?;
+        builder.store(ptr, value, span)?;
+        Ok(())
+    }
+
+    fn store_memory_word(
+        &mut self,
+        immediate_addr: Option<u32>,
+        endian: WordEndian,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        validate_memory_word_address(immediate_addr, span)?;
+        let addr = self.memory_address(immediate_addr, span, builder)?;
+        let values = self.pop_word(span)?;
+        let mut casted_values = Vec::with_capacity(4);
+        for (offset, value) in values.into_iter().enumerate() {
+            let memory_offset = match endian {
+                WordEndian::Big => offset as u32,
+                WordEndian::Little => 3 - offset as u32,
+            };
+            let ptr = self.memory_pointer_at(builder, addr, memory_offset, span)?;
+            let value = self.cast(builder, value.value, Type::Felt, span)?;
+            builder.store(ptr, value, span)?;
+            casted_values.push(value);
+        }
+        for value in casted_values {
+            self.push_value(value, span);
+        }
+        Ok(())
+    }
+
+    fn memory_address(
+        &mut self,
+        immediate_addr: Option<u32>,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<ValueRef> {
+        match immediate_addr {
+            Some(addr) => Ok(builder.u32(addr, span)),
+            None => {
+                let addr = self.pop(span)?;
+                self.cast(builder, addr.value, Type::U32, span)
+            }
+        }
+    }
+
+    fn memory_pointer_at(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        base_addr: ValueRef,
+        offset: u32,
+        span: SourceSpan,
+    ) -> Result<ValueRef> {
+        let addr = if offset == 0 {
+            base_addr
+        } else {
+            let offset = builder.u32(offset, span);
+            builder.add(base_addr, offset, span)?
+        };
+        builder.inttoptr(addr, felt_memory_pointer_type(), span).map_err(Into::into)
+    }
+
     fn load_local_word(
         &mut self,
         id: u16,
@@ -1855,6 +1989,21 @@ fn local_offset(id: u16, offset: u16, span: SourceSpan) -> Result<u16> {
             "local word index {id} with offset {offset} overflows local index space at {span:?}"
         ))
     })
+}
+
+fn felt_memory_pointer_type() -> Type {
+    Type::from(PointerType::new_with_address_space(Type::Felt, AddressSpace::Element))
+}
+
+fn validate_memory_word_address(addr: Option<u32>, span: SourceSpan) -> Result<()> {
+    if let Some(addr) = addr
+        && addr % 4 != 0
+    {
+        return Err(error::error(format!(
+            "memory word address {addr} is not word-aligned at {span:?}"
+        )));
+    }
+    Ok(())
 }
 
 fn stack_types(stack: &[StackValue]) -> Vec<Type> {

@@ -388,6 +388,34 @@ impl<'a> InferState<'a> {
                 Ok(())
             }
             LocStoreWBe(_) | LocStoreWLe(_) => self.constrain_top_n(4, Type::Felt, span),
+            MemLoad => {
+                self.pop_with_type(Type::U32, span)?;
+                self.push(Type::Felt);
+                Ok(())
+            }
+            MemLoadImm(_) => {
+                self.push(Type::Felt);
+                Ok(())
+            }
+            MemLoadWBe | MemLoadWLe => self.load_memory_word(true, span),
+            MemLoadWBeImm(addr) | MemLoadWLeImm(addr) => {
+                validate_memory_word_address(immediate_value(addr)?, span)?;
+                self.load_memory_word(false, span)
+            }
+            MemStore => {
+                self.pop_with_type(Type::U32, span)?;
+                self.pop_with_type(Type::Felt, span)?;
+                Ok(())
+            }
+            MemStoreImm(_) => {
+                self.pop_with_type(Type::Felt, span)?;
+                Ok(())
+            }
+            MemStoreWBe | MemStoreWLe => self.store_memory_word(true, span),
+            MemStoreWBeImm(addr) | MemStoreWLeImm(addr) => {
+                validate_memory_word_address(immediate_value(addr)?, span)?;
+                self.store_memory_word(false, span)
+            }
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             _ => Err(error::error(format!(
                 "signature inference is not implemented for MASM instruction {inst:?} at {span:?}"
@@ -532,6 +560,29 @@ impl<'a> InferState<'a> {
         }
         self.stack.extend(lower);
         self.stack.extend(upper);
+        Ok(())
+    }
+
+    fn load_memory_word(&mut self, pop_address: bool, span: SourceSpan) -> Result<()> {
+        if pop_address {
+            self.pop_with_type(Type::U32, span)?;
+        }
+        self.drop_n(4, span)?;
+        for _ in 0..4 {
+            self.push(Type::Felt);
+        }
+        Ok(())
+    }
+
+    fn store_memory_word(&mut self, pop_address: bool, span: SourceSpan) -> Result<()> {
+        if pop_address {
+            self.pop_with_type(Type::U32, span)?;
+        }
+        let values = self.pop_chunk(4, span);
+        for value in &values {
+            value.constrain(Type::Felt);
+        }
+        self.stack.extend(values);
         Ok(())
     }
 
@@ -778,4 +829,13 @@ fn immediate_value<T: Copy>(immediate: &Immediate<T>) -> Result<T> {
             "unresolved immediate constant '{name}' is not supported during signature inference"
         ))),
     }
+}
+
+fn validate_memory_word_address(addr: u32, span: SourceSpan) -> Result<()> {
+    if addr % 4 != 0 {
+        return Err(error::error(format!(
+            "memory word address {addr} is not word-aligned at {span:?}"
+        )));
+    }
+    Ok(())
 }

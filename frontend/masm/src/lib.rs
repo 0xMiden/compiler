@@ -207,7 +207,10 @@ mod tests {
         Incr as ArithIncr, Mul as ArithMul, Split as ArithSplit, Zext as ArithZext,
     };
     use midenc_dialect_cf::Select as CfSelect;
-    use midenc_dialect_hir::{LoadLocal as HirLoadLocal, StoreLocal as HirStoreLocal};
+    use midenc_dialect_hir::{
+        IntToPtr as HirIntToPtr, Load as HirLoad, LoadLocal as HirLoadLocal, Store as HirStore,
+        StoreLocal as HirStoreLocal,
+    };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
         CallConv, FunctionType, Immediate, SymbolName, SymbolTable, Type,
@@ -340,6 +343,48 @@ end
                 &felt_types(4),
                 &felt_types(4),
                 "loc_storew_le.0",
+            ),
+            instruction_case("mem_load", &["u32"], &["felt"], "mem_load"),
+            instruction_case("mem_load_imm", &[], &["felt"], "mem_load.0"),
+            instruction_case(
+                "mem_loadw_be",
+                &["u32", "felt", "felt", "felt", "felt"],
+                &felt_types(4),
+                "mem_loadw_be",
+            ),
+            instruction_case("mem_loadw_be_imm", &felt_types(4), &felt_types(4), "mem_loadw_be.0"),
+            instruction_case(
+                "mem_loadw_le",
+                &["u32", "felt", "felt", "felt", "felt"],
+                &felt_types(4),
+                "mem_loadw_le",
+            ),
+            instruction_case("mem_loadw_le_imm", &felt_types(4), &felt_types(4), "mem_loadw_le.0"),
+            instruction_case("mem_store", &["u32", "felt"], &[], "mem_store"),
+            instruction_case("mem_store_imm", &["felt"], &[], "mem_store.0"),
+            instruction_case(
+                "mem_storew_be",
+                &["u32", "felt", "felt", "felt", "felt"],
+                &felt_types(4),
+                "mem_storew_be",
+            ),
+            instruction_case(
+                "mem_storew_be_imm",
+                &felt_types(4),
+                &felt_types(4),
+                "mem_storew_be.0",
+            ),
+            instruction_case(
+                "mem_storew_le",
+                &["u32", "felt", "felt", "felt", "felt"],
+                &felt_types(4),
+                "mem_storew_le",
+            ),
+            instruction_case(
+                "mem_storew_le_imm",
+                &felt_types(4),
+                &felt_types(4),
+                "mem_storew_le.0",
             ),
             felt_instruction_case("add", 2, 1, "add"),
             felt_instruction_case("add_imm", 1, 1, "add.2"),
@@ -590,7 +635,6 @@ end
             unsupported_instruction_case("locaddr", 1, "locaddr.0"),
             unsupported_instruction_case("caller", 0, "caller"),
             unsupported_instruction_case("clk", 0, "clk"),
-            unsupported_instruction_case("mem_load", 0, "mem_load"),
             unsupported_instruction_case("hash", 0, "hash"),
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
@@ -956,6 +1000,92 @@ end
         assert!(store_signature.params().iter().all(|param| param.ty == Type::Felt));
         assert_eq!(store_signature.results().len(), 4);
         assert!(store_signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_memory_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc load
+    mem_load
+end
+
+pub proc load_imm
+    mem_load.0
+end
+
+pub proc load_word
+    mem_loadw_le
+end
+
+pub proc store
+    mem_store
+end
+
+pub proc store_imm
+    mem_store.0
+end
+
+pub proc store_word
+    mem_storew_be
+end
+
+pub proc store_word_imm
+    mem_storew_le.0
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let load = find_function(output.module, "load").borrow().get_signature().clone();
+        assert_eq!(load.params().len(), 1);
+        assert_eq!(load.params()[0].ty, Type::U32);
+        assert_eq!(load.results().len(), 1);
+        assert_eq!(load.results()[0].ty, Type::Felt);
+
+        let load_imm = find_function(output.module, "load_imm").borrow().get_signature().clone();
+        assert_eq!(load_imm.params().len(), 0);
+        assert_eq!(load_imm.results().len(), 1);
+        assert_eq!(load_imm.results()[0].ty, Type::Felt);
+
+        let load_word = find_function(output.module, "load_word").borrow().get_signature().clone();
+        assert_eq!(load_word.params().len(), 5);
+        assert_eq!(load_word.params()[0].ty, Type::U32);
+        assert!(load_word.params()[1..].iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(load_word.results().len(), 4);
+        assert!(load_word.results().iter().all(|result| result.ty == Type::Felt));
+
+        let store = find_function(output.module, "store").borrow().get_signature().clone();
+        assert_eq!(store.params().len(), 2);
+        assert_eq!(store.params()[0].ty, Type::U32);
+        assert_eq!(store.params()[1].ty, Type::Felt);
+        assert_eq!(store.results().len(), 0);
+
+        let store_imm = find_function(output.module, "store_imm").borrow().get_signature().clone();
+        assert_eq!(store_imm.params().len(), 1);
+        assert_eq!(store_imm.params()[0].ty, Type::Felt);
+        assert_eq!(store_imm.results().len(), 0);
+
+        for name in ["store_word", "store_word_imm"] {
+            let signature = find_function(output.module, name).borrow().get_signature().clone();
+            let expected_params = if name == "store_word" { 5 } else { 4 };
+            assert_eq!(signature.params().len(), expected_params);
+            if name == "store_word" {
+                assert_eq!(signature.params()[0].ty, Type::U32);
+                assert!(signature.params()[1..].iter().all(|param| param.ty == Type::Felt));
+            } else {
+                assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+            }
+            assert_eq!(signature.results().len(), 4);
+            assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+        }
 
         Ok(())
     }
@@ -1650,6 +1780,59 @@ end
     }
 
     #[test]
+    fn lifts_memory_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc load(addr: u32) -> felt
+    mem_load
+end
+
+pub proc load_imm() -> felt
+    mem_load.0
+end
+
+pub proc load_word(addr: u32, a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
+    mem_loadw_be
+end
+
+pub proc store(addr: u32, value: felt)
+    mem_store
+end
+
+pub proc store_word(addr: u32, a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
+    mem_storew_le
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let load = find_function(output.module, "load");
+        assert_eq!(top_level_op_count::<HirIntToPtr>(load), 1);
+        assert_eq!(top_level_op_count::<HirLoad>(load), 1);
+
+        let load_imm = find_function(output.module, "load_imm");
+        assert_eq!(top_level_op_count::<HirIntToPtr>(load_imm), 1);
+        assert_eq!(top_level_op_count::<HirLoad>(load_imm), 1);
+
+        let load_word = find_function(output.module, "load_word");
+        assert_eq!(top_level_op_count::<HirIntToPtr>(load_word), 4);
+        assert_eq!(top_level_op_count::<HirLoad>(load_word), 4);
+
+        let store = find_function(output.module, "store");
+        assert_eq!(top_level_op_count::<HirIntToPtr>(store), 1);
+        assert_eq!(top_level_op_count::<HirStore>(store), 1);
+
+        let store_word = find_function(output.module, "store_word");
+        assert_eq!(top_level_op_count::<HirIntToPtr>(store_word), 4);
+        assert_eq!(top_level_op_count::<HirStore>(store_word), 4);
+
+        Ok(())
+    }
+
+    #[test]
     fn rejects_invalid_local_word_indices() {
         let context = Rc::new(Context::default());
         let unaligned = disassemble_source(
@@ -1685,6 +1868,44 @@ end
             Err(err) => err,
         };
         assert!(err.to_string().contains("invalid local index 4"));
+    }
+
+    #[test]
+    fn rejects_invalid_memory_word_addresses() {
+        let context = Rc::new(Context::default());
+        let known_signature = disassemble_source(
+            r#"
+pub proc bad(a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
+    mem_loadw_le.1
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context.clone(),
+        );
+        let err = match known_signature {
+            Ok(_) => panic!("expected disassembly to reject an unaligned memory word address"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("memory word address 1 is not word-aligned"));
+
+        let inferred_signature = disassemble_source(
+            r#"
+pub proc bad
+    mem_storew_be.1
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        );
+        let err = match inferred_signature {
+            Ok(_) => panic!("expected inference to reject an unaligned memory word address"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("memory word address 1 is not word-aligned"));
     }
 
     #[test]
