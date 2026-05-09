@@ -225,6 +225,68 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
     }
 
+    /// Compute the Poseidon2 hash of a word.
+    fn hash(
+        &mut self,
+        input0: ValueRef,
+        input1: ValueRef,
+        input2: ValueRef,
+        input3: ValueRef,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 4]>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Hash, _>(span);
+        let op = op_builder(input0, input1, input2, input3)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Compute the Poseidon2 merge hash of two words.
+    #[allow(clippy::too_many_arguments)]
+    fn hmerge(
+        &mut self,
+        lhs0: ValueRef,
+        lhs1: ValueRef,
+        lhs2: ValueRef,
+        lhs3: ValueRef,
+        rhs0: ValueRef,
+        rhs1: ValueRef,
+        rhs2: ValueRef,
+        rhs3: ValueRef,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 4]>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::HMerge, _>(span);
+        let op = op_builder(lhs0, lhs1, lhs2, lhs3, rhs0, rhs1, rhs2, rhs3)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Apply the Poseidon2 permutation to the top three VM stack words.
+    #[allow(clippy::too_many_arguments)]
+    fn hperm(
+        &mut self,
+        state0: ValueRef,
+        state1: ValueRef,
+        state2: ValueRef,
+        state3: ValueRef,
+        state4: ValueRef,
+        state5: ValueRef,
+        state6: ValueRef,
+        state7: ValueRef,
+        state8: ValueRef,
+        state9: ValueRef,
+        state10: ValueRef,
+        state11: ValueRef,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 12]>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::HPerm, _>(span);
+        let op = op_builder(
+            state0, state1, state2, state3, state4, state5, state6, state7, state8, state9,
+            state10, state11,
+        )?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
     /// Create a constant byte array
     fn bytes(&mut self, bytes: &[u8], span: SourceSpan) -> Result<ValueRef, Report> {
         let context = self.builder().context_rc();

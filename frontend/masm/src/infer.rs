@@ -469,6 +469,17 @@ impl<'a> InferState<'a> {
             SysEvent(event) => {
                 self.constrain_top_n(system_event_read_count(event), Type::Felt, span)
             }
+            Hash => self.constrain_top_n(4, Type::Felt, span),
+            HMerge => {
+                for _ in 0..8 {
+                    self.pop_with_type(Type::Felt, span)?;
+                }
+                for _ in 0..4 {
+                    self.push(Type::Felt);
+                }
+                Ok(())
+            }
+            HPerm => self.constrain_top_n(12, Type::Felt, span),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
             _ => Err(error::error(format!(

@@ -1094,6 +1094,27 @@ impl HirLowering for hir::SystemEvent {
     }
 }
 
+impl HirLowering for hir::Hash {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).hash(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::HMerge {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).hmerge(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::HPerm {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).hperm(self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Store {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.emitter().store(self.span());

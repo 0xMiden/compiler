@@ -821,6 +821,9 @@ impl<'a> ProcedureLifter<'a> {
                 Ok(())
             }
             SysEvent(event) => self.system_event(event, span, builder),
+            Hash => self.hash(span, builder),
+            HMerge => self.hmerge(span, builder),
+            HPerm => self.hperm(span, builder),
             Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),
@@ -1555,18 +1558,66 @@ impl<'a> ProcedureLifter<'a> {
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) -> Result<()> {
         let read_count = system_event_read_count(event);
-        self.require_depth(read_count - 1, span)?;
-        let start = self.stack.len() - read_count;
-        let stack_window = self.stack.split_off(start);
-        let mut operands = Vec::with_capacity(read_count);
-        for value in stack_window.iter().rev() {
-            operands.push(self.cast(builder, value.value, Type::Felt, span)?);
-        }
-
+        let operands = self.pop_cast_felt_window(read_count, span, builder)?;
         let results = builder.system_event(operands, system_event_id(event), span)?;
-        for result in results.into_iter().rev() {
-            self.push_value(result, span);
-        }
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn hash(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(4, span, builder)?;
+        let results = builder.hash(operands[0], operands[1], operands[2], operands[3], span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn hmerge(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(8, span, builder)?;
+        let results = builder.hmerge(
+            operands[0],
+            operands[1],
+            operands[2],
+            operands[3],
+            operands[4],
+            operands[5],
+            operands[6],
+            operands[7],
+            span,
+        )?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn hperm(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(12, span, builder)?;
+        let results = builder.hperm(
+            operands[0],
+            operands[1],
+            operands[2],
+            operands[3],
+            operands[4],
+            operands[5],
+            operands[6],
+            operands[7],
+            operands[8],
+            operands[9],
+            operands[10],
+            operands[11],
+            span,
+        )?;
+        self.push_results_top_to_bottom(results, span);
         Ok(())
     }
 
@@ -2169,6 +2220,32 @@ impl<'a> ProcedureLifter<'a> {
     fn push_ext2(&mut self, result0: ValueRef, result1: ValueRef, span: SourceSpan) {
         self.push_value(result1, span);
         self.push_value(result0, span);
+    }
+
+    fn pop_cast_felt_window(
+        &mut self,
+        count: usize,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<Vec<ValueRef>> {
+        self.require_depth(count - 1, span)?;
+        let start = self.stack.len() - count;
+        let stack_window = self.stack.split_off(start);
+        let mut operands = Vec::with_capacity(count);
+        for value in stack_window.iter().rev() {
+            operands.push(self.cast(builder, value.value, Type::Felt, span)?);
+        }
+        Ok(operands)
+    }
+
+    fn push_results_top_to_bottom<I>(&mut self, results: I, span: SourceSpan)
+    where
+        I: IntoIterator<Item = ValueRef>,
+    {
+        let mut results = results.into_iter().collect::<Vec<_>>();
+        while let Some(result) = results.pop() {
+            self.push_value(result, span);
+        }
     }
 
     fn pop_chunk(&mut self, chunk_len: usize, span: SourceSpan) -> Result<Vec<StackValue>> {

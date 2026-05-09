@@ -214,9 +214,10 @@ mod tests {
     use midenc_dialect_hir::{
         AdviceLoadWord as HirAdviceLoadWord, AdvicePop as HirAdvicePop, Assert as HirAssert,
         AssertEq as HirAssertEq, Assertz as HirAssertz, Caller as HirCaller, Clk as HirClk,
-        EmitEvent as HirEmitEvent, EmitEventImm as HirEmitEventImm, IntToPtr as HirIntToPtr,
-        Load as HirLoad, LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress,
-        Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
+        EmitEvent as HirEmitEvent, EmitEventImm as HirEmitEventImm, HMerge as HirHMerge,
+        HPerm as HirHPerm, Hash as HirHash, IntToPtr as HirIntToPtr, Load as HirLoad,
+        LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress, Store as HirStore,
+        StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
@@ -484,13 +485,13 @@ mod tests {
             Instruction::Emit,
             Instruction::EmitImm(_),
             Instruction::SysEvent(_),
+            Instruction::Hash,
+            Instruction::HMerge,
+            Instruction::HPerm,
         ],
         unsupported: [
             Instruction::MemStream,
             Instruction::AdvPipe,
-            Instruction::Hash,
-            Instruction::HMerge,
-            Instruction::HPerm,
             Instruction::MTreeGet,
             Instruction::MTreeSet,
             Instruction::MTreeMerge,
@@ -561,7 +562,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported(value: u32) -> u32
-    hash
+    mtree_get
 end
 "#,
             "test",
@@ -575,7 +576,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("not supported during disassembly"));
-        assert!(err.contains("Hash"));
+        assert!(err.contains("MTreeGet"));
     }
 
     #[test]
@@ -584,7 +585,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported
-    hash
+    mtree_get
 end
 "#,
             "test",
@@ -600,7 +601,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("signature inference is not implemented"));
-        assert!(err.contains("Hash"));
+        assert!(err.contains("MTreeGet"));
     }
 
     #[test]
@@ -673,6 +674,9 @@ end
                 &felt_types(16),
                 "adv.insert_hqword",
             ),
+            instruction_case("hash", &felt_types(4), &felt_types(4), "hash"),
+            instruction_case("hmerge", &felt_types(8), &felt_types(4), "hmerge"),
+            instruction_case("hperm", &felt_types(12), &felt_types(12), "hperm"),
             instruction_case("debug", &["felt"], &["felt"], "debug.stack"),
             instruction_case("trace", &["felt"], &["felt"], "trace.1"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
@@ -1149,9 +1153,40 @@ end
     }
 
     #[test]
+    fn lifts_core_hash_ops_to_first_class_hir_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let state_params = (0..12).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let state_results = vec!["felt"; 12].join(", ");
+        let source = format!(
+            r#"
+pub proc hash_word(a0: felt, a1: felt, a2: felt, a3: felt) -> (felt, felt, felt, felt)
+    hash
+end
+
+pub proc merge_words(a0: felt, a1: felt, a2: felt, a3: felt, b0: felt, b1: felt, b2: felt, b3: felt) -> (felt, felt, felt, felt)
+    hmerge
+end
+
+pub proc permute_state({state_params}) -> ({state_results})
+    hperm
+end
+"#
+        );
+        let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
+
+        assert_eq!(top_level_op_count::<HirHash>(find_function(output.module, "hash_word")), 1);
+        assert_eq!(top_level_op_count::<HirHMerge>(find_function(output.module, "merge_words")), 1);
+        assert_eq!(
+            top_level_op_count::<HirHPerm>(find_function(output.module, "permute_state")),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
-            unsupported_instruction_case("hash", 0, "hash"),
+            unsupported_instruction_case("mtree_get", 0, "mtree_get"),
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
             unsupported_instruction_case("adv_pipe", 0, "adv_pipe"),
@@ -1164,8 +1199,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 219);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 19);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 222);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 16);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1355,6 +1390,52 @@ end
         assert_eq!(signature.params().len(), 16);
         assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
         assert_eq!(signature.results().len(), 16);
+        assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+        Ok(())
+    }
+
+    #[test]
+    fn infers_core_hash_op_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc hash_word
+    hash
+end
+
+pub proc merge_words
+    hmerge
+end
+
+pub proc permute_state
+    hperm
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "hash_word").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 4);
+        assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(signature.results().len(), 4);
+        assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        let signature =
+            find_function(output.module, "merge_words").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 8);
+        assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(signature.results().len(), 4);
+        assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        let signature =
+            find_function(output.module, "permute_state").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 12);
+        assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(signature.results().len(), 12);
         assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
         Ok(())
     }
