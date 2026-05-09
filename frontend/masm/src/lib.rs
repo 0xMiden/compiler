@@ -210,7 +210,7 @@ mod tests {
     use midenc_dialect_hir::{LoadLocal as HirLoadLocal, StoreLocal as HirStoreLocal};
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
-        CallConv, FunctionType, SymbolName, SymbolTable, Type,
+        CallConv, FunctionType, Immediate, SymbolName, SymbolTable, Type,
         dialects::builtin::{self, Function, UnrealizedConversionCast},
     };
 
@@ -322,6 +322,7 @@ end
             felt_instruction_case("push_word", 0, 0, "push.[1,2,3,4] dropw"),
             felt_instruction_case("push_slice", 0, 0, "push.[1,2,3,4][1..3] drop drop"),
             felt_instruction_case("push_felt_list", 0, 0, "push.1.2.3 drop drop drop"),
+            instruction_case("sdepth", &["felt", "felt"], &felt_types(3), "sdepth"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
             instruction_case_with_locals("loc_store", 1, &["felt"], &[], "loc_store.0"),
             instruction_case_with_locals("loc_loadw_be", 4, &[], &felt_types(4), "loc_loadw_be.0"),
@@ -587,7 +588,6 @@ end
             unsupported_instruction_case("u32assertw_err", 0, "u32assertw.err=\"boom\""),
             unsupported_instruction_case("ext2add", 0, "ext2add"),
             unsupported_instruction_case("locaddr", 1, "locaddr.0"),
-            unsupported_instruction_case("sdepth", 0, "sdepth"),
             unsupported_instruction_case("caller", 0, "caller"),
             unsupported_instruction_case("clk", 0, "clk"),
             unsupported_instruction_case("mem_load", 0, "mem_load"),
@@ -622,6 +622,30 @@ end
         let signature = find_function(output.module, "inc").borrow().get_signature().clone();
         assert_eq!(signature.params().len(), 1);
         assert_eq!(signature.params()[0].ty, Type::Felt);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infers_sdepth_signature() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc depth
+    sdepth
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "depth").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 0);
         assert_eq!(signature.results().len(), 1);
         assert_eq!(signature.results()[0].ty, Type::Felt);
 
@@ -1355,6 +1379,30 @@ end
     }
 
     #[test]
+    fn lifts_sdepth_to_current_stack_depth_constant() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc depth(a: felt, b: felt) -> (felt, felt, felt)
+    sdepth
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let constants = top_level_arith_constant_values(find_function(output.module, "depth"));
+        assert_eq!(constants.len(), 1);
+        match constants[0] {
+            Immediate::Felt(value) => assert_eq!(value.as_canonical_u64(), 2),
+            value => panic!("expected sdepth to materialize a felt constant, got {value:?}"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn lifts_eqw_to_arith_comparisons() -> Result<()> {
         let context = Rc::new(Context::default());
         let output = disassemble_source(
@@ -1865,6 +1913,17 @@ end
             .iter()
             .filter(|op| op.is::<T>())
             .count()
+    }
+
+    fn top_level_arith_constant_values(function: builtin::FunctionRef) -> Vec<Immediate> {
+        function
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .filter_map(|op| op.downcast_ref::<ArithConstant>().map(|op| *op.get_value()))
+            .collect()
     }
 
     fn masm_signature(

@@ -208,6 +208,10 @@ impl<'a> InferState<'a> {
                 }
                 Ok(())
             }
+            Sdepth => {
+                self.push(Type::Felt);
+                Ok(())
+            }
             Add | Sub | Mul | Div | Neg | ILog2 | Inv | Incr | Pow2 => {
                 self.unary_or_binary_felt(inst, span)
             }

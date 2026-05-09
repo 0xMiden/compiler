@@ -505,6 +505,7 @@ impl<'a> ProcedureLifter<'a> {
                 }
                 Ok(())
             }
+            Sdepth => self.stack_depth(span, builder),
             U32WrappingAdd => {
                 self.binary_with_type(builder, Type::U32, span, |builder, lhs, rhs, span| {
                     builder.add_wrapping(lhs, rhs, span)
@@ -1316,6 +1317,19 @@ impl<'a> ProcedureLifter<'a> {
         let (high, low) = builder.split2(result, Type::U32, span)?;
         self.push_value(high, span);
         self.push_value(low, span);
+        Ok(())
+    }
+
+    fn stack_depth(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let depth = u64::try_from(self.stack.len()).map_err(|_| {
+            error::error(format!("current stack depth does not fit in a felt at {span:?}"))
+        })?;
+        let value = builder.felt(Felt::new(depth), span);
+        self.push_value(value, span);
         Ok(())
     }
 
