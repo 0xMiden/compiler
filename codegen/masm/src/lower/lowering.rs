@@ -1146,6 +1146,13 @@ impl HirLowering for hir::MTreeVerify {
     }
 }
 
+impl HirLowering for hir::CryptoStream {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).crypto_stream(self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Store {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.emitter().store(self.span());

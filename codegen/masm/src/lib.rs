@@ -185,6 +185,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::MTreeSet, dyn HirLowering>();
     info.register_operation_trait::<hir::MTreeMerge, dyn HirLowering>();
     info.register_operation_trait::<hir::MTreeVerify, dyn HirLowering>();
+    info.register_operation_trait::<hir::CryptoStream, dyn HirLowering>();
     info.register_operation_trait::<hir::MemGrow, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSize, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSet, dyn HirLowering>();

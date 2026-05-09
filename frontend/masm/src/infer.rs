@@ -508,6 +508,7 @@ impl<'a> InferState<'a> {
                 Ok(())
             }
             MTreeVerify | MTreeVerifyWithError(_) => self.constrain_top_n(10, Type::Felt, span),
+            CryptoStream => self.constrain_top_n(14, Type::Felt, span),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
             _ => Err(error::error(format!(

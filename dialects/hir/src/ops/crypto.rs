@@ -263,3 +263,19 @@ pub struct MTreeVerify {
 }
 
 infer_felt_outputs!(MTreeVerify, "hir.mtree_verify", 10, 10);
+
+/// Encrypt two words from memory using the Poseidon2 sponge stream state.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+pub struct CryptoStream {
+    #[operands]
+    stack: IntFelt,
+    #[results]
+    outputs: IntFelt,
+}
+
+infer_felt_outputs!(CryptoStream, "hir.crypto_stream", 14, 14);

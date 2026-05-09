@@ -364,6 +364,21 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
     }
 
+    /// Encrypt two words from memory using the Poseidon2 sponge stream state.
+    fn crypto_stream<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 14]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::CryptoStream, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
     /// Create a constant byte array
     fn bytes(&mut self, bytes: &[u8], span: SourceSpan) -> Result<ValueRef, Report> {
         let context = self.builder().context_rc();

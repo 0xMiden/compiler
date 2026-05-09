@@ -214,11 +214,12 @@ mod tests {
     use midenc_dialect_hir::{
         AdviceLoadWord as HirAdviceLoadWord, AdvicePop as HirAdvicePop, Assert as HirAssert,
         AssertEq as HirAssertEq, Assertz as HirAssertz, Caller as HirCaller, Clk as HirClk,
-        EmitEvent as HirEmitEvent, EmitEventImm as HirEmitEventImm, HMerge as HirHMerge,
-        HPerm as HirHPerm, Hash as HirHash, IntToPtr as HirIntToPtr, Load as HirLoad,
-        LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress, MTreeGet as HirMTreeGet,
-        MTreeMerge as HirMTreeMerge, MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify,
-        Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
+        CryptoStream as HirCryptoStream, EmitEvent as HirEmitEvent,
+        EmitEventImm as HirEmitEventImm, HMerge as HirHMerge, HPerm as HirHPerm, Hash as HirHash,
+        IntToPtr as HirIntToPtr, Load as HirLoad, LoadLocal as HirLoadLocal,
+        LocalAddress as HirLocalAddress, MTreeGet as HirMTreeGet, MTreeMerge as HirMTreeMerge,
+        MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify, Store as HirStore,
+        StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
@@ -494,11 +495,11 @@ mod tests {
             Instruction::MTreeMerge,
             Instruction::MTreeVerify,
             Instruction::MTreeVerifyWithError(_),
+            Instruction::CryptoStream,
         ],
         unsupported: [
             Instruction::MemStream,
             Instruction::AdvPipe,
-            Instruction::CryptoStream,
             Instruction::FriExt2Fold4,
             Instruction::HornerBase,
             Instruction::HornerExt,
@@ -563,7 +564,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported(value: u32) -> u32
-    crypto_stream
+    fri_ext2fold4
 end
 "#,
             "test",
@@ -577,7 +578,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("not supported during disassembly"));
-        assert!(err.contains("CryptoStream"));
+        assert!(err.contains("FriExt2Fold4"));
     }
 
     #[test]
@@ -586,7 +587,7 @@ end
         let result = disassemble_source(
             r#"
 pub proc unsupported
-    crypto_stream
+    fri_ext2fold4
 end
 "#,
             "test",
@@ -602,7 +603,7 @@ end
 
         let err = err.to_string();
         assert!(err.contains("signature inference is not implemented"));
-        assert!(err.contains("CryptoStream"));
+        assert!(err.contains("FriExt2Fold4"));
     }
 
     #[test]
@@ -688,6 +689,7 @@ end
                 &felt_types(10),
                 "mtree_verify.err=\"bad path\"",
             ),
+            instruction_case("crypto_stream", &felt_types(14), &felt_types(14), "crypto_stream"),
             instruction_case("debug", &["felt"], &["felt"], "debug.stack"),
             instruction_case("trace", &["felt"], &["felt"], "trace.1"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
@@ -1238,9 +1240,30 @@ end
     }
 
     #[test]
+    fn lifts_crypto_stream_to_first_class_hir_op() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let params = (0..14).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let results = vec!["felt"; 14].join(", ");
+        let source = format!(
+            r#"
+pub proc stream_block({params}) -> ({results})
+    crypto_stream
+end
+"#
+        );
+        let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
+
+        assert_eq!(
+            top_level_op_count::<HirCryptoStream>(find_function(output.module, "stream_block")),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
-            unsupported_instruction_case("crypto_stream", 0, "crypto_stream"),
+            unsupported_instruction_case("horner_eval_base", 0, "horner_eval_base"),
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
             unsupported_instruction_case("adv_pipe", 0, "adv_pipe"),
@@ -1253,8 +1276,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 227);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 11);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 228);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 10);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1534,6 +1557,31 @@ end
             assert_eq!(signature.results().len(), results);
             assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn infers_crypto_stream_signature() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc stream_block
+    crypto_stream
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature =
+            find_function(output.module, "stream_block").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 14);
+        assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(signature.results().len(), 14);
+        assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
         Ok(())
     }
 

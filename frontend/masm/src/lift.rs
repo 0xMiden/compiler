@@ -832,6 +832,7 @@ impl<'a> ProcedureLifter<'a> {
                 let message = immediate_error_message(message)?;
                 self.mtree_verify(Some(message), span, builder)
             }
+            CryptoStream => self.crypto_stream(span, builder),
             Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),
@@ -1673,6 +1674,17 @@ impl<'a> ProcedureLifter<'a> {
             Some(message) => builder.mtree_verify_with_message(operands, message, span)?,
             None => builder.mtree_verify(operands, span)?,
         };
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn crypto_stream(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(14, span, builder)?;
+        let results = builder.crypto_stream(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }

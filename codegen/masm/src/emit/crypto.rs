@@ -18,6 +18,11 @@ impl OpEmitter<'_> {
         self.felt_stack_transform(masm::Instruction::HPerm, 12, 12, span);
     }
 
+    /// Encrypt two words from memory using the Poseidon2 sponge stream state.
+    pub fn crypto_stream(&mut self, span: SourceSpan) {
+        self.felt_stack_transform(masm::Instruction::CryptoStream, 14, 14, span);
+    }
+
     fn felt_stack_transform(
         &mut self,
         instruction: masm::Instruction,
@@ -100,5 +105,24 @@ mod tests {
         assert_eq!(emitter.stack_len(), 12);
         assert!(emitter.stack().iter().all(|ty| *ty == Type::Felt));
         assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::HPerm)));
+    }
+
+    #[test]
+    fn crypto_stream_emits_vm_instruction_and_preserves_window_shape() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+        for _ in 0..14 {
+            emitter.push(Type::Felt);
+        }
+
+        let span = SourceSpan::default();
+        emitter.crypto_stream(span);
+
+        assert_eq!(emitter.stack_len(), 14);
+        assert!(emitter.stack().iter().all(|ty| *ty == Type::Felt));
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::CryptoStream)));
     }
 }
