@@ -197,7 +197,7 @@ mod tests {
     };
 
     use miden_assembly::Assembler;
-    use miden_assembly_syntax::ast::Instruction;
+    use miden_assembly_syntax::{Parse, ast::Instruction};
     use miden_core::serde::Serializable;
     use miden_package_registry::{
         NoPackageStore, PackageId, PackageRecord, PackageRegistry, PackageVersions, Version,
@@ -1137,6 +1137,68 @@ end
         assert_eq!(signature.params().len(), 0);
         assert_eq!(signature.results().len(), 1);
         assert_eq!(signature.results()[0].ty, Type::Felt);
+        Ok(())
+    }
+
+    #[test]
+    fn infers_procref_as_word_but_lifting_remains_unsupported() -> Result<()> {
+        let source = r#"
+proc target()
+    nop
+end
+
+pub proc capture
+    procref.target
+end
+"#;
+        let context = Rc::new(Context::default());
+        let module = parse_test_module(source, &context)?;
+        let target = module
+            .procedures()
+            .find(|procedure| procedure.name().as_str() == "target")
+            .expect("target procedure");
+        let mut signatures = rustc_hash::FxHashMap::default();
+        signatures.insert(
+            target.name().as_str().to_owned(),
+            signatures::convert_signature(&context, &module, target.signature().unwrap())?,
+        );
+        let capture = module
+            .procedures()
+            .find(|procedure| procedure.name().as_str() == "capture")
+            .expect("capture procedure");
+        let signature = infer::infer_signature(
+            &context,
+            capture,
+            &signatures,
+            &rustc_hash::FxHashMap::default(),
+        )?;
+
+        assert_eq!(signature.params().len(), 0);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::from(ArrayType::new(Type::Felt, 4)));
+
+        let context = Rc::new(Context::default());
+        let result = disassemble_source(
+            r#"
+proc target()
+    nop
+end
+
+pub proc capture() -> [felt; 4]
+    procref.target
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )
+        .map(|_| ());
+        let err = match result {
+            Ok(()) => panic!("known-signature procref lifting should remain unsupported"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("not supported during disassembly"));
+        assert!(err.contains("ProcRef"));
         Ok(())
     }
 
@@ -2628,6 +2690,17 @@ end
         body: impl Into<String>,
     ) -> InstructionCase {
         instruction_case_with_locals(name, locals, &[], &[], body)
+    }
+
+    fn parse_test_module(
+        source: &str,
+        context: &Rc<Context>,
+    ) -> Result<Box<miden_assembly_syntax::ast::Module>> {
+        let source_manager = context.session().source_manager.clone();
+        let uri = Uri::from("test".to_owned().into_boxed_str());
+        let source_file = source_manager.load(SourceLanguage::Masm, uri, source.to_owned());
+        Ok(source_file
+            .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, "test"))?)
     }
 
     fn felt_types(count: usize) -> Vec<&'static str> {

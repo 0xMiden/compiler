@@ -437,6 +437,10 @@ impl<'a> InferState<'a> {
                 self.push(Type::from(ArrayType::new(Type::Felt, 4)));
                 Ok(())
             }
+            ProcRef(_) => {
+                self.push(Type::from(ArrayType::new(Type::Felt, 4)));
+                Ok(())
+            }
             Clk => {
                 self.push(Type::Felt);
                 Ok(())
