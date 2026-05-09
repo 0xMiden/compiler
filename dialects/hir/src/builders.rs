@@ -151,6 +151,20 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    /// Return the caller procedure hash as a word.
+    fn caller(&mut self, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Caller, _>(span);
+        let op = op_builder()?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Return the current VM clock cycle.
+    fn clk(&mut self, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Clk, _>(span);
+        let op = op_builder()?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     /// Create a constant byte array
     fn bytes(&mut self, bytes: &[u8], span: SourceSpan) -> Result<ValueRef, Report> {
         let context = self.builder().context_rc();
@@ -359,6 +373,17 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     /// NOTE: This function will panic if `local` is not valid within the current function
     fn load_local(&mut self, local: LocalVariable, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::LoadLocal, _>(span);
+        let op = op_builder(local)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Gets the element-address-space pointer to a procedure local.
+    fn local_address(
+        &mut self,
+        local: LocalVariable,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::LocalAddress, _>(span);
         let op = op_builder(local)?;
         Ok(op.borrow().result().as_value_ref())
     }

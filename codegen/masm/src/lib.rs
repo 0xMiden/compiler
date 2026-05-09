@@ -170,6 +170,9 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::StoreLocal, dyn HirLowering>();
     info.register_operation_trait::<hir::Load, dyn HirLowering>();
     info.register_operation_trait::<hir::LoadLocal, dyn HirLowering>();
+    info.register_operation_trait::<hir::LocalAddress, dyn HirLowering>();
+    info.register_operation_trait::<hir::Caller, dyn HirLowering>();
+    info.register_operation_trait::<hir::Clk, dyn HirLowering>();
     info.register_operation_trait::<hir::MemGrow, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSize, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSet, dyn HirLowering>();

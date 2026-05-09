@@ -9,6 +9,30 @@ use midenc_hir_transform::SpillLike;
 
 use crate::HirDialect;
 
+/// Get the element-address-space pointer to a procedure local.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct LocalAddress {
+    #[attr]
+    local: LocalVariableAttr,
+    #[result]
+    result: AnyPointer,
+}
+
+impl InferTypeOpInterface for LocalAddress {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = Type::from(PointerType::new_with_address_space(
+            self.get_local().ty(),
+            AddressSpace::Element,
+        ));
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
+}
+
 /// Store `value` on the heap at `addr`
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(

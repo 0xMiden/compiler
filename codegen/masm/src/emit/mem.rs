@@ -114,19 +114,24 @@ impl OpEmitter<'_> {
 
 /// Loads
 impl OpEmitter<'_> {
+    /// Push an element-address-space pointer to the given local.
+    pub fn local_address(&mut self, local: &LocalVariable, span: SourceSpan) {
+        let local_index = local.absolute_offset();
+        self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
+        self.push(Type::from(PointerType::new_with_address_space(
+            local.ty(),
+            AddressSpace::Element,
+        )));
+    }
+
     /// Load a value corresponding to the type of the given local, from the memory allocated for
     /// that local.
     ///
     /// Internally, this pushes the address of the local on the stack, then delegates to
     /// [OpEmitter::load]
     pub fn load_local(&mut self, local: &LocalVariable, span: SourceSpan) {
-        let local_index = local.absolute_offset();
         let ty = local.ty();
-        self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
-        self.push(Type::from(PointerType::new_with_address_space(
-            ty.clone(),
-            AddressSpace::Element,
-        )));
+        self.local_address(local, span);
         self.load(ty, span)
     }
 
@@ -618,12 +623,7 @@ impl OpEmitter<'_> {
     /// Internally, this pushes the address of the given local on the stack, and delegates to
     /// [OpEmitter::store] to perform the actual store.
     pub fn store_local(&mut self, local: &LocalVariable, span: SourceSpan) {
-        let local_index = local.absolute_offset();
-        self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
-        self.push(Type::from(PointerType::new_with_address_space(
-            local.ty(),
-            AddressSpace::Element,
-        )));
+        self.local_address(local, span);
         self.store(span)
     }
 

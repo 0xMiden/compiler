@@ -750,6 +750,12 @@ impl<'a> ProcedureLifter<'a> {
                 self.push_value(value, span);
                 Ok(())
             }
+            Locaddr(id) => {
+                let local = self.local(immediate_value(id)?, span)?;
+                let value = builder.local_address(local, span)?;
+                self.push_value(value, span);
+                Ok(())
+            }
             LocLoadWBe(id) => {
                 self.load_local_word(immediate_value(id)?, WordEndian::Big, span, builder)
             }
@@ -795,6 +801,16 @@ impl<'a> ProcedureLifter<'a> {
                 span,
                 builder,
             ),
+            Caller => {
+                let value = builder.caller(span)?;
+                self.push_value(value, span);
+                Ok(())
+            }
+            Clk => {
+                let value = builder.clk(span)?;
+                self.push_value(value, span);
+                Ok(())
+            }
             Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),

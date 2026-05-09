@@ -1024,6 +1024,29 @@ impl HirLowering for hir::LoadLocal {
     }
 }
 
+impl HirLowering for hir::LocalAddress {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter
+            .inst_emitter(self.as_operation())
+            .local_address(&self.get_local(), self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::Caller {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).caller(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::Clk {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).clk(self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Store {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.emitter().store(self.span());

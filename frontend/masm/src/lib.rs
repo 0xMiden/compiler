@@ -211,13 +211,14 @@ mod tests {
     };
     use midenc_dialect_cf::Select as CfSelect;
     use midenc_dialect_hir::{
-        Assert as HirAssert, AssertEq as HirAssertEq, Assertz as HirAssertz,
-        IntToPtr as HirIntToPtr, Load as HirLoad, LoadLocal as HirLoadLocal, Store as HirStore,
-        StoreLocal as HirStoreLocal,
+        Assert as HirAssert, AssertEq as HirAssertEq, Assertz as HirAssertz, Caller as HirCaller,
+        Clk as HirClk, IntToPtr as HirIntToPtr, Load as HirLoad, LoadLocal as HirLoadLocal,
+        LocalAddress as HirLocalAddress, Store as HirStore, StoreLocal as HirStoreLocal,
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
-        CallConv, FunctionType, Immediate, SymbolName, SymbolTable, Type,
+        AddressSpace, ArrayType, CallConv, FunctionType, Immediate, PointerType, SymbolName,
+        SymbolTable, Type,
         dialects::builtin::{self, Function, UnrealizedConversionCast},
     };
 
@@ -455,6 +456,7 @@ mod tests {
             Instruction::MemLoadWLe,
             Instruction::MemLoadWLeImm(_),
             Instruction::LocLoad(_),
+            Instruction::Locaddr(_),
             Instruction::LocLoadWBe(_),
             Instruction::LocLoadWLe(_),
             Instruction::MemStore,
@@ -466,6 +468,8 @@ mod tests {
             Instruction::LocStore(_),
             Instruction::LocStoreWBe(_),
             Instruction::LocStoreWLe(_),
+            Instruction::Caller,
+            Instruction::Clk,
             Instruction::Exec(_),
             Instruction::Call(_),
             Instruction::SysCall(_),
@@ -474,9 +478,6 @@ mod tests {
             Instruction::Trace(_),
         ],
         unsupported: [
-            Instruction::Locaddr(_),
-            Instruction::Caller,
-            Instruction::Clk,
             Instruction::MemStream,
             Instruction::AdvPipe,
             Instruction::AdvPush(_),
@@ -611,9 +612,18 @@ end
             felt_instruction_case("push_slice", 0, 0, "push.[1,2,3,4][1..3] drop drop"),
             felt_instruction_case("push_felt_list", 0, 0, "push.1.2.3 drop drop drop"),
             instruction_case("sdepth", &["felt", "felt"], &felt_types(3), "sdepth"),
+            instruction_case("caller", &[], &["[felt; 4]"], "caller"),
+            instruction_case("clk", &[], &["felt"], "clk"),
             instruction_case("debug", &["felt"], &["felt"], "debug.stack"),
             instruction_case("trace", &["felt"], &["felt"], "trace.1"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
+            instruction_case_with_locals(
+                "locaddr",
+                1,
+                &[],
+                &["ptr<felt, addrspace(felt)>"],
+                "locaddr.0",
+            ),
             instruction_case_with_locals("loc_store", 1, &["felt"], &[], "loc_store.0"),
             instruction_case_with_locals("loc_loadw_be", 4, &[], &felt_types(4), "loc_loadw_be.0"),
             instruction_case_with_locals("loc_loadw_le", 4, &[], &felt_types(4), "loc_loadw_le.0"),
@@ -977,11 +987,40 @@ end
     }
 
     #[test]
+    fn lifts_vm_context_instructions_to_first_class_hir_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+@locals(1)
+pub proc local_addr() -> ptr<felt, addrspace(felt)>
+    locaddr.0
+end
+
+pub proc caller_word() -> [felt; 4]
+    caller
+end
+
+pub proc current_clk() -> felt
+    clk
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        assert_eq!(
+            top_level_op_count::<HirLocalAddress>(find_function(output.module, "local_addr")),
+            1
+        );
+        assert_eq!(top_level_op_count::<HirCaller>(find_function(output.module, "caller_word")), 1);
+        assert_eq!(top_level_op_count::<HirClk>(find_function(output.module, "current_clk")), 1);
+        Ok(())
+    }
+
+    #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
-            unsupported_instruction_case("locaddr", 1, "locaddr.0"),
-            unsupported_instruction_case("caller", 0, "caller"),
-            unsupported_instruction_case("clk", 0, "clk"),
             unsupported_instruction_case("hash", 0, "hash"),
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
@@ -995,8 +1034,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 211);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 27);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 214);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 24);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1054,6 +1093,50 @@ end
         assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
         assert_eq!(signature.results().len(), 2);
         assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+        Ok(())
+    }
+
+    #[test]
+    fn infers_vm_context_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+@locals(1)
+pub proc local_addr
+    locaddr.0
+end
+
+pub proc caller_word
+    caller
+end
+
+pub proc current_clk
+    clk
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "local_addr").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 0);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, felt_memory_pointer_type());
+
+        let signature =
+            find_function(output.module, "caller_word").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 0);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::from(ArrayType::new(Type::Felt, 4)));
+
+        let signature =
+            find_function(output.module, "current_clk").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 0);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
         Ok(())
     }
 
@@ -2560,6 +2643,10 @@ end
 
     fn u32_types(count: usize) -> Vec<&'static str> {
         vec!["u32"; count]
+    }
+
+    fn felt_memory_pointer_type() -> Type {
+        Type::from(PointerType::new_with_address_space(Type::Felt, AddressSpace::Element))
     }
 
     fn assert_instruction_case_lifts(case: &InstructionCase) {

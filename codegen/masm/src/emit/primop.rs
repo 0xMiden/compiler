@@ -1,7 +1,7 @@
 use miden_assembly_syntax::parser::WordValue;
 use midenc_dialect_hir::assertions;
 use midenc_hir::{
-    Felt, Immediate, SourceSpan, Type,
+    ArrayType, Felt, Immediate, SourceSpan, Type,
     dialects::builtin::attributes::{ArgumentExtension, Signature},
 };
 
@@ -9,6 +9,18 @@ use super::{OpEmitter, int64, masm};
 use crate::TraceEvent;
 
 impl OpEmitter<'_> {
+    /// Push the caller procedure hash as a word.
+    pub fn caller(&mut self, span: SourceSpan) {
+        self.emit(masm::Instruction::Caller, span);
+        self.push(Type::from(ArrayType::new(Type::Felt, 4)));
+    }
+
+    /// Push the current VM clock cycle.
+    pub fn clk(&mut self, span: SourceSpan) {
+        self.emit(masm::Instruction::Clk, span);
+        self.push(Type::Felt);
+    }
+
     /// Format a diagnostic message for a HIR assertion code when one is available.
     fn assertion_message(
         code: Option<u32>,
@@ -460,5 +472,47 @@ impl OpEmitter<'_> {
         for result in signature.results.iter().rev() {
             self.push(result.ty.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{collections::BTreeSet, rc::Rc};
+
+    use midenc_hir::{ArrayType, Context};
+
+    use super::*;
+    use crate::{OperandStack, masm::Op};
+
+    #[test]
+    fn caller_emits_vm_instruction_and_pushes_word() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        let span = SourceSpan::default();
+        emitter.caller(span);
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::from(ArrayType::new(Type::Felt, 4)));
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Caller)));
+    }
+
+    #[test]
+    fn clk_emits_vm_instruction_and_pushes_felt() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        let span = SourceSpan::default();
+        emitter.clk(span);
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::Felt);
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Clk)));
     }
 }

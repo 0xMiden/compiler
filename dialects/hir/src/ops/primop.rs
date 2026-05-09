@@ -7,6 +7,44 @@ use midenc_hir::{
 
 use crate::HirDialect;
 
+/// Return the caller procedure hash as a word.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read))]
+pub struct Caller {
+    #[result]
+    result: AnyArray,
+}
+
+impl InferTypeOpInterface for Caller {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::from(ArrayType::new(Type::Felt, 4)));
+        Ok(())
+    }
+}
+
+/// Return the current VM clock cycle.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read))]
+pub struct Clk {
+    #[result]
+    result: IntFelt,
+}
+
+impl InferTypeOpInterface for Clk {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::Felt);
+        Ok(())
+    }
+}
+
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,

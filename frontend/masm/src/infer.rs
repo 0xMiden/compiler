@@ -6,7 +6,10 @@ use miden_assembly_syntax::{
     debuginfo::SourceSpan,
     parser::{IntValue, PushValue, WordValue},
 };
-use midenc_hir::{CallConv, Context, Type, dialects::builtin::attributes::Signature};
+use midenc_hir::{
+    AddressSpace, ArrayType, CallConv, Context, PointerType, Type,
+    dialects::builtin::attributes::Signature,
+};
 use rustc_hash::FxHashMap;
 
 use crate::{Result, error};
@@ -387,6 +390,10 @@ impl<'a> InferState<'a> {
                 self.push(Type::Felt);
                 Ok(())
             }
+            Locaddr(_) => {
+                self.push(felt_memory_pointer_type());
+                Ok(())
+            }
             LocLoadWBe(_) | LocLoadWLe(_) => {
                 for _ in 0..4 {
                     self.push(Type::Felt);
@@ -425,6 +432,14 @@ impl<'a> InferState<'a> {
             MemStoreWBeImm(addr) | MemStoreWLeImm(addr) => {
                 validate_memory_word_address(immediate_value(addr)?, span)?;
                 self.store_memory_word(false, span)
+            }
+            Caller => {
+                self.push(Type::from(ArrayType::new(Type::Felt, 4)));
+                Ok(())
+            }
+            Clk => {
+                self.push(Type::Felt);
+                Ok(())
             }
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
@@ -867,4 +882,8 @@ fn validate_memory_word_address(addr: u32, span: SourceSpan) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+fn felt_memory_pointer_type() -> Type {
+    Type::from(PointerType::new_with_address_space(Type::Felt, AddressSpace::Element))
 }
