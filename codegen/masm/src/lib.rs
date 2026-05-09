@@ -175,6 +175,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::Clk, dyn HirLowering>();
     info.register_operation_trait::<hir::AdvicePop, dyn HirLowering>();
     info.register_operation_trait::<hir::AdviceLoadWord, dyn HirLowering>();
+    info.register_operation_trait::<hir::AdvicePipe, dyn HirLowering>();
     info.register_operation_trait::<hir::EmitEvent, dyn HirLowering>();
     info.register_operation_trait::<hir::EmitEventImm, dyn HirLowering>();
     info.register_operation_trait::<hir::SystemEvent, dyn HirLowering>();
@@ -186,6 +187,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::MTreeMerge, dyn HirLowering>();
     info.register_operation_trait::<hir::MTreeVerify, dyn HirLowering>();
     info.register_operation_trait::<hir::CryptoStream, dyn HirLowering>();
+    info.register_operation_trait::<hir::MemStream, dyn HirLowering>();
     info.register_operation_trait::<hir::MemGrow, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSize, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSet, dyn HirLowering>();

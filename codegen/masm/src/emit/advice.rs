@@ -19,6 +19,18 @@ impl OpEmitter<'_> {
             self.push(Type::Felt);
         }
     }
+
+    /// Pop two advice words, write them to memory, and update the top-13 stack window.
+    pub fn advice_pipe(&mut self, span: SourceSpan) {
+        for _ in 0..13 {
+            let operand = self.pop().expect("operand stack is empty");
+            assert_eq!(operand.ty(), Type::Felt, "expected advice_pipe operand to be felt");
+        }
+        self.emit(masm::Instruction::AdvPipe, span);
+        for _ in 0..13 {
+            self.push(Type::Felt);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -64,5 +76,24 @@ mod tests {
 
         assert_eq!(emitter.stack_len(), 4);
         assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::AdvLoadW)));
+    }
+
+    #[test]
+    fn advice_pipe_emits_vm_instruction_and_preserves_window_shape() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+        for _ in 0..13 {
+            emitter.push(Type::Felt);
+        }
+
+        let span = SourceSpan::default();
+        emitter.advice_pipe(span);
+
+        assert_eq!(emitter.stack_len(), 13);
+        assert!(emitter.stack().iter().all(|ty| *ty == Type::Felt));
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::AdvPipe)));
     }
 }

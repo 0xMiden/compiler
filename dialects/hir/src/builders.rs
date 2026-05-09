@@ -192,6 +192,21 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         ))
     }
 
+    /// Pop two advice words, write them to memory, and update the affected VM stack window.
+    fn advice_pipe<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 13]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::AdvicePipe, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
     /// Emit an event whose ID is already on the operand stack.
     fn emit_event(&mut self, event_id: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::EmitEvent, _>(span);
@@ -374,6 +389,21 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         A: IntoIterator<Item = ValueRef>,
     {
         let op_builder = self.builder_mut().create::<crate::ops::CryptoStream, (A,)>(span);
+        let op = op_builder(stack)?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+    }
+
+    /// Load two VM words from memory and update the affected VM stack window.
+    fn mem_stream<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 13]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MemStream, (A,)>(span);
         let op = op_builder(stack)?;
         let op = op.borrow();
         Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())

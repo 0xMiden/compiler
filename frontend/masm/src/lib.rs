@@ -212,14 +212,15 @@ mod tests {
     };
     use midenc_dialect_cf::Select as CfSelect;
     use midenc_dialect_hir::{
-        AdviceLoadWord as HirAdviceLoadWord, AdvicePop as HirAdvicePop, Assert as HirAssert,
-        AssertEq as HirAssertEq, Assertz as HirAssertz, Caller as HirCaller, Clk as HirClk,
-        CryptoStream as HirCryptoStream, EmitEvent as HirEmitEvent,
-        EmitEventImm as HirEmitEventImm, HMerge as HirHMerge, HPerm as HirHPerm, Hash as HirHash,
-        IntToPtr as HirIntToPtr, Load as HirLoad, LoadLocal as HirLoadLocal,
-        LocalAddress as HirLocalAddress, MTreeGet as HirMTreeGet, MTreeMerge as HirMTreeMerge,
-        MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify, Store as HirStore,
-        StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
+        AdviceLoadWord as HirAdviceLoadWord, AdvicePipe as HirAdvicePipe,
+        AdvicePop as HirAdvicePop, Assert as HirAssert, AssertEq as HirAssertEq,
+        Assertz as HirAssertz, Caller as HirCaller, Clk as HirClk, CryptoStream as HirCryptoStream,
+        EmitEvent as HirEmitEvent, EmitEventImm as HirEmitEventImm, HMerge as HirHMerge,
+        HPerm as HirHPerm, Hash as HirHash, IntToPtr as HirIntToPtr, Load as HirLoad,
+        LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress, MTreeGet as HirMTreeGet,
+        MTreeMerge as HirMTreeMerge, MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify,
+        MemStream as HirMemStream, Store as HirStore, StoreLocal as HirStoreLocal,
+        SystemEvent as HirSystemEvent,
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
@@ -471,6 +472,7 @@ mod tests {
             Instruction::MemStoreWBeImm(_),
             Instruction::MemStoreWLe,
             Instruction::MemStoreWLeImm(_),
+            Instruction::MemStream,
             Instruction::LocStore(_),
             Instruction::LocStoreWBe(_),
             Instruction::LocStoreWLe(_),
@@ -478,6 +480,7 @@ mod tests {
             Instruction::Clk,
             Instruction::AdvPush(_),
             Instruction::AdvLoadW,
+            Instruction::AdvPipe,
             Instruction::Exec(_),
             Instruction::Call(_),
             Instruction::SysCall(_),
@@ -498,8 +501,6 @@ mod tests {
             Instruction::CryptoStream,
         ],
         unsupported: [
-            Instruction::MemStream,
-            Instruction::AdvPipe,
             Instruction::FriExt2Fold4,
             Instruction::HornerBase,
             Instruction::HornerExt,
@@ -622,6 +623,7 @@ end
             instruction_case("clk", &[], &["felt"], "clk"),
             instruction_case("adv_push", &[], &felt_types(3), "adv_push.3"),
             instruction_case("adv_loadw", &felt_types(4), &felt_types(4), "adv_loadw"),
+            instruction_case("adv_pipe", &felt_types(13), &felt_types(13), "adv_pipe"),
             instruction_case("emit", &["felt"], &["felt"], "emit"),
             instruction_case("emit_imm", &[], &[], r#"emit.event("phase28")"#),
             instruction_case("adv_push_mapval", &felt_types(4), &felt_types(4), "adv.push_mapval"),
@@ -719,6 +721,7 @@ end
             ),
             instruction_case("mem_load", &["u32"], &["felt"], "mem_load"),
             instruction_case("mem_load_imm", &[], &["felt"], "mem_load.0"),
+            instruction_case("mem_stream", &felt_types(13), &felt_types(13), "mem_stream"),
             instruction_case(
                 "mem_loadw_be",
                 &["u32", "felt", "felt", "felt", "felt"],
@@ -1261,12 +1264,41 @@ end
     }
 
     #[test]
+    fn lifts_streaming_io_ops_to_first_class_hir_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let params = (0..13).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let results = vec!["felt"; 13].join(", ");
+        let source = format!(
+            r#"
+pub proc stream_memory({params}) -> ({results})
+    mem_stream
+end
+
+pub proc pipe_advice({params}) -> ({results})
+    adv_pipe
+end
+"#
+        );
+        let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
+
+        assert_eq!(
+            top_level_op_count::<HirMemStream>(find_function(output.module, "stream_memory")),
+            1
+        );
+        assert_eq!(
+            top_level_op_count::<HirAdvicePipe>(find_function(output.module, "pipe_advice")),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
             unsupported_instruction_case("horner_eval_base", 0, "horner_eval_base"),
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
-            unsupported_instruction_case("adv_pipe", 0, "adv_pipe"),
+            unsupported_instruction_case("log_precompile", 0, "log_precompile"),
         ];
 
         for case in &cases {
@@ -1276,8 +1308,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 228);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 10);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 230);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 8);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1582,6 +1614,36 @@ end
         assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
         assert_eq!(signature.results().len(), 14);
         assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+        Ok(())
+    }
+
+    #[test]
+    fn infers_streaming_io_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc stream_memory
+    mem_stream
+end
+
+pub proc pipe_advice
+    adv_pipe
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        for name in ["stream_memory", "pipe_advice"] {
+            let signature = find_function(output.module, name).borrow().get_signature().clone();
+            assert_eq!(signature.params().len(), 13);
+            assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+            assert_eq!(signature.results().len(), 13);
+            assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+        }
         Ok(())
     }
 

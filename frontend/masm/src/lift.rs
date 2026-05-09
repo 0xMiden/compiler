@@ -803,6 +803,7 @@ impl<'a> ProcedureLifter<'a> {
                 span,
                 builder,
             ),
+            MemStream => self.mem_stream(span, builder),
             Caller => {
                 let value = builder.caller(span)?;
                 self.push_value(value, span);
@@ -815,6 +816,7 @@ impl<'a> ProcedureLifter<'a> {
             }
             AdvPush(count) => self.advice_push(immediate_value(count)?, span, builder),
             AdvLoadW => self.advice_load_word(span, builder),
+            AdvPipe => self.advice_pipe(span, builder),
             Emit => self.emit_event(span, builder),
             EmitImm(event_id) => {
                 builder.emit_event_imm(immediate_value(event_id)?, span)?;
@@ -1685,6 +1687,28 @@ impl<'a> ProcedureLifter<'a> {
     ) -> Result<()> {
         let operands = self.pop_cast_felt_window(14, span, builder)?;
         let results = builder.crypto_stream(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn mem_stream(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(13, span, builder)?;
+        let results = builder.mem_stream(operands, span)?;
+        self.push_results_top_to_bottom(results, span);
+        Ok(())
+    }
+
+    fn advice_pipe(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let operands = self.pop_cast_felt_window(13, span, builder)?;
+        let results = builder.advice_pipe(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }

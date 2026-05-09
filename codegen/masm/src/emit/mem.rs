@@ -110,6 +110,18 @@ impl OpEmitter<'_> {
         self.raw_exec("::intrinsics::mem::memory_size", span);
         self.push(Type::U32);
     }
+
+    /// Load two VM words from memory and update the top-13 stack window.
+    pub fn mem_stream(&mut self, span: SourceSpan) {
+        for _ in 0..13 {
+            let operand = self.pop().expect("operand stack is empty");
+            assert_eq!(operand.ty(), Type::Felt, "expected mem_stream operand to be felt");
+        }
+        self.emit(masm::Instruction::MemStream, span);
+        for _ in 0..13 {
+            self.push(Type::Felt);
+        }
+    }
 }
 
 /// Loads
@@ -1286,5 +1298,34 @@ impl OpEmitter<'_> {
 
     fn store_struct(&mut self, _ty: &StructType, _ptr: Option<NativePtr>, _span: SourceSpan) {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{collections::BTreeSet, rc::Rc};
+
+    use midenc_hir::Context;
+
+    use super::*;
+    use crate::masm::Op;
+
+    #[test]
+    fn mem_stream_emits_vm_instruction_and_preserves_window_shape() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+        for _ in 0..13 {
+            emitter.push(Type::Felt);
+        }
+
+        let span = SourceSpan::default();
+        emitter.mem_stream(span);
+
+        assert_eq!(emitter.stack_len(), 13);
+        assert!(emitter.stack().iter().all(|ty| *ty == Type::Felt));
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::MemStream)));
     }
 }
