@@ -1,6 +1,6 @@
 use midenc_hir::{
     AsCallableSymbolRef, Builder, CompactString, Felt, Immediate, Op, OpBuilder, PointerType,
-    Report, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
+    Report, SmallVec, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
     dialects::builtin::{
         attributes::{LocalVariable, Signature},
         *,
@@ -207,6 +207,22 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::EmitEventImm>, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::EmitEventImm, _>(span);
         op_builder(Immediate::Felt(event_id))
+    }
+
+    /// Emit a recognized VM system event with explicit stack-read dependencies.
+    fn system_event<A>(
+        &mut self,
+        stack: A,
+        event_id: Felt,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 16]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::SystemEvent, (A, Immediate)>(span);
+        let op = op_builder(stack, Immediate::Felt(event_id))?;
+        let op = op.borrow();
+        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
     }
 
     /// Create a constant byte array

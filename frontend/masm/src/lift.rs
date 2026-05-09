@@ -21,7 +21,9 @@ use midenc_hir::{
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    DisassembledModule, DisassemblerConfig, ExternalSignatureMap, Result, error, infer, signatures,
+    DisassembledModule, DisassemblerConfig, ExternalSignatureMap, Result, error,
+    events::{system_event_id, system_event_read_count},
+    infer, signatures,
 };
 
 pub(crate) fn lift_module(
@@ -818,6 +820,7 @@ impl<'a> ProcedureLifter<'a> {
                 builder.emit_event_imm(immediate_value(event_id)?, span)?;
                 Ok(())
             }
+            SysEvent(event) => self.system_event(event, span, builder),
             Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),
@@ -1542,6 +1545,28 @@ impl<'a> ProcedureLifter<'a> {
         let event_id = self.cast(builder, event_id.value, Type::Felt, span)?;
         let event_id = builder.emit_event(event_id, span)?;
         self.push_value(event_id, span);
+        Ok(())
+    }
+
+    fn system_event(
+        &mut self,
+        event: &miden_assembly_syntax::ast::SystemEventNode,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let read_count = system_event_read_count(event);
+        self.require_depth(read_count - 1, span)?;
+        let start = self.stack.len() - read_count;
+        let stack_window = self.stack.split_off(start);
+        let mut operands = Vec::with_capacity(read_count);
+        for value in stack_window.iter().rev() {
+            operands.push(self.cast(builder, value.value, Type::Felt, span)?);
+        }
+
+        let results = builder.system_event(operands, system_event_id(event), span)?;
+        for result in results.into_iter().rev() {
+            self.push_value(result, span);
+        }
         Ok(())
     }
 

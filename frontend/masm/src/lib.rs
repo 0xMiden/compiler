@@ -1,6 +1,7 @@
 //! MASM-to-HIR disassembler.
 
 mod error;
+mod events;
 mod infer;
 mod lift;
 mod project;
@@ -215,7 +216,7 @@ mod tests {
         AssertEq as HirAssertEq, Assertz as HirAssertz, Caller as HirCaller, Clk as HirClk,
         EmitEvent as HirEmitEvent, EmitEventImm as HirEmitEventImm, IntToPtr as HirIntToPtr,
         Load as HirLoad, LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress,
-        Store as HirStore, StoreLocal as HirStoreLocal,
+        Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
     };
     use midenc_dialect_scf::{If, While};
     use midenc_hir::{
@@ -482,11 +483,11 @@ mod tests {
             Instruction::Trace(_),
             Instruction::Emit,
             Instruction::EmitImm(_),
+            Instruction::SysEvent(_),
         ],
         unsupported: [
             Instruction::MemStream,
             Instruction::AdvPipe,
-            Instruction::SysEvent(_),
             Instruction::Hash,
             Instruction::HMerge,
             Instruction::HPerm,
@@ -620,6 +621,58 @@ end
             instruction_case("adv_loadw", &felt_types(4), &felt_types(4), "adv_loadw"),
             instruction_case("emit", &["felt"], &["felt"], "emit"),
             instruction_case("emit_imm", &[], &[], r#"emit.event("phase28")"#),
+            instruction_case("adv_push_mapval", &felt_types(4), &felt_types(4), "adv.push_mapval"),
+            instruction_case(
+                "adv_push_mapval_count",
+                &felt_types(4),
+                &felt_types(4),
+                "adv.push_mapval_count",
+            ),
+            instruction_case(
+                "adv_push_mapvaln_0",
+                &felt_types(4),
+                &felt_types(4),
+                "adv.push_mapvaln.0",
+            ),
+            instruction_case(
+                "adv_push_mapvaln_4",
+                &felt_types(4),
+                &felt_types(4),
+                "adv.push_mapvaln.4",
+            ),
+            instruction_case(
+                "adv_push_mapvaln_8",
+                &felt_types(4),
+                &felt_types(4),
+                "adv.push_mapvaln.8",
+            ),
+            instruction_case("adv_has_mapkey", &felt_types(4), &felt_types(4), "adv.has_mapkey"),
+            instruction_case("adv_push_mtnode", &felt_types(6), &felt_types(6), "adv.push_mtnode"),
+            instruction_case("adv_insert_mem", &felt_types(6), &felt_types(6), "adv.insert_mem"),
+            instruction_case(
+                "adv_insert_hdword",
+                &felt_types(8),
+                &felt_types(8),
+                "adv.insert_hdword",
+            ),
+            instruction_case(
+                "adv_insert_hdword_d",
+                &felt_types(9),
+                &felt_types(9),
+                "adv.insert_hdword_d",
+            ),
+            instruction_case(
+                "adv_insert_hperm",
+                &felt_types(12),
+                &felt_types(12),
+                "adv.insert_hperm",
+            ),
+            instruction_case(
+                "adv_insert_hqword",
+                &felt_types(16),
+                &felt_types(16),
+                "adv.insert_hqword",
+            ),
             instruction_case("debug", &["felt"], &["felt"], "debug.stack"),
             instruction_case("trace", &["felt"], &["felt"], "trace.1"),
             instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
@@ -1067,12 +1120,41 @@ end
     }
 
     #[test]
+    fn lifts_system_events_to_first_class_hir_ops() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let hqword_params = (0..16).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+        let hqword_results = vec!["felt"; 16].join(", ");
+        let source = format!(
+            r#"
+pub proc map_event(k0: felt, k1: felt, k2: felt, k3: felt) -> (felt, felt, felt, felt)
+    adv.push_mapval
+end
+
+pub proc hqword_event({hqword_params}) -> ({hqword_results})
+    adv.insert_hqword
+end
+"#
+        );
+        let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
+
+        assert_eq!(
+            top_level_op_count::<HirSystemEvent>(find_function(output.module, "map_event")),
+            1
+        );
+        assert_eq!(
+            top_level_op_count::<HirSystemEvent>(find_function(output.module, "hqword_event")),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
     fn unsupported_instruction_matrix_reports_diagnostics() {
         let cases = [
             unsupported_instruction_case("hash", 0, "hash"),
             unsupported_instruction_case("fri_ext2fold4", 0, "fri_ext2fold4"),
             unsupported_instruction_case("dynexec", 0, "dynexec"),
-            unsupported_instruction_case("sys_event", 0, "adv.push_mapval"),
+            unsupported_instruction_case("adv_pipe", 0, "adv_pipe"),
         ];
 
         for case in &cases {
@@ -1082,8 +1164,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 218);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 20);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 219);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 19);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1239,6 +1321,41 @@ end
             find_function(output.module, "emitted_imm").borrow().get_signature().clone();
         assert_eq!(signature.params().len(), 0);
         assert_eq!(signature.results().len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn infers_system_event_signatures() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc map_event
+    adv.push_mapval
+end
+
+pub proc hqword_event
+    adv.insert_hqword
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "map_event").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 4);
+        assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(signature.results().len(), 4);
+        assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
+
+        let signature =
+            find_function(output.module, "hqword_event").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 16);
+        assert!(signature.params().iter().all(|param| param.ty == Type::Felt));
+        assert_eq!(signature.results().len(), 16);
+        assert!(signature.results().iter().all(|result| result.ty == Type::Felt));
         Ok(())
     }
 

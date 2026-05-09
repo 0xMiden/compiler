@@ -17,6 +17,15 @@ impl OpEmitter<'_> {
             span,
         );
     }
+
+    /// Emit a recognized VM system event without changing the operand stack.
+    pub fn system_event(&mut self, event_id: Felt, read_count: usize, span: SourceSpan) {
+        for index in 0..read_count {
+            let operand = self.stack.get(index).expect("operand stack is empty");
+            assert_eq!(operand.ty(), Type::Felt, "expected system event operand to be felt");
+        }
+        self.emit_event_imm(event_id, span);
+    }
 }
 
 #[cfg(test)]
@@ -63,6 +72,33 @@ mod tests {
                 masm::Instruction::EmitImm(masm::Immediate::Value(masm::Span::new(
                     span,
                     Felt::new(42),
+                )))
+            ))
+        );
+    }
+
+    #[test]
+    fn system_event_emits_immediate_event_without_changing_stack() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+        for _ in 0..4 {
+            emitter.push(Type::Felt);
+        }
+
+        let span = SourceSpan::default();
+        emitter.system_event(Felt::new(7), 4, span);
+
+        assert_eq!(emitter.stack_len(), 4);
+        assert_eq!(
+            &block[0],
+            &Op::Inst(masm::Span::new(
+                span,
+                masm::Instruction::EmitImm(masm::Immediate::Value(masm::Span::new(
+                    span,
+                    Felt::new(7),
                 )))
             ))
         );

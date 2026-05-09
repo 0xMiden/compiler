@@ -1079,6 +1079,21 @@ impl HirLowering for hir::EmitEventImm {
     }
 }
 
+impl HirLowering for hir::SystemEvent {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let event_id = match *self.get_event_id() {
+            midenc_hir::Immediate::Felt(event_id) => event_id,
+            event_id => panic!("expected hir.system_event event_id to be felt, got {event_id}"),
+        };
+        emitter.inst_emitter(self.as_operation()).system_event(
+            event_id,
+            self.num_operands(),
+            self.span(),
+        );
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Store {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.emitter().store(self.span());

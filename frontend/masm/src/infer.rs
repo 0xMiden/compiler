@@ -12,7 +12,7 @@ use midenc_hir::{
 };
 use rustc_hash::FxHashMap;
 
-use crate::{Result, error};
+use crate::{Result, error, events::system_event_read_count};
 
 pub(crate) fn infer_signature(
     context: &Rc<Context>,
@@ -466,6 +466,9 @@ impl<'a> InferState<'a> {
                 Ok(())
             }
             EmitImm(_) => Ok(()),
+            SysEvent(event) => {
+                self.constrain_top_n(system_event_read_count(event), Type::Felt, span)
+            }
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
             _ => Err(error::error(format!(
