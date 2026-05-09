@@ -537,6 +537,8 @@ impl<'a> ProcedureLifter<'a> {
             U32WideningAdd3 => self.u32_add3(builder, span, U32Add3Output::Widening),
             U32OverflowingAdd3 => self.u32_add3(builder, span, U32Add3Output::Overflowing),
             U32WrappingAdd3 => self.u32_add3(builder, span, U32Add3Output::Wrapping),
+            U32WideningMadd => self.u32_madd(builder, span, U32Add3Output::Widening),
+            U32WrappingMadd => self.u32_madd(builder, span, U32Add3Output::Wrapping),
             U32WrappingSub => {
                 self.binary_with_type(builder, Type::U32, span, |builder, lhs, rhs, span| {
                     builder.sub_wrapping(lhs, rhs, span)
@@ -1330,6 +1332,38 @@ impl<'a> ProcedureLifter<'a> {
             U32Add3Output::Wrapping => {
                 self.push_value(low, span);
             }
+        }
+        Ok(())
+    }
+
+    fn u32_madd(
+        &mut self,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+        span: SourceSpan,
+        output: U32Add3Output,
+    ) -> Result<()> {
+        let b = self.pop(span)?;
+        let a = self.pop(span)?;
+        let c = self.pop(span)?;
+        let b = self.cast(builder, b.value, Type::U32, span)?;
+        let a = self.cast(builder, a.value, Type::U32, span)?;
+        let c = self.cast(builder, c.value, Type::U32, span)?;
+        let b = builder.zext(b, Type::U64, span)?;
+        let a = builder.zext(a, Type::U64, span)?;
+        let c = builder.zext(c, Type::U64, span)?;
+        let product = builder.mul(a, b, span)?;
+        let sum = builder.add(product, c, span)?;
+        let (high, low) = builder.split2(sum, Type::U32, span)?;
+
+        match output {
+            U32Add3Output::Widening => {
+                self.push_value(high, span);
+                self.push_value(low, span);
+            }
+            U32Add3Output::Wrapping => {
+                self.push_value(low, span);
+            }
+            U32Add3Output::Overflowing => unreachable!("u32 madd has no overflowing form"),
         }
         Ok(())
     }

@@ -309,6 +309,8 @@ mod tests {
             Instruction::U32OverflowingAdd3,
             Instruction::U32WideningAdd3,
             Instruction::U32WrappingAdd3,
+            Instruction::U32WideningMadd,
+            Instruction::U32WrappingMadd,
             Instruction::U32WrappingSub,
             Instruction::U32WrappingSubImm(_),
             Instruction::U32OverflowingSub,
@@ -466,8 +468,6 @@ mod tests {
             Instruction::U32AssertWithError(_),
             Instruction::U32Assert2WithError(_),
             Instruction::U32AssertWWithError(_),
-            Instruction::U32WideningMadd,
-            Instruction::U32WrappingMadd,
             Instruction::Locaddr(_),
             Instruction::Caller,
             Instruction::Clk,
@@ -742,6 +742,8 @@ end
                 &u32_types(2),
                 "u32overflowing_add3",
             ),
+            instruction_case("u32widening_madd", &u32_types(3), &u32_types(2), "u32widening_madd"),
+            instruction_case("u32wrapping_madd", &u32_types(3), &["u32"], "u32wrapping_madd"),
             instruction_case("u32wrapping_sub", &["u32", "u32"], &["u32"], "u32wrapping_sub"),
             instruction_case("u32wrapping_sub_imm", &["u32"], &["u32"], "u32wrapping_sub.2"),
             instruction_case(
@@ -931,8 +933,8 @@ end
 
     #[test]
     fn instruction_inventory_classifies_all_masm_instruction_variants() {
-        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 193);
-        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 45);
+        assert_eq!(SUPPORTED_INSTRUCTION_VARIANT_COUNT, 195);
+        assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 43);
         assert_eq!(
             SUPPORTED_INSTRUCTION_VARIANT_COUNT + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
             238
@@ -1166,6 +1168,14 @@ end
 pub proc mul_wide
     u32widening_mul
 end
+
+pub proc madd_wide
+    u32widening_madd
+end
+
+pub proc madd_wrapping
+    u32wrapping_madd
+end
 "#,
             "test",
             &DisassemblerConfig {
@@ -1182,7 +1192,7 @@ end
             assert!(signature.results().iter().all(|result| result.ty == Type::U32));
         }
 
-        for name in ["add3_wide", "add3_overflow"] {
+        for name in ["add3_wide", "add3_overflow", "madd_wide"] {
             let signature = find_function(output.module, name).borrow().get_signature().clone();
             assert_eq!(signature.params().len(), 3);
             assert!(signature.params().iter().all(|param| param.ty == Type::U32));
@@ -1192,6 +1202,13 @@ end
 
         let signature =
             find_function(output.module, "add3_wrapping").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 3);
+        assert!(signature.params().iter().all(|param| param.ty == Type::U32));
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::U32);
+
+        let signature =
+            find_function(output.module, "madd_wrapping").borrow().get_signature().clone();
         assert_eq!(signature.params().len(), 3);
         assert!(signature.params().iter().all(|param| param.ty == Type::U32));
         assert_eq!(signature.results().len(), 1);
@@ -1977,6 +1994,14 @@ end
 pub proc mul_wide(a: u32, b: u32) -> (u32, u32)
     u32widening_mul
 end
+
+pub proc madd_wide(b: u32, a: u32, c: u32) -> (u32, u32)
+    u32widening_madd
+end
+
+pub proc madd_wrapping(b: u32, a: u32, c: u32) -> u32
+    u32wrapping_madd
+end
 "#,
             "test",
             &DisassemblerConfig::default(),
@@ -1997,6 +2022,18 @@ end
         assert_eq!(top_level_op_count::<ArithZext>(mul), 2);
         assert_eq!(top_level_op_count::<ArithMul>(mul), 1);
         assert_eq!(top_level_op_count::<ArithSplit>(mul), 1);
+
+        let madd = find_function(output.module, "madd_wide");
+        assert_eq!(top_level_op_count::<ArithZext>(madd), 3);
+        assert_eq!(top_level_op_count::<ArithMul>(madd), 1);
+        assert_eq!(top_level_op_count::<ArithAdd>(madd), 1);
+        assert_eq!(top_level_op_count::<ArithSplit>(madd), 1);
+
+        let wrapping_madd = find_function(output.module, "madd_wrapping");
+        assert_eq!(top_level_op_count::<ArithZext>(wrapping_madd), 3);
+        assert_eq!(top_level_op_count::<ArithMul>(wrapping_madd), 1);
+        assert_eq!(top_level_op_count::<ArithAdd>(wrapping_madd), 1);
+        assert_eq!(top_level_op_count::<ArithSplit>(wrapping_madd), 1);
 
         Ok(())
     }

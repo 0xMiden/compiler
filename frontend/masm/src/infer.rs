@@ -301,7 +301,15 @@ impl<'a> InferState<'a> {
                 self.push(Type::U32);
                 Ok(())
             }
-            U32WrappingAdd3 => {
+            U32WideningMadd => {
+                self.pop_with_type(Type::U32, span)?;
+                self.pop_with_type(Type::U32, span)?;
+                self.pop_with_type(Type::U32, span)?;
+                self.push(Type::U32);
+                self.push(Type::U32);
+                Ok(())
+            }
+            U32WrappingAdd3 | U32WrappingMadd => {
                 self.pop_with_type(Type::U32, span)?;
                 self.pop_with_type(Type::U32, span)?;
                 self.pop_with_type(Type::U32, span)?;
