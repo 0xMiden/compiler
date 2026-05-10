@@ -100,7 +100,6 @@ end
 }
 
 #[test]
-#[ignore = "follow-up: local lowering requires a runtime-compatible memory/test harness setup"]
 fn e2e_roundtrip_locals() {
     assert_roundtrip_outputs(
         r#"
