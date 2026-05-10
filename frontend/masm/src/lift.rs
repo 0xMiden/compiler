@@ -23,7 +23,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     DisassembledModule, DisassemblerConfig, ExternalSignatureMap, ExternalTypeMap, Result, error,
     events::{system_event_id, system_event_read_count},
-    infer, signatures,
+    infer, signatures, stack as masm_stack,
 };
 
 pub(crate) fn lift_module(
@@ -2283,23 +2283,15 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn dup(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        let index = self.index_from_top(depth, span)?;
-        self.stack.push(self.stack[index]);
-        Ok(())
+        masm_stack::dup(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
     }
 
     fn dup_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        for _ in 0..4 {
-            self.dup(depth * 4 + 3, span)?;
-        }
-        Ok(())
+        masm_stack::dup_word(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
     }
 
     fn swap(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        let index = self.index_from_top(depth, span)?;
-        let top = self.index_from_top(0, span)?;
-        self.stack.swap(index, top);
-        Ok(())
+        masm_stack::swap(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
     }
 
     fn swap_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
@@ -2311,22 +2303,12 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn swap_chunks(&mut self, chunk_len: usize, depth: usize, span: SourceSpan) -> Result<()> {
-        let total = chunk_len * (depth + 1);
-        self.require_depth(total - 1, span)?;
-        let len = self.stack.len();
-        let top_start = len - chunk_len;
-        let other_start = len - total;
-        for offset in 0..chunk_len {
-            self.stack.swap(other_start + offset, top_start + offset);
-        }
-        Ok(())
+        masm_stack::swap_chunks(&mut self.stack, chunk_len, depth)
+            .ok_or_else(|| stack_underflow(span))
     }
 
     fn movup(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        let index = self.index_from_top(depth, span)?;
-        let value = self.stack.remove(index);
-        self.stack.push(value);
-        Ok(())
+        masm_stack::movup(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
     }
 
     fn movup_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
@@ -2339,20 +2321,12 @@ impl<'a> ProcedureLifter<'a> {
         depth: usize,
         span: SourceSpan,
     ) -> Result<()> {
-        let total = chunk_len * (depth + 1);
-        self.require_depth(total - 1, span)?;
-        let start = self.stack.len() - total;
-        let chunk: Vec<_> = self.stack.drain(start..start + chunk_len).collect();
-        self.stack.extend(chunk);
-        Ok(())
+        masm_stack::move_chunk_to_top(&mut self.stack, chunk_len, depth)
+            .ok_or_else(|| stack_underflow(span))
     }
 
     fn movdn(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        self.require_depth(depth, span)?;
-        let value = self.stack.pop().unwrap();
-        let index = self.stack.len().saturating_sub(depth);
-        self.stack.insert(index, value);
-        Ok(())
+        masm_stack::movdn(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
     }
 
     fn movdn_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
@@ -2365,26 +2339,16 @@ impl<'a> ProcedureLifter<'a> {
         depth: usize,
         span: SourceSpan,
     ) -> Result<()> {
-        self.require_depth(chunk_len * (depth + 1) - 1, span)?;
-        let len = self.stack.len();
-        let chunk: Vec<_> = self.stack.drain(len - chunk_len..).collect();
-        let index = self.stack.len() - (chunk_len * depth);
-        self.stack.splice(index..index, chunk);
-        Ok(())
+        masm_stack::move_top_chunk_down(&mut self.stack, chunk_len, depth)
+            .ok_or_else(|| stack_underflow(span))
     }
 
     fn reverse_word(&mut self, span: SourceSpan) -> Result<()> {
-        self.require_depth(3, span)?;
-        let len = self.stack.len();
-        self.stack[len - 4..].reverse();
-        Ok(())
+        masm_stack::reverse_n(&mut self.stack, 4).ok_or_else(|| stack_underflow(span))
     }
 
     fn reverse_double_word(&mut self, span: SourceSpan) -> Result<()> {
-        self.require_depth(7, span)?;
-        let len = self.stack.len();
-        self.stack[len - 8..].reverse();
-        Ok(())
+        masm_stack::reverse_n(&mut self.stack, 8).ok_or_else(|| stack_underflow(span))
     }
 
     fn pop_word(&mut self, span: SourceSpan) -> Result<Vec<StackValue>> {
@@ -2428,18 +2392,12 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn pop_chunk(&mut self, chunk_len: usize, span: SourceSpan) -> Result<Vec<StackValue>> {
-        self.require_depth(chunk_len - 1, span)?;
-        Ok(self.stack.split_off(self.stack.len() - chunk_len))
-    }
-
-    fn index_from_top(&self, depth: usize, span: SourceSpan) -> Result<usize> {
-        self.require_depth(depth, span)?;
-        Ok(self.stack.len() - 1 - depth)
+        masm_stack::pop_chunk(&mut self.stack, chunk_len).ok_or_else(|| stack_underflow(span))
     }
 
     fn require_depth(&self, depth: usize, span: SourceSpan) -> Result<()> {
         if self.stack.len() <= depth {
-            Err(error::error(format!("stack underflow at {span:?}")))
+            Err(stack_underflow(span))
         } else {
             Ok(())
         }
@@ -2456,6 +2414,10 @@ fn unsupported_instruction(inst: &Instruction, span: SourceSpan) -> Result<()> {
     Err(error::error(format!(
         "MASM instruction {inst:?} is not supported during disassembly at {span:?}"
     )))
+}
+
+fn stack_underflow(span: SourceSpan) -> miden_assembly_syntax::diagnostics::Report {
+    error::error(format!("stack underflow at {span:?}"))
 }
 
 fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {

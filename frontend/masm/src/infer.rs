@@ -12,7 +12,7 @@ use midenc_hir::{
 };
 use rustc_hash::FxHashMap;
 
-use crate::{Result, error, events::system_event_read_count};
+use crate::{Result, error, events::system_event_read_count, stack as masm_stack};
 
 pub(crate) fn infer_signature(
     context: &Rc<Context>,
@@ -834,7 +834,8 @@ impl<'a> InferState<'a> {
 
     fn pop_chunk(&mut self, chunk_len: usize, span: SourceSpan) -> Vec<AbstractValue> {
         self.ensure_depth(chunk_len - 1, span);
-        self.stack.split_off(self.stack.len() - chunk_len)
+        masm_stack::pop_chunk(&mut self.stack, chunk_len)
+            .expect("inference stack depth was extended before popping")
     }
 
     fn constrain_top_n(&mut self, n: usize, ty: Type, span: SourceSpan) -> Result<()> {
@@ -854,22 +855,23 @@ impl<'a> InferState<'a> {
     }
 
     fn dup(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        let index = self.index_from_top(depth, span);
-        self.stack.push(self.stack[index].clone());
+        self.ensure_depth(depth, span);
+        masm_stack::dup(&mut self.stack, depth)
+            .expect("inference stack depth was extended before dup");
         Ok(())
     }
 
     fn dup_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        for _ in 0..4 {
-            self.dup(depth * 4 + 3, span)?;
-        }
+        self.ensure_depth(depth * 4 + 3, span);
+        masm_stack::dup_word(&mut self.stack, depth)
+            .expect("inference stack depth was extended before dupw");
         Ok(())
     }
 
     fn swap(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        let index = self.index_from_top(depth, span);
-        let top = self.index_from_top(0, span);
-        self.stack.swap(index, top);
+        self.ensure_depth(depth, span);
+        masm_stack::swap(&mut self.stack, depth)
+            .expect("inference stack depth was extended before swap");
         Ok(())
     }
 
@@ -880,19 +882,15 @@ impl<'a> InferState<'a> {
     fn swap_chunks(&mut self, chunk_len: usize, depth: usize, span: SourceSpan) -> Result<()> {
         let total = chunk_len * (depth + 1);
         self.ensure_depth(total - 1, span);
-        let len = self.stack.len();
-        let top_start = len - chunk_len;
-        let other_start = len - total;
-        for offset in 0..chunk_len {
-            self.stack.swap(other_start + offset, top_start + offset);
-        }
+        masm_stack::swap_chunks(&mut self.stack, chunk_len, depth)
+            .expect("inference stack depth was extended before chunk swap");
         Ok(())
     }
 
     fn movup(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        let index = self.index_from_top(depth, span);
-        let value = self.stack.remove(index);
-        self.stack.push(value);
+        self.ensure_depth(depth, span);
+        masm_stack::movup(&mut self.stack, depth)
+            .expect("inference stack depth was extended before movup");
         Ok(())
     }
 
@@ -904,17 +902,15 @@ impl<'a> InferState<'a> {
     ) -> Result<()> {
         let total = chunk_len * (depth + 1);
         self.ensure_depth(total - 1, span);
-        let start = self.stack.len() - total;
-        let chunk: Vec<_> = self.stack.drain(start..start + chunk_len).collect();
-        self.stack.extend(chunk);
+        masm_stack::move_chunk_to_top(&mut self.stack, chunk_len, depth)
+            .expect("inference stack depth was extended before chunk movup");
         Ok(())
     }
 
     fn movdn(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
         self.ensure_depth(depth, span);
-        let value = self.stack.pop().unwrap();
-        let index = self.stack.len().saturating_sub(depth);
-        self.stack.insert(index, value);
+        masm_stack::movdn(&mut self.stack, depth)
+            .expect("inference stack depth was extended before movdn");
         Ok(())
     }
 
@@ -925,23 +921,16 @@ impl<'a> InferState<'a> {
         span: SourceSpan,
     ) -> Result<()> {
         self.ensure_depth(chunk_len * (depth + 1) - 1, span);
-        let len = self.stack.len();
-        let chunk: Vec<_> = self.stack.drain(len - chunk_len..).collect();
-        let index = self.stack.len() - (chunk_len * depth);
-        self.stack.splice(index..index, chunk);
+        masm_stack::move_top_chunk_down(&mut self.stack, chunk_len, depth)
+            .expect("inference stack depth was extended before chunk movdn");
         Ok(())
     }
 
     fn reverse_n(&mut self, n: usize, span: SourceSpan) -> Result<()> {
         self.ensure_depth(n - 1, span);
-        let len = self.stack.len();
-        self.stack[len - n..].reverse();
+        masm_stack::reverse_n(&mut self.stack, n)
+            .expect("inference stack depth was extended before reverse");
         Ok(())
-    }
-
-    fn index_from_top(&mut self, depth: usize, span: SourceSpan) -> usize {
-        self.ensure_depth(depth, span);
-        self.stack.len() - 1 - depth
     }
 
     fn ensure_depth(&mut self, depth: usize, span: SourceSpan) {

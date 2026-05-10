@@ -6,6 +6,7 @@ mod infer;
 mod lift;
 mod project;
 mod signatures;
+mod stack;
 
 use std::{collections::BTreeMap, path::Path, rc::Rc};
 
