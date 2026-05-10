@@ -113,14 +113,7 @@ impl OpEmitter<'_> {
 
     /// Load two VM words from memory and update the top-13 stack window.
     pub fn mem_stream(&mut self, span: SourceSpan) {
-        for _ in 0..13 {
-            let operand = self.pop().expect("operand stack is empty");
-            assert_eq!(operand.ty(), Type::Felt, "expected mem_stream operand to be felt");
-        }
-        self.emit(masm::Instruction::MemStream, span);
-        for _ in 0..13 {
-            self.push(Type::Felt);
-        }
+        self.felt_stack_transform(masm::Instruction::MemStream, 13, 13, "mem_stream", span);
     }
 }
 

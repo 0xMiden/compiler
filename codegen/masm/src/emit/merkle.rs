@@ -7,17 +7,17 @@ use super::{OpEmitter, masm};
 impl OpEmitter<'_> {
     /// Read a Merkle node and verify it against the provided root.
     pub fn mtree_get(&mut self, span: SourceSpan) {
-        self.merkle_stack_transform(masm::Instruction::MTreeGet, 6, 8, span);
+        self.felt_stack_transform(masm::Instruction::MTreeGet, 6, 8, "Merkle", span);
     }
 
     /// Update a Merkle node and return the old value plus new root.
     pub fn mtree_set(&mut self, span: SourceSpan) {
-        self.merkle_stack_transform(masm::Instruction::MTreeSet, 10, 8, span);
+        self.felt_stack_transform(masm::Instruction::MTreeSet, 10, 8, "Merkle", span);
     }
 
     /// Merge two Merkle roots and return the merged root.
     pub fn mtree_merge(&mut self, span: SourceSpan) {
-        self.merkle_stack_transform(masm::Instruction::MTreeMerge, 8, 4, span);
+        self.felt_stack_transform(masm::Instruction::MTreeMerge, 8, 4, "Merkle", span);
     }
 
     /// Verify a Merkle path without changing the operand stack.
@@ -31,23 +31,6 @@ impl OpEmitter<'_> {
             None => masm::Instruction::MTreeVerify,
         };
         self.emit(instruction, span);
-    }
-
-    fn merkle_stack_transform(
-        &mut self,
-        instruction: masm::Instruction,
-        inputs: usize,
-        outputs: usize,
-        span: SourceSpan,
-    ) {
-        for _ in 0..inputs {
-            let operand = self.pop().expect("operand stack is empty");
-            assert_eq!(operand.ty(), Type::Felt, "expected Merkle operand to be felt");
-        }
-        self.emit(instruction, span);
-        for _ in 0..outputs {
-            self.push(Type::Felt);
-        }
     }
 
     fn mtree_verify_with_message_inst(message: String, span: SourceSpan) -> masm::Instruction {

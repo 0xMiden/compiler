@@ -1033,40 +1033,22 @@ impl HirLowering for hir::LocalAddress {
     }
 }
 
-impl HirLowering for hir::Caller {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).caller(self.span());
-        Ok(())
-    }
+macro_rules! impl_simple_hir_lowering {
+    ($Op:path => $emit:ident) => {
+        impl HirLowering for $Op {
+            fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+                emitter.inst_emitter(self.as_operation()).$emit(self.span());
+                Ok(())
+            }
+        }
+    };
 }
 
-impl HirLowering for hir::Clk {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).clk(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::AdvicePop {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).advice_pop(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::AdviceLoadWord {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).advice_load_word(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::EmitEvent {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).emit_event(self.span());
-        Ok(())
-    }
-}
+impl_simple_hir_lowering!(hir::Caller => caller);
+impl_simple_hir_lowering!(hir::Clk => clk);
+impl_simple_hir_lowering!(hir::AdvicePop => advice_pop);
+impl_simple_hir_lowering!(hir::AdviceLoadWord => advice_load_word);
+impl_simple_hir_lowering!(hir::EmitEvent => emit_event);
 
 impl HirLowering for hir::EmitEventImm {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
@@ -1094,47 +1076,12 @@ impl HirLowering for hir::SystemEvent {
     }
 }
 
-impl HirLowering for hir::Hash {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).hash(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::HMerge {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).hmerge(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::HPerm {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).hperm(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::MTreeGet {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).mtree_get(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::MTreeSet {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).mtree_set(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::MTreeMerge {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).mtree_merge(self.span());
-        Ok(())
-    }
-}
+impl_simple_hir_lowering!(hir::Hash => hash);
+impl_simple_hir_lowering!(hir::HMerge => hmerge);
+impl_simple_hir_lowering!(hir::HPerm => hperm);
+impl_simple_hir_lowering!(hir::MTreeGet => mtree_get);
+impl_simple_hir_lowering!(hir::MTreeSet => mtree_set);
+impl_simple_hir_lowering!(hir::MTreeMerge => mtree_merge);
 
 impl HirLowering for hir::MTreeVerify {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
@@ -1146,61 +1093,14 @@ impl HirLowering for hir::MTreeVerify {
     }
 }
 
-impl HirLowering for hir::CryptoStream {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).crypto_stream(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::FriExt2Fold4 {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).fri_ext2fold4(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::HornerBase {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).horner_base(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::HornerExt {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).horner_ext(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::EvalCircuit {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).eval_circuit(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::LogPrecompile {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).log_precompile(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::MemStream {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).mem_stream(self.span());
-        Ok(())
-    }
-}
-
-impl HirLowering for hir::AdvicePipe {
-    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).advice_pipe(self.span());
-        Ok(())
-    }
-}
+impl_simple_hir_lowering!(hir::CryptoStream => crypto_stream);
+impl_simple_hir_lowering!(hir::FriExt2Fold4 => fri_ext2fold4);
+impl_simple_hir_lowering!(hir::HornerBase => horner_base);
+impl_simple_hir_lowering!(hir::HornerExt => horner_ext);
+impl_simple_hir_lowering!(hir::EvalCircuit => eval_circuit);
+impl_simple_hir_lowering!(hir::LogPrecompile => log_precompile);
+impl_simple_hir_lowering!(hir::MemStream => mem_stream);
+impl_simple_hir_lowering!(hir::AdvicePipe => advice_pipe);
 
 impl HirLowering for hir::Store {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {

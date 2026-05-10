@@ -9,6 +9,13 @@ use midenc_hir::{
 
 use crate::*;
 
+macro_rules! op_results {
+    ($op:expr) => {{
+        let op = $op.borrow();
+        op.results().iter().map(|result| result.borrow().as_value_ref()).collect()
+    }};
+}
+
 pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     fn assert(
         &mut self,
@@ -203,8 +210,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::AdvicePipe, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Emit an event whose ID is already on the operand stack.
@@ -236,8 +242,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::SystemEvent, (A, Immediate)>(span);
         let op = op_builder(stack, Immediate::Felt(event_id))?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Compute the Poseidon2 hash of a word.
@@ -251,8 +256,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     ) -> Result<SmallVec<[ValueRef; 4]>, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Hash, _>(span);
         let op = op_builder(input0, input1, input2, input3)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Compute the Poseidon2 merge hash of two words.
@@ -271,8 +275,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     ) -> Result<SmallVec<[ValueRef; 4]>, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::HMerge, _>(span);
         let op = op_builder(lhs0, lhs1, lhs2, lhs3, rhs0, rhs1, rhs2, rhs3)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Apply the Poseidon2 permutation to the top three VM stack words.
@@ -298,8 +301,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
             state0, state1, state2, state3, state4, state5, state6, state7, state8, state9,
             state10, state11,
         )?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Read a Merkle tree node from the advice provider and verify it against a root.
@@ -313,8 +315,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::MTreeGet, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Update a Merkle tree node, producing the old node value and new root.
@@ -328,8 +329,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::MTreeSet, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Merge two Merkle tree roots in the advice provider.
@@ -343,8 +343,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::MTreeMerge, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Verify a Merkle path for a node/root pair.
@@ -358,8 +357,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::MTreeVerify, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Verify a Merkle path with an inline diagnostic message.
@@ -375,8 +373,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         let op_builder =
             self.builder_mut().create::<crate::ops::MTreeVerify, (A, CompactString)>(span);
         let op = op_builder(stack, message.into())?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Encrypt two words from memory using the Poseidon2 sponge stream state.
@@ -390,8 +387,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::CryptoStream, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Perform one FRI ext2 layer fold by a factor of four.
@@ -405,8 +401,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::FriExt2Fold4, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Perform eight Horner evaluation steps over base-field coefficients.
@@ -420,8 +415,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::HornerBase, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Perform four Horner evaluation steps over extension-field coefficients.
@@ -435,8 +429,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::HornerExt, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Evaluate a memory-encoded arithmetic circuit and assert it evaluates to zero.
@@ -450,8 +443,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::EvalCircuit, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Log a precompile event into the VM precompile transcript.
@@ -465,8 +457,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::LogPrecompile, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Load two VM words from memory and update the affected VM stack window.
@@ -480,8 +471,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     {
         let op_builder = self.builder_mut().create::<crate::ops::MemStream, (A,)>(span);
         let op = op_builder(stack)?;
-        let op = op.borrow();
-        Ok(op.results().iter().map(|result| result.borrow().as_value_ref()).collect())
+        Ok(op_results!(op))
     }
 
     /// Create a constant byte array

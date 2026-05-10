@@ -1,68 +1,51 @@
-use midenc_hir::{SourceSpan, Type};
+use midenc_hir::SourceSpan;
 
 use super::{OpEmitter, masm};
 
 impl OpEmitter<'_> {
     /// Compute the Poseidon2 hash of one word.
     pub fn hash(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::Hash, 4, 4, span);
+        self.felt_stack_transform(masm::Instruction::Hash, 4, 4, "crypto", span);
     }
 
     /// Compute the Poseidon2 merge hash of two words.
     pub fn hmerge(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::HMerge, 8, 4, span);
+        self.felt_stack_transform(masm::Instruction::HMerge, 8, 4, "crypto", span);
     }
 
     /// Apply the Poseidon2 permutation to the top three words.
     pub fn hperm(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::HPerm, 12, 12, span);
+        self.felt_stack_transform(masm::Instruction::HPerm, 12, 12, "crypto", span);
     }
 
     /// Encrypt two words from memory using the Poseidon2 sponge stream state.
     pub fn crypto_stream(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::CryptoStream, 14, 14, span);
+        self.felt_stack_transform(masm::Instruction::CryptoStream, 14, 14, "crypto", span);
     }
 
     /// Perform one FRI ext2 layer fold by a factor of four.
     pub fn fri_ext2fold4(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::FriExt2Fold4, 17, 16, span);
+        self.felt_stack_transform(masm::Instruction::FriExt2Fold4, 17, 16, "crypto", span);
     }
 
     /// Perform eight Horner evaluation steps over base-field coefficients.
     pub fn horner_base(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::HornerBase, 16, 16, span);
+        self.felt_stack_transform(masm::Instruction::HornerBase, 16, 16, "crypto", span);
     }
 
     /// Perform four Horner evaluation steps over extension-field coefficients.
     pub fn horner_ext(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::HornerExt, 16, 16, span);
+        self.felt_stack_transform(masm::Instruction::HornerExt, 16, 16, "crypto", span);
     }
 
     /// Evaluate a memory-encoded arithmetic circuit and assert it evaluates to zero.
     pub fn eval_circuit(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::EvalCircuit, 3, 3, span);
+        self.felt_stack_transform(masm::Instruction::EvalCircuit, 3, 3, "crypto", span);
     }
 
     /// Log a precompile event into the VM precompile transcript.
     pub fn log_precompile(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::LogPrecompile, 12, 12, span);
-    }
-
-    fn felt_stack_transform(
-        &mut self,
-        instruction: masm::Instruction,
-        inputs: usize,
-        outputs: usize,
-        span: SourceSpan,
-    ) {
-        for _ in 0..inputs {
-            let operand = self.pop().expect("operand stack is empty");
-            assert_eq!(operand.ty(), Type::Felt, "expected crypto operand to be felt");
-        }
-        self.emit(instruction, span);
-        for _ in 0..outputs {
-            self.push(Type::Felt);
-        }
+        self.felt_stack_transform(masm::Instruction::LogPrecompile, 12, 12, "crypto", span);
     }
 }
 
@@ -70,7 +53,7 @@ impl OpEmitter<'_> {
 mod tests {
     use alloc::{collections::BTreeSet, rc::Rc};
 
-    use midenc_hir::Context;
+    use midenc_hir::{Context, Type};
 
     use super::*;
     use crate::{OperandStack, masm::Op};

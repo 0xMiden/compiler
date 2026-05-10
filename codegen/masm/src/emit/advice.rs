@@ -22,14 +22,7 @@ impl OpEmitter<'_> {
 
     /// Pop two advice words, write them to memory, and update the top-13 stack window.
     pub fn advice_pipe(&mut self, span: SourceSpan) {
-        for _ in 0..13 {
-            let operand = self.pop().expect("operand stack is empty");
-            assert_eq!(operand.ty(), Type::Felt, "expected advice_pipe operand to be felt");
-        }
-        self.emit(masm::Instruction::AdvPipe, span);
-        for _ in 0..13 {
-            self.push(Type::Felt);
-        }
+        self.felt_stack_transform(masm::Instruction::AdvPipe, 13, 13, "advice_pipe", span);
     }
 }
 

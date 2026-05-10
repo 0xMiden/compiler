@@ -232,6 +232,24 @@ impl<'a> OpEmitter<'a> {
         self.stack
     }
 
+    pub(crate) fn felt_stack_transform(
+        &mut self,
+        instruction: masm::Instruction,
+        inputs: usize,
+        outputs: usize,
+        context: &str,
+        span: SourceSpan,
+    ) {
+        for _ in 0..inputs {
+            let operand = self.pop().expect("operand stack is empty");
+            assert_eq!(operand.ty(), Type::Felt, "expected {context} operand to be felt");
+        }
+        self.emit(instruction, span);
+        for _ in 0..outputs {
+            self.push(Type::Felt);
+        }
+    }
+
     #[inline]
     fn maybe_register_invoke(&mut self, op: &masm::Instruction) {
         match op {
