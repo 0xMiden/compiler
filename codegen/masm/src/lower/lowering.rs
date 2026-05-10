@@ -183,6 +183,27 @@ impl HirLowering for builtin::RetImm {
     }
 }
 
+impl HirLowering for builtin::UnrealizedConversionCast {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let result = self.result().as_value_ref();
+        let result_operand = crate::Operand::from(result);
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        let operand = inst_emitter.pop().expect("operand stack is empty");
+        if operand.size() != result_operand.size() {
+            return Err(Report::msg(format!(
+                "cannot lower builtin.unrealized_conversion_cast from {} to {}: VM stack shape \
+                 changes from {} to {} field element(s)",
+                operand.ty(),
+                result_operand.ty(),
+                operand.size(),
+                result_operand.size()
+            )));
+        }
+        inst_emitter.push(result_operand);
+        Ok(())
+    }
+}
+
 impl HirLowering for scf::If {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let cond = self.condition().as_value_ref();

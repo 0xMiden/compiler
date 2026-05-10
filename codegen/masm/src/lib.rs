@@ -73,6 +73,7 @@ fn lower_builtin_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<builtin::Ret, dyn HirLowering>();
     info.register_operation_trait::<builtin::RetImm, dyn HirLowering>();
     info.register_operation_trait::<builtin::GlobalSymbol, dyn HirLowering>();
+    info.register_operation_trait::<builtin::UnrealizedConversionCast, dyn HirLowering>();
 }
 
 fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
