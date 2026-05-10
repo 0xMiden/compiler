@@ -1,3 +1,5 @@
+use alloc::sync::Arc;
+
 use midenc_dialect_arith as arith;
 use midenc_dialect_cf as cf;
 use midenc_dialect_hir as hir;
@@ -495,9 +497,16 @@ impl HirLowering for hir::AssertEq {
 
 impl HirLowering for hir::AssertU32 {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter
-            .inst_emitter(self.as_operation())
-            .emit(masm::Instruction::U32Assert, self.span());
+        let message = self.get_message();
+        let instruction = if message.is_empty() {
+            masm::Instruction::U32Assert
+        } else {
+            masm::Instruction::U32AssertWithError(masm::Immediate::Value(masm::Span::new(
+                self.span(),
+                Arc::<str>::from(message.as_str()),
+            )))
+        };
+        emitter.inst_emitter(self.as_operation()).emit(instruction, self.span());
         Ok(())
     }
 }

@@ -149,6 +149,32 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    fn assert_u32_with_error(
+        &mut self,
+        value: ValueRef,
+        code: u32,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::AssertU32, (ValueRef, u32, CompactString)>(span);
+        let op = op_builder(value, code, CompactString::default())?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn assert_u32_with_message(
+        &mut self,
+        value: ValueRef,
+        message: impl Into<CompactString>,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::AssertU32, (ValueRef, u32, CompactString)>(span);
+        let op = op_builder(value, 0u32, message.into())?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     /// Grow the global heap by `num_pages` pages, in 64kb units.
     ///
     /// Returns the previous size (in pages) of the heap, or -1 if the heap could not be grown.

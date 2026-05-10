@@ -3026,7 +3026,6 @@ end
 }
 
 #[test]
-#[ignore = "u32test/assert range-check sanitization is not modeled yet"]
 fn advice_taint_treats_u32test_assert_as_sanitizer() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
@@ -3049,6 +3048,60 @@ end
         findings.is_empty(),
         "expected u32test followed by assert to sanitize raw advice"
     );
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_treats_u32testw_assert_as_word_sanitizer() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> (u32, u32, u32)
+adv_push.4
+u32testw
+assert
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(
+        findings.is_empty(),
+        "expected u32testw followed by assert to sanitize raw advice"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_treats_error_annotated_u32test_assert_as_sanitizer() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+u32test
+assert.err="u32"
+push.1
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(
+        findings.is_empty(),
+        "expected error-annotated u32test/assert to sanitize raw advice"
+    );
+    assert_eq!(top_level_assert_u32_messages(find_function(output.module, "entry")), ["u32"]);
 
     Ok(())
 }
@@ -3674,6 +3727,19 @@ fn top_level_assert_eq_messages(function: builtin::FunctionRef) -> Vec<String> {
         .iter()
         .filter_map(|op| {
             op.downcast_ref::<HirAssertEq>().map(|op| op.get_message().as_str().to_owned())
+        })
+        .collect()
+}
+
+fn top_level_assert_u32_messages(function: builtin::FunctionRef) -> Vec<String> {
+    function
+        .borrow()
+        .entry_block()
+        .borrow()
+        .body()
+        .iter()
+        .filter_map(|op| {
+            op.downcast_ref::<HirAssertU32>().map(|op| op.get_message().as_str().to_owned())
         })
         .collect()
 }

@@ -72,6 +72,12 @@ pub struct AssertEq {
 pub struct AssertU32 {
     #[operand]
     value: AnyInteger,
+    #[attr]
+    #[default]
+    code: U32Attr,
+    #[attr]
+    #[default]
+    message: StringAttr,
     #[result]
     result: AnyInteger,
 }

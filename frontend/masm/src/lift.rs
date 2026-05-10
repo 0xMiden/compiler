@@ -428,7 +428,22 @@ impl<'a> ProcedureLifter<'a> {
         block: &Block,
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) -> Result<()> {
-        for op in block.iter() {
+        let mut ops = block.iter().peekable();
+        while let Some(op) = ops.next() {
+            if let Op::Inst(inst) = op
+                && let Some(Op::Inst(next)) = ops.peek()
+                && self.try_lift_u32test_assert_pair(
+                    inst.inner(),
+                    inst.span(),
+                    next.inner(),
+                    next.span(),
+                    builder,
+                )?
+            {
+                ops.next();
+                continue;
+            }
+
             match op {
                 Op::Inst(inst) => self.lift_instruction(inst.inner(), inst.span(), builder)?,
                 Op::If {
@@ -446,6 +461,47 @@ impl<'a> ProcedureLifter<'a> {
             }
         }
         Ok(())
+    }
+
+    fn try_lift_u32test_assert_pair(
+        &mut self,
+        test: &Instruction,
+        test_span: SourceSpan,
+        assertion: &Instruction,
+        assertion_span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<bool> {
+        use Instruction::*;
+
+        match (test, assertion) {
+            (U32Test, Assert) => {
+                self.u32_assert_n(1, test_span, builder)?;
+                Ok(true)
+            }
+            (U32TestW, Assert) => {
+                self.u32_assert_n(4, test_span, builder)?;
+                Ok(true)
+            }
+            (U32Test, AssertWithError(message)) => {
+                self.u32_assert_n_with_message(
+                    1,
+                    Some(immediate_error_message(message)?),
+                    assertion_span,
+                    builder,
+                )?;
+                Ok(true)
+            }
+            (U32TestW, AssertWithError(message)) => {
+                self.u32_assert_n_with_message(
+                    4,
+                    Some(immediate_error_message(message)?),
+                    assertion_span,
+                    builder,
+                )?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
 
     fn lift_instruction(
@@ -740,9 +796,27 @@ impl<'a> ProcedureLifter<'a> {
             U32Cto => self.unary_with_type(builder, Type::U32, span, |builder, value, span| {
                 builder.cto(value, span)
             }),
-            U32Cast | U32Assert | U32AssertWithError(_) => self.u32_assert_n(1, span, builder),
-            U32Assert2 | U32Assert2WithError(_) => self.u32_assert_n(2, span, builder),
-            U32AssertW | U32AssertWWithError(_) => self.u32_assert_n(4, span, builder),
+            U32Cast | U32Assert => self.u32_assert_n(1, span, builder),
+            U32AssertWithError(message) => self.u32_assert_n_with_message(
+                1,
+                Some(immediate_error_message(message)?),
+                span,
+                builder,
+            ),
+            U32Assert2 => self.u32_assert_n(2, span, builder),
+            U32Assert2WithError(message) => self.u32_assert_n_with_message(
+                2,
+                Some(immediate_error_message(message)?),
+                span,
+                builder,
+            ),
+            U32AssertW => self.u32_assert_n(4, span, builder),
+            U32AssertWWithError(message) => self.u32_assert_n_with_message(
+                4,
+                Some(immediate_error_message(message)?),
+                span,
+                builder,
+            ),
             U32Test => self.u32_test(span, builder),
             U32TestW => self.u32_testw(span, builder),
             U32Split => self.u32_split(span, builder),
@@ -750,16 +824,10 @@ impl<'a> ProcedureLifter<'a> {
             CSwapW => self.conditional_swap(4, span, builder),
             CDrop => self.conditional_drop(1, span, builder),
             CDropW => self.conditional_drop(4, span, builder),
-            Assert => {
-                let value = self.pop(span)?;
-                builder.assert(value.value, span)?;
-                Ok(())
-            }
+            Assert => self.assert_top(None, span, builder),
             AssertWithError(message) => {
                 let message = immediate_error_message(message)?;
-                let value = self.pop(span)?;
-                builder.assert_with_message(value.value, message, span)?;
-                Ok(())
+                self.assert_top(Some(message), span, builder)
             }
             Assertz => {
                 let value = self.pop(span)?;
@@ -2121,12 +2189,39 @@ impl<'a> ProcedureLifter<'a> {
         span: SourceSpan,
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) -> Result<()> {
+        self.u32_assert_n_with_message(n, None, span, builder)
+    }
+
+    fn u32_assert_n_with_message(
+        &mut self,
+        n: usize,
+        message: Option<CompactString>,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
         self.require_depth(n - 1, span)?;
         let start = self.stack.len() - n;
         for index in start..self.stack.len() {
             let value = self.stack[index].value;
-            self.stack[index].value = builder.assert_u32(value, span)?;
+            self.stack[index].value = match message.as_ref() {
+                Some(message) => builder.assert_u32_with_message(value, message.clone(), span)?,
+                None => builder.assert_u32(value, span)?,
+            };
         }
+        Ok(())
+    }
+
+    fn assert_top(
+        &mut self,
+        message: Option<CompactString>,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let value = self.pop(span)?;
+        match message {
+            Some(message) => builder.assert_with_message(value.value, message, span)?,
+            None => builder.assert(value.value, span)?,
+        };
         Ok(())
     }
 

@@ -492,6 +492,7 @@ pub fn schedule_stack_realignment(
 #[cfg(test)]
 mod tests {
     use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_dialect_hir::HirOpBuilder;
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
@@ -506,6 +507,53 @@ mod tests {
 
     use super::*;
     use crate::{OperandStack, linker::LinkInfo};
+
+    #[test]
+    fn lowers_assert_u32_message_to_masm_u32assert_err() -> Result<(), Report> {
+        let mut test = Test::new("assert_u32_message", &[Type::Felt], &[Type::U32]);
+        let function_ref = test.function();
+
+        let value = {
+            let span = function_ref.span();
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let value = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let result = builder.assert_u32_with_message(value, "must be u32", span)?;
+            builder.ret(Some(result), span)?;
+            builder.switch_to_block(entry);
+            value
+        };
+
+        let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
+        let link_info = LinkInfo::new(builtin::ComponentId {
+            namespace: "root".into(),
+            name: "root".into(),
+            version: Version::new(1, 0, 0),
+        });
+
+        let mut stack = OperandStack::new(test.context_rc());
+        stack.push(value);
+
+        let function_name = *function_ref.borrow().get_name();
+        let mut invoked = Default::default();
+        let emitter = BlockEmitter {
+            liveness: &liveness,
+            link_info: &link_info,
+            invoked: &mut invoked,
+            target: Default::default(),
+            stack,
+            trace_target: TraceTarget::category("codegen")
+                .with_relevant_symbol(function_name.as_symbol()),
+        };
+
+        let function = function_ref.borrow();
+        let entry = function.entry_block();
+        let output = emitter.emit(&entry.borrow()).to_pretty_string();
+
+        assert!(output.contains("u32assert.err=\"must be u32\""), "{output}");
+        Ok(())
+    }
 
     #[test]
     fn util_emit_if_test() -> Result<(), Report> {
