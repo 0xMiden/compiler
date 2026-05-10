@@ -2926,6 +2926,39 @@ end
     }
 
     #[test]
+    fn lifts_multi_result_if_with_distinct_result_indices() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc choose(left: felt, right: felt, cond: i1) -> (felt, felt)
+    if.true
+        swap.1
+    else
+        nop
+    end
+end
+"#,
+            "test",
+            &DisassemblerConfig::default(),
+            context,
+        )?;
+
+        let function = find_function(output.module, "choose");
+        let entry = function.borrow().entry_block();
+        let entry = entry.borrow();
+        let if_op = entry.body().iter().find(|op| op.is::<If>()).expect("expected lifted scf.if");
+        let result_indices = if_op
+            .results()
+            .all()
+            .iter()
+            .map(|result| result.borrow().index())
+            .collect::<Vec<_>>();
+        assert_eq!(result_indices, [0, 1]);
+
+        Ok(())
+    }
+
+    #[test]
     fn lifts_repeat_by_unrolling() -> Result<()> {
         let context = Rc::new(Context::default());
         let output = disassemble_source(

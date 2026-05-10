@@ -105,7 +105,7 @@ impl OpParser for Exec {
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
         let type_params =
-            signature.results.iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
+            signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
         let mut operand_values = SmallVec::default();
         parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
 
@@ -387,11 +387,37 @@ impl CallOpInterface for Syscall {
 mod tests {
     use midenc_hir::{
         CallOpInterface, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        diagnostics::Uri,
         dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
+        parse::{self, ParserConfig},
         testing::Test,
     };
 
     use crate::HirOpBuilder;
+
+    #[test]
+    fn exec_parser_resolves_operand_types_from_signature_params() {
+        let test = Test::default();
+        let source = r#"
+builtin.module public @test {
+    builtin.function private extern("C") @callee(%arg: i32) -> u64 {
+        %result = builtin.unrealized_conversion_cast %arg <{ ty = #builtin.type<u64> }>;
+        builtin.ret %result : (u64);
+    };
+
+    builtin.function public extern("C") @entrypoint(%arg: i32) -> u64 {
+        %result = hir.exec @callee(%arg) : extern("C") (i32) -> u64;
+        builtin.ret %result : (u64);
+    };
+};"#;
+
+        parse::parse_any(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("exec_parser_resolves_operand_types_from_signature_params.hir"),
+            source,
+        )
+        .expect("hir.exec parser should type operands from signature params");
+    }
 
     #[test]
     fn call_set_callee_rebinds_property_backed_symbol_use() {

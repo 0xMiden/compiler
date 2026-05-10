@@ -2541,8 +2541,8 @@ fn append_results(
 ) {
     let context = builder.builder().context();
     let mut owner_mut = owner.borrow_mut();
-    for result_ty in result_types {
-        let result = context.make_result(span, result_ty.clone(), owner, 0);
+    for (index, result_ty) in result_types.iter().enumerate() {
+        let result = context.make_result(span, result_ty.clone(), owner, index as u8);
         owner_mut.results_mut().push(result);
     }
 }
