@@ -12,7 +12,12 @@ use midenc_hir::{
 };
 use rustc_hash::FxHashMap;
 
-use crate::{Result, error, events::system_event_read_count, stack as masm_stack};
+use crate::{
+    Result, error,
+    events::system_event_read_count,
+    semantics::{self, InstructionSemantics},
+    stack as masm_stack,
+};
 
 pub(crate) fn infer_signature(
     context: &Rc<Context>,
@@ -585,9 +590,7 @@ impl<'a> InferState<'a> {
             LogPrecompile => self.constrain_top_n(12, Type::Felt, span),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
-            _ => Err(error::error(format!(
-                "signature inference is not implemented for MASM instruction {inst:?} at {span:?}"
-            ))),
+            _ => unsupported_instruction(inst, span),
         };
         self.current_span = previous_span;
         result
@@ -958,6 +961,17 @@ impl<'a> InferState<'a> {
             self.stack.insert(0, input.clone());
         }
     }
+}
+
+fn unsupported_instruction(inst: &Instruction, span: SourceSpan) -> Result<()> {
+    debug_assert_eq!(
+        semantics::instruction_semantics(inst),
+        InstructionSemantics::Unsupported,
+        "instruction classified as inferable reached the inference unsupported fallback: {inst:?}"
+    );
+    Err(error::error(format!(
+        "signature inference is not implemented for MASM instruction {inst:?} at {span:?}"
+    )))
 }
 
 fn refine_type(current: Option<Type>, constraint: Type) -> Option<Type> {

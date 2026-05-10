@@ -23,7 +23,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     DisassembledModule, DisassemblerConfig, ExternalSignatureMap, ExternalTypeMap, Result, error,
     events::{system_event_id, system_event_read_count},
-    infer, signatures, stack as masm_stack,
+    infer,
+    semantics::{self, InstructionSemantics},
+    signatures, stack as masm_stack,
 };
 
 pub(crate) fn lift_module(
@@ -2411,6 +2413,11 @@ enum InvokeKind {
 }
 
 fn unsupported_instruction(inst: &Instruction, span: SourceSpan) -> Result<()> {
+    debug_assert_ne!(
+        semantics::instruction_semantics(inst),
+        InstructionSemantics::LiftAndInfer,
+        "fully supported MASM instruction reached the lift unsupported fallback: {inst:?}"
+    );
     Err(error::error(format!(
         "MASM instruction {inst:?} is not supported during disassembly at {span:?}"
     )))

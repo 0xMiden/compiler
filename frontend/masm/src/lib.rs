@@ -5,6 +5,7 @@ mod events;
 mod infer;
 mod lift;
 mod project;
+mod semantics;
 mod signatures;
 mod stack;
 
