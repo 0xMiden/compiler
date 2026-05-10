@@ -30,36 +30,92 @@ pub(crate) fn infer_signature(
 }
 
 #[derive(Clone)]
-struct AbstractValue(Rc<RefCell<Option<Type>>>);
+struct AbstractValue(Rc<RefCell<AbstractValueState>>);
+
+struct AbstractValueState {
+    ty: Option<Type>,
+    constraints: Vec<TypeConstraint>,
+    #[allow(dead_code)]
+    provenance: ValueProvenance,
+}
+
+#[allow(dead_code)]
+#[derive(Clone)]
+struct TypeConstraint {
+    ty: Type,
+    span: SourceSpan,
+}
+
+#[allow(dead_code)]
+#[derive(Clone)]
+enum ValueProvenance {
+    Input {
+        index: usize,
+        span: SourceSpan,
+    },
+    Produced {
+        span: SourceSpan,
+    },
+    BranchJoin {
+        span: SourceSpan,
+        lhs: Box<ValueProvenance>,
+        rhs: Box<ValueProvenance>,
+    },
+}
 
 impl AbstractValue {
-    fn unknown() -> Self {
-        Self(Rc::new(RefCell::new(None)))
+    fn input(index: usize, span: SourceSpan) -> Self {
+        Self::from_state(None, ValueProvenance::Input { index, span })
     }
 
-    fn typed(ty: Type) -> Self {
-        Self(Rc::new(RefCell::new(Some(ty))))
+    fn typed(ty: Type, span: SourceSpan) -> Self {
+        let value = Self::from_state(None, ValueProvenance::Produced { span });
+        value.constrain(ty, span);
+        value
     }
 
-    fn constrain(&self, ty: Type) {
+    fn from_state(ty: Option<Type>, provenance: ValueProvenance) -> Self {
+        Self(Rc::new(RefCell::new(AbstractValueState {
+            ty,
+            constraints: Vec::new(),
+            provenance,
+        })))
+    }
+
+    fn constrain(&self, ty: Type, span: SourceSpan) {
         let mut current = self.0.borrow_mut();
-        if current.is_none() {
-            *current = Some(ty);
-        }
+        current.ty = refine_type(current.ty.take(), ty.clone());
+        current.constraints.push(TypeConstraint { ty, span });
     }
 
     fn ty(&self) -> Option<Type> {
-        self.0.borrow().clone()
+        self.0.borrow().ty.clone()
     }
 
     fn ty_or_felt(&self) -> Type {
         self.ty().unwrap_or(Type::Felt)
     }
 
-    fn merge_type_from(&self, other: &Self) {
-        if let Some(ty) = other.ty() {
-            self.constrain(ty);
-        }
+    fn branch_join(lhs: &Self, rhs: &Self, span: SourceSpan) -> Self {
+        let lhs_state = lhs.0.borrow();
+        let rhs_state = rhs.0.borrow();
+        let ty = join_types(lhs_state.ty.clone(), rhs_state.ty.clone());
+        let provenance = ValueProvenance::BranchJoin {
+            span,
+            lhs: Box::new(lhs_state.provenance.clone()),
+            rhs: Box::new(rhs_state.provenance.clone()),
+        };
+        let constraints = lhs_state
+            .constraints
+            .iter()
+            .chain(rhs_state.constraints.iter())
+            .cloned()
+            .collect();
+        Self(Rc::new(RefCell::new(AbstractValueState {
+            ty,
+            constraints,
+            provenance,
+        })))
     }
 
     fn ptr_eq(&self, other: &Self) -> bool {
@@ -70,6 +126,7 @@ impl AbstractValue {
 struct InferState<'a> {
     stack: Vec<AbstractValue>,
     inputs: Vec<AbstractValue>,
+    current_span: SourceSpan,
     signatures: &'a FxHashMap<String, Signature>,
     external_signatures: &'a FxHashMap<String, Signature>,
 }
@@ -82,6 +139,7 @@ impl<'a> InferState<'a> {
         Self {
             stack: Vec::new(),
             inputs: Vec::new(),
+            current_span: SourceSpan::UNKNOWN,
             signatures,
             external_signatures,
         }
@@ -91,6 +149,7 @@ impl<'a> InferState<'a> {
         Self {
             stack: self.stack.clone(),
             inputs: Vec::new(),
+            current_span: self.current_span,
             signatures: self.signatures,
             external_signatures: self.external_signatures,
         }
@@ -120,7 +179,9 @@ impl<'a> InferState<'a> {
     fn infer_instruction(&mut self, inst: &Instruction, span: SourceSpan) -> Result<()> {
         use Instruction::*;
 
-        match inst {
+        let previous_span = self.current_span;
+        self.current_span = span;
+        let result = match inst {
             Nop => Ok(()),
             Drop => self.drop_n(1, span),
             DropW => self.drop_n(4, span),
@@ -527,7 +588,9 @@ impl<'a> InferState<'a> {
             _ => Err(error::error(format!(
                 "signature inference is not implemented for MASM instruction {inst:?} at {span:?}"
             ))),
-        }
+        };
+        self.current_span = previous_span;
+        result
     }
 
     fn infer_if(&mut self, then_blk: &Block, else_blk: &Block, span: SourceSpan) -> Result<()> {
@@ -539,7 +602,7 @@ impl<'a> InferState<'a> {
         let mut else_state = self.branch_from();
         else_state.infer_block(else_blk)?;
 
-        let inputs = merge_branch_inputs(&then_state.inputs, &else_state.inputs);
+        let inputs = merge_branch_inputs(&then_state.inputs, &else_state.inputs, span);
         self.inputs.extend(inputs.iter().cloned());
 
         then_state.normalize_local_inputs(&inputs);
@@ -555,7 +618,7 @@ impl<'a> InferState<'a> {
             )));
         }
 
-        self.stack = merge_stacks(then_state.stack, else_state.stack);
+        self.stack = merge_stacks(then_state.stack, else_state.stack, span);
         Ok(())
     }
 
@@ -581,7 +644,7 @@ impl<'a> InferState<'a> {
         }
 
         let next_condition = body_state.stack.pop().unwrap();
-        next_condition.constrain(Type::I1);
+        next_condition.constrain(Type::I1, span);
         self.stack = body_state.stack;
         Ok(())
     }
@@ -668,7 +731,7 @@ impl<'a> InferState<'a> {
         let if_true = self.pop_chunk(chunk_len, span);
         let if_false = self.pop_chunk(chunk_len, span);
         for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
-            self.stack.push(merge_values(if_false, if_true));
+            self.stack.push(merge_values(if_false, if_true, span));
         }
         Ok(())
     }
@@ -680,8 +743,8 @@ impl<'a> InferState<'a> {
         let mut lower = Vec::with_capacity(chunk_len);
         let mut upper = Vec::with_capacity(chunk_len);
         for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
-            lower.push(merge_values(if_false.clone(), if_true.clone()));
-            upper.push(merge_values(if_true, if_false));
+            lower.push(merge_values(if_false.clone(), if_true.clone(), span));
+            upper.push(merge_values(if_true, if_false, span));
         }
         self.stack.extend(lower);
         self.stack.extend(upper);
@@ -705,7 +768,7 @@ impl<'a> InferState<'a> {
         }
         let values = self.pop_chunk(4, span);
         for value in &values {
-            value.constrain(Type::Felt);
+            value.constrain(Type::Felt, span);
         }
         self.stack.extend(values);
         Ok(())
@@ -748,7 +811,7 @@ impl<'a> InferState<'a> {
     }
 
     fn push(&mut self, ty: Type) {
-        self.stack.push(AbstractValue::typed(ty));
+        self.stack.push(AbstractValue::typed(ty, self.current_span));
     }
 
     fn pop_any(&mut self, span: SourceSpan) -> Result<AbstractValue> {
@@ -758,7 +821,7 @@ impl<'a> InferState<'a> {
 
     fn pop_with_type(&mut self, ty: Type, span: SourceSpan) -> Result<AbstractValue> {
         let value = self.pop_any(span)?;
-        value.constrain(ty);
+        value.constrain(ty, span);
         Ok(value)
     }
 
@@ -778,7 +841,7 @@ impl<'a> InferState<'a> {
         self.ensure_depth(n.saturating_sub(1), span);
         let start = self.stack.len() - n;
         for value in &self.stack[start..] {
-            value.constrain(ty.clone());
+            value.constrain(ty.clone(), span);
         }
         Ok(())
     }
@@ -881,9 +944,9 @@ impl<'a> InferState<'a> {
         self.stack.len() - 1 - depth
     }
 
-    fn ensure_depth(&mut self, depth: usize, _span: SourceSpan) {
+    fn ensure_depth(&mut self, depth: usize, span: SourceSpan) {
         while self.stack.len() <= depth {
-            let input = AbstractValue::unknown();
+            let input = AbstractValue::input(self.inputs.len(), span);
             self.inputs.push(input.clone());
             self.stack.insert(0, input);
         }
@@ -908,6 +971,75 @@ impl<'a> InferState<'a> {
     }
 }
 
+fn refine_type(current: Option<Type>, constraint: Type) -> Option<Type> {
+    match current {
+        Some(current) => Some(meet_types(current, constraint)),
+        None => Some(constraint),
+    }
+}
+
+fn join_types(lhs: Option<Type>, rhs: Option<Type>) -> Option<Type> {
+    match (lhs, rhs) {
+        (Some(lhs), Some(rhs)) => Some(join_type(lhs, rhs)),
+        (None, None) => None,
+        // A value which is unconstrained on one alternative path cannot be narrowed globally by
+        // the other path without inventing a path-sensitive procedure signature.
+        (Some(_), None) | (None, Some(_)) => Some(Type::Felt),
+    }
+}
+
+fn meet_types(lhs: Type, rhs: Type) -> Type {
+    if lhs == rhs {
+        return lhs;
+    }
+
+    match (masm_scalar_rank(&lhs), masm_scalar_rank(&rhs)) {
+        (Some(lhs_rank), Some(rhs_rank)) => {
+            if lhs_rank <= rhs_rank {
+                lhs
+            } else {
+                rhs
+            }
+        }
+        (Some(_), None) if rhs == Type::Unknown => lhs,
+        (None, Some(_)) if lhs == Type::Unknown => rhs,
+        _ => Type::Felt,
+    }
+}
+
+fn join_type(lhs: Type, rhs: Type) -> Type {
+    if lhs == rhs {
+        return lhs;
+    }
+
+    match (masm_scalar_rank(&lhs), masm_scalar_rank(&rhs)) {
+        (Some(lhs_rank), Some(rhs_rank)) => {
+            if lhs_rank >= rhs_rank {
+                lhs
+            } else {
+                rhs
+            }
+        }
+        (Some(_), None) if rhs == Type::Unknown => lhs,
+        (None, Some(_)) if lhs == Type::Unknown => rhs,
+        _ => Type::Felt,
+    }
+}
+
+fn masm_scalar_rank(ty: &Type) -> Option<u8> {
+    match ty {
+        Type::I1 => Some(0),
+        Type::U8 => Some(1),
+        Type::U16 => Some(2),
+        Type::U32 => Some(3),
+        Type::U64 => Some(4),
+        Type::U128 => Some(5),
+        Type::U256 => Some(6),
+        Type::Felt => Some(7),
+        _ => None,
+    }
+}
+
 fn invocation_path_key(path: &MasmPath) -> String {
     path.to_absolute().to_string()
 }
@@ -928,32 +1060,37 @@ fn external_signature_metadata_hint(external_signatures: &FxHashMap<String, Sign
     hint
 }
 
-fn merge_branch_inputs(lhs: &[AbstractValue], rhs: &[AbstractValue]) -> Vec<AbstractValue> {
+fn merge_branch_inputs(
+    lhs: &[AbstractValue],
+    rhs: &[AbstractValue],
+    span: SourceSpan,
+) -> Vec<AbstractValue> {
     let max_len = lhs.len().max(rhs.len());
     let mut merged = Vec::with_capacity(max_len);
     for index in 0..max_len {
-        let value = lhs.get(index).or_else(|| rhs.get(index)).unwrap().clone();
-        if let Some(other) = lhs.get(index).and_then(|_| rhs.get(index)) {
-            value.merge_type_from(other);
-        }
+        let value = match (lhs.get(index), rhs.get(index)) {
+            (Some(lhs), Some(rhs)) => AbstractValue::branch_join(lhs, rhs, span),
+            (Some(value), None) | (None, Some(value)) => value.clone(),
+            (None, None) => unreachable!("index is bounded by max branch input length"),
+        };
         merged.push(value);
     }
     merged
 }
 
-fn merge_stacks(lhs: Vec<AbstractValue>, rhs: Vec<AbstractValue>) -> Vec<AbstractValue> {
+fn merge_stacks(
+    lhs: Vec<AbstractValue>,
+    rhs: Vec<AbstractValue>,
+    span: SourceSpan,
+) -> Vec<AbstractValue> {
     lhs.into_iter()
         .zip(rhs)
-        .map(|(lhs, rhs)| {
-            lhs.merge_type_from(&rhs);
-            lhs
-        })
+        .map(|(lhs, rhs)| AbstractValue::branch_join(&lhs, &rhs, span))
         .collect()
 }
 
-fn merge_values(lhs: AbstractValue, rhs: AbstractValue) -> AbstractValue {
-    lhs.merge_type_from(&rhs);
-    lhs
+fn merge_values(lhs: AbstractValue, rhs: AbstractValue, span: SourceSpan) -> AbstractValue {
+    AbstractValue::branch_join(&lhs, &rhs, span)
 }
 
 fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {

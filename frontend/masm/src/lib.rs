@@ -2075,6 +2075,71 @@ end
     }
 
     #[test]
+    fn infers_cumulative_and_alternative_type_constraints() -> Result<()> {
+        let context = Rc::new(Context::default());
+        let output = disassemble_source(
+            r#"
+pub proc sequential_refine
+    dup.0
+    add.1
+    drop
+    u32assert
+end
+
+pub proc branch_alternative
+    if.true
+        u32assert
+    else
+        add.1
+    end
+end
+
+pub proc branch_common
+    if.true
+        u32assert
+    else
+        u32cast
+    end
+end
+"#,
+            "test",
+            &DisassemblerConfig {
+                infer_missing_signatures: true,
+            },
+            context,
+        )?;
+
+        let signature = find_function(output.module, "sequential_refine")
+            .borrow()
+            .get_signature()
+            .clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::U32);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::U32);
+
+        let signature = find_function(output.module, "branch_alternative")
+            .borrow()
+            .get_signature()
+            .clone();
+        assert_eq!(signature.params().len(), 2);
+        assert_eq!(signature.params()[0].ty, Type::I1);
+        assert_eq!(signature.params()[1].ty, Type::Felt);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::Felt);
+
+        let signature =
+            find_function(output.module, "branch_common").borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 2);
+        assert_eq!(signature.params()[0].ty, Type::I1);
+        assert_eq!(signature.params()[1].ty, Type::U32);
+        assert_eq!(signature.results().len(), 1);
+        assert_eq!(signature.results()[0].ty, Type::U32);
+
+        Ok(())
+    }
+
+    #[test]
     fn infers_u32split_signature() -> Result<()> {
         let context = Rc::new(Context::default());
         let output = disassemble_source(
