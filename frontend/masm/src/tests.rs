@@ -2924,14 +2924,18 @@ end
 }
 
 #[test]
-#[ignore = "unary u32-presuming operations are not classified as advice-taint sinks yet"]
 fn advice_taint_reports_raw_advice_used_by_unary_u32_operation() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
         r#"
-pub proc entry() -> u32
+pub proc pop_count() -> u32
 adv_push.1
 u32popcnt
+end
+
+pub proc bitwise_not() -> u32
+adv_push.1
+u32not
 end
 "#,
         "test",
@@ -2940,13 +2944,12 @@ end
     )?;
 
     let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.popcnt"]);
+    assert_eq!(sink_names(&findings), ["arith.popcnt", "arith.bnot"]);
 
     Ok(())
 }
 
 #[test]
-#[ignore = "widening u32 operations are not classified as advice-taint sinks yet"]
 fn advice_taint_reports_raw_advice_used_by_widening_u32_operation() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
@@ -2962,7 +2965,62 @@ end
     )?;
 
     let findings = advice_taint_findings(output.module)?;
-    assert!(!findings.is_empty(), "expected u32widening_mul to report raw advice operands");
+    assert_eq!(sink_names(&findings), ["arith.zext"]);
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_treats_u32assert2_as_widening_sanitizer() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> (u32, u32)
+adv_push.2
+u32assert2
+u32widening_mul
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "expected u32assert2 to sanitize widening operands");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_reports_raw_advice_used_by_u32_add3_and_madd() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc add3() -> u32
+adv_push.3
+u32wrapping_add3
+end
+
+pub proc madd() -> u32
+adv_push.3
+u32wrapping_madd
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.zext", "arith.zext"]);
+    assert_eq!(
+        findings
+            .iter()
+            .map(|finding| finding.function.map(|name| name.as_str()))
+            .collect::<Vec<_>>(),
+        [Some("add3"), Some("madd")]
+    );
 
     Ok(())
 }

@@ -4,6 +4,7 @@ use core::{any::Any, fmt};
 use midenc_dialect_arith as arith;
 use midenc_hir::{
     Forward, Operation, OperationName, Report, SourceSpan, Spanned, Symbol, SymbolName, Type,
+    Value,
     dialects::builtin,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
 };
@@ -175,8 +176,7 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
 
         let operand_taint =
             AdviceTaintValue::join_all(operands.iter().map(|operand| operand.value()));
-        let result_taint = if is_u32_presuming_arith_op(op) && operand_taint.has_unreported_origin()
-        {
+        let result_taint = if is_u32_presuming_sink(op) && operand_taint.has_unreported_origin() {
             operand_taint.mark_reported()
         } else {
             operand_taint
@@ -253,7 +253,7 @@ impl Analysis for AdviceTaintAnalysis {
 fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
-        if !is_u32_presuming_arith_op(operation) {
+        if !is_u32_presuming_sink(operation) {
             return;
         }
 
@@ -274,21 +274,34 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
         });
         let sink = operation.name();
         let sink_span = operation.span();
-        findings.extend(operand_taint.unreported_origins().map(|advice_span| AdviceTaintFinding {
-            sink: sink.clone(),
-            sink_span,
-            advice_span,
-            function,
-        }));
+        for advice_span in operand_taint.unreported_origins() {
+            let finding = AdviceTaintFinding {
+                sink: sink.clone(),
+                sink_span,
+                advice_span,
+                function,
+            };
+            if !findings.iter().any(|existing| same_finding(existing, &finding)) {
+                findings.push(finding);
+            }
+        }
     });
     findings
 }
 
+fn same_finding(lhs: &AdviceTaintFinding, rhs: &AdviceTaintFinding) -> bool {
+    lhs.sink == rhs.sink
+        && lhs.sink_span == rhs.sink_span
+        && lhs.advice_span == rhs.advice_span
+        && lhs.function == rhs.function
+}
+
+fn is_u32_presuming_sink(op: &Operation) -> bool {
+    is_u32_presuming_arith_op(op) || is_u32_to_u64_zext(op)
+}
+
 fn is_u32_presuming_arith_op(op: &Operation) -> bool {
-    if !op.operands().iter().any(|operand| {
-        let value = operand.borrow().as_value_ref();
-        value.borrow().ty() == &Type::U32
-    }) {
+    if !has_u32_operand(op) {
         return false;
     }
 
@@ -316,4 +329,26 @@ fn is_u32_presuming_arith_op(op: &Operation) -> bool {
         || op.is::<arith::Lte>()
         || op.is::<arith::Min>()
         || op.is::<arith::Max>()
+        || op.is::<arith::Bnot>()
+        || op.is::<arith::Popcnt>()
+        || op.is::<arith::Ctz>()
+        || op.is::<arith::Clz>()
+        || op.is::<arith::Clo>()
+        || op.is::<arith::Cto>()
+}
+
+fn is_u32_to_u64_zext(op: &Operation) -> bool {
+    // MASM widening/add3/madd u32 instructions lower by first refining operands to u32, then
+    // zero-extending them to u64 for the widened arithmetic. The zext is the u32-consuming
+    // boundary that remains visible after lifting.
+    op.is::<arith::Zext>()
+        && has_u32_operand(op)
+        && op.results().all().iter().any(|result| result.borrow().ty() == &Type::U64)
+}
+
+fn has_u32_operand(op: &Operation) -> bool {
+    op.operands().iter().any(|operand| {
+        let value = operand.borrow().as_value_ref();
+        value.borrow().ty() == &Type::U32
+    })
 }
