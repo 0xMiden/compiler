@@ -32,12 +32,13 @@ use midenc_dialect_hir::{
     LogPrecompile as HirLogPrecompile, MTreeGet as HirMTreeGet, MTreeMerge as HirMTreeMerge,
     MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify, MemStream as HirMemStream,
     Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
-    analyses::{AdviceTaintAnalysis, AdviceTaintFinding},
+    analyses::{AdviceTaintAnalysis, AdviceTaintDiagnostic, AdviceTaintFinding},
 };
 use midenc_dialect_scf::{If, While};
 use midenc_hir::{
     AddressSpace, ArrayType, CallConv, FunctionType, Immediate, PointerType, SymbolName,
     SymbolTable, Type,
+    diagnostics::{Report, Severity},
     dialects::builtin::{self, Function, UnrealizedConversionCast},
     pass::AnalysisManager,
 };
@@ -2677,6 +2678,51 @@ end
 }
 
 #[test]
+fn advice_taint_diagnostics_include_actionable_context() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+push.1
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert_eq!(diagnostics.len(), 1);
+
+    let diagnostic = &diagnostics[0];
+    assert!(
+        diagnostic
+            .message()
+            .contains("unconstrained advice value reaches u32-presuming operation `arith.add`"),
+        "{}",
+        diagnostic.message()
+    );
+    assert!(diagnostic.message().contains("function 'entry'"), "{}", diagnostic.message());
+    assert!(diagnostic.help_message().contains("u32assert"));
+    assert!(diagnostic.help_message().contains("u32test"));
+    assert_eq!(
+        diagnostic.label_messages().collect::<Vec<_>>(),
+        [
+            "`arith.add` consumes unconstrained advice as a u32",
+            "unconstrained advice originates here",
+        ]
+    );
+
+    let reports = advice_taint_reports(output.module)?;
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].severity(), Some(Severity::Warning));
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_marks_adv_loadw_results_as_raw() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
@@ -3643,6 +3689,18 @@ fn advice_taint_findings(module: builtin::ModuleRef) -> Result<Vec<AdviceTaintFi
     let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
     let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
     Ok(analysis.findings().to_vec())
+}
+
+fn advice_taint_diagnostics(module: builtin::ModuleRef) -> Result<Vec<AdviceTaintDiagnostic>> {
+    let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    Ok(analysis.diagnostics())
+}
+
+fn advice_taint_reports(module: builtin::ModuleRef) -> Result<Vec<Report>> {
+    let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    Ok(analysis.reports())
 }
 
 fn sink_names(findings: &[AdviceTaintFinding]) -> Vec<String> {

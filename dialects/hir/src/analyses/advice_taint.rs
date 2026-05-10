@@ -1,10 +1,19 @@
-use alloc::{collections::BTreeMap, rc::Rc, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    format,
+    rc::Rc,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use core::{any::Any, fmt};
 
 use midenc_dialect_arith as arith;
 use midenc_hir::{
     Forward, Operation, OperationName, Report, SourceSpan, Spanned, Symbol, SymbolName, Type,
     Value,
+    diagnostics::{Diagnostic, LabeledSpan, Severity},
     dialects::builtin,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
 };
@@ -28,6 +37,94 @@ pub struct AdviceTaintFinding {
     pub advice_span: SourceSpan,
     /// The nearest containing function, when available.
     pub function: Option<SymbolName>,
+}
+
+impl AdviceTaintFinding {
+    pub fn diagnostic(&self) -> AdviceTaintDiagnostic {
+        AdviceTaintDiagnostic::new(self)
+    }
+
+    pub fn into_report(&self) -> Report {
+        self.diagnostic().into_report()
+    }
+}
+
+/// User-facing diagnostic for an unconstrained advice taint finding.
+#[derive(Debug, Clone)]
+pub struct AdviceTaintDiagnostic {
+    message: String,
+    help: String,
+    labels: Vec<LabeledSpan>,
+}
+
+impl AdviceTaintDiagnostic {
+    fn new(finding: &AdviceTaintFinding) -> Self {
+        let function = finding
+            .function
+            .map(|name| format!(" in function '{}'", name.as_str()))
+            .unwrap_or_default();
+        let message = format!(
+            "unconstrained advice value reaches u32-presuming operation `{}`{}",
+            finding.sink, function
+        );
+        let help = "add an explicit u32 range check, such as `u32assert` or `u32test` followed by \
+                    `assert`, before this value is consumed by a u32-presuming operation"
+            .to_string();
+        let labels = vec![
+            LabeledSpan::new_primary_with_span(
+                Some(format!("`{}` consumes unconstrained advice as a u32", finding.sink)),
+                finding.sink_span,
+            ),
+            LabeledSpan::new_with_span(
+                Some("unconstrained advice originates here".to_string()),
+                finding.advice_span,
+            ),
+        ];
+
+        Self {
+            message,
+            help,
+            labels,
+        }
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub fn help_message(&self) -> &str {
+        &self.help
+    }
+
+    pub fn label_messages(&self) -> impl Iterator<Item = &str> {
+        self.labels.iter().filter_map(|label| label.label())
+    }
+
+    pub fn into_report(self) -> Report {
+        Report::from(self)
+    }
+}
+
+impl fmt::Display for AdviceTaintDiagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl core::error::Error for AdviceTaintDiagnostic {}
+
+impl Diagnostic for AdviceTaintDiagnostic {
+    fn severity(&self) -> Option<Severity> {
+        Some(Severity::Warning)
+    }
+
+    fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
+        Some(Box::new(&self.help))
+    }
+
+    fn labels(&self) -> Option<Box<dyn Iterator<Item = LabeledSpan> + '_>> {
+        Some(Box::new(self.labels.iter().cloned()))
+    }
 }
 
 /// Sparse taint facts for an SSA value.
@@ -209,6 +306,14 @@ pub struct AdviceTaintAnalysis {
 impl AdviceTaintAnalysis {
     pub fn findings(&self) -> &[AdviceTaintFinding] {
         &self.findings
+    }
+
+    pub fn diagnostics(&self) -> Vec<AdviceTaintDiagnostic> {
+        self.findings.iter().map(AdviceTaintFinding::diagnostic).collect()
+    }
+
+    pub fn reports(&self) -> Vec<Report> {
+        self.findings.iter().map(AdviceTaintFinding::into_report).collect()
     }
 
     pub fn solver(&self) -> &DataFlowSolver {
