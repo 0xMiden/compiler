@@ -11,8 +11,8 @@ use core::{any::Any, fmt};
 
 use midenc_dialect_arith as arith;
 use midenc_hir::{
-    Forward, Operation, OperationName, Report, SourceSpan, Spanned, Symbol, SymbolName, Type,
-    Value,
+    CallOpInterface, Forward, Operation, OperationName, Report, SourceSpan, Spanned, Symbol,
+    SymbolName, Type, Value,
     diagnostics::{Diagnostic, LabeledSpan, Severity},
     dialects::builtin,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
@@ -33,8 +33,10 @@ pub struct AdviceTaintFinding {
     pub sink: OperationName,
     /// The span of the unsafe sink operation.
     pub sink_span: SourceSpan,
-    /// The advice-producing operation span from which the raw value originated.
+    /// The operation span from which the unconstrained value originated.
     pub advice_span: SourceSpan,
+    /// The origin represented by `advice_span`.
+    pub origin: AdviceTaintOrigin,
     /// The nearest containing function, when available.
     pub function: Option<SymbolName>,
 }
@@ -46,6 +48,40 @@ impl AdviceTaintFinding {
 
     pub fn into_report(&self) -> Report {
         self.diagnostic().into_report()
+    }
+}
+
+/// The kind of unconstrained value origin tracked by advice taint.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub enum AdviceTaintOriginKind {
+    /// A value produced by a MASM advice operation.
+    Advice,
+    /// A value returned by an external call whose body is unavailable to the analysis.
+    ExternalCall,
+}
+
+/// Provenance for an unconstrained value tracked by advice taint.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct AdviceTaintOrigin {
+    /// The operation span at which the unconstrained value originated.
+    pub span: SourceSpan,
+    /// The kind of origin represented by `span`.
+    pub kind: AdviceTaintOriginKind,
+}
+
+impl AdviceTaintOrigin {
+    pub fn advice(span: SourceSpan) -> Self {
+        Self {
+            span,
+            kind: AdviceTaintOriginKind::Advice,
+        }
+    }
+
+    pub fn external_call(span: SourceSpan) -> Self {
+        Self {
+            span,
+            kind: AdviceTaintOriginKind::ExternalCall,
+        }
     }
 }
 
@@ -63,22 +99,33 @@ impl AdviceTaintDiagnostic {
             .function
             .map(|name| format!(" in function '{}'", name.as_str()))
             .unwrap_or_default();
-        let message = format!(
-            "unconstrained advice value reaches u32-presuming operation `{}`{}",
-            finding.sink, function
-        );
-        let help = "add an explicit u32 range check, such as `u32assert` or `u32test` followed by \
-                    `assert`, before this value is consumed by a u32-presuming operation"
-            .to_string();
+        let (subject, sink_label, origin_label, help) = match finding.origin.kind {
+            AdviceTaintOriginKind::Advice => (
+                "unconstrained advice value",
+                format!("`{}` consumes unconstrained advice as a u32", finding.sink),
+                "unconstrained advice originates here".to_string(),
+                "add an explicit u32 range check, such as `u32assert` or `u32test` followed by \
+                 `assert`, before this value is consumed by a u32-presuming operation"
+                    .to_string(),
+            ),
+            AdviceTaintOriginKind::ExternalCall => (
+                "unconstrained external call result",
+                format!(
+                    "`{}` consumes an unconstrained external call result as a u32",
+                    finding.sink
+                ),
+                "external call result is modeled as unconstrained here".to_string(),
+                "add an explicit u32 range check after the external call, or provide an \
+                 analyzable callee body/summary proving the result is constrained before this \
+                 u32-presuming operation"
+                    .to_string(),
+            ),
+        };
+        let message =
+            format!("{subject} reaches u32-presuming operation `{}`{}", finding.sink, function);
         let labels = vec![
-            LabeledSpan::new_primary_with_span(
-                Some(format!("`{}` consumes unconstrained advice as a u32", finding.sink)),
-                finding.sink_span,
-            ),
-            LabeledSpan::new_with_span(
-                Some("unconstrained advice originates here".to_string()),
-                finding.advice_span,
-            ),
+            LabeledSpan::new_primary_with_span(Some(sink_label), finding.sink_span),
+            LabeledSpan::new_with_span(Some(origin_label), finding.advice_span),
         ];
 
         Self {
@@ -134,7 +181,7 @@ impl Diagnostic for AdviceTaintDiagnostic {
 /// downstream u32 operations avoid duplicate diagnostics along the same path.
 #[derive(Clone, Eq, PartialEq)]
 pub struct AdviceTaintValue {
-    origins: BTreeMap<SourceSpan, OriginState>,
+    origins: BTreeMap<AdviceTaintOrigin, OriginState>,
 }
 
 impl AdviceTaintValue {
@@ -146,7 +193,16 @@ impl AdviceTaintValue {
 
     pub fn raw(span: SourceSpan) -> Self {
         Self {
-            origins: BTreeMap::from([(span, OriginState::Unreported)]),
+            origins: BTreeMap::from([(AdviceTaintOrigin::advice(span), OriginState::Unreported)]),
+        }
+    }
+
+    pub fn external_call(span: SourceSpan) -> Self {
+        Self {
+            origins: BTreeMap::from([(
+                AdviceTaintOrigin::external_call(span),
+                OriginState::Unreported,
+            )]),
         }
     }
 
@@ -158,10 +214,10 @@ impl AdviceTaintValue {
         self.origins.values().any(|state| state.is_unreported())
     }
 
-    pub fn unreported_origins(&self) -> impl Iterator<Item = SourceSpan> + '_ {
-        self.origins.iter().filter_map(|(span, state)| {
+    pub fn unreported_origins(&self) -> impl Iterator<Item = AdviceTaintOrigin> + '_ {
+        self.origins.iter().filter_map(|(origin, state)| {
             if state.is_unreported() {
-                Some(*span)
+                Some(*origin)
             } else {
                 None
             }
@@ -174,7 +230,7 @@ impl AdviceTaintValue {
                 .origins
                 .keys()
                 .copied()
-                .map(|span| (span, OriginState::Reported))
+                .map(|origin| (origin, OriginState::Reported))
                 .collect(),
         }
     }
@@ -201,9 +257,9 @@ impl fmt::Debug for AdviceTaintValue {
 impl LatticeLike for AdviceTaintValue {
     fn join(&self, other: &Self) -> Self {
         let mut joined = self.origins.clone();
-        for (&span, &state) in other.origins.iter() {
+        for (&origin, &state) in other.origins.iter() {
             joined
-                .entry(span)
+                .entry(origin)
                 .and_modify(|current| *current = current.join(state))
                 .or_insert(state);
         }
@@ -279,6 +335,19 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
             operand_taint
         };
         join_results(results, &result_taint)
+    }
+
+    fn visit_external_call(
+        &self,
+        call: &dyn CallOpInterface,
+        _arguments: &[AnalysisStateGuard<'_, Self::Lattice>],
+        results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
+        _solver: &mut DataFlowSolver,
+    ) {
+        let value = AdviceTaintValue::external_call(call.as_operation().span());
+        for result in results {
+            result.join(&value);
+        }
     }
 
     fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>) {
@@ -379,11 +448,12 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
         });
         let sink = operation.name();
         let sink_span = operation.span();
-        for advice_span in operand_taint.unreported_origins() {
+        for origin in operand_taint.unreported_origins() {
             let finding = AdviceTaintFinding {
                 sink: sink.clone(),
                 sink_span,
-                advice_span,
+                advice_span: origin.span,
+                origin,
                 function,
             };
             if !findings.iter().any(|existing| same_finding(existing, &finding)) {
@@ -397,7 +467,7 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
 fn same_finding(lhs: &AdviceTaintFinding, rhs: &AdviceTaintFinding) -> bool {
     lhs.sink == rhs.sink
         && lhs.sink_span == rhs.sink_span
-        && lhs.advice_span == rhs.advice_span
+        && lhs.origin == rhs.origin
         && lhs.function == rhs.function
 }
 

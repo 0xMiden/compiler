@@ -207,9 +207,10 @@ where
         let callable = callable
             .as_ref()
             .and_then(|c| c.as_symbol_operation().as_trait::<dyn CallableOpInterface>());
-        if !solver.config().is_interprocedural()
-            || callable.is_some_and(|c| c.get_callable_region().is_none())
-        {
+        let is_external_call = callable
+            .as_ref()
+            .map_or(true, |callable| callable.get_callable_region().is_none());
+        if !solver.config().is_interprocedural() || is_external_call {
             log::trace!(target: analysis.debug_name(), "callee {} is external", call.callable_for_callee());
             analysis.visit_external_call(call, &operand_lattices, &mut result_lattices, solver);
             return Ok(());

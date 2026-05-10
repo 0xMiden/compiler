@@ -32,7 +32,9 @@ use midenc_dialect_hir::{
     LogPrecompile as HirLogPrecompile, MTreeGet as HirMTreeGet, MTreeMerge as HirMTreeMerge,
     MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify, MemStream as HirMemStream,
     Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
-    analyses::{AdviceTaintAnalysis, AdviceTaintDiagnostic, AdviceTaintFinding},
+    analyses::{
+        AdviceTaintAnalysis, AdviceTaintDiagnostic, AdviceTaintFinding, AdviceTaintOriginKind,
+    },
 };
 use midenc_dialect_scf::{If, While};
 use midenc_hir::{
@@ -3076,6 +3078,77 @@ end
     let findings = advice_taint_findings(output.module)?;
     assert_eq!(sink_names(&findings), ["arith.add"]);
     assert_eq!(findings[0].function.map(|name| name.as_str()), Some("consume"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_treats_external_call_results_as_unconstrained() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures.insert("::dep::source".to_owned(), masm_signature([], [Type::Felt]));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry(rhs: u32) -> u32
+exec.::dep::source
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+    assert_eq!(findings[0].origin.kind, AdviceTaintOriginKind::ExternalCall);
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert_eq!(diagnostics.len(), 1);
+    let diagnostic = &diagnostics[0];
+    assert!(
+        diagnostic
+            .message()
+            .contains("unconstrained external call result reaches u32-presuming operation"),
+        "{}",
+        diagnostic.message()
+    );
+    assert_eq!(
+        diagnostic.label_messages().collect::<Vec<_>>(),
+        [
+            "`arith.add` consumes an unconstrained external call result as a u32",
+            "external call result is modeled as unconstrained here",
+        ]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_treats_u32assert_as_external_result_sanitizer() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures.insert("::dep::source".to_owned(), masm_signature([], [Type::Felt]));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry(rhs: u32) -> u32
+exec.::dep::source
+u32assert
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "{findings:#?}");
 
     Ok(())
 }
