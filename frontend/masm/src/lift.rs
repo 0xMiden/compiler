@@ -2125,7 +2125,7 @@ impl<'a> ProcedureLifter<'a> {
         let start = self.stack.len() - n;
         for index in start..self.stack.len() {
             let value = self.stack[index].value;
-            self.stack[index].value = self.cast(builder, value, Type::U32, span)?;
+            self.stack[index].value = builder.assert_u32(value, span)?;
         }
         Ok(())
     }

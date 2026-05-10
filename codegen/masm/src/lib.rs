@@ -158,6 +158,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::Assert, dyn HirLowering>();
     info.register_operation_trait::<hir::Assertz, dyn HirLowering>();
     info.register_operation_trait::<hir::AssertEq, dyn HirLowering>();
+    info.register_operation_trait::<hir::AssertU32, dyn HirLowering>();
     info.register_operation_trait::<hir::PtrToInt, dyn HirLowering>();
     info.register_operation_trait::<hir::IntToPtr, dyn HirLowering>();
     info.register_operation_trait::<hir::Cast, dyn HirLowering>();

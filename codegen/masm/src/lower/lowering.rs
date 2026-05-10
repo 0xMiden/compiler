@@ -493,6 +493,15 @@ impl HirLowering for hir::AssertEq {
     }
 }
 
+impl HirLowering for hir::AssertU32 {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter
+            .inst_emitter(self.as_operation())
+            .emit(masm::Instruction::U32Assert, self.span());
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::ConstantPointer {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let addr = self.get_value().addr();

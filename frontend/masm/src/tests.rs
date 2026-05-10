@@ -23,8 +23,8 @@ use midenc_dialect_arith::{
 use midenc_dialect_cf::Select as CfSelect;
 use midenc_dialect_hir::{
     AdviceLoadWord as HirAdviceLoadWord, AdvicePipe as HirAdvicePipe, AdvicePop as HirAdvicePop,
-    Assert as HirAssert, AssertEq as HirAssertEq, Assertz as HirAssertz, Caller as HirCaller,
-    Clk as HirClk, CryptoStream as HirCryptoStream, EmitEvent as HirEmitEvent,
+    Assert as HirAssert, AssertEq as HirAssertEq, AssertU32 as HirAssertU32, Assertz as HirAssertz,
+    Caller as HirCaller, Clk as HirClk, CryptoStream as HirCryptoStream, EmitEvent as HirEmitEvent,
     EmitEventImm as HirEmitEventImm, EvalCircuit as HirEvalCircuit,
     FriExt2Fold4 as HirFriExt2Fold4, HMerge as HirHMerge, HPerm as HirHPerm, Hash as HirHash,
     HornerBase as HirHornerBase, HornerExt as HirHornerExt, IntToPtr as HirIntToPtr,
@@ -32,12 +32,14 @@ use midenc_dialect_hir::{
     LogPrecompile as HirLogPrecompile, MTreeGet as HirMTreeGet, MTreeMerge as HirMTreeMerge,
     MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify, MemStream as HirMemStream,
     Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
+    analyses::{AdviceTaintAnalysis, AdviceTaintFinding},
 };
 use midenc_dialect_scf::{If, While};
 use midenc_hir::{
     AddressSpace, ArrayType, CallConv, FunctionType, Immediate, PointerType, SymbolName,
     SymbolTable, Type,
     dialects::builtin::{self, Function, UnrealizedConversionCast},
+    pass::AnalysisManager,
 };
 
 use super::*;
@@ -2632,7 +2634,7 @@ end
 }
 
 #[test]
-fn lifts_u32assertw_as_u32_cast_contract() -> Result<()> {
+fn lifts_u32assertw_as_u32_range_contract() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
         r#"
@@ -2646,7 +2648,133 @@ end
     )?;
 
     let function = find_function(output.module, "assert_word");
-    assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 4);
+    assert_eq!(top_level_op_count::<HirAssertU32>(function), 4);
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_reports_raw_advice_used_by_u32_arithmetic() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+push.1
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_treats_u32assert_as_sanitizer() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+u32assert
+push.1
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "expected u32assert to sanitize raw advice");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_reports_first_unconstrained_use_per_control_flow_path() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry(lhs: u32, rhs: u32, cond: felt) -> u32
+adv_push.1
+swap.1
+if.true
+    u32assert
+    u32wrapping_add
+else
+    u32wrapping_sub
+end
+u32wrapping_mul
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.sub"]);
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_propagates_raw_advice_returned_from_callee() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc source() -> felt
+adv_push.1
+end
+
+pub proc entry(rhs: u32) -> u32
+exec.source
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_propagates_raw_advice_into_callee_arguments() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc consume(value: felt, rhs: u32) -> u32
+u32wrapping_add
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+exec.consume
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("consume"));
 
     Ok(())
 }
@@ -3182,6 +3310,16 @@ fn masm_results(results: &[&str]) -> String {
 
 fn indent_masm_body(body: &str) -> String {
     body.lines().map(|line| format!("    {line}")).collect::<Vec<_>>().join("\n")
+}
+
+fn advice_taint_findings(module: builtin::ModuleRef) -> Result<Vec<AdviceTaintFinding>> {
+    let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    Ok(analysis.findings().to_vec())
+}
+
+fn sink_names(findings: &[AdviceTaintFinding]) -> Vec<String> {
+    findings.iter().map(|finding| finding.sink.to_string()).collect()
 }
 
 fn find_function(module: builtin::ModuleRef, name: &str) -> builtin::FunctionRef {

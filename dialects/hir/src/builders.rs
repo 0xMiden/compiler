@@ -142,6 +142,13 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         self.assert_eq_with_error(lhs, rhs, code, span)
     }
 
+    /// Assert that `value` is in the u32 range and refine its result type to u32.
+    fn assert_u32(&mut self, value: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::AssertU32, (ValueRef,)>(span);
+        let op = op_builder(value)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     /// Grow the global heap by `num_pages` pages, in 64kb units.
     ///
     /// Returns the previous size (in pages) of the heap, or -1 if the heap could not be grown.
