@@ -66,8 +66,6 @@ end
 }
 
 #[test]
-#[ignore = "follow-up: local exec lowering from disassembled HIR currently fails backend symbol \
-            resolution"]
 fn e2e_roundtrip_local_exec() {
     assert_roundtrip_outputs(
         r#"

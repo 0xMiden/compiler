@@ -12,10 +12,11 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
     AddressSpace, AsSymbolRef, BlockRef, Builder, CompactString, Context, Ident, Op as HirOp,
-    OpBuilder, OperationRef, PointerType, ProgramPoint, SymbolTable, Type, ValueRef, Visibility,
+    OpBuilder, OperationRef, PointerType, ProgramPoint, SymbolNameComponent, SymbolPath,
+    SymbolTable, Type, ValueRef, Visibility,
     dialects::builtin::{
         BuiltinOpBuilder, FunctionBuilder, FunctionRef,
-        attributes::{LocalVariable, Signature},
+        attributes::{LocalVariable, Signature, SymbolRefAttr},
     },
 };
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -195,6 +196,19 @@ fn external_signature_metadata_hint(external_functions: &FxHashMap<String, Funct
         hint.push_str(&format!(" (+{omitted} more)"));
     }
     hint
+}
+
+fn local_symbol_path(name: &str) -> SymbolPath {
+    SymbolPath::new([SymbolNameComponent::Leaf(midenc_hir::interner::Symbol::intern(name))])
+        .expect("single-leaf symbol paths are valid")
+}
+
+fn set_invoke_callee_path(op: &mut dyn HirOp, path: SymbolPath) {
+    let mut callee = op.as_operation_mut().get_property_mut("callee");
+    let callee = callee
+        .downcast_mut::<SymbolRefAttr>()
+        .expect("invoke callee property must be a symbol reference");
+    callee.set_path(path);
 }
 
 fn ensure_op_region(context: &Rc<Context>, op: &mut dyn HirOp) {
@@ -1160,6 +1174,10 @@ impl<'a> ProcedureLifter<'a> {
     ) -> Result<()> {
         let function = self.resolve_local_target(target)?;
         let signature = function.borrow().get_signature().clone();
+        let local_callee_path = match target {
+            InvocationTarget::Symbol(name) => Some(local_symbol_path(name.as_str())),
+            InvocationTarget::Path(_) | InvocationTarget::MastRoot(_) => None,
+        };
         let mut args = Vec::with_capacity(signature.arity());
         for param in signature.params().iter() {
             let arg = self.pop(span)?;
@@ -1167,27 +1185,39 @@ impl<'a> ProcedureLifter<'a> {
         }
 
         let results: Vec<_> = match kind {
-            InvokeKind::Exec => builder
-                .exec(function, signature, args, span)?
-                .borrow()
-                .results()
-                .iter()
-                .map(|result| result.borrow().as_value_ref())
-                .collect(),
-            InvokeKind::Call => builder
-                .call(function, signature, args, span)?
-                .borrow()
-                .results()
-                .iter()
-                .map(|result| result.borrow().as_value_ref())
-                .collect(),
-            InvokeKind::Syscall => builder
-                .syscall(function, signature, args, span)?
-                .borrow()
-                .results()
-                .iter()
-                .map(|result| result.borrow().as_value_ref())
-                .collect(),
+            InvokeKind::Exec => {
+                let mut op = builder.exec(function, signature, args, span)?;
+                if let Some(path) = local_callee_path.clone() {
+                    set_invoke_callee_path(&mut *op.borrow_mut(), path);
+                }
+                op.borrow()
+                    .results()
+                    .iter()
+                    .map(|result| result.borrow().as_value_ref())
+                    .collect()
+            }
+            InvokeKind::Call => {
+                let mut op = builder.call(function, signature, args, span)?;
+                if let Some(path) = local_callee_path.clone() {
+                    set_invoke_callee_path(&mut *op.borrow_mut(), path);
+                }
+                op.borrow()
+                    .results()
+                    .iter()
+                    .map(|result| result.borrow().as_value_ref())
+                    .collect()
+            }
+            InvokeKind::Syscall => {
+                let mut op = builder.syscall(function, signature, args, span)?;
+                if let Some(path) = local_callee_path.clone() {
+                    set_invoke_callee_path(&mut *op.borrow_mut(), path);
+                }
+                op.borrow()
+                    .results()
+                    .iter()
+                    .map(|result| result.borrow().as_value_ref())
+                    .collect()
+            }
         };
         for result in results.into_iter().rev() {
             self.push_value(result, span);
