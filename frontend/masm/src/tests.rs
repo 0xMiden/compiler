@@ -2944,6 +2944,62 @@ end
 }
 
 #[test]
+fn advice_taint_propagates_raw_advice_through_multi_hop_exec_chain() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc source() -> felt
+adv_push.1
+end
+
+proc forward() -> felt
+exec.source
+end
+
+pub proc entry(rhs: u32) -> u32
+exec.forward
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_propagates_raw_advice_returned_from_call() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc source() -> felt
+adv_push.1
+end
+
+pub proc entry(rhs: u32) -> u32
+call.source
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_propagates_raw_advice_into_callee_arguments() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
@@ -2953,6 +3009,61 @@ u32wrapping_add
 end
 
 pub proc entry(rhs: u32) -> u32
+adv_push.1
+exec.consume
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("consume"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_propagates_raw_advice_into_call_arguments() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc consume(value: felt, rhs: u32) -> u32
+u32wrapping_add
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+call.consume
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("consume"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_handles_repeated_call_sites_with_mixed_clean_and_tainted_arguments() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc consume(value: felt, rhs: u32) -> u32
+u32wrapping_add
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+u32assert
+exec.consume
 adv_push.1
 exec.consume
 end
