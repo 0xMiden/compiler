@@ -2677,6 +2677,51 @@ end
 }
 
 #[test]
+fn advice_taint_marks_adv_loadw_results_as_raw() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry(k0: felt, k1: felt, k2: felt, k3: felt) -> (felt, felt, u32)
+adv_loadw
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_marks_adv_pipe_results_as_raw() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let params = (0..13).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
+    let results = (0..12)
+        .map(|i| if i == 11 { "u32" } else { "felt" })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let source = format!(
+        r#"
+pub proc entry({params}) -> ({results})
+adv_pipe
+u32wrapping_add
+end
+"#
+    );
+    let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_treats_u32assert_as_sanitizer() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
@@ -2695,6 +2740,76 @@ end
 
     let findings = advice_taint_findings(output.module)?;
     assert!(findings.is_empty(), "expected u32assert to sanitize raw advice");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_treats_u32assertw_as_multi_value_sanitizer() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> (u32, u32, u32)
+adv_push.4
+u32assertw
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "expected u32assertw to sanitize all word elements");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_sanitizes_only_the_asserted_alias() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+dup.0
+u32assert
+swap.1
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_suppresses_straight_line_duplicate_uses() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+push.1
+u32wrapping_add
+push.2
+u32wrapping_mul
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
 
     Ok(())
 }
@@ -2723,6 +2838,35 @@ end
 
     let findings = advice_taint_findings(output.module)?;
     assert_eq!(sink_names(&findings), ["arith.sub"]);
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_reports_later_sink_for_raw_branch_path_not_reported_earlier() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry(cond: felt) -> u32
+adv_push.1
+swap.1
+if.true
+    push.1
+    u32wrapping_add
+else
+    nop
+end
+push.2
+u32wrapping_mul
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add", "arith.mul"]);
 
     Ok(())
 }
@@ -2775,6 +2919,78 @@ end
     let findings = advice_taint_findings(output.module)?;
     assert_eq!(sink_names(&findings), ["arith.add"]);
     assert_eq!(findings[0].function.map(|name| name.as_str()), Some("consume"));
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "unary u32-presuming operations are not classified as advice-taint sinks yet"]
+fn advice_taint_reports_raw_advice_used_by_unary_u32_operation() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+u32popcnt
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.popcnt"]);
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "widening u32 operations are not classified as advice-taint sinks yet"]
+fn advice_taint_reports_raw_advice_used_by_widening_u32_operation() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> (u32, u32)
+adv_push.2
+u32widening_mul
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(!findings.is_empty(), "expected u32widening_mul to report raw advice operands");
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "u32test/assert range-check sanitization is not modeled yet"]
+fn advice_taint_treats_u32test_assert_as_sanitizer() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+u32test
+assert
+push.1
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(
+        findings.is_empty(),
+        "expected u32test followed by assert to sanitize raw advice"
+    );
 
     Ok(())
 }
