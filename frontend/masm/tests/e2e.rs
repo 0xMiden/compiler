@@ -6,6 +6,7 @@ use miden_assembly_syntax::{
     ast::ModuleKind,
     debuginfo::{SourceLanguage, Uri},
 };
+use miden_core_lib::CoreLibrary;
 use miden_processor::{
     DefaultHost, ExecutionOptions, Felt, Program, StackInputs, advice::AdviceInputs, execute_sync,
 };
@@ -86,8 +87,6 @@ end
 }
 
 #[test]
-#[ignore = "follow-up: scf lowering currently sees builtin.unrealized_conversion_cast from MASM \
-            lifting"]
 fn e2e_roundtrip_structured_if() {
     let source = r#"
 pub proc entry(flag: i1) -> felt
@@ -152,6 +151,7 @@ fn e2e_context() -> Rc<Context> {
 
 fn assemble_original_program(source: &str, context: &Context) -> Program {
     let source_manager = context.session().source_manager.clone();
+    let core_library = CoreLibrary::default();
     let source_file = source_manager.load(
         SourceLanguage::Masm,
         Uri::from("test.masm".to_owned()),
@@ -166,10 +166,15 @@ fn assemble_original_program(source: &str, context: &Context) -> Program {
     Assembler::new(source_manager)
         .with_static_library(library)
         .expect("original MASM library should link")
+        .with_static_library(core_library.library())
+        .expect("Miden core library should link")
         .assemble_program(
             r#"
+use miden::core::sys
+
 begin
     exec.::test::entry
+    exec.sys::truncate_stack
 end
 "#,
         )
@@ -188,6 +193,7 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program 
         .to_masm_component(analysis_manager)
         .expect("HIR should lower back to MASM");
     let source_manager = context.session().source_manager.clone();
+    let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
     let mem_intrinsics = intrinsics::load(MEM_INTRINSICS_MODULE_NAME, source_manager.clone())
         .expect("memory intrinsics should load");
@@ -202,10 +208,15 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program 
     Assembler::new(source_manager)
         .with_static_library(library)
         .expect("round-tripped MASM library should link")
+        .with_static_library(core_library.library())
+        .expect("Miden core library should link")
         .assemble_program(
             r#"
+use miden::core::sys
+
 begin
     exec.::"root_ns:root@1.0.0"::test::entry
+    exec.sys::truncate_stack
 end
 "#,
         )
