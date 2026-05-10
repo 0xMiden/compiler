@@ -33,7 +33,8 @@ use midenc_dialect_hir::{
     MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify, MemStream as HirMemStream,
     Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
     analyses::{
-        AdviceTaintAnalysis, AdviceTaintDiagnostic, AdviceTaintFinding, AdviceTaintOriginKind,
+        AdviceTaintAnalysis, AdviceTaintDiagnostic, AdviceTaintExitFinding, AdviceTaintFinding,
+        AdviceTaintOriginKind,
     },
 };
 use midenc_dialect_scf::{If, While};
@@ -3154,6 +3155,135 @@ end
 }
 
 #[test]
+fn advice_taint_reports_public_function_returning_raw_advice() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc source() -> felt
+adv_push.1
+end
+
+pub proc entry() -> felt
+exec.source
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    let exits = advice_taint_exit_findings(output.module)?;
+    assert_eq!(exits.len(), 1);
+    assert_eq!(exits[0].function.as_str(), "entry");
+    assert_eq!(exits[0].result_index, 0);
+    assert_eq!(exits[0].origin.kind, AdviceTaintOriginKind::Advice);
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert_eq!(diagnostics.len(), 1);
+    let diagnostic = &diagnostics[0];
+    assert!(
+        diagnostic
+            .message()
+            .contains("public function 'entry' returns unconstrained advice value as result #0"),
+        "{}",
+        diagnostic.message()
+    );
+    assert_eq!(
+        diagnostic.label_messages().collect::<Vec<_>>(),
+        [
+            "public function returns unconstrained advice as result #0",
+            "unconstrained advice originates here",
+        ]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_does_not_report_private_function_returning_raw_advice() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc source() -> felt
+adv_push.1
+end
+
+pub proc entry() -> felt
+push.1
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let exits = advice_taint_exit_findings(output.module)?;
+    assert!(exits.is_empty(), "{exits:#?}");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_does_not_report_sanitized_public_return() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+u32assert
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let exits = advice_taint_exit_findings(output.module)?;
+    assert!(exits.is_empty(), "{exits:#?}");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_reports_public_function_returning_external_result() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures.insert("::dep::source".to_owned(), masm_signature([], [Type::Felt]));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry() -> felt
+exec.::dep::source
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+
+    let exits = advice_taint_exit_findings(output.module)?;
+    assert_eq!(exits.len(), 1);
+    assert_eq!(exits[0].function.as_str(), "entry");
+    assert_eq!(exits[0].origin.kind, AdviceTaintOriginKind::ExternalCall);
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert_eq!(diagnostics.len(), 1);
+    assert!(
+        diagnostics[0]
+            .message()
+            .contains("public function 'entry' returns unconstrained external call result"),
+        "{}",
+        diagnostics[0].message()
+    );
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_reports_raw_advice_used_by_unary_u32_operation() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
@@ -3873,6 +4003,12 @@ fn advice_taint_findings(module: builtin::ModuleRef) -> Result<Vec<AdviceTaintFi
     let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
     let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
     Ok(analysis.findings().to_vec())
+}
+
+fn advice_taint_exit_findings(module: builtin::ModuleRef) -> Result<Vec<AdviceTaintExitFinding>> {
+    let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    Ok(analysis.exit_findings().to_vec())
 }
 
 fn advice_taint_diagnostics(module: builtin::ModuleRef) -> Result<Vec<AdviceTaintDiagnostic>> {

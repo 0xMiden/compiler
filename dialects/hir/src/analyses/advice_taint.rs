@@ -51,6 +51,33 @@ impl AdviceTaintFinding {
     }
 }
 
+/// A public/exported function returns an unconstrained value.
+#[derive(Debug, Clone)]
+pub struct AdviceTaintExitFinding {
+    /// The public/exported function that returns the unconstrained value.
+    pub function: SymbolName,
+    /// The span of the function operation.
+    pub function_span: SourceSpan,
+    /// The return operation span.
+    pub return_span: SourceSpan,
+    /// The zero-based result index containing an unconstrained value.
+    pub result_index: usize,
+    /// The operation span from which the unconstrained value originated.
+    pub advice_span: SourceSpan,
+    /// The origin represented by `advice_span`.
+    pub origin: AdviceTaintOrigin,
+}
+
+impl AdviceTaintExitFinding {
+    pub fn diagnostic(&self) -> AdviceTaintDiagnostic {
+        AdviceTaintDiagnostic::new_exit(self)
+    }
+
+    pub fn into_report(&self) -> Report {
+        self.diagnostic().into_report()
+    }
+}
+
 /// The kind of unconstrained value origin tracked by advice taint.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum AdviceTaintOriginKind {
@@ -125,6 +152,48 @@ impl AdviceTaintDiagnostic {
             format!("{subject} reaches u32-presuming operation `{}`{}", finding.sink, function);
         let labels = vec![
             LabeledSpan::new_primary_with_span(Some(sink_label), finding.sink_span),
+            LabeledSpan::new_with_span(Some(origin_label), finding.advice_span),
+        ];
+
+        Self {
+            message,
+            help,
+            labels,
+        }
+    }
+
+    fn new_exit(finding: &AdviceTaintExitFinding) -> Self {
+        let (subject, return_label, origin_label, help) = match finding.origin.kind {
+            AdviceTaintOriginKind::Advice => (
+                "unconstrained advice value",
+                format!(
+                    "public function returns unconstrained advice as result #{}",
+                    finding.result_index
+                ),
+                "unconstrained advice originates here".to_string(),
+                "constrain this value before returning it from a public function, or require \
+                 callers to validate it before any constrained use"
+                    .to_string(),
+            ),
+            AdviceTaintOriginKind::ExternalCall => (
+                "unconstrained external call result",
+                format!(
+                    "public function returns an unconstrained external call result as result #{}",
+                    finding.result_index
+                ),
+                "external call result is modeled as unconstrained here".to_string(),
+                "add an explicit constraint before returning the external result, or provide an \
+                 analyzable callee body/summary proving the result is constrained"
+                    .to_string(),
+            ),
+        };
+        let message = format!(
+            "public function '{}' returns {subject} as result #{}",
+            finding.function.as_str(),
+            finding.result_index
+        );
+        let labels = vec![
+            LabeledSpan::new_primary_with_span(Some(return_label), finding.return_span),
             LabeledSpan::new_with_span(Some(origin_label), finding.advice_span),
         ];
 
@@ -370,6 +439,7 @@ fn join_results(
 pub struct AdviceTaintAnalysis {
     solver: DataFlowSolver,
     findings: Vec<AdviceTaintFinding>,
+    exit_findings: Vec<AdviceTaintExitFinding>,
 }
 
 impl AdviceTaintAnalysis {
@@ -377,12 +447,24 @@ impl AdviceTaintAnalysis {
         &self.findings
     }
 
+    pub fn exit_findings(&self) -> &[AdviceTaintExitFinding] {
+        &self.exit_findings
+    }
+
     pub fn diagnostics(&self) -> Vec<AdviceTaintDiagnostic> {
-        self.findings.iter().map(AdviceTaintFinding::diagnostic).collect()
+        self.findings
+            .iter()
+            .map(AdviceTaintFinding::diagnostic)
+            .chain(self.exit_findings.iter().map(AdviceTaintExitFinding::diagnostic))
+            .collect()
     }
 
     pub fn reports(&self) -> Vec<Report> {
-        self.findings.iter().map(AdviceTaintFinding::into_report).collect()
+        self.findings
+            .iter()
+            .map(AdviceTaintFinding::into_report)
+            .chain(self.exit_findings.iter().map(AdviceTaintExitFinding::into_report))
+            .collect()
     }
 
     pub fn solver(&self) -> &DataFlowSolver {
@@ -416,6 +498,7 @@ impl Analysis for AdviceTaintAnalysis {
         self.solver.load::<AdviceTaintPropagation>();
         self.solver.initialize_and_run(op, analysis_manager)?;
         self.findings = collect_findings(op, &self.solver);
+        self.exit_findings = collect_exit_findings(op, &self.solver);
         Ok(())
     }
 
@@ -464,11 +547,62 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
     findings
 }
 
+fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintExitFinding> {
+    let mut findings = Vec::new();
+    op.prewalk_all(|operation| {
+        let Some(ret) = operation.downcast_ref::<builtin::Ret>() else {
+            return;
+        };
+        let Some(function_ref) = operation.nearest_parent_op::<builtin::Function>() else {
+            return;
+        };
+        let function = function_ref.borrow();
+        if !Symbol::is_public(&*function) {
+            return;
+        }
+
+        let function_name = Symbol::name(&*function);
+        let function_span = function.as_symbol_operation().span();
+        let return_span = operation.span();
+        for (result_index, operand) in ret.values().iter().enumerate() {
+            let value = operand.borrow().as_value_ref();
+            let Some(state) = solver.get::<Lattice<AdviceTaintValue>, _>(&value) else {
+                continue;
+            };
+            if state.value().is_clean() || !state.value().has_unreported_origin() {
+                continue;
+            }
+
+            for origin in state.value().unreported_origins() {
+                let finding = AdviceTaintExitFinding {
+                    function: function_name,
+                    function_span,
+                    return_span,
+                    result_index,
+                    advice_span: origin.span,
+                    origin,
+                };
+                if !findings.iter().any(|existing| same_exit_finding(existing, &finding)) {
+                    findings.push(finding);
+                }
+            }
+        }
+    });
+    findings
+}
+
 fn same_finding(lhs: &AdviceTaintFinding, rhs: &AdviceTaintFinding) -> bool {
     lhs.sink == rhs.sink
         && lhs.sink_span == rhs.sink_span
         && lhs.origin == rhs.origin
         && lhs.function == rhs.function
+}
+
+fn same_exit_finding(lhs: &AdviceTaintExitFinding, rhs: &AdviceTaintExitFinding) -> bool {
+    lhs.function == rhs.function
+        && lhs.return_span == rhs.return_span
+        && lhs.result_index == rhs.result_index
+        && lhs.origin == rhs.origin
 }
 
 fn is_u32_presuming_sink(op: &Operation) -> bool {
