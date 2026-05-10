@@ -33,8 +33,8 @@ use midenc_dialect_hir::{
     MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify, MemStream as HirMemStream,
     Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
     analyses::{
-        AdviceTaintAnalysis, AdviceTaintDiagnostic, AdviceTaintExitFinding, AdviceTaintFinding,
-        AdviceTaintOriginKind,
+        AdviceTaintAnalysis, AdviceTaintContextKind, AdviceTaintDiagnostic, AdviceTaintExitFinding,
+        AdviceTaintFinding, AdviceTaintOriginKind,
     },
 };
 use midenc_dialect_scf::{If, While};
@@ -3084,6 +3084,80 @@ end
 }
 
 #[test]
+fn advice_taint_diagnostics_include_call_argument_context() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc consume(value: felt, rhs: u32) -> u32
+u32wrapping_add
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+exec.consume
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].contexts.len(), 1);
+    assert_eq!(findings[0].contexts[0].kind, AdviceTaintContextKind::CallArgument);
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert_eq!(
+        diagnostics[0].label_messages().collect::<Vec<_>>(),
+        [
+            "`arith.add` consumes unconstrained advice as a u32",
+            "unconstrained value is passed as a call argument here",
+            "unconstrained advice originates here",
+        ]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_diagnostics_include_call_result_context() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc source() -> felt
+adv_push.1
+end
+
+pub proc entry(rhs: u32) -> u32
+exec.source
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].contexts.len(), 1);
+    assert_eq!(findings[0].contexts[0].kind, AdviceTaintContextKind::CallResult);
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert_eq!(
+        diagnostics[0].label_messages().collect::<Vec<_>>(),
+        [
+            "`arith.add` consumes unconstrained advice as a u32",
+            "unconstrained value returns from a call here",
+            "unconstrained advice originates here",
+        ]
+    );
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_treats_external_call_results_as_unconstrained() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
@@ -3180,6 +3254,8 @@ end
     assert_eq!(exits[0].function.as_str(), "entry");
     assert_eq!(exits[0].result_index, 0);
     assert_eq!(exits[0].origin.kind, AdviceTaintOriginKind::Advice);
+    assert_eq!(exits[0].contexts.len(), 1);
+    assert_eq!(exits[0].contexts[0].kind, AdviceTaintContextKind::CallResult);
 
     let diagnostics = advice_taint_diagnostics(output.module)?;
     assert_eq!(diagnostics.len(), 1);
@@ -3195,6 +3271,7 @@ end
         diagnostic.label_messages().collect::<Vec<_>>(),
         [
             "public function returns unconstrained advice as result #0",
+            "unconstrained value returns from a call here",
             "unconstrained advice originates here",
         ]
     );

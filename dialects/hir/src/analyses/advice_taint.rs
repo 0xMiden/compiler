@@ -37,6 +37,8 @@ pub struct AdviceTaintFinding {
     pub advice_span: SourceSpan,
     /// The origin represented by `advice_span`.
     pub origin: AdviceTaintOrigin,
+    /// Relevant call-boundary context for interprocedural propagation.
+    pub contexts: Vec<AdviceTaintContext>,
     /// The nearest containing function, when available.
     pub function: Option<SymbolName>,
 }
@@ -66,6 +68,8 @@ pub struct AdviceTaintExitFinding {
     pub advice_span: SourceSpan,
     /// The origin represented by `advice_span`.
     pub origin: AdviceTaintOrigin,
+    /// Relevant call-boundary context for interprocedural propagation.
+    pub contexts: Vec<AdviceTaintContext>,
 }
 
 impl AdviceTaintExitFinding {
@@ -112,6 +116,24 @@ impl AdviceTaintOrigin {
     }
 }
 
+/// The kind of call-boundary context associated with a tainted value.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum AdviceTaintContextKind {
+    /// The unconstrained value is passed into another function as a call argument.
+    CallArgument,
+    /// The unconstrained value is returned from another function through a call result.
+    CallResult,
+}
+
+/// Diagnostic context for a call boundary crossed by an unconstrained value.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AdviceTaintContext {
+    /// The call operation span.
+    pub span: SourceSpan,
+    /// How the tainted value crossed this call boundary.
+    pub kind: AdviceTaintContextKind,
+}
+
 /// User-facing diagnostic for an unconstrained advice taint finding.
 #[derive(Debug, Clone)]
 pub struct AdviceTaintDiagnostic {
@@ -150,10 +172,15 @@ impl AdviceTaintDiagnostic {
         };
         let message =
             format!("{subject} reaches u32-presuming operation `{}`{}", finding.sink, function);
-        let labels = vec![
-            LabeledSpan::new_primary_with_span(Some(sink_label), finding.sink_span),
-            LabeledSpan::new_with_span(Some(origin_label), finding.advice_span),
-        ];
+        let labels = vec![LabeledSpan::new_primary_with_span(Some(sink_label), finding.sink_span)];
+        let labels = labels
+            .into_iter()
+            .chain(context_labels(&finding.contexts))
+            .chain(core::iter::once(LabeledSpan::new_with_span(
+                Some(origin_label),
+                finding.advice_span,
+            )))
+            .collect();
 
         Self {
             message,
@@ -192,10 +219,16 @@ impl AdviceTaintDiagnostic {
             finding.function.as_str(),
             finding.result_index
         );
-        let labels = vec![
-            LabeledSpan::new_primary_with_span(Some(return_label), finding.return_span),
-            LabeledSpan::new_with_span(Some(origin_label), finding.advice_span),
-        ];
+        let labels =
+            vec![LabeledSpan::new_primary_with_span(Some(return_label), finding.return_span)];
+        let labels = labels
+            .into_iter()
+            .chain(context_labels(&finding.contexts))
+            .chain(core::iter::once(LabeledSpan::new_with_span(
+                Some(origin_label),
+                finding.advice_span,
+            )))
+            .collect();
 
         Self {
             message,
@@ -243,6 +276,18 @@ impl Diagnostic for AdviceTaintDiagnostic {
     }
 }
 
+fn context_labels(contexts: &[AdviceTaintContext]) -> impl Iterator<Item = LabeledSpan> + '_ {
+    contexts.iter().map(|context| {
+        let label = match context.kind {
+            AdviceTaintContextKind::CallArgument => {
+                "unconstrained value is passed as a call argument here"
+            }
+            AdviceTaintContextKind::CallResult => "unconstrained value returns from a call here",
+        };
+        LabeledSpan::new_with_span(Some(label.to_string()), context.span)
+    })
+}
+
 /// Sparse taint facts for an SSA value.
 ///
 /// Each tracked origin is either still unreported on at least one path, or has already reached an
@@ -281,6 +326,10 @@ impl AdviceTaintValue {
 
     pub fn has_unreported_origin(&self) -> bool {
         self.origins.values().any(|state| state.is_unreported())
+    }
+
+    pub fn contains_origin(&self, origin: AdviceTaintOrigin) -> bool {
+        self.origins.contains_key(&origin)
     }
 
     pub fn unreported_origins(&self) -> impl Iterator<Item = AdviceTaintOrigin> + '_ {
@@ -537,6 +586,7 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
                 sink_span,
                 advice_span: origin.span,
                 origin,
+                contexts: collect_call_contexts(op, solver, function, origin),
                 function,
             };
             if !findings.iter().any(|existing| same_finding(existing, &finding)) {
@@ -581,6 +631,7 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
                     result_index,
                     advice_span: origin.span,
                     origin,
+                    contexts: collect_call_contexts(op, solver, Some(function_name), origin),
                 };
                 if !findings.iter().any(|existing| same_exit_finding(existing, &finding)) {
                     findings.push(finding);
@@ -589,6 +640,92 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
         }
     });
     findings
+}
+
+fn collect_call_contexts(
+    root: &Operation,
+    solver: &DataFlowSolver,
+    use_function: Option<SymbolName>,
+    origin: AdviceTaintOrigin,
+) -> Vec<AdviceTaintContext> {
+    let Some(use_function) = use_function else {
+        return Vec::new();
+    };
+
+    let mut contexts = Vec::new();
+    root.prewalk_all(|operation| {
+        if operation.span() == origin.span {
+            return;
+        }
+        let Some(call) = operation.as_trait::<dyn CallOpInterface>() else {
+            return;
+        };
+
+        let caller_function = operation.nearest_parent_op::<builtin::Function>().map(|function| {
+            let function = function.borrow();
+            Symbol::name(&*function)
+        });
+        let callee_function = resolved_callee_function_name(call);
+
+        if caller_function == Some(use_function)
+            && call_results_contain_origin(operation, solver, origin)
+        {
+            push_context(&mut contexts, operation.span(), AdviceTaintContextKind::CallResult);
+        }
+
+        if callee_function == Some(use_function)
+            && call_arguments_contain_origin(call, solver, origin)
+        {
+            push_context(&mut contexts, operation.span(), AdviceTaintContextKind::CallArgument);
+        }
+    });
+    contexts
+}
+
+fn resolved_callee_function_name(call: &dyn CallOpInterface) -> Option<SymbolName> {
+    let callee = call.resolve()?;
+    let callee = callee.borrow();
+    callee
+        .as_symbol_operation()
+        .downcast_ref::<builtin::Function>()
+        .map(Symbol::name)
+}
+
+fn call_results_contain_origin(
+    call: &Operation,
+    solver: &DataFlowSolver,
+    origin: AdviceTaintOrigin,
+) -> bool {
+    call.results().all().iter().any(|result| {
+        let value = result.borrow().as_value_ref();
+        solver
+            .get::<Lattice<AdviceTaintValue>, _>(&value)
+            .is_some_and(|state| state.value().contains_origin(origin))
+    })
+}
+
+fn call_arguments_contain_origin(
+    call: &dyn CallOpInterface,
+    solver: &DataFlowSolver,
+    origin: AdviceTaintOrigin,
+) -> bool {
+    call.arguments().iter().any(|operand| {
+        let value = operand.borrow().as_value_ref();
+        solver
+            .get::<Lattice<AdviceTaintValue>, _>(&value)
+            .is_some_and(|state| state.value().contains_origin(origin))
+    })
+}
+
+fn push_context(
+    contexts: &mut Vec<AdviceTaintContext>,
+    span: SourceSpan,
+    kind: AdviceTaintContextKind,
+) {
+    let context = AdviceTaintContext { span, kind };
+    if !contexts.contains(&context) {
+        contexts.push(context);
+    }
 }
 
 fn same_finding(lhs: &AdviceTaintFinding, rhs: &AdviceTaintFinding) -> bool {
