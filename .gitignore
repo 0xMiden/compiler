@@ -22,7 +22,6 @@ node_modules/
 book/
 
 # Ignore Cargo.lock in test projects
-examples/**/Cargo.lock
 tests/**/Cargo.lock
 
 *.lit_test_times.txt*
