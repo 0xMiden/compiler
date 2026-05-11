@@ -10,9 +10,10 @@ use alloc::{
 use core::{any::Any, fmt};
 
 use midenc_dialect_arith as arith;
+use midenc_dialect_scf as scf;
 use midenc_hir::{
-    CallOpInterface, Forward, Operation, OperationName, Report, SourceSpan, Spanned, Symbol,
-    SymbolName, Type, Value, ValueRef,
+    CallOpInterface, Forward, Op, Operation, OperationName, RegionRef, Report, SourceSpan, Spanned,
+    Symbol, SymbolName, Type, Value, ValueRef,
     diagnostics::{Diagnostic, LabeledSpan, Severity},
     dialects::builtin::{self, attributes::LocalVariable},
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
@@ -645,6 +646,12 @@ struct StorageTaintOverlay {
     values: BTreeMap<String, AdviceTaintValue>,
 }
 
+#[derive(Clone, Default, Eq, PartialEq)]
+struct StorageState {
+    storage: BTreeMap<StorageKey, AdviceTaintValue>,
+    dynamic_memory: AdviceTaintValue,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 enum StorageKey {
     Local(SymbolName, usize),
@@ -653,61 +660,222 @@ enum StorageKey {
 
 fn collect_storage_taint_overlay(op: &Operation, solver: &DataFlowSolver) -> StorageTaintOverlay {
     let mut overlay = StorageTaintOverlay::default();
-    let mut storage = BTreeMap::<StorageKey, AdviceTaintValue>::new();
-
-    op.prewalk_all(|operation| {
-        if let Some(store) = operation.downcast_ref::<StoreLocal>() {
-            let key = StorageKey::from(*store.get_local());
-            let taint = value_taint(store.value().as_value_ref(), solver, &overlay);
-            storage.insert(key, taint);
-            return;
-        }
-
-        if let Some(load) = operation.downcast_ref::<LoadLocal>() {
-            let key = StorageKey::from(*load.get_local());
-            if let Some(taint) = storage.get(&key) {
-                overlay.set(load.result().as_value_ref(), taint.clone());
-            }
-            return;
-        }
-
-        if let Some(store) = operation.downcast_ref::<Store>() {
-            if let Some(key) = memory_storage_key(store.addr().as_value_ref()) {
-                let taint = value_taint(store.value().as_value_ref(), solver, &overlay);
-                storage.insert(key, taint);
-            }
-            return;
-        }
-
-        if let Some(load) = operation.downcast_ref::<Load>() {
-            if let Some(key) = memory_storage_key(load.addr().as_value_ref())
-                && let Some(taint) = storage.get(&key)
-            {
-                overlay.set(load.result().as_value_ref(), taint.clone());
-            }
-            return;
-        }
-
-        if !operation.has_results() {
-            return;
-        }
-
-        let operand_taint =
-            operation.operands().iter().fold(AdviceTaintValue::clean(), |acc, operand| {
-                let taint = value_taint(operand.borrow().as_value_ref(), solver, &overlay);
-                LatticeLike::join(&acc, &taint)
-            });
-        if operand_taint.is_clean() {
-            return;
-        }
-
-        let result_taint = transfer_taint(operation, operand_taint);
-        for result in operation.results().all() {
-            overlay.set(result.borrow().as_value_ref(), result_taint.clone());
-        }
-    });
-
+    collect_storage_taint_for_operation_tree(op, solver, &mut overlay);
     overlay
+}
+
+fn collect_storage_taint_for_operation_tree(
+    op: &Operation,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+) {
+    if let Some(function) = op.downcast_ref::<builtin::Function>() {
+        if !function.body().is_empty() {
+            let mut state = StorageState::default();
+            transfer_region(function.body().as_region_ref(), &mut state, solver, overlay);
+        }
+        return;
+    }
+
+    for region in op.regions() {
+        let mut state = StorageState::default();
+        transfer_region(region.as_region_ref(), &mut state, solver, overlay);
+    }
+}
+
+fn transfer_region(
+    region: RegionRef,
+    state: &mut StorageState,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+) {
+    let region = region.borrow();
+    for block in region.body() {
+        for operation in block.body() {
+            transfer_storage_operation(&operation, state, solver, overlay);
+        }
+    }
+}
+
+fn transfer_storage_operation(
+    operation: &Operation,
+    state: &mut StorageState,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+) {
+    if let Some(function) = operation.downcast_ref::<builtin::Function>() {
+        if !function.body().is_empty() {
+            let mut function_state = StorageState::default();
+            transfer_region(function.body().as_region_ref(), &mut function_state, solver, overlay);
+        }
+        return;
+    }
+
+    if let Some(if_op) = operation.downcast_ref::<scf::If>() {
+        transfer_storage_if(if_op, state, solver, overlay);
+        return;
+    }
+
+    if let Some(while_op) = operation.downcast_ref::<scf::While>() {
+        transfer_storage_while(while_op, state, solver, overlay);
+        return;
+    }
+
+    if let Some(store) = operation.downcast_ref::<StoreLocal>() {
+        let key = StorageKey::from(*store.get_local());
+        let taint = value_taint(store.value().as_value_ref(), solver, overlay);
+        state.store(key, taint);
+        return;
+    }
+
+    if let Some(load) = operation.downcast_ref::<LoadLocal>() {
+        let key = StorageKey::from(*load.get_local());
+        overlay.set(load.result().as_value_ref(), state.load(&key));
+        return;
+    }
+
+    if let Some(store) = operation.downcast_ref::<Store>() {
+        let taint = value_taint(store.value().as_value_ref(), solver, overlay);
+        match memory_storage_key(store.addr().as_value_ref()) {
+            Some(key) => state.store(key, taint),
+            None => state.store_dynamic_memory(taint),
+        }
+        return;
+    }
+
+    if let Some(load) = operation.downcast_ref::<Load>() {
+        let taint = match memory_storage_key(load.addr().as_value_ref()) {
+            Some(StorageKey::Memory(addr)) => state.load_memory(addr),
+            Some(key) => state.load(&key),
+            None => state.load_dynamic_memory(),
+        };
+        overlay.set(load.result().as_value_ref(), taint);
+        return;
+    }
+
+    transfer_storage_results(operation, solver, overlay);
+}
+
+fn transfer_storage_if(
+    if_op: &scf::If,
+    state: &mut StorageState,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+) {
+    let entry_state = state.clone();
+    let mut then_state = entry_state.clone();
+    transfer_region(if_op.then_body().as_region_ref(), &mut then_state, solver, overlay);
+
+    let mut else_state = entry_state;
+    if !if_op.else_body().is_empty() {
+        transfer_region(if_op.else_body().as_region_ref(), &mut else_state, solver, overlay);
+    }
+
+    overlay_if_results(if_op, solver, overlay);
+    *state = then_state.join(&else_state);
+}
+
+fn transfer_storage_while(
+    while_op: &scf::While,
+    state: &mut StorageState,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+) {
+    let entry_state = state.clone();
+    let mut loop_state = state.clone();
+
+    // Iterate to a fixed point. Storage taint is finite for a fixed function because each store
+    // key can only accumulate origins, and this avoids missing loop-carried taint when a value is
+    // stored late in one iteration and loaded early in the next.
+    loop {
+        let previous = loop_state.clone();
+        let mut iteration = loop_state.clone();
+        transfer_region(while_op.before().as_region_ref(), &mut iteration, solver, overlay);
+        transfer_region(while_op.after().as_region_ref(), &mut iteration, solver, overlay);
+        loop_state = loop_state.join(&iteration);
+        if loop_state == previous {
+            break;
+        }
+    }
+
+    overlay_while_results(while_op, solver, overlay);
+    *state = entry_state.join(&loop_state);
+}
+
+fn transfer_storage_results(
+    operation: &Operation,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+) {
+    if !operation.has_results() {
+        return;
+    }
+
+    let operand_taint =
+        operation.operands().iter().fold(AdviceTaintValue::clean(), |acc, operand| {
+            let taint = value_taint(operand.borrow().as_value_ref(), solver, overlay);
+            LatticeLike::join(&acc, &taint)
+        });
+    let result_taint = transfer_taint(operation, operand_taint);
+    if result_taint.is_clean() {
+        return;
+    }
+
+    for result in operation.results().all() {
+        overlay.set(result.borrow().as_value_ref(), result_taint.clone());
+    }
+}
+
+fn overlay_if_results(if_op: &scf::If, solver: &DataFlowSolver, overlay: &mut StorageTaintOverlay) {
+    if !if_op.as_operation().has_results() {
+        return;
+    }
+
+    let then_yield = if_op.then_yield();
+    let else_yield = if_op.else_yield();
+    let then_yield = then_yield.borrow();
+    let else_yield = else_yield.borrow();
+    for ((result, then_value), else_value) in if_op
+        .as_operation()
+        .results()
+        .all()
+        .iter()
+        .zip(then_yield.yielded().iter())
+        .zip(else_yield.yielded().iter())
+    {
+        let taint = LatticeLike::join(
+            &value_taint(then_value.borrow().as_value_ref(), solver, overlay),
+            &value_taint(else_value.borrow().as_value_ref(), solver, overlay),
+        );
+        overlay.set(result.borrow().as_value_ref(), taint);
+    }
+}
+
+fn overlay_while_results(
+    while_op: &scf::While,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+) {
+    if !while_op.as_operation().has_results() {
+        return;
+    }
+
+    let yield_op = while_op.yield_op();
+    let yield_op = yield_op.borrow();
+    for ((result, init), yielded) in while_op
+        .as_operation()
+        .results()
+        .all()
+        .iter()
+        .zip(while_op.inits().iter())
+        .zip(yield_op.yielded().iter())
+    {
+        let taint = LatticeLike::join(
+            &value_taint(init.borrow().as_value_ref(), solver, overlay),
+            &value_taint(yielded.borrow().as_value_ref(), solver, overlay),
+        );
+        overlay.set(result.borrow().as_value_ref(), taint);
+    }
 }
 
 fn transfer_taint(op: &Operation, operand_taint: AdviceTaintValue) -> AdviceTaintValue {
@@ -733,6 +901,52 @@ impl StorageTaintOverlay {
 
     fn set(&mut self, value: ValueRef, taint: AdviceTaintValue) {
         self.values.insert(value_key(value), taint);
+    }
+}
+
+impl StorageState {
+    fn store(&mut self, key: StorageKey, taint: AdviceTaintValue) {
+        self.storage.insert(key, taint);
+    }
+
+    fn load(&self, key: &StorageKey) -> AdviceTaintValue {
+        self.storage.get(key).cloned().unwrap_or_default()
+    }
+
+    fn store_dynamic_memory(&mut self, taint: AdviceTaintValue) {
+        self.dynamic_memory = LatticeLike::join(&self.dynamic_memory, &taint);
+    }
+
+    fn load_memory(&self, addr: u32) -> AdviceTaintValue {
+        LatticeLike::join(&self.load(&StorageKey::Memory(addr)), &self.dynamic_memory)
+    }
+
+    fn load_dynamic_memory(&self) -> AdviceTaintValue {
+        self.storage
+            .iter()
+            .filter_map(|(key, taint)| {
+                if matches!(key, StorageKey::Memory(_)) {
+                    Some(taint)
+                } else {
+                    None
+                }
+            })
+            .fold(self.dynamic_memory.clone(), |acc, taint| LatticeLike::join(&acc, taint))
+    }
+
+    fn join(&self, other: &Self) -> Self {
+        let mut storage = self.storage.clone();
+        for (key, taint) in other.storage.iter() {
+            storage
+                .entry(key.clone())
+                .and_modify(|current| *current = LatticeLike::join(current, taint))
+                .or_insert_with(|| taint.clone());
+        }
+
+        Self {
+            storage,
+            dynamic_memory: LatticeLike::join(&self.dynamic_memory, &other.dynamic_memory),
+        }
     }
 }
 

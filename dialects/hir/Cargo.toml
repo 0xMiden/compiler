@@ -22,6 +22,7 @@ std = ["midenc-hir/std"]
 log.workspace = true
 midenc-dialect-arith.workspace = true
 midenc-dialect-cf.workspace = true
+midenc-dialect-scf.workspace = true
 midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true
 midenc-hir-transform.workspace = true
@@ -29,6 +30,5 @@ midenc-hir-transform.workspace = true
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 litcheck-filecheck.workspace = true
-midenc-dialect-scf = { path = "../scf" }
 midenc-expect-test = { path = "../../tools/expect-test" }
 midenc-hir = { path = "../../hir", features = ["logging"] }
