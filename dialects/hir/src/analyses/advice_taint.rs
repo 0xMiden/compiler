@@ -667,6 +667,9 @@ impl Analysis for AdviceTaintAnalysis {
 #[derive(Default)]
 struct StorageTaintOverlay {
     values: BTreeMap<String, AdviceTaintValue>,
+    // Call simulation uses scopes so callee-local SSA values can be recomputed per call site
+    // without stale memory facts from earlier call contexts affecting return taint.
+    scopes: Vec<BTreeMap<String, AdviceTaintValue>>,
 }
 
 #[derive(Clone, Default, Eq, PartialEq)]
@@ -906,21 +909,26 @@ fn transfer_storage_call(
 
     let mut callee_state = state.memory_only();
     call_stack.push(callee_name);
+    overlay.push_scope();
     transfer_region(callee_region, &mut callee_state, solver, overlay, call_stack);
+    let result_taints =
+        call_result_taints_from_callee_returns(call.as_operation(), callee_region, solver, overlay);
+    let scoped_values = overlay.pop_scope();
+    overlay.merge_values(scoped_values);
     call_stack.pop();
 
-    overlay_call_results_from_callee_returns(call.as_operation(), callee_region, solver, overlay);
+    overlay_call_results(call.as_operation(), result_taints, overlay);
     state.replace_memory_from(&callee_state);
 }
 
-fn overlay_call_results_from_callee_returns(
+fn call_result_taints_from_callee_returns(
     call: &Operation,
     callee_region: RegionRef,
     solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-) {
+    overlay: &StorageTaintOverlay,
+) -> Vec<AdviceTaintValue> {
     if !call.has_results() {
-        return;
+        return Vec::new();
     }
 
     let mut result_taints = vec![AdviceTaintValue::clean(); call.results().all().len()];
@@ -937,7 +945,14 @@ fn overlay_call_results_from_callee_returns(
             *result_taint = LatticeLike::join(result_taint, &taint);
         }
     });
+    result_taints
+}
 
+fn overlay_call_results(
+    call: &Operation,
+    result_taints: Vec<AdviceTaintValue>,
+    overlay: &mut StorageTaintOverlay,
+) {
     for (result, taint) in call.results().all().iter().zip(result_taints) {
         overlay.set(result.borrow().as_value_ref(), taint);
     }
@@ -958,7 +973,7 @@ fn transfer_storage_results(
             LatticeLike::join(&acc, &taint)
         });
     let result_taint = transfer_taint(operation, operand_taint);
-    if result_taint.is_clean() {
+    if result_taint.is_clean() && !overlay.is_scoped() {
         return;
     }
 
@@ -1059,12 +1074,53 @@ fn transfer_taint(op: &Operation, operand_taint: AdviceTaintValue) -> AdviceTain
 
 impl StorageTaintOverlay {
     fn get(&self, value: ValueRef) -> Option<&AdviceTaintValue> {
-        self.values.get(&value_key(value))
+        let key = value_key(value);
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(&key))
+            .or_else(|| self.values.get(&key))
     }
 
     fn set(&mut self, value: ValueRef, taint: AdviceTaintValue) {
-        self.values
-            .entry(value_key(value))
+        if let Some(scope) = self.scopes.last_mut() {
+            Self::join_value(scope, value_key(value), taint);
+        } else {
+            Self::join_value(&mut self.values, value_key(value), taint);
+        }
+    }
+
+    fn push_scope(&mut self) {
+        self.scopes.push(BTreeMap::new());
+    }
+
+    fn pop_scope(&mut self) -> BTreeMap<String, AdviceTaintValue> {
+        self.scopes.pop().expect("storage taint overlay scope underflow")
+    }
+
+    fn merge_values(&mut self, values: BTreeMap<String, AdviceTaintValue>) {
+        if let Some(scope) = self.scopes.last_mut() {
+            for (key, taint) in values {
+                Self::join_value(scope, key, taint);
+            }
+        } else {
+            for (key, taint) in values {
+                Self::join_value(&mut self.values, key, taint);
+            }
+        }
+    }
+
+    fn is_scoped(&self) -> bool {
+        !self.scopes.is_empty()
+    }
+
+    fn join_value(
+        values: &mut BTreeMap<String, AdviceTaintValue>,
+        key: String,
+        taint: AdviceTaintValue,
+    ) {
+        values
+            .entry(key)
             .and_modify(|current| *current = LatticeLike::join(current, &taint))
             .or_insert(taint);
     }
