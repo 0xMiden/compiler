@@ -84,6 +84,35 @@ impl AdviceTaintExitFinding {
     }
 }
 
+/// An unconstrained value is passed to an external function parameter with a constrained type.
+#[derive(Debug, Clone)]
+pub struct AdviceTaintExternalCallFinding {
+    /// The external call operation that receives the unconstrained argument.
+    pub call: OperationName,
+    /// The call operation span.
+    pub call_span: SourceSpan,
+    /// The zero-based external argument index.
+    pub argument_index: usize,
+    /// The constrained parameter type expected by the external callee.
+    pub parameter_type: Type,
+    /// The operation span from which the unconstrained value originated.
+    pub advice_span: SourceSpan,
+    /// The origin represented by `advice_span`.
+    pub origin: AdviceTaintOrigin,
+    /// The nearest containing function, when available.
+    pub function: Option<SymbolName>,
+}
+
+impl AdviceTaintExternalCallFinding {
+    pub fn diagnostic(&self) -> AdviceTaintDiagnostic {
+        AdviceTaintDiagnostic::new_external_call(self)
+    }
+
+    pub fn into_report(&self) -> Report {
+        self.diagnostic().into_report()
+    }
+}
+
 /// The kind of unconstrained value origin tracked by advice taint.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum AdviceTaintOriginKind {
@@ -231,6 +260,46 @@ impl AdviceTaintDiagnostic {
                 finding.advice_span,
             )))
             .collect();
+
+        Self {
+            message,
+            help,
+            labels,
+        }
+    }
+
+    fn new_external_call(finding: &AdviceTaintExternalCallFinding) -> Self {
+        let function = finding
+            .function
+            .map(|name| format!(" in function '{}'", name.as_str()))
+            .unwrap_or_default();
+        let (subject, origin_label) = match finding.origin.kind {
+            AdviceTaintOriginKind::Advice => {
+                ("unconstrained advice value", "unconstrained advice originates here".to_string())
+            }
+            AdviceTaintOriginKind::ExternalCall => (
+                "unconstrained external call result",
+                "external call result is modeled as unconstrained here".to_string(),
+            ),
+        };
+        let message = format!(
+            "{subject} is passed to external parameter #{} of type `{}`{}",
+            finding.argument_index, finding.parameter_type, function
+        );
+        let labels = vec![
+            LabeledSpan::new_primary_with_span(
+                Some(format!(
+                    "`{}` passes an unconstrained value to external parameter #{} typed `{}`",
+                    finding.call, finding.argument_index, finding.parameter_type
+                )),
+                finding.call_span,
+            ),
+            LabeledSpan::new_with_span(Some(origin_label), finding.advice_span),
+        ];
+        let help = "add an explicit constraint before passing this value to the external callee, \
+                    or provide an analyzable callee body/summary proving the parameter is handled \
+                    safely"
+            .to_string();
 
         Self {
             message,
@@ -452,8 +521,14 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
         results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         _solver: &mut DataFlowSolver,
     ) {
-        let value = AdviceTaintValue::external_call(call.as_operation().span());
-        for result in results {
+        let span = call.as_operation().span();
+        for (result_value, result) in call.as_operation().results().all().iter().zip(results) {
+            let result_value = result_value.borrow();
+            let value = if is_unconstrained_external_result_type(result_value.ty()) {
+                AdviceTaintValue::external_call(span)
+            } else {
+                AdviceTaintValue::clean()
+            };
             result.join(&value);
         }
     }
@@ -480,6 +555,7 @@ pub struct AdviceTaintAnalysis {
     storage_overlay: StorageTaintOverlay,
     findings: Vec<AdviceTaintFinding>,
     exit_findings: Vec<AdviceTaintExitFinding>,
+    external_call_findings: Vec<AdviceTaintExternalCallFinding>,
 }
 
 impl AdviceTaintAnalysis {
@@ -491,11 +567,20 @@ impl AdviceTaintAnalysis {
         &self.exit_findings
     }
 
+    pub fn external_call_findings(&self) -> &[AdviceTaintExternalCallFinding] {
+        &self.external_call_findings
+    }
+
     pub fn diagnostics(&self) -> Vec<AdviceTaintDiagnostic> {
         self.findings
             .iter()
             .map(AdviceTaintFinding::diagnostic)
             .chain(self.exit_findings.iter().map(AdviceTaintExitFinding::diagnostic))
+            .chain(
+                self.external_call_findings
+                    .iter()
+                    .map(AdviceTaintExternalCallFinding::diagnostic),
+            )
             .collect()
     }
 
@@ -504,6 +589,11 @@ impl AdviceTaintAnalysis {
             .iter()
             .map(AdviceTaintFinding::into_report)
             .chain(self.exit_findings.iter().map(AdviceTaintExitFinding::into_report))
+            .chain(
+                self.external_call_findings
+                    .iter()
+                    .map(AdviceTaintExternalCallFinding::into_report),
+            )
             .collect()
     }
 
@@ -540,6 +630,8 @@ impl Analysis for AdviceTaintAnalysis {
         self.storage_overlay = collect_storage_taint_overlay(op, &self.solver);
         self.findings = collect_findings(op, &self.solver, &self.storage_overlay);
         self.exit_findings = collect_exit_findings(op, &self.solver, &self.storage_overlay);
+        self.external_call_findings =
+            collect_external_call_findings(op, &self.solver, &self.storage_overlay);
         Ok(())
     }
 
@@ -792,6 +884,84 @@ fn collect_exit_findings(
     findings
 }
 
+fn collect_external_call_findings(
+    op: &Operation,
+    solver: &DataFlowSolver,
+    overlay: &StorageTaintOverlay,
+) -> Vec<AdviceTaintExternalCallFinding> {
+    let mut findings = Vec::new();
+    op.prewalk_all(|operation| {
+        let Some(call) = operation.as_trait::<dyn CallOpInterface>() else {
+            return;
+        };
+        if !is_external_call(call) {
+            return;
+        }
+
+        let Some(param_types) = external_call_param_types(call) else {
+            return;
+        };
+        let function = operation.nearest_parent_op::<builtin::Function>().map(|function| {
+            let function = function.borrow();
+            Symbol::name(&*function)
+        });
+        for (argument_index, (argument, parameter_type)) in
+            call.arguments().iter().zip(param_types.into_iter()).enumerate()
+        {
+            if !is_constrained_external_parameter_type(&parameter_type) {
+                continue;
+            }
+
+            let taint = value_taint(argument.borrow().as_value_ref(), solver, overlay);
+            if taint.is_clean() || !taint.has_unreported_origin() {
+                continue;
+            }
+
+            for origin in taint.unreported_origins() {
+                let finding = AdviceTaintExternalCallFinding {
+                    call: operation.name(),
+                    call_span: operation.span(),
+                    argument_index,
+                    parameter_type: parameter_type.clone(),
+                    advice_span: origin.span,
+                    origin,
+                    function,
+                };
+                if !findings.iter().any(|existing| same_external_call_finding(existing, &finding)) {
+                    findings.push(finding);
+                }
+            }
+        }
+    });
+    findings
+}
+
+fn is_external_call(call: &dyn CallOpInterface) -> bool {
+    let Some(callee) = call.resolve() else {
+        return true;
+    };
+    let callee = callee.borrow();
+    callee
+        .as_symbol_operation()
+        .downcast_ref::<builtin::Function>()
+        .is_some_and(Symbol::is_declaration)
+}
+
+fn external_call_param_types(call: &dyn CallOpInterface) -> Option<Vec<Type>> {
+    let callee = call.resolve()?;
+    let callee = callee.borrow();
+    let function = callee.as_symbol_operation().downcast_ref::<builtin::Function>()?;
+    Some(function.get_signature().params().iter().map(|param| param.ty.clone()).collect())
+}
+
+fn is_constrained_external_parameter_type(ty: &Type) -> bool {
+    matches!(ty, Type::U32 | Type::U16 | Type::U8 | Type::I1)
+}
+
+fn is_unconstrained_external_result_type(ty: &Type) -> bool {
+    matches!(ty, Type::Felt | Type::Array(_))
+}
+
 fn collect_call_contexts(
     root: &Operation,
     solver: &DataFlowSolver,
@@ -889,6 +1059,17 @@ fn same_exit_finding(lhs: &AdviceTaintExitFinding, rhs: &AdviceTaintExitFinding)
         && lhs.return_span == rhs.return_span
         && lhs.result_index == rhs.result_index
         && lhs.origin == rhs.origin
+}
+
+fn same_external_call_finding(
+    lhs: &AdviceTaintExternalCallFinding,
+    rhs: &AdviceTaintExternalCallFinding,
+) -> bool {
+    lhs.call == rhs.call
+        && lhs.call_span == rhs.call_span
+        && lhs.argument_index == rhs.argument_index
+        && lhs.origin == rhs.origin
+        && lhs.function == rhs.function
 }
 
 fn is_u32_presuming_sink(op: &Operation) -> bool {

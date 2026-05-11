@@ -34,7 +34,7 @@ use midenc_dialect_hir::{
     Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
     analyses::{
         AdviceTaintAnalysis, AdviceTaintContextKind, AdviceTaintDiagnostic, AdviceTaintExitFinding,
-        AdviceTaintFinding, AdviceTaintOriginKind,
+        AdviceTaintExternalCallFinding, AdviceTaintFinding, AdviceTaintOriginKind,
     },
 };
 use midenc_dialect_scf::{If, While};
@@ -3344,6 +3344,98 @@ end
 }
 
 #[test]
+fn advice_taint_treats_external_u32_results_as_constrained() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures.insert("::dep::source".to_owned(), masm_signature([], [Type::U32]));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry(rhs: u32) -> u32
+exec.::dep::source
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_reports_raw_advice_passed_to_external_u32_parameter() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures.insert("::dep::consume".to_owned(), masm_signature([Type::U32], []));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry
+adv_push.1
+exec.::dep::consume
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        &external_signatures,
+        context,
+    )?;
+
+    let findings = advice_taint_external_call_findings(output.module)?;
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].argument_index, 0);
+    assert_eq!(findings[0].parameter_type, Type::U32);
+    assert_eq!(findings[0].origin.kind, AdviceTaintOriginKind::Advice);
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert_eq!(diagnostics.len(), 1);
+    assert!(
+        diagnostics[0]
+            .message()
+            .contains("unconstrained advice value is passed to external parameter #0"),
+        "{}",
+        diagnostics[0].message()
+    );
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_allows_raw_advice_passed_to_external_felt_parameter() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures.insert("::dep::consume".to_owned(), masm_signature([Type::Felt], []));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry
+adv_push.1
+exec.::dep::consume
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        &external_signatures,
+        context,
+    )?;
+
+    let findings = advice_taint_external_call_findings(output.module)?;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_treats_u32assert_as_external_result_sanitizer() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
@@ -4227,6 +4319,14 @@ fn advice_taint_exit_findings(module: builtin::ModuleRef) -> Result<Vec<AdviceTa
     let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
     let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
     Ok(analysis.exit_findings().to_vec())
+}
+
+fn advice_taint_external_call_findings(
+    module: builtin::ModuleRef,
+) -> Result<Vec<AdviceTaintExternalCallFinding>> {
+    let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    Ok(analysis.external_call_findings().to_vec())
 }
 
 fn advice_taint_diagnostics(module: builtin::ModuleRef) -> Result<Vec<AdviceTaintDiagnostic>> {
