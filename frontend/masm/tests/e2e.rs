@@ -155,14 +155,53 @@ end
     );
 }
 
+#[test]
+fn e2e_roundtrip_memory_load_store() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry(a: felt) -> felt
+    mem_store.0
+    mem_load.0
+    add.3
+end
+"#,
+        &[41],
+        1,
+    );
+}
+
+#[test]
+fn e2e_roundtrip_advice_push() {
+    assert_roundtrip_outputs_with_advice(
+        r#"
+pub proc entry(a: felt) -> felt
+    adv_push.1
+    add
+end
+"#,
+        &[37],
+        &[5],
+        1,
+    );
+}
+
 fn assert_roundtrip_outputs(source: &str, inputs: &[u64], num_outputs: usize) {
+    assert_roundtrip_outputs_with_advice(source, inputs, &[], num_outputs);
+}
+
+fn assert_roundtrip_outputs_with_advice(
+    source: &str,
+    inputs: &[u64],
+    advice: &[u64],
+    num_outputs: usize,
+) {
     let context = e2e_context();
     let original = assemble_original_program(source, &context);
     let roundtripped = assemble_roundtripped_program(source, context.clone());
     let inputs = inputs.iter().copied().map(Felt::new).collect::<Vec<_>>();
 
-    let original_outputs = execute_program(&original, &inputs, num_outputs);
-    let roundtripped_outputs = execute_program(&roundtripped, &inputs, num_outputs);
+    let original_outputs = execute_program(&original, &inputs, advice, num_outputs);
+    let roundtripped_outputs = execute_program(&roundtripped, &inputs, advice, num_outputs);
 
     assert_eq!(
         roundtripped_outputs, original_outputs,
@@ -292,16 +331,19 @@ fn wrap_module_in_component(
     component
 }
 
-fn execute_program(program: &Program, inputs: &[Felt], num_outputs: usize) -> Vec<Felt> {
+fn execute_program(
+    program: &Program,
+    inputs: &[Felt],
+    advice: &[u64],
+    num_outputs: usize,
+) -> Vec<Felt> {
     let stack_inputs = StackInputs::new(inputs).expect("test inputs should fit on VM stack");
+    let advice_inputs = AdviceInputs::default()
+        .with_stack_values(advice.iter().copied())
+        .expect("test advice inputs should fit on VM advice stack");
     let mut host = DefaultHost::default();
-    let trace = execute_sync(
-        program,
-        stack_inputs,
-        AdviceInputs::default(),
-        &mut host,
-        ExecutionOptions::default(),
-    )
-    .expect("program should execute");
+    let trace =
+        execute_sync(program, stack_inputs, advice_inputs, &mut host, ExecutionOptions::default())
+            .expect("program should execute");
     trace.stack_outputs().get_num_elements(num_outputs).to_vec()
 }
