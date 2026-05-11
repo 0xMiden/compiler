@@ -3541,6 +3541,37 @@ end
 }
 
 #[test]
+fn advice_taint_does_not_retaint_clean_local_call_result_from_tainted_argument() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc clean(raw: felt) -> u32
+drop
+push.0
+u32assert
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+exec.clean
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module.clone())?;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_treats_external_call_results_as_unconstrained() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
@@ -3606,6 +3637,39 @@ end
 
     let findings = advice_taint_findings(output.module)?;
     assert!(findings.is_empty(), "{findings:#?}");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_does_not_retaint_constrained_external_result_from_tainted_argument() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures
+        .insert("::dep::clean".to_owned(), masm_signature([Type::Felt], [Type::U32]));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+exec.::dep::clean
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module.clone())?;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    let external_findings = advice_taint_external_call_findings(output.module.clone())?;
+    assert!(external_findings.is_empty(), "{external_findings:#?}");
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
 
     Ok(())
 }

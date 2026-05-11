@@ -812,6 +812,7 @@ fn transfer_storage_operation(
 
     if let Some(call) = operation.as_trait::<dyn CallOpInterface>() {
         transfer_storage_call(call, state, solver, overlay, call_stack);
+        return;
     }
 
     transfer_storage_results(operation, solver, overlay);
