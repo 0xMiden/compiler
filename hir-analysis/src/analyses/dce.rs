@@ -6,10 +6,10 @@ use core::{
 };
 
 use midenc_hir::{
-    AttributeRef, Block, BlockRef, CallOpInterface, CallableOpInterface, EntityWithId, Forward,
-    Operation, OperationRef, ProgramPoint, RegionBranchOpInterface, RegionBranchPoint,
-    RegionBranchTerminatorOpInterface, RegionSuccessorIter, Report, SmallVec, SourceSpan, Spanned,
-    Symbol, SymbolManager, SymbolMap, SymbolTable, ValueRef,
+    AsValueRange, AttributeRef, Block, BlockRef, CallOpInterface, CallableOpInterface,
+    EntityWithId, Forward, Operation, OperationRef, ProgramPoint, RegionBranchOpInterface,
+    RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionSuccessorIter, Report, SmallVec,
+    SourceSpan, Spanned, Symbol, SymbolManager, SymbolMap, SymbolTable, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     pass::AnalysisManager,
     traits::{BranchOpInterface, ReturnLike},
@@ -721,7 +721,9 @@ impl DeadCodeAnalysis {
             let mut callsites = solver.get_or_create_mut::<PredecessorState, _>(
                 ProgramPoint::after(callable.as_symbol_operation()),
             );
-            let change_result = callsites.change(|ps| ps.join(call.as_operation_ref()));
+            let change_result = callsites.change(|ps| {
+                ps.join_with_inputs(call.as_operation_ref(), call.arguments().as_value_range())
+            });
             log::debug!(
                 target: self.debug_name(), "adding call-site {} to predecessor state for its callee: {change_result}",
                 call.as_operation()
@@ -892,7 +894,9 @@ impl DeadCodeAnalysis {
             let point = ProgramPoint::after(&*predecessor);
             let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
             if can_resolve {
-                let change_result = predecessors.change(|ps| ps.join(op.as_operation_ref()));
+                let change_result = predecessors.change(|ps| {
+                    ps.join_with_inputs(op.as_operation_ref(), op.operands().as_value_range())
+                });
                 log::debug!(target: self.debug_name(), "adding {} as predecessor for {point}: {change_result}", op.name())
             } else {
                 // If the terminator is not a return-like, then conservatively assume we can't

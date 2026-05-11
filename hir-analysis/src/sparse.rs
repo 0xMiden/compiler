@@ -247,6 +247,10 @@ impl<A: SparseForwardDataFlowAnalysis> SparseForwardDataFlowAnalysis
         <A as SparseForwardDataFlowAnalysis>::set_to_entry_state(&self.analysis, lattice);
     }
 
+    fn allow_unknown_predecessors(&self) -> bool {
+        <A as SparseForwardDataFlowAnalysis>::allow_unknown_predecessors(&self.analysis)
+    }
+
     fn visit_external_call(
         &self,
         call: &dyn CallOpInterface,
@@ -259,6 +263,24 @@ impl<A: SparseForwardDataFlowAnalysis> SparseForwardDataFlowAnalysis
             call,
             arguments,
             results,
+            solver,
+        );
+    }
+
+    fn visit_call_control_flow_transfer(
+        &self,
+        call: &dyn CallOpInterface,
+        action: crate::CallControlFlowAction,
+        before: &[crate::AnalysisStateGuard<'_, Self::Lattice>],
+        after: &mut [crate::AnalysisStateGuardMut<'_, Self::Lattice>],
+        solver: &mut DataFlowSolver,
+    ) {
+        <A as SparseForwardDataFlowAnalysis>::visit_call_control_flow_transfer(
+            &self.analysis,
+            call,
+            action,
+            before,
+            after,
             solver,
         );
     }
