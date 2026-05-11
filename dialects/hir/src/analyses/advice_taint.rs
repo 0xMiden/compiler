@@ -509,6 +509,10 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
         results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         _solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
+        if op.is::<AdvicePipe>() {
+            return join_advice_pipe_results(op, operands, results);
+        }
+
         let operand_taint =
             AdviceTaintValue::join_all(operands.iter().map(|operand| operand.value()));
         let result_taint = transfer_taint(op, operand_taint);
@@ -546,6 +550,25 @@ fn join_results(
     for result in results {
         result.join(value);
     }
+    Ok(())
+}
+
+fn join_advice_pipe_results(
+    op: &Operation,
+    operands: &[AnalysisStateGuard<'_, Lattice<AdviceTaintValue>>],
+    results: &mut [AnalysisStateGuardMut<'_, Lattice<AdviceTaintValue>>],
+) -> Result<(), Report> {
+    const RAW_ADVICE_RESULTS: usize = 8;
+
+    for (index, result) in results.iter_mut().enumerate() {
+        let taint = if index < RAW_ADVICE_RESULTS {
+            AdviceTaintValue::raw(op.span())
+        } else {
+            operands.get(index).map(|operand| operand.value().clone()).unwrap_or_default()
+        };
+        result.join(&taint);
+    }
+
     Ok(())
 }
 
@@ -753,6 +776,23 @@ fn transfer_storage_operation(
         return;
     }
 
+    if let Some(pipe) = operation.downcast_ref::<AdvicePipe>() {
+        let taint = AdviceTaintValue::raw(operation.span());
+        let address = pipe.stack().iter().nth(12).and_then(|addr| {
+            let addr = addr.borrow().as_value_ref();
+            memory_address(addr)
+        });
+        if let Some(address) = address {
+            for offset in 0..8 {
+                state.store(StorageKey::Memory(address + offset), taint.clone());
+            }
+        } else {
+            state.store_dynamic_memory(taint);
+        }
+        transfer_advice_pipe_storage_results(pipe, solver, overlay);
+        return;
+    }
+
     transfer_storage_results(operation, solver, overlay);
 }
 
@@ -826,6 +866,28 @@ fn transfer_storage_results(
     }
 }
 
+fn transfer_advice_pipe_storage_results(
+    pipe: &AdvicePipe,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+) {
+    const RAW_ADVICE_RESULTS: usize = 8;
+
+    let operation = pipe.as_operation();
+    for (index, result) in operation.results().all().iter().enumerate() {
+        let taint = if index < RAW_ADVICE_RESULTS {
+            AdviceTaintValue::raw(operation.span())
+        } else {
+            pipe.stack()
+                .iter()
+                .nth(index)
+                .map(|operand| value_taint(operand.borrow().as_value_ref(), solver, overlay))
+                .unwrap_or_default()
+        };
+        overlay.set(result.borrow().as_value_ref(), taint);
+    }
+}
+
 fn overlay_if_results(if_op: &scf::If, solver: &DataFlowSolver, overlay: &mut StorageTaintOverlay) {
     if !if_op.as_operation().has_results() {
         return;
@@ -879,7 +941,7 @@ fn overlay_while_results(
 }
 
 fn transfer_taint(op: &Operation, operand_taint: AdviceTaintValue) -> AdviceTaintValue {
-    if op.is::<AdvicePop>() || op.is::<AdviceLoadWord>() || op.is::<AdvicePipe>() {
+    if op.is::<AdvicePop>() || op.is::<AdviceLoadWord>() {
         return AdviceTaintValue::raw(op.span());
     }
 

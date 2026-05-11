@@ -2862,6 +2862,80 @@ end
 }
 
 #[test]
+fn advice_taint_preserves_non_advice_adv_pipe_outputs() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let params = [
+        "v0: felt",
+        "v1: felt",
+        "v2: felt",
+        "v3: felt",
+        "v4: felt",
+        "v5: felt",
+        "v6: felt",
+        "v7: felt",
+        "lhs: u32",
+        "rhs: u32",
+        "v10: felt",
+        "v11: felt",
+        "addr: felt",
+    ]
+    .join(", ");
+    let source = format!(
+        r#"
+pub proc entry({params}) -> u32
+adv_pipe
+repeat.8
+    drop
+end
+movup.4
+drop
+movup.3
+drop
+movup.2
+drop
+u32wrapping_add
+end
+"#
+    );
+    let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "expected preserved adv_pipe outputs to remain clean");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_propagates_adv_pipe_memory_writes() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry(rhs: u32) -> u32
+push.0
+repeat.12
+    push.0
+end
+adv_pipe
+repeat.13
+    drop
+end
+mem_load.0
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_treats_u32assert_as_sanitizer() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
