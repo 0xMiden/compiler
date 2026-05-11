@@ -3457,6 +3457,90 @@ end
 }
 
 #[test]
+fn advice_taint_propagates_memory_written_by_local_callee() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc writer()
+adv_push.1
+mem_store.0
+end
+
+pub proc entry(rhs: u32) -> u32
+exec.writer
+mem_load.0
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_propagates_memory_read_by_local_callee() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc reader(rhs: u32) -> u32
+mem_load.0
+u32wrapping_add
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+mem_store.0
+call.reader
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("reader"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_propagates_memory_returned_by_local_callee() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc reader() -> felt
+mem_load.0
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+mem_store.0
+exec.reader
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_treats_external_call_results_as_unconstrained() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();

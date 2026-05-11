@@ -695,14 +695,22 @@ fn collect_storage_taint_for_operation_tree(
     if let Some(function) = op.downcast_ref::<builtin::Function>() {
         if !function.body().is_empty() {
             let mut state = StorageState::default();
-            transfer_region(function.body().as_region_ref(), &mut state, solver, overlay);
+            let mut call_stack = vec![Symbol::name(function)];
+            transfer_region(
+                function.body().as_region_ref(),
+                &mut state,
+                solver,
+                overlay,
+                &mut call_stack,
+            );
         }
         return;
     }
 
     for region in op.regions() {
         let mut state = StorageState::default();
-        transfer_region(region.as_region_ref(), &mut state, solver, overlay);
+        let mut call_stack = Vec::new();
+        transfer_region(region.as_region_ref(), &mut state, solver, overlay, &mut call_stack);
     }
 }
 
@@ -711,11 +719,12 @@ fn transfer_region(
     state: &mut StorageState,
     solver: &DataFlowSolver,
     overlay: &mut StorageTaintOverlay,
+    call_stack: &mut Vec<SymbolName>,
 ) {
     let region = region.borrow();
     for block in region.body() {
         for operation in block.body() {
-            transfer_storage_operation(&operation, state, solver, overlay);
+            transfer_storage_operation(&operation, state, solver, overlay, call_stack);
         }
     }
 }
@@ -725,22 +734,30 @@ fn transfer_storage_operation(
     state: &mut StorageState,
     solver: &DataFlowSolver,
     overlay: &mut StorageTaintOverlay,
+    call_stack: &mut Vec<SymbolName>,
 ) {
     if let Some(function) = operation.downcast_ref::<builtin::Function>() {
         if !function.body().is_empty() {
             let mut function_state = StorageState::default();
-            transfer_region(function.body().as_region_ref(), &mut function_state, solver, overlay);
+            let mut function_call_stack = vec![Symbol::name(function)];
+            transfer_region(
+                function.body().as_region_ref(),
+                &mut function_state,
+                solver,
+                overlay,
+                &mut function_call_stack,
+            );
         }
         return;
     }
 
     if let Some(if_op) = operation.downcast_ref::<scf::If>() {
-        transfer_storage_if(if_op, state, solver, overlay);
+        transfer_storage_if(if_op, state, solver, overlay, call_stack);
         return;
     }
 
     if let Some(while_op) = operation.downcast_ref::<scf::While>() {
-        transfer_storage_while(while_op, state, solver, overlay);
+        transfer_storage_while(while_op, state, solver, overlay, call_stack);
         return;
     }
 
@@ -793,6 +810,10 @@ fn transfer_storage_operation(
         return;
     }
 
+    if let Some(call) = operation.as_trait::<dyn CallOpInterface>() {
+        transfer_storage_call(call, state, solver, overlay, call_stack);
+    }
+
     transfer_storage_results(operation, solver, overlay);
 }
 
@@ -801,14 +822,27 @@ fn transfer_storage_if(
     state: &mut StorageState,
     solver: &DataFlowSolver,
     overlay: &mut StorageTaintOverlay,
+    call_stack: &mut Vec<SymbolName>,
 ) {
     let entry_state = state.clone();
     let mut then_state = entry_state.clone();
-    transfer_region(if_op.then_body().as_region_ref(), &mut then_state, solver, overlay);
+    transfer_region(
+        if_op.then_body().as_region_ref(),
+        &mut then_state,
+        solver,
+        overlay,
+        call_stack,
+    );
 
     let mut else_state = entry_state;
     if !if_op.else_body().is_empty() {
-        transfer_region(if_op.else_body().as_region_ref(), &mut else_state, solver, overlay);
+        transfer_region(
+            if_op.else_body().as_region_ref(),
+            &mut else_state,
+            solver,
+            overlay,
+            call_stack,
+        );
     }
 
     overlay_if_results(if_op, solver, overlay);
@@ -820,6 +854,7 @@ fn transfer_storage_while(
     state: &mut StorageState,
     solver: &DataFlowSolver,
     overlay: &mut StorageTaintOverlay,
+    call_stack: &mut Vec<SymbolName>,
 ) {
     let entry_state = state.clone();
     let mut loop_state = state.clone();
@@ -830,8 +865,20 @@ fn transfer_storage_while(
     loop {
         let previous = loop_state.clone();
         let mut iteration = loop_state.clone();
-        transfer_region(while_op.before().as_region_ref(), &mut iteration, solver, overlay);
-        transfer_region(while_op.after().as_region_ref(), &mut iteration, solver, overlay);
+        transfer_region(
+            while_op.before().as_region_ref(),
+            &mut iteration,
+            solver,
+            overlay,
+            call_stack,
+        );
+        transfer_region(
+            while_op.after().as_region_ref(),
+            &mut iteration,
+            solver,
+            overlay,
+            call_stack,
+        );
         loop_state = loop_state.join(&iteration);
         if loop_state == previous {
             break;
@@ -840,6 +887,59 @@ fn transfer_storage_while(
 
     overlay_while_results(while_op, solver, overlay);
     *state = entry_state.join(&loop_state);
+}
+
+fn transfer_storage_call(
+    call: &dyn CallOpInterface,
+    state: &mut StorageState,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+    call_stack: &mut Vec<SymbolName>,
+) {
+    let Some((callee_name, callee_region)) = resolved_defined_callee(call) else {
+        return;
+    };
+    if call_stack.contains(&callee_name) {
+        return;
+    }
+
+    let mut callee_state = state.memory_only();
+    call_stack.push(callee_name);
+    transfer_region(callee_region, &mut callee_state, solver, overlay, call_stack);
+    call_stack.pop();
+
+    overlay_call_results_from_callee_returns(call.as_operation(), callee_region, solver, overlay);
+    state.replace_memory_from(&callee_state);
+}
+
+fn overlay_call_results_from_callee_returns(
+    call: &Operation,
+    callee_region: RegionRef,
+    solver: &DataFlowSolver,
+    overlay: &mut StorageTaintOverlay,
+) {
+    if !call.has_results() {
+        return;
+    }
+
+    let mut result_taints = vec![AdviceTaintValue::clean(); call.results().all().len()];
+    callee_region.borrow().prewalk_all(|operation| {
+        let Some(ret) = operation.downcast_ref::<builtin::Ret>() else {
+            return;
+        };
+
+        for (index, operand) in ret.values().iter().enumerate() {
+            let Some(result_taint) = result_taints.get_mut(index) else {
+                continue;
+            };
+            let taint = value_taint(operand.borrow().as_value_ref(), solver, overlay);
+            *result_taint = LatticeLike::join(result_taint, &taint);
+        }
+    });
+
+    for (result, taint) in call.results().all().iter().zip(result_taints) {
+        overlay.set(result.borrow().as_value_ref(), taint);
+    }
 }
 
 fn transfer_storage_results(
@@ -962,7 +1062,10 @@ impl StorageTaintOverlay {
     }
 
     fn set(&mut self, value: ValueRef, taint: AdviceTaintValue) {
-        self.values.insert(value_key(value), taint);
+        self.values
+            .entry(value_key(value))
+            .and_modify(|current| *current = LatticeLike::join(current, &taint))
+            .or_insert(taint);
     }
 }
 
@@ -996,6 +1099,35 @@ impl StorageState {
             .fold(self.dynamic_memory.clone(), |acc, taint| LatticeLike::join(&acc, taint))
     }
 
+    fn memory_only(&self) -> Self {
+        Self {
+            storage: self
+                .storage
+                .iter()
+                .filter_map(|(key, taint)| {
+                    if matches!(key, StorageKey::Memory(_)) {
+                        Some((key.clone(), taint.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            dynamic_memory: self.dynamic_memory.clone(),
+        }
+    }
+
+    fn replace_memory_from(&mut self, other: &Self) {
+        self.storage.retain(|key, _| !matches!(key, StorageKey::Memory(_)));
+        self.storage.extend(other.storage.iter().filter_map(|(key, taint)| {
+            if matches!(key, StorageKey::Memory(_)) {
+                Some((key.clone(), taint.clone()))
+            } else {
+                None
+            }
+        }));
+        self.dynamic_memory = other.dynamic_memory.clone();
+    }
+
     fn join(&self, other: &Self) -> Self {
         let mut storage = self.storage.clone();
         for (key, taint) in other.storage.iter() {
@@ -1010,6 +1142,16 @@ impl StorageState {
             dynamic_memory: LatticeLike::join(&self.dynamic_memory, &other.dynamic_memory),
         }
     }
+}
+
+fn resolved_defined_callee(call: &dyn CallOpInterface) -> Option<(SymbolName, RegionRef)> {
+    let callee = call.resolve()?;
+    let callee = callee.borrow();
+    let function = callee.as_symbol_operation().downcast_ref::<builtin::Function>()?;
+    if Symbol::is_declaration(function) {
+        return None;
+    }
+    Some((Symbol::name(function), function.body().as_region_ref()))
 }
 
 impl From<LocalVariable> for StorageKey {
