@@ -28,6 +28,8 @@ path = "tests/mod.rs"
 midenc-compile.workspace = true
 midenc-session.workspace = true
 midenc-log.workspace = true
+miden-core.workspace = true
+miden-mast-package.workspace = true
 log.workspace = true
 clap.workspace = true
 anyhow.workspace = true
@@ -40,7 +42,3 @@ semver.workspace = true
 liquid = "0.26"
 tempfile = "3.19"
 walkdir = "2.5"
-
-[dev-dependencies]
-# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
-miden-mast-package.workspace = true
