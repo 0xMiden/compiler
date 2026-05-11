@@ -66,6 +66,46 @@ end
 }
 
 #[test]
+fn e2e_roundtrip_u32cast_truncates_felt() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry() -> u32
+    push.4294967297
+    u32cast
+end
+"#,
+        &[],
+        1,
+    );
+}
+
+#[test]
+fn e2e_roundtrip_word_immediate_order() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry() -> (felt, felt, felt, felt)
+    push.[1,2,3,4]
+end
+"#,
+        &[],
+        4,
+    );
+}
+
+#[test]
+fn e2e_roundtrip_word_slice_order() {
+    assert_roundtrip_outputs(
+        r#"
+pub proc entry() -> (felt, felt)
+    push.[1,2,3,4][1..3]
+end
+"#,
+        &[],
+        2,
+    );
+}
+
+#[test]
 fn e2e_roundtrip_local_exec() {
     assert_roundtrip_outputs(
         r#"

@@ -75,7 +75,6 @@ define_instruction_semantics! {
         Instruction::Pow2,
         Instruction::Exp,
         Instruction::ExpImm(_),
-        Instruction::ExpBitLength(_),
         Instruction::Not,
         Instruction::And,
         Instruction::Or,
@@ -285,6 +284,7 @@ define_instruction_semantics! {
         Instruction::ProcRef(_),
     ],
     unsupported: [
+        Instruction::ExpBitLength(_),
         Instruction::DynExec,
         Instruction::DynCall,
     ],

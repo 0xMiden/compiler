@@ -796,7 +796,8 @@ impl<'a> ProcedureLifter<'a> {
             U32Cto => self.unary_with_type(builder, Type::U32, span, |builder, value, span| {
                 builder.cto(value, span)
             }),
-            U32Cast | U32Assert => self.u32_assert_n(1, span, builder),
+            U32Cast => self.u32_cast(span, builder),
+            U32Assert => self.u32_assert_n(1, span, builder),
             U32AssertWithError(message) => self.u32_assert_n_with_message(
                 1,
                 Some(immediate_error_message(message)?),
@@ -1018,11 +1019,9 @@ impl<'a> ProcedureLifter<'a> {
             Pow2 => self.unary_with_type(builder, Type::Felt, span, |builder, value, span| {
                 builder.pow2(value, span)
             }),
-            Exp | ExpBitLength(_) => {
-                self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {
-                    builder.exp(lhs, rhs, span)
-                })
-            }
+            Exp => self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {
+                builder.exp(lhs, rhs, span)
+            }),
             ExpImm(value) => {
                 self.felt_binary_imm(builder, value, span, |builder, lhs, rhs, span| {
                     builder.exp(lhs, rhs, span)
@@ -1209,7 +1208,7 @@ impl<'a> ProcedureLifter<'a> {
         span: SourceSpan,
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) {
-        for value in value.0 {
+        for value in value.0.into_iter().rev() {
             self.push_value(builder.felt(value, span), span);
         }
     }
@@ -1227,7 +1226,13 @@ impl<'a> ProcedureLifter<'a> {
                 range
             )));
         };
-        for value in values {
+        if values.is_empty() {
+            return Err(error::error(format!(
+                "empty push word slice range {:?} at {span:?}",
+                range
+            )));
+        }
+        for value in values.iter().rev() {
             self.push_value(builder.felt(*value, span), span);
         }
         Ok(())
@@ -2269,6 +2274,24 @@ impl<'a> ProcedureLifter<'a> {
         let (high, low) = builder.split2(value, Type::U32, span)?;
         self.push_value(high, span);
         self.push_value(low, span);
+        Ok(())
+    }
+
+    fn u32_cast(
+        &mut self,
+        span: SourceSpan,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        let value = self.pop(span)?.value;
+        let ty = value.borrow().ty().clone();
+        let result = if ty == Type::U32 {
+            value
+        } else if ty == Type::Felt {
+            builder.trunc(value, Type::U32, span)?
+        } else {
+            builder.cast(value, Type::U32, span)?
+        };
+        self.push_value(result, span);
         Ok(())
     }
 

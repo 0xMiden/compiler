@@ -291,7 +291,7 @@ impl<'a> InferState<'a> {
                 self.push(Type::Felt);
                 Ok(())
             }
-            Exp | ExpBitLength(_) => {
+            Exp => {
                 self.pop_with_type(Type::Felt, span)?;
                 self.pop_with_type(Type::Felt, span)?;
                 self.push(Type::Felt);
@@ -411,7 +411,12 @@ impl<'a> InferState<'a> {
                 self.push(Type::I1);
                 Ok(())
             }
-            U32Cast | U32Assert | U32AssertWithError(_) => self.constrain_top_n(1, Type::U32, span),
+            U32Cast => {
+                self.pop_with_type(Type::Felt, span)?;
+                self.push(Type::U32);
+                Ok(())
+            }
+            U32Assert | U32AssertWithError(_) => self.constrain_top_n(1, Type::U32, span),
             U32Assert2 | U32Assert2WithError(_) => self.constrain_top_n(2, Type::U32, span),
             U32AssertW | U32AssertWWithError(_) => self.constrain_top_n(4, Type::U32, span),
             U32Test => {
@@ -434,12 +439,8 @@ impl<'a> InferState<'a> {
             CSwapW => self.conditional_swap(4, span),
             CDrop => self.conditional_drop(1, span),
             CDropW => self.conditional_drop(4, span),
-            Assert | AssertWithError(_) => {
-                self.pop_with_type(Type::I1, span)?;
-                Ok(())
-            }
-            Assertz | AssertzWithError(_) => {
-                self.pop_with_type(Type::I1, span)?;
+            Assert | AssertWithError(_) | Assertz | AssertzWithError(_) => {
+                self.pop_any(span)?;
                 Ok(())
             }
             AssertEq | AssertEqWithError(_) => {
@@ -723,6 +724,12 @@ impl<'a> InferState<'a> {
                 range
             )));
         };
+        if values.is_empty() {
+            return Err(error::error(format!(
+                "empty push word slice range {:?} at {span:?}",
+                range
+            )));
+        }
         for _ in values {
             self.push(Type::Felt);
         }

@@ -18,7 +18,7 @@ use midenc_dialect_arith::{
     Add as ArithAdd, And as ArithAnd, Constant as ArithConstant, Eq as ArithEq,
     Ext2Add as ArithExt2Add, Ext2Div as ArithExt2Div, Ext2Inv as ArithExt2Inv,
     Ext2Mul as ArithExt2Mul, Ext2Neg as ArithExt2Neg, Ext2Sub as ArithExt2Sub, Incr as ArithIncr,
-    Mul as ArithMul, Split as ArithSplit, Zext as ArithZext,
+    Mul as ArithMul, Split as ArithSplit, Trunc as ArithTrunc, Zext as ArithZext,
 };
 use midenc_dialect_cf::Select as CfSelect;
 use midenc_dialect_hir::{
@@ -925,6 +925,7 @@ fn unsupported_instruction_matrix_reports_diagnostics() {
     let cases = [
         unsupported_instruction_case("dynexec", 0, "dynexec"),
         unsupported_instruction_case("dyncall", 0, "dyncall"),
+        unsupported_instruction_case("exp_bit_length", 2, "exp.u32"),
     ];
 
     for case in &cases {
@@ -934,9 +935,9 @@ fn unsupported_instruction_matrix_reports_diagnostics() {
 
 #[test]
 fn instruction_inventory_classifies_all_masm_instruction_variants() {
-    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 235);
+    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 234);
     assert_eq!(INFER_ONLY_INSTRUCTION_VARIANT_COUNT, 1);
-    assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 2);
+    assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 3);
     assert_eq!(
         LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT
             + INFER_ONLY_INSTRUCTION_VARIANT_COUNT
@@ -973,6 +974,36 @@ end
     assert_eq!(signature.params()[0].ty, Type::Felt);
     assert_eq!(signature.results().len(), 1);
     assert_eq!(signature.results()[0].ty, Type::Felt);
+
+    Ok(())
+}
+
+#[test]
+fn infers_field_assertion_inputs_as_felt() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc assert_one
+assert
+end
+
+pub proc assert_zero
+assertz
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        context,
+    )?;
+
+    for name in ["assert_one", "assert_zero"] {
+        let signature = find_function(output.module, name).borrow().get_signature().clone();
+        assert_eq!(signature.params().len(), 1);
+        assert_eq!(signature.params()[0].ty, Type::Felt);
+        assert!(signature.results().is_empty());
+    }
 
     Ok(())
 }
@@ -2516,6 +2547,67 @@ end
 
     let function = find_function(output.module, "word");
     assert_eq!(top_level_op_count::<ArithConstant>(function), 4);
+    assert_eq!(felt_constant_values(top_level_arith_constant_values(function)), [4, 3, 2, 1]);
+
+    Ok(())
+}
+
+#[test]
+fn lifts_push_word_slice_in_vm_push_order() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc slice() -> (felt, felt)
+push.[1,2,3,4][1..3]
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let function = find_function(output.module, "slice");
+    assert_eq!(felt_constant_values(top_level_arith_constant_values(function)), [3, 2]);
+
+    Ok(())
+}
+
+#[test]
+fn rejects_empty_push_word_slice() {
+    let context = Rc::new(Context::default());
+    let err = match disassemble_source(
+        r#"
+pub proc empty_slice
+push.[1,2,3,4][1..1]
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        context,
+    ) {
+        Ok(_) => panic!("empty push word slices should be rejected"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("empty push word slice"), "{err}");
+}
+
+#[test]
+fn lifts_u32cast_as_truncating_cast() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc cast(value: felt) -> u32
+u32cast
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    assert_eq!(top_level_op_count::<ArithTrunc>(find_function(output.module, "cast")), 1);
 
     Ok(())
 }
@@ -4144,6 +4236,16 @@ fn top_level_arith_constant_values(function: builtin::FunctionRef) -> Vec<Immedi
         .body()
         .iter()
         .filter_map(|op| op.downcast_ref::<ArithConstant>().map(|op| *op.get_value()))
+        .collect()
+}
+
+fn felt_constant_values(values: Vec<Immediate>) -> Vec<u64> {
+    values
+        .into_iter()
+        .map(|value| match value {
+            Immediate::Felt(value) => value.as_canonical_u64(),
+            value => panic!("expected felt constant, got {value:?}"),
+        })
         .collect()
 }
 

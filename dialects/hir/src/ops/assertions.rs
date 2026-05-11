@@ -16,7 +16,7 @@ use crate::HirDialect;
 #[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct Assert {
     #[operand]
-    value: Bool,
+    value: AnyInteger,
     #[attr]
     #[default]
     code: U32Attr,
@@ -33,7 +33,7 @@ pub struct Assert {
 #[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct Assertz {
     #[operand]
-    value: Bool,
+    value: AnyInteger,
     #[attr]
     #[default]
     code: U32Attr,
