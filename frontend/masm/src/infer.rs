@@ -412,7 +412,7 @@ impl<'a> InferState<'a> {
                 Ok(())
             }
             U32Cast => {
-                self.pop_with_type(Type::Felt, span)?;
+                self.pop_any(span)?;
                 self.push(Type::U32);
                 Ok(())
             }
@@ -955,6 +955,13 @@ impl<'a> InferState<'a> {
         for value in &mut self.stack {
             for (local, replacement) in self.inputs.iter().zip(replacement_inputs.iter()) {
                 if value.ptr_eq(local) {
+                    // Preserve a path-local refinement on stack values. The merged replacement
+                    // still records the procedure input requirement, but replacing the stack value
+                    // would erase facts proven by operations such as `u32assert` in one branch.
+                    let local_ty = local.ty();
+                    if local_ty.is_some() && local_ty != replacement.ty() {
+                        break;
+                    }
                     *value = replacement.clone();
                     break;
                 }

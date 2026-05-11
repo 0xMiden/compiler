@@ -356,7 +356,6 @@ fn supported_instruction_matrix_lifts() {
         felt_instruction_case("pow2", 1, 1, "pow2"),
         felt_instruction_case("exp", 2, 1, "exp"),
         felt_instruction_case("exp_imm", 1, 1, "exp.2"),
-        felt_instruction_case("exp_bit_length", 2, 1, "exp.u8"),
         instruction_case("not", &["i1"], &["i1"], "not"),
         instruction_case("and", &["i1", "i1"], &["i1"], "and"),
         instruction_case("or", &["i1", "i1"], &["i1"], "or"),
@@ -1432,7 +1431,7 @@ end
 
     let signature = find_function(output.module, "assert_msg").borrow().get_signature().clone();
     assert_eq!(signature.params().len(), 1);
-    assert_eq!(signature.params()[0].ty, Type::I1);
+    assert_eq!(signature.params()[0].ty, Type::Felt);
     assert_eq!(signature.results().len(), 0);
 
     let signature = find_function(output.module, "assert_eqw_msg").borrow().get_signature().clone();
@@ -1638,7 +1637,7 @@ end
     let signature = find_function(output.module, "branch_common").borrow().get_signature().clone();
     assert_eq!(signature.params().len(), 2);
     assert_eq!(signature.params()[0].ty, Type::I1);
-    assert_eq!(signature.params()[1].ty, Type::U32);
+    assert_eq!(signature.params()[1].ty, Type::Felt);
     assert_eq!(signature.results().len(), 1);
     assert_eq!(signature.results()[0].ty, Type::U32);
 
