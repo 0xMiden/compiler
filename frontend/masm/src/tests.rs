@@ -3935,6 +3935,64 @@ end
 }
 
 #[test]
+fn advice_taint_treats_stack_preserving_u32test_assert_as_sanitizer() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+adv_push.1
+u32test
+dup.0
+assert.err="u32"
+drop
+push.1
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(
+        findings.is_empty(),
+        "expected stack-preserving u32test/assert sequence to sanitize raw advice"
+    );
+    assert_eq!(top_level_assert_u32_messages(find_function(output.module, "entry")), ["u32"]);
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_treats_stack_preserving_u32testw_assert_as_sanitizer() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> (u32, u32, u32)
+adv_push.4
+u32testw
+dup.0
+assert
+drop
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(
+        findings.is_empty(),
+        "expected stack-preserving u32testw/assert sequence to sanitize raw advice"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn lifts_u32split_to_arith_split() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(

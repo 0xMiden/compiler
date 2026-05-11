@@ -428,22 +428,15 @@ impl<'a> ProcedureLifter<'a> {
         block: &Block,
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) -> Result<()> {
-        let mut ops = block.iter().peekable();
-        while let Some(op) = ops.next() {
-            if let Op::Inst(inst) = op
-                && let Some(Op::Inst(next)) = ops.peek()
-                && self.try_lift_u32test_assert_pair(
-                    inst.inner(),
-                    inst.span(),
-                    next.inner(),
-                    next.span(),
-                    builder,
-                )?
-            {
-                ops.next();
+        let ops = block.iter().collect::<Vec<_>>();
+        let mut index = 0;
+        while index < ops.len() {
+            if let Some(consumed) = self.try_lift_u32test_assert_sequence(&ops[index..], builder)? {
+                index += consumed;
                 continue;
             }
 
+            let op = ops[index];
             match op {
                 Op::Inst(inst) => self.lift_instruction(inst.inner(), inst.span(), builder)?,
                 Op::If {
@@ -459,48 +452,98 @@ impl<'a> ProcedureLifter<'a> {
                     }
                 }
             }
+            index += 1;
         }
         Ok(())
     }
 
-    fn try_lift_u32test_assert_pair(
+    fn try_lift_u32test_assert_sequence(
         &mut self,
-        test: &Instruction,
-        test_span: SourceSpan,
-        assertion: &Instruction,
-        assertion_span: SourceSpan,
+        ops: &[&Op],
         builder: &mut FunctionBuilder<'_, OpBuilder>,
-    ) -> Result<bool> {
+    ) -> Result<Option<usize>> {
         use Instruction::*;
 
-        match (test, assertion) {
-            (U32Test, Assert) => {
-                self.u32_assert_n(1, test_span, builder)?;
-                Ok(true)
+        let Some(Op::Inst(test)) = ops.first() else {
+            return Ok(None);
+        };
+        let tested_values = match test.inner() {
+            U32Test => 1,
+            U32TestW => 4,
+            _ => return Ok(None),
+        };
+        let target_stack = sanitizer_target_stack(tested_values);
+        let mut symbolic_stack = target_stack.clone();
+        symbolic_stack.push(SanitizerStackValue::Predicate);
+        let mut assertion = None::<(SourceSpan, Option<CompactString>)>;
+
+        for (offset, op) in ops.iter().enumerate().skip(1).take(8) {
+            let Op::Inst(inst) = op else {
+                break;
+            };
+
+            if assertion.is_none() {
+                let message = match inst.inner() {
+                    Assert => Some(None),
+                    AssertWithError(message) => Some(Some(immediate_error_message(message)?)),
+                    _ => None,
+                };
+                if let Some(message) = message {
+                    if symbolic_stack.pop() != Some(SanitizerStackValue::Predicate) {
+                        break;
+                    }
+                    assertion = Some((inst.span(), message.clone()));
+                    if symbolic_stack == target_stack {
+                        self.lift_u32test_assert_sanitizer(
+                            tested_values,
+                            test.span(),
+                            inst.span(),
+                            message,
+                            builder,
+                        )?;
+                        return Ok(Some(offset + 1));
+                    }
+                    continue;
+                }
             }
-            (U32TestW, Assert) => {
-                self.u32_assert_n(4, test_span, builder)?;
-                Ok(true)
+
+            if !simulate_sanitizer_stack_op(inst.inner(), &mut symbolic_stack) {
+                break;
             }
-            (U32Test, AssertWithError(message)) => {
-                self.u32_assert_n_with_message(
-                    1,
-                    Some(immediate_error_message(message)?),
+
+            if let Some((assertion_span, message)) = assertion.clone()
+                && symbolic_stack == target_stack
+            {
+                self.lift_u32test_assert_sanitizer(
+                    tested_values,
+                    test.span(),
                     assertion_span,
+                    message,
                     builder,
                 )?;
-                Ok(true)
+                return Ok(Some(offset + 1));
             }
-            (U32TestW, AssertWithError(message)) => {
-                self.u32_assert_n_with_message(
-                    4,
-                    Some(immediate_error_message(message)?),
-                    assertion_span,
-                    builder,
-                )?;
-                Ok(true)
-            }
-            _ => Ok(false),
+        }
+
+        Ok(None)
+    }
+
+    fn lift_u32test_assert_sanitizer(
+        &mut self,
+        tested_values: usize,
+        test_span: SourceSpan,
+        assertion_span: SourceSpan,
+        message: Option<CompactString>,
+        builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        match message {
+            Some(message) => self.u32_assert_n_with_message(
+                tested_values,
+                Some(message),
+                assertion_span,
+                builder,
+            ),
+            None => self.u32_assert_n(tested_values, test_span, builder),
         }
     }
 
@@ -2551,6 +2594,85 @@ impl<'a> ProcedureLifter<'a> {
         } else {
             Ok(())
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SanitizerStackValue {
+    Tested(usize),
+    Predicate,
+}
+
+fn sanitizer_target_stack(tested_values: usize) -> Vec<SanitizerStackValue> {
+    (0..tested_values).map(SanitizerStackValue::Tested).collect()
+}
+
+fn simulate_sanitizer_stack_op(inst: &Instruction, stack: &mut Vec<SanitizerStackValue>) -> bool {
+    use Instruction::*;
+
+    match inst {
+        Nop => true,
+        Drop => stack.pop().is_some(),
+        Dup0 => masm_stack::dup(stack, 0).is_some(),
+        Dup1 => masm_stack::dup(stack, 1).is_some(),
+        Dup2 => masm_stack::dup(stack, 2).is_some(),
+        Dup3 => masm_stack::dup(stack, 3).is_some(),
+        Dup4 => masm_stack::dup(stack, 4).is_some(),
+        Dup5 => masm_stack::dup(stack, 5).is_some(),
+        Dup6 => masm_stack::dup(stack, 6).is_some(),
+        Dup7 => masm_stack::dup(stack, 7).is_some(),
+        Dup8 => masm_stack::dup(stack, 8).is_some(),
+        Dup9 => masm_stack::dup(stack, 9).is_some(),
+        Dup10 => masm_stack::dup(stack, 10).is_some(),
+        Dup11 => masm_stack::dup(stack, 11).is_some(),
+        Dup12 => masm_stack::dup(stack, 12).is_some(),
+        Dup13 => masm_stack::dup(stack, 13).is_some(),
+        Dup14 => masm_stack::dup(stack, 14).is_some(),
+        Dup15 => masm_stack::dup(stack, 15).is_some(),
+        Swap1 => masm_stack::swap(stack, 1).is_some(),
+        Swap2 => masm_stack::swap(stack, 2).is_some(),
+        Swap3 => masm_stack::swap(stack, 3).is_some(),
+        Swap4 => masm_stack::swap(stack, 4).is_some(),
+        Swap5 => masm_stack::swap(stack, 5).is_some(),
+        Swap6 => masm_stack::swap(stack, 6).is_some(),
+        Swap7 => masm_stack::swap(stack, 7).is_some(),
+        Swap8 => masm_stack::swap(stack, 8).is_some(),
+        Swap9 => masm_stack::swap(stack, 9).is_some(),
+        Swap10 => masm_stack::swap(stack, 10).is_some(),
+        Swap11 => masm_stack::swap(stack, 11).is_some(),
+        Swap12 => masm_stack::swap(stack, 12).is_some(),
+        Swap13 => masm_stack::swap(stack, 13).is_some(),
+        Swap14 => masm_stack::swap(stack, 14).is_some(),
+        Swap15 => masm_stack::swap(stack, 15).is_some(),
+        MovUp2 => masm_stack::movup(stack, 2).is_some(),
+        MovUp3 => masm_stack::movup(stack, 3).is_some(),
+        MovUp4 => masm_stack::movup(stack, 4).is_some(),
+        MovUp5 => masm_stack::movup(stack, 5).is_some(),
+        MovUp6 => masm_stack::movup(stack, 6).is_some(),
+        MovUp7 => masm_stack::movup(stack, 7).is_some(),
+        MovUp8 => masm_stack::movup(stack, 8).is_some(),
+        MovUp9 => masm_stack::movup(stack, 9).is_some(),
+        MovUp10 => masm_stack::movup(stack, 10).is_some(),
+        MovUp11 => masm_stack::movup(stack, 11).is_some(),
+        MovUp12 => masm_stack::movup(stack, 12).is_some(),
+        MovUp13 => masm_stack::movup(stack, 13).is_some(),
+        MovUp14 => masm_stack::movup(stack, 14).is_some(),
+        MovUp15 => masm_stack::movup(stack, 15).is_some(),
+        MovDn2 => masm_stack::movdn(stack, 2).is_some(),
+        MovDn3 => masm_stack::movdn(stack, 3).is_some(),
+        MovDn4 => masm_stack::movdn(stack, 4).is_some(),
+        MovDn5 => masm_stack::movdn(stack, 5).is_some(),
+        MovDn6 => masm_stack::movdn(stack, 6).is_some(),
+        MovDn7 => masm_stack::movdn(stack, 7).is_some(),
+        MovDn8 => masm_stack::movdn(stack, 8).is_some(),
+        MovDn9 => masm_stack::movdn(stack, 9).is_some(),
+        MovDn10 => masm_stack::movdn(stack, 10).is_some(),
+        MovDn11 => masm_stack::movdn(stack, 11).is_some(),
+        MovDn12 => masm_stack::movdn(stack, 12).is_some(),
+        MovDn13 => masm_stack::movdn(stack, 13).is_some(),
+        MovDn14 => masm_stack::movdn(stack, 14).is_some(),
+        MovDn15 => masm_stack::movdn(stack, 15).is_some(),
+        _ => false,
     }
 }
 
