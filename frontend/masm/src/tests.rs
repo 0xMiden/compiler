@@ -3250,6 +3250,55 @@ end
 }
 
 #[test]
+fn advice_taint_propagates_raw_advice_through_local_store_load() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+@locals(1)
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+loc_store.0
+loc_load.0
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_propagates_raw_advice_through_memory_store_load() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+mem_store.0
+mem_load.0
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_treats_external_call_results_as_unconstrained() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();

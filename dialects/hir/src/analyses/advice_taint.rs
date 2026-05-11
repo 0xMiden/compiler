@@ -12,9 +12,9 @@ use core::{any::Any, fmt};
 use midenc_dialect_arith as arith;
 use midenc_hir::{
     CallOpInterface, Forward, Operation, OperationName, Report, SourceSpan, Spanned, Symbol,
-    SymbolName, Type, Value,
+    SymbolName, Type, Value, ValueRef,
     diagnostics::{Diagnostic, LabeledSpan, Severity},
-    dialects::builtin,
+    dialects::builtin::{self, attributes::LocalVariable},
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
 };
 use midenc_hir_analysis::{
@@ -24,7 +24,9 @@ use midenc_hir_analysis::{
     sparse::SparseDataFlowAnalysis,
 };
 
-use crate::{AdviceLoadWord, AdvicePipe, AdvicePop, AssertU32};
+use crate::{
+    AdviceLoadWord, AdvicePipe, AdvicePop, AssertU32, IntToPtr, Load, LoadLocal, Store, StoreLocal,
+};
 
 /// The first unsafe u32-presuming use of raw advice data.
 #[derive(Debug, Clone)]
@@ -437,21 +439,9 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
         results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         _solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
-        if op.is::<AdvicePop>() || op.is::<AdviceLoadWord>() || op.is::<AdvicePipe>() {
-            return join_results(results, &AdviceTaintValue::raw(op.span()));
-        }
-
-        if op.is::<AssertU32>() {
-            return join_results(results, &AdviceTaintValue::clean());
-        }
-
         let operand_taint =
             AdviceTaintValue::join_all(operands.iter().map(|operand| operand.value()));
-        let result_taint = if is_u32_presuming_sink(op) && operand_taint.has_unreported_origin() {
-            operand_taint.mark_reported()
-        } else {
-            operand_taint
-        };
+        let result_taint = transfer_taint(op, operand_taint);
         join_results(results, &result_taint)
     }
 
@@ -487,6 +477,7 @@ fn join_results(
 #[derive(Default)]
 pub struct AdviceTaintAnalysis {
     solver: DataFlowSolver,
+    storage_overlay: StorageTaintOverlay,
     findings: Vec<AdviceTaintFinding>,
     exit_findings: Vec<AdviceTaintExitFinding>,
 }
@@ -546,8 +537,9 @@ impl Analysis for AdviceTaintAnalysis {
         self.solver = DataFlowSolver::new(config);
         self.solver.load::<AdviceTaintPropagation>();
         self.solver.initialize_and_run(op, analysis_manager)?;
-        self.findings = collect_findings(op, &self.solver);
-        self.exit_findings = collect_exit_findings(op, &self.solver);
+        self.storage_overlay = collect_storage_taint_overlay(op, &self.solver);
+        self.findings = collect_findings(op, &self.solver, &self.storage_overlay);
+        self.exit_findings = collect_exit_findings(op, &self.solver, &self.storage_overlay);
         Ok(())
     }
 
@@ -556,7 +548,159 @@ impl Analysis for AdviceTaintAnalysis {
     }
 }
 
-fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintFinding> {
+#[derive(Default)]
+struct StorageTaintOverlay {
+    values: BTreeMap<String, AdviceTaintValue>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+enum StorageKey {
+    Local(SymbolName, usize),
+    Memory(u32),
+}
+
+fn collect_storage_taint_overlay(op: &Operation, solver: &DataFlowSolver) -> StorageTaintOverlay {
+    let mut overlay = StorageTaintOverlay::default();
+    let mut storage = BTreeMap::<StorageKey, AdviceTaintValue>::new();
+
+    op.prewalk_all(|operation| {
+        if let Some(store) = operation.downcast_ref::<StoreLocal>() {
+            let key = StorageKey::from(*store.get_local());
+            let taint = value_taint(store.value().as_value_ref(), solver, &overlay);
+            storage.insert(key, taint);
+            return;
+        }
+
+        if let Some(load) = operation.downcast_ref::<LoadLocal>() {
+            let key = StorageKey::from(*load.get_local());
+            if let Some(taint) = storage.get(&key) {
+                overlay.set(load.result().as_value_ref(), taint.clone());
+            }
+            return;
+        }
+
+        if let Some(store) = operation.downcast_ref::<Store>() {
+            if let Some(key) = memory_storage_key(store.addr().as_value_ref()) {
+                let taint = value_taint(store.value().as_value_ref(), solver, &overlay);
+                storage.insert(key, taint);
+            }
+            return;
+        }
+
+        if let Some(load) = operation.downcast_ref::<Load>() {
+            if let Some(key) = memory_storage_key(load.addr().as_value_ref())
+                && let Some(taint) = storage.get(&key)
+            {
+                overlay.set(load.result().as_value_ref(), taint.clone());
+            }
+            return;
+        }
+
+        if !operation.has_results() {
+            return;
+        }
+
+        let operand_taint =
+            operation.operands().iter().fold(AdviceTaintValue::clean(), |acc, operand| {
+                let taint = value_taint(operand.borrow().as_value_ref(), solver, &overlay);
+                LatticeLike::join(&acc, &taint)
+            });
+        if operand_taint.is_clean() {
+            return;
+        }
+
+        let result_taint = transfer_taint(operation, operand_taint);
+        for result in operation.results().all() {
+            overlay.set(result.borrow().as_value_ref(), result_taint.clone());
+        }
+    });
+
+    overlay
+}
+
+fn transfer_taint(op: &Operation, operand_taint: AdviceTaintValue) -> AdviceTaintValue {
+    if op.is::<AdvicePop>() || op.is::<AdviceLoadWord>() || op.is::<AdvicePipe>() {
+        return AdviceTaintValue::raw(op.span());
+    }
+
+    if op.is::<AssertU32>() {
+        return AdviceTaintValue::clean();
+    }
+
+    if is_u32_presuming_sink(op) && operand_taint.has_unreported_origin() {
+        operand_taint.mark_reported()
+    } else {
+        operand_taint
+    }
+}
+
+impl StorageTaintOverlay {
+    fn get(&self, value: ValueRef) -> Option<&AdviceTaintValue> {
+        self.values.get(&value_key(value))
+    }
+
+    fn set(&mut self, value: ValueRef, taint: AdviceTaintValue) {
+        self.values.insert(value_key(value), taint);
+    }
+}
+
+impl From<LocalVariable> for StorageKey {
+    fn from(local: LocalVariable) -> Self {
+        let function = local.function();
+        let function = function.borrow();
+        Self::Local(Symbol::name(&*function), local.as_usize())
+    }
+}
+
+fn value_taint(
+    value: ValueRef,
+    solver: &DataFlowSolver,
+    overlay: &StorageTaintOverlay,
+) -> AdviceTaintValue {
+    let solver_taint = solver
+        .get::<Lattice<AdviceTaintValue>, _>(&value)
+        .map(|state| state.value().clone())
+        .unwrap_or_default();
+    match overlay.get(value) {
+        Some(overlay_taint) => LatticeLike::join(&solver_taint, overlay_taint),
+        None => solver_taint,
+    }
+}
+
+fn value_key(value: ValueRef) -> String {
+    format!("{}", value.borrow())
+}
+
+fn memory_storage_key(ptr: ValueRef) -> Option<StorageKey> {
+    memory_address(ptr).map(StorageKey::Memory)
+}
+
+fn memory_address(value: ValueRef) -> Option<u32> {
+    let defining_op = value.borrow().get_defining_op()?;
+    let defining_op = defining_op.borrow();
+
+    if let Some(inttoptr) = defining_op.downcast_ref::<IntToPtr>() {
+        return memory_address(inttoptr.operand().as_value_ref());
+    }
+
+    if let Some(constant) = defining_op.downcast_ref::<arith::Constant>() {
+        return constant.get_value().as_u32();
+    }
+
+    if let Some(add) = defining_op.downcast_ref::<arith::Add>() {
+        let lhs = memory_address(add.lhs().as_value_ref())?;
+        let rhs = memory_address(add.rhs().as_value_ref())?;
+        return lhs.checked_add(rhs);
+    }
+
+    None
+}
+
+fn collect_findings(
+    op: &Operation,
+    solver: &DataFlowSolver,
+    overlay: &StorageTaintOverlay,
+) -> Vec<AdviceTaintFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
         if !is_u32_presuming_sink(operation) {
@@ -566,9 +710,7 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
         let mut operand_taint = AdviceTaintValue::clean();
         for operand in operation.operands().iter() {
             let value = operand.borrow().as_value_ref();
-            if let Some(state) = solver.get::<Lattice<AdviceTaintValue>, _>(&value) {
-                operand_taint = LatticeLike::join(&operand_taint, state.value());
-            }
+            operand_taint = LatticeLike::join(&operand_taint, &value_taint(value, solver, overlay));
         }
         if operand_taint.is_clean() || !operand_taint.has_unreported_origin() {
             return;
@@ -586,7 +728,7 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
                 sink_span,
                 advice_span: origin.span,
                 origin,
-                contexts: collect_call_contexts(op, solver, function, origin),
+                contexts: collect_call_contexts(op, solver, overlay, function, origin),
                 function,
             };
             if !findings.iter().any(|existing| same_finding(existing, &finding)) {
@@ -597,7 +739,11 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
     findings
 }
 
-fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintExitFinding> {
+fn collect_exit_findings(
+    op: &Operation,
+    solver: &DataFlowSolver,
+    overlay: &StorageTaintOverlay,
+) -> Vec<AdviceTaintExitFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
         let Some(ret) = operation.downcast_ref::<builtin::Ret>() else {
@@ -616,14 +762,12 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
         let return_span = operation.span();
         for (result_index, operand) in ret.values().iter().enumerate() {
             let value = operand.borrow().as_value_ref();
-            let Some(state) = solver.get::<Lattice<AdviceTaintValue>, _>(&value) else {
-                continue;
-            };
-            if state.value().is_clean() || !state.value().has_unreported_origin() {
+            let taint = value_taint(value, solver, overlay);
+            if taint.is_clean() || !taint.has_unreported_origin() {
                 continue;
             }
 
-            for origin in state.value().unreported_origins() {
+            for origin in taint.unreported_origins() {
                 let finding = AdviceTaintExitFinding {
                     function: function_name,
                     function_span,
@@ -631,7 +775,13 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
                     result_index,
                     advice_span: origin.span,
                     origin,
-                    contexts: collect_call_contexts(op, solver, Some(function_name), origin),
+                    contexts: collect_call_contexts(
+                        op,
+                        solver,
+                        overlay,
+                        Some(function_name),
+                        origin,
+                    ),
                 };
                 if !findings.iter().any(|existing| same_exit_finding(existing, &finding)) {
                     findings.push(finding);
@@ -645,6 +795,7 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
 fn collect_call_contexts(
     root: &Operation,
     solver: &DataFlowSolver,
+    overlay: &StorageTaintOverlay,
     use_function: Option<SymbolName>,
     origin: AdviceTaintOrigin,
 ) -> Vec<AdviceTaintContext> {
@@ -668,13 +819,13 @@ fn collect_call_contexts(
         let callee_function = resolved_callee_function_name(call);
 
         if caller_function == Some(use_function)
-            && call_results_contain_origin(operation, solver, origin)
+            && call_results_contain_origin(operation, solver, overlay, origin)
         {
             push_context(&mut contexts, operation.span(), AdviceTaintContextKind::CallResult);
         }
 
         if callee_function == Some(use_function)
-            && call_arguments_contain_origin(call, solver, origin)
+            && call_arguments_contain_origin(call, solver, overlay, origin)
         {
             push_context(&mut contexts, operation.span(), AdviceTaintContextKind::CallArgument);
         }
@@ -694,26 +845,24 @@ fn resolved_callee_function_name(call: &dyn CallOpInterface) -> Option<SymbolNam
 fn call_results_contain_origin(
     call: &Operation,
     solver: &DataFlowSolver,
+    overlay: &StorageTaintOverlay,
     origin: AdviceTaintOrigin,
 ) -> bool {
     call.results().all().iter().any(|result| {
         let value = result.borrow().as_value_ref();
-        solver
-            .get::<Lattice<AdviceTaintValue>, _>(&value)
-            .is_some_and(|state| state.value().contains_origin(origin))
+        value_taint(value, solver, overlay).contains_origin(origin)
     })
 }
 
 fn call_arguments_contain_origin(
     call: &dyn CallOpInterface,
     solver: &DataFlowSolver,
+    overlay: &StorageTaintOverlay,
     origin: AdviceTaintOrigin,
 ) -> bool {
     call.arguments().iter().any(|operand| {
         let value = operand.borrow().as_value_ref();
-        solver
-            .get::<Lattice<AdviceTaintValue>, _>(&value)
-            .is_some_and(|state| state.value().contains_origin(origin))
+        value_taint(value, solver, overlay).contains_origin(origin)
     })
 }
 
