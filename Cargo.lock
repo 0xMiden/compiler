@@ -3763,6 +3763,7 @@ dependencies = [
 name = "midenc-integration-network-tests"
 version = "0.8.1"
 dependencies = [
+ "cargo-miden",
  "miden-client",
  "miden-core",
  "miden-mast-package",
@@ -3770,7 +3771,6 @@ dependencies = [
  "miden-standards",
  "miden-testing",
  "midenc-expect-test",
- "midenc-frontend-wasm",
  "midenc-integration-test-support",
  "rand 0.9.4",
  "tokio",

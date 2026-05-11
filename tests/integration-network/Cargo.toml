@@ -15,13 +15,13 @@ publish = false
 doctest = false
 
 [dependencies]
+cargo-miden.workspace = true
 miden-client = { version = "0.14", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std"] }
 miden-testing = { version = "0.14", features = ["std"] }
 miden-mast-package.workspace = true
-midenc-frontend-wasm.workspace = true
 midenc-expect-test.workspace = true
 rand = "0.9"
 tokio.workspace = true

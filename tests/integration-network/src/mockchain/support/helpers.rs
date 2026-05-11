@@ -1,7 +1,8 @@
 //! Common helper functions for mock-chain integration tests.
 
-use std::{future::Future, path::Path, sync::Arc};
+use std::{fs, future::Future, path::Path, sync::Arc};
 
+use cargo_miden::{BuildOutput, OutputType};
 use miden_client::{
     Word,
     account::component::{BasicWallet, InitStorageData},
@@ -11,7 +12,7 @@ use miden_client::{
     note::{Note, NoteType},
     transaction::RawOutputNote,
 };
-use miden_core::{Felt, utils::ToHex};
+use miden_core::{Felt, serde::Deserializable, utils::ToHex};
 use miden_mast_package::{Package, PackageExport};
 use miden_protocol::{
     account::{
@@ -27,8 +28,6 @@ use miden_standards::{
     testing::note::NoteBuilder,
 };
 use miden_testing::{MockChain, TransactionContextBuilder};
-use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_test_support::CompilerTestBuilder;
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Converts a value's felt representation into `miden_core::Felt` elements.
@@ -55,15 +54,42 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
 /// Compiles a Cargo Miden project into a MAST package.
 pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool) -> Arc<Package> {
     let project_path = project_path.as_ref();
-    let config = WasmTranslationConfig::default();
-    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
-
+    let manifest_path = project_path.join("Cargo.toml");
+    let mut args = vec![
+        "cargo".to_string(),
+        "miden".to_string(),
+        "build".to_string(),
+        "--manifest-path".to_string(),
+        manifest_path.to_string_lossy().into_owned(),
+    ];
     if release {
-        builder.with_release(true);
+        args.push("--release".to_string());
     }
 
-    let mut test = builder.build();
-    let package = test.compile_package();
+    let output = cargo_miden::run(args.into_iter(), OutputType::Masm)
+        .unwrap_or_else(|err| {
+            panic!("failed to compile Miden package at {}: {err}", project_path.display())
+        })
+        .expect("`cargo miden build` should produce a command output")
+        .unwrap_build_output();
+
+    let artifact_path = match output {
+        BuildOutput::Masm { artifact_path } => artifact_path,
+        BuildOutput::Wasm { artifact_path, .. } => {
+            panic!(
+                "expected MASM package for {}, got Wasm artifact {}",
+                project_path.display(),
+                artifact_path.display()
+            )
+        }
+    };
+
+    let package_bytes = fs::read(&artifact_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", artifact_path.display()));
+    let package = Arc::new(Package::read_from_bytes(&package_bytes).unwrap_or_else(|err| {
+        panic!("failed to decode Miden package {}: {err}", artifact_path.display())
+    }));
+
     print_package_exports("mockchain compile_rust_package", project_path, package.as_ref());
     package
 }
