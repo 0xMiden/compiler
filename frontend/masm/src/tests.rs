@@ -3324,8 +3324,7 @@ end
 
 #[test]
 fn advice_taint_propagates_raw_advice_through_local_store_load() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 @locals(1)
 pub proc entry(rhs: u32) -> u32
@@ -3335,22 +3334,14 @@ loc_load.0
 u32wrapping_add
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
-
-    Ok(())
+        &["arith.add"],
+        Some("entry"),
+    )
 }
 
 #[test]
 fn advice_taint_propagates_raw_advice_through_memory_store_load() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 pub proc entry(rhs: u32) -> u32
 adv_push.1
@@ -3359,22 +3350,14 @@ mem_load.0
 u32wrapping_add
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
-
-    Ok(())
+        &["arith.add"],
+        Some("entry"),
+    )
 }
 
 #[test]
 fn advice_taint_propagates_storage_load_taint_through_solver_to_later_store() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 @locals(1)
 pub proc entry(rhs: u32) -> u32
@@ -3388,22 +3371,14 @@ mem_load.0
 u32wrapping_add
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
-
-    Ok(())
+        &["arith.add"],
+        Some("entry"),
+    )
 }
 
 #[test]
 fn advice_taint_joins_local_store_taint_across_branches() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 @locals(1)
 pub proc entry(rhs: u32, cond: i1) -> u32
@@ -3418,22 +3393,14 @@ loc_load.0
 u32wrapping_add
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
-
-    Ok(())
+        &["arith.add"],
+        Some("entry"),
+    )
 }
 
 #[test]
 fn advice_taint_joins_memory_store_taint_across_branches() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 pub proc entry(rhs: u32, cond: i1) -> u32
 if.true
@@ -3447,22 +3414,14 @@ mem_load.0
 u32wrapping_add
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
-
-    Ok(())
+        &["arith.add"],
+        Some("entry"),
+    )
 }
 
 #[test]
 fn advice_taint_propagates_raw_advice_through_dynamic_memory_store_load() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 pub proc entry(rhs: u32, addr: u32) -> u32
 dup.0
@@ -3473,22 +3432,14 @@ mem_load
 u32wrapping_add
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
-
-    Ok(())
+        &["arith.add"],
+        Some("entry"),
+    )
 }
 
 #[test]
 fn advice_taint_propagates_memory_written_by_local_callee() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 proc writer()
 adv_push.1
@@ -3501,22 +3452,14 @@ mem_load.0
 u32wrapping_add
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
-
-    Ok(())
+        &["arith.add"],
+        Some("entry"),
+    )
 }
 
 #[test]
 fn advice_taint_propagates_memory_read_by_local_callee() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 proc reader(rhs: u32) -> u32
 mem_load.0
@@ -3529,22 +3472,14 @@ mem_store.0
 call.reader
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("reader"));
-
-    Ok(())
+        &["arith.add"],
+        Some("reader"),
+    )
 }
 
 #[test]
 fn advice_taint_propagates_memory_read_by_public_local_callee() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 pub proc reader(rhs: u32) -> u32
 mem_load.0
@@ -3557,22 +3492,14 @@ mem_store.0
 call.reader
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("reader"));
-
-    Ok(())
+        &["arith.add"],
+        Some("reader"),
+    )
 }
 
 #[test]
 fn advice_taint_propagates_memory_returned_by_local_callee() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 proc reader() -> felt
 mem_load.0
@@ -3585,22 +3512,14 @@ exec.reader
 u32wrapping_add
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
-
-    Ok(())
+        &["arith.add"],
+        Some("entry"),
+    )
 }
 
 #[test]
 fn advice_taint_keeps_returned_memory_taint_call_site_specific() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    assert_advice_taint_sinks(
         r#"
 proc reader() -> felt
 mem_load.0
@@ -3625,16 +3544,9 @@ exec.dirty
 exec.clean
 end
 "#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    )?;
-
-    let findings = advice_taint_findings(output.module)?;
-    assert_eq!(sink_names(&findings), ["arith.add"]);
-    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("dirty"));
-
-    Ok(())
+        &["arith.add"],
+        Some("dirty"),
+    )
 }
 
 #[test]
@@ -4830,6 +4742,26 @@ fn masm_results(results: &[&str]) -> String {
 
 fn indent_masm_body(body: &str) -> String {
     body.lines().map(|line| format!("    {line}")).collect::<Vec<_>>().join("\n")
+}
+
+fn assert_advice_taint_sinks(
+    source: &str,
+    expected_sinks: &[&str],
+    expected_function: Option<&str>,
+) -> Result<()> {
+    let findings = advice_taint_findings_for_source(source)?;
+    let expected_sinks = expected_sinks.iter().map(|sink| sink.to_string()).collect::<Vec<_>>();
+    assert_eq!(sink_names(&findings), expected_sinks);
+    if let Some(function) = expected_function {
+        assert_eq!(findings[0].function.map(|name| name.as_str()), Some(function));
+    }
+    Ok(())
+}
+
+fn advice_taint_findings_for_source(source: &str) -> Result<Vec<AdviceTaintFinding>> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
+    advice_taint_findings(output.module)
 }
 
 fn advice_taint_findings(module: builtin::ModuleRef) -> Result<Vec<AdviceTaintFinding>> {
