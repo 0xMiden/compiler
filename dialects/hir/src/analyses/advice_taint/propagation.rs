@@ -8,6 +8,7 @@ use midenc_hir_analysis::{
 
 use super::{
     lattice::{AdviceTaintSparseLattice, CallContextFrame, ContextualAdviceTaintValue},
+    layout::ADVICE_PIPE_RAW_RESULT_COUNT,
     sinks::{is_u32_presuming_sink, is_unconstrained_external_result_type},
 };
 use crate::{AdviceLoadWord, AdvicePipe, AdvicePop, AssertU32};
@@ -110,10 +111,8 @@ fn join_advice_pipe_results(
     operands: &[AnalysisStateGuard<'_, AdviceTaintSparseLattice>],
     results: &mut [AnalysisStateGuardMut<'_, AdviceTaintSparseLattice>],
 ) -> Result<(), Report> {
-    const RAW_ADVICE_RESULTS: usize = 8;
-
     for (index, result) in results.iter_mut().enumerate() {
-        let taint = if index < RAW_ADVICE_RESULTS {
+        let taint = if index < ADVICE_PIPE_RAW_RESULT_COUNT {
             ContextualAdviceTaintValue::raw(op.span())
         } else {
             operands.get(index).map(|operand| operand.value().clone()).unwrap_or_default()

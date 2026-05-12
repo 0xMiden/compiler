@@ -11,8 +11,11 @@ use midenc_hir_analysis::{
     dense::DenseDataFlowAnalysis,
 };
 
-use super::lattice::{
-    CallContextFrame, ContextualAdviceTaintValue, join_value_taint, required_value_taint,
+use super::{
+    lattice::{
+        CallContextFrame, ContextualAdviceTaintValue, join_value_taint, required_value_taint,
+    },
+    layout::{ADVICE_PIPE_MEMORY_ADDRESS_OPERAND, ADVICE_PIPE_MEMORY_WRITE_WIDTH},
 };
 use crate::{AdvicePipe, IntToPtr, Load, LoadLocal, Store, StoreLocal};
 
@@ -104,14 +107,16 @@ impl DenseForwardDataFlowAnalysis for AdviceTaintStoragePropagation {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub(super) struct StorageState {
-    storage: BTreeMap<StorageKey, ContextualAdviceTaintValue>,
-    dynamic_memory: ContextualAdviceTaintValue,
+    locals: BTreeMap<LocalKey, ContextualAdviceTaintValue>,
+    memory: MemoryState,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-enum StorageKey {
-    Local(SymbolName, usize),
-    Memory(u32),
+type LocalKey = (SymbolName, usize);
+
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+struct MemoryState {
+    addresses: BTreeMap<u32, ContextualAdviceTaintValue>,
+    dynamic: ContextualAdviceTaintValue,
 }
 
 /// Returns the storage state immediately before `operation`.
@@ -151,32 +156,29 @@ fn transfer_storage_operation(
 ) -> Result<(), Report> {
     let dependent = ProgramPoint::after(operation.as_operation_ref());
     if let Some(store) = operation.downcast_ref::<StoreLocal>() {
-        let key = StorageKey::from(*store.get_local());
         let taint = required_value_taint(store.value().as_value_ref(), dependent, solver);
-        state.store(key, taint);
+        state.store_local(local_key(*store.get_local()), taint);
         return Ok(());
     }
 
     if let Some(load) = operation.downcast_ref::<LoadLocal>() {
-        let key = StorageKey::from(*load.get_local());
-        let taint = state.load(&key);
+        let taint = state.load_local(&local_key(*load.get_local()));
         join_value_taint(load.result().as_value_ref(), &taint, solver);
         return Ok(());
     }
 
     if let Some(store) = operation.downcast_ref::<Store>() {
         let taint = required_value_taint(store.value().as_value_ref(), dependent, solver);
-        match memory_storage_key(store.addr().as_value_ref()) {
-            Some(key) => state.store(key, taint),
+        match memory_address(store.addr().as_value_ref()) {
+            Some(address) => state.store_memory(address, taint),
             None => state.store_dynamic_memory(taint),
         }
         return Ok(());
     }
 
     if let Some(load) = operation.downcast_ref::<Load>() {
-        let taint = match memory_storage_key(load.addr().as_value_ref()) {
-            Some(StorageKey::Memory(addr)) => state.load_memory(addr),
-            Some(key) => state.load(&key),
+        let taint = match memory_address(load.addr().as_value_ref()) {
+            Some(address) => state.load_memory(address),
             None => state.load_dynamic_memory(),
         };
         join_value_taint(load.result().as_value_ref(), &taint, solver);
@@ -185,13 +187,14 @@ fn transfer_storage_operation(
 
     if let Some(pipe) = operation.downcast_ref::<AdvicePipe>() {
         let taint = ContextualAdviceTaintValue::raw(operation.span());
-        let address = pipe.stack().iter().nth(12).and_then(|addr| {
-            let addr = addr.borrow().as_value_ref();
-            memory_address(addr)
-        });
+        let address =
+            pipe.stack().iter().nth(ADVICE_PIPE_MEMORY_ADDRESS_OPERAND).and_then(|addr| {
+                let addr = addr.borrow().as_value_ref();
+                memory_address(addr)
+            });
         if let Some(address) = address {
-            for offset in 0..8 {
-                state.store(StorageKey::Memory(address + offset), taint.clone());
+            for offset in 0..ADVICE_PIPE_MEMORY_WRITE_WIDTH {
+                state.store_memory(address + offset, taint.clone());
             }
         } else {
             state.store_dynamic_memory(taint);
@@ -203,62 +206,39 @@ fn transfer_storage_operation(
 }
 
 impl StorageState {
-    fn store(&mut self, key: StorageKey, taint: ContextualAdviceTaintValue) {
-        self.storage.insert(key, taint);
+    fn store_local(&mut self, key: LocalKey, taint: ContextualAdviceTaintValue) {
+        self.locals.insert(key, taint);
     }
 
-    fn load(&self, key: &StorageKey) -> ContextualAdviceTaintValue {
-        self.storage.get(key).cloned().unwrap_or_default()
+    fn load_local(&self, key: &LocalKey) -> ContextualAdviceTaintValue {
+        self.locals.get(key).cloned().unwrap_or_default()
     }
 
     fn store_dynamic_memory(&mut self, taint: ContextualAdviceTaintValue) {
-        self.dynamic_memory = LatticeLike::join(&self.dynamic_memory, &taint);
+        self.memory.store_dynamic(taint);
+    }
+
+    fn store_memory(&mut self, addr: u32, taint: ContextualAdviceTaintValue) {
+        self.memory.store(addr, taint);
     }
 
     fn load_memory(&self, addr: u32) -> ContextualAdviceTaintValue {
-        LatticeLike::join(&self.load(&StorageKey::Memory(addr)), &self.dynamic_memory)
+        self.memory.load(addr)
     }
 
     fn load_dynamic_memory(&self) -> ContextualAdviceTaintValue {
-        self.storage
-            .iter()
-            .filter_map(|(key, taint)| {
-                if matches!(key, StorageKey::Memory(_)) {
-                    Some(taint)
-                } else {
-                    None
-                }
-            })
-            .fold(self.dynamic_memory.clone(), |acc, taint| LatticeLike::join(&acc, taint))
+        self.memory.load_dynamic()
     }
 
     fn memory_only(&self) -> Self {
         Self {
-            storage: self
-                .storage
-                .iter()
-                .filter_map(|(key, taint)| {
-                    if matches!(key, StorageKey::Memory(_)) {
-                        Some((key.clone(), taint.clone()))
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-            dynamic_memory: self.dynamic_memory.clone(),
+            locals: BTreeMap::new(),
+            memory: self.memory.clone(),
         }
     }
 
     fn replace_memory_from(&mut self, other: &Self) {
-        self.storage.retain(|key, _| !matches!(key, StorageKey::Memory(_)));
-        self.storage.extend(other.storage.iter().filter_map(|(key, taint)| {
-            if matches!(key, StorageKey::Memory(_)) {
-                Some((key.clone(), taint.clone()))
-            } else {
-                None
-            }
-        }));
-        self.dynamic_memory = other.dynamic_memory.clone();
+        self.memory = other.memory.clone();
     }
 
     fn enter_call(&self, frame: CallContextFrame) -> Self {
@@ -274,23 +254,68 @@ impl StorageState {
         mut f: impl FnMut(&ContextualAdviceTaintValue) -> ContextualAdviceTaintValue,
     ) -> Self {
         Self {
-            storage: self.storage.iter().map(|(key, taint)| (key.clone(), f(taint))).collect(),
-            dynamic_memory: f(&self.dynamic_memory),
+            locals: self.locals.iter().map(|(key, taint)| (*key, f(taint))).collect(),
+            memory: self.memory.map_taint(f),
         }
     }
 
     fn join(&self, other: &Self) -> Self {
-        let mut storage = self.storage.clone();
-        for (key, taint) in other.storage.iter() {
-            storage
-                .entry(key.clone())
+        let mut locals = self.locals.clone();
+        for (key, taint) in other.locals.iter() {
+            locals
+                .entry(*key)
                 .and_modify(|current| *current = LatticeLike::join(current, taint))
                 .or_insert_with(|| taint.clone());
         }
 
         Self {
-            storage,
-            dynamic_memory: LatticeLike::join(&self.dynamic_memory, &other.dynamic_memory),
+            locals,
+            memory: self.memory.join(&other.memory),
+        }
+    }
+}
+
+impl MemoryState {
+    fn store(&mut self, addr: u32, taint: ContextualAdviceTaintValue) {
+        self.addresses.insert(addr, taint);
+    }
+
+    fn store_dynamic(&mut self, taint: ContextualAdviceTaintValue) {
+        self.dynamic = LatticeLike::join(&self.dynamic, &taint);
+    }
+
+    fn load(&self, addr: u32) -> ContextualAdviceTaintValue {
+        LatticeLike::join(&self.addresses.get(&addr).cloned().unwrap_or_default(), &self.dynamic)
+    }
+
+    fn load_dynamic(&self) -> ContextualAdviceTaintValue {
+        self.addresses
+            .values()
+            .fold(self.dynamic.clone(), |acc, taint| LatticeLike::join(&acc, taint))
+    }
+
+    fn map_taint(
+        &self,
+        mut f: impl FnMut(&ContextualAdviceTaintValue) -> ContextualAdviceTaintValue,
+    ) -> Self {
+        Self {
+            addresses: self.addresses.iter().map(|(addr, taint)| (*addr, f(taint))).collect(),
+            dynamic: f(&self.dynamic),
+        }
+    }
+
+    fn join(&self, other: &Self) -> Self {
+        let mut addresses = self.addresses.clone();
+        for (addr, taint) in other.addresses.iter() {
+            addresses
+                .entry(*addr)
+                .and_modify(|current| *current = LatticeLike::join(current, taint))
+                .or_insert_with(|| taint.clone());
+        }
+
+        Self {
+            addresses,
+            dynamic: LatticeLike::join(&self.dynamic, &other.dynamic),
         }
     }
 }
@@ -305,16 +330,10 @@ impl LatticeLike for StorageState {
     }
 }
 
-impl From<LocalVariable> for StorageKey {
-    fn from(local: LocalVariable) -> Self {
-        let function = local.function();
-        let function = function.borrow();
-        Self::Local(Symbol::name(&*function), local.as_usize())
-    }
-}
-
-fn memory_storage_key(ptr: ValueRef) -> Option<StorageKey> {
-    memory_address(ptr).map(StorageKey::Memory)
+fn local_key(local: LocalVariable) -> LocalKey {
+    let function = local.function();
+    let function = function.borrow();
+    (Symbol::name(&*function), local.as_usize())
 }
 
 fn memory_address(value: ValueRef) -> Option<u32> {

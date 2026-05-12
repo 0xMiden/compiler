@@ -1,5 +1,6 @@
 mod diagnostics;
 mod lattice;
+mod layout;
 mod propagation;
 mod sinks;
 mod storage;
