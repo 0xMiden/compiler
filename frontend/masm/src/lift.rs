@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, rc::Rc, sync::Arc};
 
 use miden_assembly_syntax::{
-    Felt, Path as MasmPath,
-    ast::{Block, Immediate, Instruction, InvocationTarget, Module, Op, Procedure},
+    Felt,
+    ast::{self, Block, Immediate, Instruction, InvocationTarget, Module, Op, Procedure},
     debuginfo::{SourceSpan, Spanned},
     parser::{IntValue, PushValue},
 };
@@ -49,7 +49,7 @@ pub(crate) fn lift_module(
     let body_block = builder.create_block(body, None, &[]);
     builder.set_insertion_point_to_end(body_block);
 
-    let mut signatures = FxHashMap::<String, Signature>::default();
+    let mut signatures = FxHashMap::<ast::Ident, Signature>::default();
     for procedure in module.procedures() {
         let Some(signature) = procedure.signature() else {
             continue;
@@ -64,14 +64,14 @@ pub(crate) fn lift_module(
                 external_types,
             )?
         };
-        signatures.insert(procedure.name().as_str().to_owned(), signature);
+        signatures.insert(procedure.name().as_ident(), signature);
     }
     let external_signatures = convert_external_signatures(&context, external_signatures)?;
 
     if !config.infer_missing_signatures
         && let Some(procedure) = module
             .procedures()
-            .find(|procedure| !signatures.contains_key(procedure.name().as_str()))
+            .find(|procedure| !signatures.contains_key(&procedure.name().as_ident()))
     {
         return Err(Report::msg(format!(
             "procedure '{}' is missing a signature",
@@ -83,12 +83,12 @@ pub(crate) fn lift_module(
 
     if config.infer_missing_signatures {
         for name in callee_first_order(module)? {
-            if signatures.contains_key(name.as_str()) {
+            if signatures.contains_key(&name) {
                 continue;
             }
             let procedure = module
                 .procedures()
-                .find(|procedure| procedure.name().as_str() == name)
+                .find(|procedure| procedure.name().as_ident() == name)
                 .expect("callee-first order must contain local procedures only");
             let signature =
                 infer::infer_signature(&context, procedure, &signatures, &external_signatures)?;
@@ -96,12 +96,12 @@ pub(crate) fn lift_module(
         }
     }
 
-    let mut external_functions = FxHashMap::<String, FunctionRef>::default();
-    for (index, (path, signature)) in external_signatures.iter().enumerate() {
+    let mut external_functions = FxHashMap::<Arc<ast::Path>, FunctionRef>::default();
+    for (path, signature) in external_signatures.iter() {
+        // TODO(pauls): We need to resolve/generate `path` as a declaration in the correct
+        // module, not generate a function in the current module.
         let function = builder.create_function(
-            Ident::with_empty_span(midenc_hir::interner::Symbol::intern(external_symbol_name(
-                index, path,
-            ))),
+            Ident::with_empty_span(midenc_hir::interner::Symbol::intern(path.as_str())),
             Visibility::Public,
             signature.clone(),
         )?;
@@ -111,9 +111,9 @@ pub(crate) fn lift_module(
         external_functions.insert(path.clone(), function);
     }
 
-    let mut functions = FxHashMap::<String, FunctionRef>::default();
+    let mut functions = FxHashMap::<ast::Ident, FunctionRef>::default();
     for procedure in module.procedures() {
-        let signature = signatures.get(procedure.name().as_str()).cloned().ok_or_else(|| {
+        let signature = signatures.get(&procedure.name().as_ident()).cloned().ok_or_else(|| {
             Report::msg(format!("procedure '{}' is missing a signature", procedure.name()))
         })?;
         let visibility = if procedure.visibility().is_public() {
@@ -130,12 +130,13 @@ pub(crate) fn lift_module(
         hir_module
             .borrow_mut()
             .insert_new(function.as_symbol_ref(), ProgramPoint::default());
-        functions.insert(procedure.name().as_str().to_owned(), function);
+        functions.insert(procedure.name().as_ident(), function);
     }
 
     for procedure in module.procedures() {
-        let function = *functions.get(procedure.name().as_str()).unwrap();
-        let signature = signatures.get(procedure.name().as_str()).unwrap().clone();
+        let name = procedure.name().as_ident();
+        let function = *functions.get(&name).unwrap();
+        let signature = signatures.get(&name).unwrap().clone();
         let mut function_builder = FunctionBuilder::new(function, &mut builder);
         let mut lifter =
             ProcedureLifter::new(procedure, signature, &functions, &external_functions);
@@ -151,46 +152,33 @@ pub(crate) fn lift_module(
 fn convert_external_signatures(
     context: &Rc<Context>,
     external_signatures: &ExternalSignatureMap,
-) -> Result<FxHashMap<String, Signature>> {
+) -> Result<FxHashMap<Arc<ast::Path>, Signature>> {
     external_signatures
         .iter()
         .map(|(path, signature)| {
-            let path = normalize_external_path(path)?;
+            let path = normalize_external_path(path.clone());
             let signature = signatures::convert_hir_function_type(context, signature);
             Ok((path, signature))
         })
         .collect()
 }
 
-fn normalize_external_path(path: &str) -> Result<String> {
-    let path = path
-        .parse::<miden_assembly_syntax::PathBuf>()
-        .map_err(|err| Report::msg(format!("invalid external MASM path '{path}': {err}")))?;
-    Ok(path.as_path().to_absolute().to_string())
-}
-
-fn invocation_path_key(path: &MasmPath) -> String {
-    path.to_absolute().to_string()
-}
-
-fn external_symbol_name(index: usize, path: &str) -> String {
-    let mut name = format!("__masm_external_{index}");
-    for ch in path.chars() {
-        if ch.is_ascii_alphanumeric() {
-            name.push(ch);
-        } else {
-            name.push('_');
-        }
+fn normalize_external_path(path: Arc<ast::Path>) -> Arc<ast::Path> {
+    if !path.is_absolute() {
+        path.to_absolute().into()
+    } else {
+        path
     }
-    name
 }
 
-fn external_signature_metadata_hint(external_functions: &FxHashMap<String, FunctionRef>) -> String {
+fn external_signature_metadata_hint(
+    external_functions: &FxHashMap<Arc<ast::Path>, FunctionRef>,
+) -> String {
     if external_functions.is_empty() {
         return "; no external signature metadata is available".to_string();
     }
 
-    let mut paths = external_functions.keys().cloned().collect::<Vec<_>>();
+    let mut paths = external_functions.keys().map(|path| path.as_str()).collect::<Vec<_>>();
     paths.sort();
     let omitted = paths.len().saturating_sub(8);
     paths.truncate(8);
@@ -221,22 +209,10 @@ fn ensure_op_region(context: &Rc<Context>, op: &mut dyn HirOp) {
     }
 }
 
-fn reject_recursive_calls(module: &Module) -> Result<()> {
-    let graph = local_call_graph(module);
-    let mut states = FxHashMap::<String, VisitState>::default();
-    let mut stack = Vec::<String>::new();
-    for name in graph.keys() {
-        reject_recursive_calls_from(name, &graph, &mut states, &mut stack)?;
-    }
-    Ok(())
-}
-
-fn local_call_graph(module: &Module) -> FxHashMap<String, Vec<String>> {
-    let local_names: FxHashSet<_> = module
-        .procedures()
-        .map(|procedure| procedure.name().as_str().to_owned())
-        .collect();
-    let mut graph = FxHashMap::<String, Vec<String>>::default();
+fn local_call_graph(module: &Module) -> FxHashMap<ast::Ident, Vec<ast::Ident>> {
+    let local_names: FxHashSet<_> =
+        module.procedures().map(|procedure| procedure.name().as_ident()).collect();
+    let mut graph = FxHashMap::default();
 
     for procedure in module.procedures() {
         let mut callees = Vec::new();
@@ -244,28 +220,38 @@ fn local_call_graph(module: &Module) -> FxHashMap<String, Vec<String>> {
             let InvocationTarget::Symbol(name) = &target.target else {
                 continue;
             };
-            if local_names.contains(name.as_str()) {
-                callees.push(name.as_str().to_owned());
+            if local_names.contains(name) {
+                callees.push(name.clone());
             }
         }
-        graph.insert(procedure.name().as_str().to_owned(), callees);
+        graph.insert(procedure.name().as_ident(), callees);
     }
 
     graph
 }
 
+fn reject_recursive_calls(module: &Module) -> Result<()> {
+    let graph = local_call_graph(module);
+    let mut states = FxHashMap::<ast::Ident, VisitState>::default();
+    let mut stack = Vec::<ast::Ident>::new();
+    for name in graph.keys() {
+        reject_recursive_calls_from(name.clone(), &graph, &mut states, &mut stack)?;
+    }
+    Ok(())
+}
+
 fn reject_recursive_calls_from(
-    name: &str,
-    graph: &FxHashMap<String, Vec<String>>,
-    states: &mut FxHashMap<String, VisitState>,
-    stack: &mut Vec<String>,
+    name: ast::Ident,
+    graph: &FxHashMap<ast::Ident, Vec<ast::Ident>>,
+    states: &mut FxHashMap<ast::Ident, VisitState>,
+    stack: &mut Vec<ast::Ident>,
 ) -> Result<()> {
-    match states.get(name).copied() {
+    match states.get(&name).copied() {
         Some(VisitState::Done) => return Ok(()),
         Some(VisitState::Visiting) => {
-            let cycle_start = stack.iter().position(|entry| entry == name).unwrap_or(0);
-            let mut cycle = stack[cycle_start..].to_vec();
-            cycle.push(name.to_owned());
+            let cycle_start = stack.iter().position(|entry| entry == &name).unwrap_or(0);
+            let mut cycle = stack[cycle_start..].iter().map(|id| id.as_str()).collect::<Vec<_>>();
+            cycle.push(name.as_str());
             return Err(Report::msg(format!(
                 "recursive MASM procedure calls are not supported: {}",
                 cycle.join(" -> ")
@@ -274,26 +260,26 @@ fn reject_recursive_calls_from(
         None => (),
     }
 
-    states.insert(name.to_owned(), VisitState::Visiting);
-    stack.push(name.to_owned());
-    if let Some(callees) = graph.get(name) {
+    states.insert(name.clone(), VisitState::Visiting);
+    stack.push(name.clone());
+    if let Some(callees) = graph.get(&name) {
         for callee in callees {
-            reject_recursive_calls_from(callee, graph, states, stack)?;
+            reject_recursive_calls_from(callee.clone(), graph, states, stack)?;
         }
     }
     stack.pop();
-    states.insert(name.to_owned(), VisitState::Done);
+    states.insert(name, VisitState::Done);
     Ok(())
 }
 
-fn callee_first_order(module: &Module) -> Result<Vec<String>> {
+fn callee_first_order(module: &Module) -> Result<Vec<ast::Ident>> {
     let graph = local_call_graph(module);
-    let mut states = FxHashMap::<String, VisitState>::default();
-    let mut stack = Vec::<String>::new();
-    let mut order = Vec::<String>::new();
+    let mut states = FxHashMap::<ast::Ident, VisitState>::default();
+    let mut stack = Vec::<ast::Ident>::new();
+    let mut order = Vec::<ast::Ident>::new();
     for procedure in module.procedures() {
         callee_first_order_from(
-            procedure.name().as_str(),
+            procedure.name().as_ident(),
             &graph,
             &mut states,
             &mut stack,
@@ -304,18 +290,18 @@ fn callee_first_order(module: &Module) -> Result<Vec<String>> {
 }
 
 fn callee_first_order_from(
-    name: &str,
-    graph: &FxHashMap<String, Vec<String>>,
-    states: &mut FxHashMap<String, VisitState>,
-    stack: &mut Vec<String>,
-    order: &mut Vec<String>,
+    name: ast::Ident,
+    graph: &FxHashMap<ast::Ident, Vec<ast::Ident>>,
+    states: &mut FxHashMap<ast::Ident, VisitState>,
+    stack: &mut Vec<ast::Ident>,
+    order: &mut Vec<ast::Ident>,
 ) -> Result<()> {
-    match states.get(name).copied() {
+    match states.get(&name).copied() {
         Some(VisitState::Done) => return Ok(()),
         Some(VisitState::Visiting) => {
-            let cycle_start = stack.iter().position(|entry| entry == name).unwrap_or(0);
-            let mut cycle = stack[cycle_start..].to_vec();
-            cycle.push(name.to_owned());
+            let cycle_start = stack.iter().position(|entry| entry == &name).unwrap_or(0);
+            let mut cycle = stack[cycle_start..].iter().map(|id| id.as_str()).collect::<Vec<_>>();
+            cycle.push(name.as_str());
             return Err(Report::msg(format!(
                 "recursive MASM procedure calls are not supported: {}",
                 cycle.join(" -> ")
@@ -326,9 +312,9 @@ fn callee_first_order_from(
 
     states.insert(name.to_owned(), VisitState::Visiting);
     stack.push(name.to_owned());
-    if let Some(callees) = graph.get(name) {
+    if let Some(callees) = graph.get(&name) {
         for callee in callees {
-            callee_first_order_from(callee, graph, states, stack, order)?;
+            callee_first_order_from(callee.clone(), graph, states, stack, order)?;
         }
     }
     stack.pop();
@@ -366,8 +352,8 @@ enum WordEndian {
 struct ProcedureLifter<'a> {
     procedure: &'a Procedure,
     signature: Signature,
-    functions: &'a FxHashMap<String, FunctionRef>,
-    external_functions: &'a FxHashMap<String, FunctionRef>,
+    functions: &'a FxHashMap<ast::Ident, FunctionRef>,
+    external_functions: &'a FxHashMap<Arc<ast::Path>, FunctionRef>,
     locals: BTreeMap<u16, LocalVariable>,
     stack: Vec<StackValue>,
 }
@@ -376,8 +362,8 @@ impl<'a> ProcedureLifter<'a> {
     fn new(
         procedure: &'a Procedure,
         signature: Signature,
-        functions: &'a FxHashMap<String, FunctionRef>,
-        external_functions: &'a FxHashMap<String, FunctionRef>,
+        functions: &'a FxHashMap<ast::Ident, FunctionRef>,
+        external_functions: &'a FxHashMap<Arc<ast::Path>, FunctionRef>,
     ) -> Self {
         Self {
             procedure,
@@ -2436,11 +2422,11 @@ impl<'a> ProcedureLifter<'a> {
         match target {
             InvocationTarget::Symbol(name) => self
                 .functions
-                .get(name.as_str())
+                .get(name)
                 .copied()
                 .ok_or_else(|| Report::msg(format!("unresolved local callee '{name}'"))),
             InvocationTarget::Path(path) => {
-                let key = invocation_path_key(path.inner());
+                let key = normalize_external_path(path.inner().clone());
                 self.external_functions.get(&key).copied().ok_or_else(|| {
                     Report::msg(format!(
                         "unresolved external callee '{}'; external signature metadata is missing{}",

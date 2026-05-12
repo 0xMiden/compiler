@@ -1,8 +1,8 @@
-use std::{cell::RefCell, ops::Range, rc::Rc};
+use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
 
 use miden_assembly_syntax::{
     Path as MasmPath,
-    ast::{Block, Immediate, Instruction, InvocationTarget, Op, Procedure},
+    ast::{self, Block, Immediate, Instruction, InvocationTarget, Op, Procedure},
     debuginfo::SourceSpan,
     parser::{IntValue, PushValue, WordValue},
 };
@@ -19,11 +19,13 @@ use crate::{
     stack as masm_stack,
 };
 
+/// Infer a [Signature] for `procedure`, using the signatures in `signatures`/`external_signatures`
+/// for inferring the stack effects of procedure invocations in its body.
 pub(crate) fn infer_signature(
     context: &Rc<Context>,
     procedure: &Procedure,
-    signatures: &FxHashMap<String, Signature>,
-    external_signatures: &FxHashMap<String, Signature>,
+    signatures: &FxHashMap<ast::Ident, Signature>,
+    external_signatures: &FxHashMap<Arc<ast::Path>, Signature>,
 ) -> Result<Signature> {
     let mut state = InferState::new(signatures, external_signatures);
     state.infer_block(procedure.body())?;
@@ -132,14 +134,14 @@ struct InferState<'a> {
     stack: Vec<AbstractValue>,
     inputs: Vec<AbstractValue>,
     current_span: SourceSpan,
-    signatures: &'a FxHashMap<String, Signature>,
-    external_signatures: &'a FxHashMap<String, Signature>,
+    signatures: &'a FxHashMap<ast::Ident, Signature>,
+    external_signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
 }
 
 impl<'a> InferState<'a> {
     fn new(
-        signatures: &'a FxHashMap<String, Signature>,
-        external_signatures: &'a FxHashMap<String, Signature>,
+        signatures: &'a FxHashMap<ast::Ident, Signature>,
+        external_signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
     ) -> Self {
         Self {
             stack: Vec::new(),
@@ -786,13 +788,11 @@ impl<'a> InferState<'a> {
 
     fn invoke(&mut self, target: &InvocationTarget, span: SourceSpan) -> Result<()> {
         let signature = match target {
-            InvocationTarget::Symbol(name) => {
-                self.signatures.get(name.as_str()).ok_or_else(|| {
-                    Report::msg(format!(
-                        "signature inference could not resolve local callee '{name}' at {span:?}"
-                    ))
-                })?
-            }
+            InvocationTarget::Symbol(name) => self.signatures.get(name).ok_or_else(|| {
+                Report::msg(format!(
+                    "signature inference could not resolve local callee '{name}' at {span:?}"
+                ))
+            })?,
             InvocationTarget::Path(path) => {
                 let key = invocation_path_key(path.inner());
                 self.external_signatures.get(&key).ok_or_else(|| {
@@ -1057,16 +1057,18 @@ fn masm_scalar_rank(ty: &Type) -> Option<u8> {
     }
 }
 
-fn invocation_path_key(path: &MasmPath) -> String {
-    path.to_absolute().to_string()
+fn invocation_path_key(path: &MasmPath) -> Arc<ast::Path> {
+    path.to_absolute().into()
 }
 
-fn external_signature_metadata_hint(external_signatures: &FxHashMap<String, Signature>) -> String {
+fn external_signature_metadata_hint(
+    external_signatures: &FxHashMap<Arc<ast::Path>, Signature>,
+) -> String {
     if external_signatures.is_empty() {
         return "; no external signature metadata is available".to_string();
     }
 
-    let mut paths = external_signatures.keys().cloned().collect::<Vec<_>>();
+    let mut paths = external_signatures.keys().map(|path| path.as_str()).collect::<Vec<_>>();
     paths.sort();
     let omitted = paths.len().saturating_sub(8);
     paths.truncate(8);

@@ -6,7 +6,7 @@ use std::{
 
 use miden_assembly_syntax::{
     Parse, ParseOptions, PathBuf as MasmPathBuf,
-    ast::{Export, Module, ModuleKind},
+    ast::{self, Export, Module, ModuleKind},
     debuginfo::SourceManager,
 };
 use miden_core::serde::Deserializable;
@@ -312,16 +312,12 @@ fn collect_mast_package_metadata(metadata: &mut ExternalMetadata, path: &Path) -
                 };
                 insert_external_signature(
                     &mut metadata.signatures,
-                    export.path.to_absolute().to_string(),
+                    export.path.clone(),
                     signature.clone(),
                 )?;
             }
             PackageExport::Type(export) => {
-                insert_external_type(
-                    &mut metadata.types,
-                    export.path.to_absolute().to_string(),
-                    export.ty.clone(),
-                )?;
+                insert_external_type(&mut metadata.types, export.path.clone(), export.ty.clone())?;
             }
             PackageExport::Constant(_) => {}
         }
@@ -379,7 +375,7 @@ fn collect_source_module_types(
         };
         let ty =
             signatures::convert_type_expr_with_external_types(context, module, &decl.ty(), types)?;
-        insert_external_type(types, path.as_path().to_absolute().to_string(), ty)?;
+        insert_external_type(types, path.as_path().to_absolute().into_owned().into(), ty)?;
     }
 
     Ok(())
@@ -394,7 +390,11 @@ fn collect_source_modules_types(
     for (module_index, module) in modules.iter().enumerate() {
         for (index, path) in module.exported() {
             if matches!(&module[index], Export::Type(_)) {
-                pending.push((module_index, index, path.as_path().to_absolute().to_string()));
+                pending.push((
+                    module_index,
+                    index,
+                    Arc::from(path.as_path().to_absolute().into_owned()),
+                ));
             }
         }
     }
@@ -462,7 +462,11 @@ fn collect_source_module_signatures(
                 external_types,
             )?
         };
-        insert_external_signature(signatures, path.as_path().to_absolute().to_string(), signature)?;
+        insert_external_signature(
+            signatures,
+            path.as_path().to_absolute().into_owned().into(),
+            signature,
+        )?;
     }
 
     Ok(())
@@ -487,7 +491,7 @@ fn package_base_dir(package: &ProjectPackage) -> Result<&Path> {
 
 fn insert_external_signature(
     signatures: &mut ExternalSignatureMap,
-    path: String,
+    path: Arc<ast::Path>,
     signature: midenc_hir::FunctionType,
 ) -> Result<()> {
     if let Some(existing) = signatures.insert(path.clone(), signature.clone())
@@ -500,7 +504,7 @@ fn insert_external_signature(
     Ok(())
 }
 
-fn insert_external_type(types: &mut ExternalTypeMap, path: String, ty: Type) -> Result<()> {
+fn insert_external_type(types: &mut ExternalTypeMap, path: Arc<ast::Path>, ty: Type) -> Result<()> {
     if let Some(existing) = types.insert(path.clone(), ty.clone())
         && existing != ty
     {

@@ -8,7 +8,10 @@ use std::{
 };
 
 use miden_assembly::Assembler;
-use miden_assembly_syntax::{Parse, ast::Instruction};
+use miden_assembly_syntax::{
+    Parse,
+    ast::{self, Instruction},
+};
 use miden_core::serde::Serializable;
 use miden_package_registry::{
     NoPackageStore, PackageId, PackageRecord, PackageRegistry, PackageVersions, Version,
@@ -567,8 +570,10 @@ end
 "#;
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures
-        .insert("::$kernel::callee".to_owned(), masm_signature([Type::Felt], [Type::Felt]));
+    external_signatures.insert(
+        ast::Path::new("::$kernel::callee").into(),
+        masm_signature([Type::Felt], [Type::Felt]),
+    );
     if let Err(err) = disassemble_source_with_external_signatures(
         source,
         "test",
@@ -1382,7 +1387,7 @@ end
         .expect("target procedure");
     let mut signatures = rustc_hash::FxHashMap::default();
     signatures.insert(
-        target.name().as_str().to_owned(),
+        target.name().as_ident(),
         signatures::convert_signature(&context, &module, target.signature().unwrap())?,
     );
     let capture = module
@@ -1983,8 +1988,10 @@ end
 fn lifts_external_path_call_with_known_signature() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures
-        .insert("::dep::callee".to_owned(), masm_signature([Type::Felt], [Type::Felt]));
+    external_signatures.insert(
+        ast::Path::new("::dep::callee").into(),
+        masm_signature([Type::Felt], [Type::Felt]),
+    );
 
     let output = disassemble_source_with_external_signatures(
         r#"
@@ -2008,8 +2015,10 @@ end
 fn infers_signature_through_external_path_call() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures
-        .insert("::dep::callee".to_owned(), masm_signature([Type::U32], [Type::Felt]));
+    external_signatures.insert(
+        ast::Path::new("::dep::callee").into(),
+        masm_signature([Type::U32], [Type::Felt]),
+    );
 
     let output = disassemble_source_with_external_signatures(
         r#"
@@ -2038,8 +2047,10 @@ end
 fn missing_external_callee_diagnostic_lists_available_metadata() {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures
-        .insert("::dep::callee".to_owned(), masm_signature([Type::Felt], [Type::Felt]));
+    external_signatures.insert(
+        ast::Path::new("::dep::callee").into(),
+        masm_signature([Type::Felt], [Type::Felt]),
+    );
 
     let err = match disassemble_source_with_external_signatures(
         r#"
@@ -2065,8 +2076,10 @@ end
 fn missing_external_callee_inference_diagnostic_lists_available_metadata() {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures
-        .insert("::dep::callee".to_owned(), masm_signature([Type::Felt], [Type::Felt]));
+    external_signatures.insert(
+        ast::Path::new("::dep::callee").into(),
+        masm_signature([Type::Felt], [Type::Felt]),
+    );
 
     let err = match disassemble_source_with_external_signatures(
         r#"
@@ -3666,7 +3679,8 @@ end
 fn advice_taint_treats_external_call_results_as_unconstrained() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures.insert("::dep::source".to_owned(), masm_signature([], [Type::Felt]));
+    external_signatures
+        .insert(ast::Path::new("::dep::source").into(), masm_signature([], [Type::Felt]));
 
     let output = disassemble_source_with_external_signatures(
         r#"
@@ -3711,7 +3725,8 @@ end
 fn advice_taint_treats_external_u32_results_as_constrained() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures.insert("::dep::source".to_owned(), masm_signature([], [Type::U32]));
+    external_signatures
+        .insert(ast::Path::new("::dep::source").into(), masm_signature([], [Type::U32]));
 
     let output = disassemble_source_with_external_signatures(
         r#"
@@ -3737,7 +3752,7 @@ fn advice_taint_does_not_retaint_constrained_external_result_from_tainted_argume
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
     external_signatures
-        .insert("::dep::clean".to_owned(), masm_signature([Type::Felt], [Type::U32]));
+        .insert(ast::Path::new("::dep::clean").into(), masm_signature([Type::Felt], [Type::U32]));
 
     let output = disassemble_source_with_external_signatures(
         r#"
@@ -3769,7 +3784,8 @@ end
 fn advice_taint_reports_raw_advice_passed_to_external_u32_parameter() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures.insert("::dep::consume".to_owned(), masm_signature([Type::U32], []));
+    external_signatures
+        .insert(ast::Path::new("::dep::consume").into(), masm_signature([Type::U32], []));
 
     let output = disassemble_source_with_external_signatures(
         r#"
@@ -3809,7 +3825,8 @@ end
 fn advice_taint_allows_raw_advice_passed_to_external_felt_parameter() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures.insert("::dep::consume".to_owned(), masm_signature([Type::Felt], []));
+    external_signatures
+        .insert(ast::Path::new("::dep::consume").into(), masm_signature([Type::Felt], []));
 
     let output = disassemble_source_with_external_signatures(
         r#"
@@ -3836,7 +3853,8 @@ end
 fn advice_taint_treats_u32assert_as_external_result_sanitizer() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures.insert("::dep::source".to_owned(), masm_signature([], [Type::Felt]));
+    external_signatures
+        .insert(ast::Path::new("::dep::source").into(), masm_signature([], [Type::Felt]));
 
     let output = disassemble_source_with_external_signatures(
         r#"
@@ -3958,7 +3976,8 @@ end
 fn advice_taint_reports_public_function_returning_external_result() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
-    external_signatures.insert("::dep::source".to_owned(), masm_signature([], [Type::Felt]));
+    external_signatures
+        .insert(ast::Path::new("::dep::source").into(), masm_signature([], [Type::Felt]));
 
     let output = disassemble_source_with_external_signatures(
         r#"

@@ -1,8 +1,8 @@
 use std::{collections::BTreeSet, rc::Rc, sync::Arc};
 
-use miden_assembly_syntax::ast::{Export, FunctionType, Module, SymbolResolution, TypeExpr};
+use miden_assembly_syntax::ast::{self, Export, FunctionType, Module, SymbolResolution, TypeExpr};
 use midenc_hir::{
-    ArrayType, Context, FunctionType as HirFunctionType, PointerType, Report,
+    ArrayType, Context, FunctionType as HirFunctionType, PointerType, Report, Span,
     StructType as HirStructType, Type, dialects::builtin::attributes::Signature,
 };
 
@@ -143,7 +143,7 @@ fn convert_type_expr_with_depth(
 fn resolve_type_ref(
     context: &Context,
     module: &Module,
-    mut path: miden_assembly_syntax::debuginfo::Span<Arc<miden_assembly_syntax::Path>>,
+    mut path: Span<Arc<ast::Path>>,
     external_types: &ExternalTypeMap,
     depth: usize,
 ) -> Result<Type> {
@@ -177,8 +177,8 @@ fn resolve_type_ref(
                 );
             }
             Ok(SymbolResolution::External(resolved)) => {
-                let resolved_key = external_type_key(resolved.inner());
-                if let Some(ty) = external_types.get(&resolved_key) {
+                let resolved_key = resolved.inner();
+                if let Some(ty) = external_types.get(resolved_key) {
                     return Ok(ty.clone());
                 }
                 if resolved != path {
@@ -216,16 +216,12 @@ fn resolve_type_ref(
     }
 }
 
-fn external_type_key(path: &miden_assembly_syntax::Path) -> String {
-    path.to_absolute().to_string()
-}
-
 fn external_type_metadata_hint(external_types: &ExternalTypeMap) -> String {
     if external_types.is_empty() {
         return "; no external type metadata is available".to_string();
     }
 
-    let paths = external_types.keys().take(8).cloned().collect::<Vec<_>>();
+    let paths = external_types.keys().take(8).map(|path| path.as_str()).collect::<Vec<_>>();
     let omitted = external_types.len().saturating_sub(paths.len());
     let mut hint = format!("; available external types: {}", paths.join(", "));
     if omitted > 0 {

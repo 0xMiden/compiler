@@ -7,12 +7,14 @@ mod project;
 mod semantics;
 mod signatures;
 mod stack;
+#[cfg(test)]
+mod tests;
 
-use std::{collections::BTreeMap, path::Path, rc::Rc};
+use std::{collections::BTreeMap, path::Path, rc::Rc, sync::Arc};
 
 use miden_assembly_syntax::{
     Parse, ParseOptions,
-    ast::{Module, ModuleKind},
+    ast::{self, Module, ModuleKind},
     debuginfo::{SourceLanguage, SourceManager, SourceManagerExt, Uri},
 };
 use midenc_hir::{Context, FunctionType, Report, Type, dialects::builtin};
@@ -25,14 +27,14 @@ pub type Result<T> = core::result::Result<T, Report>;
 /// These entries are used for calls to procedures outside the module being disassembled. Project
 /// disassembly can populate this from package metadata; tests or embedding tools can provide it
 /// directly when they already know the callee contracts.
-pub type ExternalSignatureMap = BTreeMap<String, FunctionType>;
+pub type ExternalSignatureMap = BTreeMap<Arc<ast::Path>, FunctionType>;
 
 /// External type definitions keyed by absolute MASM type path.
 ///
 /// These entries are used when MASM procedure signatures refer to imported types. Project
 /// disassembly populates this from dependency package metadata/source exports so signatures can be
 /// lowered without requiring the MASM AST resolver to load external modules.
-pub type ExternalTypeMap = BTreeMap<String, Type>;
+pub type ExternalTypeMap = BTreeMap<Arc<ast::Path>, Type>;
 
 /// Configuration for MASM disassembly.
 #[derive(Default, Debug, Clone, Copy)]
@@ -196,6 +198,3 @@ fn masm_module_path_from_file(path: &Path) -> Result<miden_assembly_syntax::Path
     stem.parse::<miden_assembly_syntax::PathBuf>()
         .map_err(|err| Report::msg(format!("invalid MASM module path '{}': {err}", stem)))
 }
-
-#[cfg(test)]
-mod tests;
