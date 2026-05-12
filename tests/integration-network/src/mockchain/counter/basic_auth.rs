@@ -13,13 +13,19 @@ use super::super::support::{
     COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, compile_rust_package,
     counter_storage_slot_name, execute_tx, note_cycles, note_script_root,
 };
+use crate::mockchain::support::read_miden_package;
 
 /// Tests the counter contract deployment and note consumption workflow on a mock chain.
 #[test]
 pub fn counter_note_basic_auth_increments_storage() {
     // Compile the contracts first (before creating any runtime)
-    let contract_package = compile_rust_package("../../examples/counter-contract", true);
+    let direct_contract_package = compile_rust_package("../../examples/counter-contract", true);
+    dbg!(direct_contract_package.digest());
     let note_package = compile_rust_package("../../examples/counter-note", true);
+    let contract_package = read_miden_package(
+        "../../examples/counter-contract/target/miden/release/counter_contract.masp",
+    );
+    dbg!(contract_package.digest());
 
     let counter_storage_slot = counter_storage_slot_name();
 

@@ -18,6 +18,7 @@ use super::super::support::{
     build_existing_counter_account_builder_with_auth_package, compile_rust_package,
     counter_storage_slot_name, execute_tx, note_cycles, note_script_root,
 };
+use crate::mockchain::support::read_miden_package;
 
 /// Tests the counter contract with a "no-auth" authentication component.
 ///
@@ -29,10 +30,15 @@ use super::super::support::{
 #[test]
 pub fn counter_note_no_auth_increments_storage_without_signature() {
     // Compile the contracts first (before creating any runtime)
-    let counter_package = compile_rust_package("../../examples/counter-contract", true);
+    let direct_counter_package = compile_rust_package("../../examples/counter-contract", true);
+    dbg!(direct_counter_package.digest());
     let note_package = compile_rust_package("../../examples/counter-note", true);
     let no_auth_auth_component =
         compile_rust_package("../../examples/auth-component-no-auth", true);
+    let counter_package = read_miden_package(
+        "../../examples/counter-contract/target/miden/release/counter_contract.masp",
+    );
+    dbg!(counter_package.digest());
 
     let counter_storage_slot = counter_storage_slot_name();
 

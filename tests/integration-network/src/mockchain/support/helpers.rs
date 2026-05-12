@@ -1,6 +1,6 @@
 //! Common helper functions for mock-chain integration tests.
 
-use std::{future::Future, sync::Arc};
+use std::{fs, future::Future, path::Path, sync::Arc};
 
 use miden_client::{
     Word,
@@ -11,7 +11,7 @@ use miden_client::{
     note::{Note, NoteType},
     transaction::RawOutputNote,
 };
-use miden_core::Felt;
+use miden_core::{Felt, serde::Deserializable};
 use miden_mast_package::Package;
 use miden_protocol::{
     account::{
@@ -62,6 +62,15 @@ pub(crate) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Pac
 
     let mut test = builder.build();
     test.compile_package()
+}
+
+pub(crate) fn read_miden_package(path: impl AsRef<Path>) -> Arc<Package> {
+    let path = path.as_ref();
+    let bytes = fs::read(path)
+        .unwrap_or_else(|err| panic!("failed to read Miden package {}: {err}", path.display()));
+    Arc::new(Package::read_from_bytes(&bytes).unwrap_or_else(|err| {
+        panic!("failed to deserialize Miden package {}: {err}", path.display())
+    }))
 }
 
 /// Returns the root of the note script exported by the compiled package.
