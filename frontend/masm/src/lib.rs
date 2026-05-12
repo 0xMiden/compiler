@@ -1,6 +1,5 @@
 //! MASM-to-HIR disassembler.
 
-mod error;
 mod events;
 mod infer;
 mod lift;
@@ -16,9 +15,10 @@ use miden_assembly_syntax::{
     ast::{Module, ModuleKind},
     debuginfo::{SourceLanguage, SourceManager, SourceManagerExt, Uri},
 };
-use midenc_hir::{Context, FunctionType, Type, dialects::builtin};
+use midenc_hir::{Context, FunctionType, Report, Type, dialects::builtin};
 
-pub use self::error::Result;
+/// Result type used by the MASM disassembler.
+pub type Result<T> = core::result::Result<T, Report>;
 
 /// External procedure signatures keyed by absolute MASM procedure path.
 ///
@@ -35,20 +35,12 @@ pub type ExternalSignatureMap = BTreeMap<String, FunctionType>;
 pub type ExternalTypeMap = BTreeMap<String, Type>;
 
 /// Configuration for MASM disassembly.
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct DisassemblerConfig {
     /// Infer signatures for procedures whose MASM AST/package metadata does not provide one.
     ///
     /// When enabled, missing signatures are inferred from stack underflow and final stack shape.
     pub infer_missing_signatures: bool,
-}
-
-impl Default for DisassemblerConfig {
-    fn default() -> Self {
-        Self {
-            infer_missing_signatures: false,
-        }
-    }
 }
 
 /// Result of disassembling a MASM module.
@@ -99,7 +91,7 @@ fn disassemble_file_with_module_path_and_external_signatures(
     let path = path.as_ref();
     let source_manager = context.session().source_manager.clone();
     let source_file = source_manager.load_file(path).map_err(|err| {
-        error::error(format!("failed to load MASM source '{}': {err}", path.display()))
+        Report::msg(format!("failed to load MASM source '{}': {err}", path.display()))
     })?;
     let module = source_file
         .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))?;
@@ -199,10 +191,10 @@ pub fn disassemble_module(
 
 fn masm_module_path_from_file(path: &Path) -> Result<miden_assembly_syntax::PathBuf> {
     let stem = path.file_stem().and_then(|stem| stem.to_str()).ok_or_else(|| {
-        error::error(format!("failed to derive MASM module name from '{}'", path.display()))
+        Report::msg(format!("failed to derive MASM module name from '{}'", path.display()))
     })?;
     stem.parse::<miden_assembly_syntax::PathBuf>()
-        .map_err(|err| error::error(format!("invalid MASM module path '{}': {err}", stem)))
+        .map_err(|err| Report::msg(format!("invalid MASM module path '{}': {err}", stem)))
 }
 
 #[cfg(test)]

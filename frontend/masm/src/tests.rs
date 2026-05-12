@@ -14,30 +14,16 @@ use miden_package_registry::{
     NoPackageStore, PackageId, PackageRecord, PackageRegistry, PackageVersions, Version,
 };
 use miden_project::ProjectDependencyGraphBuilder;
-use midenc_dialect_arith::{
-    Add as ArithAdd, And as ArithAnd, Constant as ArithConstant, Eq as ArithEq,
-    Ext2Add as ArithExt2Add, Ext2Div as ArithExt2Div, Ext2Inv as ArithExt2Inv,
-    Ext2Mul as ArithExt2Mul, Ext2Neg as ArithExt2Neg, Ext2Sub as ArithExt2Sub, Incr as ArithIncr,
-    Mul as ArithMul, Split as ArithSplit, Trunc as ArithTrunc, Zext as ArithZext,
-};
-use midenc_dialect_cf::Select as CfSelect;
+use midenc_dialect_arith as arith;
+use midenc_dialect_cf as cf;
 use midenc_dialect_hir::{
-    AdviceLoadWord as HirAdviceLoadWord, AdvicePipe as HirAdvicePipe, AdvicePop as HirAdvicePop,
-    Assert as HirAssert, AssertEq as HirAssertEq, AssertU32 as HirAssertU32, Assertz as HirAssertz,
-    Caller as HirCaller, Clk as HirClk, CryptoStream as HirCryptoStream, EmitEvent as HirEmitEvent,
-    EmitEventImm as HirEmitEventImm, EvalCircuit as HirEvalCircuit,
-    FriExt2Fold4 as HirFriExt2Fold4, HMerge as HirHMerge, HPerm as HirHPerm, Hash as HirHash,
-    HornerBase as HirHornerBase, HornerExt as HirHornerExt, IntToPtr as HirIntToPtr,
-    Load as HirLoad, LoadLocal as HirLoadLocal, LocalAddress as HirLocalAddress,
-    LogPrecompile as HirLogPrecompile, MTreeGet as HirMTreeGet, MTreeMerge as HirMTreeMerge,
-    MTreeSet as HirMTreeSet, MTreeVerify as HirMTreeVerify, MemStream as HirMemStream,
-    Store as HirStore, StoreLocal as HirStoreLocal, SystemEvent as HirSystemEvent,
+    self as hir,
     analyses::{
         AdviceTaintAnalysis, AdviceTaintContextKind, AdviceTaintDiagnostic, AdviceTaintExitFinding,
         AdviceTaintExternalCallFinding, AdviceTaintFinding, AdviceTaintOriginKind,
     },
 };
-use midenc_dialect_scf::{If, While};
+use midenc_dialect_scf as scf;
 use midenc_hir::{
     AddressSpace, ArrayType, CallConv, FunctionType, Immediate, PointerType, SymbolName,
     SymbolTable, Type,
@@ -59,7 +45,7 @@ fn lifts_known_signature_u32_add() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc add(a: u32, b: u32) -> u32
-u32wrapping_add
+    u32wrapping_add
 end
 "#,
         "test",
@@ -85,7 +71,7 @@ fn rejects_missing_signature_in_phase_one() {
     let result = disassemble_source(
         r#"
 pub proc no_sig
-push.1
+    push.1
 end
 "#,
         "test",
@@ -107,7 +93,7 @@ fn rejects_declared_signature_body_drift() {
             "extra_value",
             r#"
 pub proc extra_value(value: felt) -> felt
-dup.0
+    dup.0
 end
 "#,
             "leaves 1 extra value(s) on the stack",
@@ -116,7 +102,7 @@ end
             "missing_value",
             r#"
 pub proc missing_value(value: felt) -> (felt, felt)
-nop
+    nop
 end
 "#,
             "stack underflow",
@@ -125,7 +111,7 @@ end
             "undeclared_input",
             r#"
 pub proc undeclared_input(value: felt) -> felt
-add
+    add
 end
 "#,
             "stack underflow",
@@ -153,7 +139,7 @@ fn rejects_unsupported_instruction_during_known_signature_lifting() {
     let result = disassemble_source(
         r#"
 pub proc unsupported(value: u32) -> u32
-dynexec
+    dynexec
 end
 "#,
         "test",
@@ -176,7 +162,7 @@ fn rejects_unsupported_instruction_during_signature_inference() {
     let result = disassemble_source(
         r#"
 pub proc unsupported
-dynexec
+    dynexec
 end
 "#,
         "test",
@@ -557,11 +543,11 @@ fn supported_invocation_instruction_matrix_lifts() {
         let source = format!(
             r#"
 proc callee(value: felt) -> felt
-add.1
+    add.1
 end
 
 pub proc matrix_{name}(value: felt) -> felt
-{instruction}
+    {instruction}
 end
 "#
         );
@@ -576,7 +562,7 @@ end
 
     let source = r#"
 pub proc matrix_syscall(value: felt) -> felt
-syscall.callee
+    syscall.callee
 end
 "#;
     let context = Rc::new(Context::default());
@@ -600,27 +586,27 @@ fn lifts_ext2_instructions_to_first_class_arith_ops() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc ext2_add(rhs0: felt, rhs1: felt, lhs0: felt, lhs1: felt) -> (felt, felt)
-ext2add
+    ext2add
 end
 
 pub proc ext2_sub(rhs0: felt, rhs1: felt, lhs0: felt, lhs1: felt) -> (felt, felt)
-ext2sub
+    ext2sub
 end
 
 pub proc ext2_mul(rhs0: felt, rhs1: felt, lhs0: felt, lhs1: felt) -> (felt, felt)
-ext2mul
+    ext2mul
 end
 
 pub proc ext2_div(rhs0: felt, rhs1: felt, lhs0: felt, lhs1: felt) -> (felt, felt)
-ext2div
+    ext2div
 end
 
 pub proc ext2_neg(operand0: felt, operand1: felt) -> (felt, felt)
-ext2neg
+    ext2neg
 end
 
 pub proc ext2_inv(operand0: felt, operand1: felt) -> (felt, felt)
-ext2inv
+    ext2inv
 end
 "#,
         "test",
@@ -628,12 +614,30 @@ end
         context,
     )?;
 
-    assert_eq!(top_level_op_count::<ArithExt2Add>(find_function(output.module, "ext2_add")), 1);
-    assert_eq!(top_level_op_count::<ArithExt2Sub>(find_function(output.module, "ext2_sub")), 1);
-    assert_eq!(top_level_op_count::<ArithExt2Mul>(find_function(output.module, "ext2_mul")), 1);
-    assert_eq!(top_level_op_count::<ArithExt2Div>(find_function(output.module, "ext2_div")), 1);
-    assert_eq!(top_level_op_count::<ArithExt2Neg>(find_function(output.module, "ext2_neg")), 1);
-    assert_eq!(top_level_op_count::<ArithExt2Inv>(find_function(output.module, "ext2_inv")), 1);
+    assert_eq!(
+        top_level_op_count::<arith::Ext2Add>(find_function(output.module, "ext2_add")),
+        1
+    );
+    assert_eq!(
+        top_level_op_count::<arith::Ext2Sub>(find_function(output.module, "ext2_sub")),
+        1
+    );
+    assert_eq!(
+        top_level_op_count::<arith::Ext2Mul>(find_function(output.module, "ext2_mul")),
+        1
+    );
+    assert_eq!(
+        top_level_op_count::<arith::Ext2Div>(find_function(output.module, "ext2_div")),
+        1
+    );
+    assert_eq!(
+        top_level_op_count::<arith::Ext2Neg>(find_function(output.module, "ext2_neg")),
+        1
+    );
+    assert_eq!(
+        top_level_op_count::<arith::Ext2Inv>(find_function(output.module, "ext2_inv")),
+        1
+    );
     Ok(())
 }
 
@@ -644,15 +648,15 @@ fn lifts_vm_context_instructions_to_first_class_hir_ops() -> Result<()> {
         r#"
 @locals(1)
 pub proc local_addr() -> ptr<felt, addrspace(felt)>
-locaddr.0
+    locaddr.0
 end
 
 pub proc caller_word() -> [felt; 4]
-caller
+    caller
 end
 
 pub proc current_clk() -> felt
-clk
+    clk
 end
 "#,
         "test",
@@ -661,11 +665,14 @@ end
     )?;
 
     assert_eq!(
-        top_level_op_count::<HirLocalAddress>(find_function(output.module, "local_addr")),
+        top_level_op_count::<hir::LocalAddress>(find_function(output.module, "local_addr")),
         1
     );
-    assert_eq!(top_level_op_count::<HirCaller>(find_function(output.module, "caller_word")), 1);
-    assert_eq!(top_level_op_count::<HirClk>(find_function(output.module, "current_clk")), 1);
+    assert_eq!(
+        top_level_op_count::<hir::Caller>(find_function(output.module, "caller_word")),
+        1
+    );
+    assert_eq!(top_level_op_count::<hir::Clk>(find_function(output.module, "current_clk")), 1);
     Ok(())
 }
 
@@ -675,11 +682,11 @@ fn lifts_advice_and_event_ops_to_first_class_hir_ops() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc advice_values() -> (felt, felt, felt)
-adv_push.3
+    adv_push.3
 end
 
 pub proc advice_word(a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
-adv_loadw
+    adv_loadw
 end
 
 pub proc emitted(event_id: felt) -> felt
@@ -687,7 +694,7 @@ emit
 end
 
 pub proc emitted_imm()
-emit.event("phase28")
+    emit.event("phase28")
 end
 "#,
         "test",
@@ -696,16 +703,16 @@ end
     )?;
 
     assert_eq!(
-        top_level_op_count::<HirAdvicePop>(find_function(output.module, "advice_values")),
+        top_level_op_count::<hir::AdvicePop>(find_function(output.module, "advice_values")),
         3
     );
     assert_eq!(
-        top_level_op_count::<HirAdviceLoadWord>(find_function(output.module, "advice_word")),
+        top_level_op_count::<hir::AdviceLoadWord>(find_function(output.module, "advice_word")),
         1
     );
-    assert_eq!(top_level_op_count::<HirEmitEvent>(find_function(output.module, "emitted")), 1);
+    assert_eq!(top_level_op_count::<hir::EmitEvent>(find_function(output.module, "emitted")), 1);
     assert_eq!(
-        top_level_op_count::<HirEmitEventImm>(find_function(output.module, "emitted_imm")),
+        top_level_op_count::<hir::EmitEventImm>(find_function(output.module, "emitted_imm")),
         1
     );
     Ok(())
@@ -719,22 +726,22 @@ fn lifts_system_events_to_first_class_hir_ops() -> Result<()> {
     let source = format!(
         r#"
 pub proc map_event(k0: felt, k1: felt, k2: felt, k3: felt) -> (felt, felt, felt, felt)
-adv.push_mapval
+    adv.push_mapval
 end
 
 pub proc hqword_event({hqword_params}) -> ({hqword_results})
-adv.insert_hqword
+    adv.insert_hqword
 end
 "#
     );
     let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
 
     assert_eq!(
-        top_level_op_count::<HirSystemEvent>(find_function(output.module, "map_event")),
+        top_level_op_count::<hir::SystemEvent>(find_function(output.module, "map_event")),
         1
     );
     assert_eq!(
-        top_level_op_count::<HirSystemEvent>(find_function(output.module, "hqword_event")),
+        top_level_op_count::<hir::SystemEvent>(find_function(output.module, "hqword_event")),
         1
     );
     Ok(())
@@ -744,27 +751,33 @@ end
 fn lifts_core_hash_ops_to_first_class_hir_ops() -> Result<()> {
     let context = Rc::new(Context::default());
     let state_params = (0..12).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
-    let state_results = vec!["felt"; 12].join(", ");
+    let state_results = ["felt"; 12].join(", ");
     let source = format!(
         r#"
 pub proc hash_word(a0: felt, a1: felt, a2: felt, a3: felt) -> (felt, felt, felt, felt)
-hash
+    hash
 end
 
 pub proc merge_words(a0: felt, a1: felt, a2: felt, a3: felt, b0: felt, b1: felt, b2: felt, b3: felt) -> (felt, felt, felt, felt)
-hmerge
+    hmerge
 end
 
 pub proc permute_state({state_params}) -> ({state_results})
-hperm
+    hperm
 end
 "#
     );
     let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
 
-    assert_eq!(top_level_op_count::<HirHash>(find_function(output.module, "hash_word")), 1);
-    assert_eq!(top_level_op_count::<HirHMerge>(find_function(output.module, "merge_words")), 1);
-    assert_eq!(top_level_op_count::<HirHPerm>(find_function(output.module, "permute_state")), 1);
+    assert_eq!(top_level_op_count::<hir::Hash>(find_function(output.module, "hash_word")), 1);
+    assert_eq!(
+        top_level_op_count::<hir::HMerge>(find_function(output.module, "merge_words")),
+        1
+    );
+    assert_eq!(
+        top_level_op_count::<hir::HPerm>(find_function(output.module, "permute_state")),
+        1
+    );
     Ok(())
 }
 
@@ -774,38 +787,38 @@ fn lifts_merkle_ops_to_first_class_hir_ops() -> Result<()> {
     let params6 = (0..6).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
     let params8 = (0..8).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
     let params10 = (0..10).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
-    let results4 = vec!["felt"; 4].join(", ");
-    let results8 = vec!["felt"; 8].join(", ");
-    let results10 = vec!["felt"; 10].join(", ");
+    let results4 = ["felt"; 4].join(", ");
+    let results8 = ["felt"; 8].join(", ");
+    let results10 = ["felt"; 10].join(", ");
     let source = format!(
         r#"
 pub proc get_node({params6}) -> ({results8})
-mtree_get
+    mtree_get
 end
 
 pub proc set_node({params10}) -> ({results8})
-mtree_set
+    mtree_set
 end
 
 pub proc merge_roots({params8}) -> ({results4})
-mtree_merge
+    mtree_merge
 end
 
 pub proc verify_node({params10}) -> ({results10})
-mtree_verify.err="bad path"
+    mtree_verify.err="bad path"
 end
 "#
     );
     let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
 
-    assert_eq!(top_level_op_count::<HirMTreeGet>(find_function(output.module, "get_node")), 1);
-    assert_eq!(top_level_op_count::<HirMTreeSet>(find_function(output.module, "set_node")), 1);
+    assert_eq!(top_level_op_count::<hir::MTreeGet>(find_function(output.module, "get_node")), 1);
+    assert_eq!(top_level_op_count::<hir::MTreeSet>(find_function(output.module, "set_node")), 1);
     assert_eq!(
-        top_level_op_count::<HirMTreeMerge>(find_function(output.module, "merge_roots")),
+        top_level_op_count::<hir::MTreeMerge>(find_function(output.module, "merge_roots")),
         1
     );
     assert_eq!(
-        top_level_op_count::<HirMTreeVerify>(find_function(output.module, "verify_node")),
+        top_level_op_count::<hir::MTreeVerify>(find_function(output.module, "verify_node")),
         1
     );
     Ok(())
@@ -819,14 +832,14 @@ fn lifts_crypto_stream_to_first_class_hir_op() -> Result<()> {
     let source = format!(
         r#"
 pub proc stream_block({params}) -> ({results})
-crypto_stream
+    crypto_stream
 end
 "#
     );
     let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
 
     assert_eq!(
-        top_level_op_count::<HirCryptoStream>(find_function(output.module, "stream_block")),
+        top_level_op_count::<hir::CryptoStream>(find_function(output.module, "stream_block")),
         1
     );
     Ok(())
@@ -840,22 +853,22 @@ fn lifts_streaming_io_ops_to_first_class_hir_ops() -> Result<()> {
     let source = format!(
         r#"
 pub proc stream_memory({params}) -> ({results})
-mem_stream
+    mem_stream
 end
 
 pub proc pipe_advice({params}) -> ({results})
-adv_pipe
+    adv_pipe
 end
 "#
     );
     let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
 
     assert_eq!(
-        top_level_op_count::<HirMemStream>(find_function(output.module, "stream_memory")),
+        top_level_op_count::<hir::MemStream>(find_function(output.module, "stream_memory")),
         1
     );
     assert_eq!(
-        top_level_op_count::<HirAdvicePipe>(find_function(output.module, "pipe_advice")),
+        top_level_op_count::<hir::AdvicePipe>(find_function(output.module, "pipe_advice")),
         1
     );
     Ok(())
@@ -868,52 +881,55 @@ fn lifts_proof_primitives_to_first_class_hir_ops() -> Result<()> {
     let params12 = (0..12).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
     let params16 = (0..16).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
     let params17 = (0..17).map(|i| format!("v{i}: felt")).collect::<Vec<_>>().join(", ");
-    let results3 = vec!["felt"; 3].join(", ");
-    let results12 = vec!["felt"; 12].join(", ");
-    let results16 = vec!["felt"; 16].join(", ");
+    let results3 = ["felt"; 3].join(", ");
+    let results12 = ["felt"; 12].join(", ");
+    let results16 = ["felt"; 16].join(", ");
     let source = format!(
         r#"
 pub proc fold_fri({params17}) -> ({results16})
-fri_ext2fold4
+    fri_ext2fold4
 end
 
 pub proc horner_base({params16}) -> ({results16})
-horner_eval_base
+    horner_eval_base
 end
 
 pub proc horner_ext({params16}) -> ({results16})
-horner_eval_ext
+    horner_eval_ext
 end
 
 pub proc eval_circuit_case({params3}) -> ({results3})
-eval_circuit
+    eval_circuit
 end
 
 pub proc log_precompile_case({params12}) -> ({results12})
-log_precompile
+    log_precompile
 end
 "#
     );
     let output = disassemble_source(source, "test", &DisassemblerConfig::default(), context)?;
 
     assert_eq!(
-        top_level_op_count::<HirFriExt2Fold4>(find_function(output.module, "fold_fri")),
+        top_level_op_count::<hir::FriExt2Fold4>(find_function(output.module, "fold_fri")),
         1
     );
     assert_eq!(
-        top_level_op_count::<HirHornerBase>(find_function(output.module, "horner_base")),
+        top_level_op_count::<hir::HornerBase>(find_function(output.module, "horner_base")),
         1
     );
     assert_eq!(
-        top_level_op_count::<HirHornerExt>(find_function(output.module, "horner_ext")),
+        top_level_op_count::<hir::HornerExt>(find_function(output.module, "horner_ext")),
         1
     );
     assert_eq!(
-        top_level_op_count::<HirEvalCircuit>(find_function(output.module, "eval_circuit_case")),
+        top_level_op_count::<hir::EvalCircuit>(find_function(output.module, "eval_circuit_case")),
         1
     );
     assert_eq!(
-        top_level_op_count::<HirLogPrecompile>(find_function(output.module, "log_precompile_case")),
+        top_level_op_count::<hir::LogPrecompile>(find_function(
+            output.module,
+            "log_precompile_case"
+        )),
         1
     );
     Ok(())
@@ -958,7 +974,7 @@ fn infers_straight_line_signature() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc inc
-add.1
+    add.1
 end
 "#,
         "test",
@@ -983,11 +999,11 @@ fn infers_field_assertion_inputs_as_felt() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc assert_one
-assert
+    assert
 end
 
 pub proc assert_zero
-assertz
+    assertz
 end
 "#,
         "test",
@@ -1013,7 +1029,7 @@ fn infers_ext2_signature() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc ext2_product
-ext2mul
+    ext2mul
 end
 "#,
         "test",
@@ -1038,15 +1054,15 @@ fn infers_vm_context_signatures() -> Result<()> {
         r#"
 @locals(1)
 pub proc local_addr
-locaddr.0
+    locaddr.0
 end
 
 pub proc caller_word
-caller
+    caller
 end
 
 pub proc current_clk
-clk
+    clk
 end
 "#,
         "test",
@@ -1079,19 +1095,19 @@ fn infers_advice_and_event_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc advice_values
-adv_push.2
+    adv_push.2
 end
 
 pub proc advice_word
-adv_loadw
+    adv_loadw
 end
 
 pub proc emitted
-emit
+    emit
 end
 
 pub proc emitted_imm
-emit.event("phase28")
+    emit.event("phase28")
 end
 "#,
         "test",
@@ -1130,11 +1146,11 @@ fn infers_system_event_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc map_event
-adv.push_mapval
+    adv.push_mapval
 end
 
 pub proc hqword_event
-adv.insert_hqword
+    adv.insert_hqword
 end
 "#,
         "test",
@@ -1164,15 +1180,15 @@ fn infers_core_hash_op_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc hash_word
-hash
+    hash
 end
 
 pub proc merge_words
-hmerge
+    hmerge
 end
 
 pub proc permute_state
-hperm
+    hperm
 end
 "#,
         "test",
@@ -1208,19 +1224,19 @@ fn infers_merkle_op_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc get_node
-mtree_get
+    mtree_get
 end
 
 pub proc set_node
-mtree_set
+    mtree_set
 end
 
 pub proc merge_roots
-mtree_merge
+    mtree_merge
 end
 
 pub proc verify_node
-mtree_verify.err="bad path"
+    mtree_verify.err="bad path"
 end
 "#,
         "test",
@@ -1251,7 +1267,7 @@ fn infers_crypto_stream_signature() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc stream_block
-crypto_stream
+    crypto_stream
 end
 "#,
         "test",
@@ -1275,11 +1291,11 @@ fn infers_streaming_io_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc stream_memory
-mem_stream
+    mem_stream
 end
 
 pub proc pipe_advice
-adv_pipe
+    adv_pipe
 end
 "#,
         "test",
@@ -1305,23 +1321,23 @@ fn infers_proof_primitive_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc fold_fri
-fri_ext2fold4
+    fri_ext2fold4
 end
 
 pub proc horner_base
-horner_eval_base
+    horner_eval_base
 end
 
 pub proc horner_ext
-horner_eval_ext
+    horner_eval_ext
 end
 
 pub proc eval_circuit_case
-eval_circuit
+    eval_circuit
 end
 
 pub proc log_precompile_case
-log_precompile
+    log_precompile
 end
 "#,
         "test",
@@ -1351,11 +1367,11 @@ end
 fn infers_procref_as_word_but_lifting_remains_unsupported() -> Result<()> {
     let source = r#"
 proc target()
-nop
+    nop
 end
 
 pub proc capture
-procref.target
+    procref.target
 end
 "#;
     let context = Rc::new(Context::default());
@@ -1384,11 +1400,11 @@ end
     let result = disassemble_source(
         r#"
 proc target()
-nop
+    nop
 end
 
 pub proc capture() -> [felt; 4]
-procref.target
+    procref.target
 end
 "#,
         "test",
@@ -1411,15 +1427,15 @@ fn infers_error_annotated_assertion_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc assert_msg
-assert.err="plain"
+    assert.err="plain"
 end
 
 pub proc assert_eqw_msg
-assert_eqw.err="word"
+    assert_eqw.err="word"
 end
 
 pub proc u32assert_msg
-u32assert.err="u32"
+    u32assert.err="u32"
 end
 "#,
         "test",
@@ -1454,7 +1470,7 @@ fn infers_sdepth_signature() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc depth
-sdepth
+    sdepth
 end
 "#,
         "test",
@@ -1478,8 +1494,8 @@ fn infers_debug_decorator_signature() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc debugged
-debug.stack
-trace.1
+    debug.stack
+    trace.1
 end
 "#,
         "test",
@@ -1502,11 +1518,11 @@ fn infers_local_callee_before_caller() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc inc
-add.1
+    add.1
 end
 
 pub proc entry
-exec.inc
+    exec.inc
 end
 "#,
         "test",
@@ -1531,11 +1547,11 @@ fn infers_control_flow_join_signature() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc choose
-if.true
-    add.1
-else
-    add.2
-end
+    if.true
+        add.1
+    else
+        add.2
+    end
 end
 "#,
         "test",
@@ -1561,7 +1577,7 @@ fn infers_u32_signature() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc add
-u32wrapping_add
+    u32wrapping_add
 end
 "#,
         "test",
@@ -1586,26 +1602,26 @@ fn infers_cumulative_and_alternative_type_constraints() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc sequential_refine
-dup.0
-add.1
-drop
-u32assert
+    dup.0
+    add.1
+    drop
+    u32assert
 end
 
 pub proc branch_alternative
-if.true
-    u32assert
-else
-    add.1
-end
+    if.true
+        u32assert
+    else
+        add.1
+    end
 end
 
 pub proc branch_common
-if.true
-    u32assert
-else
-    u32cast
-end
+    if.true
+        u32assert
+    else
+        u32cast
+    end
 end
 "#,
         "test",
@@ -1650,7 +1666,7 @@ fn infers_u32split_signature() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc split
-u32split
+    u32split
 end
 "#,
         "test",
@@ -1677,11 +1693,11 @@ fn infers_u32test_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc test_one
-u32test
+    u32test
 end
 
 pub proc test_word
-u32testw
+    u32testw
 end
 "#,
         "test",
@@ -1714,31 +1730,31 @@ fn infers_u32_widening_arithmetic_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc add_wide
-u32widening_add
+    u32widening_add
 end
 
 pub proc add3_wide
-u32widening_add3
+    u32widening_add3
 end
 
 pub proc add3_overflow
-u32overflowing_add3
+    u32overflowing_add3
 end
 
 pub proc add3_wrapping
-u32wrapping_add3
+    u32wrapping_add3
 end
 
 pub proc mul_wide
-u32widening_mul
+    u32widening_mul
 end
 
 pub proc madd_wide
-u32widening_madd
+    u32widening_madd
 end
 
 pub proc madd_wrapping
-u32wrapping_madd
+    u32wrapping_madd
 end
 "#,
         "test",
@@ -1785,19 +1801,19 @@ fn infers_conditional_stack_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc choose
-cdrop
+    cdrop
 end
 
 pub proc swap
-cswap
+    cswap
 end
 
 pub proc choose_word
-cdropw
+    cdropw
 end
 
 pub proc swap_word
-cswapw
+    cswapw
 end
 "#,
         "test",
@@ -1847,12 +1863,12 @@ fn infers_local_word_signatures() -> Result<()> {
         r#"
 @locals(4)
 pub proc load_word
-loc_loadw_le.0
+    loc_loadw_le.0
 end
 
 @locals(4)
 pub proc store_word
-loc_storew_be.0
+    loc_storew_be.0
 end
 "#,
         "test",
@@ -1883,31 +1899,31 @@ fn infers_memory_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc load
-mem_load
+    mem_load
 end
 
 pub proc load_imm
-mem_load.0
+    mem_load.0
 end
 
 pub proc load_word
-mem_loadw_le
+    mem_loadw_le
 end
 
 pub proc store
-mem_store
+    mem_store
 end
 
 pub proc store_imm
-mem_store.0
+    mem_store.0
 end
 
 pub proc store_word
-mem_storew_be
+    mem_storew_be
 end
 
 pub proc store_word_imm
-mem_storew_le.0
+    mem_storew_le.0
 end
 "#,
         "test",
@@ -1973,7 +1989,7 @@ fn lifts_external_path_call_with_known_signature() -> Result<()> {
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry(a: felt) -> felt
-exec.::dep::callee
+    exec.::dep::callee
 end
 "#,
         "test",
@@ -1998,7 +2014,7 @@ fn infers_signature_through_external_path_call() -> Result<()> {
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry
-exec.::dep::callee
+    exec.::dep::callee
 end
 "#,
         "test",
@@ -2028,7 +2044,7 @@ fn missing_external_callee_diagnostic_lists_available_metadata() {
     let err = match disassemble_source_with_external_signatures(
         r#"
 pub proc entry(a: felt) -> felt
-exec.::dep::missing
+    exec.::dep::missing
 end
 "#,
         "test",
@@ -2055,7 +2071,7 @@ fn missing_external_callee_inference_diagnostic_lists_available_metadata() {
     let err = match disassemble_source_with_external_signatures(
         r#"
 pub proc entry
-exec.::dep::missing
+    exec.::dep::missing
 end
 "#,
         "test",
@@ -2084,7 +2100,7 @@ fn lifts_known_signature_with_local_type_alias() -> Result<()> {
 type Scalar = felt
 
 pub proc inc(a: Scalar) -> Scalar
-add.1
+    add.1
 end
 "#,
         "test",
@@ -2125,7 +2141,7 @@ fn project_dependency_graph_resolves_imported_external_type_metadata() -> Result
     let (root, app_dir) =
         write_imported_type_dependency_project("midenc_frontend_masm_graph_type_metadata", true);
     let context = Rc::new(Context::default());
-    let registry = NoPackageStore::default();
+    let registry = NoPackageStore;
     let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
         .with_source_manager(context.session().source_manager.clone())
         .build_from_path(app_dir.join("miden-project.toml"))?;
@@ -2152,7 +2168,7 @@ fn project_dependency_graph_reports_unresolved_external_type_metadata() -> Resul
         false,
     );
     let context = Rc::new(Context::default());
-    let registry = NoPackageStore::default();
+    let registry = NoPackageStore;
     let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
         .with_source_manager(context.session().source_manager.clone())
         .build_from_path(app_dir.join("miden-project.toml"))?;
@@ -2222,7 +2238,7 @@ fn project_disassembly_uses_workspace_dependency_signatures() -> Result<()> {
 fn project_disassembly_consumes_precomputed_dependency_graph() -> Result<()> {
     let (root, app_dir) = write_source_dependency_project("midenc_frontend_masm_graph_dep");
     let context = Rc::new(Context::default());
-    let registry = NoPackageStore::default();
+    let registry = NoPackageStore;
     let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
         .with_source_manager(context.session().source_manager.clone())
         .build_from_path(app_dir.join("miden-project.toml"))?;
@@ -2248,7 +2264,7 @@ fn project_disassembly_uses_workspace_dependency_graph_signatures() -> Result<()
         write_workspace_dependency_project("midenc_frontend_masm_workspace_graph_dep");
 
     let context = Rc::new(Context::default());
-    let registry = NoPackageStore::default();
+    let registry = NoPackageStore;
     let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
         .with_source_manager(context.session().source_manager.clone())
         .build_from_path(app_dir.join("miden-project.toml"))?;
@@ -2274,7 +2290,7 @@ fn project_disassembly_uses_preassembled_dependency_graph_signatures() -> Result
         write_preassembled_dependency_project("midenc_frontend_masm_preassembled_graph_dep");
 
     let context = Rc::new(Context::default());
-    let registry = NoPackageStore::default();
+    let registry = NoPackageStore;
     let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
         .with_source_manager(context.session().source_manager.clone())
         .build_from_path(app_dir.join("miden-project.toml"))?;
@@ -2299,7 +2315,7 @@ fn project_disassembly_uses_git_dependency_graph_signatures() -> Result<()> {
     let (root, app_dir) = write_git_dependency_project("midenc_frontend_masm_git_graph_dep");
 
     let context = Rc::new(Context::default());
-    let registry = NoPackageStore::default();
+    let registry = NoPackageStore;
     let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
         .with_source_manager(context.session().source_manager.clone())
         .with_git_cache_root(root.join("git-cache"))
@@ -2343,7 +2359,7 @@ dep = "1.0.0"
         app_dir.join("main.masm"),
         r#"
 pub proc entry(a: felt) -> felt
-exec.::dep::callee
+    exec.::dep::callee
 end
 "#,
     )
@@ -2379,7 +2395,7 @@ fn lifts_felt_add_imm() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc inc(a: felt) -> felt
-add.1
+    add.1
 end
 "#,
         "test",
@@ -2402,11 +2418,11 @@ fn lifts_if_to_scf_if() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc choose(cond: u8) -> felt
-if.true
-    push.1
-else
-    push.2
-end
+    if.true
+        push.1
+    else
+        push.2
+    end
 end
 "#,
         "test",
@@ -2415,7 +2431,7 @@ end
     )?;
 
     let function = find_function(output.module, "choose");
-    assert_eq!(top_level_op_count::<If>(function), 1);
+    assert_eq!(top_level_op_count::<scf::If>(function), 1);
 
     Ok(())
 }
@@ -2426,11 +2442,11 @@ fn lifts_multi_result_if_with_distinct_result_indices() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc choose(left: felt, right: felt, cond: i1) -> (felt, felt)
-if.true
-    swap.1
-else
-    nop
-end
+    if.true
+        swap.1
+    else
+        nop
+    end
 end
 "#,
         "test",
@@ -2441,7 +2457,11 @@ end
     let function = find_function(output.module, "choose");
     let entry = function.borrow().entry_block();
     let entry = entry.borrow();
-    let if_op = entry.body().iter().find(|op| op.is::<If>()).expect("expected lifted scf.if");
+    let if_op = entry
+        .body()
+        .iter()
+        .find(|op| op.is::<scf::If>())
+        .expect("expected lifted scf.if");
     let result_indices = if_op
         .results()
         .all()
@@ -2459,9 +2479,9 @@ fn lifts_repeat_by_unrolling() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc inc3(a: felt) -> felt
-repeat.3
-    add.1
-end
+    repeat.3
+        add.1
+    end
 end
 "#,
         "test",
@@ -2470,7 +2490,7 @@ end
     )?;
 
     let function = find_function(output.module, "inc3");
-    assert_eq!(top_level_op_count::<ArithIncr>(function), 3);
+    assert_eq!(top_level_op_count::<arith::Incr>(function), 3);
 
     Ok(())
 }
@@ -2481,10 +2501,10 @@ fn lifts_while_to_scf_while() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc loop_once(cond: u8) -> felt
-while.true
-    push.0
-end
-push.7
+    while.true
+        push.0
+    end
+    push.7
 end
 "#,
         "test",
@@ -2493,7 +2513,7 @@ end
     )?;
 
     let function = find_function(output.module, "loop_once");
-    assert_eq!(top_level_op_count::<While>(function), 1);
+    assert_eq!(top_level_op_count::<scf::While>(function), 1);
 
     Ok(())
 }
@@ -2504,19 +2524,19 @@ fn lifts_word_stack_manipulation() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc shuffle(
-a: felt, b: felt, c: felt, d: felt,
-e: felt, f: felt, g: felt, h: felt,
-i: felt, j: felt, k: felt, l: felt,
-m: felt, n: felt, o: felt, p: felt
+    a: felt, b: felt, c: felt, d: felt,
+    e: felt, f: felt, g: felt, h: felt,
+    i: felt, j: felt, k: felt, l: felt,
+    m: felt, n: felt, o: felt, p: felt
 ) -> (felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt)
-swapw.2
-swapw.3
-swapdw
-movupw.2
-movdnw.2
-movupw.3
-movdnw.3
-reversedw
+    swapw.2
+    swapw.3
+    swapdw
+    movupw.2
+    movdnw.2
+    movupw.3
+    movdnw.3
+    reversedw
 end
 "#,
         "test",
@@ -2536,7 +2556,7 @@ fn lifts_push_word_immediate() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc word() -> (felt, felt, felt, felt)
-push.[1,2,3,4]
+    push.[1,2,3,4]
 end
 "#,
         "test",
@@ -2545,7 +2565,7 @@ end
     )?;
 
     let function = find_function(output.module, "word");
-    assert_eq!(top_level_op_count::<ArithConstant>(function), 4);
+    assert_eq!(top_level_op_count::<arith::Constant>(function), 4);
     assert_eq!(felt_constant_values(top_level_arith_constant_values(function)), [4, 3, 2, 1]);
 
     Ok(())
@@ -2557,7 +2577,7 @@ fn lifts_push_word_slice_in_vm_push_order() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc slice() -> (felt, felt)
-push.[1,2,3,4][1..3]
+    push.[1,2,3,4][1..3]
 end
 "#,
         "test",
@@ -2577,7 +2597,7 @@ fn rejects_empty_push_word_slice() {
     let err = match disassemble_source(
         r#"
 pub proc empty_slice
-push.[1,2,3,4][1..1]
+    push.[1,2,3,4][1..1]
 end
 "#,
         "test",
@@ -2598,7 +2618,7 @@ fn lifts_u32cast_as_truncating_cast() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc cast(value: felt) -> u32
-u32cast
+    u32cast
 end
 "#,
         "test",
@@ -2606,7 +2626,7 @@ end
         context,
     )?;
 
-    assert_eq!(top_level_op_count::<ArithTrunc>(find_function(output.module, "cast")), 1);
+    assert_eq!(top_level_op_count::<arith::Trunc>(find_function(output.module, "cast")), 1);
 
     Ok(())
 }
@@ -2617,7 +2637,7 @@ fn lifts_sdepth_to_current_stack_depth_constant() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc depth(a: felt, b: felt) -> (felt, felt, felt)
-sdepth
+    sdepth
 end
 "#,
         "test",
@@ -2641,10 +2661,10 @@ fn lifts_eqw_to_arith_comparisons() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc words_equal(
-a: felt, b: felt, c: felt, d: felt,
-e: felt, f: felt, g: felt, h: felt
+    a: felt, b: felt, c: felt, d: felt,
+    e: felt, f: felt, g: felt, h: felt
 ) -> i1
-eqw
+    eqw
 end
 "#,
         "test",
@@ -2653,8 +2673,8 @@ end
     )?;
 
     let function = find_function(output.module, "words_equal");
-    assert_eq!(top_level_op_count::<ArithEq>(function), 4);
-    assert_eq!(top_level_op_count::<ArithAnd>(function), 3);
+    assert_eq!(top_level_op_count::<arith::Eq>(function), 4);
+    assert_eq!(top_level_op_count::<arith::And>(function), 3);
 
     Ok(())
 }
@@ -2665,10 +2685,10 @@ fn lifts_assert_eqw_to_hir_assert_eqs() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc assert_words(
-a: felt, b: felt, c: felt, d: felt,
-e: felt, f: felt, g: felt, h: felt
+    a: felt, b: felt, c: felt, d: felt,
+    e: felt, f: felt, g: felt, h: felt
 )
-assert_eqw
+    assert_eqw
 end
 "#,
         "test",
@@ -2688,22 +2708,22 @@ fn preserves_error_messages_on_hir_assertions() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc assert_msg(value: i1)
-assert.err="plain"
+    assert.err="plain"
 end
 
 pub proc assertz_msg(value: i1)
-assertz.err="zero"
+    assertz.err="zero"
 end
 
 pub proc assert_eq_msg(a: felt, b: felt)
-assert_eq.err="equal"
+    assert_eq.err="equal"
 end
 
 pub proc assert_eqw_msg(
-a: felt, b: felt, c: felt, d: felt,
-e: felt, f: felt, g: felt, h: felt
+    a: felt, b: felt, c: felt, d: felt,
+    e: felt, f: felt, g: felt, h: felt
 )
-assert_eqw.err="word"
+    assert_eqw.err="word"
 end
 "#,
         "test",
@@ -2734,7 +2754,7 @@ fn lifts_u32assertw_as_u32_range_contract() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc assert_word(a: felt, b: felt, c: felt, d: felt) -> (u32, u32, u32, u32)
-u32assertw
+    u32assertw
 end
 "#,
         "test",
@@ -2743,7 +2763,7 @@ end
     )?;
 
     let function = find_function(output.module, "assert_word");
-    assert_eq!(top_level_op_count::<HirAssertU32>(function), 4);
+    assert_eq!(top_level_op_count::<hir::AssertU32>(function), 4);
 
     Ok(())
 }
@@ -2754,9 +2774,9 @@ fn advice_taint_reports_raw_advice_used_by_u32_arithmetic() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-adv_push.1
-push.1
-u32wrapping_add
+    adv_push.1
+    push.1
+    u32wrapping_add
 end
 "#,
         "test",
@@ -2777,9 +2797,9 @@ fn advice_taint_diagnostics_include_actionable_context() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-adv_push.1
-push.1
-u32wrapping_add
+    adv_push.1
+    push.1
+    u32wrapping_add
 end
 "#,
         "test",
@@ -2822,8 +2842,8 @@ fn advice_taint_marks_adv_loadw_results_as_raw() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry(k0: felt, k1: felt, k2: felt, k3: felt) -> (felt, felt, u32)
-adv_loadw
-u32wrapping_add
+    adv_loadw
+    u32wrapping_add
 end
 "#,
         "test",
@@ -2848,8 +2868,8 @@ fn advice_taint_marks_adv_pipe_results_as_raw() -> Result<()> {
     let source = format!(
         r#"
 pub proc entry({params}) -> ({results})
-adv_pipe
-u32wrapping_add
+    adv_pipe
+    u32wrapping_add
 end
 "#
     );
@@ -2883,17 +2903,17 @@ fn advice_taint_preserves_non_advice_adv_pipe_outputs() -> Result<()> {
     let source = format!(
         r#"
 pub proc entry({params}) -> u32
-adv_pipe
-repeat.8
+    adv_pipe
+    repeat.8
+        drop
+    end
+    movup.4
     drop
-end
-movup.4
-drop
-movup.3
-drop
-movup.2
-drop
-u32wrapping_add
+    movup.3
+    drop
+    movup.2
+    drop
+    u32wrapping_add
 end
 "#
     );
@@ -2911,16 +2931,16 @@ fn advice_taint_propagates_adv_pipe_memory_writes() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry(rhs: u32) -> u32
-push.0
-repeat.12
     push.0
-end
-adv_pipe
-repeat.13
-    drop
-end
-mem_load.0
-u32wrapping_add
+    repeat.12
+        push.0
+    end
+    adv_pipe
+    repeat.13
+        drop
+    end
+    mem_load.0
+    u32wrapping_add
 end
 "#,
         "test",
@@ -2941,10 +2961,10 @@ fn advice_taint_treats_u32assert_as_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-adv_push.1
-u32assert
-push.1
-u32wrapping_add
+    adv_push.1
+    u32assert
+    push.1
+    u32wrapping_add
 end
 "#,
         "test",
@@ -2964,9 +2984,9 @@ fn advice_taint_treats_u32assertw_as_multi_value_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32, u32)
-adv_push.4
-u32assertw
-u32wrapping_add
+    adv_push.4
+    u32assertw
+    u32wrapping_add
 end
 "#,
         "test",
@@ -2986,11 +3006,11 @@ fn advice_taint_sanitizes_only_the_asserted_alias() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-adv_push.1
-dup.0
-u32assert
-swap.1
-u32wrapping_add
+    adv_push.1
+    dup.0
+    u32assert
+    swap.1
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3010,11 +3030,11 @@ fn advice_taint_suppresses_straight_line_duplicate_uses() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-adv_push.1
-push.1
-u32wrapping_add
-push.2
-u32wrapping_mul
+    adv_push.1
+    push.1
+    u32wrapping_add
+    push.2
+    u32wrapping_mul
 end
 "#,
         "test",
@@ -3034,15 +3054,15 @@ fn advice_taint_reports_first_unconstrained_use_per_control_flow_path() -> Resul
     let output = disassemble_source(
         r#"
 pub proc entry(lhs: u32, rhs: u32, cond: felt) -> u32
-adv_push.1
-swap.1
-if.true
-    u32assert
-    u32wrapping_add
-else
-    u32wrapping_sub
-end
-u32wrapping_mul
+    adv_push.1
+    swap.1
+    if.true
+        u32assert
+        u32wrapping_add
+    else
+        u32wrapping_sub
+    end
+    u32wrapping_mul
 end
 "#,
         "test",
@@ -3062,16 +3082,16 @@ fn advice_taint_reports_later_sink_for_raw_branch_path_not_reported_earlier() ->
     let output = disassemble_source(
         r#"
 pub proc entry(cond: felt) -> u32
-adv_push.1
-swap.1
-if.true
-    push.1
-    u32wrapping_add
-else
-    nop
-end
-push.2
-u32wrapping_mul
+    adv_push.1
+    swap.1
+    if.true
+        push.1
+        u32wrapping_add
+    else
+        nop
+    end
+    push.2
+    u32wrapping_mul
 end
 "#,
         "test",
@@ -3091,12 +3111,12 @@ fn advice_taint_propagates_raw_advice_returned_from_callee() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc source() -> felt
-adv_push.1
+    adv_push.1
 end
 
 pub proc entry(rhs: u32) -> u32
-exec.source
-u32wrapping_add
+    exec.source
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3117,16 +3137,16 @@ fn advice_taint_propagates_raw_advice_through_multi_hop_exec_chain() -> Result<(
     let output = disassemble_source(
         r#"
 proc source() -> felt
-adv_push.1
+    adv_push.1
 end
 
 proc forward() -> felt
-exec.source
+    exec.source
 end
 
 pub proc entry(rhs: u32) -> u32
-exec.forward
-u32wrapping_add
+    exec.forward
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3147,12 +3167,12 @@ fn advice_taint_propagates_raw_advice_returned_from_call() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc source() -> felt
-adv_push.1
+    adv_push.1
 end
 
 pub proc entry(rhs: u32) -> u32
-call.source
-u32wrapping_add
+    call.source
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3173,12 +3193,12 @@ fn advice_taint_propagates_raw_advice_into_callee_arguments() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc consume(value: felt, rhs: u32) -> u32
-u32wrapping_add
+    u32wrapping_add
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-exec.consume
+    adv_push.1
+    exec.consume
 end
 "#,
         "test",
@@ -3199,12 +3219,12 @@ fn advice_taint_propagates_raw_advice_into_call_arguments() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc consume(value: felt, rhs: u32) -> u32
-u32wrapping_add
+    u32wrapping_add
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-call.consume
+    adv_push.1
+    call.consume
 end
 "#,
         "test",
@@ -3225,15 +3245,15 @@ fn advice_taint_handles_repeated_call_sites_with_mixed_clean_and_tainted_argumen
     let output = disassemble_source(
         r#"
 proc consume(value: felt, rhs: u32) -> u32
-u32wrapping_add
+    u32wrapping_add
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-u32assert
-exec.consume
-adv_push.1
-exec.consume
+    adv_push.1
+    u32assert
+    exec.consume
+    adv_push.1
+    exec.consume
 end
 "#,
         "test",
@@ -3254,12 +3274,12 @@ fn advice_taint_diagnostics_include_call_argument_context() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc consume(value: felt, rhs: u32) -> u32
-u32wrapping_add
+    u32wrapping_add
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-exec.consume
+    adv_push.1
+    exec.consume
 end
 "#,
         "test",
@@ -3291,12 +3311,12 @@ fn advice_taint_diagnostics_include_call_result_context() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc source() -> felt
-adv_push.1
+    adv_push.1
 end
 
 pub proc entry(rhs: u32) -> u32
-exec.source
-u32wrapping_add
+    exec.source
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3328,10 +3348,10 @@ fn advice_taint_propagates_raw_advice_through_local_store_load() -> Result<()> {
         r#"
 @locals(1)
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-loc_store.0
-loc_load.0
-u32wrapping_add
+    adv_push.1
+    loc_store.0
+    loc_load.0
+    u32wrapping_add
 end
 "#,
         &["arith.add"],
@@ -3344,10 +3364,10 @@ fn advice_taint_propagates_raw_advice_through_memory_store_load() -> Result<()> 
     assert_advice_taint_sinks(
         r#"
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-mem_store.0
-mem_load.0
-u32wrapping_add
+    adv_push.1
+    mem_store.0
+    mem_load.0
+    u32wrapping_add
 end
 "#,
         &["arith.add"],
@@ -3361,14 +3381,14 @@ fn advice_taint_propagates_storage_load_taint_through_solver_to_later_store() ->
         r#"
 @locals(1)
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-loc_store.0
-loc_load.0
-push.0
-add
-mem_store.0
-mem_load.0
-u32wrapping_add
+    adv_push.1
+    loc_store.0
+    loc_load.0
+    push.0
+    add
+    mem_store.0
+    mem_load.0
+    u32wrapping_add
 end
 "#,
         &["arith.add"],
@@ -3382,15 +3402,15 @@ fn advice_taint_joins_local_store_taint_across_branches() -> Result<()> {
         r#"
 @locals(1)
 pub proc entry(rhs: u32, cond: i1) -> u32
-if.true
-    adv_push.1
-    loc_store.0
-else
-    push.0
-    loc_store.0
-end
-loc_load.0
-u32wrapping_add
+    if.true
+        adv_push.1
+        loc_store.0
+    else
+        push.0
+        loc_store.0
+    end
+    loc_load.0
+    u32wrapping_add
 end
 "#,
         &["arith.add"],
@@ -3403,15 +3423,15 @@ fn advice_taint_joins_memory_store_taint_across_branches() -> Result<()> {
     assert_advice_taint_sinks(
         r#"
 pub proc entry(rhs: u32, cond: i1) -> u32
-if.true
-    adv_push.1
-    mem_store.0
-else
-    push.0
-    mem_store.0
-end
-mem_load.0
-u32wrapping_add
+    if.true
+        adv_push.1
+        mem_store.0
+    else
+        push.0
+        mem_store.0
+    end
+    mem_load.0
+    u32wrapping_add
 end
 "#,
         &["arith.add"],
@@ -3424,12 +3444,12 @@ fn advice_taint_propagates_raw_advice_through_dynamic_memory_store_load() -> Res
     assert_advice_taint_sinks(
         r#"
 pub proc entry(rhs: u32, addr: u32) -> u32
-dup.0
-adv_push.1
-swap.1
-mem_store
-mem_load
-u32wrapping_add
+    dup.0
+    adv_push.1
+    swap.1
+    mem_store
+    mem_load
+    u32wrapping_add
 end
 "#,
         &["arith.add"],
@@ -3442,14 +3462,14 @@ fn advice_taint_propagates_memory_written_by_local_callee() -> Result<()> {
     assert_advice_taint_sinks(
         r#"
 proc writer()
-adv_push.1
-mem_store.0
+    adv_push.1
+    mem_store.0
 end
 
 pub proc entry(rhs: u32) -> u32
-exec.writer
-mem_load.0
-u32wrapping_add
+    exec.writer
+    mem_load.0
+    u32wrapping_add
 end
 "#,
         &["arith.add"],
@@ -3462,14 +3482,14 @@ fn advice_taint_propagates_memory_read_by_local_callee() -> Result<()> {
     assert_advice_taint_sinks(
         r#"
 proc reader(rhs: u32) -> u32
-mem_load.0
-u32wrapping_add
+    mem_load.0
+    u32wrapping_add
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-mem_store.0
-call.reader
+    adv_push.1
+    mem_store.0
+    call.reader
 end
 "#,
         &["arith.add"],
@@ -3482,14 +3502,14 @@ fn advice_taint_propagates_memory_read_by_public_local_callee() -> Result<()> {
     assert_advice_taint_sinks(
         r#"
 pub proc reader(rhs: u32) -> u32
-mem_load.0
-u32wrapping_add
+    mem_load.0
+    u32wrapping_add
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-mem_store.0
-call.reader
+    adv_push.1
+    mem_store.0
+    call.reader
 end
 "#,
         &["arith.add"],
@@ -3502,14 +3522,14 @@ fn advice_taint_propagates_memory_returned_by_local_callee() -> Result<()> {
     assert_advice_taint_sinks(
         r#"
 proc reader() -> felt
-mem_load.0
+    mem_load.0
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-mem_store.0
-exec.reader
-u32wrapping_add
+    adv_push.1
+    mem_store.0
+    exec.reader
+    u32wrapping_add
 end
 "#,
         &["arith.add"],
@@ -3522,26 +3542,26 @@ fn advice_taint_keeps_returned_memory_taint_call_site_specific() -> Result<()> {
     assert_advice_taint_sinks(
         r#"
 proc reader() -> felt
-mem_load.0
+    mem_load.0
 end
 
 proc dirty(rhs: u32) -> u32
-adv_push.1
-mem_store.0
-exec.reader
-u32wrapping_add
+    adv_push.1
+    mem_store.0
+    exec.reader
+    u32wrapping_add
 end
 
 proc clean(rhs: u32) -> u32
-push.0
-mem_store.0
-exec.reader
-u32wrapping_add
+    push.0
+    mem_store.0
+    exec.reader
+    u32wrapping_add
 end
 
 pub proc entry(rhs: u32) -> u32
-exec.dirty
-exec.clean
+    exec.dirty
+    exec.clean
 end
 "#,
         &["arith.add"],
@@ -3555,15 +3575,15 @@ fn advice_taint_does_not_retaint_clean_local_call_result_from_tainted_argument()
     let output = disassemble_source(
         r#"
 proc clean(raw: felt) -> u32
-drop
-push.0
-u32assert
+    drop
+    push.0
+    u32assert
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-exec.clean
-u32wrapping_add
+    adv_push.1
+    exec.clean
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3571,7 +3591,7 @@ end
         context,
     )?;
 
-    let findings = advice_taint_findings(output.module.clone())?;
+    let findings = advice_taint_findings(output.module)?;
     assert!(findings.is_empty(), "{findings:#?}");
 
     let diagnostics = advice_taint_diagnostics(output.module)?;
@@ -3586,16 +3606,16 @@ fn advice_taint_keeps_passthrough_call_results_call_site_specific() -> Result<()
     let output = disassemble_source(
         r#"
 proc passthrough(value: felt) -> felt
-nop
+    nop
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-exec.passthrough
-drop
-push.0
-exec.passthrough
-u32wrapping_add
+    adv_push.1
+    exec.passthrough
+    drop
+    push.0
+    exec.passthrough
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3615,20 +3635,20 @@ fn advice_taint_keeps_nested_passthrough_call_results_call_site_specific() -> Re
     let output = disassemble_source(
         r#"
 proc passthrough(value: felt) -> felt
-nop
+    nop
 end
 
 proc outer(value: felt) -> felt
-exec.passthrough
+    exec.passthrough
 end
 
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-exec.outer
-drop
-push.0
-exec.outer
-u32wrapping_add
+    adv_push.1
+    exec.outer
+    drop
+    push.0
+    exec.outer
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3651,8 +3671,8 @@ fn advice_taint_treats_external_call_results_as_unconstrained() -> Result<()> {
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry(rhs: u32) -> u32
-exec.::dep::source
-u32wrapping_add
+    exec.::dep::source
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3696,8 +3716,8 @@ fn advice_taint_treats_external_u32_results_as_constrained() -> Result<()> {
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry(rhs: u32) -> u32
-exec.::dep::source
-u32wrapping_add
+    exec.::dep::source
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3722,9 +3742,9 @@ fn advice_taint_does_not_retaint_constrained_external_result_from_tainted_argume
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry(rhs: u32) -> u32
-adv_push.1
-exec.::dep::clean
-u32wrapping_add
+    adv_push.1
+    exec.::dep::clean
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3733,10 +3753,10 @@ end
         context,
     )?;
 
-    let findings = advice_taint_findings(output.module.clone())?;
+    let findings = advice_taint_findings(output.module)?;
     assert!(findings.is_empty(), "{findings:#?}");
 
-    let external_findings = advice_taint_external_call_findings(output.module.clone())?;
+    let external_findings = advice_taint_external_call_findings(output.module)?;
     assert!(external_findings.is_empty(), "{external_findings:#?}");
 
     let diagnostics = advice_taint_diagnostics(output.module)?;
@@ -3754,8 +3774,8 @@ fn advice_taint_reports_raw_advice_passed_to_external_u32_parameter() -> Result<
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry
-adv_push.1
-exec.::dep::consume
+    adv_push.1
+    exec.::dep::consume
 end
 "#,
         "test",
@@ -3794,8 +3814,8 @@ fn advice_taint_allows_raw_advice_passed_to_external_felt_parameter() -> Result<
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry
-adv_push.1
-exec.::dep::consume
+    adv_push.1
+    exec.::dep::consume
 end
 "#,
         "test",
@@ -3821,9 +3841,9 @@ fn advice_taint_treats_u32assert_as_external_result_sanitizer() -> Result<()> {
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry(rhs: u32) -> u32
-exec.::dep::source
-u32assert
-u32wrapping_add
+    exec.::dep::source
+    u32assert
+    u32wrapping_add
 end
 "#,
         "test",
@@ -3844,11 +3864,11 @@ fn advice_taint_reports_public_function_returning_raw_advice() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc source() -> felt
-adv_push.1
+    adv_push.1
 end
 
 pub proc entry() -> felt
-exec.source
+    exec.source
 end
 "#,
         "test",
@@ -3895,11 +3915,11 @@ fn advice_taint_does_not_report_private_function_returning_raw_advice() -> Resul
     let output = disassemble_source(
         r#"
 proc source() -> felt
-adv_push.1
+    adv_push.1
 end
 
 pub proc entry() -> felt
-push.1
+    push.1
 end
 "#,
         "test",
@@ -3919,8 +3939,8 @@ fn advice_taint_does_not_report_sanitized_public_return() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-adv_push.1
-u32assert
+    adv_push.1
+    u32assert
 end
 "#,
         "test",
@@ -3943,7 +3963,7 @@ fn advice_taint_reports_public_function_returning_external_result() -> Result<()
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry() -> felt
-exec.::dep::source
+    exec.::dep::source
 end
 "#,
         "test",
@@ -3976,13 +3996,13 @@ fn advice_taint_reports_raw_advice_used_by_unary_u32_operation() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc pop_count() -> u32
-adv_push.1
-u32popcnt
+    adv_push.1
+    u32popcnt
 end
 
 pub proc bitwise_not() -> u32
-adv_push.1
-u32not
+    adv_push.1
+    u32not
 end
 "#,
         "test",
@@ -4002,8 +4022,8 @@ fn advice_taint_reports_raw_advice_used_by_widening_u32_operation() -> Result<()
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32)
-adv_push.2
-u32widening_mul
+    adv_push.2
+    u32widening_mul
 end
 "#,
         "test",
@@ -4023,9 +4043,9 @@ fn advice_taint_treats_u32assert2_as_widening_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32)
-adv_push.2
-u32assert2
-u32widening_mul
+    adv_push.2
+    u32assert2
+    u32widening_mul
 end
 "#,
         "test",
@@ -4045,13 +4065,13 @@ fn advice_taint_reports_raw_advice_used_by_u32_add3_and_madd() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc add3() -> u32
-adv_push.3
-u32wrapping_add3
+    adv_push.3
+    u32wrapping_add3
 end
 
 pub proc madd() -> u32
-adv_push.3
-u32wrapping_madd
+    adv_push.3
+    u32wrapping_madd
 end
 "#,
         "test",
@@ -4078,11 +4098,11 @@ fn advice_taint_treats_u32test_assert_as_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-adv_push.1
-u32test
-assert
-push.1
-u32wrapping_add
+    adv_push.1
+    u32test
+    assert
+    push.1
+    u32wrapping_add
 end
 "#,
         "test",
@@ -4105,10 +4125,10 @@ fn advice_taint_treats_u32testw_assert_as_word_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32, u32)
-adv_push.4
-u32testw
-assert
-u32wrapping_add
+    adv_push.4
+    u32testw
+    assert
+    u32wrapping_add
 end
 "#,
         "test",
@@ -4131,11 +4151,11 @@ fn advice_taint_treats_error_annotated_u32test_assert_as_sanitizer() -> Result<(
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-adv_push.1
-u32test
-assert.err="u32"
-push.1
-u32wrapping_add
+    adv_push.1
+    u32test
+    assert.err="u32"
+    push.1
+    u32wrapping_add
 end
 "#,
         "test",
@@ -4159,13 +4179,13 @@ fn advice_taint_treats_stack_preserving_u32test_assert_as_sanitizer() -> Result<
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-adv_push.1
-u32test
-dup.0
-assert.err="u32"
-drop
-push.1
-u32wrapping_add
+    adv_push.1
+    u32test
+    dup.0
+    assert.err="u32"
+    drop
+    push.1
+    u32wrapping_add
 end
 "#,
         "test",
@@ -4189,12 +4209,12 @@ fn advice_taint_treats_stack_preserving_u32testw_assert_as_sanitizer() -> Result
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32, u32)
-adv_push.4
-u32testw
-dup.0
-assert
-drop
-u32wrapping_add
+    adv_push.4
+    u32testw
+    dup.0
+    assert
+    drop
+    u32wrapping_add
 end
 "#,
         "test",
@@ -4217,7 +4237,7 @@ fn lifts_u32split_to_arith_split() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc split(value: felt) -> (u32, u32)
-u32split
+    u32split
 end
 "#,
         "test",
@@ -4227,7 +4247,7 @@ end
 
     let function = find_function(output.module, "split");
     assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 1);
-    assert_eq!(top_level_op_count::<ArithSplit>(function), 1);
+    assert_eq!(top_level_op_count::<arith::Split>(function), 1);
 
     Ok(())
 }
@@ -4238,7 +4258,7 @@ fn lifts_u32test_to_range_check() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc test(value: felt) -> (i1, felt)
-u32test
+    u32test
 end
 "#,
         "test",
@@ -4248,8 +4268,8 @@ end
 
     let function = find_function(output.module, "test");
     assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 1);
-    assert_eq!(top_level_op_count::<ArithSplit>(function), 1);
-    assert_eq!(top_level_op_count::<ArithEq>(function), 1);
+    assert_eq!(top_level_op_count::<arith::Split>(function), 1);
+    assert_eq!(top_level_op_count::<arith::Eq>(function), 1);
 
     Ok(())
 }
@@ -4260,7 +4280,7 @@ fn lifts_u32testw_to_range_checks() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc testw(a: felt, b: felt, c: felt, d: felt) -> (i1, felt, felt, felt, felt)
-u32testw
+    u32testw
 end
 "#,
         "test",
@@ -4270,9 +4290,9 @@ end
 
     let function = find_function(output.module, "testw");
     assert_eq!(top_level_op_count::<UnrealizedConversionCast>(function), 4);
-    assert_eq!(top_level_op_count::<ArithSplit>(function), 4);
-    assert_eq!(top_level_op_count::<ArithEq>(function), 4);
-    assert_eq!(top_level_op_count::<ArithAnd>(function), 3);
+    assert_eq!(top_level_op_count::<arith::Split>(function), 4);
+    assert_eq!(top_level_op_count::<arith::Eq>(function), 4);
+    assert_eq!(top_level_op_count::<arith::And>(function), 3);
 
     Ok(())
 }
@@ -4283,23 +4303,23 @@ fn lifts_u32_widening_arithmetic() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc add_wide(a: u32, b: u32) -> (u32, u32)
-u32widening_add
+    u32widening_add
 end
 
 pub proc add3_overflow(a: u32, b: u32, c: u32) -> (u32, u32)
-u32overflowing_add3
+    u32overflowing_add3
 end
 
 pub proc mul_wide(a: u32, b: u32) -> (u32, u32)
-u32widening_mul
+    u32widening_mul
 end
 
 pub proc madd_wide(b: u32, a: u32, c: u32) -> (u32, u32)
-u32widening_madd
+    u32widening_madd
 end
 
 pub proc madd_wrapping(b: u32, a: u32, c: u32) -> u32
-u32wrapping_madd
+    u32wrapping_madd
 end
 "#,
         "test",
@@ -4308,31 +4328,31 @@ end
     )?;
 
     let add = find_function(output.module, "add_wide");
-    assert_eq!(top_level_op_count::<ArithZext>(add), 2);
-    assert_eq!(top_level_op_count::<ArithAdd>(add), 1);
-    assert_eq!(top_level_op_count::<ArithSplit>(add), 1);
+    assert_eq!(top_level_op_count::<arith::Zext>(add), 2);
+    assert_eq!(top_level_op_count::<arith::Add>(add), 1);
+    assert_eq!(top_level_op_count::<arith::Split>(add), 1);
 
     let add3 = find_function(output.module, "add3_overflow");
-    assert_eq!(top_level_op_count::<ArithZext>(add3), 3);
-    assert_eq!(top_level_op_count::<ArithAdd>(add3), 2);
-    assert_eq!(top_level_op_count::<ArithSplit>(add3), 1);
+    assert_eq!(top_level_op_count::<arith::Zext>(add3), 3);
+    assert_eq!(top_level_op_count::<arith::Add>(add3), 2);
+    assert_eq!(top_level_op_count::<arith::Split>(add3), 1);
 
     let mul = find_function(output.module, "mul_wide");
-    assert_eq!(top_level_op_count::<ArithZext>(mul), 2);
-    assert_eq!(top_level_op_count::<ArithMul>(mul), 1);
-    assert_eq!(top_level_op_count::<ArithSplit>(mul), 1);
+    assert_eq!(top_level_op_count::<arith::Zext>(mul), 2);
+    assert_eq!(top_level_op_count::<arith::Mul>(mul), 1);
+    assert_eq!(top_level_op_count::<arith::Split>(mul), 1);
 
     let madd = find_function(output.module, "madd_wide");
-    assert_eq!(top_level_op_count::<ArithZext>(madd), 3);
-    assert_eq!(top_level_op_count::<ArithMul>(madd), 1);
-    assert_eq!(top_level_op_count::<ArithAdd>(madd), 1);
-    assert_eq!(top_level_op_count::<ArithSplit>(madd), 1);
+    assert_eq!(top_level_op_count::<arith::Zext>(madd), 3);
+    assert_eq!(top_level_op_count::<arith::Mul>(madd), 1);
+    assert_eq!(top_level_op_count::<arith::Add>(madd), 1);
+    assert_eq!(top_level_op_count::<arith::Split>(madd), 1);
 
     let wrapping_madd = find_function(output.module, "madd_wrapping");
-    assert_eq!(top_level_op_count::<ArithZext>(wrapping_madd), 3);
-    assert_eq!(top_level_op_count::<ArithMul>(wrapping_madd), 1);
-    assert_eq!(top_level_op_count::<ArithAdd>(wrapping_madd), 1);
-    assert_eq!(top_level_op_count::<ArithSplit>(wrapping_madd), 1);
+    assert_eq!(top_level_op_count::<arith::Zext>(wrapping_madd), 3);
+    assert_eq!(top_level_op_count::<arith::Mul>(wrapping_madd), 1);
+    assert_eq!(top_level_op_count::<arith::Add>(wrapping_madd), 1);
+    assert_eq!(top_level_op_count::<arith::Split>(wrapping_madd), 1);
 
     Ok(())
 }
@@ -4343,27 +4363,27 @@ fn lifts_conditional_stack_ops_to_cf_selects() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc choose(cond: i1, b: felt, a: felt) -> felt
-cdrop
+    cdrop
 end
 
 pub proc swap(cond: i1, b: felt, a: felt) -> (felt, felt)
-cswap
+    cswap
 end
 
 pub proc choose_word(
-cond: i1,
-b0: felt, b1: felt, b2: felt, b3: felt,
-a0: felt, a1: felt, a2: felt, a3: felt
+    cond: i1,
+    b0: felt, b1: felt, b2: felt, b3: felt,
+    a0: felt, a1: felt, a2: felt, a3: felt
 ) -> (felt, felt, felt, felt)
-cdropw
+    cdropw
 end
 
 pub proc swap_word(
-cond: i1,
-b0: felt, b1: felt, b2: felt, b3: felt,
-a0: felt, a1: felt, a2: felt, a3: felt
+    cond: i1,
+    b0: felt, b1: felt, b2: felt, b3: felt,
+    a0: felt, a1: felt, a2: felt, a3: felt
 ) -> (felt, felt, felt, felt, felt, felt, felt, felt)
-cswapw
+    cswapw
 end
 "#,
         "test",
@@ -4371,10 +4391,10 @@ end
         context,
     )?;
 
-    assert_eq!(top_level_op_count::<CfSelect>(find_function(output.module, "choose")), 1);
-    assert_eq!(top_level_op_count::<CfSelect>(find_function(output.module, "swap")), 2);
-    assert_eq!(top_level_op_count::<CfSelect>(find_function(output.module, "choose_word")), 4);
-    assert_eq!(top_level_op_count::<CfSelect>(find_function(output.module, "swap_word")), 8);
+    assert_eq!(top_level_op_count::<cf::Select>(find_function(output.module, "choose")), 1);
+    assert_eq!(top_level_op_count::<cf::Select>(find_function(output.module, "swap")), 2);
+    assert_eq!(top_level_op_count::<cf::Select>(find_function(output.module, "choose_word")), 4);
+    assert_eq!(top_level_op_count::<cf::Select>(find_function(output.module, "swap_word")), 8);
 
     Ok(())
 }
@@ -4386,12 +4406,12 @@ fn lifts_local_word_ops() -> Result<()> {
         r#"
 @locals(4)
 pub proc load_word() -> (felt, felt, felt, felt)
-loc_loadw_be.0
+    loc_loadw_be.0
 end
 
 @locals(4)
 pub proc store_word(a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
-loc_storew_le.0
+    loc_storew_le.0
 end
 "#,
         "test",
@@ -4399,9 +4419,12 @@ end
         context,
     )?;
 
-    assert_eq!(top_level_op_count::<HirLoadLocal>(find_function(output.module, "load_word")), 4);
     assert_eq!(
-        top_level_op_count::<HirStoreLocal>(find_function(output.module, "store_word")),
+        top_level_op_count::<hir::LoadLocal>(find_function(output.module, "load_word")),
+        4
+    );
+    assert_eq!(
+        top_level_op_count::<hir::StoreLocal>(find_function(output.module, "store_word")),
         4
     );
 
@@ -4414,23 +4437,23 @@ fn lifts_memory_ops() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc load(addr: u32) -> felt
-mem_load
+    mem_load
 end
 
 pub proc load_imm() -> felt
-mem_load.0
+    mem_load.0
 end
 
 pub proc load_word(addr: u32, a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
-mem_loadw_be
+    mem_loadw_be
 end
 
 pub proc store(addr: u32, value: felt)
-mem_store
+    mem_store
 end
 
 pub proc store_word(addr: u32, a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
-mem_storew_le
+    mem_storew_le
 end
 "#,
         "test",
@@ -4439,24 +4462,24 @@ end
     )?;
 
     let load = find_function(output.module, "load");
-    assert_eq!(top_level_op_count::<HirIntToPtr>(load), 1);
-    assert_eq!(top_level_op_count::<HirLoad>(load), 1);
+    assert_eq!(top_level_op_count::<hir::IntToPtr>(load), 1);
+    assert_eq!(top_level_op_count::<hir::Load>(load), 1);
 
     let load_imm = find_function(output.module, "load_imm");
-    assert_eq!(top_level_op_count::<HirIntToPtr>(load_imm), 1);
-    assert_eq!(top_level_op_count::<HirLoad>(load_imm), 1);
+    assert_eq!(top_level_op_count::<hir::IntToPtr>(load_imm), 1);
+    assert_eq!(top_level_op_count::<hir::Load>(load_imm), 1);
 
     let load_word = find_function(output.module, "load_word");
-    assert_eq!(top_level_op_count::<HirIntToPtr>(load_word), 4);
-    assert_eq!(top_level_op_count::<HirLoad>(load_word), 4);
+    assert_eq!(top_level_op_count::<hir::IntToPtr>(load_word), 4);
+    assert_eq!(top_level_op_count::<hir::Load>(load_word), 4);
 
     let store = find_function(output.module, "store");
-    assert_eq!(top_level_op_count::<HirIntToPtr>(store), 1);
-    assert_eq!(top_level_op_count::<HirStore>(store), 1);
+    assert_eq!(top_level_op_count::<hir::IntToPtr>(store), 1);
+    assert_eq!(top_level_op_count::<hir::Store>(store), 1);
 
     let store_word = find_function(output.module, "store_word");
-    assert_eq!(top_level_op_count::<HirIntToPtr>(store_word), 4);
-    assert_eq!(top_level_op_count::<HirStore>(store_word), 4);
+    assert_eq!(top_level_op_count::<hir::IntToPtr>(store_word), 4);
+    assert_eq!(top_level_op_count::<hir::Store>(store_word), 4);
 
     Ok(())
 }
@@ -4468,7 +4491,7 @@ fn rejects_invalid_local_word_indices() {
         r#"
 @locals(8)
 pub proc bad() -> (felt, felt, felt, felt)
-loc_loadw_le.1
+    loc_loadw_le.1
 end
 "#,
         "test",
@@ -4485,7 +4508,7 @@ end
         r#"
 @locals(4)
 pub proc bad() -> (felt, felt, felt, felt)
-loc_loadw_le.4
+    loc_loadw_le.4
 end
 "#,
         "test",
@@ -4505,7 +4528,7 @@ fn rejects_invalid_memory_word_addresses() {
     let known_signature = disassemble_source(
         r#"
 pub proc bad(a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
-mem_loadw_le.1
+    mem_loadw_le.1
 end
 "#,
         "test",
@@ -4521,7 +4544,7 @@ end
     let inferred_signature = disassemble_source(
         r#"
 pub proc bad
-mem_storew_be.1
+    mem_storew_be.1
 end
 "#,
         "test",
@@ -4543,12 +4566,12 @@ fn rejects_if_branch_stack_shape_mismatch() {
     let result = disassemble_source(
         r#"
 pub proc bad(cond: u8) -> felt
-if.true
-    push.1
-else
-    push.1
-    push.2
-end
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
 end
 "#,
         "test",
@@ -4569,11 +4592,11 @@ fn rejects_indirect_recursion() {
     let result = disassemble_source(
         r#"
 pub proc a() -> felt
-exec.b
+    exec.b
 end
 
 pub proc b() -> felt
-exec.a
+    exec.a
 end
 "#,
         "test",
@@ -4645,8 +4668,7 @@ fn parse_test_module(
     let source_manager = context.session().source_manager.clone();
     let uri = Uri::from("test".to_owned().into_boxed_str());
     let source_file = source_manager.load(SourceLanguage::Masm, uri, source.to_owned());
-    Ok(source_file
-        .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, "test"))?)
+    source_file.parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, "test"))
 }
 
 fn felt_types(count: usize) -> Vec<&'static str> {
@@ -4839,7 +4861,7 @@ fn top_level_arith_constant_values(function: builtin::FunctionRef) -> Vec<Immedi
         .borrow()
         .body()
         .iter()
-        .filter_map(|op| op.downcast_ref::<ArithConstant>().map(|op| *op.get_value()))
+        .filter_map(|op| op.downcast_ref::<arith::Constant>().map(|op| *op.get_value()))
         .collect()
 }
 
@@ -4861,7 +4883,7 @@ fn top_level_assert_messages(function: builtin::FunctionRef) -> Vec<String> {
         .body()
         .iter()
         .filter_map(|op| {
-            op.downcast_ref::<HirAssert>().map(|op| op.get_message().as_str().to_owned())
+            op.downcast_ref::<hir::Assert>().map(|op| op.get_message().as_str().to_owned())
         })
         .collect()
 }
@@ -4874,7 +4896,7 @@ fn top_level_assertz_messages(function: builtin::FunctionRef) -> Vec<String> {
         .body()
         .iter()
         .filter_map(|op| {
-            op.downcast_ref::<HirAssertz>().map(|op| op.get_message().as_str().to_owned())
+            op.downcast_ref::<hir::Assertz>().map(|op| op.get_message().as_str().to_owned())
         })
         .collect()
 }
@@ -4887,7 +4909,8 @@ fn top_level_assert_eq_messages(function: builtin::FunctionRef) -> Vec<String> {
         .body()
         .iter()
         .filter_map(|op| {
-            op.downcast_ref::<HirAssertEq>().map(|op| op.get_message().as_str().to_owned())
+            op.downcast_ref::<hir::AssertEq>()
+                .map(|op| op.get_message().as_str().to_owned())
         })
         .collect()
 }
@@ -4900,7 +4923,8 @@ fn top_level_assert_u32_messages(function: builtin::FunctionRef) -> Vec<String> 
         .body()
         .iter()
         .filter_map(|op| {
-            op.downcast_ref::<HirAssertU32>().map(|op| op.get_message().as_str().to_owned())
+            op.downcast_ref::<hir::AssertU32>()
+                .map(|op| op.get_message().as_str().to_owned())
         })
         .collect()
 }
@@ -4965,7 +4989,7 @@ dep = { path = "../dep" }
         app_dir.join("main.masm"),
         r#"
 pub proc entry(a: felt) -> felt
-exec.::dep::callee
+    exec.::dep::callee
 end
 "#,
     )
@@ -5034,7 +5058,7 @@ use ::types::Scalar
 pub type Wrapped = Scalar
 
 pub proc callee(a: Wrapped) -> Wrapped
-add.1
+    add.1
 end
 "#,
     )
@@ -5058,7 +5082,7 @@ dep = { path = "../dep" }
         app_dir.join("main.masm"),
         r#"
 pub proc entry(a: felt) -> felt
-exec.::dep::callee
+    exec.::dep::callee
 end
 "#,
     )
@@ -5113,7 +5137,7 @@ types = { path = "../types" }
 use ::types::Scalar
 
 pub proc entry(a: Scalar) -> Scalar
-add.1
+    add.1
 end
 "#,
     )
@@ -5156,7 +5180,7 @@ path = "lib.masm"
 type Scalar = felt
 
 pub proc callee(a: Scalar) -> Scalar
-add.1
+    add.1
 end
 "#,
     )
@@ -5180,7 +5204,7 @@ dep.workspace = true
         app_dir.join("main.masm"),
         r#"
 pub proc entry(a: felt) -> felt
-exec.::dep::callee
+    exec.::dep::callee
 end
 "#,
     )
@@ -5213,7 +5237,7 @@ path = "lib.masm"
 type Scalar = felt
 
 pub proc callee(a: Scalar) -> Scalar
-add.1
+    add.1
 end
 "#,
     )
@@ -5246,7 +5270,7 @@ dep = {{ git = "{dep_git_uri}", branch = "main" }}
         app_dir.join("main.masm"),
         r#"
 pub proc entry(a: felt) -> felt
-exec.::dep::callee
+    exec.::dep::callee
 end
 "#,
     )
@@ -5266,7 +5290,7 @@ fn write_preassembled_dependency_project(prefix: &str) -> (std::path::PathBuf, s
         dep_src_dir.join("api.masm"),
         r#"
 pub proc callee(a: felt) -> felt
-add.1
+    add.1
 end
 "#,
     )
@@ -5299,7 +5323,7 @@ dep = { path = "../dep.masp" }
         app_dir.join("main.masm"),
         r#"
 pub proc entry(a: felt) -> felt
-exec.::dep::api::callee
+    exec.::dep::api::callee
 end
 "#,
     )

@@ -7,13 +7,13 @@ use miden_assembly_syntax::{
     parser::{IntValue, PushValue, WordValue},
 };
 use midenc_hir::{
-    AddressSpace, ArrayType, CallConv, Context, PointerType, Type,
+    AddressSpace, ArrayType, CallConv, Context, PointerType, Report, Type,
     dialects::builtin::attributes::Signature,
 };
 use rustc_hash::FxHashMap;
 
 use crate::{
-    Result, error,
+    Result,
     events::system_event_read_count,
     semantics::{self, InstructionSemantics},
     stack as masm_stack,
@@ -615,7 +615,7 @@ impl<'a> InferState<'a> {
         else_state.prepend_missing_inputs(&inputs);
 
         if then_state.stack.len() != else_state.stack.len() {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "if branches leave different inferred stack depths at {span:?}: then={}, else={}",
                 then_state.stack.len(),
                 else_state.stack.len()
@@ -640,7 +640,7 @@ impl<'a> InferState<'a> {
 
         let expected = inputs.len() + base_stack.len() + 1;
         if body_state.stack.len() != expected {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "while body must leave {expected} inferred value(s) for the next iteration at \
                  {span:?}, but left {}",
                 body_state.stack.len()
@@ -719,13 +719,13 @@ impl<'a> InferState<'a> {
     ) -> Result<()> {
         let value = immediate_value(value)?;
         let Some(values) = value.0.get(range.clone()) else {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "invalid push word slice range {:?} at {span:?}",
                 range
             )));
         };
         if values.is_empty() {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "empty push word slice range {:?} at {span:?}",
                 range
             )));
@@ -740,7 +740,7 @@ impl<'a> InferState<'a> {
         self.pop_with_type(Type::I1, span)?;
         let if_true = self.pop_chunk(chunk_len, span);
         let if_false = self.pop_chunk(chunk_len, span);
-        for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
+        for (if_false, if_true) in if_false.into_iter().zip(if_true) {
             self.stack.push(merge_values(if_false, if_true, span));
         }
         Ok(())
@@ -752,7 +752,7 @@ impl<'a> InferState<'a> {
         let if_false = self.pop_chunk(chunk_len, span);
         let mut lower = Vec::with_capacity(chunk_len);
         let mut upper = Vec::with_capacity(chunk_len);
-        for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
+        for (if_false, if_true) in if_false.into_iter().zip(if_true) {
             lower.push(merge_values(if_false.clone(), if_true.clone(), span));
             upper.push(merge_values(if_true, if_false, span));
         }
@@ -788,7 +788,7 @@ impl<'a> InferState<'a> {
         let signature = match target {
             InvocationTarget::Symbol(name) => {
                 self.signatures.get(name.as_str()).ok_or_else(|| {
-                    error::error(format!(
+                    Report::msg(format!(
                         "signature inference could not resolve local callee '{name}' at {span:?}"
                     ))
                 })?
@@ -796,7 +796,7 @@ impl<'a> InferState<'a> {
             InvocationTarget::Path(path) => {
                 let key = invocation_path_key(path.inner());
                 self.external_signatures.get(&key).ok_or_else(|| {
-                    error::error(format!(
+                    Report::msg(format!(
                         "signature inference could not resolve external callee '{}' at {span:?}; \
                          external signature metadata is missing{}",
                         path.inner(),
@@ -805,7 +805,7 @@ impl<'a> InferState<'a> {
                 })?
             }
             InvocationTarget::MastRoot(_) => {
-                return Err(error::error(format!(
+                return Err(Report::msg(format!(
                     "signature inference does not support MAST root invoke targets at {span:?}"
                 )));
             }
@@ -983,7 +983,7 @@ fn unsupported_instruction(inst: &Instruction, span: SourceSpan) -> Result<()> {
         InstructionSemantics::Unsupported,
         "instruction classified as inferable reached the inference unsupported fallback: {inst:?}"
     );
-    Err(error::error(format!(
+    Err(Report::msg(format!(
         "signature inference is not implemented for MASM instruction {inst:?} at {span:?}"
     )))
 }
@@ -1113,7 +1113,7 @@ fn merge_values(lhs: AbstractValue, rhs: AbstractValue, span: SourceSpan) -> Abs
 fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {
     match immediate {
         Immediate::Value(value) => Ok(value.into_inner()),
-        Immediate::Constant(name) => Err(error::error(format!(
+        Immediate::Constant(name) => Err(Report::msg(format!(
             "unresolved repeat count constant '{name}' is not supported during signature inference"
         ))),
     }
@@ -1122,15 +1122,15 @@ fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {
 fn immediate_value<T: Copy>(immediate: &Immediate<T>) -> Result<T> {
     match immediate {
         Immediate::Value(value) => Ok(value.into_inner()),
-        Immediate::Constant(name) => Err(error::error(format!(
+        Immediate::Constant(name) => Err(Report::msg(format!(
             "unresolved immediate constant '{name}' is not supported during signature inference"
         ))),
     }
 }
 
 fn validate_memory_word_address(addr: u32, span: SourceSpan) -> Result<()> {
-    if addr % 4 != 0 {
-        return Err(error::error(format!(
+    if addr.is_multiple_of(4) {
+        return Err(Report::msg(format!(
             "memory word address {addr} is not word-aligned at {span:?}"
         )));
     }
@@ -1139,7 +1139,7 @@ fn validate_memory_word_address(addr: u32, span: SourceSpan) -> Result<()> {
 
 fn validate_advice_read_count(count: u8, span: SourceSpan) -> Result<()> {
     if !(1..=16).contains(&count) {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "advice read count {count} is out of range at {span:?}; expected 1..=16"
         )));
     }

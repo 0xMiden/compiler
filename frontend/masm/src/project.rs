@@ -15,9 +15,9 @@ use miden_project::{
     DependencyVersionScheme, Package as ProjectPackage, Project, ProjectDependencyGraph,
     ProjectDependencyNode, ProjectDependencyNodeProvenance, ProjectSource, Target,
 };
-use midenc_hir::{Context, Type};
+use midenc_hir::{Context, Report, Type};
 
-use crate::{ExternalSignatureMap, ExternalTypeMap, Result, error, signatures};
+use crate::{ExternalSignatureMap, ExternalTypeMap, Result, signatures};
 
 pub(crate) struct ProjectTargetInput {
     pub source_path: PathBuf,
@@ -47,20 +47,17 @@ pub(crate) fn resolve_project_target(
         .chain(package.executable_targets().iter())
         .find(|target| target_name.is_none_or(|name| target.name.as_ref().inner().as_ref() == name))
         .ok_or_else(|| match target_name {
-            Some(name) => error::error(format!("project has no target named '{name}'")),
-            None => error::error("project has no build targets"),
+            Some(name) => Report::msg(format!("project has no target named '{name}'")),
+            None => Report::msg("project has no build targets"),
         })?;
 
     let target_path = target.path.as_ref().ok_or_else(|| {
-        error::error(format!(
-            "target '{}' does not specify a MASM source path",
-            target.name.inner()
-        ))
+        Report::msg(format!("target '{}' does not specify a MASM source path", target.name.inner()))
     })?;
 
     let target_path = Path::new(target_path.inner().path());
     if target_path.extension().and_then(|ext| ext.to_str()) != Some("masm") {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "target '{}' path '{}' is not a .masm file",
             target.name.inner(),
             target_path.display()
@@ -70,7 +67,7 @@ pub(crate) fn resolve_project_target(
     let base_dir = package
         .manifest_path()
         .and_then(Path::parent)
-        .ok_or_else(|| error::error("project package does not have a filesystem manifest path"))?;
+        .ok_or_else(|| Report::msg("project package does not have a filesystem manifest path"))?;
 
     let source_path = if target_path.is_absolute() {
         target_path.to_path_buf()
@@ -95,7 +92,7 @@ pub(crate) fn resolve_project_target_with_dependency_graph(
     let package = project.package();
     let package_name = package.name();
     if dependency_graph.root() != package_name.inner() {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "dependency graph root '{}' does not match project package '{}'",
             dependency_graph.root(),
             package_name.inner()
@@ -108,20 +105,17 @@ pub(crate) fn resolve_project_target_with_dependency_graph(
         .chain(package.executable_targets().iter())
         .find(|target| target_name.is_none_or(|name| target.name.as_ref().inner().as_ref() == name))
         .ok_or_else(|| match target_name {
-            Some(name) => error::error(format!("project has no target named '{name}'")),
-            None => error::error("project has no build targets"),
+            Some(name) => Report::msg(format!("project has no target named '{name}'")),
+            None => Report::msg("project has no build targets"),
         })?;
 
     let target_path = target.path.as_ref().ok_or_else(|| {
-        error::error(format!(
-            "target '{}' does not specify a MASM source path",
-            target.name.inner()
-        ))
+        Report::msg(format!("target '{}' does not specify a MASM source path", target.name.inner()))
     })?;
 
     let target_path = Path::new(target_path.inner().path());
     if target_path.extension().and_then(|ext| ext.to_str()) != Some("masm") {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "target '{}' path '{}' is not a .masm file",
             target.name.inner(),
             target_path.display()
@@ -132,7 +126,7 @@ pub(crate) fn resolve_project_target_with_dependency_graph(
     let source_path = resolve_uri_path(
         base_dir,
         target_path.to_str().ok_or_else(|| {
-            error::error(format!("target path '{}' is not valid UTF-8", target_path.display()))
+            Report::msg(format!("target path '{}' is not valid UTF-8", target_path.display()))
         })?,
     );
     let module_path = target.namespace.inner().as_ref().to_path_buf();
@@ -204,6 +198,7 @@ fn collect_dependency_graph_metadata(
     Ok(metadata)
 }
 
+#[allow(clippy::vec_box)]
 fn collect_dependency_graph_node_metadata(
     metadata: &mut ExternalMetadata,
     source_modules: &mut Vec<Box<Module>>,
@@ -234,7 +229,7 @@ fn collect_dependency_graph_node_metadata(
             library_path: None, ..
         })
         | ProjectDependencyNodeProvenance::Source(ProjectSource::Virtual { .. }) => Ok(()),
-        ProjectDependencyNodeProvenance::Registry { selected, .. } => Err(error::error(format!(
+        ProjectDependencyNodeProvenance::Registry { selected, .. } => Err(Report::msg(format!(
             "dependency graph node '{}' resolved to registry package '{}', but registry package \
              artifacts are not available from the dependency graph",
             node.name, selected
@@ -280,7 +275,7 @@ fn collect_dependency_metadata_for_scheme(
                 return Ok(());
             };
             let Some(package) = workspace.get_member_by_relative_path(member.inner().path()) else {
-                return Err(error::error(format!(
+                return Err(Report::msg(format!(
                     "workspace dependency '{dependency_name}' refers to missing member '{}'",
                     member.inner().path()
                 )));
@@ -359,7 +354,7 @@ fn parse_source_package_module(
         return Ok(None);
     };
     if source_path.extension().and_then(|ext| ext.to_str()) != Some("masm") {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "library target '{}' path '{}' is not a .masm file",
             target.name.inner(),
             source_path.display()
@@ -434,7 +429,7 @@ fn collect_source_modules_types(
 
         if !progress {
             return Err(last_unresolved.unwrap_or_else(|| {
-                error::error("failed to resolve source dependency type metadata")
+                Report::msg("failed to resolve source dependency type metadata")
             }));
         }
         pending = next;
@@ -487,7 +482,7 @@ fn package_base_dir(package: &ProjectPackage) -> Result<&Path> {
     package
         .manifest_path()
         .and_then(Path::parent)
-        .ok_or_else(|| error::error("project package does not have a filesystem manifest path"))
+        .ok_or_else(|| Report::msg("project package does not have a filesystem manifest path"))
 }
 
 fn insert_external_signature(
@@ -498,7 +493,7 @@ fn insert_external_signature(
     if let Some(existing) = signatures.insert(path.clone(), signature.clone())
         && existing != signature
     {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "conflicting package metadata signatures for external procedure '{path}'"
         )));
     }
@@ -509,7 +504,7 @@ fn insert_external_type(types: &mut ExternalTypeMap, path: String, ty: Type) -> 
     if let Some(existing) = types.insert(path.clone(), ty.clone())
         && existing != ty
     {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "conflicting package metadata types for external type '{path}'"
         )));
     }
@@ -536,10 +531,10 @@ fn resolve_uri_path(base_dir: &Path, path: &str) -> PathBuf {
 
 fn load_mast_package(path: &Path) -> Result<MastPackage> {
     let bytes = fs::read(path).map_err(|err| {
-        error::error(format!("failed to read Miden package dependency '{}': {err}", path.display()))
+        Report::msg(format!("failed to read Miden package dependency '{}': {err}", path.display()))
     })?;
     MastPackage::read_from_bytes(&bytes).map_err(|err| {
-        error::error(format!(
+        Report::msg(format!(
             "failed to decode Miden package dependency '{}': {err}",
             path.display()
         ))

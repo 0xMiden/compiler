@@ -2,11 +2,11 @@ use std::{collections::BTreeSet, rc::Rc, sync::Arc};
 
 use miden_assembly_syntax::ast::{Export, FunctionType, Module, SymbolResolution, TypeExpr};
 use midenc_hir::{
-    ArrayType, CallConv, Context, FunctionType as HirFunctionType, PointerType,
+    ArrayType, Context, FunctionType as HirFunctionType, PointerType, Report,
     StructType as HirStructType, Type, dialects::builtin::attributes::Signature,
 };
 
-use crate::{ExternalTypeMap, Result, error};
+use crate::{ExternalTypeMap, Result};
 
 const MAX_TYPE_EXPR_DEPTH: usize = 256;
 
@@ -36,12 +36,7 @@ pub(crate) fn convert_signature_with_external_types(
         .map(|ty| convert_type_expr_with_external_types(context, module, ty, external_types))
         .collect::<Result<Vec<_>>>()?;
 
-    Ok(Signature::with_convention(
-        context,
-        convert_callconv(signature.cc),
-        params,
-        results,
-    ))
+    Ok(Signature::with_convention(context, signature.cc, params, results))
 }
 
 pub(crate) fn convert_hir_function_type(
@@ -82,11 +77,7 @@ pub(crate) fn convert_ast_function_type_with_external_types(
         .map(|ty| convert_type_expr_with_external_types(context, module, ty, external_types))
         .collect::<Result<Vec<_>>>()?;
 
-    Ok(HirFunctionType::new(convert_callconv(signature.cc), params, results))
-}
-
-fn convert_callconv(cc: CallConv) -> CallConv {
-    cc
+    Ok(HirFunctionType::new(signature.cc, params, results))
 }
 
 pub(crate) fn convert_type_expr_with_external_types(
@@ -106,7 +97,7 @@ fn convert_type_expr_with_depth(
     depth: usize,
 ) -> Result<Type> {
     if depth > MAX_TYPE_EXPR_DEPTH {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "MASM type expression nesting exceeds maximum depth of {MAX_TYPE_EXPR_DEPTH}"
         )));
     }
@@ -162,7 +153,7 @@ fn resolve_type_ref(
 
     loop {
         if !visited.insert(path.inner().to_string()) {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "cyclic MASM type alias resolution involving '{}'",
                 path.inner()
             )));
@@ -172,7 +163,7 @@ fn resolve_type_ref(
             Ok(SymbolResolution::Local(item)) => {
                 let item = &module[item.into_inner()];
                 let Export::Type(decl) = item else {
-                    return Err(error::error(format!(
+                    return Err(Report::msg(format!(
                         "MASM symbol '{}' does not resolve to a type",
                         path.inner()
                     )));
@@ -194,7 +185,7 @@ fn resolve_type_ref(
                     path = resolved;
                     continue;
                 }
-                return Err(error::error(format!(
+                return Err(Report::msg(format!(
                     "MASM type reference '{}' resolves to external type '{}', but no external \
                      type metadata was provided{}",
                     original,
@@ -203,20 +194,20 @@ fn resolve_type_ref(
                 )));
             }
             Ok(SymbolResolution::Exact { .. }) => {
-                return Err(error::error(format!(
+                return Err(Report::msg(format!(
                     "MASM type reference '{}' could not be resolved from external type metadata{}",
                     original,
                     external_type_metadata_hint(external_types)
                 )));
             }
             Ok(SymbolResolution::Module { .. }) | Ok(SymbolResolution::MastRoot(_)) => {
-                return Err(error::error(format!(
+                return Err(Report::msg(format!(
                     "MASM symbol '{}' does not resolve to a type",
                     path.inner()
                 )));
             }
             Err(err) => {
-                return Err(error::error(format!(
+                return Err(Report::msg(format!(
                     "failed to resolve MASM type reference '{}': {err}",
                     path.inner()
                 )));

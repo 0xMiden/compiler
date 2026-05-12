@@ -12,7 +12,7 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
     AddressSpace, AsSymbolRef, BlockRef, Builder, CompactString, Context, Ident, Op as HirOp,
-    OpBuilder, OperationRef, PointerType, ProgramPoint, SymbolNameComponent, SymbolPath,
+    OpBuilder, OperationRef, PointerType, ProgramPoint, Report, SymbolNameComponent, SymbolPath,
     SymbolTable, Type, ValueRef, Visibility,
     dialects::builtin::{
         BuiltinOpBuilder, FunctionBuilder, FunctionRef,
@@ -22,13 +22,17 @@ use midenc_hir::{
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    DisassembledModule, DisassemblerConfig, ExternalSignatureMap, ExternalTypeMap, Result, error,
+    DisassembledModule, DisassemblerConfig, ExternalSignatureMap, ExternalTypeMap, Result,
     events::{system_event_id, system_event_read_count},
     infer,
     semantics::{self, InstructionSemantics},
     signatures, stack as masm_stack,
 };
 
+/// Lift the Miden Assembly `module` to HIR, using the provided configuration, and context.
+///
+/// The `external_signatures` and `external_types` maps provide known externally-defined
+/// procedure signatures and type declarations for resolving imports.
 pub(crate) fn lift_module(
     module: &Module,
     config: &DisassemblerConfig,
@@ -64,16 +68,15 @@ pub(crate) fn lift_module(
     }
     let external_signatures = convert_external_signatures(&context, external_signatures)?;
 
-    if !config.infer_missing_signatures {
-        if let Some(procedure) = module
+    if !config.infer_missing_signatures
+        && let Some(procedure) = module
             .procedures()
             .find(|procedure| !signatures.contains_key(procedure.name().as_str()))
-        {
-            return Err(error::error(format!(
-                "procedure '{}' is missing a signature",
-                procedure.name()
-            )));
-        }
+    {
+        return Err(Report::msg(format!(
+            "procedure '{}' is missing a signature",
+            procedure.name()
+        )));
     }
 
     reject_recursive_calls(module)?;
@@ -96,7 +99,7 @@ pub(crate) fn lift_module(
     let mut external_functions = FxHashMap::<String, FunctionRef>::default();
     for (index, (path, signature)) in external_signatures.iter().enumerate() {
         let function = builder.create_function(
-            Ident::with_empty_span(midenc_hir::interner::Symbol::intern(&external_symbol_name(
+            Ident::with_empty_span(midenc_hir::interner::Symbol::intern(external_symbol_name(
                 index, path,
             ))),
             Visibility::Public,
@@ -111,7 +114,7 @@ pub(crate) fn lift_module(
     let mut functions = FxHashMap::<String, FunctionRef>::default();
     for procedure in module.procedures() {
         let signature = signatures.get(procedure.name().as_str()).cloned().ok_or_else(|| {
-            error::error(format!("procedure '{}' is missing a signature", procedure.name()))
+            Report::msg(format!("procedure '{}' is missing a signature", procedure.name()))
         })?;
         let visibility = if procedure.visibility().is_public() {
             Visibility::Public
@@ -162,7 +165,7 @@ fn convert_external_signatures(
 fn normalize_external_path(path: &str) -> Result<String> {
     let path = path
         .parse::<miden_assembly_syntax::PathBuf>()
-        .map_err(|err| error::error(format!("invalid external MASM path '{path}': {err}")))?;
+        .map_err(|err| Report::msg(format!("invalid external MASM path '{path}': {err}")))?;
     Ok(path.as_path().to_absolute().to_string())
 }
 
@@ -263,7 +266,7 @@ fn reject_recursive_calls_from(
             let cycle_start = stack.iter().position(|entry| entry == name).unwrap_or(0);
             let mut cycle = stack[cycle_start..].to_vec();
             cycle.push(name.to_owned());
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "recursive MASM procedure calls are not supported: {}",
                 cycle.join(" -> ")
             )));
@@ -313,7 +316,7 @@ fn callee_first_order_from(
             let cycle_start = stack.iter().position(|entry| entry == name).unwrap_or(0);
             let mut cycle = stack[cycle_start..].to_vec();
             cycle.push(name.to_owned());
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "recursive MASM procedure calls are not supported: {}",
                 cycle.join(" -> ")
             )));
@@ -392,7 +395,7 @@ impl<'a> ProcedureLifter<'a> {
         self.lift_block(self.procedure.body(), builder)?;
         let results = self.pop_results(builder, self.procedure.span())?;
         if !self.stack.is_empty() {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "procedure '{}' leaves {} extra value(s) on the stack",
                 self.procedure.name(),
                 self.stack.len()
@@ -1149,7 +1152,7 @@ impl<'a> ProcedureLifter<'a> {
         let else_stack = self.stack.clone();
 
         if then_stack.len() != else_stack.len() {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "if branches leave different stack depths at {span:?}: then={}, else={}",
                 then_stack.len(),
                 else_stack.len()
@@ -1206,7 +1209,7 @@ impl<'a> ProcedureLifter<'a> {
         self.lift_block(body, builder)?;
 
         if self.stack.len() != init_types.len() {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "while body must leave {} value(s) for the next iteration at {span:?}, but left {}",
                 init_types.len(),
                 self.stack.len()
@@ -1264,13 +1267,13 @@ impl<'a> ProcedureLifter<'a> {
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) -> Result<()> {
         let Some(values) = value.0.get(range.clone()) else {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "invalid push word slice range {:?} at {span:?}",
                 range
             )));
         };
         if values.is_empty() {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "empty push word slice range {:?} at {span:?}",
                 range
             )));
@@ -1688,7 +1691,7 @@ impl<'a> ProcedureLifter<'a> {
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) -> Result<()> {
         let depth = u64::try_from(self.stack.len()).map_err(|_| {
-            error::error(format!("current stack depth does not fit in a felt at {span:?}"))
+            Report::msg(format!("current stack depth does not fit in a felt at {span:?}"))
         })?;
         let value = builder.felt(Felt::new(depth), span);
         self.push_value(value, span);
@@ -2052,7 +2055,7 @@ impl<'a> ProcedureLifter<'a> {
             let offset = builder.u32(offset, span);
             builder.add(base_addr, offset, span)?
         };
-        builder.inttoptr(addr, felt_memory_pointer_type(), span).map_err(Into::into)
+        builder.inttoptr(addr, felt_memory_pointer_type(), span)
     }
 
     fn load_local_word(
@@ -2124,7 +2127,7 @@ impl<'a> ProcedureLifter<'a> {
         let rhs = self.pop_word(span)?;
         let lhs = self.pop_word(span)?;
         let mut result = None;
-        for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+        for (lhs, rhs) in lhs.into_iter().zip(rhs) {
             let lhs = self.cast(builder, lhs.value, Type::Felt, span)?;
             let rhs = self.cast(builder, rhs.value, Type::Felt, span)?;
             let comparison = builder.eq(lhs, rhs, span)?;
@@ -2134,7 +2137,7 @@ impl<'a> ProcedureLifter<'a> {
             });
         }
         let result = result.ok_or_else(|| {
-            error::error(format!("word equality requires word operands at {span:?}"))
+            Report::msg(format!("word equality requires word operands at {span:?}"))
         })?;
         self.push_value(result, span);
         Ok(())
@@ -2147,7 +2150,7 @@ impl<'a> ProcedureLifter<'a> {
     ) -> Result<()> {
         let rhs = self.pop_word(span)?;
         let lhs = self.pop_word(span)?;
-        for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+        for (lhs, rhs) in lhs.into_iter().zip(rhs) {
             let lhs = self.cast(builder, lhs.value, Type::Felt, span)?;
             let rhs = self.cast(builder, rhs.value, Type::Felt, span)?;
             builder.assert_eq(lhs, rhs, span)?;
@@ -2163,7 +2166,7 @@ impl<'a> ProcedureLifter<'a> {
     ) -> Result<()> {
         let rhs = self.pop_word(span)?;
         let lhs = self.pop_word(span)?;
-        for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+        for (lhs, rhs) in lhs.into_iter().zip(rhs) {
             let lhs = self.cast(builder, lhs.value, Type::Felt, span)?;
             let rhs = self.cast(builder, rhs.value, Type::Felt, span)?;
             builder.assert_eq_with_message(lhs, rhs, message.clone(), span)?;
@@ -2180,7 +2183,7 @@ impl<'a> ProcedureLifter<'a> {
         let cond = self.pop_condition(span, builder)?;
         let if_true = self.pop_chunk(chunk_len, span)?;
         let if_false = self.pop_chunk(chunk_len, span)?;
-        for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
+        for (if_false, if_true) in if_false.into_iter().zip(if_true) {
             let result_ty = if_false.value.borrow().ty().clone();
             let selected =
                 self.select_as_type(builder, cond, if_true.value, if_false.value, result_ty, span)?;
@@ -2201,7 +2204,7 @@ impl<'a> ProcedureLifter<'a> {
 
         let mut lower = Vec::with_capacity(chunk_len);
         let mut upper = Vec::with_capacity(chunk_len);
-        for (if_false, if_true) in if_false.into_iter().zip(if_true.into_iter()) {
+        for (if_false, if_true) in if_false.into_iter().zip(if_true) {
             let lower_ty = if_false.value.borrow().ty().clone();
             let upper_ty = if_true.value.borrow().ty().clone();
             lower.push(self.select_as_type(
@@ -2302,7 +2305,7 @@ impl<'a> ProcedureLifter<'a> {
             });
         }
         let result = result
-            .ok_or_else(|| error::error(format!("u32testw requires word operands at {span:?}")))?;
+            .ok_or_else(|| Report::msg(format!("u32testw requires word operands at {span:?}")))?;
         self.push_value(result, span);
         Ok(())
     }
@@ -2347,7 +2350,7 @@ impl<'a> ProcedureLifter<'a> {
         let value = self.cast(builder, value, Type::U64, span)?;
         let (high, _low) = builder.split2(value, Type::U32, span)?;
         let zero = builder.u32(0, span);
-        builder.eq(high, zero, span).map_err(Into::into)
+        builder.eq(high, zero, span)
     }
 
     fn pop_condition(
@@ -2370,7 +2373,7 @@ impl<'a> ProcedureLifter<'a> {
     ) -> Result<ValueRef> {
         let if_true = self.cast(builder, if_true, result_ty.clone(), span)?;
         let if_false = self.cast(builder, if_false, result_ty, span)?;
-        builder.select(cond, if_true, if_false, span).map_err(Into::into)
+        builder.select(cond, if_true, if_false, span)
     }
 
     fn cast_stack_to_types(
@@ -2381,7 +2384,7 @@ impl<'a> ProcedureLifter<'a> {
         span: SourceSpan,
     ) -> Result<Vec<ValueRef>> {
         if stack.len() != types.len() {
-            return Err(error::error(format!(
+            return Err(Report::msg(format!(
                 "cannot cast stack of depth {} to {} type(s) at {span:?}",
                 stack.len(),
                 types.len()
@@ -2405,19 +2408,19 @@ impl<'a> ProcedureLifter<'a> {
         if value.borrow().ty() == &ty {
             return Ok(value);
         }
-        builder.unrealized_conversion_cast(value, ty, span).map_err(Into::into)
+        builder.unrealized_conversion_cast(value, ty, span)
     }
 
     fn local(&self, id: u16, span: SourceSpan) -> Result<LocalVariable> {
         self.locals
             .get(&id)
             .copied()
-            .ok_or_else(|| error::error(format!("invalid local index {id} at {span:?}")))
+            .ok_or_else(|| Report::msg(format!("invalid local index {id} at {span:?}")))
     }
 
     fn local_word(&self, id: u16, span: SourceSpan) -> Result<[LocalVariable; 4]> {
-        if id % 4 != 0 {
-            return Err(error::error(format!(
+        if id.is_multiple_of(4) {
+            return Err(Report::msg(format!(
                 "local word index {id} is not word-aligned at {span:?}"
             )));
         }
@@ -2435,11 +2438,11 @@ impl<'a> ProcedureLifter<'a> {
                 .functions
                 .get(name.as_str())
                 .copied()
-                .ok_or_else(|| error::error(format!("unresolved local callee '{name}'"))),
+                .ok_or_else(|| Report::msg(format!("unresolved local callee '{name}'"))),
             InvocationTarget::Path(path) => {
                 let key = invocation_path_key(path.inner());
                 self.external_functions.get(&key).copied().ok_or_else(|| {
-                    error::error(format!(
+                    Report::msg(format!(
                         "unresolved external callee '{}'; external signature metadata is missing{}",
                         path.inner(),
                         external_signature_metadata_hint(self.external_functions)
@@ -2447,7 +2450,7 @@ impl<'a> ProcedureLifter<'a> {
                 })
             }
             InvocationTarget::MastRoot(_) => {
-                Err(error::error("MAST root invocation targets are not supported"))
+                Err(Report::msg("MAST root invocation targets are not supported"))
             }
         }
     }
@@ -2459,7 +2462,7 @@ impl<'a> ProcedureLifter<'a> {
     fn pop(&mut self, span: SourceSpan) -> Result<StackValue> {
         self.stack
             .pop()
-            .ok_or_else(|| error::error(format!("stack underflow at {span:?}")))
+            .ok_or_else(|| Report::msg(format!("stack underflow at {span:?}")))
     }
 
     fn pop_binary(&mut self, span: SourceSpan) -> Result<(StackValue, StackValue)> {
@@ -2688,19 +2691,19 @@ fn unsupported_instruction(inst: &Instruction, span: SourceSpan) -> Result<()> {
         InstructionSemantics::LiftAndInfer,
         "fully supported MASM instruction reached the lift unsupported fallback: {inst:?}"
     );
-    Err(error::error(format!(
+    Err(Report::msg(format!(
         "MASM instruction {inst:?} is not supported during disassembly at {span:?}"
     )))
 }
 
 fn stack_underflow(span: SourceSpan) -> miden_assembly_syntax::diagnostics::Report {
-    error::error(format!("stack underflow at {span:?}"))
+    Report::msg(format!("stack underflow at {span:?}"))
 }
 
 fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {
     match immediate {
         Immediate::Value(value) => Ok(value.into_inner()),
-        Immediate::Constant(name) => Err(error::error(format!(
+        Immediate::Constant(name) => Err(Report::msg(format!(
             "unresolved repeat count constant '{name}' is not supported during disassembly"
         ))),
     }
@@ -2709,7 +2712,7 @@ fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {
 fn immediate_value<T: Copy>(immediate: &Immediate<T>) -> Result<T> {
     match immediate {
         Immediate::Value(value) => Ok(value.into_inner()),
-        Immediate::Constant(name) => Err(error::error(format!(
+        Immediate::Constant(name) => Err(Report::msg(format!(
             "unresolved immediate constant '{name}' is not supported during disassembly"
         ))),
     }
@@ -2718,7 +2721,7 @@ fn immediate_value<T: Copy>(immediate: &Immediate<T>) -> Result<T> {
 fn immediate_error_message(immediate: &Immediate<Arc<str>>) -> Result<CompactString> {
     match immediate {
         Immediate::Value(value) => Ok(CompactString::from(value.clone().into_inner().as_ref())),
-        Immediate::Constant(name) => Err(error::error(format!(
+        Immediate::Constant(name) => Err(Report::msg(format!(
             "unresolved error message constant '{name}' is not supported during disassembly"
         ))),
     }
@@ -2726,7 +2729,7 @@ fn immediate_error_message(immediate: &Immediate<Arc<str>>) -> Result<CompactStr
 
 fn local_offset(id: u16, offset: u16, span: SourceSpan) -> Result<u16> {
     id.checked_add(offset).ok_or_else(|| {
-        error::error(format!(
+        Report::msg(format!(
             "local word index {id} with offset {offset} overflows local index space at {span:?}"
         ))
     })
@@ -2738,9 +2741,9 @@ fn felt_memory_pointer_type() -> Type {
 
 fn validate_memory_word_address(addr: Option<u32>, span: SourceSpan) -> Result<()> {
     if let Some(addr) = addr
-        && addr % 4 != 0
+        && !addr.is_multiple_of(4)
     {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "memory word address {addr} is not word-aligned at {span:?}"
         )));
     }
@@ -2749,7 +2752,7 @@ fn validate_memory_word_address(addr: Option<u32>, span: SourceSpan) -> Result<(
 
 fn validate_advice_read_count(count: u8, span: SourceSpan) -> Result<()> {
     if !(1..=16).contains(&count) {
-        return Err(error::error(format!(
+        return Err(Report::msg(format!(
             "advice read count {count} is out of range at {span:?}; expected 1..=16"
         )));
     }

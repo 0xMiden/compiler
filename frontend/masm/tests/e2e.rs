@@ -210,8 +210,10 @@ fn assert_roundtrip_outputs_with_advice(
 }
 
 fn e2e_context() -> Rc<Context> {
-    let mut options = Options::default();
-    options.entrypoint = Some("test::entry".to_owned());
+    let options = Options {
+        entrypoint: Some("test::entry".to_owned()),
+        ..Options::default()
+    };
     let source_manager = Arc::new(DefaultSourceManager::default());
     let session = Rc::new(Session::new(
         [],
