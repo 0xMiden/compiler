@@ -10,9 +10,8 @@ use alloc::{
 use core::{any::Any, fmt};
 
 use midenc_dialect_arith as arith;
-use midenc_dialect_scf as scf;
 use midenc_hir::{
-    CallOpInterface, Forward, Op, Operation, OperationName, OperationRef, RegionRef, Report,
+    CallOpInterface, Forward, Operation, OperationName, OperationRef, ProgramPoint, Report,
     SmallVec, SourceSpan, Spanned, Symbol, SymbolName, Type, Value, ValueRef,
     diagnostics::{Diagnostic, LabeledSpan, Severity},
     dialects::builtin::{self, attributes::LocalVariable},
@@ -20,9 +19,10 @@ use midenc_hir::{
 };
 use midenc_hir_analysis::{
     AnalysisStateGuard, AnalysisStateGuardMut, BuildableDataFlowAnalysis, CallControlFlowAction,
-    DataFlowConfig, DataFlowSolver, Lattice, LatticeLike, SparseForwardDataFlowAnalysis,
-    SparseLattice,
+    DataFlowConfig, DataFlowSolver, DenseForwardDataFlowAnalysis, Lattice, LatticeLike,
+    SparseForwardDataFlowAnalysis, SparseLattice,
     analyses::{DeadCodeAnalysis, SparseConstantPropagation},
+    dense::DenseDataFlowAnalysis,
     sparse::SparseDataFlowAnalysis,
 };
 
@@ -772,7 +772,6 @@ fn join_advice_pipe_results(
 #[derive(Default)]
 pub struct AdviceTaintAnalysis {
     solver: DataFlowSolver,
-    storage_overlay: StorageTaintOverlay,
     findings: Vec<AdviceTaintFinding>,
     exit_findings: Vec<AdviceTaintExitFinding>,
     external_call_findings: Vec<AdviceTaintExternalCallFinding>,
@@ -846,12 +845,11 @@ impl Analysis for AdviceTaintAnalysis {
         config.set_interprocedural(true);
         self.solver = DataFlowSolver::new(config);
         self.solver.load::<AdviceTaintPropagation>();
+        self.solver.load::<AdviceTaintStoragePropagation>();
         self.solver.initialize_and_run(op, analysis_manager)?;
-        self.storage_overlay = collect_storage_taint_overlay(op, &self.solver);
-        self.findings = collect_findings(op, &self.solver, &self.storage_overlay);
-        self.exit_findings = collect_exit_findings(op, &self.solver, &self.storage_overlay);
-        self.external_call_findings =
-            collect_external_call_findings(op, &self.solver, &self.storage_overlay);
+        self.findings = collect_findings(op, &self.solver);
+        self.exit_findings = collect_exit_findings(op, &self.solver);
+        self.external_call_findings = collect_external_call_findings(op, &self.solver);
         Ok(())
     }
 
@@ -860,15 +858,95 @@ impl Analysis for AdviceTaintAnalysis {
     }
 }
 
+/// Dense propagation of storage taint through local slots and memory.
+///
+/// Storage itself is modeled as dense program-point state, while load results are written back into
+/// the sparse advice-taint value lattice. That lets the sparse solver propagate storage-derived
+/// values through ordinary SSA use-def edges.
 #[derive(Default)]
-struct StorageTaintOverlay {
-    values: BTreeMap<String, AdviceTaintFacts>,
-    // Call simulation uses scopes so callee-local SSA values can be recomputed per call site
-    // without stale memory facts from earlier call contexts affecting return taint.
-    scopes: Vec<BTreeMap<String, AdviceTaintFacts>>,
+struct AdviceTaintStoragePropagation;
+
+impl BuildableDataFlowAnalysis for AdviceTaintStoragePropagation {
+    type Strategy = DenseDataFlowAnalysis<Self, Forward>;
+
+    fn new(solver: &mut DataFlowSolver) -> Self {
+        solver.load::<DeadCodeAnalysis>();
+        solver.load::<AdviceTaintPropagation>();
+        Self
+    }
 }
 
-#[derive(Clone, Default, Eq, PartialEq)]
+impl DenseForwardDataFlowAnalysis for AdviceTaintStoragePropagation {
+    type Lattice = Lattice<StorageState>;
+
+    fn debug_name(&self) -> &'static str {
+        "unconstrained-advice-storage-taint"
+    }
+
+    fn allow_unknown_predecessors(&self) -> bool {
+        true
+    }
+
+    fn visit_operation(
+        &self,
+        op: &Operation,
+        _before: &Self::Lattice,
+        after: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) -> Result<(), Report> {
+        let dependent = ProgramPoint::after(op.as_operation_ref());
+        let mut state = required_storage_before_operation(op, dependent, solver);
+        transfer_storage_operation(op, &mut state, solver)?;
+        midenc_hir_analysis::DenseLattice::join(after, &state);
+        Ok(())
+    }
+
+    fn set_to_entry_state(
+        &self,
+        lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
+        _solver: &mut DataFlowSolver,
+    ) {
+        midenc_hir_analysis::DenseLattice::join(lattice, &StorageState::default());
+    }
+
+    fn visit_call_control_flow_transfer(
+        &self,
+        call: &dyn CallOpInterface,
+        action: CallControlFlowAction,
+        before: &Self::Lattice,
+        after: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
+        solver: &mut DataFlowSolver,
+    ) {
+        let dependent = midenc_hir_analysis::AnalysisState::anchor(after)
+            .as_program_point()
+            .unwrap_or_else(|| ProgramPoint::after(call.as_operation()));
+        let frame = CallContextFrame::new(call);
+        match action {
+            CallControlFlowAction::Enter => {
+                let state =
+                    required_storage_before_operation(call.as_operation(), dependent, solver);
+                midenc_hir_analysis::DenseLattice::join(
+                    after,
+                    &state.memory_only().enter_call(frame),
+                );
+            }
+            CallControlFlowAction::Exit => {
+                let mut state =
+                    required_storage_before_operation(call.as_operation(), dependent, solver);
+                state.replace_memory_from(&before.value().exit_call(frame));
+                midenc_hir_analysis::DenseLattice::join(after, &state);
+            }
+            // External memory effects need summaries before we can model them conservatively.
+            CallControlFlowAction::External => {
+                let state =
+                    required_storage_before_operation(call.as_operation(), dependent, solver);
+                midenc_hir_analysis::DenseLattice::join(after, &state);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 struct StorageState {
     storage: BTreeMap<StorageKey, AdviceTaintFacts>,
     dynamic_memory: AdviceTaintFacts,
@@ -880,106 +958,56 @@ enum StorageKey {
     Memory(u32),
 }
 
-fn collect_storage_taint_overlay(op: &Operation, solver: &DataFlowSolver) -> StorageTaintOverlay {
-    let mut overlay = StorageTaintOverlay::default();
-    collect_storage_taint_for_operation_tree(op, solver, &mut overlay);
-    overlay
-}
-
-fn collect_storage_taint_for_operation_tree(
-    op: &Operation,
-    solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-) {
-    if let Some(function) = op.downcast_ref::<builtin::Function>() {
-        if !function.body().is_empty() {
-            let mut state = StorageState::default();
-            let mut call_stack = vec![Symbol::name(function)];
-            transfer_region(
-                function.body().as_region_ref(),
-                &mut state,
-                solver,
-                overlay,
-                &mut call_stack,
-            );
-        }
-        return;
+fn required_storage_before_operation(
+    operation: &Operation,
+    dependent: ProgramPoint,
+    solver: &mut DataFlowSolver,
+) -> StorageState {
+    let operation = operation.as_operation_ref();
+    if let Some(previous) = operation.prev() {
+        return solver
+            .require::<Lattice<StorageState>, _>(ProgramPoint::after(previous), dependent)
+            .value()
+            .clone();
     }
 
-    for region in op.regions() {
-        let mut state = StorageState::default();
-        let mut call_stack = Vec::new();
-        transfer_region(region.as_region_ref(), &mut state, solver, overlay, &mut call_stack);
+    if let Some(block) = operation.parent() {
+        return solver
+            .require::<Lattice<StorageState>, _>(ProgramPoint::at_start_of(block), dependent)
+            .value()
+            .clone();
     }
-}
 
-fn transfer_region(
-    region: RegionRef,
-    state: &mut StorageState,
-    solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-    call_stack: &mut Vec<SymbolName>,
-) {
-    let region = region.borrow();
-    for block in region.body() {
-        for operation in block.body() {
-            transfer_storage_operation(&operation, state, solver, overlay, call_stack);
-        }
-    }
+    StorageState::default()
 }
 
 fn transfer_storage_operation(
     operation: &Operation,
     state: &mut StorageState,
-    solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-    call_stack: &mut Vec<SymbolName>,
-) {
-    if let Some(function) = operation.downcast_ref::<builtin::Function>() {
-        if !function.body().is_empty() {
-            let mut function_state = StorageState::default();
-            let mut function_call_stack = vec![Symbol::name(function)];
-            transfer_region(
-                function.body().as_region_ref(),
-                &mut function_state,
-                solver,
-                overlay,
-                &mut function_call_stack,
-            );
-        }
-        return;
-    }
-
-    if let Some(if_op) = operation.downcast_ref::<scf::If>() {
-        transfer_storage_if(if_op, state, solver, overlay, call_stack);
-        return;
-    }
-
-    if let Some(while_op) = operation.downcast_ref::<scf::While>() {
-        transfer_storage_while(while_op, state, solver, overlay, call_stack);
-        return;
-    }
-
+    solver: &mut DataFlowSolver,
+) -> Result<(), Report> {
+    let dependent = ProgramPoint::after(operation.as_operation_ref());
     if let Some(store) = operation.downcast_ref::<StoreLocal>() {
         let key = StorageKey::from(*store.get_local());
-        let taint = value_taint(store.value().as_value_ref(), solver, overlay);
+        let taint = required_value_taint(store.value().as_value_ref(), dependent, solver);
         state.store(key, taint);
-        return;
+        return Ok(());
     }
 
     if let Some(load) = operation.downcast_ref::<LoadLocal>() {
         let key = StorageKey::from(*load.get_local());
-        overlay.set(load.result().as_value_ref(), state.load(&key));
-        return;
+        let taint = state.load(&key);
+        join_solver_value_taint(load.result().as_value_ref(), &taint, solver);
+        return Ok(());
     }
 
     if let Some(store) = operation.downcast_ref::<Store>() {
-        let taint = value_taint(store.value().as_value_ref(), solver, overlay);
+        let taint = required_value_taint(store.value().as_value_ref(), dependent, solver);
         match memory_storage_key(store.addr().as_value_ref()) {
             Some(key) => state.store(key, taint),
             None => state.store_dynamic_memory(taint),
         }
-        return;
+        return Ok(());
     }
 
     if let Some(load) = operation.downcast_ref::<Load>() {
@@ -988,8 +1016,8 @@ fn transfer_storage_operation(
             Some(key) => state.load(&key),
             None => state.load_dynamic_memory(),
         };
-        overlay.set(load.result().as_value_ref(), taint);
-        return;
+        join_solver_value_taint(load.result().as_value_ref(), &taint, solver);
+        return Ok(());
     }
 
     if let Some(pipe) = operation.downcast_ref::<AdvicePipe>() {
@@ -1005,253 +1033,10 @@ fn transfer_storage_operation(
         } else {
             state.store_dynamic_memory(taint);
         }
-        transfer_advice_pipe_storage_results(pipe, solver, overlay);
-        return;
+        return Ok(());
     }
 
-    if let Some(call) = operation.as_trait::<dyn CallOpInterface>() {
-        transfer_storage_call(call, state, solver, overlay, call_stack);
-        return;
-    }
-
-    transfer_storage_results(operation, solver, overlay);
-}
-
-fn transfer_storage_if(
-    if_op: &scf::If,
-    state: &mut StorageState,
-    solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-    call_stack: &mut Vec<SymbolName>,
-) {
-    let entry_state = state.clone();
-    let mut then_state = entry_state.clone();
-    transfer_region(
-        if_op.then_body().as_region_ref(),
-        &mut then_state,
-        solver,
-        overlay,
-        call_stack,
-    );
-
-    let mut else_state = entry_state;
-    if !if_op.else_body().is_empty() {
-        transfer_region(
-            if_op.else_body().as_region_ref(),
-            &mut else_state,
-            solver,
-            overlay,
-            call_stack,
-        );
-    }
-
-    overlay_if_results(if_op, solver, overlay);
-    *state = then_state.join(&else_state);
-}
-
-fn transfer_storage_while(
-    while_op: &scf::While,
-    state: &mut StorageState,
-    solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-    call_stack: &mut Vec<SymbolName>,
-) {
-    let entry_state = state.clone();
-    let mut loop_state = state.clone();
-
-    // Iterate to a fixed point. Storage taint is finite for a fixed function because each store
-    // key can only accumulate origins, and this avoids missing loop-carried taint when a value is
-    // stored late in one iteration and loaded early in the next.
-    loop {
-        let previous = loop_state.clone();
-        let mut iteration = loop_state.clone();
-        transfer_region(
-            while_op.before().as_region_ref(),
-            &mut iteration,
-            solver,
-            overlay,
-            call_stack,
-        );
-        transfer_region(
-            while_op.after().as_region_ref(),
-            &mut iteration,
-            solver,
-            overlay,
-            call_stack,
-        );
-        loop_state = loop_state.join(&iteration);
-        if loop_state == previous {
-            break;
-        }
-    }
-
-    overlay_while_results(while_op, solver, overlay);
-    *state = entry_state.join(&loop_state);
-}
-
-fn transfer_storage_call(
-    call: &dyn CallOpInterface,
-    state: &mut StorageState,
-    solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-    call_stack: &mut Vec<SymbolName>,
-) {
-    let Some((callee_name, callee_region)) = resolved_defined_callee(call) else {
-        return;
-    };
-    if call_stack.contains(&callee_name) {
-        return;
-    }
-
-    let mut callee_state = state.memory_only();
-    call_stack.push(callee_name);
-    overlay.push_scope();
-    transfer_region(callee_region, &mut callee_state, solver, overlay, call_stack);
-    let result_taints =
-        call_result_taints_from_callee_returns(call, callee_region, solver, overlay);
-    let scoped_values = overlay.pop_scope();
-    overlay.merge_values(scoped_values);
-    call_stack.pop();
-
-    overlay_call_results(call.as_operation(), result_taints, overlay);
-    state.replace_memory_from(&callee_state);
-}
-
-fn call_result_taints_from_callee_returns(
-    call: &dyn CallOpInterface,
-    callee_region: RegionRef,
-    solver: &DataFlowSolver,
-    overlay: &StorageTaintOverlay,
-) -> Vec<AdviceTaintFacts> {
-    if !call.as_operation().has_results() {
-        return Vec::new();
-    }
-
-    let frame = CallContextFrame::new(call);
-    let mut result_taints =
-        vec![AdviceTaintFacts::clean(); call.as_operation().results().all().len()];
-    callee_region.borrow().prewalk_all(|operation| {
-        let Some(ret) = operation.downcast_ref::<builtin::Ret>() else {
-            return;
-        };
-
-        for (index, operand) in ret.values().iter().enumerate() {
-            let Some(result_taint) = result_taints.get_mut(index) else {
-                continue;
-            };
-            let taint = value_taint(operand.borrow().as_value_ref(), solver, overlay);
-            *result_taint = LatticeLike::join(result_taint, &taint.exit_call(frame));
-        }
-    });
-    result_taints
-}
-
-fn overlay_call_results(
-    call: &Operation,
-    result_taints: Vec<AdviceTaintFacts>,
-    overlay: &mut StorageTaintOverlay,
-) {
-    for (result, taint) in call.results().all().iter().zip(result_taints) {
-        overlay.set(result.borrow().as_value_ref(), taint);
-    }
-}
-
-fn transfer_storage_results(
-    operation: &Operation,
-    solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-) {
-    if !operation.has_results() {
-        return;
-    }
-
-    let operand_taint =
-        operation.operands().iter().fold(AdviceTaintFacts::clean(), |acc, operand| {
-            let taint = value_taint(operand.borrow().as_value_ref(), solver, overlay);
-            LatticeLike::join(&acc, &taint)
-        });
-    let result_taint = transfer_taint(operation, operand_taint);
-    if result_taint.is_clean() && !overlay.is_scoped() {
-        return;
-    }
-
-    for result in operation.results().all() {
-        overlay.set(result.borrow().as_value_ref(), result_taint.clone());
-    }
-}
-
-fn transfer_advice_pipe_storage_results(
-    pipe: &AdvicePipe,
-    solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-) {
-    const RAW_ADVICE_RESULTS: usize = 8;
-
-    let operation = pipe.as_operation();
-    for (index, result) in operation.results().all().iter().enumerate() {
-        let taint = if index < RAW_ADVICE_RESULTS {
-            AdviceTaintFacts::raw(operation.span())
-        } else {
-            pipe.stack()
-                .iter()
-                .nth(index)
-                .map(|operand| value_taint(operand.borrow().as_value_ref(), solver, overlay))
-                .unwrap_or_default()
-        };
-        overlay.set(result.borrow().as_value_ref(), taint);
-    }
-}
-
-fn overlay_if_results(if_op: &scf::If, solver: &DataFlowSolver, overlay: &mut StorageTaintOverlay) {
-    if !if_op.as_operation().has_results() {
-        return;
-    }
-
-    let then_yield = if_op.then_yield();
-    let else_yield = if_op.else_yield();
-    let then_yield = then_yield.borrow();
-    let else_yield = else_yield.borrow();
-    for ((result, then_value), else_value) in if_op
-        .as_operation()
-        .results()
-        .all()
-        .iter()
-        .zip(then_yield.yielded().iter())
-        .zip(else_yield.yielded().iter())
-    {
-        let taint = LatticeLike::join(
-            &value_taint(then_value.borrow().as_value_ref(), solver, overlay),
-            &value_taint(else_value.borrow().as_value_ref(), solver, overlay),
-        );
-        overlay.set(result.borrow().as_value_ref(), taint);
-    }
-}
-
-fn overlay_while_results(
-    while_op: &scf::While,
-    solver: &DataFlowSolver,
-    overlay: &mut StorageTaintOverlay,
-) {
-    if !while_op.as_operation().has_results() {
-        return;
-    }
-
-    let yield_op = while_op.yield_op();
-    let yield_op = yield_op.borrow();
-    for ((result, init), yielded) in while_op
-        .as_operation()
-        .results()
-        .all()
-        .iter()
-        .zip(while_op.inits().iter())
-        .zip(yield_op.yielded().iter())
-    {
-        let taint = LatticeLike::join(
-            &value_taint(init.borrow().as_value_ref(), solver, overlay),
-            &value_taint(yielded.borrow().as_value_ref(), solver, overlay),
-        );
-        overlay.set(result.borrow().as_value_ref(), taint);
-    }
+    Ok(())
 }
 
 fn transfer_taint(op: &Operation, operand_taint: AdviceTaintFacts) -> AdviceTaintFacts {
@@ -1267,60 +1052,6 @@ fn transfer_taint(op: &Operation, operand_taint: AdviceTaintFacts) -> AdviceTain
         operand_taint.mark_reported()
     } else {
         operand_taint
-    }
-}
-
-impl StorageTaintOverlay {
-    fn get(&self, value: ValueRef) -> Option<&AdviceTaintFacts> {
-        let key = value_key(value);
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(&key))
-            .or_else(|| self.values.get(&key))
-    }
-
-    fn set(&mut self, value: ValueRef, taint: AdviceTaintFacts) {
-        if let Some(scope) = self.scopes.last_mut() {
-            Self::join_value(scope, value_key(value), taint);
-        } else {
-            Self::join_value(&mut self.values, value_key(value), taint);
-        }
-    }
-
-    fn push_scope(&mut self) {
-        self.scopes.push(BTreeMap::new());
-    }
-
-    fn pop_scope(&mut self) -> BTreeMap<String, AdviceTaintFacts> {
-        self.scopes.pop().expect("storage taint overlay scope underflow")
-    }
-
-    fn merge_values(&mut self, values: BTreeMap<String, AdviceTaintFacts>) {
-        if let Some(scope) = self.scopes.last_mut() {
-            for (key, taint) in values {
-                Self::join_value(scope, key, taint);
-            }
-        } else {
-            for (key, taint) in values {
-                Self::join_value(&mut self.values, key, taint);
-            }
-        }
-    }
-
-    fn is_scoped(&self) -> bool {
-        !self.scopes.is_empty()
-    }
-
-    fn join_value(
-        values: &mut BTreeMap<String, AdviceTaintFacts>,
-        key: String,
-        taint: AdviceTaintFacts,
-    ) {
-        values
-            .entry(key)
-            .and_modify(|current| *current = LatticeLike::join(current, &taint))
-            .or_insert(taint);
     }
 }
 
@@ -1383,6 +1114,21 @@ impl StorageState {
         self.dynamic_memory = other.dynamic_memory.clone();
     }
 
+    fn enter_call(&self, frame: CallContextFrame) -> Self {
+        self.map_taint(|taint| taint.enter_call(frame))
+    }
+
+    fn exit_call(&self, frame: CallContextFrame) -> Self {
+        self.map_taint(|taint| taint.exit_call(frame))
+    }
+
+    fn map_taint(&self, mut f: impl FnMut(&AdviceTaintFacts) -> AdviceTaintFacts) -> Self {
+        Self {
+            storage: self.storage.iter().map(|(key, taint)| (key.clone(), f(taint))).collect(),
+            dynamic_memory: f(&self.dynamic_memory),
+        }
+    }
+
     fn join(&self, other: &Self) -> Self {
         let mut storage = self.storage.clone();
         for (key, taint) in other.storage.iter() {
@@ -1399,14 +1145,14 @@ impl StorageState {
     }
 }
 
-fn resolved_defined_callee(call: &dyn CallOpInterface) -> Option<(SymbolName, RegionRef)> {
-    let callee = call.resolve()?;
-    let callee = callee.borrow();
-    let function = callee.as_symbol_operation().downcast_ref::<builtin::Function>()?;
-    if Symbol::is_declaration(function) {
-        return None;
+impl LatticeLike for StorageState {
+    fn join(&self, other: &Self) -> Self {
+        StorageState::join(self, other)
     }
-    Some((Symbol::name(function), function.body().as_region_ref()))
+
+    fn meet(&self, other: &Self) -> Self {
+        self.join(other)
+    }
 }
 
 impl From<LocalVariable> for StorageKey {
@@ -1417,23 +1163,24 @@ impl From<LocalVariable> for StorageKey {
     }
 }
 
-fn value_taint(
+fn required_value_taint(
     value: ValueRef,
-    solver: &DataFlowSolver,
-    overlay: &StorageTaintOverlay,
+    dependent: ProgramPoint,
+    solver: &mut DataFlowSolver,
 ) -> AdviceTaintFacts {
-    let solver_taint = solver
-        .get::<AdviceTaintSparseLattice, _>(&value)
-        .map(|state| state.value().clone())
-        .unwrap_or_default();
-    match overlay.get(value) {
-        Some(overlay_taint) => LatticeLike::join(&solver_taint, overlay_taint),
-        None => solver_taint,
-    }
+    solver.require::<AdviceTaintSparseLattice, _>(value, dependent).value().clone()
 }
 
-fn value_key(value: ValueRef) -> String {
-    format!("{}", value.borrow())
+fn join_solver_value_taint(value: ValueRef, taint: &AdviceTaintFacts, solver: &mut DataFlowSolver) {
+    let mut lattice = solver.get_or_create_mut::<AdviceTaintSparseLattice, _>(value);
+    SparseLattice::join(&mut *lattice, taint);
+}
+
+fn value_taint(value: ValueRef, solver: &DataFlowSolver) -> AdviceTaintFacts {
+    solver
+        .get::<AdviceTaintSparseLattice, _>(&value)
+        .map(|state| state.value().clone())
+        .unwrap_or_default()
 }
 
 fn memory_storage_key(ptr: ValueRef) -> Option<StorageKey> {
@@ -1461,11 +1208,7 @@ fn memory_address(value: ValueRef) -> Option<u32> {
     None
 }
 
-fn collect_findings(
-    op: &Operation,
-    solver: &DataFlowSolver,
-    overlay: &StorageTaintOverlay,
-) -> Vec<AdviceTaintFinding> {
+fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
         if !is_u32_presuming_sink(operation) {
@@ -1475,7 +1218,7 @@ fn collect_findings(
         let mut operand_taint = AdviceTaintFacts::clean();
         for operand in operation.operands().iter() {
             let value = operand.borrow().as_value_ref();
-            operand_taint = LatticeLike::join(&operand_taint, &value_taint(value, solver, overlay));
+            operand_taint = LatticeLike::join(&operand_taint, &value_taint(value, solver));
         }
         if operand_taint.is_clean() || !operand_taint.has_unreported_origin() {
             return;
@@ -1493,7 +1236,7 @@ fn collect_findings(
                 sink_span,
                 advice_span: origin.span,
                 origin,
-                contexts: collect_call_contexts(op, solver, overlay, function, origin),
+                contexts: collect_call_contexts(op, solver, function, origin),
                 function,
             };
             if !findings.iter().any(|existing| same_finding(existing, &finding)) {
@@ -1504,11 +1247,7 @@ fn collect_findings(
     findings
 }
 
-fn collect_exit_findings(
-    op: &Operation,
-    solver: &DataFlowSolver,
-    overlay: &StorageTaintOverlay,
-) -> Vec<AdviceTaintExitFinding> {
+fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintExitFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
         let Some(ret) = operation.downcast_ref::<builtin::Ret>() else {
@@ -1527,7 +1266,7 @@ fn collect_exit_findings(
         let return_span = operation.span();
         for (result_index, operand) in ret.values().iter().enumerate() {
             let value = operand.borrow().as_value_ref();
-            let taint = value_taint(value, solver, overlay);
+            let taint = value_taint(value, solver);
             if taint.is_clean() || !taint.has_unreported_origin() {
                 continue;
             }
@@ -1540,13 +1279,7 @@ fn collect_exit_findings(
                     result_index,
                     advice_span: origin.span,
                     origin,
-                    contexts: collect_call_contexts(
-                        op,
-                        solver,
-                        overlay,
-                        Some(function_name),
-                        origin,
-                    ),
+                    contexts: collect_call_contexts(op, solver, Some(function_name), origin),
                 };
                 if !findings.iter().any(|existing| same_exit_finding(existing, &finding)) {
                     findings.push(finding);
@@ -1560,7 +1293,6 @@ fn collect_exit_findings(
 fn collect_external_call_findings(
     op: &Operation,
     solver: &DataFlowSolver,
-    overlay: &StorageTaintOverlay,
 ) -> Vec<AdviceTaintExternalCallFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
@@ -1585,7 +1317,7 @@ fn collect_external_call_findings(
                 continue;
             }
 
-            let taint = value_taint(argument.borrow().as_value_ref(), solver, overlay);
+            let taint = value_taint(argument.borrow().as_value_ref(), solver);
             if taint.is_clean() || !taint.has_unreported_origin() {
                 continue;
             }
@@ -1638,7 +1370,6 @@ fn is_unconstrained_external_result_type(ty: &Type) -> bool {
 fn collect_call_contexts(
     root: &Operation,
     solver: &DataFlowSolver,
-    overlay: &StorageTaintOverlay,
     use_function: Option<SymbolName>,
     origin: AdviceTaintOrigin,
 ) -> Vec<AdviceTaintContext> {
@@ -1662,13 +1393,13 @@ fn collect_call_contexts(
         let callee_function = resolved_callee_function_name(call);
 
         if caller_function == Some(use_function)
-            && call_results_contain_origin(operation, solver, overlay, origin)
+            && call_results_contain_origin(operation, solver, origin)
         {
             push_context(&mut contexts, operation.span(), AdviceTaintContextKind::CallResult);
         }
 
         if callee_function == Some(use_function)
-            && call_arguments_contain_origin(call, solver, overlay, origin)
+            && call_arguments_contain_origin(call, solver, origin)
         {
             push_context(&mut contexts, operation.span(), AdviceTaintContextKind::CallArgument);
         }
@@ -1688,24 +1419,22 @@ fn resolved_callee_function_name(call: &dyn CallOpInterface) -> Option<SymbolNam
 fn call_results_contain_origin(
     call: &Operation,
     solver: &DataFlowSolver,
-    overlay: &StorageTaintOverlay,
     origin: AdviceTaintOrigin,
 ) -> bool {
     call.results().all().iter().any(|result| {
         let value = result.borrow().as_value_ref();
-        value_taint(value, solver, overlay).contains_origin(origin)
+        value_taint(value, solver).contains_origin(origin)
     })
 }
 
 fn call_arguments_contain_origin(
     call: &dyn CallOpInterface,
     solver: &DataFlowSolver,
-    overlay: &StorageTaintOverlay,
     origin: AdviceTaintOrigin,
 ) -> bool {
     call.arguments().iter().any(|operand| {
         let value = operand.borrow().as_value_ref();
-        value_taint(value, solver, overlay).contains_origin(origin)
+        value_taint(value, solver).contains_origin(origin)
     })
 }
 

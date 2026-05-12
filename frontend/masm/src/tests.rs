@@ -3372,6 +3372,35 @@ end
 }
 
 #[test]
+fn advice_taint_propagates_storage_load_taint_through_solver_to_later_store() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+@locals(1)
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+loc_store.0
+loc_load.0
+push.0
+add
+mem_store.0
+mem_load.0
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_joins_local_store_taint_across_branches() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
@@ -3490,6 +3519,34 @@ fn advice_taint_propagates_memory_read_by_local_callee() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc reader(rhs: u32) -> u32
+mem_load.0
+u32wrapping_add
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+mem_store.0
+call.reader
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("reader"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_propagates_memory_read_by_public_local_callee() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc reader(rhs: u32) -> u32
 mem_load.0
 u32wrapping_add
 end
