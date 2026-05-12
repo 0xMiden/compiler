@@ -876,7 +876,7 @@ impl DenseForwardDataFlowAnalysis for AdviceTaintStoragePropagation {
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
         let dependent = ProgramPoint::after(op.as_operation_ref());
-        let mut state = required_storage_before_operation(op, dependent, solver);
+        let mut state = storage_state_before_operation(op, dependent, solver);
         transfer_storage_operation(op, &mut state, solver)?;
         midenc_hir_analysis::DenseLattice::join(after, &state);
         Ok(())
@@ -904,8 +904,7 @@ impl DenseForwardDataFlowAnalysis for AdviceTaintStoragePropagation {
         let frame = CallContextFrame::new(call);
         match action {
             CallControlFlowAction::Enter => {
-                let state =
-                    required_storage_before_operation(call.as_operation(), dependent, solver);
+                let state = storage_state_before_operation(call.as_operation(), dependent, solver);
                 midenc_hir_analysis::DenseLattice::join(
                     after,
                     &state.memory_only().enter_call(frame),
@@ -913,14 +912,13 @@ impl DenseForwardDataFlowAnalysis for AdviceTaintStoragePropagation {
             }
             CallControlFlowAction::Exit => {
                 let mut state =
-                    required_storage_before_operation(call.as_operation(), dependent, solver);
+                    storage_state_before_operation(call.as_operation(), dependent, solver);
                 state.replace_memory_from(&before.value().exit_call(frame));
                 midenc_hir_analysis::DenseLattice::join(after, &state);
             }
             // External memory effects need summaries before we can model them conservatively.
             CallControlFlowAction::External => {
-                let state =
-                    required_storage_before_operation(call.as_operation(), dependent, solver);
+                let state = storage_state_before_operation(call.as_operation(), dependent, solver);
                 midenc_hir_analysis::DenseLattice::join(after, &state);
             }
         }
@@ -939,7 +937,14 @@ enum StorageKey {
     Memory(u32),
 }
 
-fn required_storage_before_operation(
+/// Returns the storage state immediately before `operation`.
+///
+/// Dense forward analysis passes `ProgramPoint::before(operation)` as the `before` lattice for an
+/// operation transfer, but the solver stores straight-line dense state at concrete CFG anchors:
+/// either after the previous operation or at the start of the block. Storage transfer needs that
+/// concrete state because it both reads storage and writes load-result taint back into sparse value
+/// state during the same solver iteration.
+fn storage_state_before_operation(
     operation: &Operation,
     dependent: ProgramPoint,
     solver: &mut DataFlowSolver,
