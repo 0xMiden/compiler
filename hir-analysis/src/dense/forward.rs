@@ -26,11 +26,13 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
         core::any::type_name::<Self>()
     }
 
-    /// Indicates that this analysis can reason about dataflow even in the presence of unknown
-    /// predecessors.
+    /// Indicates that this analysis can continue using known predecessor facts when some
+    /// predecessors are unknown.
     ///
-    /// By default, this returns false - i.e. conservatively assume that this analysis cannot reason
-    /// about dataflow unless all predecessors are known.
+    /// When unknown predecessors are present, the solver first seeds affected states with the
+    /// analysis entry state. If this returns true, it then also applies transfers from every known
+    /// predecessor. The default is false because most analyses cannot safely combine partial
+    /// predecessor information with an unknown-predecessor fixpoint.
     #[inline]
     fn allow_unknown_predecessors(&self) -> bool {
         false

@@ -251,22 +251,6 @@ impl<A: SparseForwardDataFlowAnalysis> SparseForwardDataFlowAnalysis
         <A as SparseForwardDataFlowAnalysis>::allow_unknown_predecessors(&self.analysis)
     }
 
-    fn visit_external_call(
-        &self,
-        call: &dyn CallOpInterface,
-        arguments: &[super::AnalysisStateGuard<'_, Self::Lattice>],
-        results: &mut [super::AnalysisStateGuardMut<'_, Self::Lattice>],
-        solver: &mut DataFlowSolver,
-    ) {
-        <A as SparseForwardDataFlowAnalysis>::visit_external_call(
-            &self.analysis,
-            call,
-            arguments,
-            results,
-            solver,
-        );
-    }
-
     fn visit_call_control_flow_transfer(
         &self,
         call: &dyn CallOpInterface,

@@ -30,11 +30,13 @@ pub trait SparseForwardDataFlowAnalysis: 'static {
         core::any::type_name::<Self>()
     }
 
-    /// Indicates that this analysis can reason about dataflow even in the presence of unknown
-    /// predecessors.
+    /// Indicates that this analysis can continue using known predecessor facts when some
+    /// predecessors are unknown.
     ///
-    /// By default, this returns false - i.e. conservatively assume that this analysis cannot reason
-    /// about dataflow unless all predecessors are known.
+    /// When unknown predecessors are present, the solver first seeds affected states with the
+    /// analysis entry state. If this returns true, it then also applies transfers from every known
+    /// predecessor. The default is false because most analyses cannot safely combine partial
+    /// predecessor information with an unknown-predecessor fixpoint.
     #[inline]
     fn allow_unknown_predecessors(&self) -> bool {
         false
@@ -50,27 +52,6 @@ pub trait SparseForwardDataFlowAnalysis: 'static {
         results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report>;
-
-    /// The transfer function for calls to external functions.
-    ///
-    /// By default this sets the result states to the entry state.
-    ///
-    /// Implementations may use this to infer result states based on the arguments to the callee.
-    fn visit_external_call(
-        &self,
-        call: &dyn CallOpInterface,
-        arguments: &[AnalysisStateGuard<'_, Self::Lattice>],
-        results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
-        solver: &mut DataFlowSolver,
-    ) {
-        self.visit_call_control_flow_transfer(
-            call,
-            CallControlFlowAction::External,
-            arguments,
-            results,
-            solver,
-        );
-    }
 
     /// Propagate the operand lattices forward along a call control flow edge, which can be either
     /// entering or exiting the callee.
@@ -274,7 +255,13 @@ where
             .is_none_or(|callable| callable.get_callable_region().is_none());
         if !solver.config().is_interprocedural() || is_external_call {
             log::trace!(target: analysis.debug_name(), "callee {} is external", call.callable_for_callee());
-            analysis.visit_external_call(call, &operand_lattices, &mut result_lattices, solver);
+            analysis.visit_call_control_flow_transfer(
+                call,
+                CallControlFlowAction::External,
+                &operand_lattices,
+                &mut result_lattices,
+                solver,
+            );
             return Ok(());
         }
 
