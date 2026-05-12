@@ -3612,6 +3612,68 @@ end
 }
 
 #[test]
+fn advice_taint_keeps_passthrough_call_results_call_site_specific() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc passthrough(value: felt) -> felt
+nop
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+exec.passthrough
+drop
+push.0
+exec.passthrough
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_keeps_nested_passthrough_call_results_call_site_specific() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc passthrough(value: felt) -> felt
+nop
+end
+
+proc outer(value: felt) -> felt
+exec.passthrough
+end
+
+pub proc entry(rhs: u32) -> u32
+adv_push.1
+exec.outer
+drop
+push.0
+exec.outer
+u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_treats_external_call_results_as_unconstrained() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
