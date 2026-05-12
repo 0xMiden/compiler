@@ -15,7 +15,7 @@ use crate::{TraceEvent, lower::NativePtr, masm};
 mod project_support;
 
 pub struct MasmComponent {
-    pub id: builtin::ComponentId,
+    pub id: Option<builtin::ComponentId>,
     /// The symbol name of the component initializer function
     ///
     /// This function is responsible for initializing global variables and writing data segments

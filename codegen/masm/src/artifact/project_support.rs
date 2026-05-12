@@ -61,8 +61,11 @@ pub(super) fn assemble(
         &mut store,
     )?;
 
+    let executable_name = component.id.as_ref().map(|id| id.to_library_path());
     let selector = if component.entrypoint.is_some() {
-        ProjectTargetSelector::Executable(&component.id.to_string())
+        ProjectTargetSelector::Executable(
+            executable_name.as_ref().map(|p| p.as_str()).unwrap_or("main"),
+        )
     } else {
         ProjectTargetSelector::Library
     };
@@ -376,8 +379,11 @@ fn prepare_sources(
         support.push(Box::new(Arc::unwrap_or_clone(module.clone())));
     }
 
+    let id = component.id.as_ref().map(|id| id.to_library_path());
     if let Some(entrypoint) = component.entrypoint.as_ref() {
-        let target = Target::executable(component.id.to_string());
+        let target = Target::executable(
+            id.as_ref().map(|p| p.as_str().to_string()).unwrap_or("main".to_string()),
+        );
         let root = Box::new(Arc::unwrap_or_clone(component.generate_main(
             entrypoint,
             emit_test_harness,
@@ -556,7 +562,7 @@ mod tests {
 
     fn test_component(modules: Vec<Arc<masm::Module>>) -> MasmComponent {
         MasmComponent {
-            id: "root:root@1.0.0".parse().expect("synthetic component id should be valid"),
+            id: Some("root:root@1.0.0".parse().expect("synthetic component id should be valid")),
             init: None,
             entrypoint: None,
             kernel: None,

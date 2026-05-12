@@ -11,7 +11,7 @@ const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
 const DEFAULT_RESERVATION: u32 = 17;
 
 pub struct LinkInfo {
-    component: builtin::ComponentId,
+    component: Option<builtin::ComponentId>,
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
     reserved_memory_pages: u32,
@@ -20,7 +20,7 @@ pub struct LinkInfo {
 
 impl LinkInfo {
     #[cfg(test)]
-    pub fn new(id: builtin::ComponentId) -> Self {
+    pub fn new(id: Option<builtin::ComponentId>) -> Self {
         Self {
             component: id,
             globals_layout: Default::default(),
@@ -31,8 +31,8 @@ impl LinkInfo {
     }
 
     #[inline]
-    pub fn component(&self) -> &builtin::ComponentId {
-        &self.component
+    pub fn component(&self) -> Option<&builtin::ComponentId> {
+        self.component.as_ref()
     }
 
     pub fn has_globals(&self) -> bool {
@@ -98,11 +98,19 @@ impl Linker {
         }
     }
 
-    pub fn link(mut self, component: &builtin::Component) -> Result<LinkInfo, LinkerError> {
+    pub fn link(
+        mut self,
+        id: Option<builtin::ComponentId>,
+        component: &midenc_hir::Operation,
+    ) -> Result<LinkInfo, LinkerError> {
         // Gather information needed to compute component data layout
 
         // 1. Verify that the component is non-empty
-        let body = component.body();
+        if !component.has_regions() {
+            // This component has no definition
+            return Err(LinkerError::Undefined);
+        }
+        let body = component.region(0);
         if body.is_empty() {
             // This component has no definition
             return Err(LinkerError::Undefined);
@@ -127,9 +135,15 @@ impl Linker {
                         );
                         self.segment_layout
                             .insert(unsafe { SegmentRef::from_raw(segment) })
-                            .map_err(|err| LinkerError::InvalidSegment {
-                                id: component.id(),
-                                err,
+                            .map_err(|err| {
+                                if let Some(id) = id.as_ref() {
+                                    LinkerError::InvalidComponentDataSegment {
+                                        id: id.clone(),
+                                        err,
+                                    }
+                                } else {
+                                    LinkerError::InvalidDataSegment { err }
+                                }
                             })?;
                         continue;
                     }
@@ -167,7 +181,7 @@ impl Linker {
         );
 
         Ok(LinkInfo {
-            component: component.id(),
+            component: id,
             globals_layout: core::mem::take(&mut self.globals_layout),
             segment_layout: core::mem::take(&mut self.segment_layout),
             reserved_memory_pages: self.reserved_memory_pages,
@@ -184,8 +198,14 @@ pub enum LinkerError {
     Undefined,
     /// Multiple segments were defined in the same component with the same offset
     #[error("invalid component: '{id}' has invalid data segment: {err}")]
-    InvalidSegment {
+    InvalidComponentDataSegment {
         id: builtin::ComponentId,
+        #[source]
+        err: DataSegmentError,
+    },
+    /// Multiple segments were defined in the same component with the same offset
+    #[error("invalid data segment: {err}")]
+    InvalidDataSegment {
         #[source]
         err: DataSegmentError,
     },

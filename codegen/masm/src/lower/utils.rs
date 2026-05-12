@@ -526,11 +526,11 @@ mod tests {
 
         let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
-        let link_info = LinkInfo::new(builtin::ComponentId {
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
             namespace: "root".into(),
             name: "root".into(),
             version: Version::new(1, 0, 0),
-        });
+        }));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(value);
@@ -596,11 +596,11 @@ mod tests {
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
-        let link_info = LinkInfo::new(builtin::ComponentId {
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
             namespace: "root".into(),
             name: "root".into(),
             version: Version::new(1, 0, 0),
-        });
+        }));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
@@ -690,11 +690,11 @@ mod tests {
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
-        let link_info = LinkInfo::new(builtin::ComponentId {
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
             namespace: "root".into(),
             name: "root".into(),
             version: Version::new(1, 0, 0),
-        });
+        }));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
@@ -916,11 +916,11 @@ mod tests {
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
-        let link_info = LinkInfo::new(builtin::ComponentId {
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
             namespace: "root".into(),
             name: "root".into(),
             version: Version::new(1, 0, 0),
-        });
+        }));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
