@@ -1,5 +1,4 @@
 use alloc::{
-    boxed::Box,
     collections::BTreeMap,
     format,
     rc::Rc,
@@ -13,7 +12,7 @@ use midenc_dialect_arith as arith;
 use midenc_hir::{
     CallOpInterface, Forward, Operation, OperationName, OperationRef, ProgramPoint, Report,
     SmallVec, SourceSpan, Spanned, Symbol, SymbolName, Type, Value, ValueRef,
-    diagnostics::{Diagnostic, LabeledSpan, Severity},
+    diagnostics::{Diagnostic, LabeledSpan, miette},
     dialects::builtin::{self, attributes::LocalVariable},
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
 };
@@ -168,10 +167,14 @@ pub struct AdviceTaintContext {
 }
 
 /// User-facing diagnostic for an unconstrained advice taint finding.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Diagnostic, thiserror::Error)]
+#[error("{message}")]
+#[diagnostic(severity(Warning))]
 pub struct AdviceTaintDiagnostic {
     message: String,
+    #[help]
     help: String,
+    #[label(collection)]
     labels: Vec<LabeledSpan>,
 }
 
@@ -324,28 +327,6 @@ impl AdviceTaintDiagnostic {
 
     pub fn into_report(self) -> Report {
         Report::from(self)
-    }
-}
-
-impl fmt::Display for AdviceTaintDiagnostic {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl core::error::Error for AdviceTaintDiagnostic {}
-
-impl Diagnostic for AdviceTaintDiagnostic {
-    fn severity(&self) -> Option<Severity> {
-        Some(Severity::Warning)
-    }
-
-    fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
-        Some(Box::new(&self.help))
-    }
-
-    fn labels(&self) -> Option<Box<dyn Iterator<Item = LabeledSpan> + '_>> {
-        Some(Box::new(self.labels.iter().cloned()))
     }
 }
 
@@ -1311,7 +1292,7 @@ fn collect_external_call_findings(
             Symbol::name(&*function)
         });
         for (argument_index, (argument, parameter_type)) in
-            call.arguments().iter().zip(param_types.into_iter()).enumerate()
+            call.arguments().iter().zip(param_types).enumerate()
         {
             if !is_constrained_external_parameter_type(&parameter_type) {
                 continue;

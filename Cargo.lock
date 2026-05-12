@@ -3526,6 +3526,7 @@ version = "0.8.1"
 dependencies = [
  "litcheck-filecheck",
  "log",
+ "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-scf",

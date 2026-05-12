@@ -26,6 +26,7 @@ midenc-dialect-scf.workspace = true
 midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true
 midenc-hir-transform.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
