@@ -28,8 +28,8 @@ use midenc_dialect_hir::{
 };
 use midenc_dialect_scf as scf;
 use midenc_hir::{
-    AddressSpace, ArrayType, CallConv, FunctionType, Immediate, PointerType, SymbolName,
-    SymbolTable, Type,
+    AddressSpace, ArrayType, CallConv, CallOpInterface, FunctionType, Immediate, PointerType,
+    SymbolName, SymbolPath, SymbolTable, Type,
     diagnostics::{Report, Severity},
     dialects::builtin::{self, Function, UnrealizedConversionCast},
     pass::AnalysisManager,
@@ -1387,15 +1387,14 @@ end
         .expect("target procedure");
     let mut signatures = rustc_hash::FxHashMap::default();
     signatures.insert(
-        target.name().as_ident(),
+        std::sync::Arc::from(module.path().join(target.name()).to_absolute().into_owned()),
         signatures::convert_signature(&context, &module, target.signature().unwrap())?,
     );
     let capture = module
         .procedures()
         .find(|procedure| procedure.name().as_str() == "capture")
         .expect("capture procedure");
-    let signature =
-        infer::infer_signature(&context, capture, &signatures, &rustc_hash::FxHashMap::default())?;
+    let signature = infer::infer_signature(&context, &module, capture, &signatures)?;
 
     assert_eq!(signature.params().len(), 0);
     assert_eq!(signature.results().len(), 1);
@@ -2044,6 +2043,82 @@ end
 }
 
 #[test]
+fn external_declarations_are_emitted_in_owning_module() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures.insert(
+        ast::Path::new("::dep::api::callee").into(),
+        masm_signature([Type::Felt], [Type::Felt]),
+    );
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::api::callee
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+
+    let dep_api = find_world_module(output.world, "dep::api");
+    let callee = find_function(dep_api, "callee");
+    assert!(callee.borrow().body().is_empty());
+    assert!(output.module.borrow().get(SymbolName::intern("callee")).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn single_module_disassembly_rejects_non_core_imports() {
+    let context = Rc::new(Context::default());
+    let err = match disassemble_source(
+        r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    ) {
+        Ok(_) => panic!("single-module disassembly should reject non-core external imports"),
+        Err(err) => err,
+    };
+
+    let message = err.to_string();
+    assert!(message.contains("single-module MASM disassembly does not support non-core import"));
+    assert!(message.contains("::dep::callee"));
+    assert!(message.contains("project target disassembly"));
+}
+
+#[test]
+fn single_module_disassembly_allows_referenced_core_imports() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+use miden::core::math::u128
+
+pub proc entry(b: u128, a: u128) -> u128
+    exec.u128::wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let core_u128 = find_world_module(output.world, "miden::core::math::u128");
+    let callee = find_function(core_u128, "wrapping_add");
+    assert!(callee.borrow().body().is_empty());
+    assert!(core_u128.borrow().get(SymbolName::intern("overflowing_add")).is_none());
+
+    Ok(())
+}
+
+#[test]
 fn missing_external_callee_diagnostic_lists_available_metadata() {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
@@ -2143,6 +2218,42 @@ fn project_disassembly_uses_source_dependency_signatures() -> Result<()> {
     )?;
     let function = find_function(output.module, "entry");
     assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn project_disassembly_loads_support_modules_into_world_tree() -> Result<()> {
+    let (root, app_dir) = write_multi_module_project("midenc_frontend_masm_multi_module");
+
+    let context = Rc::new(Context::default());
+    let output = disassemble_project_target(
+        app_dir.join("miden-project.toml"),
+        None,
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let support = find_world_module(output.world, "app::util::math");
+    let _ = find_function(support, "inc");
+
+    let entry = find_function(output.module, "entry");
+    let entry_block = entry.borrow().entry_block();
+    let entry_block = entry_block.borrow();
+    let mut callee = None;
+    for op in entry_block.body().iter() {
+        if let Some(call) = op.as_trait::<dyn CallOpInterface>() {
+            callee = Some(call.resolve().expect("support module callee should resolve"));
+            break;
+        }
+    }
+    let callee = callee.expect("entry should contain a call");
+    assert!(
+        callee.borrow().as_symbol_operation().nearest_parent_op::<builtin::Module>()
+            == Some(support)
+    );
 
     let _ = fs::remove_dir_all(root);
 
@@ -2317,6 +2428,27 @@ fn project_disassembly_uses_preassembled_dependency_graph_signatures() -> Result
     )?;
     let function = find_function(output.module, "entry");
     assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn project_disassembly_declares_only_referenced_preassembled_exports() -> Result<()> {
+    let (root, app_dir) =
+        write_preassembled_dependency_project("midenc_frontend_masm_preassembled_referenced");
+
+    let context = Rc::new(Context::default());
+    let output = disassemble_project_target(
+        app_dir.join("miden-project.toml"),
+        None,
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    let dep_api = find_world_module(output.world, "dep::api");
+    let _ = find_function(dep_api, "callee");
+    assert!(dep_api.borrow().get(SymbolName::intern("unused")).is_none());
 
     let _ = fs::remove_dir_all(root);
 
@@ -4606,9 +4738,9 @@ end
 }
 
 #[test]
-fn rejects_indirect_recursion() {
+fn represents_indirect_recursion() -> Result<()> {
     let context = Rc::new(Context::default());
-    let result = disassemble_source(
+    let output = disassemble_source(
         r#"
 pub proc a() -> felt
     exec.b
@@ -4621,13 +4753,11 @@ end
         "test",
         &DisassemblerConfig::default(),
         context,
-    );
-    let err = match result {
-        Ok(_) => panic!("expected disassembly to reject indirect recursion"),
-        Err(err) => err,
-    };
+    )?;
 
-    assert!(err.to_string().contains("recursive MASM procedure calls"));
+    assert_eq!(top_level_op_count::<hir::Exec>(find_function(output.module, "a")), 1);
+    assert_eq!(top_level_op_count::<hir::Exec>(find_function(output.module, "b")), 1);
+    Ok(())
 }
 
 struct InstructionCase {
@@ -4862,6 +4992,19 @@ fn find_function(module: builtin::ModuleRef, name: &str) -> builtin::FunctionRef
     panic!("expected function '{name}'");
 }
 
+fn find_world_module(world: builtin::WorldRef, module_path: &str) -> builtin::ModuleRef {
+    let path = SymbolPath::from_masm_module_id(module_path);
+    let symbol = world
+        .borrow()
+        .resolve(&path)
+        .unwrap_or_else(|| panic!("expected module '{module_path}'"));
+    let op = symbol.borrow();
+    op.as_symbol_operation()
+        .downcast_ref::<builtin::Module>()
+        .unwrap_or_else(|| panic!("expected symbol '{module_path}' to be a module"))
+        .as_module_ref()
+}
+
 fn top_level_op_count<T: midenc_hir::Op + 'static>(function: builtin::FunctionRef) -> usize {
     function
         .borrow()
@@ -5009,6 +5152,45 @@ dep = { path = "../dep" }
         r#"
 pub proc entry(a: felt) -> felt
     exec.::dep::callee
+end
+"#,
+    )
+    .unwrap();
+
+    (root, app_dir)
+}
+
+fn write_multi_module_project(prefix: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = temp_project_dir(prefix);
+    let app_dir = root.join("app");
+    let util_dir = app_dir.join("util");
+    fs::create_dir_all(&util_dir).unwrap();
+
+    fs::write(
+        app_dir.join("miden-project.toml"),
+        r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("main.masm"),
+        r#"
+pub proc entry(a: felt) -> felt
+    exec.::app::util::math::inc
+end
+"#,
+    )
+    .unwrap();
+    fs::write(
+        util_dir.join("math.masm"),
+        r#"
+pub proc inc(a: felt) -> felt
+    add.1
 end
 "#,
     )
@@ -5310,6 +5492,10 @@ fn write_preassembled_dependency_project(prefix: &str) -> (std::path::PathBuf, s
         r#"
 pub proc callee(a: felt) -> felt
     add.1
+end
+
+pub proc unused(a: felt) -> felt
+    add.2
 end
 "#,
     )

@@ -15,12 +15,7 @@ use midenc_codegen_masm::{
     intrinsics::{self, MEM_INTRINSICS_MODULE_NAME},
 };
 use midenc_frontend_masm::{DisassemblerConfig, disassemble_source};
-use midenc_hir::{
-    Builder, BuilderExt, Context, Ident, OpBuilder, SourceSpan,
-    dialects::builtin::{self, ComponentBuilder, WorldBuilder},
-    pass::AnalysisManager,
-    version::Version,
-};
+use midenc_hir::{Context, pass::AnalysisManager};
 use midenc_session::{Options, Session, diagnostics::DefaultSourceManager};
 
 #[test]
@@ -264,10 +259,9 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program 
         disassemble_source(source, "test", &DisassemblerConfig::default(), context.clone())
             .expect("MASM should disassemble to HIR");
 
-    let component = wrap_module_in_component(context.clone(), disassembled.module);
-    let analysis_manager = AnalysisManager::new(component.as_operation_ref(), None);
-    let masm_component = component
-        .borrow()
+    let analysis_manager = AnalysisManager::new(disassembled.world.as_operation_ref(), None);
+    let world = disassembled.world.borrow();
+    let masm_component = world
         .to_masm_component(analysis_manager)
         .expect("HIR should lower back to MASM");
     let source_manager = context.session().source_manager.clone();
@@ -278,10 +272,16 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program 
     assembler
         .compile_and_statically_link(mem_intrinsics)
         .expect("memory intrinsics should statically link");
+    for module in masm_component.modules.iter() {
+        std::dbg!(module.path());
+    }
     let library = assembler
         .assemble_library(masm_component.modules.iter().cloned())
         .unwrap_or_else(|err| {
-            panic!("round-tripped MASM should assemble:\n{err}\n\n# Emitted MASM\n{masm_component}")
+            panic!(
+                "round-tripped MASM should assemble:\nerror: {err}\n\n# Emitted \
+                 MASM\n{masm_component}"
+            )
         });
     Assembler::new(source_manager)
         .with_static_library(library)
@@ -293,44 +293,12 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program 
 use miden::core::sys
 
 begin
-    exec.::"root_ns:root@1.0.0"::test::entry
+    exec.::test::entry
     exec.sys::truncate_stack
 end
 "#,
         )
         .expect("round-tripped MASM program should assemble")
-}
-
-fn wrap_module_in_component(
-    context: Rc<Context>,
-    module: builtin::ModuleRef,
-) -> builtin::ComponentRef {
-    let mut builder = OpBuilder::new(context.clone());
-    let world = {
-        let builder = builder.create::<builtin::World, ()>(SourceSpan::default());
-        builder().expect("failed to create test world")
-    };
-    let mut world_builder = WorldBuilder::new(world);
-    let component = world_builder
-        .define_component(
-            Ident::with_empty_span("root_ns".into()),
-            Ident::with_empty_span("root".into()),
-            Version::new(1, 0, 0),
-        )
-        .expect("failed to create test component");
-    {
-        let _ = ComponentBuilder::new(component);
-    }
-    drop(world_builder);
-    let body_block = component
-        .borrow()
-        .body()
-        .entry_block_ref()
-        .expect("component builder should create an entry block");
-    let mut inserter = OpBuilder::new(context);
-    inserter.set_insertion_point_to_end(body_block);
-    inserter.insert(module.as_operation_ref());
-    component
 }
 
 fn execute_program(

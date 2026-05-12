@@ -1,9 +1,11 @@
 use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
 
 use miden_assembly_syntax::{
-    Path as MasmPath,
-    ast::{self, Block, Immediate, Instruction, InvocationTarget, Op, Procedure},
-    debuginfo::SourceSpan,
+    ast::{
+        self, Block, Immediate, Instruction, InvocationTarget, Module, Op, Procedure,
+        SymbolResolution,
+    },
+    debuginfo::{SourceManager, SourceSpan, Span, Spanned},
     parser::{IntValue, PushValue, WordValue},
 };
 use midenc_hir::{
@@ -19,15 +21,15 @@ use crate::{
     stack as masm_stack,
 };
 
-/// Infer a [Signature] for `procedure`, using the signatures in `signatures`/`external_signatures`
-/// for inferring the stack effects of procedure invocations in its body.
+/// Infer a [Signature] for `procedure`, using `signatures` for inferring the stack effects of
+/// procedure invocations in its body. Signatures are keyed by absolute MASM procedure path.
 pub(crate) fn infer_signature(
     context: &Rc<Context>,
+    module: &Module,
     procedure: &Procedure,
-    signatures: &FxHashMap<ast::Ident, Signature>,
-    external_signatures: &FxHashMap<Arc<ast::Path>, Signature>,
+    signatures: &FxHashMap<Arc<ast::Path>, Signature>,
 ) -> Result<Signature> {
-    let mut state = InferState::new(signatures, external_signatures);
+    let mut state = InferState::new(context, module, signatures);
     state.infer_block(procedure.body())?;
 
     let params = state.inputs.iter().map(AbstractValue::ty_or_felt);
@@ -134,21 +136,24 @@ struct InferState<'a> {
     stack: Vec<AbstractValue>,
     inputs: Vec<AbstractValue>,
     current_span: SourceSpan,
-    signatures: &'a FxHashMap<ast::Ident, Signature>,
-    external_signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
+    module: &'a Module,
+    source_manager: Arc<dyn SourceManager>,
+    signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
 }
 
 impl<'a> InferState<'a> {
     fn new(
-        signatures: &'a FxHashMap<ast::Ident, Signature>,
-        external_signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
+        context: &Rc<Context>,
+        module: &'a Module,
+        signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
     ) -> Self {
         Self {
             stack: Vec::new(),
             inputs: Vec::new(),
             current_span: SourceSpan::UNKNOWN,
+            module,
+            source_manager: context.session().source_manager.clone(),
             signatures,
-            external_signatures,
         }
     }
 
@@ -157,8 +162,9 @@ impl<'a> InferState<'a> {
             stack: self.stack.clone(),
             inputs: Vec::new(),
             current_span: self.current_span,
+            module: self.module,
+            source_manager: self.source_manager.clone(),
             signatures: self.signatures,
-            external_signatures: self.external_signatures,
         }
     }
 
@@ -787,29 +793,14 @@ impl<'a> InferState<'a> {
     }
 
     fn invoke(&mut self, target: &InvocationTarget, span: SourceSpan) -> Result<()> {
-        let signature = match target {
-            InvocationTarget::Symbol(name) => self.signatures.get(name).ok_or_else(|| {
-                Report::msg(format!(
-                    "signature inference could not resolve local callee '{name}' at {span:?}"
-                ))
-            })?,
-            InvocationTarget::Path(path) => {
-                let key = invocation_path_key(path.inner());
-                self.external_signatures.get(&key).ok_or_else(|| {
-                    Report::msg(format!(
-                        "signature inference could not resolve external callee '{}' at {span:?}; \
-                         external signature metadata is missing{}",
-                        path.inner(),
-                        external_signature_metadata_hint(self.external_signatures)
-                    ))
-                })?
-            }
-            InvocationTarget::MastRoot(_) => {
-                return Err(Report::msg(format!(
-                    "signature inference does not support MAST root invoke targets at {span:?}"
-                )));
-            }
-        };
+        let key = resolve_invocation_path(self.module, target, self.source_manager.clone())?;
+        let signature = self.signatures.get(&key).ok_or_else(|| {
+            Report::msg(format!(
+                "signature inference could not resolve external callee '{key}' at {span:?}; \
+                 signature metadata is missing{}",
+                signature_metadata_hint(self.signatures)
+            ))
+        })?;
 
         for param in signature.params() {
             self.pop_with_type(param.ty.clone(), span)?;
@@ -1057,22 +1048,80 @@ fn masm_scalar_rank(ty: &Type) -> Option<u8> {
     }
 }
 
-fn invocation_path_key(path: &MasmPath) -> Arc<ast::Path> {
-    path.to_absolute().into()
+fn resolve_invocation_path(
+    module: &Module,
+    target: &InvocationTarget,
+    source_manager: Arc<dyn SourceManager>,
+) -> Result<Arc<ast::Path>> {
+    match target {
+        InvocationTarget::Symbol(name) => {
+            match module.resolve(Span::new(name.span(), name.as_str()), source_manager) {
+                Ok(SymbolResolution::Local(index)) => {
+                    let item = &module[index.into_inner()];
+                    Ok(Arc::from(module.path().join(item.name()).to_absolute().into_owned()))
+                }
+                Ok(SymbolResolution::External(path)) => Ok(normalize_path(path.inner().clone())),
+                Ok(SymbolResolution::Exact { path, .. }) => {
+                    Ok(normalize_path(path.inner().clone()))
+                }
+                Ok(SymbolResolution::Module { .. }) => Err(Report::msg(format!(
+                    "signature inference target '{name}' resolves to a module"
+                ))),
+                Ok(SymbolResolution::MastRoot(_)) => Err(Report::msg(
+                    "signature inference does not support MAST root invoke targets",
+                )),
+                Err(err) => Err(Report::msg(format!(
+                    "signature inference could not resolve target '{name}': {err}"
+                ))),
+            }
+        }
+        InvocationTarget::Path(path) => {
+            match module.resolve_path(path.as_deref(), source_manager) {
+                Ok(SymbolResolution::Local(index)) => {
+                    let item = &module[index.into_inner()];
+                    Ok(Arc::from(module.path().join(item.name()).to_absolute().into_owned()))
+                }
+                Ok(SymbolResolution::External(path)) => Ok(normalize_path(path.inner().clone())),
+                Ok(SymbolResolution::Exact { path, .. }) => {
+                    Ok(normalize_path(path.inner().clone()))
+                }
+                Ok(SymbolResolution::Module { .. }) => Err(Report::msg(format!(
+                    "signature inference target '{}' resolves to a module",
+                    path.inner()
+                ))),
+                Ok(SymbolResolution::MastRoot(_)) => Err(Report::msg(
+                    "signature inference does not support MAST root invoke targets",
+                )),
+                Err(err) => Err(Report::msg(format!(
+                    "signature inference could not resolve target '{}': {err}",
+                    path.inner()
+                ))),
+            }
+        }
+        InvocationTarget::MastRoot(_) => {
+            Err(Report::msg("signature inference does not support MAST root invoke targets"))
+        }
+    }
 }
 
-fn external_signature_metadata_hint(
-    external_signatures: &FxHashMap<Arc<ast::Path>, Signature>,
-) -> String {
-    if external_signatures.is_empty() {
-        return "; no external signature metadata is available".to_string();
+fn normalize_path(path: Arc<ast::Path>) -> Arc<ast::Path> {
+    if path.is_absolute() {
+        path
+    } else {
+        path.to_absolute().into()
+    }
+}
+
+fn signature_metadata_hint(signatures: &FxHashMap<Arc<ast::Path>, Signature>) -> String {
+    if signatures.is_empty() {
+        return "; no signature metadata is available".to_string();
     }
 
-    let mut paths = external_signatures.keys().map(|path| path.as_str()).collect::<Vec<_>>();
+    let mut paths = signatures.keys().map(|path| path.as_str()).collect::<Vec<_>>();
     paths.sort();
     let omitted = paths.len().saturating_sub(8);
     paths.truncate(8);
-    let mut hint = format!("; available external signatures: {}", paths.join(", "));
+    let mut hint = format!("; available signatures: {}", paths.join(", "));
     if omitted > 0 {
         hint.push_str(&format!(" (+{omitted} more)"));
     }
@@ -1131,7 +1180,7 @@ fn immediate_value<T: Copy>(immediate: &Immediate<T>) -> Result<T> {
 }
 
 fn validate_memory_word_address(addr: u32, span: SourceSpan) -> Result<()> {
-    if addr.is_multiple_of(4) {
+    if !addr.is_multiple_of(4) {
         return Err(Report::msg(format!(
             "memory word address {addr} is not word-aligned at {span:?}"
         )));

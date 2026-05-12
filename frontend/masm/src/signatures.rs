@@ -10,6 +10,7 @@ use crate::{ExternalTypeMap, Result};
 
 const MAX_TYPE_EXPR_DEPTH: usize = 256;
 
+#[allow(dead_code)]
 pub(crate) fn convert_signature(
     context: &Rc<Context>,
     module: &Module,
@@ -51,6 +52,7 @@ pub(crate) fn convert_hir_function_type(
     )
 }
 
+#[allow(dead_code)]
 pub(crate) fn convert_ast_function_type(
     context: &Context,
     module: &Module,
@@ -60,6 +62,7 @@ pub(crate) fn convert_ast_function_type(
     convert_ast_function_type_with_external_types(context, module, signature, &external_types)
 }
 
+#[allow(dead_code)]
 pub(crate) fn convert_ast_function_type_with_external_types(
     context: &Context,
     module: &Module,

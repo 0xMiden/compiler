@@ -1,27 +1,32 @@
+#![allow(clippy::vec_box)]
+
 use std::{
+    collections::BTreeSet,
+    ffi::OsStr,
     fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use miden_assembly_syntax::{
-    Parse, ParseOptions, PathBuf as MasmPathBuf,
-    ast::{self, Export, Module, ModuleKind},
+    ModuleParser, Path as MasmPath,
+    ast::{self, Module, ModuleKind},
     debuginfo::SourceManager,
 };
 use miden_core::serde::Deserializable;
-use miden_mast_package::{Package as MastPackage, PackageExport};
+use miden_mast_package::{Package as MastPackage, PackageExport, TargetType};
 use miden_project::{
     DependencyVersionScheme, Package as ProjectPackage, Project, ProjectDependencyGraph,
     ProjectDependencyNode, ProjectDependencyNodeProvenance, ProjectSource, Target,
 };
 use midenc_hir::{Context, Report, Type};
 
-use crate::{ExternalSignatureMap, ExternalTypeMap, Result, signatures};
+use crate::{ExternalSignatureMap, ExternalTypeMap, Result};
 
 pub(crate) struct ProjectTargetInput {
-    pub source_path: PathBuf,
-    pub module_path: MasmPathBuf,
+    pub root: Box<Module>,
+    pub support: Vec<Box<Module>>,
+    pub dependency_modules: Vec<Box<Module>>,
     pub external_signatures: ExternalSignatureMap,
     pub external_types: ExternalTypeMap,
 }
@@ -30,6 +35,7 @@ pub(crate) struct ProjectTargetInput {
 struct ExternalMetadata {
     signatures: ExternalSignatureMap,
     types: ExternalTypeMap,
+    source_modules: Vec<Box<Module>>,
 }
 
 pub(crate) fn resolve_project_target(
@@ -51,34 +57,10 @@ pub(crate) fn resolve_project_target(
             None => Report::msg("project has no build targets"),
         })?;
 
-    let target_path = target.path.as_ref().ok_or_else(|| {
-        Report::msg(format!("target '{}' does not specify a MASM source path", target.name.inner()))
-    })?;
-
-    let target_path = Path::new(target_path.inner().path());
-    if target_path.extension().and_then(|ext| ext.to_str()) != Some("masm") {
-        return Err(Report::msg(format!(
-            "target '{}' path '{}' is not a .masm file",
-            target.name.inner(),
-            target_path.display()
-        )));
-    }
-
-    let base_dir = package
-        .manifest_path()
-        .and_then(Path::parent)
-        .ok_or_else(|| Report::msg("project package does not have a filesystem manifest path"))?;
-
-    let source_path = if target_path.is_absolute() {
-        target_path.to_path_buf()
-    } else {
-        base_dir.join(target_path)
-    };
-
-    let module_path = target.namespace.inner().as_ref().to_path_buf();
+    let (root, support) = load_target_modules(package.as_ref(), target.inner(), source_manager)?;
     let external_metadata = collect_dependency_metadata(&project, context)?;
 
-    Ok(project_target_input(source_path, module_path, external_metadata))
+    Ok(project_target_input(root, support, external_metadata))
 }
 
 pub(crate) fn resolve_project_target_with_dependency_graph(
@@ -109,40 +91,21 @@ pub(crate) fn resolve_project_target_with_dependency_graph(
             None => Report::msg("project has no build targets"),
         })?;
 
-    let target_path = target.path.as_ref().ok_or_else(|| {
-        Report::msg(format!("target '{}' does not specify a MASM source path", target.name.inner()))
-    })?;
-
-    let target_path = Path::new(target_path.inner().path());
-    if target_path.extension().and_then(|ext| ext.to_str()) != Some("masm") {
-        return Err(Report::msg(format!(
-            "target '{}' path '{}' is not a .masm file",
-            target.name.inner(),
-            target_path.display()
-        )));
-    }
-
-    let base_dir = package_base_dir(package.as_ref())?;
-    let source_path = resolve_uri_path(
-        base_dir,
-        target_path.to_str().ok_or_else(|| {
-            Report::msg(format!("target path '{}' is not valid UTF-8", target_path.display()))
-        })?,
-    );
-    let module_path = target.namespace.inner().as_ref().to_path_buf();
+    let (root, support) = load_target_modules(package.as_ref(), target.inner(), source_manager)?;
     let external_metadata = collect_dependency_graph_metadata(dependency_graph, context)?;
 
-    Ok(project_target_input(source_path, module_path, external_metadata))
+    Ok(project_target_input(root, support, external_metadata))
 }
 
 fn project_target_input(
-    source_path: PathBuf,
-    module_path: MasmPathBuf,
+    root: Box<Module>,
+    support: Vec<Box<Module>>,
     external_metadata: ExternalMetadata,
 ) -> ProjectTargetInput {
     ProjectTargetInput {
-        source_path,
-        module_path,
+        root,
+        support,
+        dependency_modules: external_metadata.source_modules,
         external_signatures: external_metadata.signatures,
         external_types: external_metadata.types,
     }
@@ -156,7 +119,6 @@ fn collect_dependency_metadata(project: &Project, context: &Context) -> Result<E
         collect_dependency_metadata_for_scheme(
             &mut metadata,
             project,
-            context,
             dependency.name().as_ref(),
             dependency.scheme(),
             source_manager.clone(),
@@ -170,38 +132,20 @@ fn collect_dependency_graph_metadata(
     context: &Context,
 ) -> Result<ExternalMetadata> {
     let mut metadata = ExternalMetadata::default();
-    let mut source_modules = Vec::<Box<Module>>::new();
     let source_manager = context.session().source_manager.clone();
 
     for (package, node) in dependency_graph.nodes() {
         if package == dependency_graph.root() {
             continue;
         }
-        collect_dependency_graph_node_metadata(
-            &mut metadata,
-            &mut source_modules,
-            node,
-            source_manager.clone(),
-        )?;
-    }
-
-    collect_source_modules_types(&mut metadata.types, context, &source_modules)?;
-    for module in &source_modules {
-        collect_source_module_signatures(
-            &mut metadata.signatures,
-            context,
-            module,
-            &metadata.types,
-        )?;
+        collect_dependency_graph_node_metadata(&mut metadata, node, source_manager.clone())?;
     }
 
     Ok(metadata)
 }
 
-#[allow(clippy::vec_box)]
 fn collect_dependency_graph_node_metadata(
     metadata: &mut ExternalMetadata,
-    source_modules: &mut Vec<Box<Module>>,
     node: &ProjectDependencyNode,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
@@ -220,9 +164,9 @@ fn collect_dependency_graph_node_metadata(
                 source_manager.as_ref(),
             )?;
             let package = project.package();
-            if let Some(module) = parse_source_package_module(package.as_ref(), source_manager)? {
-                source_modules.push(module);
-            }
+            metadata
+                .source_modules
+                .extend(parse_source_package_modules(package.as_ref(), source_manager)?);
             Ok(())
         }
         ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
@@ -240,7 +184,6 @@ fn collect_dependency_graph_node_metadata(
 fn collect_dependency_metadata_for_scheme(
     metadata: &mut ExternalMetadata,
     project: &Project,
-    context: &Context,
     dependency_name: &str,
     scheme: &DependencyVersionScheme,
     source_manager: Arc<dyn SourceManager>,
@@ -249,26 +192,14 @@ fn collect_dependency_metadata_for_scheme(
         DependencyVersionScheme::Path { path, .. } => {
             let package = project.package();
             let path = resolve_uri_path(package_base_dir(package.as_ref())?, path.inner().path());
-            collect_path_dependency_metadata(
-                metadata,
-                context,
-                dependency_name,
-                &path,
-                source_manager,
-            )
+            collect_path_dependency_metadata(metadata, dependency_name, &path, source_manager)
         }
         DependencyVersionScheme::WorkspacePath { path, .. } => {
             let Some(base_dir) = workspace_base_dir(project) else {
                 return Ok(());
             };
             let path = resolve_uri_path(base_dir, path.inner().path());
-            collect_path_dependency_metadata(
-                metadata,
-                context,
-                dependency_name,
-                &path,
-                source_manager,
-            )
+            collect_path_dependency_metadata(metadata, dependency_name, &path, source_manager)
         }
         DependencyVersionScheme::Workspace { member, .. } => {
             let Project::WorkspacePackage { workspace, .. } = project else {
@@ -280,7 +211,7 @@ fn collect_dependency_metadata_for_scheme(
                     member.inner().path()
                 )));
             };
-            collect_source_package_metadata(metadata, context, package.as_ref(), source_manager)
+            collect_source_package_metadata(metadata, package.as_ref(), source_manager)
         }
         DependencyVersionScheme::Registry(_) | DependencyVersionScheme::Git { .. } => Ok(()),
     }
@@ -288,7 +219,6 @@ fn collect_dependency_metadata_for_scheme(
 
 fn collect_path_dependency_metadata(
     metadata: &mut ExternalMetadata,
-    context: &Context,
     dependency_name: &str,
     path: &Path,
     source_manager: Arc<dyn SourceManager>,
@@ -299,7 +229,7 @@ fn collect_path_dependency_metadata(
 
     let project = Project::load_project_reference(dependency_name, path, source_manager.as_ref())?;
     let package = project.package();
-    collect_source_package_metadata(metadata, context, package.as_ref(), source_manager)
+    collect_source_package_metadata(metadata, package.as_ref(), source_manager)
 }
 
 fn collect_mast_package_metadata(metadata: &mut ExternalMetadata, path: &Path) -> Result<()> {
@@ -327,159 +257,23 @@ fn collect_mast_package_metadata(metadata: &mut ExternalMetadata, path: &Path) -
 
 fn collect_source_package_metadata(
     metadata: &mut ExternalMetadata,
-    context: &Context,
     package: &ProjectPackage,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
-    let Some(module) = parse_source_package_module(package, source_manager)? else {
-        return Ok(());
-    };
-    collect_source_module_types(&mut metadata.types, context, &module)?;
-    collect_source_module_signatures(&mut metadata.signatures, context, &module, &metadata.types)
+    let modules = parse_source_package_modules(package, source_manager)?;
+    metadata.source_modules.extend(modules);
+    Ok(())
 }
 
-fn parse_source_package_module(
+fn parse_source_package_modules(
     package: &ProjectPackage,
     source_manager: Arc<dyn SourceManager>,
-) -> Result<Option<Box<Module>>> {
+) -> Result<Vec<Box<Module>>> {
     let Some(target) = package.library_target() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
-    let target = target.inner();
-    let Some(source_path) = resolve_target_source_path(package, target)? else {
-        return Ok(None);
-    };
-    if source_path.extension().and_then(|ext| ext.to_str()) != Some("masm") {
-        return Err(Report::msg(format!(
-            "library target '{}' path '{}' is not a .masm file",
-            target.name.inner(),
-            source_path.display()
-        )));
-    }
-
-    let module_path = target.namespace.inner().as_ref().to_path_buf();
-    let module = source_path
-        .as_path()
-        .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))?;
-    Ok(Some(module))
-}
-
-fn collect_source_module_types(
-    types: &mut ExternalTypeMap,
-    context: &Context,
-    module: &Module,
-) -> Result<()> {
-    for (index, path) in module.exported() {
-        let Export::Type(decl) = &module[index] else {
-            continue;
-        };
-        let ty =
-            signatures::convert_type_expr_with_external_types(context, module, &decl.ty(), types)?;
-        insert_external_type(types, path.as_path().to_absolute().into_owned().into(), ty)?;
-    }
-
-    Ok(())
-}
-
-fn collect_source_modules_types(
-    types: &mut ExternalTypeMap,
-    context: &Context,
-    modules: &[Box<Module>],
-) -> Result<()> {
-    let mut pending = Vec::new();
-    for (module_index, module) in modules.iter().enumerate() {
-        for (index, path) in module.exported() {
-            if matches!(&module[index], Export::Type(_)) {
-                pending.push((
-                    module_index,
-                    index,
-                    Arc::from(path.as_path().to_absolute().into_owned()),
-                ));
-            }
-        }
-    }
-
-    while !pending.is_empty() {
-        let mut progress = false;
-        let mut next = Vec::new();
-        let mut last_unresolved = None;
-
-        for (module_index, index, path) in pending {
-            let module = &modules[module_index];
-            let Export::Type(decl) = &module[index] else {
-                continue;
-            };
-            match signatures::convert_type_expr_with_external_types(
-                context,
-                module,
-                &decl.ty(),
-                types,
-            ) {
-                Ok(ty) => {
-                    insert_external_type(types, path, ty)?;
-                    progress = true;
-                }
-                Err(err) if is_unresolved_external_type_metadata(&err) => {
-                    last_unresolved = Some(err);
-                    next.push((module_index, index, path));
-                }
-                Err(err) => return Err(err),
-            }
-        }
-
-        if !progress {
-            return Err(last_unresolved.unwrap_or_else(|| {
-                Report::msg("failed to resolve source dependency type metadata")
-            }));
-        }
-        pending = next;
-    }
-
-    Ok(())
-}
-
-fn is_unresolved_external_type_metadata(err: &miden_assembly_syntax::diagnostics::Report) -> bool {
-    err.to_string().contains("external type metadata")
-}
-
-fn collect_source_module_signatures(
-    signatures: &mut ExternalSignatureMap,
-    context: &Context,
-    module: &Module,
-    external_types: &ExternalTypeMap,
-) -> Result<()> {
-    for (index, path) in module.exported() {
-        let Some(signature) = module.procedure_signature(index) else {
-            continue;
-        };
-        let signature = if external_types.is_empty() {
-            signatures::convert_ast_function_type(context, module, signature)?
-        } else {
-            signatures::convert_ast_function_type_with_external_types(
-                context,
-                module,
-                signature,
-                external_types,
-            )?
-        };
-        insert_external_signature(
-            signatures,
-            path.as_path().to_absolute().into_owned().into(),
-            signature,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn resolve_target_source_path(
-    package: &ProjectPackage,
-    target: &Target,
-) -> Result<Option<PathBuf>> {
-    let Some(path) = &target.path else {
-        return Ok(None);
-    };
-    Ok(Some(resolve_uri_path(package_base_dir(package)?, path.inner().path())))
+    let (root, support) = load_target_modules(package, target.inner(), source_manager)?;
+    Ok(core::iter::once(root).chain(support).collect())
 }
 
 fn package_base_dir(package: &ProjectPackage) -> Result<&Path> {
@@ -531,6 +325,199 @@ fn resolve_uri_path(base_dir: &Path, path: &str) -> PathBuf {
     } else {
         base_dir.join(path)
     }
+}
+
+fn load_target_modules(
+    package: &ProjectPackage,
+    target: &Target,
+    source_manager: Arc<dyn SourceManager>,
+) -> Result<(Box<Module>, Vec<Box<Module>>)> {
+    let target_path = target.path.as_ref().ok_or_else(|| {
+        Report::msg(format!("target '{}' does not specify a MASM source path", target.name.inner()))
+    })?;
+    let target_path = resolve_uri_path(package_base_dir(package)?, target_path.inner().path());
+    if target_path.extension().and_then(|ext| ext.to_str()) != Some(Module::FILE_EXTENSION) {
+        return Err(Report::msg(format!(
+            "target '{}' path '{}' is not a .masm file",
+            target.name.inner(),
+            target_path.display()
+        )));
+    }
+
+    let root_path = target_path.canonicalize().map_err(|error| {
+        Report::msg(format!("failed to resolve target source '{}': {error}", target_path.display()))
+    })?;
+    let root_dir = root_path.parent().map(Path::to_path_buf).ok_or_else(|| {
+        Report::msg(format!("target source '{}' has no parent directory", root_path.display()))
+    })?;
+    let root = parse_module_file(
+        &root_path,
+        target_root_module_kind(target.ty),
+        target.namespace.inner().as_ref(),
+        source_manager.clone(),
+    )?;
+
+    let mut excluded = excluded_target_roots(package, target, &root_path)?;
+    excluded.insert(root_path);
+    let support_paths = read_support_module_paths(&root_dir, target.namespace.inner(), &excluded)?;
+    let support = support_paths
+        .iter()
+        .map(|path| {
+            let relative = path.strip_prefix(&root_dir).map_err(|error| {
+                Report::msg(format!(
+                    "failed to derive module path for '{}': {error}",
+                    path.display()
+                ))
+            })?;
+            let module_path = module_path_from_relative(target.namespace.inner(), relative)?;
+            parse_module_file(
+                path,
+                ModuleKind::Library,
+                module_path.as_ref(),
+                source_manager.clone(),
+            )
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok((root, support))
+}
+
+fn parse_module_file(
+    path: &Path,
+    kind: ModuleKind,
+    module_path: &MasmPath,
+    source_manager: Arc<dyn SourceManager>,
+) -> Result<Box<Module>> {
+    let mut parser = ModuleParser::new(kind);
+    parser.parse_file(module_path, path, source_manager)
+}
+
+fn target_root_module_kind(ty: TargetType) -> ModuleKind {
+    match ty {
+        TargetType::Executable => ModuleKind::Executable,
+        TargetType::Kernel => ModuleKind::Kernel,
+        _ => ModuleKind::Library,
+    }
+}
+
+fn excluded_target_roots(
+    package: &ProjectPackage,
+    target: &Target,
+    current_root: &Path,
+) -> Result<BTreeSet<PathBuf>> {
+    let base_dir = package_base_dir(package)?;
+    let mut excluded = BTreeSet::new();
+
+    if !target.ty.is_executable()
+        && let Some(library_target) = package.library_target()
+        && let Some(path) = library_target.path.as_ref()
+    {
+        insert_excluded_target_root(&mut excluded, base_dir, path.inner().path(), current_root)?;
+    }
+
+    for executable in package.executable_targets() {
+        let Some(path) = executable.path.as_ref() else {
+            continue;
+        };
+        insert_excluded_target_root(&mut excluded, base_dir, path.inner().path(), current_root)?;
+    }
+
+    Ok(excluded)
+}
+
+fn insert_excluded_target_root(
+    excluded: &mut BTreeSet<PathBuf>,
+    base_dir: &Path,
+    path: &str,
+    current_root: &Path,
+) -> Result<()> {
+    let path = resolve_uri_path(base_dir, path);
+    if let Ok(path) = path.canonicalize()
+        && path != current_root
+    {
+        excluded.insert(path);
+    }
+    Ok(())
+}
+
+fn read_support_module_paths(
+    root_dir: &Path,
+    namespace: &MasmPath,
+    excluded: &BTreeSet<PathBuf>,
+) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    collect_module_files(root_dir, &mut paths)?;
+    paths.sort();
+
+    let mut modules = Vec::new();
+    for path in paths {
+        let canonical = path.canonicalize().map_err(|error| {
+            Report::msg(format!("failed to resolve '{}': {error}", path.display()))
+        })?;
+        if excluded.contains(&canonical) {
+            continue;
+        }
+
+        let relative = canonical.strip_prefix(root_dir).map_err(|error| {
+            Report::msg(format!(
+                "failed to derive module path for '{}': {error}",
+                canonical.display()
+            ))
+        })?;
+        module_path_from_relative(namespace, relative)?;
+        modules.push(canonical);
+    }
+
+    Ok(modules)
+}
+
+fn collect_module_files(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir).map_err(|error| {
+        Report::msg(format!("failed to read module directory '{}': {error}", dir.display()))
+    })? {
+        let entry = entry.map_err(|error| {
+            Report::msg(format!("failed to read directory entry in '{}': {error}", dir.display()))
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|error| {
+            Report::msg(format!("failed to read file type for '{}': {error}", path.display()))
+        })?;
+
+        if file_type.is_dir() {
+            collect_module_files(&path, paths)?;
+            continue;
+        }
+
+        if path.extension() == Some(AsRef::<OsStr>::as_ref(Module::FILE_EXTENSION)) {
+            paths.push(path);
+        }
+    }
+
+    Ok(())
+}
+
+fn module_path_from_relative(namespace: &MasmPath, relative: &Path) -> Result<Arc<MasmPath>> {
+    let mut module_path = namespace.to_path_buf();
+    let stem = relative.with_extension("");
+    let mut components = stem
+        .iter()
+        .map(|component| {
+            component.to_str().ok_or_else(|| {
+                Report::msg(format!("module path '{}' contains invalid UTF-8", relative.display()))
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    if components.last().is_some_and(|component| *component == Module::ROOT) {
+        components.pop();
+    }
+
+    for component in components {
+        MasmPath::validate(component).map_err(|error| Report::msg(error.to_string()))?;
+        module_path.push_component(component);
+    }
+
+    Ok(module_path.into())
 }
 
 fn load_mast_package(path: &Path) -> Result<MastPackage> {
