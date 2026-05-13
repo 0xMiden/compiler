@@ -1,8 +1,8 @@
 use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
-    AsValueRange, BlockRef, EntityMut, FxHashMap, Operation, OperationName, OperationRef,
-    RegionRef, Report, Rewriter, RewriterExt, SmallVec, ValueRef,
+    AsValueRange, BlockRef, EntityMut, Operation, OperationName, OperationRef, RegionRef, Report,
+    Rewriter, RewriterExt, SmallVec, ValueRef,
     adt::SmallDenseMap,
     cfg::Graph,
     dominance::{DomTreeNode, DominanceInfo, PostDominanceInfo},
@@ -93,7 +93,50 @@ struct CSEDriver<'a> {
     mem_effects_cache: SmallDenseMap<OperationRef, (OperationRef, Option<MemoryEffect>)>,
 }
 
-type ScopedMap = FxHashMap<OpKey, OperationRef>;
+/// Tracks common subexpression candidates visible in the current dominance scope.
+///
+/// This intentionally keeps candidates in traversal order and recomputes equivalence during
+/// lookup. `OpKey` is derived from mutable IR state such as operation operands, and this pass
+/// rewrites uses while it runs. An operation recorded earlier may therefore need to be compared
+/// using its current operands, not the operands it had when it was recorded. Scanning the visible
+/// candidates avoids stale equivalence results after those rewrites and picks a stable
+/// representative.
+#[derive(Clone, Default)]
+struct ScopedMap {
+    ops: Vec<OperationRef>,
+}
+
+impl ScopedMap {
+    fn get(&self, op: OperationRef) -> Option<OperationRef> {
+        self.ops.iter().copied().find(|existing| OpKey(*existing) == OpKey(op))
+    }
+
+    fn equivalent_ops_rev(&self, op: OperationRef) -> SmallVec<[OperationRef; 2]> {
+        self.ops
+            .iter()
+            .rev()
+            .copied()
+            .filter(|existing| OpKey(*existing) == OpKey(op))
+            .collect()
+    }
+
+    fn insert(&mut self, op: OperationRef) {
+        self.ops.push(op);
+    }
+
+    fn insert_or_replace_equivalent(&mut self, op: OperationRef) {
+        if let Some(existing) = self.ops.iter_mut().find(|existing| OpKey(**existing) == OpKey(op))
+        {
+            *existing = op;
+        } else {
+            self.insert(op);
+        }
+    }
+
+    fn contains_equivalent(&self, op: OperationRef) -> bool {
+        self.get(op).is_some()
+    }
+}
 
 impl CSEDriver<'_> {
     pub fn simplify(&mut self, op: OperationRef) -> PostPassStatus {
@@ -154,27 +197,28 @@ impl CSEDriver<'_> {
             }
 
             // Look for an existing definition for the operation.
-            if let Some(existing) = known_values.get(&OpKey(op)).copied()
-                && existing.parent() == op.parent()
-                && !self.has_other_side_effecting_op_in_between(existing, op)
-            {
+            let candidates = known_values.equivalent_ops_rev(op);
+            if let Some(existing) = candidates.into_iter().find(|existing| {
+                existing.parent() == op.parent()
+                    && !self.has_other_side_effecting_op_in_between(*existing, op)
+            }) {
                 // The operation that can be deleted has been reach with no
                 // side-effecting operations in between the existing operation and
                 // this one so we can remove the duplicate.
                 self.replace_uses_and_delete(known_values, op, existing, has_ssa_dominance);
                 return PostPassStatus::Changed;
             }
-            known_values.insert(OpKey(op), op);
+            known_values.insert_or_replace_equivalent(op);
             return PostPassStatus::Unchanged;
         }
 
         // Look for an existing definition for the operation.
-        if let Some(existing) = known_values.get(&OpKey(op)).copied() {
+        if let Some(existing) = known_values.get(op) {
             self.replace_uses_and_delete(known_values, op, existing, has_ssa_dominance);
             PostPassStatus::Changed
         } else {
             // Otherwise, we add this operation to the known values map.
-            known_values.insert(OpKey(op), op);
+            known_values.insert(op);
             PostPassStatus::Unchanged
         }
     }
@@ -313,7 +357,7 @@ impl CSEDriver<'_> {
             // When the region does not have SSA dominance, we need to check if we have visited a
             // use before replacing any use.
             let was_visited = |operand: &midenc_hir::OpOperandImpl| {
-                !known_values.contains_key(&OpKey(operand.owner))
+                !known_values.contains_equivalent(operand.owner)
             };
 
             let op_results = op.borrow().results().as_value_range().into_smallvec();
