@@ -468,8 +468,8 @@ mod tests {
     use litcheck_filecheck::{filecheck, litcheck};
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        PointerType, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, print::AsmPrinter,
-        testing::Test,
+        PointerType, ProgramPoint, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder,
+        print::AsmPrinter, testing::Test,
     };
 
     use super::*;
@@ -500,6 +500,56 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
     // CHECK-NEXT: builtin.ret [[V0]], [[V0]] : (i32, i32);
     %1 = arith.constant 1 : i32;
     builtin.ret %0, %1 : (i32, i32);
+};
+            "#
+        );
+    }
+
+    #[test]
+    fn cse_rechecks_recorded_ops_after_operand_rewrite() {
+        let mut test = Test::new("rechecks_recorded_ops", &[], &[Type::I32, Type::I32]);
+        {
+            let mut builder = test.function_builder();
+            let canonical = builder.i32(1, SourceSpan::UNKNOWN);
+            let rhs = builder.i32(3, SourceSpan::UNKNOWN);
+            let duplicate_constant = builder.i32(1, SourceSpan::UNKNOWN);
+            let recorded = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
+            let duplicate = builder.sub(canonical, rhs, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([recorded, duplicate], SourceSpan::UNKNOWN).unwrap();
+
+            // Place `recorded` before the duplicate constant it uses, so eliminating that
+            // constant rewrites an operation CSE has already recorded.
+            let mut recorded_op = recorded.borrow().get_defining_op().unwrap();
+            let duplicate_constant_op = duplicate_constant.borrow().get_defining_op().unwrap();
+            recorded_op.borrow_mut().move_to(ProgramPoint::before(duplicate_constant_op));
+        }
+
+        test.apply_pass::<CommonSubexpressionElimination>(false).expect("invalid ir");
+        test.function()
+            .as_operation_ref()
+            .borrow()
+            .recursively_verify()
+            .expect("invalid ir after cse");
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
+        let output = format!("{}", printer.finish());
+        filecheck!(
+            output,
+            r#"
+builtin.function public extern("C") @rechecks_recorded_ops() -> (i32, i32) {
+    // CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
+    %0 = arith.constant 1 : i32;
+
+    // CHECK-NEXT: [[RHS:%\d+]] = arith.constant 3 : i32;
+    %1 = arith.constant 3 : i32;
+
+    // CHECK-NEXT: [[RECORDED:%\d+]] = arith.sub [[CANONICAL]], [[RHS]]
+    %3 = arith.sub %2, %1 <{ overflow = #builtin.overflow<checked> }>
+
+    // CHECK-NEXT: builtin.ret [[RECORDED]], [[RECORDED]] : (i32, i32);
+    builtin.ret %3, %4 : (i32, i32);
 };
             "#
         );
