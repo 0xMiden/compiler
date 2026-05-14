@@ -1,7 +1,7 @@
 use std::{any::type_name, marker::PhantomData};
 
 use miden_core::Felt;
-use miden_debug::{FromMidenRepr, ToMidenRepr};
+use miden_debug::{FromMidenRepr, ToMidenRepr, push_wasm_ty_to_operand_stack};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use num_traits::{PrimInt, ToBytes, Unsigned};
 use proptest::{
@@ -162,8 +162,8 @@ macro_rules! test_func_two_arg {
                     .run(&(0..$a_ty::MAX/2, any::<$b_ty>()), move |(a, b)| {
                         let rust_out = $func(a, b);
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        a.push_to_operand_stack(&mut args);
-                        b.push_to_operand_stack(&mut args);
+                        push_wasm_ty_to_operand_stack(a, &mut args);
+                        push_wasm_ty_to_operand_stack(b, &mut args);
                         run_masm_vs_rust(rust_out, &package, &args, &test.session)
                     });
                 match res {
@@ -902,8 +902,8 @@ fn test_overflowing_arith<T>(
 
         let mut args = Vec::<midenc_hir::Felt>::default();
         out_addr.push_to_operand_stack(&mut args);
-        a.push_to_operand_stack(&mut args);
-        b.push_to_operand_stack(&mut args);
+        push_wasm_ty_to_operand_stack(a, &mut args);
+        push_wasm_ty_to_operand_stack(b, &mut args);
 
         eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
             let ty_byte_size = std::mem::size_of::<T>();
@@ -961,8 +961,8 @@ where
         let out_addr = 20u32 * 65536;
         let mut args = Vec::<midenc_hir::Felt>::default();
         out_addr.push_to_operand_stack(&mut args);
-        a.push_to_operand_stack(&mut args);
-        b.push_to_operand_stack(&mut args);
+        push_wasm_ty_to_operand_stack(a, &mut args);
+        push_wasm_ty_to_operand_stack(b, &mut args);
 
         eval_package::<u32, _, _>(&package, None, &args, &test.session, |trace| {
             let ty_byte_size = std::mem::size_of::<T>();
@@ -1022,8 +1022,8 @@ fn test_checked_arith<T>(
 
         let mut args = Vec::<midenc_hir::Felt>::default();
         out_addr.push_to_operand_stack(&mut args);
-        a.push_to_operand_stack(&mut args);
-        b.push_to_operand_stack(&mut args);
+        push_wasm_ty_to_operand_stack(a, &mut args);
+        push_wasm_ty_to_operand_stack(b, &mut args);
 
         eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
             let ty_byte_size = std::mem::size_of::<T>();
