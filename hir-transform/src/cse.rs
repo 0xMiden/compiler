@@ -712,6 +712,63 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
     }
 
     #[test]
+    fn cse_rechecks_graph_candidates_after_nested_rewrite() {
+        use midenc_dialect_scf::StructuredControlFlowOpBuilder;
+
+        let mut test = Test::named("graph_candidate_rewrite").in_module("graph_candidate_rewrite");
+        {
+            let module_body = test.module().borrow().body().entry_block_ref().unwrap();
+            let builder = test.builder_mut();
+            builder.set_insertion_point_to_end(module_body);
+
+            let canonical = builder.i32(1, SourceSpan::UNKNOWN);
+            let rhs = builder.i32(3, SourceSpan::UNKNOWN);
+            let duplicate_constant = builder.i32(1, SourceSpan::UNKNOWN);
+            let recorded = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
+            let cond = builder.i1(true, SourceSpan::UNKNOWN);
+            let if_op = builder.r#if(cond, &[], SourceSpan::UNKNOWN).unwrap();
+            let duplicate = builder.sub(canonical, rhs, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([recorded, duplicate], SourceSpan::UNKNOWN).unwrap();
+
+            let then_region = if_op.borrow().then_body().as_region_ref();
+            let then_block = builder.create_block(then_region, None, &[]);
+            builder.r#yield(None, SourceSpan::UNKNOWN).unwrap();
+            let else_region = if_op.borrow().else_body().as_region_ref();
+            builder.create_block(else_region, None, &[]);
+            builder.r#yield(None, SourceSpan::UNKNOWN).unwrap();
+
+            // Move the duplicate constant into a nested region that is processed after `recorded`
+            // is added to the parent graph-region candidate set. Replacing the constant rewrites
+            // `recorded`'s operand after its candidate key would have been computed.
+            let mut duplicate_constant_op = duplicate_constant.borrow().get_defining_op().unwrap();
+            duplicate_constant_op
+                .borrow_mut()
+                .move_to(ProgramPoint::at_start_of(then_block));
+        }
+
+        let mut pm = PassManager::on::<Module>(test.context_rc(), Nesting::Implicit);
+        pm.add_pass(Box::<CommonSubexpressionElimination>::default());
+        pm.enable_verifier(false);
+        pm.run(test.module().as_operation_ref()).expect("invalid ir");
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.module().borrow());
+        let output = format!("{}", printer.finish());
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.module private @graph_candidate_rewrite
+// CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
+// CHECK: [[RHS:%\d+]] = arith.constant 3 : i32;
+// CHECK: [[RECORDED:%\d+]] = arith.sub [[CANONICAL]], [[RHS]]
+// CHECK-NOT: arith.sub [[CANONICAL]], [[RHS]]
+// CHECK: builtin.ret [[RECORDED]], [[RECORDED]] : (i32, i32);
+            "#
+        );
+    }
+
+    #[test]
     fn basic() {
         let mut test = Test::new("basic", &[], &[Type::I32, Type::I32]);
         {
