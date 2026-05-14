@@ -285,7 +285,7 @@ impl SSABuilder {
         // We've promised to return the most recent block where `var` was defined, but we didn't
         // find a usable definition. So create one.
 
-        let val = self.context.append_block_argument(block, ty, SourceSpan::default());
+        let val = self.context.append_block_argument(block, ty, SourceSpan::SYNTHETIC);
         var_defs.insert(block, Some(val));
 
         // Now every predecessor needs to pass its definition of this variable to the newly added

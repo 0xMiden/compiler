@@ -107,7 +107,7 @@ struct DwarfLocalData {
 pub struct LocationScheduleEntry {
     pub offset: u64,
     pub var_index: usize,
-    pub storage: Expression,
+    pub storage: Option<Expression>,
 }
 
 impl FunctionDebugInfo {
@@ -403,11 +403,18 @@ fn build_location_schedule(locals: &[Option<LocalDebugInfo>]) -> Vec<LocationSch
             schedule.push(LocationScheduleEntry {
                 offset: descriptor.start,
                 var_index,
-                storage: descriptor.storage.clone(),
+                storage: Some(descriptor.storage.clone()),
             });
+            if let Some(end) = descriptor.end {
+                schedule.push(LocationScheduleEntry {
+                    offset: end,
+                    var_index,
+                    storage: None,
+                });
+            }
         }
     }
-    schedule.sort_by_key(|entry| entry.offset);
+    schedule.sort_by_key(|entry| (entry.offset, entry.storage.is_some()));
     schedule
 }
 

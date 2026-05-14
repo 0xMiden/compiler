@@ -1,4 +1,4 @@
-use alloc::{rc::Rc, vec::Vec};
+use alloc::{collections::BTreeMap, rc::Rc, vec::Vec};
 use core::cell::RefCell;
 use std::path::Path;
 
@@ -142,11 +142,7 @@ pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
     debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
     param_values: Vec<(Variable, ValueRef)>,
     param_dbg_emitted: bool,
-    /// Set of variables that have been defined via def_var. Used by
-    /// apply_location_schedule to avoid calling try_use_var on undefined
-    /// variables, which would insert block parameters as a side effect and
-    /// corrupt the CFG.
-    defined_vars: alloc::collections::BTreeSet<u32>,
+    active_wasm_local_debug_vars: BTreeMap<u32, Vec<usize>>,
 }
 
 impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
@@ -162,7 +158,7 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
             debug_info: None,
             param_values: Vec::new(),
             param_dbg_emitted: false,
-            defined_vars: alloc::collections::BTreeSet::new(),
+            active_wasm_local_debug_vars: BTreeMap::new(),
         }
     }
 }
@@ -178,21 +174,27 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     }
 
     pub fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
-        let Some(info) = self.debug_info.as_ref() else {
+        let Some(info) = self.debug_info.clone() else {
             return;
         };
         let idx = var.index();
-        let (attr_opt, expr_opt) = {
+        let (attr_opt, expr_opt, schedule_only) = {
             let info = info.borrow();
             let local_info = info.locals.get(idx).and_then(|l| l.as_ref());
             match local_info {
-                Some(l) => (Some(l.attr.clone()), l.expression.clone()),
-                None => (None, None),
+                Some(l) => {
+                    let schedule_only = !l.locations.is_empty();
+                    (Some(l.attr.clone()), l.expression.clone(), schedule_only)
+                }
+                None => (None, None, false),
             }
         };
         let Some(mut attr) = attr_opt else {
             return;
         };
+        if schedule_only {
+            return;
+        }
 
         if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
             attr.file = file_symbol;
@@ -248,7 +250,12 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         }
     }
 
-    pub fn apply_location_schedule(&mut self, offset: u64, span: SourceSpan) {
+    pub fn apply_location_schedule(
+        &mut self,
+        offset: u64,
+        span: SourceSpan,
+        wasm_stack: &[ValueRef],
+    ) {
         let Some(info_rc) = self.debug_info.as_ref() else {
             return;
         };
@@ -268,16 +275,17 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         };
 
         for entry in updates {
-            self.emit_scheduled_dbg_value(entry, span);
+            self.emit_scheduled_dbg_value(entry, span, wasm_stack);
         }
     }
 
-    fn emit_scheduled_dbg_value(&mut self, entry: LocationScheduleEntry, span: SourceSpan) {
-        if entry.storage.is_empty() {
-            return;
-        }
-
-        let Some(info) = self.debug_info.as_ref() else {
+    fn emit_scheduled_dbg_value(
+        &mut self,
+        entry: LocationScheduleEntry,
+        span: SourceSpan,
+        wasm_stack: &[ValueRef],
+    ) {
+        let Some(info) = self.debug_info.clone() else {
             return;
         };
         let idx = entry.var_index;
@@ -296,29 +304,82 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             }
         }
 
-        if let Some(local_index) = wasm_local_index_from_expression(&entry.storage)
-            && self.defined_vars.contains(&local_index)
-        {
-            let var = Variable::new(local_index as usize);
-            let value = match self.try_use_var(var) {
-                Ok(v) => v,
-                Err(_) => {
-                    self.emit_scheduled_dbg_declare_with_attr(idx, attr, entry.storage, span);
-                    return;
-                }
-            };
-            if let Err(err) = DIBuilder::builder_mut(self).debug_value_with_expr(
-                value,
-                attr,
-                Some(entry.storage),
-                span,
-            ) {
-                warn!("failed to emit scheduled dbg.value for local {idx}: {err:?}");
+        let Some(storage) = entry.storage else {
+            self.remove_active_wasm_local_debug_var(idx);
+            if let Err(err) = DIBuilder::builder_mut(self).debug_kill(attr, span) {
+                warn!("failed to emit scheduled dbg.kill for local {idx}: {err:?}");
+            }
+            return;
+        };
+        if storage.is_empty() {
+            return;
+        }
+
+        if let Some(value) = wasm_stack_value_from_expression(&storage, wasm_stack) {
+            if let Err(err) =
+                DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, None, span)
+            {
+                warn!("failed to emit scheduled stack dbg.value for local {idx}: {err:?}");
             }
             return;
         }
 
-        self.emit_scheduled_dbg_declare_with_attr(idx, attr, entry.storage, span);
+        if let Some(local_index) = wasm_local_index_from_expression(&storage) {
+            self.set_active_wasm_local_debug_var(local_index, idx);
+            self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
+            return;
+        }
+
+        self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
+    }
+
+    pub fn emit_debug_values_for_wasm_local(
+        &mut self,
+        local_index: u32,
+        value: ValueRef,
+        span: SourceSpan,
+    ) {
+        let Some(info) = self.debug_info.clone() else {
+            return;
+        };
+        let Some(var_indices) = self.active_wasm_local_debug_vars.get(&local_index).cloned() else {
+            return;
+        };
+
+        for idx in var_indices {
+            let attr_opt = {
+                let info = info.borrow();
+                info.local_attr(idx).cloned()
+            };
+            let Some(mut attr) = attr_opt else {
+                continue;
+            };
+            if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+                attr.file = file_symbol;
+                if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
+                    attr.line = line;
+                    attr.column = column;
+                }
+            }
+            if let Err(err) = DIBuilder::builder_mut(self).debug_value(value, attr, span) {
+                warn!("failed to emit local-backed dbg.value for local {local_index}: {err:?}");
+            }
+        }
+    }
+
+    fn set_active_wasm_local_debug_var(&mut self, local_index: u32, var_index: usize) {
+        self.remove_active_wasm_local_debug_var(var_index);
+        let active = self.active_wasm_local_debug_vars.entry(local_index).or_default();
+        if !active.contains(&var_index) {
+            active.push(var_index);
+        }
+    }
+
+    fn remove_active_wasm_local_debug_var(&mut self, var_index: usize) {
+        self.active_wasm_local_debug_vars.retain(|_, active| {
+            active.retain(|idx| *idx != var_index);
+            !active.is_empty()
+        });
     }
 
     fn emit_scheduled_dbg_declare_with_attr(
@@ -389,7 +450,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
 
         let results = SmallVec::<[_; 2]>::from_iter(self.signature().results().iter().cloned());
         for argtyp in results {
-            self.inner.append_block_param(block, argtyp.ty.clone(), SourceSpan::default());
+            self.inner.append_block_param(block, argtyp.ty.clone(), SourceSpan::SYNTHETIC);
         }
     }
 
@@ -581,7 +642,6 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             }
             func_ctx.ssa.def_var(var, val, self.inner.current_block());
         }
-        self.defined_vars.insert(var.index() as u32);
         Ok(())
     }
 
@@ -693,15 +753,21 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         let uri = source_file.uri();
         let file = session
             .options
-            .trim_path_prefixes
+            .remap_path_prefixes
             .iter()
             .filter_map(|prefix| {
-                Path::new(uri.path()).strip_prefix(prefix).ok().and_then(|path| path.to_str())
+                Path::new(uri.path())
+                    .strip_prefix(prefix.source_prefix())
+                    .ok()
+                    .and_then(|path| match prefix.to.as_deref() {
+                        Some(parent) => parent.join(path).to_str().map(ToOwned::to_owned),
+                        None => path.to_str().map(ToOwned::to_owned),
+                    })
             })
             .max_by_key(|path| path.len())
-            .unwrap_or_else(|| uri.as_str());
-        let path = Path::new(file);
-        let file_symbol = Symbol::intern(file);
+            .unwrap_or_else(|| uri.as_str().to_owned());
+        let path = Path::new(&file);
+        let file_symbol = Symbol::intern(&file);
         let directory_symbol = path.parent().and_then(|parent| parent.to_str()).map(Symbol::intern);
         let location = source_file.location(span);
         let line = location.line.to_u32();
@@ -715,6 +781,17 @@ fn wasm_local_index_from_expression(expression: &Expression) -> Option<u32> {
         ExpressionOp::WasmLocal(index) => Some(*index),
         _ => None,
     })
+}
+
+fn wasm_stack_value_from_expression(
+    expression: &Expression,
+    wasm_stack: &[ValueRef],
+) -> Option<ValueRef> {
+    let index = expression.operations.iter().find_map(|op| match op {
+        ExpressionOp::WasmStack(index) => Some(*index as usize),
+        _ => None,
+    })?;
+    wasm_stack.iter().rev().nth(index).copied()
 }
 
 fn should_fill_debug_attr_location(
