@@ -536,10 +536,12 @@ pub trait RewriterExt: Rewriter {
         let mut from = from.borrow_mut();
         let from_uses = from.uses_mut();
         let mut cursor = from_uses.front_mut();
-        while let Some(user) = cursor.as_pointer() {
+        while let Some(mut user) = cursor.as_pointer() {
             if should_replace(&user.borrow()) {
                 let owner = user.borrow().owner;
                 self.notify_operation_modification_started(&owner);
+                // Keep the operand payload in sync with the use-list move below.
+                user.borrow_mut().value = Some(to);
                 let operand = cursor.remove().unwrap();
                 to.borrow_mut().insert_use(operand);
                 self.notify_operation_modified(owner);

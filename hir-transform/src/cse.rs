@@ -1,8 +1,8 @@
 use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
-    AsValueRange, BlockRef, EntityMut, Operation, OperationName, OperationRef, RegionRef, Report,
-    Rewriter, RewriterExt, SmallVec, ValueRef,
+    AsValueRange, BlockRef, EntityMut, FxHashMap, FxHashSet, Operation, OperationName,
+    OperationRef, RegionRef, Report, Rewriter, RewriterExt, SmallVec, ValueRef,
     adt::SmallDenseMap,
     cfg::Graph,
     dominance::{DomTreeNode, DominanceInfo, PostDominanceInfo},
@@ -94,19 +94,93 @@ struct CSEDriver<'a> {
 }
 
 /// Tracks common subexpression candidates visible in the current dominance scope.
+#[derive(Clone)]
+enum ScopedCseCandidates {
+    /// Candidates in an SSA region, where operation operands cannot be rewritten after insertion.
+    Stable(FxHashMap<OpKey, OperationRef>),
+    /// Candidates in a graph region, where visited operations may be rewritten during the pass.
+    Rescanning(RescanningCandidates),
+}
+
+impl Default for ScopedCseCandidates {
+    fn default() -> Self {
+        Self::Stable(FxHashMap::default())
+    }
+}
+
+impl ScopedCseCandidates {
+    /// Returns a scope representation suitable for `has_ssa_dominance`.
+    fn for_region(&self, has_ssa_dominance: bool) -> Self {
+        match (has_ssa_dominance, self) {
+            (true, Self::Stable(known_values)) => Self::Stable(known_values.clone()),
+            (true, Self::Rescanning(known_values)) => Self::Stable(known_values.as_stable_map()),
+            (false, Self::Stable(known_values)) => {
+                Self::Rescanning(RescanningCandidates::from_ops(known_values.values().copied()))
+            }
+            (false, Self::Rescanning(known_values)) => Self::Rescanning(known_values.clone()),
+        }
+    }
+
+    fn get(&self, op: OperationRef) -> Option<OperationRef> {
+        match self {
+            Self::Stable(known_values) => known_values.get(&OpKey(op)).copied(),
+            Self::Rescanning(known_values) => known_values.get(op),
+        }
+    }
+
+    fn equivalent_ops_rev(&self, op: OperationRef) -> SmallVec<[OperationRef; 2]> {
+        match self {
+            Self::Stable(known_values) => {
+                known_values.get(&OpKey(op)).copied().into_iter().collect()
+            }
+            Self::Rescanning(known_values) => known_values.equivalent_ops_rev(op),
+        }
+    }
+
+    fn insert(&mut self, op: OperationRef) {
+        match self {
+            Self::Stable(known_values) => {
+                known_values.insert(OpKey(op), op);
+            }
+            Self::Rescanning(known_values) => known_values.insert(op),
+        }
+    }
+
+    fn insert_or_replace_equivalent(&mut self, op: OperationRef) {
+        match self {
+            Self::Stable(known_values) => {
+                known_values.insert(OpKey(op), op);
+            }
+            Self::Rescanning(known_values) => known_values.insert_or_replace_equivalent(op),
+        }
+    }
+}
+
+/// Tracks graph-region candidates in traversal order and recomputes equivalence during lookup.
 ///
-/// This intentionally keeps candidates in traversal order and recomputes equivalence during
-/// lookup. `OpKey` is derived from mutable IR state such as operation operands, and this pass
-/// rewrites uses while it runs. An operation recorded earlier may therefore need to be compared
-/// using its current operands, not the operands it had when it was recorded. Scanning the visible
-/// candidates avoids stale equivalence results after those rewrites and picks a stable
-/// representative.
+/// `OpKey` is derived from mutable IR state such as operation operands, and graph regions allow
+/// CSE to rewrite uses in operations that do not dominate all users. Scanning visible candidates
+/// avoids stale equivalence results after those rewrites and picks a stable representative.
 #[derive(Clone, Default)]
-struct ScopedMap {
+struct RescanningCandidates {
     ops: Vec<OperationRef>,
 }
 
-impl ScopedMap {
+impl RescanningCandidates {
+    fn from_ops(ops: impl IntoIterator<Item = OperationRef>) -> Self {
+        Self {
+            ops: ops.into_iter().collect(),
+        }
+    }
+
+    fn as_stable_map(&self) -> FxHashMap<OpKey, OperationRef> {
+        let mut known_values = FxHashMap::default();
+        for op in self.ops.iter().copied() {
+            known_values.insert(OpKey(op), op);
+        }
+        known_values
+    }
+
     fn get(&self, op: OperationRef) -> Option<OperationRef> {
         self.ops.iter().copied().find(|existing| OpKey(*existing) == OpKey(op))
     }
@@ -132,16 +206,12 @@ impl ScopedMap {
             self.insert(op);
         }
     }
-
-    fn contains_equivalent(&self, op: OperationRef) -> bool {
-        self.get(op).is_some()
-    }
 }
 
 impl CSEDriver<'_> {
     pub fn simplify(&mut self, op: OperationRef) -> PostPassStatus {
         // Simplify all regions.
-        let mut known_values = ScopedMap::default();
+        let mut known_values = ScopedCseCandidates::default();
         let mut next_region = op.borrow().regions().front().as_pointer();
         let mut status = PostPassStatus::Unchanged;
         while let Some(region) = next_region.take() {
@@ -164,7 +234,8 @@ impl CSEDriver<'_> {
     /// Returns success if the operation was marked for removal, failure otherwise.
     fn simplify_operation(
         &mut self,
-        known_values: &mut ScopedMap,
+        known_values: &mut ScopedCseCandidates,
+        visited_ops: &FxHashSet<OperationRef>,
         op: OperationRef,
         has_ssa_dominance: bool,
     ) -> PostPassStatus {
@@ -205,7 +276,7 @@ impl CSEDriver<'_> {
                 // The operation that can be deleted has been reach with no
                 // side-effecting operations in between the existing operation and
                 // this one so we can remove the duplicate.
-                self.replace_uses_and_delete(known_values, op, existing, has_ssa_dominance);
+                self.replace_uses_and_delete(visited_ops, op, existing, has_ssa_dominance);
                 return PostPassStatus::Changed;
             }
             known_values.insert_or_replace_equivalent(op);
@@ -214,7 +285,7 @@ impl CSEDriver<'_> {
 
         // Look for an existing definition for the operation.
         if let Some(existing) = known_values.get(op) {
-            self.replace_uses_and_delete(known_values, op, existing, has_ssa_dominance);
+            self.replace_uses_and_delete(visited_ops, op, existing, has_ssa_dominance);
             PostPassStatus::Changed
         } else {
             // Otherwise, we add this operation to the known values map.
@@ -225,11 +296,12 @@ impl CSEDriver<'_> {
 
     fn simplify_block(
         &mut self,
-        known_values: &mut ScopedMap,
+        known_values: &mut ScopedCseCandidates,
         block: BlockRef,
         has_ssa_dominance: bool,
     ) -> PostPassStatus {
         let mut changed = PostPassStatus::Unchanged;
+        let mut visited_ops = FxHashSet::default();
         let mut next_op = block.borrow().body().front().as_pointer();
         while let Some(op) = next_op.take() {
             next_op = op.next();
@@ -241,7 +313,7 @@ impl CSEDriver<'_> {
                 // given 'known_values' map. This would cause the insertion of implicit captures in
                 // explicit capture only regions.
                 if operation.implements::<dyn IsolatedFromAbove>() {
-                    let mut nested_known_values = ScopedMap::default();
+                    let mut nested_known_values = ScopedCseCandidates::default();
                     let mut next_region = operation.regions().front().as_pointer();
                     while let Some(region) = next_region.take() {
                         next_region = region.next();
@@ -259,7 +331,10 @@ impl CSEDriver<'_> {
                 }
             }
 
-            changed |= self.simplify_operation(known_values, op, has_ssa_dominance);
+            changed |= self.simplify_operation(known_values, &visited_ops, op, has_ssa_dominance);
+            if !has_ssa_dominance {
+                visited_ops.insert(op);
+            }
         }
 
         // Clear the MemoryEffect cache since its usage is by block only.
@@ -270,7 +345,7 @@ impl CSEDriver<'_> {
 
     fn simplify_region(
         &mut self,
-        known_values: &mut ScopedMap,
+        known_values: &mut ScopedCseCandidates,
         region: RegionRef,
     ) -> PostPassStatus {
         // If the region is empty there is nothing to do.
@@ -283,7 +358,7 @@ impl CSEDriver<'_> {
 
         // If the region only contains one block, then simplify it directly.
         if region.has_one_block() {
-            let mut scope = known_values.clone();
+            let mut scope = known_values.for_region(has_ssa_dominance);
             let block = region.entry_block_ref().unwrap();
             drop(region);
             return self.simplify_block(&mut scope, block, has_ssa_dominance);
@@ -299,7 +374,10 @@ impl CSEDriver<'_> {
         // Process the nodes of the dom tree for this region.
         let mut stack = Vec::<CfgStackNode>::with_capacity(16);
         let dominfo = self.domtree.dominance(region.as_region_ref());
-        stack.push(CfgStackNode::new(known_values.clone(), dominfo.root_node().unwrap()));
+        stack.push(CfgStackNode::new(
+            known_values.for_region(has_ssa_dominance),
+            dominfo.root_node().unwrap(),
+        ));
 
         let mut changed = PostPassStatus::Unchanged;
         while let Some(current_node) = stack.last_mut() {
@@ -328,7 +406,7 @@ impl CSEDriver<'_> {
 
     fn replace_uses_and_delete(
         &mut self,
-        known_values: &ScopedMap,
+        visited_ops: &FxHashSet<OperationRef>,
         op: OperationRef,
         mut existing: OperationRef,
         has_ssa_dominance: bool,
@@ -356,14 +434,13 @@ impl CSEDriver<'_> {
         } else {
             // When the region does not have SSA dominance, we need to check if we have visited a
             // use before replacing any use.
-            let was_visited = |operand: &midenc_hir::OpOperandImpl| {
-                !known_values.contains_equivalent(operand.owner)
-            };
+            let can_replace_use =
+                |operand: &midenc_hir::OpOperandImpl| !visited_ops.contains(&operand.owner);
 
             let op_results = op.borrow().results().as_value_range().into_smallvec();
             let should_replace_op = op_results.iter().all(|v| {
                 let v = v.borrow();
-                v.iter_uses().all(|user| was_visited(&user))
+                v.iter_uses().all(|user| can_replace_use(&user))
             });
             if should_replace_op {
                 self.rewriter.notify_operation_replaced(op, existing);
@@ -373,7 +450,7 @@ impl CSEDriver<'_> {
             // listener because the original op is not erased.
             let existing_results = existing.borrow().results().as_value_range().into_smallvec();
             self.rewriter
-                .maybe_replace_uses_with(&op_results, &existing_results, was_visited);
+                .maybe_replace_uses_with(&op_results, &existing_results, can_replace_use);
 
             // There may be some remaining uses of the operation.
             if !op.borrow().is_used() {
@@ -449,7 +526,7 @@ impl CSEDriver<'_> {
 /// Represents a single entry in the depth first traversal of a CFG.
 struct CfgStackNode {
     /// Scope for the known values.
-    scope: ScopedMap,
+    scope: ScopedCseCandidates,
     node: Rc<DomTreeNode>,
     children: <Rc<DomTreeNode> as Graph>::ChildIter,
     /// If this node has been fully processed yet or not.
@@ -457,7 +534,7 @@ struct CfgStackNode {
 }
 
 impl CfgStackNode {
-    pub fn new(scope: ScopedMap, node: Rc<DomTreeNode>) -> Self {
+    pub fn new(scope: ScopedCseCandidates, node: Rc<DomTreeNode>) -> Self {
         let children = <Rc<DomTreeNode> as Graph>::children(node.clone());
         Self {
             scope,
@@ -507,13 +584,16 @@ impl PartialEq for OpKey {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, string::ToString, sync::Arc};
+    use alloc::{boxed::Box, format, string::ToString, sync::Arc};
 
     use litcheck_filecheck::{filecheck, litcheck};
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        PointerType, ProgramPoint, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder,
-        print::AsmPrinter, testing::Test,
+        Builder, PointerType, ProgramPoint, SourceSpan, Type,
+        dialects::builtin::{BuiltinOpBuilder, Module},
+        pass::{Nesting, PassManager},
+        print::AsmPrinter,
+        testing::Test,
     };
 
     use super::*;
@@ -550,51 +630,52 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
     }
 
     #[test]
-    fn cse_rechecks_recorded_ops_after_operand_rewrite() {
-        let mut test = Test::new("rechecks_recorded_ops", &[], &[Type::I32, Type::I32]);
+    fn cse_uses_identity_visited_state_in_graph_region() {
+        let mut test = Test::named("identity_visited_state").in_module("identity_visited_state");
         {
-            let mut builder = test.function_builder();
+            let module_body = test.module().borrow().body().entry_block_ref().unwrap();
+            let builder = test.builder_mut();
+            builder.set_insertion_point_to_end(module_body);
+
             let canonical = builder.i32(1, SourceSpan::UNKNOWN);
             let rhs = builder.i32(3, SourceSpan::UNKNOWN);
+            let canonical_user = builder.sub(canonical, rhs, SourceSpan::UNKNOWN).unwrap();
             let duplicate_constant = builder.i32(1, SourceSpan::UNKNOWN);
-            let recorded = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
-            let duplicate = builder.sub(canonical, rhs, SourceSpan::UNKNOWN).unwrap();
-            builder.ret([recorded, duplicate], SourceSpan::UNKNOWN).unwrap();
+            let visited_user = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
+            let unvisited_user = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
+            builder
+                .ret([canonical_user, visited_user, unvisited_user], SourceSpan::UNKNOWN)
+                .unwrap();
 
-            // Place `recorded` before the duplicate constant it uses, so eliminating that
-            // constant rewrites an operation CSE has already recorded.
-            let mut recorded_op = recorded.borrow().get_defining_op().unwrap();
-            let duplicate_constant_op = duplicate_constant.borrow().get_defining_op().unwrap();
-            recorded_op.borrow_mut().move_to(ProgramPoint::before(duplicate_constant_op));
+            // Graph regions allow use-before-def. Keep the first user before the duplicate
+            // constant so the replacement predicate must distinguish it from the later user by
+            // operation identity, not by operation equivalence.
+            let mut duplicate_constant_op = duplicate_constant.borrow().get_defining_op().unwrap();
+            let unvisited_user_op = unvisited_user.borrow().get_defining_op().unwrap();
+            duplicate_constant_op
+                .borrow_mut()
+                .move_to(ProgramPoint::before(unvisited_user_op));
         }
 
-        test.apply_pass::<CommonSubexpressionElimination>(false).expect("invalid ir");
-        test.function()
-            .as_operation_ref()
-            .borrow()
-            .recursively_verify()
-            .expect("invalid ir after cse");
+        let mut pm = PassManager::on::<Module>(test.context_rc(), Nesting::Implicit);
+        pm.add_pass(Box::<CommonSubexpressionElimination>::default());
+        pm.enable_verifier(false);
+        pm.run(test.module().as_operation_ref()).expect("invalid ir");
 
         let flags = Default::default();
         let mut printer = AsmPrinter::new(test.context_rc(), &flags);
-        printer.print_operation(test.function().borrow());
+        printer.print_operation(test.module().borrow());
         let output = format!("{}", printer.finish());
         filecheck!(
             output,
             r#"
-builtin.function public extern("C") @rechecks_recorded_ops() -> (i32, i32) {
-    // CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
-    %0 = arith.constant 1 : i32;
-
-    // CHECK-NEXT: [[RHS:%\d+]] = arith.constant 3 : i32;
-    %1 = arith.constant 3 : i32;
-
-    // CHECK-NEXT: [[RECORDED:%\d+]] = arith.sub [[CANONICAL]], [[RHS]]
-    %3 = arith.sub %2, %1 <{ overflow = #builtin.overflow<checked> }>
-
-    // CHECK-NEXT: builtin.ret [[RECORDED]], [[RECORDED]] : (i32, i32);
-    builtin.ret %3, %4 : (i32, i32);
-};
+// CHECK-LABEL: builtin.module private @identity_visited_state
+// CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
+// CHECK-NEXT: [[RHS:%\d+]] = arith.constant 3 : i32;
+// CHECK-NEXT: [[CANONICAL_USER:%\d+]] = arith.sub [[CANONICAL]], [[RHS]]
+// CHECK-NEXT: [[VISITED:%\d+]] = arith.sub %{{.*}}, [[RHS]]
+// CHECK-NEXT: arith.constant 1 : i32;
+// CHECK-NEXT: builtin.ret [[CANONICAL_USER]], [[VISITED]], [[CANONICAL_USER]] : (i32, i32, i32);
             "#
         );
     }
