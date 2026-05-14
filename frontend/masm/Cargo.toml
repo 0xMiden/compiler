@@ -14,6 +14,7 @@ edition.workspace = true
 [dependencies]
 miden-core.workspace = true
 miden-core-lib = { workspace = true, features = ["std"] }
+miden-assembly.workspace = true
 miden-assembly-syntax = { workspace = true, features = ["std"] }
 miden-mast-package.workspace = true
 miden-project = { workspace = true, features = ["std", "serde"] }

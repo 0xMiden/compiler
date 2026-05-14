@@ -33,6 +33,19 @@ pub trait Stage {
         ChainOptional::new(self, stage)
     }
 
+    #[allow(clippy::type_complexity)]
+    fn map<I, O, F>(
+        self,
+        mapper: F,
+    ) -> Chain<Self, Box<dyn FnMut(I, Rc<Context>) -> CompilerResult<O>>>
+    where
+        Self: Sized,
+        F: FnMut(I, Rc<Context>) -> CompilerResult<O> + 'static,
+    {
+        Chain::new(self, Box::new(mapper) as Box<_>)
+    }
+
+    #[allow(unused)]
     fn collect<S, I>(self, stage: S) -> Collect<Self, S, I>
     where
         Self: Sized,

@@ -1,6 +1,7 @@
 use std::{env, fs, path::Path};
 
 use cargo_miden::{BuildOutput, OutputType, run};
+use midenc_session::diagnostics::assert_matches;
 
 use crate::utils::current_dir_lock;
 
@@ -117,7 +118,7 @@ fn build_workspace_member_account_project() {
             .unwrap()
             .unwrap()
             .unwrap_build_output();
-    assert!(matches!(output, BuildOutput::Masm { .. }));
+    assert_matches!(output.as_slice(), [BuildOutput::Masm { .. }]);
 
     // cleanup
     env::set_current_dir(restore_dir).unwrap();

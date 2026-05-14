@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+use miden_assembly::ProjectSourceInputs;
 use miden_assembly_syntax::{
     ModuleParser, Path as MasmPath,
     ast::{self, Module, ModuleKind},
@@ -23,28 +24,37 @@ use midenc_hir::{Context, Report, Type};
 
 use crate::{ExternalSignatureMap, ExternalTypeMap, Result};
 
-pub(crate) struct ProjectTargetInput {
-    pub root: Box<Module>,
-    pub support: Vec<Box<Module>>,
+pub struct ProjectTargetInput {
+    pub sources: ProjectSourceInputs,
     pub dependency_modules: Vec<Box<Module>>,
     pub external_signatures: ExternalSignatureMap,
     pub external_types: ExternalTypeMap,
 }
 
-#[derive(Default)]
-struct ExternalMetadata {
-    signatures: ExternalSignatureMap,
-    types: ExternalTypeMap,
-    source_modules: Vec<Box<Module>>,
+impl ProjectTargetInput {
+    pub fn new(sources: ProjectSourceInputs, external_metadata: ExternalMetadata) -> Self {
+        ProjectTargetInput {
+            sources,
+            dependency_modules: external_metadata.source_modules,
+            external_signatures: external_metadata.signatures,
+            external_types: external_metadata.types,
+        }
+    }
 }
 
-pub(crate) fn resolve_project_target(
-    manifest_path: &Path,
+#[derive(Default)]
+pub struct ExternalMetadata {
+    pub signatures: ExternalSignatureMap,
+    pub types: ExternalTypeMap,
+    pub source_modules: Vec<Box<Module>>,
+}
+
+/// Resolve disassembler inputs for `target_name` of `project`
+pub fn resolve_project_target(
+    project: &Project,
     target_name: Option<&str>,
     context: &Context,
 ) -> Result<ProjectTargetInput> {
-    let source_manager = context.session().source_manager.clone();
-    let project = Project::load(manifest_path, source_manager.as_ref())?;
     let package = project.package();
 
     let target = package
@@ -57,20 +67,45 @@ pub(crate) fn resolve_project_target(
             None => Report::msg("project has no build targets"),
         })?;
 
-    let (root, support) = load_target_modules(package.as_ref(), target.inner(), source_manager)?;
-    let external_metadata = collect_dependency_metadata(&project, context)?;
+    let source_manager = context.session().source_manager.clone();
+    let sources = load_target_modules(package.as_ref(), target.inner(), source_manager)?;
+    let external_metadata = collect_dependency_metadata(project, context)?;
 
-    Ok(project_target_input(root, support, external_metadata))
+    Ok(ProjectTargetInput::new(sources, external_metadata))
 }
 
-pub(crate) fn resolve_project_target_with_dependency_graph(
+/// Resolve disassembler inputs for `target_name` of the project at `manifest_path`
+pub fn resolve_project_target_from_manifest_path(
+    manifest_path: &Path,
+    target_name: Option<&str>,
+    context: &Context,
+) -> Result<ProjectTargetInput> {
+    let project = Project::load(manifest_path, &context.session().source_manager)?;
+
+    resolve_project_target(&project, target_name, context)
+}
+
+/// Resolve disassembler inputs for `target_name` of the project at `manifest_path`, using an
+/// already-resolved `dependency_graph`.
+pub fn resolve_project_target_from_manifest_path_with_dependency_graph(
     manifest_path: &Path,
     target_name: Option<&str>,
     dependency_graph: &ProjectDependencyGraph,
     context: &Context,
 ) -> Result<ProjectTargetInput> {
-    let source_manager = context.session().source_manager.clone();
-    let project = Project::load(manifest_path, source_manager.as_ref())?;
+    let project = Project::load(manifest_path, &context.session().source_manager)?;
+
+    resolve_project_target_with_dependency_graph(&project, target_name, dependency_graph, context)
+}
+
+/// Resolve disassembler inputs for `target_name` of `project` , using an already-resolved
+/// `dependency_graph`.
+pub fn resolve_project_target_with_dependency_graph(
+    project: &Project,
+    target_name: Option<&str>,
+    dependency_graph: &ProjectDependencyGraph,
+    context: &Context,
+) -> Result<ProjectTargetInput> {
     let package = project.package();
     let package_name = package.name();
     if dependency_graph.root() != package_name.inner() {
@@ -91,27 +126,17 @@ pub(crate) fn resolve_project_target_with_dependency_graph(
             None => Report::msg("project has no build targets"),
         })?;
 
-    let (root, support) = load_target_modules(package.as_ref(), target.inner(), source_manager)?;
+    let source_manager = context.session().source_manager.clone();
+    let sources = load_target_modules(package.as_ref(), target.inner(), source_manager)?;
     let external_metadata = collect_dependency_graph_metadata(dependency_graph, context)?;
 
-    Ok(project_target_input(root, support, external_metadata))
+    Ok(ProjectTargetInput::new(sources, external_metadata))
 }
 
-fn project_target_input(
-    root: Box<Module>,
-    support: Vec<Box<Module>>,
-    external_metadata: ExternalMetadata,
-) -> ProjectTargetInput {
-    ProjectTargetInput {
-        root,
-        support,
-        dependency_modules: external_metadata.source_modules,
-        external_signatures: external_metadata.signatures,
-        external_types: external_metadata.types,
-    }
-}
-
-fn collect_dependency_metadata(project: &Project, context: &Context) -> Result<ExternalMetadata> {
+pub fn collect_dependency_metadata(
+    project: &Project,
+    context: &Context,
+) -> Result<ExternalMetadata> {
     let mut metadata = ExternalMetadata::default();
     let package = project.package();
     let source_manager = context.session().source_manager.clone();
@@ -272,7 +297,8 @@ fn parse_source_package_modules(
     let Some(target) = package.library_target() else {
         return Ok(Vec::new());
     };
-    let (root, support) = load_target_modules(package, target.inner(), source_manager)?;
+    let ProjectSourceInputs { root, support } =
+        load_target_modules(package, target.inner(), source_manager)?;
     Ok(core::iter::once(root).chain(support).collect())
 }
 
@@ -327,11 +353,11 @@ fn resolve_uri_path(base_dir: &Path, path: &str) -> PathBuf {
     }
 }
 
-fn load_target_modules(
+pub fn load_target_modules(
     package: &ProjectPackage,
     target: &Target,
     source_manager: Arc<dyn SourceManager>,
-) -> Result<(Box<Module>, Vec<Box<Module>>)> {
+) -> Result<ProjectSourceInputs> {
     let target_path = target.path.as_ref().ok_or_else(|| {
         Report::msg(format!("target '{}' does not specify a MASM source path", target.name.inner()))
     })?;
@@ -379,7 +405,7 @@ fn load_target_modules(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    Ok((root, support))
+    Ok(ProjectSourceInputs { root, support })
 }
 
 fn parse_module_file(

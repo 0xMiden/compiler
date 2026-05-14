@@ -268,31 +268,29 @@ impl clap::builder::TypedValueParser for InputFileParser {
 pub enum FileType {
     Hir,
     Masm,
-    Mast,
     Masp,
     Wasm,
     Wat,
+    Toml,
 }
+
 impl fmt::Display for FileType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Hir => f.write_str("hir"),
             Self::Masm => f.write_str("masm"),
-            Self::Mast => f.write_str("mast"),
             Self::Masp => f.write_str("masp"),
             Self::Wasm => f.write_str("wasm"),
             Self::Wat => f.write_str("wat"),
+            Self::Toml => f.write_str("toml"),
         }
     }
 }
+
 impl FileType {
     pub fn detect(bytes: &[u8]) -> Result<Self, InvalidInputError> {
         if bytes.starts_with(b"\0asm") {
             return Ok(FileType::Wasm);
-        }
-
-        if bytes.starts_with(b"MAST\0") {
-            return Ok(FileType::Mast);
         }
 
         if bytes.starts_with(b"MASP\0") {
@@ -300,7 +298,14 @@ impl FileType {
         }
 
         fn is_masm_top_level_item(line: &str) -> bool {
-            line.starts_with("const.") || line.starts_with("export.") || line.starts_with("proc.")
+            line.starts_with("pub proc")
+                || line.starts_with("proc ")
+                || line.starts_with("adv_map")
+                || line.starts_with("const ")
+        }
+
+        fn is_project_toml_item(line: &str) -> bool {
+            line.starts_with("[workspace]") || line.starts_with("[package]")
         }
 
         if let Ok(content) = core::str::from_utf8(bytes) {
@@ -318,6 +323,9 @@ impl FileType {
                 if is_masm_top_level_item(first_line) {
                     return Ok(FileType::Masm);
                 }
+                if is_project_toml_item(first_line) {
+                    return Ok(FileType::Toml);
+                }
             }
         }
 
@@ -331,10 +339,10 @@ impl TryFrom<&Path> for FileType {
         match path.extension().and_then(|ext| ext.to_str()) {
             Some("hir") => Ok(FileType::Hir),
             Some("masm") => Ok(FileType::Masm),
-            Some("masl") | Some("mast") => Ok(FileType::Mast),
             Some("masp") => Ok(FileType::Masp),
             Some("wasm") => Ok(FileType::Wasm),
             Some("wat") => Ok(FileType::Wat),
+            Some("toml") => Ok(FileType::Toml),
             _ => Err(InvalidInputError::UnsupportedFileType(path.to_path_buf())),
         }
     }

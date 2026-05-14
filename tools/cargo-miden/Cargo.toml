@@ -25,6 +25,8 @@ name = "integration"
 path = "tests/mod.rs"
 
 [dependencies]
+miden-package-registry = { workspace = true, features = ["std"] }
+miden-mast-package.workspace = true
 midenc-compile.workspace = true
 midenc-session.workspace = true
 midenc-log.workspace = true

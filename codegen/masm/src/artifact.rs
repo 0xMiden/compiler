@@ -1,7 +1,7 @@
-use alloc::{collections::BTreeMap, sync::Arc};
+use alloc::sync::Arc;
 use core::fmt;
 
-use miden_assembly::{Library, Path, ast::InvocationTarget};
+use miden_assembly::{Path, ast::InvocationTarget};
 use miden_core::Word;
 use miden_mast_package::Package;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
@@ -16,6 +16,10 @@ mod project_support;
 
 pub struct MasmComponent {
     pub id: Option<builtin::ComponentId>,
+    /// The path of the root module for this component
+    ///
+    /// All components must have a canonical root module, even if empty
+    pub root: Arc<Path>,
     /// The symbol name of the component initializer function
     ///
     /// This function is responsible for initializing global variables and writing data segments
@@ -174,18 +178,10 @@ impl MasmComponent {
     /// Assemble this component into a Miden package.
     pub fn assemble(
         &self,
-        link_libraries: &[Arc<Library>],
-        link_packages: &BTreeMap<Symbol, Arc<Package>>,
         account_component_metadata_bytes: Option<&[u8]>,
         session: &Session,
-    ) -> Result<Package, Report> {
-        project_support::assemble(
-            self,
-            link_libraries,
-            link_packages,
-            account_component_metadata_bytes,
-            session,
-        )
+    ) -> Result<Arc<Package>, Report> {
+        project_support::assemble(self, account_component_metadata_bytes, session)
     }
 
     /// Generate an executable module which when run expects the raw data segment data to be
@@ -196,7 +192,7 @@ impl MasmComponent {
         entrypoint: &InvocationTarget,
         emit_test_harness: bool,
         source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
-    ) -> Result<Arc<masm::Module>, Report> {
+    ) -> Result<Box<masm::Module>, Report> {
         use masm::{Instruction as Inst, Op};
 
         let mut exe = Box::new(masm::Module::new_executable());
@@ -242,7 +238,7 @@ impl MasmComponent {
         exe.define_procedure(start, source_manager)
             .into_diagnostic()
             .wrap_err("failed to define executable `main` procedure")?;
-        Ok(Arc::from(exe))
+        Ok(exe)
     }
 
     fn emit_test_harness(&self, block: &mut masm::Block) {

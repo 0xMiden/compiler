@@ -67,12 +67,12 @@ pub(crate) fn lift_project_target(
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
     let mut modules =
-        Vec::with_capacity(1 + target.support.len() + target.dependency_modules.len());
-    modules.push(target.root.as_ref());
-    modules.extend(target.support.iter().map(Box::as_ref));
+        Vec::with_capacity(1 + target.sources.support.len() + target.dependency_modules.len());
+    modules.push(target.sources.root.as_ref());
+    modules.extend(target.sources.support.iter().map(Box::as_ref));
     modules.extend(target.dependency_modules.iter().map(Box::as_ref));
     lift_modules(
-        target.root.as_ref(),
+        target.sources.root.as_ref(),
         modules,
         config,
         &target.external_signatures,

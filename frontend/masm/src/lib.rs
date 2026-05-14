@@ -3,7 +3,7 @@
 mod events;
 mod infer;
 mod lift;
-mod project;
+pub mod project;
 mod semantics;
 mod signatures;
 mod stack;
@@ -12,11 +12,13 @@ mod tests;
 
 use std::{collections::BTreeMap, path::Path, rc::Rc, sync::Arc};
 
+use miden_assembly::ProjectSourceInputs;
 use miden_assembly_syntax::{
     Parse, ParseOptions,
     ast::{self, Module, ModuleKind},
     debuginfo::{SourceLanguage, SourceManager, SourceManagerExt, Uri},
 };
+use miden_project::Project;
 use midenc_hir::{Context, FunctionType, Report, Type, dialects::builtin};
 
 /// Result type used by the MASM disassembler.
@@ -129,12 +131,33 @@ pub fn disassemble_source_with_external_signatures(
 
 /// Disassemble a target from a `miden-project.toml` package manifest.
 pub fn disassemble_project_target(
+    project: &Project,
+    target: Option<&str>,
+    sources: Option<ProjectSourceInputs>,
+    config: &DisassemblerConfig,
+    context: Rc<Context>,
+) -> Result<DisassembledWorld> {
+    let inputs = if let Some(sources) = sources {
+        let external_metadata = project::collect_dependency_metadata(project, &context)?;
+        project::ProjectTargetInput::new(sources, external_metadata)
+    } else {
+        project::resolve_project_target(project, target, &context)?
+    };
+    lift::lift_project_target(inputs, config, context)
+}
+
+/// Disassemble a target from a `miden-project.toml` package manifest.
+pub fn disassemble_project_target_from_path(
     manifest_path: impl AsRef<Path>,
     target: Option<&str>,
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    let target = project::resolve_project_target(manifest_path.as_ref(), target, &context)?;
+    let target = project::resolve_project_target_from_manifest_path(
+        manifest_path.as_ref(),
+        target,
+        &context,
+    )?;
     lift::lift_project_target(target, config, context)
 }
 
@@ -147,7 +170,7 @@ pub fn disassemble_project_target_with_dependency_graph(
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    let target = project::resolve_project_target_with_dependency_graph(
+    let target = project::resolve_project_target_from_manifest_path_with_dependency_graph(
         manifest_path.as_ref(),
         target,
         dependency_graph,

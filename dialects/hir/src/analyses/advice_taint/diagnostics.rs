@@ -1,13 +1,14 @@
 use alloc::{
     format,
     string::{String, ToString},
+    sync::Arc,
     vec,
     vec::Vec,
 };
 
 use midenc_hir::{
     OperationName, Report, SourceSpan, SymbolName, Type,
-    diagnostics::{Diagnostic, LabeledSpan, miette},
+    diagnostics::{Diagnostic, LabeledSpan, RelatedLabel, SourceFile, SourceManager, miette},
 };
 
 use super::lattice::{AdviceTaintOrigin, AdviceTaintOriginKind};
@@ -30,12 +31,12 @@ pub struct AdviceTaintFinding {
 }
 
 impl AdviceTaintFinding {
-    pub fn diagnostic(&self) -> AdviceTaintDiagnostic {
-        AdviceTaintDiagnostic::new(self)
+    pub fn diagnostic(&self, source_manager: &dyn SourceManager) -> AdviceTaintDiagnostic {
+        AdviceTaintDiagnostic::new(self, source_manager)
     }
 
-    pub fn into_report(&self) -> Report {
-        self.diagnostic().into_report()
+    pub fn into_report(&self, source_manager: &dyn SourceManager) -> Report {
+        self.diagnostic(source_manager).into_report()
     }
 }
 
@@ -59,12 +60,12 @@ pub struct AdviceTaintExitFinding {
 }
 
 impl AdviceTaintExitFinding {
-    pub fn diagnostic(&self) -> AdviceTaintDiagnostic {
-        AdviceTaintDiagnostic::new_exit(self)
+    pub fn diagnostic(&self, source_manager: &dyn SourceManager) -> AdviceTaintDiagnostic {
+        AdviceTaintDiagnostic::new_exit(self, source_manager)
     }
 
-    pub fn into_report(&self) -> Report {
-        self.diagnostic().into_report()
+    pub fn into_report(&self, source_manager: &dyn SourceManager) -> Report {
+        self.diagnostic(source_manager).into_report()
     }
 }
 
@@ -88,12 +89,12 @@ pub struct AdviceTaintExternalCallFinding {
 }
 
 impl AdviceTaintExternalCallFinding {
-    pub fn diagnostic(&self) -> AdviceTaintDiagnostic {
-        AdviceTaintDiagnostic::new_external_call(self)
+    pub fn diagnostic(&self, source_manager: &dyn SourceManager) -> AdviceTaintDiagnostic {
+        AdviceTaintDiagnostic::new_external_call(self, source_manager)
     }
 
-    pub fn into_report(&self) -> Report {
-        self.diagnostic().into_report()
+    pub fn into_report(&self, source_manager: &dyn SourceManager) -> Report {
+        self.diagnostic(source_manager).into_report()
     }
 }
 
@@ -123,63 +124,81 @@ pub struct AdviceTaintDiagnostic {
     message: String,
     #[help]
     help: String,
+    #[source_code]
+    sink_source: Option<Arc<SourceFile>>,
     #[label(collection)]
     labels: Vec<LabeledSpan>,
+    #[related]
+    related: Vec<RelatedLabel>,
 }
 
 impl AdviceTaintDiagnostic {
-    fn new(finding: &AdviceTaintFinding) -> Self {
+    fn new(finding: &AdviceTaintFinding, source_manager: &dyn SourceManager) -> Self {
         let function = finding
             .function
             .map(|name| format!(" in function '{}'", name.as_str()))
             .unwrap_or_default();
+
         let (subject, sink_label, origin_label, help) = match finding.origin.kind {
             AdviceTaintOriginKind::Advice => (
                 "unconstrained advice value",
-                format!("`{}` consumes unconstrained advice as a u32", finding.sink),
-                "unconstrained advice originates here".to_string(),
-                "add an explicit u32 range check, such as `u32assert` or `u32test` followed by \
-                 `assert`, before this value is consumed by a u32-presuming operation"
+                "unconstrained advice data is consumed here as a u32",
+                "advice data is obtained here which is later used unconstrained",
+                "add an explicit u32 range check, such as MASM's `u32assert`, before this value \
+                 is consumed by a u32-presuming operation"
                     .to_string(),
             ),
             AdviceTaintOriginKind::ExternalCall => (
                 "unconstrained external call result",
-                format!(
-                    "`{}` consumes an unconstrained external call result as a u32",
-                    finding.sink
-                ),
-                "external call result is modeled as unconstrained here".to_string(),
-                "add an explicit u32 range check after the external call, or provide an \
-                 analyzable callee body/summary proving the result is constrained before this \
-                 u32-presuming operation"
+                "unconstrained advice from an external call is consumed here as a u32",
+                "the result of the external call here is tainted as unconstrained",
+                "add an explicit u32 range check after the call, or provide an analyzable callee \
+                 body/summary proving the result is constrained before this u32-presuming \
+                 operation"
                     .to_string(),
             ),
         };
-        let message =
-            format!("{subject} reaches u32-presuming operation `{}`{}", finding.sink, function);
-        let labels = vec![LabeledSpan::new_primary_with_span(Some(sink_label), finding.sink_span)];
-        let labels = labels
-            .into_iter()
-            .chain(context_labels(&finding.contexts))
-            .chain(core::iter::once(LabeledSpan::new_with_span(
-                Some(origin_label),
-                finding.advice_span,
-            )))
-            .collect();
-
+        let sink_source = source_manager.get(finding.sink_span.source_id()).ok();
+        let message = format!("{subject} reaches u32-presuming operation {}", function);
+        let label =
+            LabeledSpan::new_primary_with_span(Some(sink_label.to_string()), finding.sink_span);
+        let mut labels = vec![label];
+        let mut related = vec![];
+        context_labels(
+            finding.sink_span,
+            &finding.contexts,
+            &mut labels,
+            &mut related,
+            source_manager,
+        );
+        let source_source = source_manager.get(finding.origin.span.source_id()).ok();
+        if finding.origin.span.source_id() == finding.advice_span.source_id() {
+            labels.push(LabeledSpan::new_with_span(
+                Some(origin_label.to_string()),
+                finding.origin.span,
+            ));
+        } else {
+            related.push(
+                RelatedLabel::advice("unconstrained advice")
+                    .with_labeled_span(finding.origin.span, origin_label)
+                    .with_source_file(source_source),
+            );
+        }
         Self {
             message,
             help,
+            sink_source,
             labels,
+            related,
         }
     }
 
-    fn new_exit(finding: &AdviceTaintExitFinding) -> Self {
+    fn new_exit(finding: &AdviceTaintExitFinding, source_manager: &dyn SourceManager) -> Self {
         let (subject, return_label, origin_label, help) = match finding.origin.kind {
             AdviceTaintOriginKind::Advice => (
                 "unconstrained advice value",
                 format!(
-                    "public function returns unconstrained advice as result #{}",
+                    "public function returns unconstrained advice via result #{}",
                     finding.result_index
                 ),
                 "unconstrained advice originates here".to_string(),
@@ -190,7 +209,7 @@ impl AdviceTaintDiagnostic {
             AdviceTaintOriginKind::ExternalCall => (
                 "unconstrained external call result",
                 format!(
-                    "public function returns an unconstrained external call result as result #{}",
+                    "public function returns an unconstrained external call result via result #{}",
                     finding.result_index
                 ),
                 "external call result is modeled as unconstrained here".to_string(),
@@ -199,30 +218,49 @@ impl AdviceTaintDiagnostic {
                     .to_string(),
             ),
         };
+        let sink_source = source_manager.get(finding.function_span.source_id()).ok();
         let message = format!(
             "public function '{}' returns {subject} as result #{}",
             finding.function.as_str(),
             finding.result_index
         );
-        let labels =
-            vec![LabeledSpan::new_primary_with_span(Some(return_label), finding.return_span)];
-        let labels = labels
-            .into_iter()
-            .chain(context_labels(&finding.contexts))
-            .chain(core::iter::once(LabeledSpan::new_with_span(
-                Some(origin_label),
-                finding.advice_span,
-            )))
-            .collect();
+        let label = LabeledSpan::new_primary_with_span(Some(return_label), finding.return_span);
+        let mut labels = vec![label];
+        let mut related = vec![];
+        context_labels(
+            finding.function_span,
+            &finding.contexts,
+            &mut labels,
+            &mut related,
+            source_manager,
+        );
+        if finding.origin.span.source_id() == finding.advice_span.source_id() {
+            labels.push(LabeledSpan::new_with_span(
+                Some(origin_label.to_string()),
+                finding.origin.span,
+            ));
+        } else {
+            let source_source = source_manager.get(finding.origin.span.source_id()).ok();
+            related.push(
+                RelatedLabel::advice("unconstrained advice")
+                    .with_labeled_span(finding.origin.span, origin_label)
+                    .with_source_file(source_source),
+            );
+        }
 
         Self {
             message,
             help,
+            sink_source,
             labels,
+            related,
         }
     }
 
-    fn new_external_call(finding: &AdviceTaintExternalCallFinding) -> Self {
+    fn new_external_call(
+        finding: &AdviceTaintExternalCallFinding,
+        source_manager: &dyn SourceManager,
+    ) -> Self {
         let function = finding
             .function
             .map(|name| format!(" in function '{}'", name.as_str()))
@@ -236,20 +274,30 @@ impl AdviceTaintDiagnostic {
                 "external call result is modeled as unconstrained here".to_string(),
             ),
         };
+        let sink_source = source_manager.get(finding.call_span.source_id()).ok();
         let message = format!(
             "{subject} is passed to external parameter #{} of type `{}`{}",
             finding.argument_index, finding.parameter_type, function
         );
-        let labels = vec![
-            LabeledSpan::new_primary_with_span(
-                Some(format!(
-                    "`{}` passes an unconstrained value to external parameter #{} typed `{}`",
-                    finding.call, finding.argument_index, finding.parameter_type
-                )),
-                finding.call_span,
-            ),
-            LabeledSpan::new_with_span(Some(origin_label), finding.advice_span),
-        ];
+        let label = LabeledSpan::new_primary_with_span(
+            Some(format!(
+                "an unconstrained value is passed to external parameter #{} typed `{}`",
+                finding.argument_index, finding.parameter_type
+            )),
+            finding.call_span,
+        );
+        let mut labels = vec![label];
+        let mut related = vec![];
+        if finding.call_span.source_id() == finding.origin.span.source_id() {
+            labels.push(LabeledSpan::new_with_span(Some(origin_label), finding.origin.span));
+        } else {
+            let source_source = source_manager.get(finding.origin.span.source_id()).ok();
+            related.push(
+                RelatedLabel::advice("unconstrained advice")
+                    .with_labeled_span(finding.origin.span, origin_label)
+                    .with_source_file(source_source),
+            );
+        }
         let help = "add an explicit constraint before passing this value to the external callee, \
                     or provide an analyzable callee body/summary proving the parameter is handled \
                     safely"
@@ -258,7 +306,9 @@ impl AdviceTaintDiagnostic {
         Self {
             message,
             help,
+            sink_source,
             labels,
+            related,
         }
     }
 
@@ -271,7 +321,15 @@ impl AdviceTaintDiagnostic {
     }
 
     pub fn label_messages(&self) -> impl Iterator<Item = &str> {
-        self.labels.iter().filter_map(|label| label.label())
+        self.labels
+            .iter()
+            .map(|label| label.label())
+            .chain(
+                self.related
+                    .iter()
+                    .flat_map(|related| related.labels.iter().map(|label| label.label())),
+            )
+            .flatten()
     }
 
     pub fn into_report(self) -> Report {
@@ -279,14 +337,28 @@ impl AdviceTaintDiagnostic {
     }
 }
 
-fn context_labels(contexts: &[AdviceTaintContext]) -> impl Iterator<Item = LabeledSpan> + '_ {
-    contexts.iter().map(|context| {
+fn context_labels(
+    sink_span: SourceSpan,
+    contexts: &[AdviceTaintContext],
+    labels: &mut Vec<LabeledSpan>,
+    related: &mut Vec<RelatedLabel>,
+    source_manager: &dyn SourceManager,
+) {
+    for context in contexts {
         let label = match context.kind {
             AdviceTaintContextKind::CallArgument => {
                 "unconstrained value is passed as a call argument here"
             }
             AdviceTaintContextKind::CallResult => "unconstrained value returns from a call here",
         };
-        LabeledSpan::new_with_span(Some(label.to_string()), context.span)
-    })
+        if sink_span.source_id() == context.span.source_id() {
+            labels.push(LabeledSpan::new_with_span(Some(label.to_string()), context.span));
+        } else {
+            related.push(
+                RelatedLabel::advice("relevant context for unconstrained advice")
+                    .with_labeled_span(context.span, label)
+                    .with_source_file(source_manager.get(context.span.source_id()).ok()),
+            );
+        }
+    }
 }

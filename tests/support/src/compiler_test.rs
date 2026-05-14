@@ -303,7 +303,7 @@ impl CompilerTestBuilder {
 
     /// Consume the builder, invoke any tools required to obtain the inputs for the test, and if
     /// successful, return a [CompilerTest], ready for evaluation.
-    pub fn build(mut self) -> CompilerTest {
+    pub fn build(self) -> CompilerTest {
         let source = self.source;
 
         // Set up the command used to compile the test inputs (typically Rust -> Wasm)
@@ -367,38 +367,32 @@ impl CompilerTestBuilder {
                     .map(|s| s.to_str().unwrap().to_string())
                     .collect();
                 args.extend(cmd_args);
+                args.extend(self.midenc_flags.iter().cloned());
                 log::debug!(target: "cargo-miden", "arguments: {args:#?}");
                 log::debug!(target: "cargo-miden", "env      : {:#?}", command.get_envs());
-                let build_output =
+                let mut build_output =
                     cargo_miden::run(args.into_iter(), cargo_miden::OutputType::Wasm)
                         .unwrap()
                         .expect("'cargo miden build' should return Some(CommandOutput)")
                         .unwrap_build_output(); // Use the new method
-                let (wasm_artifact_path, mut extra_midenc_flags) = match build_output {
+                assert_eq!(build_output.len(), 1);
+                let (wasm_artifact_path, mut options) = match build_output.pop().unwrap() {
                     cargo_miden::BuildOutput::Wasm {
                         artifact_path,
-                        midenc_flags,
-                    } => (artifact_path, midenc_flags),
+                        options,
+                    } => (artifact_path, options),
                     other => panic!("Expected Wasm output, got {:?}", other),
                 };
-                self.midenc_flags.append(&mut extra_midenc_flags);
+                options.link_modules.extend(self.link_masm_modules);
                 let artifact_name =
                     wasm_artifact_path.file_stem().unwrap().to_str().unwrap().to_string();
-                let input_file = InputFile::from_path(wasm_artifact_path).unwrap();
-                let mut inputs = vec![input_file];
-                inputs.extend(self.link_masm_modules.into_iter().map(|(path, content)| {
-                    let path = path.to_string();
-                    InputFile::new(
-                        midenc_session::FileType::Masm,
-                        InputType::Stdin {
-                            name: path.into(),
-                            input: content.into_bytes(),
-                        },
-                    )
-                }));
+                let input = InputFile::from_path(wasm_artifact_path).unwrap();
 
-                let context = setup::default_context(inputs, &self.midenc_flags);
-                let session = context.session_rc();
+                setup::install_reporting_hooks();
+                let session = Rc::new(
+                    options.into_session(input, None, None).expect("valid compiler options"),
+                );
+                let context = Rc::new(Context::new(session.clone()));
                 CompilerTest {
                     config: self.config,
                     session,
@@ -464,21 +458,17 @@ impl CompilerTestBuilder {
                     eprintln!("{}", String::from_utf8_lossy(&output.stderr));
                     panic!("Rust to Wasm compilation failed!");
                 }
-                let input_file = InputFile::from_path(output_file).unwrap();
-                let mut inputs = vec![input_file];
-                inputs.extend(self.link_masm_modules.into_iter().map(|(path, content)| {
-                    let path = path.to_string();
-                    InputFile::new(
-                        midenc_session::FileType::Masm,
-                        InputType::Stdin {
-                            name: path.into(),
-                            input: content.into_bytes(),
-                        },
-                    )
-                }));
 
-                let context = setup::default_context(inputs, &self.midenc_flags);
-                let session = context.session_rc();
+                setup::install_reporting_hooks();
+                let mut options =
+                    midenc_compile::Compiler::try_parse_from(working_dir, self.midenc_flags)
+                        .expect("valid compiler options");
+                options.link_modules.extend(self.link_masm_modules);
+                let input = InputFile::from_path(output_file).unwrap();
+                let session = Rc::new(
+                    options.into_session(input, None, None).expect("valid compiler options"),
+                );
+                let context = Rc::new(Context::new(session.clone()));
                 CompilerTest {
                     config: self.config,
                     session,
@@ -751,7 +741,7 @@ pub struct CompilerTest {
     /// The entrypoint function to use when building the IR
     entrypoint: Option<FunctionIdent>,
     /// The compiled IR
-    hir: Option<midenc_compile::LinkOutput>,
+    hir: Option<midenc_compile::MidenComponent>,
     /// The MASM source code
     masm_src: Option<String>,
     /// The compiled IR MASM program
@@ -769,9 +759,10 @@ impl fmt::Debug for CompilerTest {
             .field("entrypoint", &self.entrypoint)
             .field_with("hir", |f| match self.hir.as_ref() {
                 None => f.debug_tuple("None").finish(),
-                Some(link_output) => {
-                    f.debug_tuple("Some").field(&link_output.component.borrow().id()).finish()
-                }
+                Some(link_output) => f
+                    .debug_tuple("Some")
+                    .field(&link_output.component.unwrap().borrow().id())
+                    .finish(),
             })
             .finish_non_exhaustive()
     }
@@ -856,11 +847,13 @@ impl CompilerTest {
 
     /// Get the translated IR component, translating the Wasm if it has not been done yet
     pub fn hir(&mut self) -> builtin::ComponentRef {
-        self.link_output().component
+        self.miden_component()
+            .component
+            .expect("compiler should produce an HIR component")
     }
 
     /// Get a reference to the full IR linker output, translating the Wasm if needed.
-    pub fn link_output(&mut self) -> &midenc_compile::LinkOutput {
+    pub fn miden_component(&mut self) -> &midenc_compile::MidenComponent {
         use midenc_compile::compile_to_optimized_hir;
 
         if self.hir.is_none() {
@@ -884,8 +877,9 @@ impl CompilerTest {
     pub fn expect_ir_unoptimized(&mut self, expected_hir_file: midenc_expect_test::ExpectFile) {
         let component = compile_to_unoptimized_hir(self.context.clone())
             .map_err(format_report)
-            .expect("failed to translate wasm to hir component")
-            .component;
+            .expect("failed to translate wasm to miden component")
+            .component
+            .expect("failed to translate wasm to hir component");
 
         let ir = demangle(component.borrow().as_operation().to_string());
         expected_hir_file.assert_eq(&ir);
@@ -931,7 +925,7 @@ impl CompilerTest {
 
     /// The compiled Wasm component/module
     fn wasm_bytes(&self) -> Vec<u8> {
-        match &self.session.inputs[0].file {
+        match &self.session.input.as_ref().expect("valid wasm input").file {
             InputType::Real(file_path) => fs::read(file_path)
                 .unwrap_or_else(|_| panic!("Failed to read Wasm file: {}", file_path.display())),
             InputType::Stdin { name: _, input } => input.clone(),
@@ -956,7 +950,7 @@ impl CompilerTest {
             Ok(output)
         };
 
-        let link_output = self.link_output().clone();
+        let link_output = self.miden_component().clone();
         let package = compile_link_output_to_masm_with_pre_assembly_stage(link_output, &mut stage)
             .map_err(format_report)?
             .unwrap_mast();
@@ -964,7 +958,7 @@ impl CompilerTest {
         assert!(src.is_some(), "failed to pretty print masm artifact");
         self.masm_src = src;
         self.ir_masm_program = masm_program.map(Ok);
-        self.package = Some(Ok(Arc::new(package)));
+        self.package = Some(Ok(package));
         Ok(())
     }
 }

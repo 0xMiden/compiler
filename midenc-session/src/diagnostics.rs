@@ -9,7 +9,7 @@ use alloc::{
 };
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-pub use miden_assembly::diagnostics::{
+pub use miden_assembly_syntax::diagnostics::{
     Diagnostic, Label, LabeledSpan, RelatedError, RelatedLabel, Report, Severity, WrapErr, miette,
     miette::MietteDiagnostic as AdHocDiagnostic,
     reporting,
@@ -241,7 +241,7 @@ impl<'h> InFlightDiagnosticBuilder<'h> {
 
     /// Adds a primary label for `span` to this diagnostic, with no label message.
     pub fn with_primary_span(mut self, span: SourceSpan) -> Self {
-        use miden_assembly::diagnostics::LabeledSpan;
+        use miden_assembly_syntax::diagnostics::LabeledSpan;
 
         assert!(self.diagnostic.labels.is_empty(), "cannot set the primary span more than once");
         let source_id = span.source_id();
@@ -258,7 +258,7 @@ impl<'h> InFlightDiagnosticBuilder<'h> {
     /// at which a diagnostic originates. Secondary labels are used for related items
     /// involved in the diagnostic.
     pub fn with_primary_label(mut self, span: SourceSpan, message: impl ToString) -> Self {
-        use miden_assembly::diagnostics::LabeledSpan;
+        use miden_assembly_syntax::diagnostics::LabeledSpan;
 
         assert!(self.diagnostic.labels.is_empty(), "cannot set the primary span more than once");
         let source_id = span.source_id();
@@ -277,7 +277,7 @@ impl<'h> InFlightDiagnosticBuilder<'h> {
     /// are relevant to the diagnostic, but which are not themselves the point at which
     /// the diagnostic originates.
     pub fn with_secondary_label(mut self, span: SourceSpan, message: impl ToString) -> Self {
-        use miden_assembly::diagnostics::LabeledSpan;
+        use miden_assembly_syntax::diagnostics::LabeledSpan;
 
         assert!(
             !self.diagnostic.labels.is_empty(),
@@ -414,8 +414,8 @@ mod into_diagnostic {
             Self(Box::new(error))
         }
     }
-    impl<E: core::fmt::Debug + core::fmt::Display + 'static> miden_assembly::diagnostics::Diagnostic
-        for DiagnosticError<E>
+    impl<E: core::fmt::Debug + core::fmt::Display + 'static>
+        miden_assembly_syntax::diagnostics::Diagnostic for DiagnosticError<E>
     {
     }
     impl<E: core::fmt::Display> core::fmt::Display for DiagnosticError<E> {

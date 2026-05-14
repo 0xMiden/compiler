@@ -10,6 +10,7 @@ use core::any::Any;
 
 use midenc_hir::{
     CallOpInterface, Operation, Report, Spanned, Symbol, SymbolName,
+    diagnostics::SourceManager,
     dialects::builtin,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
 };
@@ -56,28 +57,28 @@ impl AdviceTaintAnalysis {
         &self.external_call_findings
     }
 
-    pub fn diagnostics(&self) -> Vec<AdviceTaintDiagnostic> {
+    pub fn diagnostics(&self, source_manager: &dyn SourceManager) -> Vec<AdviceTaintDiagnostic> {
         self.findings
             .iter()
-            .map(AdviceTaintFinding::diagnostic)
-            .chain(self.exit_findings.iter().map(AdviceTaintExitFinding::diagnostic))
+            .map(|finding| finding.diagnostic(source_manager))
+            .chain(self.exit_findings.iter().map(|finding| finding.diagnostic(source_manager)))
             .chain(
                 self.external_call_findings
                     .iter()
-                    .map(AdviceTaintExternalCallFinding::diagnostic),
+                    .map(|finding| finding.diagnostic(source_manager)),
             )
             .collect()
     }
 
-    pub fn reports(&self) -> Vec<Report> {
+    pub fn reports(&self, source_manager: &dyn SourceManager) -> Vec<Report> {
         self.findings
             .iter()
-            .map(AdviceTaintFinding::into_report)
-            .chain(self.exit_findings.iter().map(AdviceTaintExitFinding::into_report))
+            .map(|finding| finding.into_report(source_manager))
+            .chain(self.exit_findings.iter().map(|finding| finding.into_report(source_manager)))
             .chain(
                 self.external_call_findings
                     .iter()
-                    .map(AdviceTaintExternalCallFinding::into_report),
+                    .map(|finding| finding.into_report(source_manager)),
             )
             .collect()
     }

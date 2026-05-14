@@ -1,0 +1,3 @@
+# RUN: midenc -Zlint %S/../../fixtures/masm/cross_module_advice_taint/miden-project.toml | filecheck %s
+
+# CHECK:  unconstrained advice value reaches u32-presuming operation `arith.add` in function 'dirty'

@@ -205,20 +205,15 @@ fn assert_roundtrip_outputs_with_advice(
 }
 
 fn e2e_context() -> Rc<Context> {
-    let options = Options {
+    let options = Box::new(Options {
         entrypoint: Some("test::entry".to_owned()),
         ..Options::default()
-    };
+    });
     let source_manager = Arc::new(DefaultSourceManager::default());
-    let session = Rc::new(Session::new(
-        [],
-        None,
-        None,
-        std::env::current_dir().expect("current directory must be available"),
-        options,
-        None,
-        source_manager,
-    ));
+    let session = Rc::new(
+        Session::new(midenc_session::InputFile::empty(), options, None, source_manager)
+            .expect("valid session configuration"),
+    );
     Rc::new(Context::new(session))
 }
 

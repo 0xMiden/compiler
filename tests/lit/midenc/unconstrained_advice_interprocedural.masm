@@ -1,0 +1,16 @@
+# RUN: midenc -Zlint --lib %s | filecheck %s
+
+const FOO = 1
+
+
+pub proc dirty
+   push.FOO
+   u32wrapping_add
+end
+
+pub proc entry() -> u32
+   adv_push.1
+   exec.dirty
+end
+
+# CHECK:  unconstrained advice value reaches u32-presuming operation `arith.add` in function 'dirty'

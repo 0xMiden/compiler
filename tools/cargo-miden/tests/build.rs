@@ -119,9 +119,9 @@ fn build_new_project_from_template(template: &str) -> Package {
         })
         .expect("'cargo miden build' should return Some(CommandOutput)");
     let expected_masm_path = match output {
-        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
-            cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {other:?}"),
+        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output.as_slice() {
+            [cargo_miden::BuildOutput::Masm { artifact_path }] => artifact_path.clone(),
+            outputs => panic!("Expected single Masm output, got {outputs:#?}"),
         },
         other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };
@@ -136,9 +136,9 @@ fn build_new_project_from_template(template: &str) -> Package {
         .expect("Failed to compile with the release profile")
         .expect("'cargo miden build --release' should return Some(CommandOutput)");
     let expected_masm_path = match output {
-        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
-            cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {other:?}"),
+        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output.as_slice() {
+            [cargo_miden::BuildOutput::Masm { artifact_path }] => artifact_path.clone(),
+            outputs => panic!("Expected single Masm output, got {outputs:#?}"),
         },
         other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };

@@ -82,6 +82,7 @@ miden-assembly = { version = "0.22", default-features = false }
 miden-core = { version = "0.22", default-features = false }
 miden-debug = { version = "0.7" }
 miden-debug-types = { version = "0.22", default-features = false }
+miden-serde-utils = { version = "0.22", default-features = false }
 miden-assembly-syntax = { version = "0.22", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
 miden-protocol = { version = "0.14.0", default-features = false }

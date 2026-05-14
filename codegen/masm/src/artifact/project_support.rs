@@ -1,371 +1,76 @@
 //! Project-assembler support for compiler-generated MASM components.
 
-use alloc::{
-    collections::{BTreeMap, BTreeSet},
-    string::{String, ToString},
-    sync::Arc,
-    vec::Vec,
-};
+use alloc::{collections::BTreeMap, string::ToString, sync::Arc, vec::Vec};
 
 use miden_assembly::{
     Assembler, Library, Path, ProjectSourceInputs, ProjectTargetSelector,
     library::{LibraryExport, ProcedureExport},
 };
-use miden_mast_package::{
-    Package as MastPackage, PackageManifest, Section, SectionId, TargetType, Version,
-};
-use miden_package_registry::{
-    InMemoryPackageRegistry, PackageId, PackageRegistry, PackageStore, Version as RegistryVersion,
-    VersionRequirement,
-};
-use miden_project::{
-    Dependency as ProjectDependency, DependencyVersionScheme, Linkage, Package as ProjectPackage,
-    Target,
-};
+use miden_mast_package::{PackageManifest, Section, SectionId};
 use midenc_session::{
-    LinkLibrary, Session,
+    Session,
     diagnostics::{Report, Span},
 };
 
-use super::{MasmComponent, Package, Rodata, Symbol};
+use super::{MasmComponent, Package, Rodata};
 use crate::{intrinsics::INTRINSICS_MODULE_NAMES, masm};
 
 /// Assemble a MASM component through the VM project assembler.
 pub(super) fn assemble(
     component: &MasmComponent,
-    link_libraries: &[Arc<miden_assembly::Library>],
-    link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
     account_component_metadata_bytes: Option<&[u8]>,
     session: &Session,
-) -> Result<Package, Report> {
-    let mut store = InMemoryPackageRegistry::default();
-    let dependencies = register_external_dependencies(
-        &mut store,
-        &session.options.link_libraries,
-        link_libraries,
-        link_packages,
-    )?;
-    let mut assembler = Assembler::new(session.source_manager.clone());
-    let (target, sources) = prepare_sources(
-        component,
-        &mut assembler,
-        link_libraries,
-        link_packages,
-        session.get_flag("test_harness"),
-        session.source_manager.clone(),
-    )?;
-    let mut project_assembler = assembler.for_project(
-        Arc::<ProjectPackage>::from(
-            ProjectPackage::new(session.name.clone(), target).with_dependencies(dependencies),
-        ),
-        &mut store,
-    )?;
+) -> Result<Arc<Package>, Report> {
+    let mut assembler = Assembler::new(session.source_manager.clone())
+        .with_warnings_as_errors(session.options.diagnostics.warnings.warnings_as_errors());
+    let mut link_modules = Vec::default();
+    for (path, content) in session.options.link_modules.iter() {
+        let source = session.source_manager.load(
+            midenc_hir::diagnostics::SourceLanguage::Masm,
+            path.as_str().into(),
+            content.clone(),
+        );
+        let module =
+            miden_assembly_syntax::ModuleParser::new(miden_assembly::ast::ModuleKind::Library)
+                .parse(path, source, session.source_manager.clone())?;
+        link_modules.push(module);
+    }
+    assembler.compile_and_statically_link_all(link_modules)?;
+    let sources =
+        prepare_sources(component, &mut assembler, session.get_flag("test_harness"), session)?;
+    let mut registry = session.package_registry()?;
+    let mut project_assembler =
+        assembler.for_project(session.project.package(), registry.as_mut())?;
 
-    let executable_name = component.id.as_ref().map(|id| id.to_library_path());
+    let executable_name = session.name.as_ref();
     let selector = if component.entrypoint.is_some() {
-        ProjectTargetSelector::Executable(
-            executable_name.as_ref().map(|p| p.as_str()).unwrap_or("main"),
-        )
+        ProjectTargetSelector::Executable(executable_name)
     } else {
         ProjectTargetSelector::Library
     };
-    let mut package =
-        Arc::unwrap_or_clone(project_assembler.assemble_with_sources(selector, "dev", sources)?);
-
-    package.name = session.name.clone().into();
-    attach_account_component_metadata(&mut package, account_component_metadata_bytes);
-    extend_rodata_advice_map(&mut package, &component.rodata);
-    normalize_library_exports(&mut package)?;
-    Ok(package)
-}
-
-/// Register externally-linked artifacts in an in-memory package store.
-fn register_external_dependencies(
-    store: &mut InMemoryPackageRegistry,
-    link_library_specs: &[LinkLibrary],
-    link_libraries: &[Arc<miden_assembly::Library>],
-    link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
-) -> Result<Vec<ProjectDependency>, Report> {
-    if link_library_specs.len() != link_libraries.len() {
-        return Err(Report::msg(
-            "loaded link libraries do not match the session link library configuration",
-        ));
-    }
-
-    let link_library_versions =
-        resolve_link_library_versions(link_library_specs, link_libraries, link_packages)?;
-    let mut dependencies = BTreeMap::default();
-    for ((link_lib, library), version) in
-        link_library_specs.iter().zip(link_libraries.iter()).zip(link_library_versions)
+    let mut package = project_assembler.assemble_with_sources(selector, "dev", sources)?;
     {
-        let package = Arc::from(MastPackage::from_library(
-            link_lib.name.to_string().into(),
-            version,
-            TargetType::Library,
-            library.clone(),
-            [],
-        ));
-        let version = publish_external_package(store, package)?;
-        push_project_dependency(&mut dependencies, Arc::from(link_lib.name.as_ref()), version)?;
+        let package = Arc::make_mut(&mut package);
+
+        attach_account_component_metadata(package, account_component_metadata_bytes);
+        extend_rodata_advice_map(package, &component.rodata);
+        normalize_library_exports(package)?;
     }
-    register_link_packages(store, &mut dependencies, link_packages)?;
-
-    Ok(dependencies.into_values().collect())
-}
-
-/// Determine the semantic version to associate with each raw session link library.
-///
-/// Linked package inputs record exact dependency versions in their manifests. To keep those package
-/// inputs interoperable with raw `-l` libraries, reuse the semantic version already required by
-/// any linked packages that depend on the same library digest. Libraries with no discoverable
-/// version metadata fall back to `0.0.0`.
-fn resolve_link_library_versions(
-    link_library_specs: &[LinkLibrary],
-    link_libraries: &[Arc<miden_assembly::Library>],
-    link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
-) -> Result<Vec<Version>, Report> {
-    let mut digests = BTreeMap::default();
-    let mut required_versions =
-        BTreeMap::<PackageId, BTreeMap<Version, BTreeSet<PackageId>>>::default();
-
-    for (link_lib, library) in link_library_specs.iter().zip(link_libraries.iter()) {
-        let name = PackageId::from(link_lib.name.as_ref());
-        let digest = *library.digest();
-
-        match digests.get(&name) {
-            Some(existing) if existing != &digest => {
-                return Err(Report::msg(format!(
-                    "conflicting session link libraries registered for '{name}'",
-                )));
-            }
-            Some(_) => {}
-            None => {
-                digests.insert(name.clone(), digest);
-            }
-        }
-
-        required_versions.entry(name).or_default();
-    }
-
-    for package in link_packages.values() {
-        for dependency in package.manifest.dependencies() {
-            if dependency.kind != TargetType::Library {
-                continue;
-            }
-
-            let Some(expected_digest) = digests.get(&dependency.name) else {
-                continue;
-            };
-            if &dependency.digest != expected_digest {
-                return Err(Report::msg(format!(
-                    "linked package '{}' depends on session library '{}' at '{}#{}', but the \
-                     loaded session library has digest '{}'",
-                    package.name,
-                    dependency.name,
-                    dependency.version,
-                    dependency.digest,
-                    expected_digest,
-                )));
-            }
-
-            required_versions
-                .get_mut(&dependency.name)
-                .expect("session link library versions should be initialized")
-                .entry(dependency.version.clone())
-                .or_default()
-                .insert(package.name.clone());
-        }
-    }
-
-    link_library_specs
-        .iter()
-        .map(|link_lib| {
-            let name = PackageId::from(link_lib.name.as_ref());
-            let versions = required_versions
-                .get(&name)
-                .expect("session link library versions should be initialized");
-
-            if versions.is_empty() {
-                return Ok(Version::new(0, 0, 0));
-            }
-            if versions.len() > 1 {
-                let details = versions
-                    .iter()
-                    .map(|(version, packages)| {
-                        let packages =
-                            packages.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
-                        format!("{version} (required by {packages})")
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                return Err(Report::msg(format!(
-                    "linked packages require conflicting versions for session library '{name}': \
-                     {details}",
-                )));
-            }
-
-            Ok(versions.keys().next().cloned().expect("non-empty map should contain a version"))
-        })
-        .collect()
-}
-
-/// Register package inputs in an order accepted by the in-memory registry.
-fn register_link_packages(
-    store: &mut InMemoryPackageRegistry,
-    dependencies: &mut BTreeMap<Arc<str>, ProjectDependency>,
-    link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
-) -> Result<(), Report> {
-    let mut pending = BTreeMap::<PackageId, Arc<MastPackage>>::default();
-    for package in link_packages.values() {
-        pending.insert(package.name.clone(), package.clone());
-    }
-
-    while !pending.is_empty() {
-        let mut published = Vec::default();
-
-        // The registry validates dependency availability during publication, so we only publish
-        // packages whose exact dependency versions are already present and iterate to a fixed point.
-        for (name, package) in pending.iter() {
-            if !package_dependencies_available(store, package.as_ref()) {
-                continue;
-            }
-
-            let version = publish_external_package(store, package.clone())?;
-            push_project_dependency(dependencies, package.name.clone().into_inner(), version)?;
-            published.push(name.clone());
-        }
-
-        if published.is_empty() {
-            return Err(unresolved_external_packages_report(&pending, store));
-        }
-
-        for name in published {
-            pending.remove(&name);
-        }
-    }
-
-    Ok(())
-}
-
-/// Return true when all exact dependency versions of `package` are already available.
-fn package_dependencies_available(store: &InMemoryPackageRegistry, package: &MastPackage) -> bool {
-    package.manifest.dependencies().all(|dependency| {
-        let version = RegistryVersion::new(dependency.version.clone(), dependency.digest);
-        store.is_version_available(&dependency.name, &version)
-    })
-}
-
-/// Publish `package`, allowing idempotent reuse of an identical exact version.
-fn publish_external_package(
-    store: &mut InMemoryPackageRegistry,
-    package: Arc<MastPackage>,
-) -> Result<RegistryVersion, Report> {
-    let version = RegistryVersion::new(package.version.clone(), package.digest());
-
-    if let Some(existing) = store.get_by_semver(&package.name, &package.version) {
-        return if existing.version() == &version {
-            Ok(version)
-        } else {
-            Err(Report::msg(format!(
-                "package '{}' version '{}' is already registered",
-                package.name, package.version
-            )))
-        };
-    }
-
-    store.publish_package(package).map_err(|error| Report::msg(error.to_string()))
-}
-
-/// Build a diagnostic for the remaining unpublished external packages.
-fn unresolved_external_packages_report(
-    pending: &BTreeMap<PackageId, Arc<MastPackage>>,
-    store: &InMemoryPackageRegistry,
-) -> Report {
-    let details = pending
-        .values()
-        .map(|package| {
-            let blocking = package
-                .manifest
-                .dependencies()
-                .filter_map(|dependency| {
-                    let version =
-                        RegistryVersion::new(dependency.version.clone(), dependency.digest);
-                    if store.is_version_available(&dependency.name, &version) {
-                        return None;
-                    }
-
-                    let mut reason = String::from("missing");
-                    if pending.contains_key(&dependency.name) {
-                        reason = String::from("pending");
-                    }
-
-                    Some(format!("{}@{} ({reason})", dependency.name, version))
-                })
-                .collect::<Vec<_>>();
-
-            if blocking.is_empty() {
-                format!("'{}' could not be published", package.name)
-            } else {
-                format!("'{}' is blocked by {}", package.name, blocking.join(", "))
-            }
-        })
-        .collect::<Vec<_>>();
-
-    Report::msg(format!(
-        "unable to register external packages in dependency order: {}",
-        details.join("; ")
-    ))
-}
-
-/// Append a project dependency while preserving the existing exact resolution.
-fn push_project_dependency(
-    dependencies: &mut BTreeMap<Arc<str>, ProjectDependency>,
-    name: Arc<str>,
-    version: RegistryVersion,
-) -> Result<(), Report> {
-    let dependency = ProjectDependency::new(
-        Span::unknown(name.clone()),
-        DependencyVersionScheme::Registry(VersionRequirement::Exact(version)),
-        Linkage::Dynamic,
-    );
-
-    match dependencies.get(name.as_ref()) {
-        Some(existing) if existing == &dependency => Ok(()),
-        Some(_) => Err(Report::msg(format!(
-            "conflicting external dependency registration for '{name}'",
-        ))),
-        None => {
-            dependencies.insert(name, dependency);
-            Ok(())
-        }
-    }
+    Ok(package)
 }
 
 /// Prepare the synthetic project target and source inputs used to assemble compiler-generated MASM.
 fn prepare_sources(
     component: &MasmComponent,
     assembler: &mut Assembler,
-    link_libraries: &[Arc<miden_assembly::Library>],
-    link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
     emit_test_harness: bool,
-    source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
-) -> Result<(Target, ProjectSourceInputs), Report> {
-    let external_modules = external_module_paths(link_libraries, link_packages);
-
+    session: &Session,
+) -> Result<ProjectSourceInputs, Report> {
     // Intrinsics must be linked into the assembler context directly so they do not become part of
     // the assembled package surface.
     let mut support = Vec::with_capacity(component.modules.len());
+    let mut root = None;
     for module in component.modules.iter() {
-        if external_modules.contains(module.path()) {
-            log::warn!(
-                target: "assembly",
-                "module '{}' is already registered with the assembler as dependency module, \
-                 skipping",
-                module.path()
-            );
-            continue;
-        }
-
         if is_intrinsics_module(module) {
             log::debug!(
                 target: "assembly",
@@ -376,34 +81,27 @@ fn prepare_sources(
             continue;
         }
 
+        if module.path() == component.root.as_ref() {
+            root = Some(Box::new(Arc::unwrap_or_clone(module.clone())));
+            continue;
+        }
+
         support.push(Box::new(Arc::unwrap_or_clone(module.clone())));
     }
 
-    let id = component.id.as_ref().map(|id| id.to_library_path());
     if let Some(entrypoint) = component.entrypoint.as_ref() {
-        let target = Target::executable(
-            id.as_ref().map(|p| p.as_str().to_string()).unwrap_or("main".to_string()),
-        );
-        let root = Box::new(Arc::unwrap_or_clone(component.generate_main(
+        // Our generated main module takes precedence here, so move the root module into support
+        support.extend(root);
+        let root = component.generate_main(
             entrypoint,
             emit_test_harness,
-            source_manager,
-        )?));
-        return Ok((target, ProjectSourceInputs { root, support }));
+            session.source_manager.clone(),
+        )?;
+        return Ok(ProjectSourceInputs { root, support });
     }
 
-    let mut modules = support.into_iter();
-    let root = modules
-        .next()
-        .ok_or_else(|| Report::msg("component does not contain any user-defined MASM modules"))?;
-    let target = Target::library(root.path());
-    Ok((
-        target,
-        ProjectSourceInputs {
-            root,
-            support: modules.collect(),
-        },
-    ))
+    let root = root.expect("components must always have a root module");
+    Ok(ProjectSourceInputs { root, support })
 }
 
 /// Attach serialized account component metadata to the assembled package.
@@ -511,180 +209,7 @@ fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExpor
     exports
 }
 
-/// Return the set of modules already supplied by external dependencies.
-fn external_module_paths(
-    link_libraries: &[Arc<miden_assembly::Library>],
-    link_packages: &BTreeMap<Symbol, Arc<MastPackage>>,
-) -> BTreeSet<miden_assembly::PathBuf> {
-    let mut paths = BTreeSet::default();
-    for library in link_libraries {
-        for module in library.module_infos() {
-            paths.insert(module.path().to_path_buf());
-        }
-    }
-    for package in link_packages.values() {
-        for module in package.mast.module_infos() {
-            paths.insert(module.path().to_path_buf());
-        }
-    }
-    paths
-}
-
 /// Return true when the module belongs to the compiler's intrinsics namespace.
 fn is_intrinsics_module(module: &miden_assembly::ast::Module) -> bool {
     module.path().as_str().trim_start_matches("::").starts_with("intrinsics")
-}
-
-#[cfg(test)]
-mod tests {
-    use alloc::{collections::BTreeMap, sync::Arc, vec};
-
-    use miden_assembly::DefaultSourceManager;
-    use miden_mast_package::{Dependency, PackageId};
-    use midenc_session::{LinkLibrary, STDLIB};
-
-    use super::*;
-
-    /// Build a synthetic library package backed by the standard library MAST.
-    fn test_package(
-        name: &str,
-        version: Version,
-        dependencies: impl IntoIterator<Item = Dependency>,
-    ) -> Arc<MastPackage> {
-        Arc::from(MastPackage::from_library(
-            PackageId::from(name),
-            version,
-            TargetType::Library,
-            STDLIB.clone(),
-            dependencies,
-        ))
-    }
-
-    fn test_component(modules: Vec<Arc<masm::Module>>) -> MasmComponent {
-        MasmComponent {
-            id: Some("root:root@1.0.0".parse().expect("synthetic component id should be valid")),
-            init: None,
-            entrypoint: None,
-            kernel: None,
-            rodata: Vec::new(),
-            heap_base: 0,
-            stack_pointer: None,
-            modules,
-        }
-    }
-
-    #[test]
-    fn register_external_dependencies_reuses_link_package_library_versions() {
-        let stdlib = STDLIB.clone();
-        let std_digest = *stdlib.digest();
-        let dependent = test_package(
-            "dep",
-            Version::new(1, 0, 0),
-            [Dependency {
-                name: PackageId::from("std"),
-                kind: TargetType::Library,
-                version: Version::new(1, 2, 3),
-                digest: std_digest,
-            }],
-        );
-        let link_packages = BTreeMap::from([(Symbol::intern("dep"), dependent)]);
-
-        let mut store = InMemoryPackageRegistry::default();
-        let link_library_specs = vec![LinkLibrary::std()];
-        let dependencies = register_external_dependencies(
-            &mut store,
-            &link_library_specs,
-            &[stdlib],
-            &link_packages,
-        )
-        .expect("external dependency registration should succeed");
-
-        let std_version = RegistryVersion::new(Version::new(1, 2, 3), std_digest);
-        assert!(store.is_version_available(&PackageId::from("std"), &std_version));
-        assert!(
-            !store.is_semver_available(&PackageId::from("std"), &Version::new(0, 0, 0)),
-            "expected the inferred version to replace the synthetic 0.0.0 fallback"
-        );
-
-        let std_dependency = dependencies
-            .into_iter()
-            .find(|dependency| dependency.name().as_ref() == "std")
-            .expect("root project should register the std dependency");
-        assert_eq!(std_dependency.required_version(), VersionRequirement::Exact(std_version));
-    }
-
-    #[test]
-    fn register_external_dependencies_rejects_conflicting_library_versions() {
-        let stdlib = STDLIB.clone();
-        let std_digest = *stdlib.digest();
-        let dep_a = test_package(
-            "dep-a",
-            Version::new(1, 0, 0),
-            [Dependency {
-                name: PackageId::from("std"),
-                kind: TargetType::Library,
-                version: Version::new(1, 2, 3),
-                digest: std_digest,
-            }],
-        );
-        let dep_b = test_package(
-            "dep-b",
-            Version::new(1, 0, 0),
-            [Dependency {
-                name: PackageId::from("std"),
-                kind: TargetType::Library,
-                version: Version::new(2, 0, 0),
-                digest: std_digest,
-            }],
-        );
-        let link_packages =
-            BTreeMap::from([(Symbol::intern("dep-a"), dep_a), (Symbol::intern("dep-b"), dep_b)]);
-
-        let mut store = InMemoryPackageRegistry::default();
-        let link_library_specs = vec![LinkLibrary::std()];
-        let error = register_external_dependencies(
-            &mut store,
-            &link_library_specs,
-            &[stdlib],
-            &link_packages,
-        )
-        .expect_err("conflicting link-library versions should fail");
-
-        assert!(
-            error.to_string().contains("conflicting versions for session library 'std'"),
-            "unexpected error: {error}"
-        );
-    }
-
-    #[test]
-    fn prepare_sources_uses_filtered_library_root_for_target_namespace() {
-        let duplicate_path = STDLIB
-            .module_infos()
-            .next()
-            .expect("stdlib should contain at least one module")
-            .path()
-            .to_path_buf();
-        let user_path = masm::LibraryPath::new("test::user").expect("path should be valid");
-        let component = test_component(vec![
-            Arc::new(masm::Module::new(masm::ModuleKind::Library, duplicate_path)),
-            Arc::new(masm::Module::new(masm::ModuleKind::Library, user_path.clone())),
-        ]);
-        let source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync> =
-            Arc::new(DefaultSourceManager::default());
-        let mut assembler = Assembler::new(source_manager.clone());
-
-        let (target, sources) = prepare_sources(
-            &component,
-            &mut assembler,
-            core::slice::from_ref(&*STDLIB),
-            &BTreeMap::default(),
-            false,
-            source_manager,
-        )
-        .expect("source preparation should succeed");
-        let expected_root_path = user_path.as_path().to_absolute();
-
-        assert_eq!(sources.root.path().as_str(), expected_root_path.as_ref().as_str());
-        assert_eq!(target.namespace.inner().as_str(), sources.root.path().as_str());
-    }
 }

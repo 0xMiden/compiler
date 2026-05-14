@@ -1,20 +1,24 @@
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::Arc,
 };
 
-use anyhow::{Context, Result, bail};
-use cargo_metadata::{Metadata, MetadataCommand, Package, camino};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::Args;
+use miden_mast_package::TargetType;
 use midenc_compile::Compiler;
-use midenc_session::TargetEnv;
-use path_absolutize::Absolutize;
+use midenc_session::{
+    SourceManager,
+    diagnostics::{DefaultSourceManager, PrintDiagnostic, SourceManagerExt},
+    miden_project,
+    registry::HybridPackageRegistry,
+};
+use tempfile::TempDir;
 
 use crate::{
-    BuildOutput, CommandOutput, OutputType, compile_masm,
-    config::CargoPackageSpec,
-    dependencies::process_miden_dependencies,
-    target::{self, install_wasm32_target},
+    BuildOutput, CommandOutput, OutputType, compile_masm, config::CargoPackageSpec,
+    target::install_wasm32_target,
 };
 
 /// Command-line arguments accepted by `cargo miden build`.
@@ -36,38 +40,206 @@ impl BuildCommand {
     pub fn exec(self, build_output_type: OutputType) -> Result<Option<CommandOutput>> {
         // Parse all arguments using midenc's Compiler parser.
         // This gives us a structured representation of all options.
-        let compiler_opts = Compiler::try_parse_from(&self.args).map_err(|e| {
+        let cwd = std::env::current_dir()?;
+        let compiler_opts = Compiler::try_parse_from(cwd, &self.args).map_err(|e| {
             // Render the clap error with full formatting (colors, suggestions, etc.)
             anyhow::anyhow!("failed to parse 'cargo miden build' arguments: {}", e.render())
         })?;
 
+        Self::exec_from_options(compiler_opts, None, build_output_type)
+    }
+
+    /// Executes `cargo miden build` with the provided compiler options and package registry
+    pub fn exec_from_options(
+        mut compiler_opts: Box<midenc_session::Options>,
+        registry: Option<&mut HybridPackageRegistry>,
+        build_output_type: OutputType,
+    ) -> Result<Option<CommandOutput>> {
         // Extract cargo-specific options from parsed Compiler struct
         let cargo_opts = CargoOptions::from_compiler(&compiler_opts)?;
 
-        let metadata = load_metadata(cargo_opts.manifest_path.as_deref())?;
+        let cwd = compiler_opts.current_dir.clone();
+        let (project_dir, project_manifest_path) = match compiler_opts.manifest_path.as_mut() {
+            Some(manifest_path)
+                if manifest_path
+                    .file_stem()
+                    .is_some_and(|stem| stem.eq_ignore_ascii_case("miden-project")) =>
+            {
+                let manifest_path = manifest_path.clone();
+                let cwd = manifest_path.parent().map(|dir| dir.to_path_buf()).unwrap_or(cwd);
+                (cwd, manifest_path)
+            }
+            Some(cargo_manifest_path) => {
+                let Some(project_dir) = cargo_manifest_path.parent() else {
+                    bail!(
+                        "unable to locate project manifest: --manifest-path specifies a path with \
+                         no parent"
+                    )
+                };
+                let manifest_path = project_dir.join("miden-project.toml");
+                let project_dir = project_dir.to_path_buf();
+                *cargo_manifest_path = manifest_path.clone();
+                (project_dir, manifest_path)
+            }
+            None => {
+                let Ok(cwd) = std::env::current_dir() else {
+                    bail!(
+                        "unable to locate project manifest: current working directory is \
+                         unavailable"
+                    )
+                };
+                let manifest_path = cwd.join("miden-project.toml");
+                compiler_opts.manifest_path = Some(manifest_path.clone());
+                (cwd, manifest_path)
+            }
+        };
 
-        let mut packages =
-            load_component_metadata(&metadata, cargo_opts.packages.iter(), cargo_opts.workspace)?;
+        let source_manager = Arc::new(DefaultSourceManager::default()) as Arc<dyn SourceManager>;
+        let outputs = if compiler_opts.workspace {
+            let source = source_manager.load_file(&project_manifest_path)?;
+            let workspace = miden_project::Workspace::load(source, &source_manager)
+                .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
+            Self::build_workspace(
+                &workspace,
+                build_output_type,
+                project_dir,
+                compiler_opts,
+                &cargo_opts,
+                None,
+                source_manager,
+            )?
+        } else if !compiler_opts.packages.is_empty() {
+            let source = source_manager.load_file(&project_manifest_path)?;
+            // Check if the project manifest is a workspace manifest - this requires us to build
+            // the entire workspace, rather than a single project
+            if let miden_project::ast::MidenProject::Workspace(_) =
+                miden_project::ast::MidenProject::parse(source.clone())
+                    .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?
+            {
+                let workspace = miden_project::Workspace::load(source, &source_manager)
+                    .map(Arc::<miden_project::Workspace>::from)
+                    .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
+                let mut outputs = Vec::new();
+                for requested in compiler_opts.packages.iter() {
+                    let Some(package) = workspace.get_member_by_name(requested) else {
+                        bail!("requested pacakge '{requested}' is not a valid workspace member");
+                    };
+                    let output = Self::build_project(
+                        miden_project::Project::WorkspacePackage {
+                            package,
+                            workspace: workspace.clone(),
+                        },
+                        Some(compiler_opts.target_type),
+                        build_output_type,
+                        compiler_opts.clone(),
+                        &cargo_opts,
+                        None,
+                        Arc::clone(&source_manager),
+                    )?;
+                    outputs.push(output);
+                }
+                outputs
+            } else {
+                let project = miden_project::Project::load(&project_manifest_path, &source_manager)
+                    .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
+                let output = Self::build_project(
+                    project,
+                    Some(compiler_opts.target_type),
+                    build_output_type,
+                    compiler_opts,
+                    &cargo_opts,
+                    registry,
+                    source_manager,
+                )?;
+                vec![output]
+            }
+        } else {
+            todo!()
+        };
 
-        if packages.is_empty() {
+        Ok(Some(CommandOutput::BuildCommandOutput { output: outputs }))
+    }
+
+    fn build_workspace(
+        workspace: &miden_project::Workspace,
+        _build_output_type: OutputType,
+        _cwd: PathBuf,
+        _compiler_opts: Box<midenc_session::Options>,
+        _cargo_opts: &CargoOptions,
+        _registry: Option<&mut HybridPackageRegistry>,
+        _source_manager: Arc<dyn SourceManager>,
+    ) -> Result<Vec<BuildOutput>> {
+        //let metadata = load_metadata(cargo_opts.manifest_path.as_deref())?;
+
+        //let mut packages =
+        //   load_component_metadata(&metadata, cargo_opts.packages.iter(), cargo_opts.workspace)?;
+
+        if workspace.members().is_empty() {
             bail!(
-                "manifest `{path}` contains no package or the workspace has no members",
-                path = metadata.workspace_root.join("Cargo.toml")
+                "workspace ({}) contains no members",
+                workspace.manifest_path().unwrap_or(Path::new("virtual")).display()
             );
         }
 
-        let cargo_package = determine_cargo_package(&metadata, &cargo_opts)?;
+        todo!("build a dependency graph of the workspace members and build each package")
+    }
 
-        let target_env = target::detect_target_environment(cargo_package)?;
-        let project_type = target::target_environment_to_project_type(target_env);
+    fn build_project(
+        project: miden_project::Project,
+        target_type: Option<TargetType>,
+        build_output_type: OutputType,
+        mut compiler_opts: Box<midenc_session::Options>,
+        cargo_opts: &CargoOptions,
+        registry: Option<&mut HybridPackageRegistry>,
+        source_manager: Arc<dyn SourceManager>,
+    ) -> Result<BuildOutput> {
+        let package = project.package();
+        let target_type = match target_type {
+            None => {
+                if let Some(target) = package.library_target() {
+                    target.ty
+                } else if package.executable_targets().len() > 1 {
+                    bail!(
+                        "cannot build project '{}': multiple targets are present and --target \
+                         wasn't provided to disambiguate",
+                        package.name()
+                    );
+                } else {
+                    TargetType::Executable
+                }
+            }
+            Some(ty) => ty,
+        };
 
-        if !packages.iter().any(|p| p.package.id == cargo_package.id) {
-            packages.push(PackageComponentMetadata::new(cargo_package)?);
-        }
+        let tmp = TempDir::new()?;
+        let mut default_registry =
+            midenc_session::registry::HybridPackageRegistry::new(compiler_opts.as_ref())
+                .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
+        let registry = registry.unwrap_or(&mut default_registry);
+        let dependency_graph = miden_project::ProjectDependencyGraphBuilder::new(&*registry)
+            .with_source_manager(source_manager.clone())
+            .with_git_cache_root(
+                compiler_opts
+                    .midenup_home
+                    .as_deref()
+                    .unwrap_or(tmp.path())
+                    .join("git")
+                    .join("checkouts"),
+            );
+        let dependency_graph = dependency_graph
+            .build(package.clone())
+            .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
 
-        let dependency_packages_paths = process_miden_dependencies(cargo_package, &cargo_opts)?;
+        crate::dependencies::load_cargo_based_source_dependencies(
+            &package,
+            &dependency_graph,
+            registry,
+            &compiler_opts,
+            cargo_opts,
+            &source_manager,
+        )?;
 
-        let spawn_args = build_cargo_args(&cargo_opts);
+        let cargo_build_args = build_cargo_args(cargo_opts);
 
         // Enable memcopy and 128-bit arithmetic ops
         let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
@@ -89,47 +261,40 @@ impl BuildCommand {
             extra_rust_flags.push_str(&inherited);
         }
 
-        let wasi = match target_env {
-            TargetEnv::Rollup { .. } => "wasip2",
-            _ => "wasip1",
+        let wasi = if compiler_opts.target_requires_protocol() {
+            "wasip2"
+        } else {
+            "wasip1"
         };
 
-        let wasm_outputs = run_cargo(wasi, &spawn_args, [("RUSTFLAGS", extra_rust_flags)])?;
+        let wasm_outputs = run_cargo(wasi, &cargo_build_args, [("RUSTFLAGS", extra_rust_flags)])?;
 
         assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
         let wasm_output = wasm_outputs.first().expect("expected at least one Wasm artifact");
 
-        // Build midenc flags from target environment defaults
-        let mut midenc_flags = midenc_flags_from_target(target_env, project_type, wasm_output);
+        // Set midenc flags from target environment defaults
+        modify_midenc_options_for_target(&mut compiler_opts, target_type, wasm_output)?;
 
-        // Add dependency library paths
-        for dep_path in dependency_packages_paths {
-            midenc_flags.push("--link-library".to_string());
-            midenc_flags.push(dep_path.to_string_lossy().to_string());
-        }
-
-        // Merge user-provided build options
-        midenc_flags.extend_from_slice(&self.args);
         // When debug info is enabled, automatically add -Ztrim-path-prefix to normalize
         // source paths in debug information.
-        let package_source_dir = cargo_package.manifest_path.parent().map(|p| p.as_std_path());
+        let package_source_dir = package
+            .manifest_path()
+            .expect("expected package to have an on-disk manifest")
+            .parent();
         if compiler_opts.debug != midenc_session::DebugInfo::None
             && let Some(source_dir) = package_source_dir
         {
-            let trim_prefix = format!("-Ztrim-path-prefix={}", source_dir.display());
-            midenc_flags.push(trim_prefix);
+            compiler_opts.trim_path_prefixes.push(source_dir.to_path_buf());
         }
 
         match build_output_type {
-            OutputType::Wasm => Ok(Some(CommandOutput::BuildCommandOutput {
-                output: BuildOutput::Wasm {
-                    artifact_path: wasm_output.clone(),
-                    midenc_flags,
-                },
-            })),
+            OutputType::Wasm => Ok(BuildOutput::Wasm {
+                artifact_path: wasm_output.clone(),
+                options: compiler_opts,
+            }),
             OutputType::Masm => {
                 let metadata_out_dir =
-                    metadata.target_directory.join("miden").join(if cargo_opts.release {
+                    compiler_opts.target_dir.join("miden").join(if cargo_opts.release {
                         "release"
                     } else {
                         "debug"
@@ -138,18 +303,13 @@ impl BuildCommand {
                     std::fs::create_dir_all(&metadata_out_dir)?;
                 }
 
-                let output = compile_masm::wasm_to_masm(
-                    wasm_output,
-                    metadata_out_dir.as_std_path(),
-                    midenc_flags,
-                )
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let output =
+                    compile_masm::wasm_to_masm(wasm_output, &metadata_out_dir, compiler_opts)
+                        .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
 
-                Ok(Some(CommandOutput::BuildCommandOutput {
-                    output: BuildOutput::Masm {
-                        artifact_path: output,
-                    },
-                }))
+                Ok(BuildOutput::Masm {
+                    artifact_path: output,
+                })
             }
         }
     }
@@ -173,9 +333,9 @@ pub struct CargoOptions {
 
 impl CargoOptions {
     /// Extract cargo-specific options from a Compiler struct.
-    fn from_compiler(compiler: &Compiler) -> Result<Self> {
-        let packages = compiler
-            .package
+    fn from_compiler(options: &midenc_session::Options) -> Result<Self> {
+        let packages = options
+            .packages
             .iter()
             .map(|s| {
                 CargoPackageSpec::new(s.clone())
@@ -184,9 +344,9 @@ impl CargoOptions {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
-            release: compiler.release,
-            manifest_path: compiler.manifest_path.clone(),
-            workspace: compiler.workspace,
+            release: options.profile == "release",
+            manifest_path: options.manifest_path.clone(),
+            workspace: options.workspace,
             packages,
         })
     }
@@ -292,162 +452,30 @@ where
     Ok(outputs)
 }
 
-fn determine_cargo_package<'a>(
-    metadata: &'a cargo_metadata::Metadata,
-    cargo_opts: &CargoOptions,
-) -> Result<&'a cargo_metadata::Package> {
-    let package = if let Some(manifest_path) = cargo_opts.manifest_path.as_deref() {
-        let mp_utf8 = camino::Utf8Path::from_path(manifest_path).ok_or_else(|| {
-            anyhow::anyhow!("manifest path is not valid UTF-8: {}", manifest_path.display())
-        })?;
-        let mp_abs = mp_utf8
-            .as_std_path()
-            .absolutize()
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to absolutize manifest path {}: {e}",
-                    manifest_path.display()
-                )
-            })?
-            .into_owned();
-        metadata
-            .packages
-            .iter()
-            .find(|p| p.manifest_path.as_std_path() == mp_abs.as_path())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "unable to determine package: manifest `{}` does not match any workspace \
-                     package",
-                    manifest_path.display()
-                )
-            })?
-    } else {
-        let cwd = std::env::current_dir()?;
-        metadata
-            .packages
-            .iter()
-            .find(|p| p.manifest_path.parent().map(|d| d.as_std_path()) == Some(cwd.as_path()))
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "unable to determine package; run inside a member directory or pass `-p \
-                     <name>` / `--manifest-path <path>`"
-                )
-            })?
-    };
-    Ok(package)
-}
-
 /// Produces the `midenc` CLI flags implied by the detected target environment and project type.
-fn midenc_flags_from_target(
-    target_env: TargetEnv,
-    project_type: midenc_session::ProjectType,
+fn modify_midenc_options_for_target(
+    options: &mut midenc_session::Options,
+    target_type: TargetType,
     wasm_output: &Path,
-) -> Vec<String> {
-    let mut midenc_args = Vec::new();
-
-    match target_env {
-        TargetEnv::Base | TargetEnv::Emu => match project_type {
-            midenc_session::ProjectType::Program => {
-                midenc_args.push("--exe".into());
-                let masm_module_name = wasm_output
-                    .file_stem()
-                    .expect("invalid wasm file path: no file stem")
-                    .to_str()
-                    .unwrap();
-                let entrypoint_opt = format!("--entrypoint={masm_module_name}::entrypoint");
-                midenc_args.push(entrypoint_opt);
-            }
-            midenc_session::ProjectType::Library => midenc_args.push("--lib".into()),
-        },
-        TargetEnv::Rollup { target } => {
-            midenc_args.push("--target".into());
-            match target {
-                midenc_session::RollupTarget::Account => {
-                    midenc_args.push("rollup:account".into());
-                    midenc_args.push("--lib".into());
-                }
-                midenc_session::RollupTarget::NoteScript => {
-                    midenc_args.push("rollup:note-script".into());
-                    midenc_args.push("--lib".into());
-                }
-                midenc_session::RollupTarget::TransactionScript => {
-                    midenc_args.push("rollup:transaction-script".into());
-                    midenc_args.push("--exe".into());
-                    midenc_args
-                        .push("--entrypoint=miden:base/transaction-script@1.0.0::run".to_string())
-                }
-                midenc_session::RollupTarget::AuthComponent => {
-                    midenc_args.push("rollup:authentication-component".into());
-                    midenc_args.push("--lib".into());
-                }
-            }
+) -> Result<()> {
+    options.target_type = target_type;
+    match target_type {
+        TargetType::Executable => {
+            let masm_module_name = wasm_output
+                .file_stem()
+                .expect("invalid wasm file path: no file stem")
+                .to_str()
+                .unwrap();
+            options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
         }
-    }
-    midenc_args
-}
-
-/// Loads the workspace metadata based on the given manifest path.
-fn load_metadata(manifest_path: Option<&Path>) -> Result<Metadata> {
-    let mut command = MetadataCommand::new();
-    command.no_deps();
-
-    if let Some(path) = manifest_path {
-        log::debug!("loading metadata from manifest `{path}`", path = path.display());
-        command.manifest_path(path);
-    } else {
-        log::debug!("loading metadata from current directory");
-    }
-
-    command.exec().context("failed to load cargo metadata")
-}
-
-/// Loads the component metadata for the given package specs.
-///
-/// If `workspace` is true, all workspace packages are loaded.
-fn load_component_metadata<'a>(
-    metadata: &'a Metadata,
-    specs: impl ExactSizeIterator<Item = &'a CargoPackageSpec>,
-    workspace: bool,
-) -> Result<Vec<PackageComponentMetadata<'a>>> {
-    let pkgs = if workspace {
-        metadata.workspace_packages()
-    } else if specs.len() > 0 {
-        let mut pkgs = Vec::with_capacity(specs.len());
-        for spec in specs {
-            let pkg = metadata
-                .packages
-                .iter()
-                .find(|p| {
-                    p.name == spec.name
-                        && match spec.version.as_ref() {
-                            Some(v) => &p.version == v,
-                            None => true,
-                        }
-                })
-                .with_context(|| {
-                    format!("package ID specification `{spec}` did not match any packages")
-                })?;
-            pkgs.push(pkg);
+        TargetType::Kernel => {
+            bail!("kernels are not currently supported via midenc")
         }
-
-        pkgs
-    } else {
-        metadata.workspace_default_packages()
-    };
-
-    pkgs.into_iter().map(PackageComponentMetadata::new).collect::<Result<_>>()
-}
-
-/// Represents a cargo package paired with its component metadata.
-#[derive(Debug)]
-pub struct PackageComponentMetadata<'a> {
-    /// The cargo package.
-    pub package: &'a Package,
-}
-
-impl<'a> PackageComponentMetadata<'a> {
-    /// Creates a new package metadata from the given package.
-    pub fn new(package: &'a Package) -> Result<Self> {
-        Ok(Self { package })
+        TargetType::Library | TargetType::AccountComponent | TargetType::Note => (),
+        TargetType::TransactionScript => {
+            options.entrypoint = Some("miden:base/transaction-script@1.0.0::run".to_string());
+        }
+        _ => bail!("unsupported --target-type: {target_type}"),
     }
+    Ok(())
 }

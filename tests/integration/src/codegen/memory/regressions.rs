@@ -17,7 +17,7 @@ fn global_u64_initializer_uses_immediate_store_dw() {
     // Define `test` module.
     let module = {
         let mut component_builder =
-            midenc_hir::dialects::builtin::ComponentBuilder::new(link_output.component);
+            midenc_hir::dialects::builtin::ComponentBuilder::new(link_output.component.unwrap());
         component_builder
             .define_module(midenc_hir::Ident::with_empty_span("test".into()))
             .unwrap()
@@ -64,7 +64,7 @@ fn global_u64_initializer_uses_immediate_store_dw() {
         builder.ret(Some(loaded), SourceSpan::default()).unwrap();
     }
 
-    let output = eval_link_output::<u64, _, _>(
+    let output = eval_miden_component::<u64, _, _>(
         link_output,
         std::iter::empty::<Initializer<'_>>(),
         &[],

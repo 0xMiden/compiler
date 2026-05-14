@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 /// Represents the structured output of a successful `cargo miden` command.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum CommandOutput {
     /// Output from the `new` command.
     NewCommandOutput {
@@ -11,14 +11,14 @@ pub enum CommandOutput {
     /// Output from the `build` command.
     BuildCommandOutput {
         /// The type and path of the artifact produced by the build.
-        output: BuildOutput,
+        output: Vec<BuildOutput>,
     },
     // Add other variants here if other commands need structured output later.
 }
 
 impl CommandOutput {
     /// Panics if the output is not `BuildCommandOutput`, otherwise returns the inner `BuildOutput`.
-    pub fn unwrap_build_output(self) -> BuildOutput {
+    pub fn unwrap_build_output(self) -> Vec<BuildOutput> {
         match self {
             CommandOutput::BuildCommandOutput { output } => output,
             _ => panic!("called `unwrap_build_output()` on a non-BuildCommandOutput value"),
@@ -35,7 +35,7 @@ impl CommandOutput {
 }
 
 /// Represents the specific artifact produced by the `build` command.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum BuildOutput {
     /// Miden Assembly (.masm) output.
     Masm {
@@ -47,8 +47,8 @@ pub enum BuildOutput {
     Wasm {
         /// Path to the compiled WASM file.
         artifact_path: PathBuf,
-        /// Additional arguments passed to the Miden compiler.
-        midenc_flags: Vec<String>,
+        /// The compiler options extracted from the arguments given to `cargo miden build`
+        options: Box<midenc_session::Options>,
     },
 }
 

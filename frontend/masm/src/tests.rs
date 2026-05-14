@@ -28,7 +28,7 @@ use midenc_dialect_hir::{
 };
 use midenc_dialect_scf as scf;
 use midenc_hir::{
-    AddressSpace, ArrayType, CallConv, CallOpInterface, FunctionType, Immediate, PointerType,
+    AddressSpace, ArrayType, CallConv, CallOpInterface, FunctionType, Immediate, Op, PointerType,
     SymbolName, SymbolPath, SymbolTable, Type,
     diagnostics::{Report, Severity},
     dialects::builtin::{self, Function, UnrealizedConversionCast},
@@ -2210,7 +2210,7 @@ fn project_disassembly_uses_source_dependency_signatures() -> Result<()> {
     let (root, app_dir) = write_source_dependency_project("midenc_frontend_masm_source_dep");
 
     let context = Rc::new(Context::default());
-    let output = disassemble_project_target(
+    let output = disassemble_project_target_from_path(
         app_dir.join("miden-project.toml"),
         None,
         &DisassemblerConfig::default(),
@@ -2229,7 +2229,7 @@ fn project_disassembly_loads_support_modules_into_world_tree() -> Result<()> {
     let (root, app_dir) = write_multi_module_project("midenc_frontend_masm_multi_module");
 
     let context = Rc::new(Context::default());
-    let output = disassemble_project_target(
+    let output = disassemble_project_target_from_path(
         app_dir.join("miden-project.toml"),
         None,
         &DisassemblerConfig::default(),
@@ -2322,7 +2322,7 @@ fn project_target_resolves_imported_external_type_in_declared_signature() -> Res
         write_root_imported_type_project("midenc_frontend_masm_root_type_metadata");
 
     let context = Rc::new(Context::default());
-    let output = disassemble_project_target(
+    let output = disassemble_project_target_from_path(
         app_dir.join("miden-project.toml"),
         None,
         &DisassemblerConfig::default(),
@@ -2344,7 +2344,7 @@ fn project_disassembly_uses_workspace_dependency_signatures() -> Result<()> {
     let (root, app_dir) = write_workspace_dependency_project("midenc_frontend_masm_workspace_dep");
 
     let context = Rc::new(Context::default());
-    let output = disassemble_project_target(
+    let output = disassemble_project_target_from_path(
         app_dir.join("miden-project.toml"),
         None,
         &DisassemblerConfig::default(),
@@ -2440,7 +2440,7 @@ fn project_disassembly_declares_only_referenced_preassembled_exports() -> Result
         write_preassembled_dependency_project("midenc_frontend_masm_preassembled_referenced");
 
     let context = Rc::new(Context::default());
-    let output = disassemble_project_target(
+    let output = disassemble_project_target_from_path(
         app_dir.join("miden-project.toml"),
         None,
         &DisassemblerConfig::default(),
@@ -4958,13 +4958,15 @@ fn advice_taint_external_call_findings(
 fn advice_taint_diagnostics(module: builtin::ModuleRef) -> Result<Vec<AdviceTaintDiagnostic>> {
     let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
     let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
-    Ok(analysis.diagnostics())
+    let source_manager = module.borrow().as_operation().context().source_manager();
+    Ok(analysis.diagnostics(&source_manager))
 }
 
 fn advice_taint_reports(module: builtin::ModuleRef) -> Result<Vec<Report>> {
     let analysis_manager = AnalysisManager::new(module.as_operation_ref(), None);
     let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
-    Ok(analysis.reports())
+    let source_manager = module.borrow().as_operation().context().source_manager();
+    Ok(analysis.reports(&source_manager))
 }
 
 fn sink_names(findings: &[AdviceTaintFinding]) -> Vec<String> {

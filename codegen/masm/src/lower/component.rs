@@ -14,10 +14,7 @@ use midenc_hir::{
     pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
-use midenc_session::{
-    TargetEnv,
-    diagnostics::{Report, Spanned, WrapErr},
-};
+use midenc_session::diagnostics::{Report, Spanned, WrapErr};
 use smallvec::SmallVec;
 
 use crate::{
@@ -86,15 +83,14 @@ impl ToMasmComponent for builtin::World {
         // Define the initial component modules set
         //
         // The top-level component module is always defined, but may be empty
-        let modules = if requires_init {
-            vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, "::init"))]
-        } else {
-            vec![]
-        };
+        let root =
+            Arc::<miden_assembly_syntax::Path>::from(miden_assembly_syntax::Path::new("::init"));
+        let init_module = Arc::new(masm::Module::new(masm::ModuleKind::Library, &root));
+        let modules = vec![init_module];
 
         let rodata = data_segments_to_rodata(&link_info)?;
 
-        let kernel = if matches!(context.session().options.target, TargetEnv::Rollup { .. }) {
+        let kernel = if context.session().options.target_requires_protocol() {
             Some(miden_protocol::transaction::TransactionKernel::kernel())
         } else {
             None
@@ -111,6 +107,7 @@ impl ToMasmComponent for builtin::World {
         let stack_pointer = link_info.globals_layout().stack_pointer_offset();
         let mut masm_component = MasmComponent {
             id: None,
+            root,
             init,
             entrypoint,
             kernel,
@@ -206,12 +203,12 @@ impl ToMasmComponent for builtin::Component {
         // Define the initial component modules set
         //
         // The top-level component module is always defined, but may be empty
-        let modules =
-            vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, id.to_library_path()))];
+        let root: Arc<miden_assembly_syntax::Path> = id.to_library_path().into();
+        let modules = vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, &root))];
 
         let rodata = data_segments_to_rodata(&link_info)?;
 
-        let kernel = if matches!(context.session().options.target, TargetEnv::Rollup { .. }) {
+        let kernel = if context.session().options.target_requires_protocol() {
             Some(miden_protocol::transaction::TransactionKernel::kernel())
         } else {
             None
@@ -228,6 +225,7 @@ impl ToMasmComponent for builtin::Component {
         let stack_pointer = link_info.globals_layout().stack_pointer_offset();
         let mut masm_component = MasmComponent {
             id: Some(id),
+            root,
             init,
             entrypoint,
             kernel,

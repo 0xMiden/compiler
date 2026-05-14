@@ -74,6 +74,7 @@ impl HirOpt {
         let command = midenc_session::flags::register_flags(command);
 
         let mut matches = command.try_get_matches_from(args).map_err(ClapDiagnostic::from)?;
+        let compile_matches = matches.clone();
         let Self {
             input,
             verify,
@@ -86,9 +87,7 @@ impl HirOpt {
         log::set_boxed_logger(logger)
             .unwrap_or_else(|err| panic!("failed to install logger: {err}"));
         log::set_max_level(filter);
-        if options.working_dir.is_none() {
-            options.working_dir = Some(cwd.into());
-        }
+
         if options.output_types.is_empty() && !options.stdout {
             options.stdout = true;
             options.output_types.push(OutputTypeSpec::Typed {
@@ -96,25 +95,32 @@ impl HirOpt {
                 path: Some(midenc_session::OutputFile::Stdout),
             });
         }
-        let session =
-            Rc::new(options.into_session(vec![input], emitter).with_extra_flags(matches.into()));
+
+        let mut options = options.into_options(cwd.into());
+        options.set_extra_flags(compile_matches.into());
+
+        let session = Rc::new(options.into_session(input, emitter, None)?);
         let context = Rc::new(Context::new(session));
 
-        let input = &context.session().inputs[0];
-        if input.file_type() != FileType::Hir && input.is_real() {
+        let is_valid_input = context
+            .session()
+            .input
+            .as_ref()
+            .is_none_or(|input| input.file_type() != FileType::Hir);
+        if !is_valid_input {
             return Err(Report::msg("invalid input file: expected HIR source file"));
         }
 
         let mut pm = pass_pipeline
             .load(context.clone())?
-            .enable_ir_printing(IRPrintingConfig::try_from(&context.session().options)?);
+            .enable_ir_printing(IRPrintingConfig::try_from(context.session().options.as_ref())?);
         pm.enable_verifier(verify);
 
         let config = ParserConfig {
             context: context.clone(),
             verify,
         };
-        let parsed = match &input.file {
+        let parsed = match &context.session().input.as_ref().unwrap().file {
             InputType::Real(path) => match pass_pipeline.anchor {
                 Anchor::Any => midenc_hir::parse::parse_file_any(config, path)?,
                 Anchor::Operation { dialect, opcode } => {

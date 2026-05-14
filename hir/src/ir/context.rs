@@ -5,7 +5,7 @@ use core::{
 };
 
 use blink_alloc::Blink;
-use midenc_session::Session;
+use midenc_session::{Session, SourceManager};
 use traits::BranchOpInterface;
 
 use super::{traits::BuildableTypeConstraint, *};
@@ -42,13 +42,12 @@ impl Default for Context {
     fn default() -> Self {
         use alloc::sync::Arc;
 
-        use midenc_session::diagnostics::DefaultSourceManager;
+        use midenc_session::{InputFile, diagnostics::DefaultSourceManager};
 
-        let target_dir = std::env::current_dir().unwrap();
-        let options = midenc_session::Options::default();
+        let options = alloc::boxed::Box::new(midenc_session::Options::default());
         let source_manager = Arc::new(DefaultSourceManager::default());
         let session =
-            Rc::new(Session::new([], None, None, target_dir, options, None, source_manager));
+            Rc::new(Session::new(InputFile::empty(), options, None, source_manager).unwrap());
         Self::new(session)
     }
 }
@@ -97,6 +96,11 @@ impl Context {
     #[inline]
     pub fn session_rc(&self) -> Rc<Session> {
         self.session.clone()
+    }
+
+    #[inline]
+    pub fn source_manager(&self) -> Arc<dyn SourceManager + Send + Sync> {
+        self.session.source_manager.clone()
     }
 
     #[inline]

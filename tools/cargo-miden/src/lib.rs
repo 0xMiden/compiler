@@ -18,11 +18,9 @@ mod utils;
 
 pub use commands::BuildCommand;
 pub use outputs::{BuildOutput, CommandOutput};
-pub use target::{
-    detect_project_type, detect_target_environment, target_environment_to_project_type,
-};
 
 /// Requested output type for the `build` command.
+#[derive(Debug, Copy, Clone)]
 pub enum OutputType {
     /// Return the Wasm component or core Wasm module emitted by Cargo.
     Wasm,
