@@ -97,14 +97,14 @@ struct CSEDriver<'a> {
 #[derive(Clone)]
 enum ScopedCseCandidates {
     /// Candidates in an SSA region, where operation operands cannot be rewritten after insertion.
-    Stable(FxHashMap<OpKey, OperationRef>),
+    Stable(StableCandidates),
     /// Candidates in a graph region, where visited operations may be rewritten during the pass.
     Rescanning(RescanningCandidates),
 }
 
 impl Default for ScopedCseCandidates {
     fn default() -> Self {
-        Self::Stable(FxHashMap::default())
+        Self::Stable(StableCandidates::default())
     }
 }
 
@@ -113,46 +113,77 @@ impl ScopedCseCandidates {
     fn for_region(&self, has_ssa_dominance: bool) -> Self {
         match (has_ssa_dominance, self) {
             (true, Self::Stable(known_values)) => Self::Stable(known_values.clone()),
-            (true, Self::Rescanning(known_values)) => Self::Stable(known_values.as_stable_map()),
-            (false, Self::Stable(known_values)) => {
-                Self::Rescanning(RescanningCandidates::from_ops(known_values.values().copied()))
-            }
+            (true, Self::Rescanning(known_values)) => Self::Stable(known_values.to_stable()),
+            (false, Self::Stable(known_values)) => Self::Rescanning(known_values.to_rescanning()),
             (false, Self::Rescanning(known_values)) => Self::Rescanning(known_values.clone()),
         }
     }
 
     fn get(&self, op: OperationRef) -> Option<OperationRef> {
         match self {
-            Self::Stable(known_values) => known_values.get(&OpKey(op)).copied(),
+            Self::Stable(known_values) => known_values.get(op),
             Self::Rescanning(known_values) => known_values.get(op),
         }
     }
 
     fn equivalent_ops_rev(&self, op: OperationRef) -> SmallVec<[OperationRef; 2]> {
         match self {
-            Self::Stable(known_values) => {
-                known_values.get(&OpKey(op)).copied().into_iter().collect()
-            }
+            Self::Stable(known_values) => known_values.equivalent_ops_rev(op),
             Self::Rescanning(known_values) => known_values.equivalent_ops_rev(op),
         }
     }
 
     fn insert(&mut self, op: OperationRef) {
         match self {
-            Self::Stable(known_values) => {
-                known_values.insert(OpKey(op), op);
-            }
+            Self::Stable(known_values) => known_values.insert(op),
             Self::Rescanning(known_values) => known_values.insert(op),
         }
     }
 
     fn insert_or_replace_equivalent(&mut self, op: OperationRef) {
         match self {
-            Self::Stable(known_values) => {
-                known_values.insert(OpKey(op), op);
-            }
+            Self::Stable(known_values) => known_values.insert_or_replace_equivalent(op),
             Self::Rescanning(known_values) => known_values.insert_or_replace_equivalent(op),
         }
+    }
+}
+
+/// Tracks SSA-region candidates by operation key while preserving insertion order.
+#[derive(Clone, Default)]
+struct StableCandidates {
+    /// Hash index used for O(1) lookups while the enclosing region has SSA dominance.
+    index: FxHashMap<OpKey, OperationRef>,
+    /// Traversal-order candidates used if this scope is inherited by a graph region.
+    ops: Vec<OperationRef>,
+}
+
+impl StableCandidates {
+    fn get(&self, op: OperationRef) -> Option<OperationRef> {
+        self.index.get(&OpKey(op)).copied()
+    }
+
+    fn equivalent_ops_rev(&self, op: OperationRef) -> SmallVec<[OperationRef; 2]> {
+        self.get(op).into_iter().collect()
+    }
+
+    fn insert(&mut self, op: OperationRef) {
+        if let Some(existing) = self.index.insert(OpKey(op), op) {
+            if let Some(slot) = self.ops.iter_mut().find(|candidate| **candidate == existing) {
+                *slot = op;
+            } else {
+                self.ops.push(op);
+            }
+        } else {
+            self.ops.push(op);
+        }
+    }
+
+    fn insert_or_replace_equivalent(&mut self, op: OperationRef) {
+        self.insert(op);
+    }
+
+    fn to_rescanning(&self) -> RescanningCandidates {
+        RescanningCandidates::from_ops(self.ops.iter().copied())
     }
 }
 
@@ -173,10 +204,10 @@ impl RescanningCandidates {
         }
     }
 
-    fn as_stable_map(&self) -> FxHashMap<OpKey, OperationRef> {
-        let mut known_values = FxHashMap::default();
+    fn to_stable(&self) -> StableCandidates {
+        let mut known_values = StableCandidates::default();
         for op in self.ops.iter().copied() {
-            known_values.insert(OpKey(op), op);
+            known_values.insert_or_replace_equivalent(op);
         }
         known_values
     }
