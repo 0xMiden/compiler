@@ -704,8 +704,8 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
 // CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
 // CHECK-NEXT: [[RHS:%\d+]] = arith.constant 3 : i32;
 // CHECK-NEXT: [[CANONICAL_USER:%\d+]] = arith.sub [[CANONICAL]], [[RHS]]
-// CHECK-NEXT: [[VISITED:%\d+]] = arith.sub %{{.*}}, [[RHS]]
-// CHECK-NEXT: arith.constant 1 : i32;
+// CHECK-NEXT: [[VISITED:%\d+]] = arith.sub [[DUP:%\d+]], [[RHS]]
+// CHECK-NEXT: [[DUP]] = arith.constant 1 : i32;
 // CHECK-NEXT: builtin.ret [[CANONICAL_USER]], [[VISITED]], [[CANONICAL_USER]] : (i32, i32, i32);
             "#
         );
