@@ -154,6 +154,9 @@ struct StableCandidates {
     /// Hash index used for O(1) lookups while the enclosing region has SSA dominance.
     index: FxHashMap<OpKey, OperationRef>,
     /// Traversal-order candidates used if this scope is inherited by a graph region.
+    ///
+    /// Memory-read candidates may replace the current representative in `index`, but this list
+    /// remains chronological so graph-region rescans observe candidates in visitation order.
     ops: Vec<OperationRef>,
 }
 
@@ -167,15 +170,8 @@ impl StableCandidates {
     }
 
     fn insert(&mut self, op: OperationRef) {
-        if let Some(existing) = self.index.insert(OpKey(op), op) {
-            if let Some(slot) = self.ops.iter_mut().find(|candidate| **candidate == existing) {
-                *slot = op;
-            } else {
-                self.ops.push(op);
-            }
-        } else {
-            self.ops.push(op);
-        }
+        self.index.insert(OpKey(op), op);
+        self.ops.push(op);
     }
 
     fn insert_or_replace_equivalent(&mut self, op: OperationRef) {
@@ -194,6 +190,7 @@ impl StableCandidates {
 /// avoids stale equivalence results after those rewrites and picks a stable representative.
 #[derive(Clone, Default)]
 struct RescanningCandidates {
+    /// Traversal-order candidates scanned with freshly computed operation keys.
     ops: Vec<OperationRef>,
 }
 
@@ -230,12 +227,7 @@ impl RescanningCandidates {
     }
 
     fn insert_or_replace_equivalent(&mut self, op: OperationRef) {
-        if let Some(existing) = self.ops.iter_mut().find(|existing| OpKey(**existing) == OpKey(op))
-        {
-            *existing = op;
-        } else {
-            self.insert(op);
-        }
+        self.insert(op);
     }
 }
 
@@ -630,6 +622,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn candidate_representative_updates_preserve_traversal_order() {
+        let mut test = Test::new("candidate_order", &[], &[Type::I32]);
+        let (first, separator, replacement) = {
+            let mut builder = test.function_builder();
+            let first_value = builder.i32(1, SourceSpan::UNKNOWN);
+            let separator_value = builder.i32(2, SourceSpan::UNKNOWN);
+            let replacement_value = builder.i32(1, SourceSpan::UNKNOWN);
+            builder.ret([replacement_value], SourceSpan::UNKNOWN).unwrap();
+
+            (
+                first_value.borrow().get_defining_op().unwrap(),
+                separator_value.borrow().get_defining_op().unwrap(),
+                replacement_value.borrow().get_defining_op().unwrap(),
+            )
+        };
+
+        let mut stable = StableCandidates::default();
+        stable.insert_or_replace_equivalent(first);
+        stable.insert(separator);
+        stable.insert_or_replace_equivalent(replacement);
+        assert_eq!(stable.get(first), Some(replacement));
+        assert_eq!(stable.ops.as_slice(), &[first, separator, replacement]);
+
+        let rescanning = stable.to_rescanning();
+        assert_eq!(rescanning.ops.as_slice(), &[first, separator, replacement]);
+
+        let mut rescanning = RescanningCandidates::default();
+        rescanning.insert_or_replace_equivalent(first);
+        rescanning.insert(separator);
+        rescanning.insert_or_replace_equivalent(replacement);
+        assert_eq!(rescanning.ops.as_slice(), &[first, separator, replacement]);
+        assert_eq!(rescanning.equivalent_ops_rev(first).as_slice(), &[replacement, first]);
+    }
+
+    #[test]
     fn simple_constant() {
         let mut test = Test::new("simple_constant", &[], &[Type::I32, Type::I32]);
         {
@@ -712,60 +739,44 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
     }
 
     #[test]
-    fn cse_rechecks_graph_candidates_after_nested_rewrite() {
-        use midenc_dialect_scf::StructuredControlFlowOpBuilder;
-
-        let mut test = Test::named("graph_candidate_rewrite").in_module("graph_candidate_rewrite");
-        {
-            let module_body = test.module().borrow().body().entry_block_ref().unwrap();
-            let builder = test.builder_mut();
-            builder.set_insertion_point_to_end(module_body);
-
+    fn cse_rechecks_graph_candidates_after_operand_rewrite() {
+        let mut test = Test::new("graph_candidate_rewrite", &[], &[Type::I32, Type::I32]);
+        let (canonical, duplicate_constant, recorded_op, duplicate_op) = {
+            let mut builder = test.function_builder();
             let canonical = builder.i32(1, SourceSpan::UNKNOWN);
             let rhs = builder.i32(3, SourceSpan::UNKNOWN);
             let duplicate_constant = builder.i32(1, SourceSpan::UNKNOWN);
             let recorded = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
-            let cond = builder.i1(true, SourceSpan::UNKNOWN);
-            let if_op = builder.r#if(cond, &[], SourceSpan::UNKNOWN).unwrap();
             let duplicate = builder.sub(canonical, rhs, SourceSpan::UNKNOWN).unwrap();
             builder.ret([recorded, duplicate], SourceSpan::UNKNOWN).unwrap();
 
-            let then_region = if_op.borrow().then_body().as_region_ref();
-            let then_block = builder.create_block(then_region, None, &[]);
-            builder.r#yield(None, SourceSpan::UNKNOWN).unwrap();
-            let else_region = if_op.borrow().else_body().as_region_ref();
-            builder.create_block(else_region, None, &[]);
-            builder.r#yield(None, SourceSpan::UNKNOWN).unwrap();
+            (
+                canonical,
+                duplicate_constant,
+                recorded.borrow().get_defining_op().unwrap(),
+                duplicate.borrow().get_defining_op().unwrap(),
+            )
+        };
+        test.function()
+            .as_operation_ref()
+            .borrow()
+            .recursively_verify()
+            .expect("valid ir");
 
-            // Move the duplicate constant into a nested region that is processed after `recorded`
-            // is added to the parent graph-region candidate set. Replacing the constant rewrites
-            // `recorded`'s operand after its candidate key would have been computed.
-            let mut duplicate_constant_op = duplicate_constant.borrow().get_defining_op().unwrap();
-            duplicate_constant_op
-                .borrow_mut()
-                .move_to(ProgramPoint::at_start_of(then_block));
-        }
+        let mut candidates = RescanningCandidates::default();
+        candidates.insert(recorded_op);
+        assert_eq!(candidates.get(duplicate_op), None);
 
-        let mut pm = PassManager::on::<Module>(test.context_rc(), Nesting::Implicit);
-        pm.add_pass(Box::<CommonSubexpressionElimination>::default());
-        pm.enable_verifier(false);
-        pm.run(test.module().as_operation_ref()).expect("invalid ir");
+        let mut rewriter = RewriterImpl::<TracingRewriterListener>::new(test.context_rc())
+            .with_listener(TracingRewriterListener);
+        rewriter.replace_all_uses_with(&[duplicate_constant], &[Some(canonical)]);
+        test.function()
+            .as_operation_ref()
+            .borrow()
+            .recursively_verify()
+            .expect("valid ir after rewrite");
 
-        let flags = Default::default();
-        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
-        printer.print_operation(test.module().borrow());
-        let output = format!("{}", printer.finish());
-        filecheck!(
-            output,
-            r#"
-// CHECK-LABEL: builtin.module private @graph_candidate_rewrite
-// CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
-// CHECK: [[RHS:%\d+]] = arith.constant 3 : i32;
-// CHECK: [[RECORDED:%\d+]] = arith.sub [[CANONICAL]], [[RHS]]
-// CHECK-NOT: arith.sub [[CANONICAL]], [[RHS]]
-// CHECK: builtin.ret [[RECORDED]], [[RECORDED]] : (i32, i32);
-            "#
-        );
+        assert_eq!(candidates.get(duplicate_op), Some(recorded_op));
     }
 
     #[test]
