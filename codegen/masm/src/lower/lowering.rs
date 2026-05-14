@@ -1559,7 +1559,7 @@ fn debug_var_location_from_expression(
             .and_then(|value| emitter.stack.find(value))
             .map(|pos| emitter.stack.effective_index(pos) as u8)
             .map(DebugVarLocation::Stack),
-        [first] => match first {
+        [first] | [first, ExpressionOp::StackValue] => match first {
             ExpressionOp::WasmStack(offset) => Some(DebugVarLocation::Stack(*offset as u8)),
             ExpressionOp::WasmLocal(idx) => {
                 // WASM locals are always stored in memory via FMP in Miden.

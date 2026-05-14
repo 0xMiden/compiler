@@ -9,7 +9,7 @@ use midenc_hir::{
     effects::MemoryEffect,
     pass::{Pass, PassExecutionState, PostPassStatus},
     patterns::{RewriterImpl, RewriterListener, TracingRewriterListener},
-    traits::{IsolatedFromAbove, Terminator},
+    traits::{IsolatedFromAbove, Terminator, Transparent},
 };
 
 /// This transformation pass performs a simple common sub-expression elimination algorithm on
@@ -186,6 +186,10 @@ impl CSEDriver<'_> {
         // Don't simplify terminator operations.
         let operation = op.borrow();
         if operation.implements::<dyn Terminator>() {
+            return PostPassStatus::Unchanged;
+        }
+
+        if operation.implements::<dyn Transparent>() {
             return PostPassStatus::Unchanged;
         }
 

@@ -14,7 +14,7 @@ use crate::{
     adt::SmallSet,
     formatter::DisplayValues,
     patterns::{PatternApplicationError, RewritePattern, TracingRewriterListener},
-    traits::{ConstantLike, Foldable, IsolatedFromAbove},
+    traits::{ConstantLike, Foldable, IsolatedFromAbove, Transparent},
 };
 
 /// Rewrite ops in the given region, which must be isolated from above, by repeatedly applying the
@@ -485,6 +485,10 @@ impl GreedyPatternRewriteDriver {
         log::trace!(target: "pattern-rewrite-driver", "processing operation '{op_ref}'");
 
         let op = op_ref.borrow();
+
+        if op.implements::<dyn Transparent>() {
+            return false;
+        }
 
         // If the operation is trivially dead - remove it.
         if op.is_trivially_dead() {

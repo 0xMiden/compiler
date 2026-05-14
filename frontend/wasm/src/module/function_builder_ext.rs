@@ -196,10 +196,10 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
 
         if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
             attr.file = file_symbol;
-            if line != 0 {
+            if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
                 attr.line = line;
+                attr.column = column;
             }
-            attr.column = column;
         }
 
         // If DWARF didn't provide a location expression, synthesize one from the
@@ -273,67 +273,6 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     }
 
     fn emit_scheduled_dbg_value(&mut self, entry: LocationScheduleEntry, span: SourceSpan) {
-        // Skip variables already emitted as parameters to avoid duplicates.
-        if self.param_dbg_emitted
-            && self.param_values.iter().any(|(v, _)| v.index() == entry.var_index)
-        {
-            return;
-        }
-
-        // Only emit debug values for variables that have already been defined.
-        // Calling try_use_var on an undefined variable would insert block
-        // parameters (phis) as a side effect, corrupting the CFG.
-        let is_frame_base =
-            matches!(entry.storage.operations.as_slice(), [ExpressionOp::FrameBase { .. }]);
-        if !is_frame_base && !self.defined_vars.contains(&(entry.var_index as u32)) {
-            return;
-        }
-
-        let var = Variable::new(entry.var_index);
-        let is_defined = self.defined_vars.contains(&(entry.var_index as u32));
-        if !is_defined && is_frame_base {
-            self.emit_scheduled_dbg_declare(entry, span);
-            return;
-        }
-
-        let value = if is_defined {
-            match self.try_use_var(var) {
-                Ok(v) => v,
-                Err(_) => {
-                    return;
-                }
-            }
-        } else {
-            return;
-        };
-
-        // Create expression from the scheduled location
-        let expression = if entry.storage.is_empty() {
-            None
-        } else {
-            Some(entry.storage)
-        };
-
-        let Some(info) = self.debug_info.as_ref() else {
-            return;
-        };
-        let idx = entry.var_index;
-        let attr_opt = {
-            let info = info.borrow();
-            info.local_attr(idx).cloned()
-        };
-        let Some(attr) = attr_opt else {
-            return;
-        };
-
-        if let Err(err) =
-            DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, expression, span)
-        {
-            warn!("failed to emit scheduled dbg.value for local {idx}: {err:?}");
-        }
-    }
-
-    fn emit_scheduled_dbg_declare(&mut self, entry: LocationScheduleEntry, span: SourceSpan) {
         if entry.storage.is_empty() {
             return;
         }
@@ -346,11 +285,50 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             let info = info.borrow();
             info.local_attr(idx).cloned()
         };
-        let Some(attr) = attr_opt else {
+        let Some(mut attr) = attr_opt else {
             return;
         };
+        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+            attr.file = file_symbol;
+            if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
+                attr.line = line;
+                attr.column = column;
+            }
+        }
 
-        if let Err(err) = DIBuilder::builder_mut(self).debug_declare(attr, entry.storage, span) {
+        if let Some(local_index) = wasm_local_index_from_expression(&entry.storage)
+            && self.defined_vars.contains(&local_index)
+        {
+            let var = Variable::new(local_index as usize);
+            let value = match self.try_use_var(var) {
+                Ok(v) => v,
+                Err(_) => {
+                    self.emit_scheduled_dbg_declare_with_attr(idx, attr, entry.storage, span);
+                    return;
+                }
+            };
+            if let Err(err) = DIBuilder::builder_mut(self).debug_value_with_expr(
+                value,
+                attr,
+                Some(entry.storage),
+                span,
+            ) {
+                warn!("failed to emit scheduled dbg.value for local {idx}: {err:?}");
+            }
+            return;
+        }
+
+        self.emit_scheduled_dbg_declare_with_attr(idx, attr, entry.storage, span);
+    }
+
+    fn emit_scheduled_dbg_declare_with_attr(
+        &mut self,
+        idx: usize,
+        attr: midenc_hir::dialects::debuginfo::attributes::Variable,
+        expression: Expression,
+        span: SourceSpan,
+    ) {
+        if let Err(err) = DIBuilder::builder_mut(self).debug_declare(attr, expression, span) {
             warn!("failed to emit scheduled dbg.declare for local {idx}: {err:?}");
         }
     }
@@ -712,15 +690,46 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         let context = self.inner.builder().context();
         let session = context.session();
         let source_file = session.source_manager.get(span.source_id()).ok()?;
-        let uri = source_file.uri().as_str();
-        let path = Path::new(uri);
-        let file_symbol = Symbol::intern(uri);
+        let uri = source_file.uri();
+        let file = session
+            .options
+            .trim_path_prefixes
+            .iter()
+            .filter_map(|prefix| {
+                Path::new(uri.path()).strip_prefix(prefix).ok().and_then(|path| path.to_str())
+            })
+            .max_by_key(|path| path.len())
+            .unwrap_or_else(|| uri.as_str());
+        let path = Path::new(file);
+        let file_symbol = Symbol::intern(file);
         let directory_symbol = path.parent().and_then(|parent| parent.to_str()).map(Symbol::intern);
         let location = source_file.location(span);
         let line = location.line.to_u32();
         let column = location.column.to_u32();
         Some((file_symbol, directory_symbol, line, Some(column)))
     }
+}
+
+fn wasm_local_index_from_expression(expression: &Expression) -> Option<u32> {
+    expression.operations.iter().find_map(|op| match op {
+        ExpressionOp::WasmLocal(index) => Some(*index),
+        _ => None,
+    })
+}
+
+fn should_fill_debug_attr_location(
+    current_line: u32,
+    current_column: Option<u32>,
+    span_line: u32,
+    span_column: Option<u32>,
+) -> bool {
+    if current_line != 0 || current_column.is_some() || span_line == 0 {
+        return false;
+    }
+
+    // Rust/wasm DWARF sometimes maps prologue/epilogue-style instructions to the first byte of
+    // the source file. Keep real declaration metadata rather than showing these fallback spans.
+    !(span_line == 1 && span_column.is_none_or(|column| column == 1))
 }
 
 impl<'f, B: ?Sized + Builder> ArithOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
