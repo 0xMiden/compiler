@@ -1,11 +1,14 @@
 #![no_std]
 #![deny(warnings)]
 
+#[macro_use]
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
 mod compiler;
+#[cfg(feature = "std")]
+pub mod rust;
 mod stage;
 mod stages;
 

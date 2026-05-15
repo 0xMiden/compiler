@@ -20,7 +20,10 @@ pub use self::{
     analyze::AnalysisStage,
     assemble::{Artifact, AssembleProjectStage, AssembleStage},
     codegen::{CodegenOutput, CodegenStage},
-    parse::{MidenComponent, ParseComponentStage, ParseHirStage, ParseMasmStage, ParseWasmStage},
+    parse::{
+        MidenComponent, ParseComponentStage, ParseHirStage, ParseMasmStage, ParseRustStage,
+        ParseWasmStage,
+    },
     rewrite::ApplyRewritesStage,
 };
 
@@ -38,6 +41,7 @@ pub fn run_default_pipeline(
         FileType::Hir => hir_pipeline(input, context),
         FileType::Masm => masm_source_pipeline(input, context),
         FileType::Masp => Err(Report::msg("unsupported input file type '.masp'")),
+        FileType::Rust => rust_pipeline(input, context),
         FileType::Toml => masm_project_pipeline(Some(input), context),
         FileType::Wasm | FileType::Wat => wasm_pipeline(input, context),
     }
@@ -101,6 +105,15 @@ fn masm_project_pipeline(
     let mut stages = maybe_parse_masm_stage.next(AnalysisStage).next(AssembleProjectStage);
 
     stages.run(input, context)
+}
+
+fn rust_pipeline(
+    input: midenc_session::InputFile,
+    context: Rc<Context>,
+) -> CompilerResult<Artifact> {
+    let mut parse_rust = ParseRustStage;
+    let output = parse_rust.run(input, context.clone())?;
+    wasm_pipeline(output, context)
 }
 
 fn ensure_world_for_operation(

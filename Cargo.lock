@@ -512,7 +512,6 @@ name = "cargo-miden"
 version = "0.8.1"
 dependencies = [
  "anyhow",
- "cargo_metadata 0.23.1",
  "clap",
  "liquid",
  "log",
@@ -3489,6 +3488,7 @@ dependencies = [
 name = "midenc-compile"
 version = "0.8.1"
 dependencies = [
+ "cargo_metadata 0.23.1",
  "clap",
  "log",
  "miden-assembly",

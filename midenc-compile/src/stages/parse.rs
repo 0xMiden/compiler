@@ -1,5 +1,6 @@
 mod hir;
 mod masm;
+mod rust;
 mod wasm;
 
 #[cfg(feature = "std")]

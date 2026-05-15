@@ -12,7 +12,6 @@ mod compile_masm;
 mod config;
 mod dependencies;
 mod outputs;
-mod target;
 mod template;
 mod utils;
 

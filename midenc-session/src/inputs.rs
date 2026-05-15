@@ -269,6 +269,7 @@ pub enum FileType {
     Hir,
     Masm,
     Masp,
+    Rust,
     Toml,
     Wasm,
     Wat,
@@ -280,6 +281,7 @@ impl fmt::Display for FileType {
             Self::Hir => f.write_str("hir"),
             Self::Masm => f.write_str("masm"),
             Self::Masp => f.write_str("masp"),
+            Self::Rust => f.write_str("rs"),
             Self::Toml => f.write_str("toml"),
             Self::Wasm => f.write_str("wasm"),
             Self::Wat => f.write_str("wat"),
@@ -297,6 +299,14 @@ impl FileType {
             return Ok(FileType::Masp);
         }
 
+        fn is_rust_top_level_item(line: &str) -> bool {
+            line.starts_with("//")
+                || line.starts_with("#[")
+                || line.starts_with("#![")
+                || line.starts_with("pub fn")
+                || line.starts_with("fn ")
+        }
+
         fn is_masm_top_level_item(line: &str) -> bool {
             line.starts_with("pub proc")
                 || line.starts_with("proc ")
@@ -310,15 +320,24 @@ impl FileType {
 
         if let Ok(content) = core::str::from_utf8(bytes) {
             // Skip comment lines and empty lines
-            let first_line = content
-                .lines()
-                .find(|line| !line.starts_with(['#', ';']) && !line.trim().is_empty());
+            let first_line = content.lines().find(|line| {
+                if line.trim().is_empty() {
+                    return false;
+                }
+                if line.starts_with('#') && !(line.starts_with("#[") || line.starts_with("#![")) {
+                    return false;
+                }
+                !line.starts_with(';')
+            });
             if let Some(first_line) = first_line {
                 if first_line.starts_with("(module #") {
                     return Ok(FileType::Hir);
                 }
                 if first_line.starts_with("(module") {
                     return Ok(FileType::Wat);
+                }
+                if is_rust_top_level_item(first_line) {
+                    return Ok(FileType::Masm);
                 }
                 if is_masm_top_level_item(first_line) {
                     return Ok(FileType::Masm);
@@ -340,6 +359,7 @@ impl TryFrom<&Path> for FileType {
             Some("hir") => Ok(FileType::Hir),
             Some("masm") => Ok(FileType::Masm),
             Some("masp") => Ok(FileType::Masp),
+            Some("rs") => Ok(FileType::Rust),
             Some("toml") => Ok(FileType::Toml),
             Some("wasm") => Ok(FileType::Wasm),
             Some("wat") => Ok(FileType::Wat),

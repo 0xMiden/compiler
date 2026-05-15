@@ -26,11 +26,13 @@ std = [
     "midenc-frontend-wasm/std",
     "midenc-hir/std",
     "midenc-session/std",
+    "dep:cargo_metadata",
     "dep:clap",
     "dep:wat",
 ]
 
 [dependencies]
+cargo_metadata = { version = "^0.23", optional = true }
 clap = { workspace = true, optional = true }
 log.workspace = true
 midenc-codegen-masm.workspace = true

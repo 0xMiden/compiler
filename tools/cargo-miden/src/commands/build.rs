@@ -16,10 +16,7 @@ use midenc_session::{
 };
 use tempfile::TempDir;
 
-use crate::{
-    BuildOutput, CommandOutput, OutputType, compile_masm, config::CargoPackageSpec,
-    target::install_wasm32_target,
-};
+use crate::{BuildOutput, CommandOutput, OutputType, compile_masm, config::CargoPackageSpec};
 
 /// Command-line arguments accepted by `cargo miden build`.
 ///
@@ -426,7 +423,7 @@ where
     cargo.args(spawn_args);
 
     // Handle the target for buildable commands
-    install_wasm32_target(wasi)?;
+    midenc_compile::rust::install_wasm32_target(wasi, None).map_err(|err| anyhow!("{err}"))?;
 
     cargo.arg("--target").arg(format!("wasm32-{wasi}"));
 
@@ -435,7 +432,8 @@ where
     cargo.arg("--message-format").arg("json-render-diagnostics");
     cargo.stdout(Stdio::piped());
 
-    let artifacts = crate::utils::spawn_cargo(cargo, &cargo_path)?;
+    let artifacts =
+        midenc_compile::rust::spawn_cargo(cargo, &cargo_path).map_err(|err| anyhow!("{err}"))?;
 
     let outputs: Vec<PathBuf> = artifacts
         .into_iter()
