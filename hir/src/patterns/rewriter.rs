@@ -1500,4 +1500,34 @@ mod tests {
         assert_eq!(from_users, [retained_user]);
         assert_eq!(to_users, [replaced_user]);
     }
+
+    #[test]
+    fn conditional_value_replacement_updates_multiple_operands_in_same_owner() {
+        let mut test = Test::new("conditional_value_replacement_same_owner", &[], &[Type::U32]);
+        let (from, to, replaced_user) = {
+            let mut builder = test.function_builder();
+            let from = builder.u32(1, SourceSpan::UNKNOWN).unwrap();
+            let to = builder.u32(2, SourceSpan::UNKNOWN).unwrap();
+            let replaced = builder.add(from, from, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([replaced], SourceSpan::UNKNOWN).unwrap();
+
+            let replaced_user = replaced.borrow().get_defining_op().unwrap();
+            (from, to, replaced_user)
+        };
+
+        let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+        let all_replaced = rewriter
+            .maybe_replace_uses_of_value_with(from, to, |operand| operand.owner == replaced_user);
+        assert!(all_replaced);
+
+        let (lhs, rhs) = {
+            let op = replaced_user.borrow();
+            let operands = op.operands().all();
+            (operands[0].borrow().as_value_ref(), operands[1].borrow().as_value_ref())
+        };
+        assert_eq!(lhs, to);
+        assert_eq!(rhs, to);
+        assert_eq!(from.borrow().iter_uses().count(), 0);
+        assert_eq!(to.borrow().iter_uses().filter(|user| user.owner == replaced_user).count(), 2);
+    }
 }

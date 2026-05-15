@@ -793,6 +793,66 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
     }
 
     #[test]
+    fn cse_partially_replaces_multi_result_graph_duplicate() {
+        use midenc_dialect_hir::HirOpBuilder;
+
+        let mut test =
+            Test::named("graph_multi_result_partial").in_module("graph_multi_result_partial");
+        let (canonical_sum, duplicate_overflow, visited_user_op, unvisited_user_op) = {
+            let module_body = test.module().borrow().body().entry_block_ref().unwrap();
+            let builder = test.builder_mut();
+            builder.set_insertion_point_to_end(module_body);
+
+            let lhs = builder.i32(1, SourceSpan::UNKNOWN);
+            let rhs = builder.i32(2, SourceSpan::UNKNOWN);
+            let (_canonical_overflow, canonical_sum) =
+                builder.add_overflowing(lhs, rhs, SourceSpan::UNKNOWN).unwrap();
+            builder.assert_eq(canonical_sum, canonical_sum, SourceSpan::UNKNOWN).unwrap();
+            let (duplicate_overflow, duplicate_sum) =
+                builder.add_overflowing(lhs, rhs, SourceSpan::UNKNOWN).unwrap();
+            let visited_user = builder
+                .assert_eq(duplicate_overflow, duplicate_overflow, SourceSpan::UNKNOWN)
+                .unwrap();
+            let unvisited_user =
+                builder.assert_eq(duplicate_sum, duplicate_sum, SourceSpan::UNKNOWN).unwrap();
+
+            let mut duplicate_op = duplicate_sum.borrow().get_defining_op().unwrap();
+            let unvisited_user_op = unvisited_user.as_operation_ref();
+            duplicate_op.borrow_mut().move_to(ProgramPoint::before(unvisited_user_op));
+
+            (
+                canonical_sum,
+                duplicate_overflow,
+                visited_user.as_operation_ref(),
+                unvisited_user_op,
+            )
+        };
+
+        let module = test.module().as_operation_ref();
+        module.borrow().recursively_verify().expect("valid ir before CSE");
+
+        let status = run_cse_driver(&test, module);
+        assert_eq!(status, PostPassStatus::Changed);
+        module.borrow().recursively_verify().expect("valid ir after CSE");
+
+        let (visited_lhs, visited_rhs) = {
+            let op = visited_user_op.borrow();
+            let operands = op.operands().all();
+            (operands[0].borrow().as_value_ref(), operands[1].borrow().as_value_ref())
+        };
+        assert_eq!(visited_lhs, duplicate_overflow);
+        assert_eq!(visited_rhs, duplicate_overflow);
+
+        let (unvisited_lhs, unvisited_rhs) = {
+            let op = unvisited_user_op.borrow();
+            let operands = op.operands().all();
+            (operands[0].borrow().as_value_ref(), operands[1].borrow().as_value_ref())
+        };
+        assert_eq!(unvisited_lhs, canonical_sum);
+        assert_eq!(unvisited_rhs, canonical_sum);
+    }
+
+    #[test]
     fn cse_eliminates_redundant_memory_reads_in_ssa_region() {
         use midenc_dialect_hir::HirOpBuilder;
 
