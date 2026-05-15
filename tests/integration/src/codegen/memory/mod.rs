@@ -17,6 +17,7 @@ use crate::testing::*;
 
 mod load_bool;
 mod load_dw;
+mod load_qw;
 mod load_sw;
 mod load_u16;
 mod load_u64_unaligned;
