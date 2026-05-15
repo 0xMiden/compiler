@@ -186,6 +186,18 @@ impl Session {
                 default_target.path = Some(Span::unknown(miden_project::Uri::from(path.as_path())));
             }
             let package = miden_project::Package::new(name.clone(), default_target);
+
+            // Currently, we always require the core library to be linked
+            let package = package.with_dependencies([miden_project::Dependency::new(
+                Span::unknown("miden-core".to_string().into()),
+                miden_project::DependencyVersionScheme::Registry(
+                    miden_project::VersionRequirement::Semantic(Span::unknown(
+                        miden_project::VersionReq::STAR.clone(),
+                    )),
+                ),
+                miden_project::Linkage::Dynamic,
+            )]);
+
             let project = miden_project::Project::Package(package.into());
             Ok(Self::new_project(name, Some(input), project, options, emitter, source_manager))
         }

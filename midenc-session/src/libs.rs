@@ -105,7 +105,7 @@ impl LinkLibrary {
 
         // Handle libraries shipped with the compiler, or via Miden crates
         match self.name.as_ref() {
-            "std" | "core" => {
+            "std" | "core" | "miden-core" => {
                 let lib = (*STDLIB).as_ref().clone();
                 return Ok(Package::from_library(
                     "miden-core".into(),
@@ -116,7 +116,7 @@ impl LinkLibrary {
                 )
                 .into());
             }
-            "base" | "protocol" => {
+            "base" | "protocol" | "miden-protocol" => {
                 let lib = miden_protocol::ProtocolLib::default().as_ref().clone();
                 return Ok(Package::from_library(
                     "miden-protocol".into(),
