@@ -104,7 +104,20 @@ impl Session {
         if matches!(input.file_type(), FileType::Toml) {
             let (pkgid, project) = match &input.file {
                 InputType::Real(path) => {
-                    let project = miden_project::Project::load(path, &source_manager)?;
+                    let project = match miden_project::Project::load(path, &source_manager)? {
+                        project if options.target_type.unwrap_or_default().is_executable() => {
+                            project
+                        }
+                        // HACK(pauls): Workaround bug with virtual bin targets until 0.24.x
+                        //              See https://github.com/0xMiden/miden-vm/pull/3156
+                        miden_project::Project::Package(package) => {
+                            miden_project::Project::Package(fixup_virtual_bin_targets(package))
+                        }
+                        miden_project::Project::WorkspacePackage {
+                            package,
+                            workspace: _,
+                        } => miden_project::Project::Package(fixup_virtual_bin_targets(package)),
+                    };
                     let pkgid = match &project {
                         miden_project::Project::Package(pkg)
                         | miden_project::Project::WorkspacePackage { package: pkg, .. } => {
@@ -178,7 +191,7 @@ impl Session {
             log::debug!(target: "driver", "artifact name set to '{name}'");
 
             let mut default_target = miden_project::Target::r#virtual(
-                options.target_type,
+                options.target_type.unwrap_or_default(),
                 name.clone(),
                 miden_assembly_syntax::Path::new(name.as_str()).to_absolute().into_owned(),
             );
@@ -255,7 +268,7 @@ impl Session {
             log::debug!(target: "driver", " | output dir = <unset>");
         }
 
-        log::debug!(target: "driver", " | target = {}", &options.target_type);
+        log::debug!(target: "driver", " | target = {}", options.target_type.map(|tt| tt.to_string()).unwrap_or("none specified".to_string()));
         if log::log_enabled!(target: "driver", log::Level::Debug) {
             for lib in options.link_libraries.iter() {
                 if let Some(path) = lib.path.as_deref() {
@@ -461,5 +474,43 @@ impl Session {
     #[cfg(not(feature = "std"))]
     pub fn emit<E: Emit>(&self, _mode: OutputMode, _item: &E) -> anyhow::Result<()> {
         Ok(())
+    }
+}
+
+fn fixup_virtual_bin_targets(package: Arc<miden_project::Package>) -> Arc<miden_project::Package> {
+    if package
+        .executable_targets()
+        .iter()
+        .any(|t| t.path.as_deref().is_some_and(|path| path.as_str() == "<virtual>"))
+    {
+        // We have to rewrite this package without the path
+        let mut prev_targets = package.executable_targets().iter();
+        let mut default_target = match package.library_target().cloned() {
+            Some(target) => target.inner().clone(),
+            None => prev_targets.next().unwrap().inner().clone(),
+        };
+        if default_target.path.as_deref().is_some_and(|p| p.as_str() == "<virtual>") {
+            default_target.path = None;
+        }
+        let new_package = miden_project::Package::new(package.name().into_inner(), default_target)
+            .with_version(package.version().into_inner().clone())
+            .with_dependencies(package.dependencies().iter().cloned())
+            .with_lints(package.lints().clone())
+            .with_metadata(package.metadata().clone())
+            .with_targets(prev_targets.map(|t| {
+                let mut t = t.inner().clone();
+                if t.path.as_deref().is_some_and(|p| p.as_str() == "<virtual>") {
+                    t.path = None;
+                }
+                t
+            }));
+        let new_package = package
+            .profiles()
+            .iter()
+            .cloned()
+            .fold(new_package, |pkg, profile| pkg.with_profile(profile));
+        new_package.into()
+    } else {
+        package
     }
 }

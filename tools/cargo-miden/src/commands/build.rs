@@ -126,7 +126,7 @@ impl BuildCommand {
                             package,
                             workspace: workspace.clone(),
                         },
-                        Some(compiler_opts.target_type),
+                        compiler_opts.target_type,
                         build_output_type,
                         compiler_opts.clone(),
                         &cargo_opts,
@@ -141,7 +141,7 @@ impl BuildCommand {
                     .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
                 let output = Self::build_project(
                     project,
-                    Some(compiler_opts.target_type),
+                    compiler_opts.target_type,
                     build_output_type,
                     compiler_opts,
                     &cargo_opts,
@@ -456,7 +456,7 @@ fn modify_midenc_options_for_target(
     target_type: TargetType,
     wasm_output: &Path,
 ) -> Result<()> {
-    options.target_type = target_type;
+    options.target_type = Some(target_type);
     match target_type {
         TargetType::Executable => {
             let masm_module_name = wasm_output

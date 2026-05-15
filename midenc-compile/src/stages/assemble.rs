@@ -73,7 +73,7 @@ impl Stage for AssembleProjectStage {
             .with_warnings_as_errors(session.options.diagnostics.warnings.warnings_as_errors())
             .for_project(package, registry.as_mut())?;
 
-        let selector = if session.options.target_type.is_executable() {
+        let selector = if session.options.target_type.unwrap_or_default().is_executable() {
             ProjectTargetSelector::Executable(session.name.as_str())
         } else {
             ProjectTargetSelector::Library

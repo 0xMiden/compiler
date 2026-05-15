@@ -63,7 +63,7 @@ impl ParseMasmStage {
             })?;
 
         // Parse AST
-        let kind = match context.session().options.target_type {
+        let kind = match context.session().options.target_type.unwrap_or_default() {
             TargetType::Executable => ModuleKind::Executable,
             TargetType::Kernel => ModuleKind::Kernel,
             _ => ModuleKind::Library,
@@ -97,7 +97,7 @@ impl ParseMasmStage {
         let name = LibraryPath::new(name).into_diagnostic()?;
 
         // Parse AST
-        let kind = match context.session().options.target_type {
+        let kind = match context.session().options.target_type.unwrap_or_default() {
             TargetType::Executable => ModuleKind::Executable,
             TargetType::Kernel => ModuleKind::Kernel,
             _ => ModuleKind::Library,

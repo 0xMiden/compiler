@@ -87,7 +87,7 @@ fn cargo_build(
     let mut nested_options = Box::new(options.clone());
     nested_options.manifest_path = Some(manifest_path.to_path_buf());
     nested_options.name = Some(target.name.to_string());
-    nested_options.target_type = target.ty;
+    nested_options.target_type = Some(target.ty);
     // Inherit release/debug profile from parent build
     if cargo_opts.release {
         nested_options.profile = "release".to_string();

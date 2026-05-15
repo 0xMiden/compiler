@@ -38,8 +38,8 @@ pub struct Options {
     pub packages: Vec<String>,
     /// The name of the current project target being compiled
     pub target: Option<String>,
-    /// The current target environment for this session
-    pub target_type: TargetType,
+    /// The type of target that was requested
+    pub target_type: Option<TargetType>,
     /// The optimization level for the current program
     pub optimize: OptLevel,
     /// The level of debugging info for the current program
@@ -150,7 +150,7 @@ impl Options {
             workspace: false,
             packages: vec![],
             target: None,
-            target_type: target.unwrap_or_default(),
+            target_type: target,
             entrypoint: None,
             optimize: OptLevel::None,
             debug: DebugInfo::None,
@@ -281,7 +281,7 @@ impl Options {
         use miden_project::TargetType;
         !matches!(
             self.target_type,
-            TargetType::Kernel | TargetType::Executable | TargetType::Library
+            Some(TargetType::Kernel | TargetType::Executable | TargetType::Library) | None
         )
     }
 }

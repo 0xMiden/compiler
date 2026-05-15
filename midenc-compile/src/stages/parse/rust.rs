@@ -37,11 +37,12 @@ impl Stage for ParseRustStage {
                 let name = context.session().project.package().name().into_inner();
                 let project_dir = tmp.join(&*name);
                 let src_dir = project_dir.join("src");
-                let tmp_rs = src_dir.join(if options.target_type.is_executable() {
-                    "main.rs"
-                } else {
-                    "lib.rs"
-                });
+                let tmp_rs =
+                    src_dir.join(if options.target_type.unwrap_or_default().is_executable() {
+                        "main.rs"
+                    } else {
+                        "lib.rs"
+                    });
                 std::fs::create_dir_all(&src_dir).map_err(|err| {
                     Report::msg(format!("failed to create temporary Cargo project: {err}"))
                 })?;
@@ -64,11 +65,12 @@ impl Stage for ParseRustStage {
                     std::fs::create_dir_all(&src_dir).map_err(|err| {
                         Report::msg(format!("failed to create temporary Cargo project: {err}"))
                     })?;
-                    let tmp_rs = src_dir.join(if options.target_type.is_executable() {
-                        "main.rs"
-                    } else {
-                        "lib.rs"
-                    });
+                    let tmp_rs =
+                        src_dir.join(if options.target_type.unwrap_or_default().is_executable() {
+                            "main.rs"
+                        } else {
+                            "lib.rs"
+                        });
                     std::fs::write(&tmp_rs, input).map_err(|err| {
                         Report::msg(format!("failed to write Rust input to temporary file: {err}"))
                     })?;
