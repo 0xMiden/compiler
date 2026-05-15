@@ -203,7 +203,8 @@ impl ToMasmComponent for builtin::Component {
         // Define the initial component modules set
         //
         // The top-level component module is always defined, but may be empty
-        let root: Arc<miden_assembly_syntax::Path> = id.to_library_path().into();
+        let root: Arc<miden_assembly_syntax::Path> =
+            id.to_library_path().to_absolute().into_owned().into();
         let modules = vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, &root))];
 
         let rodata = data_segments_to_rodata(&link_info)?;
