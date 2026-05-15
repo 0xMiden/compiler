@@ -66,7 +66,8 @@ impl Pass for CommonSubexpressionElimination {
         let status = driver.simplify(op);
 
         if status.ir_changed() {
-            // We currently don't remove region operations, so mark dominance as preserved.
+            // CSE only replaces uses and erases operations; it does not change the CFG of
+            // remaining regions, so dominance/post-dominance for remaining blocks is preserved.
             state.preserved_analyses_mut().preserve::<DominanceInfo>();
             state.preserved_analyses_mut().preserve::<PostDominanceInfo>();
         } else {
@@ -99,6 +100,9 @@ struct ScopedCseCandidates {
     /// Hash index used for O(1) lookups when operation keys are stable.
     index: FxHashMap<OpKey, OperationRef>,
     /// Traversal-order candidates used for graph-region fallback lookups.
+    ///
+    /// This is populated for SSA regions too, so a nested graph region can see candidates from
+    /// its enclosing SSA scopes without depending on mutable `OpKey` hashes.
     ops: Vec<OperationRef>,
 }
 
@@ -118,6 +122,9 @@ impl ScopedCseCandidates {
     ///
     /// Graph regions scan candidates in reverse visitation order. SSA regions use the hash index
     /// and return the current canonical candidate, if one exists.
+    ///
+    /// Graph memory-read CSE is intentionally disabled today, but the graph branch keeps this
+    /// helper correct if that conservative restriction is relaxed later.
     fn equivalent_ops_rev(
         &self,
         op: OperationRef,
@@ -167,7 +174,8 @@ impl CSEDriver<'_> {
 
     /// Attempt to eliminate a redundant operation.
     ///
-    /// Returns success if the operation was marked for removal, failure otherwise.
+    /// Returns [PostPassStatus::Changed] when the operation was marked for removal or at least one
+    /// use was replaced, and [PostPassStatus::Unchanged] otherwise.
     fn simplify_operation(
         &mut self,
         known_values: &mut ScopedCseCandidates,
@@ -668,7 +676,7 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
             let builder = test.builder_mut();
             builder.set_insertion_point_to_end(module_body);
 
-            let _canonical = builder.i32(1, SourceSpan::UNKNOWN);
+            let canonical = builder.i32(1, SourceSpan::UNKNOWN);
             let cond = builder.i1(true, SourceSpan::UNKNOWN);
             let duplicate_constant = builder.i32(1, SourceSpan::UNKNOWN);
             let if_op = builder.r#if(cond, &[Type::I32], SourceSpan::UNKNOWN).unwrap();
@@ -686,7 +694,7 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
             let else_region = if_op.borrow().else_body().as_region_ref();
             let else_block = builder.create_block(else_region, None, &[]);
             builder.set_insertion_point_to_end(else_block);
-            builder.r#yield([_canonical], SourceSpan::UNKNOWN).unwrap();
+            builder.r#yield([canonical], SourceSpan::UNKNOWN).unwrap();
 
             builder.set_insertion_point(ProgramPoint::after(if_op.as_operation_ref()));
             builder.assert_eq(if_result, if_result, SourceSpan::UNKNOWN).unwrap();
