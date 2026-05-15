@@ -46,7 +46,7 @@ fn invocation_target_from_symbol_path(
     masm::InvocationTarget::Path(masm::Span::new(span, qualified.into_inner()))
 }
 
-fn is_execute_foreign_procedure_path(path: &SymbolPath) -> bool {
+pub(super) fn is_execute_foreign_procedure_path(path: &SymbolPath) -> bool {
     let mut components = path.components().peekable();
     components.next_if_eq(&SymbolNameComponent::Root);
 
@@ -66,6 +66,12 @@ fn is_execute_foreign_procedure_path(path: &SymbolPath) -> bool {
             None,
         ) if function.as_str() == EXECUTE_FOREIGN_PROCEDURE
     )
+}
+
+/// Returns true when a direct FPI call needs a scratch slot to pad its ABI inputs.
+pub(super) fn requires_fpi_padding_scratch(op: &hir::Exec) -> bool {
+    is_execute_foreign_procedure_path(op.callee().path())
+        && op.arguments().len() == FPI_MAX_PADDED_ARGS + 1
 }
 
 /// Returns true for the compiler-internal indirect FPI executor path.
@@ -118,6 +124,7 @@ fn execute_foreign_procedure_path() -> SymbolPath {
 
 fn append_fpi_padding(
     emitter: &mut BlockEmitter<'_>,
+    op: &hir::Exec,
     actual_arg_count: usize,
     span: midenc_hir::SourceSpan,
 ) -> Result<(), Report> {
@@ -133,10 +140,14 @@ fn append_fpi_padding(
     }
 
     if actual_arg_count > FPI_MAX_PADDED_ARGS {
+        if actual_arg_count == FPI_MAX_PADDED_ARGS + 1 {
+            return append_fpi_padding_with_scratch(emitter, op, padding, span);
+        }
+
         return Err(Report::msg(format!(
             "`{EXECUTE_FOREIGN_PROCEDURE}` lowering currently supports at most {} flattened \
              procedure input felts when padding is required",
-            FPI_MAX_PADDED_ARGS - 6
+            FPI_MAX_PADDED_ARGS + 1 - FPI_ABI_PREFIX_ARGS
         )));
     }
 
@@ -149,6 +160,76 @@ fn append_fpi_padding(
     }
 
     Ok(())
+}
+
+/// Pads a 16-operand direct FPI call by temporarily spilling the deepest operand.
+fn append_fpi_padding_with_scratch(
+    emitter: &mut BlockEmitter<'_>,
+    op: &hir::Exec,
+    padding: usize,
+    span: midenc_hir::SourceSpan,
+) -> Result<(), Report> {
+    let scratch_slot = fpi_padding_scratch_slot(op)?;
+
+    {
+        let mut inst_emitter = emitter.emitter();
+        inst_emitter.movup(FPI_MAX_PADDED_ARGS as u8, span);
+        push_fpi_padding_scratch_addr(&mut inst_emitter, scratch_slot, span);
+        inst_emitter.store(span);
+    }
+
+    {
+        let mut inst_emitter = emitter.emitter();
+        for _ in 0..padding {
+            inst_emitter.literal(Immediate::Felt(Felt::ZERO), span);
+            for _ in 0..FPI_MAX_PADDED_ARGS {
+                inst_emitter.movup(FPI_MAX_PADDED_ARGS as u8, span);
+            }
+        }
+
+        push_fpi_padding_scratch_addr(&mut inst_emitter, scratch_slot, span);
+        inst_emitter.load(Type::Felt, span);
+        inst_emitter.movdn(FPI_MAX_PADDED_ARGS as u8, span);
+    }
+
+    Ok(())
+}
+
+/// Returns the reserved absolute local offset used for direct FPI padding.
+fn fpi_padding_scratch_slot(op: &hir::Exec) -> Result<u16, Report> {
+    let mut parent = op.as_operation().parent_op();
+    while let Some(parent_op) = parent {
+        let parent_ref = parent_op.borrow();
+        if let Some(function) = parent_ref.downcast_ref::<builtin::Function>() {
+            let locals_required =
+                function.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();
+            return u16::try_from(locals_required).map_err(|_| {
+                Report::msg(format!(
+                    "`{EXECUTE_FOREIGN_PROCEDURE}` lowering cannot address its FPI padding \
+                     scratch slot"
+                ))
+            });
+        }
+        parent = parent_ref.parent_op();
+    }
+
+    Err(Report::msg(format!(
+        "`{EXECUTE_FOREIGN_PROCEDURE}` lowering could not find an enclosing function for its FPI \
+         padding scratch slot"
+    )))
+}
+
+/// Pushes the reserved FPI padding scratch slot address onto the operand stack.
+fn push_fpi_padding_scratch_addr(
+    emitter: &mut OpEmitter<'_>,
+    scratch_slot: u16,
+    span: midenc_hir::SourceSpan,
+) {
+    emitter.emit(masm::Instruction::Locaddr(scratch_slot.into()), span);
+    emitter.push(Type::from(PointerType::new_with_address_space(
+        Type::Felt,
+        AddressSpace::Element,
+    )));
 }
 
 /// Emits MASM for an FPI call whose canonical ABI lowered the argument list to one pointer.
@@ -995,11 +1076,11 @@ impl HirLowering for hir::Exec {
         // are scheduled.
         let is_fpi = is_execute_foreign_procedure_path(self.callee().path());
         let actual_arg_count = args.len();
-        if is_fpi && actual_arg_count > FPI_MAX_PADDED_ARGS {
+        if is_fpi && actual_arg_count > FPI_MAX_PADDED_ARGS + 1 {
             return Err(Report::msg(format!(
                 "`{EXECUTE_FOREIGN_PROCEDURE}` lowering currently supports at most {} flattened \
                  procedure input felts",
-                FPI_MAX_PADDED_ARGS - 6
+                FPI_MAX_PADDED_ARGS + 1 - FPI_ABI_PREFIX_ARGS
             )));
         }
 
@@ -1025,7 +1106,7 @@ impl HirLowering for hir::Exec {
             });
 
         if is_fpi {
-            append_fpi_padding(emitter, actual_arg_count, self.span())?;
+            append_fpi_padding(emitter, self, actual_arg_count, self.span())?;
         }
 
         Ok(())
