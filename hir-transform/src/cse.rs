@@ -114,7 +114,10 @@ impl ScopedCseCandidates {
         }
     }
 
-    /// Returns equivalent candidates in reverse visitation order.
+    /// Returns equivalent candidates for memory-read CSE.
+    ///
+    /// Graph regions scan candidates in reverse visitation order. SSA regions use the hash index
+    /// and return the current canonical candidate, if one exists.
     fn equivalent_ops_rev(
         &self,
         op: OperationRef,
@@ -213,8 +216,7 @@ impl CSEDriver<'_> {
                 // The operation that can be deleted has been reach with no
                 // side-effecting operations in between the existing operation and
                 // this one so we can remove the duplicate.
-                self.replace_uses_and_delete(visited_ops, op, existing, has_ssa_dominance);
-                return PostPassStatus::Changed;
+                return self.replace_uses_and_delete(visited_ops, op, existing, has_ssa_dominance);
             }
             known_values.insert(op, has_ssa_dominance);
             return PostPassStatus::Unchanged;
@@ -222,8 +224,7 @@ impl CSEDriver<'_> {
 
         // Look for an existing definition for the operation.
         if let Some(existing) = known_values.get(op, has_ssa_dominance) {
-            self.replace_uses_and_delete(visited_ops, op, existing, has_ssa_dominance);
-            PostPassStatus::Changed
+            self.replace_uses_and_delete(visited_ops, op, existing, has_ssa_dominance)
         } else {
             // Otherwise, we add this operation to the known values map.
             known_values.insert(op, has_ssa_dominance);
@@ -347,7 +348,7 @@ impl CSEDriver<'_> {
         op: OperationRef,
         mut existing: OperationRef,
         has_ssa_dominance: bool,
-    ) {
+    ) -> PostPassStatus {
         // If we find one then replace all uses of the current operation with the existing one and
         // mark it for deletion. We can only replace an operand in an operation if it has not been
         // visited yet.
@@ -371,10 +372,19 @@ impl CSEDriver<'_> {
         } else {
             // When the region does not have SSA dominance, we need to check if we have visited a
             // use before replacing any use.
-            let can_replace_use =
-                |operand: &midenc_hir::OpOperandImpl| !visited_ops.contains(&operand.owner);
+            let can_replace_use = |operand: &midenc_hir::OpOperandImpl| {
+                !Self::has_visited_owner_or_ancestor(visited_ops, operand.owner)
+            };
 
             let op_results = op.borrow().results().as_value_range().into_smallvec();
+            let has_replaceable_use = op_results.iter().any(|v| {
+                let v = v.borrow();
+                v.iter_uses().any(|user| can_replace_use(&user))
+            });
+            if !has_replaceable_use {
+                return PostPassStatus::Unchanged;
+            }
+
             let should_replace_op = op_results.iter().all(|v| {
                 let v = v.borrow();
                 v.iter_uses().all(|user| can_replace_use(&user))
@@ -402,6 +412,23 @@ impl CSEDriver<'_> {
         if existing.span.is_unknown() && !op_span.is_unknown() {
             existing.set_span(op_span);
         }
+
+        PostPassStatus::Changed
+    }
+
+    /// Returns true if `owner` or one of its enclosing operations was already visited.
+    fn has_visited_owner_or_ancestor(
+        visited_ops: &FxHashSet<OperationRef>,
+        owner: OperationRef,
+    ) -> bool {
+        let mut current = Some(owner);
+        while let Some(op) = current.take() {
+            if visited_ops.contains(&op) {
+                return true;
+            }
+            current = op.borrow().parent_op();
+        }
+        false
     }
 
     /// Check if there is side-effecting operations other than the given effect between the two
@@ -521,7 +548,7 @@ impl PartialEq for OpKey {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{boxed::Box, format, string::ToString, sync::Arc};
+    use alloc::{boxed::Box, format, rc::Rc, string::ToString, sync::Arc};
 
     use litcheck_filecheck::{filecheck, litcheck};
     use midenc_dialect_arith::ArithOpBuilder;
@@ -534,6 +561,19 @@ mod tests {
     };
 
     use super::*;
+
+    fn run_cse_driver(test: &Test, op: OperationRef) -> PostPassStatus {
+        let domtree = Rc::new(DominanceInfo::new(&op.borrow()));
+        let mut rewriter = RewriterImpl::<TracingRewriterListener>::new(test.context_rc())
+            .with_listener(TracingRewriterListener);
+        let mut driver = CSEDriver {
+            rewriter: &mut rewriter,
+            ops_to_erase: Default::default(),
+            domtree,
+            mem_effects_cache: Default::default(),
+        };
+        driver.simplify(op)
+    }
 
     #[test]
     fn simple_constant() {
@@ -562,6 +602,126 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
     %1 = arith.constant 1 : i32;
     builtin.ret %0, %1 : (i32, i32);
 };
+            "#
+        );
+    }
+
+    #[test]
+    fn cse_reports_unchanged_when_graph_duplicate_has_no_replaceable_uses() {
+        use midenc_dialect_hir::HirOpBuilder;
+
+        let mut test =
+            Test::named("graph_no_replaceable_uses").in_module("graph_no_replaceable_uses");
+        {
+            let module_body = test.module().borrow().body().entry_block_ref().unwrap();
+            let builder = test.builder_mut();
+            builder.set_insertion_point_to_end(module_body);
+
+            let canonical = builder.i32(1, SourceSpan::UNKNOWN);
+            let rhs = builder.i32(3, SourceSpan::UNKNOWN);
+            let canonical_user = builder.sub(canonical, rhs, SourceSpan::UNKNOWN).unwrap();
+            let duplicate_constant = builder.i32(1, SourceSpan::UNKNOWN);
+            let visited_user = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
+            builder.assert_eq(canonical_user, canonical_user, SourceSpan::UNKNOWN).unwrap();
+            builder.assert_eq(visited_user, visited_user, SourceSpan::UNKNOWN).unwrap();
+
+            let mut duplicate_constant_op = duplicate_constant.borrow().get_defining_op().unwrap();
+            let visited_user_op = visited_user.borrow().get_defining_op().unwrap();
+            duplicate_constant_op.borrow_mut().move_to(ProgramPoint::after(visited_user_op));
+        }
+
+        let module = test.module().as_operation_ref();
+        module.borrow().recursively_verify().expect("valid ir before CSE");
+
+        let status = run_cse_driver(&test, module);
+        assert_eq!(status, PostPassStatus::Unchanged);
+        module.borrow().recursively_verify().expect("valid ir after CSE");
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.module().borrow());
+        let output = format!("{}", printer.finish());
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.module private @graph_no_replaceable_uses
+// CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
+// CHECK-NEXT: [[RHS:%\d+]] = arith.constant 3 : i32;
+// CHECK-NEXT: [[CANONICAL_USER:%\d+]] = arith.sub [[CANONICAL]], [[RHS]]
+// CHECK-NEXT: [[VISITED:%\d+]] = arith.sub [[DUP:%\d+]], [[RHS]]
+// CHECK-NEXT: [[DUP]] = arith.constant 1 : i32;
+// CHECK-NEXT: hir.assert_eq [[CANONICAL_USER]], [[CANONICAL_USER]]
+// CHECK-NEXT: hir.assert_eq [[VISITED]], [[VISITED]]
+            "#
+        );
+    }
+
+    #[test]
+    fn cse_does_not_rewrite_uses_nested_under_visited_graph_op() {
+        use midenc_dialect_hir::HirOpBuilder;
+        use midenc_dialect_scf::StructuredControlFlowOpBuilder;
+
+        let mut test =
+            Test::named("nested_graph_visited_state").in_module("nested_graph_visited_state");
+        {
+            let module_body = test.module().borrow().body().entry_block_ref().unwrap();
+            let builder = test.builder_mut();
+            builder.set_insertion_point_to_end(module_body);
+
+            let _canonical = builder.i32(1, SourceSpan::UNKNOWN);
+            let cond = builder.i1(true, SourceSpan::UNKNOWN);
+            let duplicate_constant = builder.i32(1, SourceSpan::UNKNOWN);
+            let if_op = builder.r#if(cond, &[Type::I32], SourceSpan::UNKNOWN).unwrap();
+            let if_result = {
+                let if_op = if_op.as_operation_ref();
+                let if_op = if_op.borrow();
+                if_op.results().all()[0].borrow().as_value_ref()
+            };
+
+            let then_region = if_op.borrow().then_body().as_region_ref();
+            let then_block = builder.create_block(then_region, None, &[]);
+            builder.set_insertion_point_to_end(then_block);
+            builder.r#yield([duplicate_constant], SourceSpan::UNKNOWN).unwrap();
+
+            let else_region = if_op.borrow().else_body().as_region_ref();
+            let else_block = builder.create_block(else_region, None, &[]);
+            builder.set_insertion_point_to_end(else_block);
+            builder.r#yield([_canonical], SourceSpan::UNKNOWN).unwrap();
+
+            builder.set_insertion_point(ProgramPoint::after(if_op.as_operation_ref()));
+            builder.assert_eq(if_result, if_result, SourceSpan::UNKNOWN).unwrap();
+
+            let mut duplicate_constant_op = duplicate_constant.borrow().get_defining_op().unwrap();
+            duplicate_constant_op
+                .borrow_mut()
+                .move_to(ProgramPoint::after(if_op.as_operation_ref()));
+        }
+
+        let module = test.module().as_operation_ref();
+        module.borrow().recursively_verify().expect("valid ir before CSE");
+
+        let status = run_cse_driver(&test, module);
+        assert_eq!(status, PostPassStatus::Unchanged);
+        module.borrow().recursively_verify().expect("valid ir after CSE");
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.module().borrow());
+        let output = format!("{}", printer.finish());
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.module private @nested_graph_visited_state
+// CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
+// CHECK-NEXT: [[COND:%\d+]] = arith.constant 1 : i1;
+// CHECK-NEXT: [[IF:%\d+]] = scf.if [[COND]] then {
+// CHECK-NEXT: scf.yield [[DUP:%\d+]] : (i32);
+// CHECK-NEXT: } else {
+// CHECK-NEXT: scf.yield [[CANONICAL]] : (i32);
+// CHECK-NEXT: } : (i1) -> (i32);
+// CHECK-NEXT: [[DUP]] = arith.constant 1 : i32;
+// CHECK-NEXT: hir.assert_eq [[IF]], [[IF]]
+// CHECK-NOT: hir.assert_eq [[CANONICAL]], [[CANONICAL]]
             "#
         );
     }
@@ -620,6 +780,42 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
 // CHECK-NEXT: hir.assert_eq [[CANONICAL_USER]], [[CANONICAL_USER]]
 // CHECK-NEXT: hir.assert_eq [[VISITED]], [[VISITED]]
 // CHECK-NEXT: hir.assert_eq [[CANONICAL_USER]], [[CANONICAL_USER]]
+            "#
+        );
+    }
+
+    #[test]
+    fn cse_eliminates_redundant_memory_reads_in_ssa_region() {
+        use midenc_dialect_hir::HirOpBuilder;
+
+        let ptr_ty = Type::Ptr(Arc::new(PointerType::new(Type::U8)));
+        let mut test =
+            Test::new("ssa_memory_reads", core::slice::from_ref(&ptr_ty), &[Type::U8, Type::U8]);
+        {
+            let mut builder = test.function_builder();
+            let ptr = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let first = builder.load(ptr, SourceSpan::UNKNOWN).unwrap();
+            let second = builder.load(ptr, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([first, second], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
+        let output = format!("{}", printer.finish());
+        filecheck!(
+            output,
+            r#"
+builtin.function public extern("C") @ssa_memory_reads(%0: ptr<u8, byte>) -> (u8, u8) {
+    // CHECK: [[LOAD:%\d+]] = hir.load %0;
+    %1 = hir.load %0;
+    %2 = hir.load %0;
+
+    // CHECK-NEXT: builtin.ret [[LOAD]], [[LOAD]] : (u8, u8);
+    builtin.ret %1, %2 : (u8, u8);
+};
             "#
         );
     }

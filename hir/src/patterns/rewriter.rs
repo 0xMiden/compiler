@@ -1444,3 +1444,60 @@ impl<L: RewriterListener> RewriterListener for RewriterImpl<L> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use super::*;
+    use crate::{
+        Type,
+        dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
+        testing::Test,
+    };
+
+    #[test]
+    fn conditional_value_replacement_updates_operand_payloads() {
+        let mut test = Test::new("conditional_value_replacement", &[], &[Type::U32, Type::U32]);
+        let (from, to, replaced_user, retained_user) = {
+            let mut builder = test.function_builder();
+            let from = builder.u32(1, SourceSpan::UNKNOWN).unwrap();
+            let to = builder.u32(2, SourceSpan::UNKNOWN).unwrap();
+            let rhs = builder.u32(3, SourceSpan::UNKNOWN).unwrap();
+            let replaced = builder.add(from, rhs, SourceSpan::UNKNOWN).unwrap();
+            let retained = builder.mul(from, rhs, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([replaced, retained], SourceSpan::UNKNOWN).unwrap();
+
+            let replaced_user = replaced.borrow().get_defining_op().unwrap();
+            let retained_user = retained.borrow().get_defining_op().unwrap();
+            (from, to, replaced_user, retained_user)
+        };
+
+        let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+        let all_replaced = rewriter
+            .maybe_replace_uses_of_value_with(from, to, |operand| operand.owner == replaced_user);
+        assert!(!all_replaced);
+
+        let replaced_operand = {
+            let op = replaced_user.borrow();
+            op.operands().all()[0].borrow().as_value_ref()
+        };
+        let retained_operand = {
+            let op = retained_user.borrow();
+            op.operands().all()[0].borrow().as_value_ref()
+        };
+        assert_eq!(replaced_operand, to);
+        assert_eq!(retained_operand, from);
+
+        let from_users = {
+            let from = from.borrow();
+            from.iter_uses().map(|user| user.owner).collect::<Vec<_>>()
+        };
+        let to_users = {
+            let to = to.borrow();
+            to.iter_uses().map(|user| user.owner).collect::<Vec<_>>()
+        };
+        assert_eq!(from_users, [retained_user]);
+        assert_eq!(to_users, [replaced_user]);
+    }
+}
