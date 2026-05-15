@@ -1,11 +1,8 @@
 use std::{
-    fs,
     path::{Path, PathBuf},
     rc::Rc,
 };
 
-use miden_core::{serde::Deserializable, utils::ToHex};
-use miden_mast_package::{Package, PackageExport};
 use midenc_compile::{Compiler, Context};
 use midenc_session::{
     InputFile, OutputType,
@@ -53,55 +50,5 @@ pub fn wasm_to_masm(
     let context = Rc::new(Context::new(session));
     println!("Creating Miden package {}", output_file.display());
     midenc_compile::compile(context.clone())?;
-    print_package_exports(&output_file);
     Ok(output_file)
-}
-
-/// Prints exported procedure roots for a compiled Miden package.
-fn print_package_exports(output_file: &Path) {
-    let package_bytes = match fs::read(output_file) {
-        Ok(package_bytes) => package_bytes,
-        Err(err) => {
-            eprintln!(
-                "[miden package exports] context=cargo-miden compile_masm output={} error=failed \
-                 to read package: {err}",
-                output_file.display()
-            );
-            return;
-        }
-    };
-
-    let package = match Package::read_from_bytes(&package_bytes) {
-        Ok(package) => package,
-        Err(err) => {
-            eprintln!(
-                "[miden package exports] context=cargo-miden compile_masm output={} error=failed \
-                 to decode package: {err}",
-                output_file.display()
-            );
-            return;
-        }
-    };
-
-    println!(
-        "[miden package exports] context=cargo-miden compile_masm output={} package={} exports={}",
-        output_file.display(),
-        package.name,
-        package.manifest.num_exports()
-    );
-
-    for export in package.manifest.exports() {
-        let PackageExport::Procedure(proc_export) = export else {
-            continue;
-        };
-
-        println!(
-            "[miden package export] context=cargo-miden compile_masm output={} package={} path={} \
-             root={}",
-            output_file.display(),
-            package.name,
-            proc_export.path,
-            proc_export.digest.as_bytes().to_hex_with_prefix()
-        );
-    }
 }
