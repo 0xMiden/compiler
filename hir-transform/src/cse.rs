@@ -562,6 +562,8 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
 
     #[test]
     fn cse_uses_identity_visited_state_in_graph_region() {
+        use midenc_dialect_hir::HirOpBuilder;
+
         let mut test = Test::named("identity_visited_state").in_module("identity_visited_state");
         {
             let module_body = test.module().borrow().body().entry_block_ref().unwrap();
@@ -574,9 +576,9 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
             let duplicate_constant = builder.i32(1, SourceSpan::UNKNOWN);
             let visited_user = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
             let unvisited_user = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
-            builder
-                .ret([canonical_user, visited_user, unvisited_user], SourceSpan::UNKNOWN)
-                .unwrap();
+            builder.assert_eq(canonical_user, canonical_user, SourceSpan::UNKNOWN).unwrap();
+            builder.assert_eq(visited_user, visited_user, SourceSpan::UNKNOWN).unwrap();
+            builder.assert_eq(unvisited_user, unvisited_user, SourceSpan::UNKNOWN).unwrap();
 
             // Graph regions allow use-before-def. Keep the first user before the duplicate
             // constant so the replacement predicate must distinguish it from the later user by
@@ -588,10 +590,13 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
                 .move_to(ProgramPoint::before(unvisited_user_op));
         }
 
+        let module = test.module().as_operation_ref();
+        module.borrow().recursively_verify().expect("valid ir before CSE");
+
         let mut pm = PassManager::on::<Module>(test.context_rc(), Nesting::Implicit);
         pm.add_pass(Box::<CommonSubexpressionElimination>::default());
-        pm.enable_verifier(false);
-        pm.run(test.module().as_operation_ref()).expect("invalid ir");
+        pm.run(module).expect("valid ir");
+        module.borrow().recursively_verify().expect("valid ir after CSE");
 
         let flags = Default::default();
         let mut printer = AsmPrinter::new(test.context_rc(), &flags);
@@ -606,7 +611,9 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
 // CHECK-NEXT: [[CANONICAL_USER:%\d+]] = arith.sub [[CANONICAL]], [[RHS]]
 // CHECK-NEXT: [[VISITED:%\d+]] = arith.sub [[DUP:%\d+]], [[RHS]]
 // CHECK-NEXT: [[DUP]] = arith.constant 1 : i32;
-// CHECK-NEXT: builtin.ret [[CANONICAL_USER]], [[VISITED]], [[CANONICAL_USER]] : (i32, i32, i32);
+// CHECK-NEXT: hir.assert_eq [[CANONICAL_USER]], [[CANONICAL_USER]]
+// CHECK-NEXT: hir.assert_eq [[VISITED]], [[VISITED]]
+// CHECK-NEXT: hir.assert_eq [[CANONICAL_USER]], [[CANONICAL_USER]]
             "#
         );
     }
