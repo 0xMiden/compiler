@@ -246,6 +246,9 @@ impl CSEDriver<'_> {
             // Most operations don't have regions, so fast path that case.
             let operation = op.borrow();
             if operation.has_regions() {
+                // The graph-region visit guard below is block-local. Nested regions are simplified
+                // as separate scopes, relying on nested values not escaping upward and parent op
+                // results not being used inside their own nested regions.
                 // If this operation is isolated above, we can't process nested regions with the
                 // given 'known_values' map. This would cause the insertion of implicit captures in
                 // explicit capture only regions.
