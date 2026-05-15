@@ -86,6 +86,27 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
 
     render_template(&source_root, &project_dir, &parser, &variables, &config)?;
 
+    // Generate miden-project.toml directly temporarily, if not rendered by template
+    let miden_project_toml = project_dir.join("miden-project.toml");
+    if miden_project_toml.try_exists().is_ok_and(|exists| !exists) {
+        std::fs::write(
+            &miden_project_toml,
+            format!(
+                "\
+[package]
+name = {project_name}
+version = \"0.1.0\"
+
+[lib]
+
+[dependencies]
+miden-core = \"^0.22\"
+miden-protocol = \"^0.14\"
+"
+            ),
+        )?;
+    }
+
     if args.force_git_init {
         initialise_git_repo(&project_dir)?;
     }

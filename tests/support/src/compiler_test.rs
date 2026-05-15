@@ -565,6 +565,21 @@ impl CompilerTestBuilder {
         let sdk_alloc_path = sdk_alloc_crate_path();
         let proj = project(name.as_ref())
             .file(
+                "miden-project.toml",
+                r#"
+                [package]
+                name = "{name}"
+                version = "0.0.1"
+
+                [[bin]]
+                name = "{name}"
+                path = "<virtual>"
+
+                [dependencies]
+                miden-core = "*"
+                "#,
+            )
+            .file(
                 "Cargo.toml",
                 format!(
                     r#"
@@ -645,6 +660,22 @@ impl CompilerTestBuilder {
         let sdk_path = sdk_crate_path();
         let sdk_alloc_path = sdk_alloc_crate_path();
         let proj = project(name.as_ref())
+            .file(
+                "miden-project.toml",
+                r#"
+                [package]
+                name = "{name}"
+                version = "0.0.1"
+
+                [[bin]]
+                name = "{name}"
+                path = "<virtual>"
+
+                [dependencies]
+                miden-core = "*"
+                miden-protocol = "*"
+                "#,
+            )
             .file(
                 "Cargo.toml",
                 format!(

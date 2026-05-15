@@ -105,14 +105,19 @@ impl BuildCommand {
                 None,
                 source_manager,
             )?
-        } else if !compiler_opts.packages.is_empty() {
-            let source = source_manager.load_file(&project_manifest_path)?;
+        } else {
             // Check if the project manifest is a workspace manifest - this requires us to build
-            // the entire workspace, rather than a single project
+            // the entire workspace, rather than a single project. However, we only support this
+            // if `--package` was given, as otherwise there is no way for us to select a package
+            // to build
+            let source = source_manager.load_file(&project_manifest_path)?;
             if let miden_project::ast::MidenProject::Workspace(_) =
                 miden_project::ast::MidenProject::parse(source.clone())
                     .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?
             {
+                if compiler_opts.packages.is_empty() {
+                    bail!("a workspace manifest was provided, but --workspace was not specified");
+                }
                 let workspace = miden_project::Workspace::load(source, &source_manager)
                     .map(Arc::<miden_project::Workspace>::from)
                     .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
@@ -139,6 +144,21 @@ impl BuildCommand {
             } else {
                 let project = miden_project::Project::load(&project_manifest_path, &source_manager)
                     .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
+                let package_name = project.package().name().into_inner();
+                if compiler_opts.packages.len() > 1 {
+                    bail!(
+                        "multiple packages were requested via --package, but the project manifest \
+                         only defines a single package ({package_name})"
+                    );
+                } else if !compiler_opts.packages.is_empty()
+                    && !compiler_opts.packages.iter().any(|p| &*package_name == p)
+                {
+                    bail!(
+                        "the provided project manifest defines a package ({}) that differs from \
+                         the one requested via --package ({package_name})",
+                        &compiler_opts.packages[0]
+                    );
+                }
                 let output = Self::build_project(
                     project,
                     compiler_opts.target_type,
@@ -150,8 +170,6 @@ impl BuildCommand {
                 )?;
                 vec![output]
             }
-        } else {
-            todo!()
         };
 
         Ok(Some(CommandOutput::BuildCommandOutput { output: outputs }))
