@@ -105,16 +105,13 @@ struct ScopedCseCandidates {
 impl ScopedCseCandidates {
     /// Looks up an equivalent candidate for `op`.
     fn get(&self, op: OperationRef, has_ssa_dominance: bool) -> Option<OperationRef> {
-        self.index.get(&OpKey(op)).copied().or_else(|| {
-            if has_ssa_dominance {
-                None
-            } else {
-                // Graph regions permit use-before-def. Rewriting an earlier duplicate can update
-                // an unvisited operation before its CSE visit, so fall back to freshly comparing
-                // the visible candidates when the current-key probe misses.
-                self.ops.iter().copied().find(|existing| OpKey(*existing) == OpKey(op))
-            }
-        })
+        if has_ssa_dominance {
+            self.index.get(&OpKey(op)).copied()
+        } else {
+            // Graph regions permit use-before-def, so candidate keys may only be compared against
+            // current IR state. Avoid the hash index because OpKey is derived from mutable operands.
+            self.ops.iter().copied().find(|existing| OpKey(*existing) == OpKey(op))
+        }
     }
 
     /// Returns equivalent candidates in reverse visitation order.
@@ -136,8 +133,10 @@ impl ScopedCseCandidates {
     }
 
     /// Inserts `op` into the current scope.
-    fn insert(&mut self, op: OperationRef) {
-        self.index.insert(OpKey(op), op);
+    fn insert(&mut self, op: OperationRef, has_ssa_dominance: bool) {
+        if has_ssa_dominance {
+            self.index.insert(OpKey(op), op);
+        }
         self.ops.push(op);
     }
 }
@@ -194,6 +193,10 @@ impl CSEDriver<'_> {
         // Some simple use case of operation with memory side-effect are dealt with here.
         // Operations with no side-effect are done after.
         if !operation.is_memory_effect_free() {
+            if !has_ssa_dominance {
+                return PostPassStatus::Unchanged;
+            }
+
             // TODO: Only basic use case for operations with MemoryEffects::Read can be
             // eleminated now. More work needs to be done for more complicated patterns
             // and other side-effects.
@@ -213,7 +216,7 @@ impl CSEDriver<'_> {
                 self.replace_uses_and_delete(visited_ops, op, existing, has_ssa_dominance);
                 return PostPassStatus::Changed;
             }
-            known_values.insert(op);
+            known_values.insert(op, has_ssa_dominance);
             return PostPassStatus::Unchanged;
         }
 
@@ -223,7 +226,7 @@ impl CSEDriver<'_> {
             PostPassStatus::Changed
         } else {
             // Otherwise, we add this operation to the known values map.
-            known_values.insert(op);
+            known_values.insert(op, has_ssa_dominance);
             PostPassStatus::Unchanged
         }
     }
@@ -614,6 +617,49 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
 // CHECK-NEXT: hir.assert_eq [[CANONICAL_USER]], [[CANONICAL_USER]]
 // CHECK-NEXT: hir.assert_eq [[VISITED]], [[VISITED]]
 // CHECK-NEXT: hir.assert_eq [[CANONICAL_USER]], [[CANONICAL_USER]]
+            "#
+        );
+    }
+
+    #[test]
+    fn cse_does_not_eliminate_memory_reads_in_graph_region() {
+        use midenc_dialect_hir::HirOpBuilder;
+
+        let mut test = Test::named("graph_memory_reads").in_module("graph_memory_reads");
+        {
+            let module_body = test.module().borrow().body().entry_block_ref().unwrap();
+            let builder = test.builder_mut();
+            builder.set_insertion_point_to_end(module_body);
+
+            let ptr_ty = Type::Ptr(Arc::new(PointerType::new(Type::U8)));
+            let addr = builder.u32(0, SourceSpan::UNKNOWN);
+            let ptr = builder.inttoptr(addr, ptr_ty, SourceSpan::UNKNOWN).unwrap();
+            let first = builder.load(ptr, SourceSpan::UNKNOWN).unwrap();
+            let second = builder.load(ptr, SourceSpan::UNKNOWN).unwrap();
+            builder.assert_eq(first, second, SourceSpan::UNKNOWN).unwrap();
+        }
+
+        let module = test.module().as_operation_ref();
+        module.borrow().recursively_verify().expect("valid ir before CSE");
+
+        let mut pm = PassManager::on::<Module>(test.context_rc(), Nesting::Implicit);
+        pm.add_pass(Box::<CommonSubexpressionElimination>::default());
+        pm.run(module).expect("valid ir");
+        module.borrow().recursively_verify().expect("valid ir after CSE");
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.module().borrow());
+        let output = format!("{}", printer.finish());
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.module private @graph_memory_reads
+    // CHECK: [[ADDR:%\d+]] = arith.constant 0 : u32;
+    // CHECK-NEXT: [[PTR:%\d+]] = hir.int_to_ptr [[ADDR]] <{ ty = #builtin.type<ptr<u8, byte>> }>;
+    // CHECK-NEXT: [[FIRST:%\d+]] = hir.load [[PTR]];
+    // CHECK-NEXT: [[SECOND:%\d+]] = hir.load [[PTR]];
+    // CHECK-NEXT: hir.assert_eq [[FIRST]], [[SECOND]]
             "#
         );
     }
