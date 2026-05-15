@@ -1430,6 +1430,7 @@ impl Operation {
             if OperationRef::ptr_eq(&a, &b) {
                 return true;
             }
+            next = b.parent_op();
         }
         false
     }
