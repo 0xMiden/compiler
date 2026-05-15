@@ -3,6 +3,7 @@
 use alloc::rc::Rc;
 use core::cell::RefCell;
 
+use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
@@ -36,6 +37,8 @@ const FPI_EXEC_INPUTS: usize = 16;
 const FPI_EXEC_RESULTS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_PARAMS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_RESULTS: usize = 1;
+
+type AbiParam = midenc_hir::dialects::builtin::attributes::AbiParam;
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import function.
 pub fn generate_import_lowering_function(
@@ -136,15 +139,12 @@ fn generate_fpi_lowering(
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
     let context = world_builder.context_rc();
-    let fpi_abi = lower_fpi_canonical_args(&context, import_func_ty, import_lowered_sig, args)
-        .wrap_err_with(|| format!("failed to lower FPI import arguments for `{core_func_path}`"))?;
-    validate_fpi_core_signature(
-        &context,
-        import_func_ty,
-        &core_func_path,
-        &core_func_sig,
-        &fpi_abi,
-    )?;
+    let fpi_abi =
+        lower_fpi_canonical_args(&context, import_func_ty, import_lowered_sig, fb, args, span)
+            .wrap_err_with(|| {
+                format!("failed to lower FPI import arguments for `{core_func_path}`")
+            })?;
+    validate_fpi_core_signature(&core_func_path, &core_func_sig, &fpi_abi)?;
 
     let exec = match &fpi_abi.args {
         FpiExecArgs::Direct(fpi_args) => {
@@ -190,7 +190,7 @@ fn generate_fpi_lowering(
             exec
         }
     };
-    let mut results: Vec<ValueRef> = {
+    let results: Vec<ValueRef> = {
         let borrow = exec.borrow();
         borrow.results().iter().map(|op_res| op_res.borrow().as_value_ref()).collect()
     };
@@ -199,19 +199,13 @@ fn generate_fpi_lowering(
     fb.br(exit_block, vec![], span)?;
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
+    let results = lower_fpi_result_felts(fb, &fpi_abi.flattened_results, &results, span)?;
     if let Some(output_ptr) = fpi_abi.output_ptr {
         assert_eq!(import_func_ty.results.len(), 1, "expected a single FPI result type");
-        let flattened_results =
-            flatten_types(&context, &import_func_ty.results).wrap_err_with(|| {
-                format!("failed to flatten FPI import results for `{core_func_path}`")
-            })?;
-
-        results.truncate(flattened_results.len());
         let mut results_iter = results.into_iter();
         store(fb, output_ptr, &import_func_ty.results[0], &mut results_iter, span)?;
         fb.ret([], span)?;
     } else {
-        results.truncate(core_func_sig.results().len());
         fb.ret(results, span)?;
     }
 
@@ -228,6 +222,10 @@ struct LoweredFpiAbi {
     args: FpiExecArgs,
     /// Optional canonical ABI pointer where multi-felt results must be stored.
     output_ptr: Option<ValueRef>,
+    /// Canonical ABI flat parameters for the import function.
+    flattened_params: Vec<AbiParam>,
+    /// Canonical ABI flat results for the import function.
+    flattened_results: Vec<AbiParam>,
 }
 
 /// Protocol executor argument source for an FPI import.
@@ -248,7 +246,9 @@ fn lower_fpi_canonical_args(
     context: &Rc<midenc_hir::Context>,
     import_func_ty: &FunctionType,
     import_lowered_sig: &Signature,
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     args: &[ValueRef],
+    span: SourceSpan,
 ) -> WasmResult<LoweredFpiAbi> {
     let flattened_params = flatten_types(context, &import_func_ty.params)?;
     let flattened_results = flatten_types(context, &import_func_ty.results)?;
@@ -287,13 +287,176 @@ fn lower_fpi_canonical_args(
         let arg_ptr = *args.first().expect("expected FPI argument tuple pointer");
         FpiExecArgs::Indirect {
             arg_ptr,
-            flattened_arg_count: flattened_params.len(),
+            flattened_arg_count: fpi_flat_value_count(&flattened_params)?,
         }
     } else {
-        FpiExecArgs::Direct(args[..flattened_params.len()].to_vec())
+        FpiExecArgs::Direct(lower_fpi_direct_args(
+            fb,
+            &flattened_params,
+            &args[..flattened_params.len()],
+            span,
+        )?)
     };
 
-    Ok(LoweredFpiAbi { args, output_ptr })
+    Ok(LoweredFpiAbi {
+        args,
+        output_ptr,
+        flattened_params,
+        flattened_results,
+    })
+}
+
+/// Converts canonical flat direct FPI arguments to the felt-only protocol argument list.
+fn lower_fpi_direct_args(
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
+    flat_params: &[AbiParam],
+    canonical_args: &[ValueRef],
+    span: SourceSpan,
+) -> WasmResult<Vec<ValueRef>> {
+    if flat_params.len() != canonical_args.len() {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "FPI argument lowering expected {} canonical values, but received {}",
+            flat_params.len(),
+            canonical_args.len()
+        )));
+    }
+
+    let mut fpi_args = Vec::with_capacity(fpi_flat_value_count(flat_params)?);
+    for (param, arg) in flat_params.iter().zip(canonical_args) {
+        push_fpi_arg_felts(fb, &param.ty, *arg, &mut fpi_args, span)?;
+    }
+    Ok(fpi_args)
+}
+
+/// Appends the FPI felt representation for one canonical ABI flat value.
+fn push_fpi_arg_felts(
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
+    ty: &Type,
+    arg: ValueRef,
+    fpi_args: &mut Vec<ValueRef>,
+    span: SourceSpan,
+) -> WasmResult<()> {
+    match ty {
+        Type::I64 | Type::U64 => {
+            let (high, low) = fb.split2(arg, Type::Felt, span)?;
+            fpi_args.push(high);
+            fpi_args.push(low);
+        }
+        Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::Felt => {
+            fpi_args.push(canonical_arg_to_felt(fb, arg, span)?);
+        }
+        other => {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "unsupported flattened FPI argument type `{other}`"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Converts FPI result felts to canonical flat result values.
+fn lower_fpi_result_felts(
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
+    flat_results: &[AbiParam],
+    fpi_results: &[ValueRef],
+    span: SourceSpan,
+) -> WasmResult<Vec<ValueRef>> {
+    let mut results = Vec::with_capacity(flat_results.len());
+    let mut next_result = 0;
+    for result in flat_results {
+        push_fpi_result_value(fb, &result.ty, fpi_results, &mut next_result, &mut results, span)?;
+    }
+    Ok(results)
+}
+
+/// Appends one canonical ABI flat value decoded from FPI result felts.
+fn push_fpi_result_value(
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
+    ty: &Type,
+    fpi_results: &[ValueRef],
+    next_result: &mut usize,
+    results: &mut Vec<ValueRef>,
+    span: SourceSpan,
+) -> WasmResult<()> {
+    match ty {
+        Type::I64 | Type::U64 => {
+            let high = take_value(fpi_results, next_result, "FPI result")?;
+            let low = take_value(fpi_results, next_result, "FPI result")?;
+            results.push(fb.join2(high, low, Type::I64, span)?);
+        }
+        Type::I1 | Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32 => {
+            let result = take_value(fpi_results, next_result, "FPI result")?;
+            results.push(fb.bitcast(result, Type::I32, span)?);
+        }
+        Type::Felt => {
+            results.push(take_value(fpi_results, next_result, "FPI result")?);
+        }
+        other => {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "unsupported flattened FPI result type `{other}`"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Returns how many protocol felts are needed to represent canonical ABI flat values across FPI.
+fn fpi_flat_value_count(flat_values: &[AbiParam]) -> WasmResult<usize> {
+    flat_values
+        .iter()
+        .try_fold(0usize, |count, param| Ok(count + fpi_flat_type_felt_count(&param.ty)?))
+}
+
+/// Returns how many protocol felts are needed for one canonical ABI flat type across FPI.
+fn fpi_flat_type_felt_count(ty: &Type) -> WasmResult<usize> {
+    Ok(match ty {
+        Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::Felt => 1,
+        Type::I64 | Type::U64 => 2,
+        other => {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "unsupported flattened FPI value type `{other}`"
+            )));
+        }
+    })
+}
+
+fn take_value(values: &[ValueRef], next: &mut usize, label: &str) -> WasmResult<ValueRef> {
+    let value = values.get(*next).copied().ok_or_else(|| {
+        midenc_session::diagnostics::Report::msg(format!(
+            "{label} lowering expected another value at index {}",
+            *next
+        ))
+    })?;
+    *next += 1;
+    Ok(value)
+}
+
+fn canonical_arg_to_felt(
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
+    arg: ValueRef,
+    span: SourceSpan,
+) -> WasmResult<ValueRef> {
+    if arg.borrow().ty() == &Type::Felt {
+        Ok(arg)
+    } else {
+        Ok(fb.bitcast(arg, Type::Felt, span)?)
+    }
 }
 
 /// Returns true for WIT imports generated for foreign procedure invocation.
@@ -303,8 +466,6 @@ fn is_fpi_import(import_func_path: &SymbolPath) -> bool {
 
 /// Validates the FPI import ABI that the Rust wrapper generates.
 fn validate_fpi_core_signature(
-    context: &Rc<midenc_hir::Context>,
-    import_func_ty: &FunctionType,
     core_func_path: &SymbolPath,
     core_func_sig: &Signature,
     fpi_abi: &LoweredFpiAbi,
@@ -329,12 +490,12 @@ fn validate_fpi_core_signature(
         )));
     }
 
-    let flattened_results = flatten_types(context, &import_func_ty.results)?;
-    if flattened_results.len() > FPI_EXEC_RESULTS {
+    let fpi_result_count = fpi_flat_value_count(&fpi_abi.flattened_results)?;
+    if fpi_result_count > FPI_EXEC_RESULTS {
         return Err(midenc_session::diagnostics::Report::msg(format!(
             "FPI import `{core_func_path}` returns {} result felts, but \
              `execute_foreign_procedure` supports at most {FPI_EXEC_RESULTS}",
-            flattened_results.len()
+            fpi_result_count
         )));
     }
 
@@ -353,15 +514,14 @@ fn validate_fpi_core_signature(
 
     let all_fpi_params_are_felts = match &fpi_abi.args {
         FpiExecArgs::Direct(args) => args.iter().all(|arg| arg.borrow().ty() == &Type::Felt),
-        FpiExecArgs::Indirect { .. } => flatten_types(context, &import_func_ty.params)?
-            .iter()
-            .all(|param| param.ty == Type::Felt),
+        FpiExecArgs::Indirect { .. } => {
+            fpi_abi.flattened_params.iter().all(|param| param.ty == Type::Felt)
+        }
     };
-    let all_results_are_felts =
-        core_func_sig.results().iter().all(|result| result.ty == Type::Felt);
-    if !all_fpi_params_are_felts || !all_results_are_felts {
+    if !all_fpi_params_are_felts {
         return Err(midenc_session::diagnostics::Report::msg(format!(
-            "FPI import `{core_func_path}` must lower to felt-only parameters and results"
+            "FPI import `{core_func_path}` with indirect arguments must lower to felt-only \
+             parameters"
         )));
     }
 
@@ -725,16 +885,14 @@ mod tests {
                 flattened_arg_count,
             },
             output_ptr: None,
+            flattened_params: flatten_types(&context, &import_func_ty.params).unwrap(),
+            flattened_results: flatten_types(&context, &import_func_ty.results).unwrap(),
         };
 
-        let err = validate_fpi_core_signature(
-            &context,
-            &import_func_ty,
-            &core_func_path,
-            &core_func_sig,
-            &fpi_abi,
-        )
-        .expect_err("expected FPI validation to reject more than sixteen procedure input felts");
+        let err = validate_fpi_core_signature(&core_func_path, &core_func_sig, &fpi_abi)
+            .expect_err(
+                "expected FPI validation to reject more than sixteen procedure input felts",
+            );
         let message = err.to_string();
 
         assert!(
@@ -778,16 +936,12 @@ mod tests {
         let fpi_abi = LoweredFpiAbi {
             args: FpiExecArgs::Direct(args),
             output_ptr: Some(output_ptr),
+            flattened_params: flatten_types(&context, &import_func_ty.params).unwrap(),
+            flattened_results: flatten_types(&context, &import_func_ty.results).unwrap(),
         };
 
-        let err = validate_fpi_core_signature(
-            &context,
-            &import_func_ty,
-            &core_func_path,
-            &core_func_sig,
-            &fpi_abi,
-        )
-        .expect_err("expected FPI validation to reject more than sixteen result felts");
+        let err = validate_fpi_core_signature(&core_func_path, &core_func_sig, &fpi_abi)
+            .expect_err("expected FPI validation to reject more than sixteen result felts");
         let message = err.to_string();
 
         assert!(
