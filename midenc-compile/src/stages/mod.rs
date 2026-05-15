@@ -1,7 +1,6 @@
 use alloc::{format, rc::Rc};
 
 use miden_assembly::ProjectSourceInputs;
-use midenc_frontend_wasm as wasm;
 use midenc_hir::{Context, dialects::builtin};
 use midenc_session::{
     OutputMode, Session,
@@ -37,10 +36,10 @@ pub fn run_default_pipeline(
 
     match input.file_type() {
         FileType::Hir => hir_pipeline(input, context),
-        FileType::Wasm | FileType::Wat => wasm_pipeline(input, context),
-        FileType::Toml => masm_project_pipeline(Some(input), context),
         FileType::Masm => masm_source_pipeline(input, context),
         FileType::Masp => Err(Report::msg("unsupported input file type '.masp'")),
+        FileType::Toml => masm_project_pipeline(Some(input), context),
+        FileType::Wasm | FileType::Wat => wasm_pipeline(input, context),
     }
 }
 

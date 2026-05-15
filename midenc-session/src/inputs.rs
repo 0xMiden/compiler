@@ -269,9 +269,9 @@ pub enum FileType {
     Hir,
     Masm,
     Masp,
+    Toml,
     Wasm,
     Wat,
-    Toml,
 }
 
 impl fmt::Display for FileType {
@@ -280,9 +280,9 @@ impl fmt::Display for FileType {
             Self::Hir => f.write_str("hir"),
             Self::Masm => f.write_str("masm"),
             Self::Masp => f.write_str("masp"),
+            Self::Toml => f.write_str("toml"),
             Self::Wasm => f.write_str("wasm"),
             Self::Wat => f.write_str("wat"),
-            Self::Toml => f.write_str("toml"),
         }
     }
 }
@@ -340,9 +340,9 @@ impl TryFrom<&Path> for FileType {
             Some("hir") => Ok(FileType::Hir),
             Some("masm") => Ok(FileType::Masm),
             Some("masp") => Ok(FileType::Masp),
+            Some("toml") => Ok(FileType::Toml),
             Some("wasm") => Ok(FileType::Wasm),
             Some("wat") => Ok(FileType::Wat),
-            Some("toml") => Ok(FileType::Toml),
             _ => Err(InvalidInputError::UnsupportedFileType(path.to_path_buf())),
         }
     }
