@@ -94,140 +94,51 @@ struct CSEDriver<'a> {
 }
 
 /// Tracks common subexpression candidates visible in the current dominance scope.
-#[derive(Clone)]
-enum ScopedCseCandidates {
-    /// Candidates in an SSA region, where operation operands cannot be rewritten after insertion.
-    Stable(StableCandidates),
-    /// Candidates in a graph region, where visited operations may be rewritten during the pass.
-    Rescanning(RescanningCandidates),
-}
-
-impl Default for ScopedCseCandidates {
-    fn default() -> Self {
-        Self::Stable(StableCandidates::default())
-    }
+#[derive(Clone, Default)]
+struct ScopedCseCandidates {
+    /// Hash index used for O(1) lookups when operation keys are stable.
+    index: FxHashMap<OpKey, OperationRef>,
+    /// Traversal-order candidates used for graph-region fallback lookups.
+    ops: Vec<OperationRef>,
 }
 
 impl ScopedCseCandidates {
-    /// Returns a scope representation suitable for `has_ssa_dominance`.
-    fn for_region(&self, has_ssa_dominance: bool) -> Self {
-        match (has_ssa_dominance, self) {
-            (true, Self::Stable(known_values)) => Self::Stable(known_values.clone()),
-            (true, Self::Rescanning(known_values)) => Self::Stable(known_values.to_stable()),
-            (false, Self::Stable(known_values)) => Self::Rescanning(known_values.to_rescanning()),
-            (false, Self::Rescanning(known_values)) => Self::Rescanning(known_values.clone()),
+    /// Looks up an equivalent candidate for `op`.
+    fn get(&self, op: OperationRef, has_ssa_dominance: bool) -> Option<OperationRef> {
+        self.index.get(&OpKey(op)).copied().or_else(|| {
+            if has_ssa_dominance {
+                None
+            } else {
+                // Graph regions permit use-before-def. Rewriting an earlier duplicate can update
+                // an unvisited operation before its CSE visit, so fall back to freshly comparing
+                // the visible candidates when the current-key probe misses.
+                self.ops.iter().copied().find(|existing| OpKey(*existing) == OpKey(op))
+            }
+        })
+    }
+
+    /// Returns equivalent candidates in reverse visitation order.
+    fn equivalent_ops_rev(
+        &self,
+        op: OperationRef,
+        has_ssa_dominance: bool,
+    ) -> SmallVec<[OperationRef; 2]> {
+        if has_ssa_dominance {
+            self.get(op, has_ssa_dominance).into_iter().collect()
+        } else {
+            self.ops
+                .iter()
+                .rev()
+                .copied()
+                .filter(|existing| OpKey(*existing) == OpKey(op))
+                .collect()
         }
     }
 
-    fn get(&self, op: OperationRef) -> Option<OperationRef> {
-        match self {
-            Self::Stable(known_values) => known_values.get(op),
-            Self::Rescanning(known_values) => known_values.get(op),
-        }
-    }
-
-    fn equivalent_ops_rev(&self, op: OperationRef) -> SmallVec<[OperationRef; 2]> {
-        match self {
-            Self::Stable(known_values) => known_values.equivalent_ops_rev(op),
-            Self::Rescanning(known_values) => known_values.equivalent_ops_rev(op),
-        }
-    }
-
-    fn insert(&mut self, op: OperationRef) {
-        match self {
-            Self::Stable(known_values) => known_values.insert(op),
-            Self::Rescanning(known_values) => known_values.insert(op),
-        }
-    }
-
-    fn insert_or_replace_equivalent(&mut self, op: OperationRef) {
-        match self {
-            Self::Stable(known_values) => known_values.insert_or_replace_equivalent(op),
-            Self::Rescanning(known_values) => known_values.insert_or_replace_equivalent(op),
-        }
-    }
-}
-
-/// Tracks SSA-region candidates by operation key while preserving insertion order.
-#[derive(Clone, Default)]
-struct StableCandidates {
-    /// Hash index used for O(1) lookups while the enclosing region has SSA dominance.
-    index: FxHashMap<OpKey, OperationRef>,
-    /// Traversal-order candidates used if this scope is inherited by a graph region.
-    ///
-    /// Memory-read candidates may replace the current representative in `index`, but this list
-    /// remains chronological so graph-region rescans observe candidates in visitation order.
-    ops: Vec<OperationRef>,
-}
-
-impl StableCandidates {
-    fn get(&self, op: OperationRef) -> Option<OperationRef> {
-        self.index.get(&OpKey(op)).copied()
-    }
-
-    fn equivalent_ops_rev(&self, op: OperationRef) -> SmallVec<[OperationRef; 2]> {
-        self.get(op).into_iter().collect()
-    }
-
+    /// Inserts `op` into the current scope.
     fn insert(&mut self, op: OperationRef) {
         self.index.insert(OpKey(op), op);
         self.ops.push(op);
-    }
-
-    fn insert_or_replace_equivalent(&mut self, op: OperationRef) {
-        self.insert(op);
-    }
-
-    fn to_rescanning(&self) -> RescanningCandidates {
-        RescanningCandidates::from_ops(self.ops.iter().copied())
-    }
-}
-
-/// Tracks graph-region candidates in traversal order and recomputes equivalence during lookup.
-///
-/// `OpKey` is derived from mutable IR state such as operation operands, and graph regions allow
-/// CSE to rewrite uses in operations that do not dominate all users. Scanning visible candidates
-/// avoids stale equivalence results after those rewrites and picks a stable representative.
-#[derive(Clone, Default)]
-struct RescanningCandidates {
-    /// Traversal-order candidates scanned with freshly computed operation keys.
-    ops: Vec<OperationRef>,
-}
-
-impl RescanningCandidates {
-    fn from_ops(ops: impl IntoIterator<Item = OperationRef>) -> Self {
-        Self {
-            ops: ops.into_iter().collect(),
-        }
-    }
-
-    fn to_stable(&self) -> StableCandidates {
-        let mut known_values = StableCandidates::default();
-        for op in self.ops.iter().copied() {
-            known_values.insert_or_replace_equivalent(op);
-        }
-        known_values
-    }
-
-    fn get(&self, op: OperationRef) -> Option<OperationRef> {
-        self.ops.iter().copied().find(|existing| OpKey(*existing) == OpKey(op))
-    }
-
-    fn equivalent_ops_rev(&self, op: OperationRef) -> SmallVec<[OperationRef; 2]> {
-        self.ops
-            .iter()
-            .rev()
-            .copied()
-            .filter(|existing| OpKey(*existing) == OpKey(op))
-            .collect()
-    }
-
-    fn insert(&mut self, op: OperationRef) {
-        self.ops.push(op);
-    }
-
-    fn insert_or_replace_equivalent(&mut self, op: OperationRef) {
-        self.insert(op);
     }
 }
 
@@ -291,7 +202,7 @@ impl CSEDriver<'_> {
             }
 
             // Look for an existing definition for the operation.
-            let candidates = known_values.equivalent_ops_rev(op);
+            let candidates = known_values.equivalent_ops_rev(op, has_ssa_dominance);
             if let Some(existing) = candidates.into_iter().find(|existing| {
                 existing.parent() == op.parent()
                     && !self.has_other_side_effecting_op_in_between(*existing, op)
@@ -302,12 +213,12 @@ impl CSEDriver<'_> {
                 self.replace_uses_and_delete(visited_ops, op, existing, has_ssa_dominance);
                 return PostPassStatus::Changed;
             }
-            known_values.insert_or_replace_equivalent(op);
+            known_values.insert(op);
             return PostPassStatus::Unchanged;
         }
 
         // Look for an existing definition for the operation.
-        if let Some(existing) = known_values.get(op) {
+        if let Some(existing) = known_values.get(op, has_ssa_dominance) {
             self.replace_uses_and_delete(visited_ops, op, existing, has_ssa_dominance);
             PostPassStatus::Changed
         } else {
@@ -381,7 +292,7 @@ impl CSEDriver<'_> {
 
         // If the region only contains one block, then simplify it directly.
         if region.has_one_block() {
-            let mut scope = known_values.for_region(has_ssa_dominance);
+            let mut scope = known_values.clone();
             let block = region.entry_block_ref().unwrap();
             drop(region);
             return self.simplify_block(&mut scope, block, has_ssa_dominance);
@@ -397,10 +308,7 @@ impl CSEDriver<'_> {
         // Process the nodes of the dom tree for this region.
         let mut stack = Vec::<CfgStackNode>::with_capacity(16);
         let dominfo = self.domtree.dominance(region.as_region_ref());
-        stack.push(CfgStackNode::new(
-            known_values.for_region(has_ssa_dominance),
-            dominfo.root_node().unwrap(),
-        ));
+        stack.push(CfgStackNode::new(known_values.clone(), dominfo.root_node().unwrap()));
 
         let mut changed = PostPassStatus::Unchanged;
         while let Some(current_node) = stack.last_mut() {
@@ -622,41 +530,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn candidate_representative_updates_preserve_traversal_order() {
-        let mut test = Test::new("candidate_order", &[], &[Type::I32]);
-        let (first, separator, replacement) = {
-            let mut builder = test.function_builder();
-            let first_value = builder.i32(1, SourceSpan::UNKNOWN);
-            let separator_value = builder.i32(2, SourceSpan::UNKNOWN);
-            let replacement_value = builder.i32(1, SourceSpan::UNKNOWN);
-            builder.ret([replacement_value], SourceSpan::UNKNOWN).unwrap();
-
-            (
-                first_value.borrow().get_defining_op().unwrap(),
-                separator_value.borrow().get_defining_op().unwrap(),
-                replacement_value.borrow().get_defining_op().unwrap(),
-            )
-        };
-
-        let mut stable = StableCandidates::default();
-        stable.insert_or_replace_equivalent(first);
-        stable.insert(separator);
-        stable.insert_or_replace_equivalent(replacement);
-        assert_eq!(stable.get(first), Some(replacement));
-        assert_eq!(stable.ops.as_slice(), &[first, separator, replacement]);
-
-        let rescanning = stable.to_rescanning();
-        assert_eq!(rescanning.ops.as_slice(), &[first, separator, replacement]);
-
-        let mut rescanning = RescanningCandidates::default();
-        rescanning.insert_or_replace_equivalent(first);
-        rescanning.insert(separator);
-        rescanning.insert_or_replace_equivalent(replacement);
-        assert_eq!(rescanning.ops.as_slice(), &[first, separator, replacement]);
-        assert_eq!(rescanning.equivalent_ops_rev(first).as_slice(), &[replacement, first]);
-    }
-
-    #[test]
     fn simple_constant() {
         let mut test = Test::new("simple_constant", &[], &[Type::I32, Type::I32]);
         {
@@ -736,47 +609,6 @@ builtin.function public extern("C") @simple_constant() -> (i32, i32) {
 // CHECK-NEXT: builtin.ret [[CANONICAL_USER]], [[VISITED]], [[CANONICAL_USER]] : (i32, i32, i32);
             "#
         );
-    }
-
-    #[test]
-    fn cse_rechecks_graph_candidates_after_operand_rewrite() {
-        let mut test = Test::new("graph_candidate_rewrite", &[], &[Type::I32, Type::I32]);
-        let (canonical, duplicate_constant, recorded_op, duplicate_op) = {
-            let mut builder = test.function_builder();
-            let canonical = builder.i32(1, SourceSpan::UNKNOWN);
-            let rhs = builder.i32(3, SourceSpan::UNKNOWN);
-            let duplicate_constant = builder.i32(1, SourceSpan::UNKNOWN);
-            let recorded = builder.sub(duplicate_constant, rhs, SourceSpan::UNKNOWN).unwrap();
-            let duplicate = builder.sub(canonical, rhs, SourceSpan::UNKNOWN).unwrap();
-            builder.ret([recorded, duplicate], SourceSpan::UNKNOWN).unwrap();
-
-            (
-                canonical,
-                duplicate_constant,
-                recorded.borrow().get_defining_op().unwrap(),
-                duplicate.borrow().get_defining_op().unwrap(),
-            )
-        };
-        test.function()
-            .as_operation_ref()
-            .borrow()
-            .recursively_verify()
-            .expect("valid ir");
-
-        let mut candidates = RescanningCandidates::default();
-        candidates.insert(recorded_op);
-        assert_eq!(candidates.get(duplicate_op), None);
-
-        let mut rewriter = RewriterImpl::<TracingRewriterListener>::new(test.context_rc())
-            .with_listener(TracingRewriterListener);
-        rewriter.replace_all_uses_with(&[duplicate_constant], &[Some(canonical)]);
-        test.function()
-            .as_operation_ref()
-            .borrow()
-            .recursively_verify()
-            .expect("valid ir after rewrite");
-
-        assert_eq!(candidates.get(duplicate_op), Some(recorded_op));
     }
 
     #[test]
