@@ -1,0 +1,14 @@
+[package]
+name = "counter-note"
+version = "0.1.0"
+
+[lib]
+kind = "note-script"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+counter-contract = { path = "../counter-contract" }
+
+[package.metadata.dependencies]
+counter-contract = { wit = "../counter-contract/target/generated-wit/" }

@@ -29,9 +29,11 @@ use crate::{CompilerTest, project, testing::executor_with_std};
 pub(super) fn run_case(name: &str, source: &str) {
     let pkg_name = format!("differential_{name}");
     let manifest = cargo_toml(&pkg_name);
+    let miden_project_manifest = miden_project_toml(&pkg_name);
     let full_source = format!("{CASE_HEADER}{source}");
 
     let masm_proj = project(&format!("{pkg_name}_masm"))
+        .file("miden-project.toml", &miden_project_manifest)
         .file("Cargo.toml", &manifest)
         .file("src/lib.rs", &full_source)
         .build();
@@ -113,6 +115,20 @@ panic = "abort"
 
 [profile.dev]
 panic = "abort"
+"#
+    )
+}
+
+fn miden_project_toml(pkg_name: &str) -> String {
+    format!(
+        r#"[package]
+name = "{pkg_name}"
+version = "0.1.0"
+
+[lib]
+
+[dependencies]
+miden-core = "*"
 "#
     )
 }

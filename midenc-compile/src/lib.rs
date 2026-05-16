@@ -6,11 +6,13 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "std")]
+pub mod cargo;
 mod compiler;
 #[cfg(feature = "std")]
 pub mod rust;
 mod stage;
-mod stages;
+pub mod stages;
 
 use alloc::rc::Rc;
 
@@ -21,11 +23,12 @@ use midenc_session::{
     diagnostics::{Diagnostic, Report, WrapErr, miette},
 };
 
+use self::stages::*;
 pub use self::{
     compiler::Compiler,
+    stage::Stage,
     stages::{CodegenOutput, MidenComponent},
 };
-use self::{stage::Stage, stages::*};
 
 pub type CompilerResult<T> = Result<T, Report>;
 

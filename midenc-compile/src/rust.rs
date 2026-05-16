@@ -1,5 +1,6 @@
 use alloc::format;
 use std::{
+    boxed::Box,
     env,
     path::{Path, PathBuf},
     process::Command,
@@ -179,5 +180,39 @@ pub fn ensure_rustup_components_are_installed_for_target(
             "failed to install rustup components: {output}",
             output = String::from_utf8_lossy(&output.stdout)
         )))
+    }
+}
+
+/// Represents the specific artifact produced by the `build` command.
+#[derive(Debug, Clone)]
+pub enum BuildOutput {
+    /// Miden Assembly (.masm) output.
+    Masm {
+        /// Path to the compiled MASM file or directory containing artifacts.
+        artifact_path: PathBuf,
+        // Potentially add other relevant info like package name, component type etc.
+    },
+    /// WebAssembly (.wasm) output.
+    Wasm {
+        /// Path to the compiled WASM file.
+        artifact_path: PathBuf,
+        /// The compiler options extracted from the arguments given to `cargo miden build`
+        options: Box<midenc_session::Options>,
+    },
+}
+
+impl BuildOutput {
+    /// Get a reference to the filesystem path where the build artifact was placed
+    pub fn artifact_path(&self) -> &Path {
+        match self {
+            Self::Masm { artifact_path } | Self::Wasm { artifact_path, .. } => artifact_path,
+        }
+    }
+
+    /// Convert this build output to the underlying filesystem path of the build artifact
+    pub fn into_artifact_path(self) -> PathBuf {
+        match self {
+            Self::Masm { artifact_path } | Self::Wasm { artifact_path, .. } => artifact_path,
+        }
     }
 }

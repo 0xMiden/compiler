@@ -228,7 +228,7 @@ impl fmt::Display for OutputFile {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OutputFiles {
     stem: String,
     /// The compiler working directory

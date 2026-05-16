@@ -518,6 +518,7 @@ dependencies = [
  "miden-mast-package",
  "miden-package-registry",
  "midenc-compile",
+ "midenc-hir",
  "midenc-log",
  "midenc-session",
  "path-absolutize",
@@ -2643,9 +2644,13 @@ name = "miden-base-macros"
 version = "0.12.0"
 dependencies = [
  "heck",
+ "miden-assembly-syntax",
+ "miden-debug-types",
  "miden-field 0.25.0",
  "miden-field-repr",
  "miden-formatting",
+ "miden-mast-package",
+ "miden-project",
  "miden-protocol",
  "midenc-frontend-wasm-metadata",
  "proc-macro2",
@@ -3503,6 +3508,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
+ "tempfile",
  "wat",
 ]
 

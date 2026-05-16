@@ -28,6 +28,7 @@ std = [
     "midenc-session/std",
     "dep:cargo_metadata",
     "dep:clap",
+    "dep:tempfile",
     "dep:wat",
 ]
 
@@ -46,5 +47,6 @@ midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true
 midenc-hir-transform.workspace = true
 midenc-session.workspace = true
+tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 wat = { workspace = true, optional = true }

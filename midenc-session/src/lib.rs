@@ -59,6 +59,7 @@ pub use self::{duration::HumanDuration, emit::EmitExt, statistics::Statistics};
 
 /// This struct provides access to all of the metadata and configuration
 /// needed during a single compilation session.
+#[derive(Clone)]
 pub struct Session {
     /// The name of this session
     pub name: String,
@@ -95,7 +96,7 @@ impl fmt::Debug for Session {
 impl Session {
     pub fn new(
         input: InputFile,
-        options: Box<Options>,
+        mut options: Box<Options>,
         emitter: Option<Arc<dyn Emitter>>,
         source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> Result<Self, Report> {
@@ -104,19 +105,21 @@ impl Session {
         if matches!(input.file_type(), FileType::Toml) {
             let (pkgid, project) = match &input.file {
                 InputType::Real(path) => {
-                    let project = match miden_project::Project::load(path, &source_manager)? {
-                        project if options.target_type.unwrap_or_default().is_executable() => {
-                            project
-                        }
-                        // HACK(pauls): Workaround bug with virtual bin targets until 0.24.x
-                        //              See https://github.com/0xMiden/miden-vm/pull/3156
-                        miden_project::Project::Package(package) => {
+                    let project_path =
+                        if path.file_name().unwrap().eq_ignore_ascii_case("Cargo.toml") {
+                            path.with_file_name("miden-project.toml")
+                        } else {
+                            path.clone()
+                        };
+                    let project = miden_project::Project::load(project_path, &source_manager)?;
+                    let project = match options.target_type {
+                        Some(ty) if ty.is_executable() => project,
+                        _ => {
+                            // HACK(pauls): Workaround bug with virtual bin targets until
+                            // 0.24.x. See https://github.com/0xMiden/miden-vm/pull/3156
+                            let package = project.package();
                             miden_project::Project::Package(fixup_virtual_bin_targets(package))
                         }
-                        miden_project::Project::WorkspacePackage {
-                            package,
-                            workspace: _,
-                        } => miden_project::Project::Package(fixup_virtual_bin_targets(package)),
                     };
                     let pkgid = match &project {
                         miden_project::Project::Package(pkg)
@@ -143,7 +146,15 @@ impl Session {
                 }
             };
             let name = options.name.clone().unwrap_or_else(|| pkgid.to_string());
-            Ok(Self::new_project(name, None, project, options, emitter, source_manager))
+            if options.target_type.is_none() {
+                let project_package = project.package();
+                let target_type = match project_package.library_target() {
+                    Some(lib) => lib.ty,
+                    None => miden_project::TargetType::Executable,
+                };
+                options.target_type = Some(target_type);
+            }
+            Ok(Self::new_project(name, Some(input), project, options, emitter, source_manager))
         } else {
             let name = options
                 .name

@@ -52,8 +52,12 @@ end
     );
     let artifact_name = format!("abi_transform_tx_kernel_get_inputs_{test_name}");
     let config = WasmTranslationConfig::default();
-    let mut test_builder =
-        CompilerTestBuilder::rust_fn_body_with_sdk(artifact_name.clone(), &main_fn, config, []);
+    let mut test_builder = CompilerTestBuilder::rust_fn_body_with_sdk(
+        artifact_name.clone(),
+        &main_fn,
+        config,
+        ["-lprotocol".to_string()],
+    );
     test_builder.link_with_masm_module("miden::protocol::active_note", masm);
     let mut test = test_builder.build();
 

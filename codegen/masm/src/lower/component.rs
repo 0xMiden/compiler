@@ -191,7 +191,8 @@ impl ToMasmComponent for builtin::Component {
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
         let init = if requires_init {
             let name = masm::ProcedureName::new("init").unwrap();
-            let qualified = masm::QualifiedProcedureName::new(component_path.as_path(), name);
+            let qualified =
+                masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
             Some(masm::InvocationTarget::Path(Span::new(
                 SourceSpan::default(),
                 qualified.into_inner(),
@@ -353,11 +354,16 @@ impl MasmComponentBuilder<'_> {
             let init_body = core::mem::take(&mut self.init_body);
             let init = masm::Procedure::new(
                 Default::default(),
-                masm::Visibility::Private,
+                masm::Visibility::Public,
                 init_name,
                 0,
                 masm::Block::new(component.span(), init_body),
-            );
+            )
+            .with_signature(masm::FunctionType::new(
+                midenc_hir::CallConv::Fast,
+                vec![],
+                vec![],
+            ));
 
             module
                 .define_procedure(init, self.source_manager.clone())
@@ -727,7 +733,8 @@ impl MasmFunctionBuilder {
             let init = if let Some(id) = link_info.component() {
                 let component_path = id.to_library_path();
                 let name = masm::ProcedureName::new("init").unwrap();
-                let qualified = masm::QualifiedProcedureName::new(component_path.as_path(), name);
+                let qualified =
+                    masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
                 InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
             } else {
                 let name = masm::ProcedureName::new("init").unwrap();

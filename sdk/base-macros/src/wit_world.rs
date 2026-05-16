@@ -3,8 +3,11 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
+use miden_assembly_syntax::ast;
+use miden_debug_types::DefaultSourceManager;
 use proc_macro2::Span;
 use toml::{Value, value::Table};
 
@@ -14,18 +17,46 @@ use crate::{
 };
 
 /// Parsed package metadata from the consuming crate's manifest.
-pub(crate) struct ManifestPackage {
-    manifest_dir: PathBuf,
-    package_table: Table,
+pub struct ManifestPackage {
+    pub manifest_dir: PathBuf,
+    pub package_table: Table,
+    pub package: Arc<miden_project::Package>,
+    pub target: miden_project::Target,
+    pub description: Arc<str>,
+    pub supported_types: Vec<String>,
 }
 
 impl ManifestPackage {
+    pub fn load_or_default(call_site_span: Span) -> Result<Self, syn::Error> {
+        let manifest_dir =
+            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string()));
+
+        let miden_project_toml_path = manifest_dir.join("miden-project.toml");
+        if !miden_project_toml_path.is_file() {
+            let target = miden_project::Target::r#virtual(
+                Default::default(),
+                "default",
+                ast::Path::new("empty"),
+            );
+            return Ok(Self {
+                manifest_dir,
+                package_table: Default::default(),
+                package: Arc::from(miden_project::Package::new("empty", target.clone())),
+                target,
+                description: Default::default(),
+                supported_types: vec![],
+            });
+        }
+
+        Self::load(call_site_span)
+    }
+
     /// Loads the current crate's `[package]` table from `Cargo.toml`.
     pub(crate) fn load(error_span: Span) -> Result<Self, syn::Error> {
-        let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(|err| {
+        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").map_err(|err| {
             syn::Error::new(error_span, format!("failed to read CARGO_MANIFEST_DIR: {err}"))
-        })?;
-        let manifest_path = Path::new(&manifest_dir).join("Cargo.toml");
+        })?);
+        let manifest_path = manifest_dir.join("Cargo.toml");
         let manifest_content = fs::read_to_string(&manifest_path).map_err(|err| {
             syn::Error::new(
                 error_span,
@@ -45,9 +76,51 @@ impl ManifestPackage {
             .ok_or_else(|| syn::Error::new(error_span, "manifest missing [package] table"))?
             .clone();
 
+        let miden_project_toml_path = manifest_dir.join("miden-project.toml");
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let project = miden_project::Project::load(&miden_project_toml_path, &source_manager)
+            .map_err(|err| {
+                syn::Error::new(
+                    error_span,
+                    format!("Failed to read {}: {err}", miden_project_toml_path.display()),
+                )
+            })?;
+        let package = project.package();
+        let Some(target) = package.library_target() else {
+            return Err(syn::Error::new(
+                error_span,
+                "Expected miden-project.toml to define a library target",
+            ));
+        };
+        let target = target.inner().clone();
+
+        let description = package.description().unwrap_or_else(|| {
+            package_table
+                .get("description")
+                .and_then(|d| d.as_str())
+                .map(|s| Arc::from(s.to_string().into_boxed_str()))
+                .unwrap_or_default()
+        });
+
+        let supported_types = package
+            .metadata()
+            .get("miden")
+            .and_then(|meta| meta.get("supported-types"))
+            .and_then(|st| st.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default();
+
         Ok(Self {
-            manifest_dir: PathBuf::from(manifest_dir),
+            manifest_dir,
             package_table,
+            package,
+            target,
+            description,
+            supported_types,
         })
     }
 
@@ -60,17 +133,13 @@ impl ManifestPackage {
     }
 
     /// Returns the declared component package identifier from manifest metadata.
-    pub(crate) fn component_package(&self, error_span: Span) -> Result<&str, syn::Error> {
-        self.package_table
-            .get("metadata")
-            .and_then(Value::as_table)
-            .and_then(|meta| meta.get("component"))
-            .and_then(Value::as_table)
-            .and_then(|component| component.get("package"))
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                syn::Error::new(error_span, "manifest missing package.metadata.component.package")
-            })
+    pub(crate) fn component_package(&self) -> miden_mast_package::PackageId {
+        self.package.name().into_inner()
+    }
+
+    /// Returns the declared component version from manifest metadata.
+    pub(crate) fn component_version(&self) -> &miden_mast_package::Version {
+        self.package.version().into_inner()
     }
 
     /// Resolves fully-qualified imports exported by `package.metadata.miden.dependencies`.
@@ -78,7 +147,7 @@ impl ManifestPackage {
         &self,
         error_span: Span,
     ) -> Result<Vec<String>, syn::Error> {
-        collect_miden_dependency_imports(&self.manifest_dir, &self.package_table, error_span)
+        collect_miden_dependency_imports(&self.manifest_dir, &self.package, error_span)
     }
 }
 
@@ -105,65 +174,44 @@ pub(crate) fn write_world_block(
 /// Collects fully-qualified imports from `[package.metadata.miden.dependencies]`.
 fn collect_miden_dependency_imports(
     manifest_dir: &Path,
-    package_table: &Table,
+    package: &miden_project::Package,
     error_span: Span,
 ) -> Result<Vec<String>, syn::Error> {
-    let dependencies = package_table
-        .get("metadata")
-        .and_then(Value::as_table)
-        .and_then(|meta| meta.get("miden"))
-        .and_then(Value::as_table)
-        .and_then(|miden| miden.get("dependencies"))
-        .and_then(Value::as_table);
-
     let mut imports = Vec::new();
 
-    if let Some(dep_table) = dependencies {
-        for (dep_name, dep_value) in dep_table {
-            let dep_config = dep_value.as_table().ok_or_else(|| {
-                syn::Error::new(
-                    error_span,
-                    format!(
-                        "dependency '{dep_name}' under package.metadata.miden.dependencies must \
-                         be a table"
-                    ),
-                )
-            })?;
-
-            let dependency_path =
-                dep_config.get("path").and_then(Value::as_str).ok_or_else(|| {
+    for dependency in package.dependencies() {
+        match dependency.scheme() {
+            miden_project::DependencyVersionScheme::Path { path, .. } => {
+                let absolute_path = manifest_dir.join(path.path());
+                let canonical = fs::canonicalize(&absolute_path).map_err(|err| {
                     syn::Error::new(
                         error_span,
                         format!(
-                            "dependency '{dep_name}' under package.metadata.miden.dependencies is \
-                             missing a 'path' entry"
+                            "failed to canonicalize dependency '{}' path '{}': {err}",
+                            dependency.name(),
+                            absolute_path.display()
                         ),
                     )
                 })?;
 
-            let absolute_path = manifest_dir.join(dependency_path);
-            let canonical = fs::canonicalize(&absolute_path).map_err(|err| {
-                syn::Error::new(
-                    error_span,
-                    format!(
-                        "failed to canonicalize dependency '{dep_name}' path '{}': {err}",
-                        absolute_path.display()
-                    ),
-                )
-            })?;
+                let dependency_wit = parse_dependency_wit(&canonical).map_err(|msg| {
+                    syn::Error::new(
+                        error_span,
+                        format!(
+                            "failed to process WIT for dependency '{}': {msg}",
+                            dependency.name()
+                        ),
+                    )
+                })?;
 
-            let dependency_wit = parse_dependency_wit(&canonical).map_err(|msg| {
-                syn::Error::new(
-                    error_span,
-                    format!("failed to process WIT for dependency '{dep_name}': {msg}"),
-                )
-            })?;
-
-            imports.push(qualify_dependency_export(&dependency_wit, error_span)?);
+                imports.push(qualify_dependency_export(&dependency_wit, error_span)?);
+            }
+            _ => continue,
         }
     }
 
     imports.sort();
+
     Ok(imports)
 }
 

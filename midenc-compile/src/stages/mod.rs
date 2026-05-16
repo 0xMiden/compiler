@@ -12,6 +12,7 @@ use crate::{CompilerResult, CompilerStopped};
 
 mod analyze;
 mod assemble;
+mod cargo;
 mod codegen;
 mod parse;
 mod rewrite;
@@ -19,6 +20,7 @@ mod rewrite;
 pub use self::{
     analyze::AnalysisStage,
     assemble::{Artifact, AssembleProjectStage, AssembleStage},
+    cargo::CargoBuildStage,
     codegen::{CodegenOutput, CodegenStage},
     parse::{
         MidenComponent, ParseComponentStage, ParseHirStage, ParseMasmStage, ParseRustStage,
@@ -42,9 +44,28 @@ pub fn run_default_pipeline(
         FileType::Masm => masm_source_pipeline(input, context),
         FileType::Masp => Err(Report::msg("unsupported input file type '.masp'")),
         FileType::Rust => rust_pipeline(input, context),
-        FileType::Toml => masm_project_pipeline(Some(input), context),
+        FileType::Toml => match input.file_name().file_name() {
+            Some(name) if name.eq_ignore_ascii_case("Cargo.toml") => {
+                cargo_project_pipeline(input, context)
+            }
+            Some(name) if name.eq_ignore_ascii_case("miden-project.toml") => {
+                masm_project_pipeline(Some(input), context)
+            }
+            _ => Err(Report::msg(
+                "unsupported toml input: expected either `miden-project.toml` or `Cargo.toml`",
+            )),
+        },
         FileType::Wasm | FileType::Wat => wasm_pipeline(input, context),
     }
+}
+
+pub(crate) fn cargo_project_pipeline(
+    input: midenc_session::InputFile,
+    context: Rc<Context>,
+) -> CompilerResult<Artifact> {
+    let mut build_project_stage = CargoBuildStage;
+    let wasm = build_project_stage.run(input, context.clone())?;
+    wasm_pipeline(wasm, context)
 }
 
 fn hir_pipeline(

@@ -181,6 +181,10 @@ trim-paths = [\"diagnostics\", \"object\"]
         rustflags.push(' ');
         rustflags.push_str(&inherited);
     }
+    if let Some(explicit) = options.rustflags.as_deref() {
+        rustflags.push(' ');
+        rustflags.push_str(explicit);
+    }
 
     let wasi = if options.target_requires_protocol() {
         "wasip2"
@@ -262,8 +266,14 @@ fn rustc(input: &Path, session: &Session, options: &Options) -> CompilerResult<I
     command.stderr(std::process::Stdio::piped());
 
     // If `RUSTFLAGS` is present, convert them to `rustc` flags
-    let rustflags = std::env::var("RUSTFLAGS").ok().unwrap_or_default();
-    let rustflags = rustflags.split(' ').collect::<Vec<_>>();
+    let mut rustflags = std::env::var("RUSTFLAGS").ok().unwrap_or_default();
+    if let Some(explicit) = options.rustflags.as_deref() {
+        if !rustflags.is_empty() {
+            rustflags.push(' ');
+        }
+        rustflags.push_str(explicit);
+    }
+    let rustflags = rustflags.split_ascii_whitespace().collect::<Vec<_>>();
     let mut rustc_flags = Vec::with_capacity(rustflags.len());
     let mut rustflags = rustflags.into_iter();
     let mut target = None;
@@ -290,11 +300,21 @@ fn rustc(input: &Path, session: &Session, options: &Options) -> CompilerResult<I
         .arg(&*package_name)
         .args(["--crate-type", "cdylib"])
         .args(["--edition", "2024"])
+        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
+        // cfg-based dependency selection.
+        .args(["--cfg", "miden"])
+        // Enable errors on missing stub functions
+        .args(["-C", "link-args=--fatal-warnings"])
         .arg("--remap-path-prefix")
         .arg(format!("{}=.", options.current_dir.display()))
+        .args(["-Z", "unstable-options"])
+        // Remove the source file paths in the data segment for panics
+        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+        .args(["-Z", "location-detail=none"])
         .arg("-g") // generate debug info
         .args(["-C", "opt-level=s"]) // optimize for size
         .args(["-C", "target-feature=+wide-arithmetic"])
+        .args(["-C", "panic=immediate-abort"])
         .args(rustc_flags)
         .arg("--target")
         .arg(target.as_deref().unwrap_or("wasm32-wasip1"))

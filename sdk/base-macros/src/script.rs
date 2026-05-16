@@ -1,6 +1,5 @@
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::quote;
-use semver::Version;
 use syn::{FnArg, ItemFn, Pat, PatIdent, parse_macro_input, spanned::Spanned};
 
 use crate::{
@@ -269,12 +268,13 @@ pub(crate) fn build_script_wit(
 ) -> Result<String, syn::Error> {
     let manifest = ManifestPackage::load(error_span)?;
     let crate_name = manifest.crate_name(error_span)?;
-    let component_package = manifest.component_package(error_span)?;
+    let component_package = manifest.component_package();
+    let component_version = manifest.component_version();
     let imports = manifest.collect_miden_dependency_imports(error_span)?;
     let world_name = format!("{}-world", crate_name.replace('_', "-"));
     let exports = [export_interface.to_string()];
 
-    let mut wit = WitBuilder::new("#[tx_script]", component_package, &Version::new(1, 0, 0));
+    let mut wit = WitBuilder::new("#[tx_script]", &component_package, component_version);
     write_world_block(&mut wit, &world_name, &imports, &exports);
 
     Ok(wit.finish())

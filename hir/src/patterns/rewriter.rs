@@ -923,7 +923,9 @@ impl RewriterListener for TracingRewriterListener {
             log::trace!(
                 target: "rewriter",
                 rewrite_event = "replaced";
-                "replaced {_op} with {_replacement}"
+                "replaced {} with {}",
+                _op.name(),
+                _replacement.name(),
             );
         }
     }
@@ -946,7 +948,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "modification-started";
-                "starting modification of {_op}"
+                "starting modification of {name}",
             );
         }
     }
@@ -959,7 +961,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "modification-canceled";
-                "canceled modification"
+                "canceled modification of {name}",
             );
         }
     }
@@ -972,7 +974,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "modified";
-                "completed modification of {_op}"
+                "completed modification of {name}"
             );
         }
     }
@@ -989,7 +991,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "replaced";
-                "replaced op with {}: {_op}",
+                "replaced op with {}: {name}",
                 DisplayValues::new(_replacement.iter().map(|v| {
                     DisplayOptional(v.as_ref())
                 }))
@@ -1005,7 +1007,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "erased";
-                "erased op {_op}"
+                "erased op {name}"
             );
         }
     }

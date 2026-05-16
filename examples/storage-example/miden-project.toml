@@ -1,0 +1,13 @@
+[package]
+name = "storage-example"
+version = "0.1.0"
+
+[lib]
+kind = "account-component"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]

@@ -110,6 +110,8 @@ pub struct Options {
     pub print_ir_filters: Vec<IrFilter>,
     /// Save intermediate artifacts in memory during compilation
     pub save_temps: bool,
+    /// Custom RUSTFLAGS to set when building Rust
+    pub rustflags: Option<String>,
     /// We store any leftover argument matches in the session options for use
     /// by any downstream crates that register custom flags
     pub flags: CompileFlags,
@@ -182,6 +184,7 @@ impl Options {
             print_ir_after_pass: vec![],
             print_ir_after_modified: false,
             print_ir_filters: vec![],
+            rustflags: None,
             flags: CompileFlags::default(),
         }
     }

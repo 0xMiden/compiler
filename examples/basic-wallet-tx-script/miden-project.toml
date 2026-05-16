@@ -1,0 +1,14 @@
+[package]
+name = "basic-wallet-tx-script"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+basic-wallet = { path = "../basic-wallet" }
+
+[package.metadata.dependencies]
+basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
