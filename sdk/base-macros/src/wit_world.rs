@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use heck::ToKebabCase;
 use miden_assembly_syntax::ast;
 use miden_debug_types::DefaultSourceManager;
 use proc_macro2::Span;
@@ -133,8 +134,8 @@ impl ManifestPackage {
     }
 
     /// Returns the declared component package identifier from manifest metadata.
-    pub(crate) fn component_package(&self) -> miden_mast_package::PackageId {
-        self.package.name().into_inner()
+    pub(crate) fn component_package(&self) -> String {
+        format!("miden:{}", self.package.name().into_inner().to_kebab_case())
     }
 
     /// Returns the declared component version from manifest metadata.

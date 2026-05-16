@@ -256,7 +256,8 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         Ok(metadata) => metadata,
         Err(err) => return err.to_compile_error(),
     };
-    let component_package = metadata.package.name().into_inner().to_kebab_case();
+    let component_package =
+        format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
     let interface_name = component_package.to_kebab_case();
     let world_name = format!("{interface_name}-world");
     let interface_module = interface_name.to_snake_case();

@@ -272,7 +272,7 @@ fn expand_component_impl(
     }
 
     let metadata = crate::wit_world::ManifestPackage::load_or_default(call_site_span.into())?;
-    let package_name = metadata.package.name().into_inner().to_kebab_case();
+    let package_name = format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
     let interface_name = package_name.to_kebab_case();
     let interface_module = {
         let name: &str = &interface_name;
