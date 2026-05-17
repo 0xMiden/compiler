@@ -8,5 +8,5 @@ kind = "note"
 [dependencies]
 component_macros = { path = "../component-macros-account" }
 
-[package.metadata.dependencies]
+[package.metadata.miden.dependencies]
 component_macros = { wit = "../component-macros-account/target/generated-wit" }

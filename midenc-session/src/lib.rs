@@ -123,16 +123,37 @@ impl Session {
                                 project_path.display()
                             ))
                         })?;
-                    let project = match options.target_type {
-                        Some(ty) if ty.is_executable() => project,
-                        _ => {
+                    if options.target_type.is_none() {
+                        let project_package = project.package();
+                        let target_type = match project_package.library_target() {
+                            Some(lib) => lib.ty,
+                            None => miden_project::TargetType::Executable,
+                        };
+                        options.target_type = Some(target_type);
+                    }
+                    let is_executable_target =
+                        options.target_type.is_some_and(|ty| ty.is_executable());
+                    let project = {
+                        let package = project.package();
+                        let has_virtual_executable_target =
+                            package.executable_targets().iter().any(|target| {
+                                target
+                                    .path
+                                    .as_deref()
+                                    .is_some_and(|path| path.as_str() == "<virtual>")
+                            });
+
+                        if has_virtual_executable_target
+                            || (is_cargo_project && is_executable_target)
+                        {
                             // HACK(pauls): Workaround bug with virtual bin targets until
                             // 0.24.x. See https://github.com/0xMiden/miden-vm/pull/3156
-                            let package = project.package();
                             miden_project::Project::Package(fixup_targets(
                                 package,
-                                is_cargo_project,
+                                is_cargo_project && is_executable_target,
                             ))
+                        } else {
+                            project
                         }
                     };
                     let pkgid = match &project {
@@ -167,6 +188,9 @@ impl Session {
                     None => miden_project::TargetType::Executable,
                 };
                 options.target_type = Some(target_type);
+            }
+            if is_cargo_project_input(&input) {
+                infer_cargo_project_entrypoint(&project, &mut options)?;
             }
             Ok(Self::new_project(name, Some(input), project, options, emitter, source_manager))
         } else {
@@ -506,6 +530,50 @@ impl Session {
     pub fn emit<E: Emit>(&self, _mode: OutputMode, _item: &E) -> anyhow::Result<()> {
         Ok(())
     }
+}
+
+fn is_cargo_project_input(input: &InputFile) -> bool {
+    matches!(
+        &input.file,
+        InputType::Real(path) if path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
+    )
+}
+
+fn infer_cargo_project_entrypoint(
+    project: &miden_project::Project,
+    options: &mut Options,
+) -> Result<(), Report> {
+    if options.entrypoint.is_some() {
+        return Ok(());
+    }
+
+    match options.target_type {
+        Some(miden_project::TargetType::Executable) => {
+            let package = project.package();
+            let targets = package.executable_targets();
+            let target = if let Some(target_name) = options.target.as_deref() {
+                targets.iter().find(|target| target_name == &**target.name.inner()).ok_or_else(
+                    || Report::msg(format!("no executable target name '{target_name}'")),
+                )?
+            } else if targets.len() == 1 {
+                &targets[0]
+            } else {
+                return Err(Report::msg(
+                    "ambiguous executable target selection: use --target to select a specific \
+                     executable target",
+                ));
+            };
+
+            let masm_module_name = target.name.inner().replace('-', "_");
+            options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
+        }
+        Some(miden_project::TargetType::TransactionScript) => {
+            options.entrypoint = Some("miden:base/transaction-script@1.0.0::run".to_string());
+        }
+        _ => (),
+    }
+
+    Ok(())
 }
 
 pub fn fixup_targets(

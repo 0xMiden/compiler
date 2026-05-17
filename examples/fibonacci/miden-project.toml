@@ -2,7 +2,9 @@
 name = "fibonacci"
 version = "0.1.0"
 
-[lib]
+[[bin]]
+name = "fibonacci"
+path = "<virtual>"
 
 [dependencies]
 miden-core = "*"

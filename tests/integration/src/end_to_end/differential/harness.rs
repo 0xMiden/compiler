@@ -125,7 +125,7 @@ fn miden_project_toml(pkg_name: &str) -> String {
 name = "{pkg_name}"
 version = "0.1.0"
 
-[bin]
+[[bin]]
 name = "{pkg_name}"
 path = "<virtual>"
 

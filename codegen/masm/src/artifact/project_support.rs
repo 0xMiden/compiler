@@ -21,6 +21,16 @@ pub(super) fn assemble(
     account_component_metadata_bytes: Option<&[u8]>,
     session: &Session,
 ) -> Result<Arc<Package>, Report> {
+    let mut registry = session.package_registry()?;
+    assemble_with_registry(component, account_component_metadata_bytes, session, &mut registry)
+}
+
+pub(super) fn assemble_with_registry(
+    component: &MasmComponent,
+    account_component_metadata_bytes: Option<&[u8]>,
+    session: &Session,
+    registry: &mut midenc_session::registry::HybridPackageRegistry,
+) -> Result<Arc<Package>, Report> {
     let mut assembler = Assembler::new(session.source_manager.clone())
         .with_warnings_as_errors(session.options.diagnostics.warnings.warnings_as_errors());
 
@@ -41,7 +51,6 @@ pub(super) fn assemble(
 
     // Link libraries which are not direct dependencies of the package
     let project_package = session.project.package();
-    let mut registry = session.package_registry()?;
     for link_lib in session.options.link_libraries.iter() {
         if !project_package
             .dependencies()
@@ -60,7 +69,7 @@ pub(super) fn assemble(
         || session.options.target.as_deref().is_some_and(|tname| {
             project_package.executable_targets().iter().any(|t| tname == &**t.name)
         });
-    let mut project_assembler = assembler.for_project(project_package, registry.as_mut())?;
+    let mut project_assembler = assembler.for_project(project_package, registry)?;
 
     let executable_name = session.name.as_ref();
     let selector = if component.entrypoint.as_ref().is_some() || is_executable_target {

@@ -48,7 +48,13 @@ impl Stage for AssembleStage {
             account_component_metadata_bytes,
         } = input;
 
-        let package = component.assemble(account_component_metadata_bytes.as_deref(), session)?;
+        let mut registry = session.package_registry()?;
+        load_cargo_source_dependencies_for_assembly(session, &mut registry)?;
+        let package = component.assemble_with_registry(
+            account_component_metadata_bytes.as_deref(),
+            session,
+            &mut registry,
+        )?;
 
         log::debug!(
             "successfully assembled package with digest {}",
@@ -56,6 +62,49 @@ impl Stage for AssembleStage {
         );
         Ok(Artifact::Assembled(package))
     }
+}
+
+fn load_cargo_source_dependencies_for_assembly(
+    session: &midenc_session::Session,
+    registry: &mut midenc_session::registry::HybridPackageRegistry,
+) -> CompilerResult<()> {
+    let package = session.project.package();
+    if !package.dependencies().iter().any(|dependency| {
+        matches!(
+            dependency.scheme(),
+            midenc_session::miden_project::DependencyVersionScheme::Git { .. }
+                | midenc_session::miden_project::DependencyVersionScheme::Path { .. }
+                | midenc_session::miden_project::DependencyVersionScheme::Workspace { .. }
+                | midenc_session::miden_project::DependencyVersionScheme::WorkspacePath { .. }
+        )
+    }) {
+        return Ok(());
+    }
+
+    let tmp = tempfile::TempDir::new()
+        .map_err(|err| Report::msg(format!("could not create temporary directory: {err}")))?;
+    let dependency_graph =
+        midenc_session::miden_project::ProjectDependencyGraphBuilder::new(&*registry)
+            .with_source_manager(session.source_manager.clone())
+            .with_git_cache_root(
+                session
+                    .options
+                    .midenup_home
+                    .as_deref()
+                    .unwrap_or(tmp.path())
+                    .join("git")
+                    .join("checkouts"),
+            )
+            .build(package.clone())?;
+    let cargo_opts = crate::cargo::CargoOptions::from_compiler(&session.options)?;
+    crate::cargo::load_cargo_based_source_dependencies(
+        package.as_ref(),
+        &dependency_graph,
+        registry,
+        &session.options,
+        &cargo_opts,
+        session.source_manager.clone(),
+    )
 }
 
 /// Perform assembly of a Miden Assembly project

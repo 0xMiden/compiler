@@ -184,6 +184,21 @@ impl MasmComponent {
         project_support::assemble(self, account_component_metadata_bytes, session)
     }
 
+    /// Assemble this component into a Miden package using a pre-populated package registry.
+    pub fn assemble_with_registry(
+        &self,
+        account_component_metadata_bytes: Option<&[u8]>,
+        session: &Session,
+        registry: &mut midenc_session::registry::HybridPackageRegistry,
+    ) -> Result<Arc<Package>, Report> {
+        project_support::assemble_with_registry(
+            self,
+            account_component_metadata_bytes,
+            session,
+            registry,
+        )
+    }
+
     /// Generate an executable module which when run expects the raw data segment data to be
     /// provided on the advice stack in the same order as initialization, and the operands of
     /// the entrypoint function on the operand stack.

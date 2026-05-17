@@ -2,7 +2,9 @@
 name = "collatz"
 version = "0.1.0"
 
-[lib]
+[[bin]]
+name = "collatz"
+path = "<virtual>"
 
 [dependencies]
 miden-core = "*"

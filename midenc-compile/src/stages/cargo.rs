@@ -426,7 +426,7 @@ pub mod support {
                          executable target",
                     ));
                 };
-                let masm_module_name = target.namespace.inner();
+                let masm_module_name = target.name.inner().replace('-', "_");
                 options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
             }
             TargetType::Kernel => {

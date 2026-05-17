@@ -3,12 +3,12 @@ name = "p2ide"
 version = "0.1.0"
 
 [lib]
-kind = "note-script"
+kind = "note"
 
 [dependencies]
 miden-core = "*"
 miden-protocol = "*"
 basic-wallet = { path = "../basic-wallet" }
 
-[package.metadata.dependencies]
+[package.metadata.miden.dependencies]
 basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }

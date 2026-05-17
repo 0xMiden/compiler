@@ -1,11 +1,16 @@
 use midenc_frontend_wasm::WasmTranslationConfig;
 
-use crate::{CompilerTestBuilder, cargo_proj::project, end_to_end::support::cargo_toml};
+use crate::{
+    CompilerTestBuilder,
+    cargo_proj::project,
+    end_to_end::support::{cargo_toml, miden_project_toml},
+};
 
 #[test]
 fn basic_felt_arithmetic() {
     let name = "felt_intrinsics";
     let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml(name))
         .file("Cargo.toml", &cargo_toml(name))
         .file(
             "src/lib.rs",
