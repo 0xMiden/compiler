@@ -44,7 +44,8 @@ impl Default for Context {
 
         use midenc_session::{InputFile, diagnostics::DefaultSourceManager};
 
-        let options = alloc::boxed::Box::new(midenc_session::Options::default());
+        let options = alloc::boxed::Box::new(midenc_session::Options::default())
+            .with_output_types(Default::default(), None);
         let source_manager = Arc::new(DefaultSourceManager::default());
         let session =
             Rc::new(Session::new(InputFile::empty(), options, None, source_manager).unwrap());

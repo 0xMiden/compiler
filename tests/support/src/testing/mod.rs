@@ -59,7 +59,7 @@ pub fn format_report(report: miden_assembly::diagnostics::Report) -> String {
         }
     }
 
-    let mut str = PrintDiagnostic::new(report).to_string();
+    let mut str = PrintDiagnostic::new_without_color(report).to_string();
     writeln!(&mut str, "{labels_str}").unwrap();
 
     str

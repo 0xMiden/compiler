@@ -52,6 +52,10 @@ impl Stage for ParseComponentStage {
                 let mut stage = ParseWasmStage;
                 stage.run(input, context)
             }
+            FileType::Rust => {
+                let mut stage = ParseRustStage.next(ParseWasmStage);
+                stage.run(input, context)
+            }
             file_type => Err(Report::msg(format!(
                 "unsupported file type '{file_type}' for parsing miden components"
             ))),

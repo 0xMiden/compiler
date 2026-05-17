@@ -1,0 +1,12 @@
+[package]
+name = "component_macros_note"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+
+[dependencies]
+component_macros = { path = "../component-macros-account" }
+
+[package.metadata.dependencies]
+component_macros = { wit = "../component-macros-account/target/generated-wit" }

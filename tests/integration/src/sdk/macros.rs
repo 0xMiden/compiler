@@ -57,6 +57,21 @@ fn auth_components_require_an_auth_script_method() {
     let name = "auth_components_require_an_auth_script_method";
     let sdk_path = sdk_crate_path();
     let component_package = format!("miden:{}", name.replace('_', "-"));
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+
+[lib]
+kind = "account-component"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+"#
+    );
     let cargo_toml = format!(
         r#"
 [package]
@@ -96,8 +111,11 @@ impl AuthComponent {
 }
 "#;
 
-    let cargo_proj =
-        project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build();
+    let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", lib_rs)
+        .build();
 
     let output = std::process::Command::new("cargo")
         .arg("check")
@@ -126,6 +144,21 @@ fn auth_script_requires_a_component_impl() {
     let name = "auth_script_requires_a_component_impl";
     let sdk_path = sdk_crate_path();
     let component_package = format!("miden:{}", name.replace('_', "-"));
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+
+[lib]
+kind = "account-component"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+"#
+    );
     let cargo_toml = format!(
         r#"
 [package]
@@ -165,8 +198,11 @@ impl AuthComponent {
 }
 "#;
 
-    let cargo_proj =
-        project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build();
+    let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", lib_rs)
+        .build();
 
     let output = std::process::Command::new("cargo")
         .arg("check")
@@ -194,6 +230,21 @@ fn note_script_requires_a_note_impl() {
     let name = "note_script_requires_a_note_impl";
     let sdk_path = sdk_crate_path();
     let component_package = format!("miden:{}", name.replace('_', "-"));
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+
+[lib]
+kind = "note"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+"#
+    );
     let cargo_toml = format!(
         r#"
 [package]
@@ -230,8 +281,11 @@ impl MyNote {
 }
 "#;
 
-    let cargo_proj =
-        project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build();
+    let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", lib_rs)
+        .build();
 
     let output = std::process::Command::new("cargo")
         .arg("check")

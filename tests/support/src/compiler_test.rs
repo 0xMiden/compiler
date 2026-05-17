@@ -363,6 +363,7 @@ impl CompilerTestBuilder {
             }
 
             CompilerTestInputType::Rustc(config) => {
+                assert!(self.entrypoint.is_some());
                 // Ensure we have a fresh working directory prepared
                 let working_dir = config
                     .target_dir
@@ -585,7 +586,12 @@ impl CompilerTestBuilder {
             )
             .build();
 
-        Self::rust_source_cargo_miden(proj.root(), config, midenc_flags)
+        let mut builder = Self::rust_source_cargo_miden(proj.root(), config, midenc_flags);
+        builder.with_entrypoint(FunctionIdent {
+            module: name.as_ref().into(),
+            function: "entrypoint".into(),
+        });
+        builder
     }
 
     /// Set the Rust source code to compile with `miden-sdk` (sdk + intrinsics)
@@ -684,7 +690,12 @@ use alloc::vec::Vec;
             )
             .build();
 
-        Self::rust_source_cargo_miden(proj.root(), config, midenc_flags)
+        let mut builder = Self::rust_source_cargo_miden(proj.root(), config, midenc_flags);
+        builder.with_entrypoint(FunctionIdent {
+            module: name.as_ref().into(),
+            function: "entrypoint".into(),
+        });
+        builder
     }
 
     /// Like `rust_source_with_sdk`, but expects the source code to be the body of a function
@@ -825,7 +836,7 @@ impl CompilerTest {
         if self.hir.is_none() {
             let link_output = compile_to_optimized_hir(self.context.clone())
                 .map_err(format_report)
-                .expect("failed to translate wasm to hir component");
+                .unwrap_or_else(|err| panic!("failed to translate wasm to hir component: {err}"));
             self.hir = Some(link_output);
         }
         self.hir.as_ref().unwrap()
@@ -835,7 +846,7 @@ impl CompilerTest {
     pub fn expect_ir_unoptimized(&mut self, expected_hir_file: midenc_expect_test::ExpectFile) {
         let component = compile_to_unoptimized_hir(self.context.clone())
             .map_err(format_report)
-            .expect("failed to translate wasm to miden component")
+            .unwrap_or_else(|err| panic!("failed to translate wasm to miden component: {err}"))
             .component
             .expect("failed to translate wasm to hir component");
 

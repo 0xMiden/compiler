@@ -9,8 +9,8 @@ use clap::{Parser, builder::ArgPredicate};
 use miden_mast_package::TargetType;
 use midenc_session::{
     ColorChoice, DebugInfo, InputFile, IrFilter, LinkLibrary, OptLevel, Options, OutputFile,
-    OutputType, OutputTypeSpec, OutputTypes, PathBuf, Session, Verbosity, Warnings,
-    add_target_link_libraries, diagnostics::Emitter,
+    OutputTypeSpec, OutputTypes, PathBuf, Session, Verbosity, Warnings, add_target_link_libraries,
+    diagnostics::Emitter,
 };
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.
@@ -652,7 +652,7 @@ impl Compiler {
             is_program: _,
             is_library: _,
             search_path,
-            link_libraries,
+            mut link_libraries,
             output_types,
             debug,
             opt_level,
@@ -675,15 +675,7 @@ impl Compiler {
         };
 
         // Initialize output types
-        let mut output_types = OutputTypes::new(output_types).unwrap_or_else(|err| err.exit());
-        let has_final_output = output_types.keys().any(|ty| matches!(ty, OutputType::Masp));
-        if !has_final_output {
-            // By default, we always produce a final artifact; `--emit` selects additional outputs.
-            output_types.insert(OutputType::Masp, output_file.clone());
-        } else if output_file.is_some() && output_types.get(&OutputType::Masp).is_some() {
-            // The -o flag overrides --emit
-            output_types.insert(OutputType::Masp, output_file.clone());
-        }
+        let output_types = OutputTypes::new(output_types).unwrap_or_else(|err| err.exit());
 
         let cwd = working_dir.unwrap_or(cwd);
 
@@ -708,15 +700,14 @@ impl Compiler {
         .with_warnings(warn)
         .with_debug_info(debug)
         .with_optimization(opt_level)
-        .with_output_types(output_types);
+        .with_output_types(output_types, output_file);
         options.target = target;
         options.profile = profile;
         options.manifest_path = manifest_path;
         options.midenup_home = midenup_home;
         options.toolchain = toolchain;
         options.search_paths.extend(search_path);
-        let link_libraries =
-            add_target_link_libraries(link_libraries, options.target_requires_protocol());
+        add_target_link_libraries(&mut link_libraries, options.target_requires_protocol());
         options.link_libraries = link_libraries;
         options.entrypoint = entrypoint;
         options.workspace = workspace;

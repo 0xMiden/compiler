@@ -82,13 +82,13 @@ impl Stage for ParseWasmStage {
 
         if context.session().parse_only() {
             log::debug!("stopping compiler early (parse-only=true)");
-            return Err(CompilerStopped.into());
+            return Err(CompilerStopped("parse-only").into());
         } else if context.session().analyze_only() {
             log::debug!("stopping compiler early (analyze-only=true)");
-            return Err(CompilerStopped.into());
+            return Err(CompilerStopped("analyze-only").into());
         } else if context.session().options.link_only {
             log::debug!("stopping compiler early (link-only=true)");
-            return Err(CompilerStopped.into());
+            return Err(CompilerStopped("link-only").into());
         }
 
         Ok(MidenComponent {

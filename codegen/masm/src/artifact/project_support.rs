@@ -23,6 +23,8 @@ pub(super) fn assemble(
 ) -> Result<Arc<Package>, Report> {
     let mut assembler = Assembler::new(session.source_manager.clone())
         .with_warnings_as_errors(session.options.diagnostics.warnings.warnings_as_errors());
+
+    // Link extra standalone modules
     let mut link_modules = Vec::default();
     for (path, content) in session.options.link_modules.iter() {
         let source = session.source_manager.load(
@@ -36,21 +38,32 @@ pub(super) fn assemble(
         link_modules.push(module);
     }
     assembler.compile_and_statically_link_all(link_modules)?;
+
+    // Link libraries which are not direct dependencies of the package
+    let project_package = session.project.package();
+    let mut registry = session.package_registry()?;
+    for link_lib in session.options.link_libraries.iter() {
+        if !project_package
+            .dependencies()
+            .iter()
+            .any(|dep| dep.name().as_ref() == link_lib.name.as_ref())
+        {
+            let package = link_lib.load(&session.options)?;
+            assembler.link_package(package, link_lib.linkage)?;
+        }
+    }
+
     let sources =
         prepare_sources(component, &mut assembler, session.get_flag("test_harness"), session)?;
-    let mut registry = session.package_registry()?;
-    let project_package = session.project.package();
     let is_executable_target = session.options.target_type.is_some_and(|tt| tt.is_executable())
         || project_package.library_target().is_none()
         || session.options.target.as_deref().is_some_and(|tname| {
             project_package.executable_targets().iter().any(|t| tname == &**t.name)
         });
-    std::dbg!(is_executable_target);
     let mut project_assembler = assembler.for_project(project_package, registry.as_mut())?;
 
     let executable_name = session.name.as_ref();
-    let selector = if std::dbg!(component.entrypoint.as_ref()).is_some() && is_executable_target {
-        std::dbg!(&executable_name);
+    let selector = if component.entrypoint.as_ref().is_some() || is_executable_target {
         ProjectTargetSelector::Executable(executable_name)
     } else {
         ProjectTargetSelector::Library

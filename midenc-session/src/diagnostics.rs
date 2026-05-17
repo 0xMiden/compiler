@@ -30,6 +30,13 @@ pub struct DiagnosticsConfig {
     pub warnings: Warnings,
 }
 
+impl DiagnosticsConfig {
+    #[inline]
+    pub const fn is_verbose(&self) -> bool {
+        matches!(self.verbosity, Verbosity::Debug)
+    }
+}
+
 pub struct DiagnosticsHandler {
     emitter: Arc<dyn Emitter>,
     source_manager: Arc<dyn SourceManager + Send + Sync>,

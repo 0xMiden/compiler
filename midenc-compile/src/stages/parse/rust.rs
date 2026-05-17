@@ -4,6 +4,8 @@ use alloc::string::{String, ToString};
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "std")]
+use midenc_hir::formatter::DisplayMany;
+#[cfg(feature = "std")]
 use midenc_session::{Options, Session};
 
 use super::*;
@@ -37,12 +39,7 @@ impl Stage for ParseRustStage {
                 let name = context.session().project.package().name().into_inner();
                 let project_dir = tmp.join(&*name);
                 let src_dir = project_dir.join("src");
-                let tmp_rs =
-                    src_dir.join(if options.target_type.unwrap_or_default().is_executable() {
-                        "main.rs"
-                    } else {
-                        "lib.rs"
-                    });
+                let tmp_rs = src_dir.join("lib.rs");
                 std::fs::create_dir_all(&src_dir).map_err(|err| {
                     Report::msg(format!("failed to create temporary Cargo project: {err}"))
                 })?;
@@ -65,12 +62,7 @@ impl Stage for ParseRustStage {
                     std::fs::create_dir_all(&src_dir).map_err(|err| {
                         Report::msg(format!("failed to create temporary Cargo project: {err}"))
                     })?;
-                    let tmp_rs =
-                        src_dir.join(if options.target_type.unwrap_or_default().is_executable() {
-                            "main.rs"
-                        } else {
-                            "lib.rs"
-                        });
+                    let tmp_rs = src_dir.join("lib.rs");
                     std::fs::write(&tmp_rs, input).map_err(|err| {
                         Report::msg(format!("failed to write Rust input to temporary file: {err}"))
                     })?;
@@ -262,8 +254,13 @@ fn rustc(input: &Path, session: &Session, options: &Options) -> CompilerResult<I
     // Set up the command used to compile the test inputs (typically Rust -> Wasm)
     let mut command = std::process::Command::new("rustc");
     // Pipe output of command to terminal
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::piped());
+    if options.diagnostics.is_verbose() {
+        command.stdout(std::process::Stdio::inherit());
+        command.stderr(std::process::Stdio::inherit());
+    } else {
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
+    }
 
     // If `RUSTFLAGS` is present, convert them to `rustc` flags
     let mut rustflags = std::env::var("RUSTFLAGS").ok().unwrap_or_default();
@@ -295,7 +292,7 @@ fn rustc(input: &Path, session: &Session, options: &Options) -> CompilerResult<I
         }
     }
 
-    let output = command
+    let command = command
         .arg("--crate-name")
         .arg(&*package_name)
         .args(["--crate-type", "cdylib"])
@@ -314,13 +311,16 @@ fn rustc(input: &Path, session: &Session, options: &Options) -> CompilerResult<I
         .arg("-g") // generate debug info
         .args(["-C", "opt-level=s"]) // optimize for size
         .args(["-C", "target-feature=+wide-arithmetic"])
-        .args(["-C", "panic=immediate-abort"])
         .args(rustc_flags)
         .arg("--target")
         .arg(target.as_deref().unwrap_or("wasm32-wasip1"))
         .arg("-o")
         .arg(&output_file)
-        .arg(input)
+        .arg(input);
+    log::debug!(target: "rustc", "executing `{} {}`", command.get_program().display(),
+        DisplayMany::new(command.get_args().map(|arg| arg.display()), " ")
+    );
+    let output = command
         .output()
         .map_err(|err| Report::msg(format!("failed to execute `rustc`: {err}")))?;
     if !output.status.success() {

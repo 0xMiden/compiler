@@ -65,7 +65,7 @@ impl Stage for CodegenStage {
 
         if session.options.link_only {
             log::debug!("stopping compiler early (link-only=true)");
-            return Err(CompilerStopped.into());
+            return Err(CompilerStopped("link-only=true").into());
         }
 
         Ok(CodegenOutput {

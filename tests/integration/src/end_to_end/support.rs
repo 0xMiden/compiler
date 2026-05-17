@@ -47,7 +47,6 @@ pub(super) fn miden_project_toml(name: &str) -> String {
 
                 [dependencies]
                 miden-core = "*"
-                miden-protocol = "*"
             "#,
     )
 }

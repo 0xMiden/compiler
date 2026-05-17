@@ -32,7 +32,7 @@ impl Stage for ParseMasmStage {
 
         if context.session().parse_only() {
             log::debug!("stopping compiler early (parse-only=true)");
-            return Err(CompilerStopped.into());
+            return Err(CompilerStopped("parse-only").into());
         }
 
         Ok(ProjectSourceInputs {

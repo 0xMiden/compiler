@@ -34,9 +34,9 @@ pub type CompilerResult<T> = Result<T, Report>;
 
 /// The compilation pipeline was stopped early
 #[derive(Debug, thiserror::Error, Diagnostic)]
-#[error("compilation was canceled by user")]
+#[error("compilation was canceled by user: {0}")]
 #[diagnostic()]
-pub struct CompilerStopped;
+pub struct CompilerStopped(&'static str);
 
 /// Run the compiler using the provided [midenc_session::Session]
 pub fn compile(context: Rc<Context>) -> CompilerResult<()> {

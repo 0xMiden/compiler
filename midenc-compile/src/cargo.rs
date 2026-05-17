@@ -196,7 +196,7 @@ fn cargo_build(
         diagnostics: options.diagnostics,
         trim_path_prefixes: options.trim_path_prefixes.clone(),
         rustflags: options.rustflags.clone(),
-        link_libraries: vec![LinkLibrary::std()],
+        link_libraries: vec![LinkLibrary::core()],
         ..midenc_session::Options::new(
             Some(package_name.clone()),
             Some(target.ty),
@@ -205,9 +205,10 @@ fn cargo_build(
             options.output_dir.clone(),
             options.sysroot.clone(),
         )
-    });
+    })
+    .with_output_types(Default::default(), None);
     if nested_options.target_requires_protocol() {
-        nested_options.link_libraries.push(LinkLibrary::base());
+        nested_options.link_libraries.push(LinkLibrary::protocol());
     }
     // Inherit release/debug profile from parent build
     if cargo_opts.release {

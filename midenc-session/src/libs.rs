@@ -1,5 +1,3 @@
-#![deny(warnings)]
-
 use alloc::{borrow::Cow, format, sync::Arc, vec::Vec};
 #[cfg(feature = "std")]
 use alloc::{boxed::Box, string::ToString};
@@ -39,19 +37,27 @@ pub struct LinkLibrary {
 }
 
 impl LinkLibrary {
+    pub fn is_core(&self) -> bool {
+        matches!(self.name.as_ref(), "miden-core" | "core" | "std")
+    }
+
+    pub fn is_protocol(&self) -> bool {
+        matches!(self.name.as_ref(), "miden-protocol" | "protocol" | "base")
+    }
+
     /// Construct a LinkLibrary for Miden stdlib
-    pub fn std() -> Self {
+    pub fn core() -> Self {
         LinkLibrary {
-            name: "std".into(),
+            name: "miden-core".into(),
             path: None,
             linkage: Linkage::Dynamic,
         }
     }
 
     /// Construct a LinkLibrary for Miden base(rollup/tx kernel) library
-    pub fn base() -> Self {
+    pub fn protocol() -> Self {
         LinkLibrary {
-            name: "base".into(),
+            name: "miden-protocol".into(),
             path: None,
             linkage: Linkage::Dynamic,
         }
@@ -72,7 +78,7 @@ impl LinkLibrary {
                 )
                 .into())
             }
-            "base" | "protocol" => {
+            "base" | "protocol" | "miden-protocol" => {
                 let lib = miden_protocol::ProtocolLib::default().as_ref().clone();
                 return Ok(Package::from_library(
                     "miden-protocol".into(),
@@ -331,16 +337,11 @@ impl clap::builder::TypedValueParser for LinkLibraryParser {
 
 /// Add libraries required by the target environment to the list of libraries to link against only
 /// if they are not already present.
-pub fn add_target_link_libraries(
-    link_libraries_in: Vec<LinkLibrary>,
-    requires_protocol: bool,
-) -> Vec<LinkLibrary> {
-    let mut link_libraries_out = link_libraries_in;
-    if !link_libraries_out.iter().any(|ll| ll.name == "std") {
-        link_libraries_out.push(LinkLibrary::std());
+pub fn add_target_link_libraries(link_libraries: &mut Vec<LinkLibrary>, requires_protocol: bool) {
+    if !link_libraries.iter().any(LinkLibrary::is_core) {
+        link_libraries.push(LinkLibrary::core());
     }
-    if requires_protocol && !link_libraries_out.iter().any(|ll| ll.name == "base") {
-        link_libraries_out.push(LinkLibrary::base());
+    if requires_protocol && !link_libraries.iter().any(LinkLibrary::is_protocol) {
+        link_libraries.push(LinkLibrary::protocol());
     }
-    link_libraries_out
 }

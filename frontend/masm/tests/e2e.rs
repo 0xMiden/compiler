@@ -208,7 +208,8 @@ fn e2e_context() -> Rc<Context> {
     let options = Box::new(Options {
         entrypoint: Some("test::entry".to_owned()),
         ..Options::default()
-    });
+    })
+    .with_output_types(Default::default(), None);
     let source_manager = Arc::new(DefaultSourceManager::default());
     let session = Rc::new(
         Session::new(midenc_session::InputFile::empty(), options, None, source_manager)

@@ -5,6 +5,7 @@
 #![allow(incomplete_features)]
 #![deny(warnings)]
 
+#[macro_use]
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
@@ -41,6 +42,8 @@ pub const MIDENC_BUILD_REV: &str = env!("MIDENC_BUILD_REV");
 
 use heck::ToKebabCase;
 pub use miden_assembly_syntax;
+pub use miden_mast_package::PackageId;
+pub use miden_package_registry;
 pub use miden_project;
 use midenc_hir_symbol::Symbol;
 
@@ -113,7 +116,13 @@ impl Session {
                     } else {
                         path.clone()
                     };
-                    let project = miden_project::Project::load(project_path, &source_manager)?;
+                    let project = miden_project::Project::load(&project_path, &source_manager)
+                        .map_err(|err| {
+                            err.wrap_err(format!(
+                                "failed to load Miden project from {}",
+                                project_path.display()
+                            ))
+                        })?;
                     let project = match options.target_type {
                         Some(ty) if ty.is_executable() => project,
                         _ => {
@@ -237,7 +246,7 @@ impl Session {
         name: String,
         input: Option<InputFile>,
         project: miden_project::Project,
-        options: Box<Options>,
+        mut options: Box<Options>,
         emitter: Option<Arc<dyn Emitter>>,
         source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> Self {
@@ -303,6 +312,12 @@ impl Session {
             options.target_dir.clone(),
             options.output_types.clone(),
         );
+
+        create_target_dir(options.target_dir.as_path());
+
+        // Linka against implicitly required libraries
+        let requires_protocol = options.target_requires_protocol();
+        add_target_link_libraries(&mut options.link_libraries, requires_protocol);
 
         Self {
             name,
@@ -566,3 +581,12 @@ fn rewrite_component_target_namespace(
     );
     target.namespace = Span::unknown(ast::Path::new(&component_id).into());
 }
+
+#[cfg(feature = "std")]
+fn create_target_dir(path: &Path) {
+    std::fs::create_dir_all(path)
+        .unwrap_or_else(|err| panic!("unable to create --target-dir '{}': {err}", path.display()));
+}
+
+#[cfg(not(feature = "std"))]
+fn create_target_dir(_path: &Path) {}

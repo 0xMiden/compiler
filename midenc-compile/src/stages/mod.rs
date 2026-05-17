@@ -169,7 +169,7 @@ pub fn apply_rewrites_to_miden_component(
 ) -> CompilerResult<MidenComponent> {
     if context.session().parse_only() {
         log::debug!(target: "driver", "stopping compiler early (parse-only=true)");
-        return Err(CompilerStopped.into());
+        return Err(CompilerStopped("parse-only=true").into());
     }
     let mut rewrites = ApplyRewritesStage;
     rewrites.run(component.world.as_operation_ref(), context)?;

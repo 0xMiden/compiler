@@ -113,7 +113,7 @@ impl Stage for ApplyRewritesStage {
 
         if context.session().rewrite_only() {
             log::debug!(target: "driver", "stopping compiler early (rewrite-only=true)");
-            Err(CompilerStopped.into())
+            Err(CompilerStopped("rewrite-only=true").into())
         } else {
             Ok(input)
         }

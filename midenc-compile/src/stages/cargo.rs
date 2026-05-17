@@ -234,7 +234,7 @@ pub mod support {
         )?;
 
         let rustup_toolchain = crate::rust::rustup_toolchain();
-        let cargo_build_args = build_cargo_args(cargo_opts, rustup_toolchain.as_deref());
+        let cargo_build_args = build_cargo_args(cargo_opts);
 
         // Enable memcopy and 128-bit arithmetic ops
         let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
@@ -266,8 +266,12 @@ pub mod support {
             "wasip1"
         };
 
-        let mut wasm_outputs =
-            run_cargo(wasi, &cargo_build_args, [("RUSTFLAGS", extra_rust_flags)])?;
+        let mut wasm_outputs = run_cargo(
+            wasi,
+            rustup_toolchain.as_deref(),
+            &cargo_build_args,
+            [("RUSTFLAGS", extra_rust_flags)],
+        )?;
 
         assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
         let wasm_output = wasm_outputs.pop().expect("expected at least one Wasm artifact");
@@ -276,8 +280,8 @@ pub mod support {
     }
 
     /// Builds the argument vector for the underlying `cargo build` invocation.
-    fn build_cargo_args(cargo_opts: &CargoOptions, toolchain: Option<&str>) -> Vec<String> {
-        let mut args = vec![format!("+{}", toolchain.unwrap_or("nightly")), "build".to_string()];
+    fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
+        let mut args = vec!["build".to_string()];
 
         // Add build-std flags required for Miden compilation
         args.extend(
@@ -331,20 +335,27 @@ pub mod support {
         args
     }
 
-    fn run_cargo<E>(wasi: &str, spawn_args: &[String], env: E) -> CompilerResult<Vec<PathBuf>>
+    fn run_cargo<E>(
+        wasi: &str,
+        toolchain: Option<&str>,
+        spawn_args: &[String],
+        env: E,
+    ) -> CompilerResult<Vec<PathBuf>>
     where
         E: IntoIterator<Item = (&'static str, String)>,
     {
-        let cargo_path = std::env::var("CARGO")
-            .map(PathBuf::from)
-            .ok()
-            .unwrap_or_else(|| PathBuf::from("cargo"));
+        let cargo_env = std::env::var("CARGO").map(PathBuf::from).ok();
+        let cargo_path = cargo_env.as_deref().unwrap_or_else(|| Path::new("cargo"));
 
-        let mut cargo = std::process::Command::new(&cargo_path);
+        let mut cargo = std::process::Command::new(cargo_path);
         cargo.envs(env);
-        // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm for a
-        // "real" Wasm runtime vs compiling to Wasm as an intermediate artifact that will be compiled
-        // to Miden VM code by `midenc`.
+        if cargo_env.is_none() {
+            cargo.arg(format!("+{}", toolchain.unwrap_or("nightly")));
+        }
+
+        // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm
+        // for a "real" Wasm runtime vs compiling to Wasm as an intermediate artifact that
+        // will be compiled to Miden VM code by `midenc`.
         cargo.env("MIDENC_TARGET_IS_MIDEN_VM", "1");
         cargo.args(spawn_args);
 
@@ -357,8 +368,9 @@ pub mod support {
         // that will be componentized
         cargo.arg("--message-format").arg("json-render-diagnostics");
         cargo.stdout(std::process::Stdio::piped());
+        cargo.stderr(std::process::Stdio::inherit());
 
-        let artifacts = crate::rust::spawn_cargo(cargo, &cargo_path)?;
+        let artifacts = crate::rust::spawn_cargo(cargo, cargo_path)?;
 
         let outputs: Vec<PathBuf> = artifacts
             .into_iter()

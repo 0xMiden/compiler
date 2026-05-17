@@ -48,7 +48,10 @@ impl Stage for AnalysisStage {
                         session.diagnostics.emit(diagnostic);
                     }
                     if session.diagnostics.has_errors() || session.analyze_only() {
-                        return Err(CompilerStopped.into());
+                        return Err(CompilerStopped(
+                            "either errors were raised, or analyze-only is set",
+                        )
+                        .into());
                     }
                 }
             }

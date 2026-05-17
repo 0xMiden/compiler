@@ -21,7 +21,19 @@ impl TestAccount {{
     );
 
     let sdk_path = sdk_crate_path();
-    let component_package = format!("miden:{}", name.replace('_', "-"));
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+
+[lib]
+kind = "account-component"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+"#
+    );
     let cargo_toml = format!(
         r#"
 [package]
@@ -36,13 +48,6 @@ crate-type = ["cdylib"]
 [dependencies]
 miden = {{ path = "{sdk_path}" }}
 
-[package.metadata.component]
-package = "{component_package}"
-
-[package.metadata.miden]
-project-kind = "account"
-supported-types = ["RegularAccountUpdatableCode"]
-
 [profile.release]
 opt-level = "z"
 panic = "abort"
@@ -51,10 +56,10 @@ debug = false
 "#,
         name = name,
         sdk_path = sdk_path.display(),
-        component_package = component_package,
     );
 
     let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml)
         .file("Cargo.toml", &cargo_toml)
         .file("src/lib.rs", &lib_rs)
         .build();

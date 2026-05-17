@@ -1,0 +1,12 @@
+[package]
+name = "cross-ctx-note"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+
+[dependencies]
+cross-ctx-account = { path = "../cross-ctx-account" }
+
+[package.metadata.dependencies]
+cross-ctx-account = { path = "../cross-ctx-account/wit/cross-ctx-account.wit" }

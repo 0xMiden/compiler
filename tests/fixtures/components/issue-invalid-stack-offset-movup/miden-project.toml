@@ -1,0 +1,6 @@
+[package]
+name = "issue-invalid-stack-offset-movup"
+version = "0.1.0"
+
+[lib]
+kind = "note"

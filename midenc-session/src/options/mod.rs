@@ -14,8 +14,6 @@ use miden_debug_types::SourceManager;
 use miden_project::TargetType;
 
 pub use self::printing::IrFilter;
-#[cfg(feature = "std")]
-use crate::Path;
 use crate::{
     ColorChoice, CompileFlags, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
     diagnostics::{DiagnosticsConfig, Emitter, Report},
@@ -218,8 +216,20 @@ impl Options {
         self
     }
 
-    #[inline(always)]
-    pub fn with_output_types(mut self: Box<Self>, output_types: OutputTypes) -> Box<Self> {
+    pub fn with_output_types(
+        mut self: Box<Self>,
+        mut output_types: OutputTypes,
+        output_file: Option<OutputFile>,
+    ) -> Box<Self> {
+        use crate::OutputType;
+        let has_final_output = output_types.keys().any(|ty| matches!(ty, OutputType::Masp));
+        if !has_final_output {
+            // By default, we always produce a final artifact; `--emit` selects additional outputs.
+            output_types.insert(OutputType::Masp, output_file);
+        } else if output_file.is_some() && output_types.get(&OutputType::Masp).is_some() {
+            // The -o flag overrides --emit
+            output_types.insert(OutputType::Masp, output_file);
+        }
         self.output_types = output_types;
         self
     }
@@ -243,8 +253,6 @@ impl Options {
         source_manager: Option<Arc<dyn SourceManager + Send + Sync>>,
     ) -> Result<crate::Session, Report> {
         use crate::diagnostics::DefaultSourceManager;
-
-        create_target_dir(self.target_dir.as_path());
 
         let source_manager =
             source_manager.unwrap_or_else(|| Arc::new(DefaultSourceManager::default()));
@@ -392,12 +400,3 @@ fn current_dir() -> PathBuf {
 fn current_dir() -> PathBuf {
     PathBuf::from(".")
 }
-
-#[cfg(feature = "std")]
-fn create_target_dir(path: &Path) {
-    std::fs::create_dir_all(path)
-        .unwrap_or_else(|err| panic!("unable to create --target-dir '{}': {err}", path.display()));
-}
-
-#[cfg(not(feature = "std"))]
-fn create_target_dir(_path: &Path) {}

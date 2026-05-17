@@ -83,7 +83,10 @@ impl ManifestPackage {
             .map_err(|err| {
                 syn::Error::new(
                     error_span,
-                    format!("Failed to read {}: {err}", miden_project_toml_path.display()),
+                    format!(
+                        "Failed to read project manifest from {}: {err}",
+                        miden_project_toml_path.display()
+                    ),
                 )
             })?;
         let package = project.package();
