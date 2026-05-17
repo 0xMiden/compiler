@@ -54,7 +54,13 @@ impl HybridPackageRegistry {
         };
 
         // Load link libraries
-        for lib in options.link_libraries.iter() {
+        let implied_libraries = if options.target_requires_protocol() {
+            Some(&crate::LinkLibrary::base())
+        } else {
+            None
+        };
+        let link_libraries = options.link_libraries.iter().chain(implied_libraries);
+        for lib in link_libraries {
             let package = lib.load(options)?;
             match registry.install_if_missing(package) {
                 Ok(_) => (),
