@@ -25,7 +25,6 @@ name = "integration"
 path = "tests/mod.rs"
 
 [dependencies]
-miden-package-registry = { workspace = true, features = ["std"] }
 miden-mast-package = { workspace = true, features = ["std"] }
 midenc-compile = { workspace = true, features = ["std"] }
 midenc-hir = { workspace = true, features = ["std"] }
@@ -35,10 +34,7 @@ log.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 path-absolutize = "^3.1"
-serde.workspace = true
-serde_json = { workspace = true, features = ["std"] }
 toml_edit = { version = "^0.25", features = ["serde"] }
-semver.workspace = true
 liquid = "0.26"
 tempfile.workspace = true
 walkdir = "2.5"

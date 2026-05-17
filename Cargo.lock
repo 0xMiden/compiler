@@ -516,15 +516,11 @@ dependencies = [
  "liquid",
  "log",
  "miden-mast-package",
- "miden-package-registry",
  "midenc-compile",
  "midenc-hir",
  "midenc-log",
  "midenc-session",
  "path-absolutize",
- "semver 1.0.28",
- "serde",
- "serde_json",
  "tempfile",
  "toml_edit 0.25.11+spec-1.1.0",
  "walkdir",
@@ -3468,9 +3464,7 @@ dependencies = [
  "miden-assembly-syntax",
  "miden-core",
  "miden-mast-package",
- "miden-package-registry",
  "miden-processor",
- "miden-project",
  "miden-protocol",
  "miden-thiserror",
  "midenc-dialect-arith",
@@ -3811,11 +3805,9 @@ name = "midenc-integration-test-support"
 version = "0.8.1"
 dependencies = [
  "anyhow",
- "cargo-miden",
  "cargo-util",
  "filetime",
  "glob",
- "log",
  "miden-assembly",
  "miden-core",
  "miden-core-lib",
@@ -3833,7 +3825,6 @@ dependencies = [
  "proptest",
  "sha2 0.11.0",
  "walkdir",
- "wasmprinter",
 ]
 
 [[package]]
