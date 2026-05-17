@@ -493,7 +493,7 @@ impl Session {
     }
 }
 
-fn fixup_targets(
+pub fn fixup_targets(
     package: Arc<miden_project::Package>,
     is_cargo_project: bool,
 ) -> Arc<miden_project::Package> {

@@ -39,11 +39,18 @@ pub(super) fn assemble(
     let sources =
         prepare_sources(component, &mut assembler, session.get_flag("test_harness"), session)?;
     let mut registry = session.package_registry()?;
-    let mut project_assembler =
-        assembler.for_project(session.project.package(), registry.as_mut())?;
+    let project_package = session.project.package();
+    let is_executable_target = session.options.target_type.is_some_and(|tt| tt.is_executable())
+        || project_package.library_target().is_none()
+        || session.options.target.as_deref().is_some_and(|tname| {
+            project_package.executable_targets().iter().any(|t| tname == &**t.name)
+        });
+    std::dbg!(is_executable_target);
+    let mut project_assembler = assembler.for_project(project_package, registry.as_mut())?;
 
     let executable_name = session.name.as_ref();
-    let selector = if component.entrypoint.is_some() {
+    let selector = if std::dbg!(component.entrypoint.as_ref()).is_some() && is_executable_target {
+        std::dbg!(&executable_name);
         ProjectTargetSelector::Executable(executable_name)
     } else {
         ProjectTargetSelector::Library

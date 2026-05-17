@@ -12,7 +12,7 @@ use std::{
 use miden_assembly::SourceManager;
 use miden_package_registry::PackageStore;
 use midenc_hir::Report;
-use midenc_session::{InputFile, Session, miden_project};
+use midenc_session::{InputFile, LinkLibrary, Session, miden_project};
 
 use crate::{CompilerResult, stages::Artifact};
 
@@ -156,7 +156,7 @@ pub fn load_cargo_based_source_dependencies(
                         cargo_build(
                             project_package.clone(),
                             target.inner(),
-                            manifest_path,
+                            manifest_path.with_file_name("Cargo.toml"),
                             registry,
                             options,
                             cargo_opts,
@@ -177,25 +177,48 @@ pub fn load_cargo_based_source_dependencies(
 fn cargo_build(
     package: Arc<miden_project::Package>,
     target: &miden_project::Target,
-    manifest_path: &std::path::Path,
+    manifest_path: std::path::PathBuf,
     registry: &mut midenc_session::registry::HybridPackageRegistry,
     options: &midenc_session::Options,
     cargo_opts: &CargoOptions,
     source_manager: Arc<dyn SourceManager + Send + Sync>,
 ) -> CompilerResult<Arc<miden_mast_package::Package>> {
-    let mut nested_options = Box::new(options.clone());
-    nested_options.manifest_path = Some(manifest_path.to_path_buf());
-    nested_options.name = Some(target.name.to_string());
-    nested_options.target_type = Some(target.ty);
+    let package_name = package.name().to_string();
+    let mut nested_options = Box::new(midenc_session::Options {
+        manifest_path: Some(manifest_path.clone()),
+        target: Some(target.name.to_string()),
+        optimize: options.optimize,
+        debug: options.debug,
+        search_paths: options.search_paths.clone(),
+        midenup_home: options.midenup_home.clone(),
+        toolchain: options.toolchain.clone(),
+        color: options.color,
+        diagnostics: options.diagnostics,
+        trim_path_prefixes: options.trim_path_prefixes.clone(),
+        rustflags: options.rustflags.clone(),
+        link_libraries: vec![LinkLibrary::std()],
+        ..midenc_session::Options::new(
+            Some(package_name.clone()),
+            Some(target.ty),
+            options.current_dir.clone(),
+            options.target_dir.clone(),
+            options.output_dir.clone(),
+            options.sysroot.clone(),
+        )
+    });
+    if nested_options.target_requires_protocol() {
+        nested_options.link_libraries.push(LinkLibrary::base());
+    }
     // Inherit release/debug profile from parent build
     if cargo_opts.release {
         nested_options.profile = "release".to_string();
     }
 
-    let package_name = package.name();
+    let package = midenc_session::fixup_targets(package, true);
+
     let input = InputFile::from_path(manifest_path).unwrap();
     let session = Rc::new(Session::new_project(
-        package_name.to_string(),
+        package_name.clone(),
         Some(input.clone()),
         miden_project::Project::Package(package),
         nested_options,
