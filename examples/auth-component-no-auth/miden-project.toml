@@ -4,6 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
+namespace = "miden:auth-component-no-auth/miden-auth-component-no-auth@0.1.0"
 
 [dependencies]
 miden-core = "*"

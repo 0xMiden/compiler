@@ -4,6 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
+namespace = "miden:component-macros-note/miden-component-macros-note@0.1.0"
 
 [dependencies]
 component_macros = { path = "../component-macros-account" }

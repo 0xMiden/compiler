@@ -4,6 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
+namespace = "miden:counter-contract/miden-counter-contract@0.1.0"
 
 [dependencies]
 miden-core = "*"

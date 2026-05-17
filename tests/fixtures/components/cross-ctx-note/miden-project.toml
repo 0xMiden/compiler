@@ -4,6 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "note"
+namespace = "miden:cross-ctx-note/miden-cross-ctx-note@0.1.0"
 
 [dependencies]
 cross-ctx-account = { path = "../cross-ctx-account" }
