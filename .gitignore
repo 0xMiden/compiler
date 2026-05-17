@@ -19,6 +19,7 @@ node_modules/
 *DS_Store
 ._*
 *.iml
+*.masp
 book/
 
 # Ignore Cargo.lock in test projects

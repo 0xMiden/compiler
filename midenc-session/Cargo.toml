@@ -34,6 +34,7 @@ std = [
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
 hashbrown.workspace = true
+heck.workspace = true
 inventory.workspace = true
 log.workspace = true
 miden-assembly-syntax.workspace = true

@@ -39,6 +39,7 @@ pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
 /// The git revision associated with the current compiler toolchain
 pub const MIDENC_BUILD_REV: &str = env!("MIDENC_BUILD_REV");
 
+use heck::ToKebabCase;
 pub use miden_assembly_syntax;
 pub use miden_project;
 use midenc_hir_symbol::Symbol;
@@ -105,12 +106,13 @@ impl Session {
         if matches!(input.file_type(), FileType::Toml) {
             let (pkgid, project) = match &input.file {
                 InputType::Real(path) => {
-                    let project_path =
-                        if path.file_name().unwrap().eq_ignore_ascii_case("Cargo.toml") {
-                            path.with_file_name("miden-project.toml")
-                        } else {
-                            path.clone()
-                        };
+                    let is_cargo_project =
+                        path.file_name().unwrap().eq_ignore_ascii_case("Cargo.toml");
+                    let project_path = if is_cargo_project {
+                        path.with_file_name("miden-project.toml")
+                    } else {
+                        path.clone()
+                    };
                     let project = miden_project::Project::load(project_path, &source_manager)?;
                     let project = match options.target_type {
                         Some(ty) if ty.is_executable() => project,
@@ -118,7 +120,10 @@ impl Session {
                             // HACK(pauls): Workaround bug with virtual bin targets until
                             // 0.24.x. See https://github.com/0xMiden/miden-vm/pull/3156
                             let package = project.package();
-                            miden_project::Project::Package(fixup_virtual_bin_targets(package))
+                            miden_project::Project::Package(fixup_targets(
+                                package,
+                                is_cargo_project,
+                            ))
                         }
                     };
                     let pkgid = match &project {
@@ -488,18 +493,27 @@ impl Session {
     }
 }
 
-fn fixup_virtual_bin_targets(package: Arc<miden_project::Package>) -> Arc<miden_project::Package> {
-    if package
+fn fixup_targets(
+    package: Arc<miden_project::Package>,
+    is_cargo_project: bool,
+) -> Arc<miden_project::Package> {
+    // Find executable targets whose `path` is `<virtual>`, and strip the path out - this
+    // is required due to a bug in the project manifest parser that requires executable
+    // targets to have a `path`, but virtual targets don't have paths
+    let requires_virtual_rewrite = package
         .executable_targets()
         .iter()
-        .any(|t| t.path.as_deref().is_some_and(|path| path.as_str() == "<virtual>"))
-    {
+        .any(|t| t.path.as_deref().is_some_and(|path| path.as_str() == "<virtual>"));
+    if requires_virtual_rewrite || is_cargo_project {
         // We have to rewrite this package without the path
         let mut prev_targets = package.executable_targets().iter();
         let mut default_target = match package.library_target().cloned() {
             Some(target) => target.inner().clone(),
             None => prev_targets.next().unwrap().inner().clone(),
         };
+        if is_cargo_project {
+            rewrite_component_target_namespace(&mut default_target, &package);
+        }
         if default_target.path.as_deref().is_some_and(|p| p.as_str() == "<virtual>") {
             default_target.path = None;
         }
@@ -512,6 +526,8 @@ fn fixup_virtual_bin_targets(package: Arc<miden_project::Package>) -> Arc<miden_
                 let mut t = t.inner().clone();
                 if t.path.as_deref().is_some_and(|p| p.as_str() == "<virtual>") {
                     t.path = None;
+                } else if is_cargo_project {
+                    rewrite_component_target_namespace(&mut t, &package);
                 }
                 t
             }));
@@ -524,4 +540,29 @@ fn fixup_virtual_bin_targets(package: Arc<miden_project::Package>) -> Arc<miden_
     } else {
         package
     }
+}
+
+fn rewrite_component_target_namespace(
+    target: &mut miden_project::Target,
+    package: &miden_project::Package,
+) {
+    use miden_assembly_syntax::ast;
+    use miden_debug_types::Span;
+
+    let namespace_id = target.namespace.to_relative().as_ident().map(|id| id.into_inner());
+    if target.ty.is_executable()
+        || namespace_id.as_deref().is_none_or(|id| package.name().inner() != id)
+    {
+        return;
+    }
+
+    // If the namespace is the same as the package name, then the default
+    // namespace is being used, and we should rewrite it to use the correct
+    // namespace, derived from the component id
+    let component_namespace = package.name().to_kebab_case();
+    let component_id = format!(
+        "::miden:{component_namespace}/miden-{component_namespace}@{}",
+        package.version()
+    );
+    target.namespace = Span::unknown(ast::Path::new(&component_id).into());
 }

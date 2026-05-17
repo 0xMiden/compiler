@@ -3887,6 +3887,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hashbrown 0.17.0",
+ "heck",
  "inventory",
  "log",
  "miden-assembly-syntax",
