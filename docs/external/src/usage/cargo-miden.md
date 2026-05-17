@@ -45,7 +45,7 @@ Your first step will be to create a new Rust project set up for compiling to Mid
 cargo miden new foo
 ```
 
-In this above example, this will create a new directory `foo`, containing a Cargo project for a
+In the above example, this will create a new directory `foo`, containing a Cargo project for a
 crate named `foo`, generated from our Miden project template.
 
 The template we use sets things up so that you can pretty much just build and run. Since the
