@@ -44,7 +44,7 @@ cargo install --path midenc --locked
 
 ## Usage
 
-Once installed, you should be able to invoke the compiler, you should see output similar to this:
+Once installed, you should be able to invoke the compiler and see output similar to this:
 
 ```bash
 midenc help compile
