@@ -131,7 +131,7 @@ All that remains is to compile to WebAssembly:
     cargo build --release --target=wasm32-wasip1
 
 This places a `wasm_fib.wasm` file under the `target/wasm32-wasip1/release/` directory, which
-we can then examine with [wasm2wat](https://github.com/WebAssembly/wabt) to set the code we generated:
+we can then examine with [wasm2wat](https://github.com/WebAssembly/wabt) to see the code we generated:
 
     wasm2wat target/wasm32-wasip1/release/wasm_fib.wasm
 
