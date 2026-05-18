@@ -20,6 +20,7 @@ impl TestAsset {{
     );
 
     let sdk_path = sdk_crate_path();
+    let namespace = component_namespace(name);
     let miden_project_toml = format!(
         r#"
 [package]
@@ -28,6 +29,7 @@ version = "0.0.1"
 
 [lib]
 kind = "account-component"
+namespace = "{namespace}"
 
 [package.metadata.miden]
 supported-types = ["RegularAccountUpdatableCode"]
