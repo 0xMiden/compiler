@@ -32,7 +32,6 @@ impl InferTypeOpInterface for Caller {
     dialect = HirDialect,
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read))]
 pub struct Clk {
     #[result]
     result: IntFelt,
@@ -118,15 +117,16 @@ pub struct MemCpy {
 /// Prints a string to the debug output.
 ///
 /// The string bytes are read from memory at the given pointer address and length.
-#[derive(OpPrinter, OpParser)]
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(OpPrinter)
+    implements(OpPrinter, MemoryEffectOpInterface)
 )]
 pub struct PrintLn {
     // Not adding `MemoryEffect::Read` to avoid optimizations that eliminate this operation
     // which doesn't have a result.
     #[operand]
+    #[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
     ptr: PointerOf<UInt8>,
     #[operand]
     len: UInt32,

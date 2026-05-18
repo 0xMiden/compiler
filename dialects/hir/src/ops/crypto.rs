@@ -201,14 +201,22 @@ macro_rules! infer_felt_outputs {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, AdviceEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
 pub struct MTreeGet {
     #[operands]
     stack: IntFelt,
     #[results]
     outputs: IntFelt,
+}
+
+impl EffectOpInterface<AdviceEffect> for MTreeGet {
+    fn effects(&self) -> EffectIterator<AdviceEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new_with_resource(
+            AdviceEffect::Read,
+            MerkleStoreResource
+        )])
+    }
 }
 
 infer_felt_outputs!(MTreeGet, "hir.mtree_get", 6, 8);
@@ -217,14 +225,23 @@ infer_felt_outputs!(MTreeGet, "hir.mtree_get", 6, 8);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, AdviceEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
 pub struct MTreeSet {
     #[operands]
     stack: IntFelt,
     #[results]
     outputs: IntFelt,
+}
+
+impl EffectOpInterface<AdviceEffect> for MTreeSet {
+    fn effects(&self) -> EffectIterator<AdviceEffect> {
+        EffectIterator::from_smallvec(smallvec![
+            EffectInstance::new_with_resource(AdviceEffect::Read, MerkleStoreResource),
+            EffectInstance::new_with_resource(AdviceEffect::Allocate, MerkleStoreResource),
+            EffectInstance::new_with_resource(AdviceEffect::Write, MerkleStoreResource)
+        ])
+    }
 }
 
 infer_felt_outputs!(MTreeSet, "hir.mtree_set", 10, 8);
@@ -233,14 +250,23 @@ infer_felt_outputs!(MTreeSet, "hir.mtree_set", 10, 8);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, AdviceEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
 pub struct MTreeMerge {
     #[operands]
     stack: IntFelt,
     #[results]
     outputs: IntFelt,
+}
+
+impl EffectOpInterface<AdviceEffect> for MTreeMerge {
+    fn effects(&self) -> EffectIterator<AdviceEffect> {
+        EffectIterator::from_smallvec(smallvec![
+            EffectInstance::new_with_resource(AdviceEffect::Read, MerkleStoreResource),
+            EffectInstance::new_with_resource(AdviceEffect::Allocate, MerkleStoreResource),
+            EffectInstance::new_with_resource(AdviceEffect::Write, MerkleStoreResource)
+        ])
+    }
 }
 
 infer_felt_outputs!(MTreeMerge, "hir.mtree_merge", 8, 4);
@@ -249,9 +275,8 @@ infer_felt_outputs!(MTreeMerge, "hir.mtree_merge", 8, 4);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, AdviceEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
 pub struct MTreeVerify {
     #[operands]
     stack: IntFelt,
@@ -260,6 +285,15 @@ pub struct MTreeVerify {
     message: StringAttr,
     #[results]
     outputs: IntFelt,
+}
+
+impl EffectOpInterface<AdviceEffect> for MTreeVerify {
+    fn effects(&self) -> EffectIterator<AdviceEffect> {
+        EffectIterator::from_smallvec(smallvec![EffectInstance::new_with_resource(
+            AdviceEffect::Read,
+            MerkleStoreResource
+        )])
+    }
 }
 
 infer_felt_outputs!(MTreeVerify, "hir.mtree_verify", 10, 10);

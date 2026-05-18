@@ -124,8 +124,8 @@ struct MemoryState {
 /// Dense forward analysis passes `ProgramPoint::before(operation)` as the `before` lattice for an
 /// operation transfer, but the solver stores straight-line dense state at concrete CFG anchors:
 /// either after the previous operation or at the start of the block. Storage transfer needs that
-/// concrete state because it both reads storage and writes load-result taint back into sparse value
-/// state during the same solver iteration.
+/// concrete state because it both reads storage and writes load-result taint back into sparse
+/// value state during the same solver iteration.
 fn storage_state_before_operation(
     operation: &Operation,
     dependent: ProgramPoint,

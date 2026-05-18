@@ -13,12 +13,25 @@ use crate::HirDialect;
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, AdviceEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
 pub struct AdvicePop {
     #[result]
     result: IntFelt,
+}
+
+impl EffectOpInterface<AdviceEffect> for AdvicePop {
+    fn effects(&self) -> EffectIterator<AdviceEffect> {
+        EffectIterator::from_smallvec(smallvec![
+            EffectInstance::new_with_resource(AdviceEffect::Free, AdviceStackResource),
+            EffectInstance::new_with_resource(AdviceEffect::Write, AdviceStackResource),
+            EffectInstance::new_for_value_with_resource(
+                AdviceEffect::Read,
+                self.result().as_op_result_ref(),
+                AdviceStackResource
+            )
+        ])
+    }
 }
 
 impl InferTypeOpInterface for AdvicePop {
@@ -32,9 +45,8 @@ impl InferTypeOpInterface for AdvicePop {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, AdviceEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
 pub struct AdviceLoadWord {
     #[operand]
     old0: AnyType,
@@ -54,6 +66,35 @@ pub struct AdviceLoadWord {
     result3: IntFelt,
 }
 
+impl EffectOpInterface<AdviceEffect> for AdviceLoadWord {
+    fn effects(&self) -> EffectIterator<AdviceEffect> {
+        EffectIterator::from_smallvec(smallvec![
+            EffectInstance::new_with_resource(AdviceEffect::Free, AdviceStackResource),
+            EffectInstance::new_with_resource(AdviceEffect::Write, AdviceStackResource),
+            EffectInstance::new_for_value_with_resource(
+                AdviceEffect::Read,
+                self.result0().as_op_result_ref(),
+                AdviceStackResource
+            ),
+            EffectInstance::new_for_value_with_resource(
+                AdviceEffect::Read,
+                self.result1().as_op_result_ref(),
+                AdviceStackResource
+            ),
+            EffectInstance::new_for_value_with_resource(
+                AdviceEffect::Read,
+                self.result2().as_op_result_ref(),
+                AdviceStackResource
+            ),
+            EffectInstance::new_for_value_with_resource(
+                AdviceEffect::Read,
+                self.result3().as_op_result_ref(),
+                AdviceStackResource
+            )
+        ])
+    }
+}
+
 impl InferTypeOpInterface for AdviceLoadWord {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         self.result0_mut().set_type(Type::Felt);
@@ -68,14 +109,33 @@ impl InferTypeOpInterface for AdviceLoadWord {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, AdviceEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+#[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct AdvicePipe {
     #[operands]
     stack: IntFelt,
     #[results]
     outputs: IntFelt,
+}
+
+impl EffectOpInterface<AdviceEffect> for AdvicePipe {
+    fn effects(&self) -> EffectIterator<AdviceEffect> {
+        EffectIterator::new(
+            [
+                EffectInstance::new_with_resource(AdviceEffect::Free, AdviceStackResource),
+                EffectInstance::new_with_resource(AdviceEffect::Write, AdviceStackResource),
+            ]
+            .into_iter()
+            .chain(self.outputs().iter().map(|out| {
+                EffectInstance::new_for_value_with_resource(
+                    AdviceEffect::Read,
+                    *out,
+                    AdviceStackResource,
+                )
+            })),
+        )
+    }
 }
 
 impl InferTypeOpInterface for AdvicePipe {

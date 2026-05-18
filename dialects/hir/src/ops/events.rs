@@ -14,9 +14,17 @@ use crate::HirDialect;
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, AdviceEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+#[effects(
+    MemoryEffect(MemoryEffect::Read, MemoryEffect::Write),
+    AdviceEffect(
+        AdviceEffect::Read,
+        AdviceEffect::Write,
+        AdviceEffect::Allocate,
+        AdviceEffect::Free,
+    )
+)]
 pub struct EmitEvent {
     #[operand]
     event_id: IntFelt,
@@ -35,9 +43,17 @@ impl InferTypeOpInterface for EmitEvent {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface, OpPrinter)
+    implements(AdviceEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+#[effects(
+    MemoryEffect(MemoryEffect::Read, MemoryEffect::Write),
+    AdviceEffect(
+        AdviceEffect::Read,
+        AdviceEffect::Write,
+        AdviceEffect::Allocate,
+        AdviceEffect::Free,
+    )
+)]
 pub struct EmitEventImm {
     #[attr]
     event_id: ImmediateAttr,
@@ -51,9 +67,17 @@ pub struct EmitEventImm {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, AdviceEffectOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
-#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+#[effects(
+    MemoryEffect(MemoryEffect::Read, MemoryEffect::Write),
+    AdviceEffect(
+        AdviceEffect::Read,
+        AdviceEffect::Write,
+        AdviceEffect::Allocate,
+        AdviceEffect::Free
+    )
+)]
 pub struct SystemEvent {
     #[operands]
     stack: IntFelt,
