@@ -1,0 +1,26 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(cse)' | filecheck %s
+
+// This regression covers the visited-state predicate used when CSE replaces a duplicate
+// in a graph region. The first use of %1 is already visited and must stay attached to %1,
+// while the later use is still unvisited and should be rewritten to the canonical %0. The
+// duplicate constant remains because the earlier forward use still depends on it.
+//
+// CHECK-LABEL: builtin.module private @identity_visited_state
+// CHECK: [[ADDR:%\d+]] = arith.constant 0 : u32;
+// CHECK-NEXT: [[PTR:%\d+]] = hir.int_to_ptr [[ADDR]]
+// CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
+// CHECK-NEXT: hir.store [[PTR]], [[CANONICAL]]
+// CHECK-NEXT: hir.store [[PTR]], [[DUP:%\d+]]
+// CHECK-NEXT: [[DUP]] = arith.constant 1 : i32;
+// CHECK-NEXT: hir.store [[PTR]], [[CANONICAL]]
+builtin.module private @identity_visited_state {
+    %addr = arith.constant 0 : u32;
+    %ptr = hir.int_to_ptr %addr <{ ty = #builtin.type<ptr<i32, byte>> }>;
+    %0 = arith.constant 1 : i32;
+    hir.store %ptr, %0 : (ptr<i32, byte>, i32);
+    // This forward use has already been visited when %1 is considered for CSE.
+    hir.store %ptr, %1 : (ptr<i32, byte>, i32);
+    %1 = arith.constant 1 : i32;
+    // This later use is the code CSE is expected to rewrite from %1 to %0.
+    hir.store %ptr, %1 : (ptr<i32, byte>, i32);
+};
