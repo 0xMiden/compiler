@@ -71,7 +71,7 @@ impl ValueId {
             index as u32 <= Self::OP_RESULT_INDEX_MASK,
             "invalid op result index: must be less than 64",
         );
-        Self((self.0 & !Self::OP_RESULT_INDEX_MASK) | index as u32)
+        Self((self.0 & !Self::OP_RESULT_INDEX_MASK) | Self::OP_RESULT_TAG | index as u32)
     }
 
     /// Strip operation result metadata from this [ValueId]
@@ -126,7 +126,11 @@ impl fmt::Debug for ValueId {
 impl fmt::Display for ValueId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(sym) = self.as_symbol_id() {
-            write!(f, "%{sym}")
+            if let Some(index) = self.result_index() {
+                write!(f, "%{sym}#{index}")
+            } else {
+                write!(f, "%{sym}")
+            }
         } else if let Some(index) = self.result_index() {
             write!(f, "%{}#{index}", self.as_u32())
         } else {

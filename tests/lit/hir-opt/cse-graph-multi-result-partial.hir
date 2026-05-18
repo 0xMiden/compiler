@@ -1,0 +1,33 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(cse)' | filecheck %s
+
+// This regression covers partial replacement of a duplicate multi-result operation in a
+// graph region. The forward use of %duplicate#0 is already visited, so that result must
+// stay tied to the duplicate op. The later use of %duplicate#1 is still unvisited and is
+// expected to be rewritten to %canonical#1. Because one result remains live, the duplicate
+// operation itself must remain in the output.
+//
+// CHECK-LABEL: builtin.module private @graph_multi_result_partial
+// CHECK: [[ADDR:%\d+]] = arith.constant 0 : u32;
+// CHECK-NEXT: [[I32_PTR:%\d+]] = hir.int_to_ptr [[ADDR]]
+// CHECK-NEXT: [[I1_PTR:%\d+]] = hir.int_to_ptr [[ADDR]]
+// CHECK: [[LHS:%\d+]] = arith.constant 1 : i32;
+// CHECK-NEXT: [[RHS:%\d+]] = arith.constant 2 : i32;
+// CHECK-NEXT: [[CANONICAL_OVERFLOW:%\d+]], [[CANONICAL_SUM:%\d+]] = arith.add_overflowing [[LHS]], [[RHS]];
+// CHECK-NEXT: hir.store [[I32_PTR]], [[CANONICAL_SUM]]
+// CHECK-NEXT: hir.store [[I1_PTR]], [[DUP_OVERFLOW:%\d+]]
+// CHECK-NEXT: [[DUP_OVERFLOW]], [[DUP_SUM:%\d+]] = arith.add_overflowing [[LHS]], [[RHS]];
+// CHECK-NEXT: hir.store [[I32_PTR]], [[CANONICAL_SUM]]
+builtin.module private @graph_multi_result_partial {
+    %addr = arith.constant 0 : u32;
+    %ptr_i32 = hir.int_to_ptr %addr <{ ty = #builtin.type<ptr<i32, byte>> }>;
+    %ptr_i1 = hir.int_to_ptr %addr <{ ty = #builtin.type<ptr<i1, byte>> }>;
+    %0 = arith.constant 1 : i32;
+    %1 = arith.constant 2 : i32;
+    %canonical:2 = arith.add_overflowing %0, %1;
+    hir.store %ptr_i32, %canonical#1 : (ptr<i32, byte>, i32);
+    // This already-visited use keeps the duplicate op alive for result #0.
+    hir.store %ptr_i1, %duplicate#0 : (ptr<i1, byte>, i1);
+    %duplicate:2 = arith.add_overflowing %0, %1;
+    // This unvisited use is the operand CSE should rewrite to %canonical#1.
+    hir.store %ptr_i32, %duplicate#1 : (ptr<i32, byte>, i32);
+};
