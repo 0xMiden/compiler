@@ -34,7 +34,7 @@ log.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 path-absolutize = "^3.1"
-toml_edit = { version = "^0.25", features = ["serde"] }
+toml_edit.workspace = true
 liquid = "0.26"
 tempfile.workspace = true
 walkdir = "2.5"

@@ -1,4 +1,10 @@
-// RUN: midenc -Zlint -lstd  %s | filecheck %s
+//! RUN: midenc -Zlint -Zcargo-frontmatter %s | filecheck %s
+//!
+//! ```cargo
+//! [dependencies]
+//! miden-sdk-alloc = { path = "../../../../sdk/alloc" }
+//! miden-stdlib-sys = { path = "../../../../sdk/stdlib-sys" }
+//! ```
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]

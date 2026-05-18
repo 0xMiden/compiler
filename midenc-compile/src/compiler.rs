@@ -387,6 +387,12 @@ pub struct CodegenOptions {
 #[cfg_attr(feature = "std", derive(Parser))]
 #[cfg_attr(feature = "std", command(name = "-Z"))]
 pub struct UnstableOptions {
+    /// When compiling Rust source files, look for Cargo frontmatter and build via Cargo
+    #[cfg_attr(
+        feature = "std",
+        arg(long, default_value_t = false, help_heading = "Rust")
+    )]
+    pub cargo_frontmatter: bool,
     /// Run the experimental Miden Assembly linter prior to assembly
     #[cfg_attr(
         feature = "std",
@@ -664,8 +670,25 @@ impl Compiler {
             package,
             manifest_path,
         } = self;
-        let codegen = CodegenOptions::parse_argv(codegen);
-        let unstable = UnstableOptions::parse_argv(unstable);
+        let CodegenOptions {
+            parse_only,
+            analyze_only,
+            link_only,
+            no_link,
+        } = CodegenOptions::parse_argv(codegen);
+        let UnstableOptions {
+            cargo_frontmatter,
+            lint,
+            print_cfg_after_all,
+            print_cfg_after_pass,
+            print_ir_before_stage,
+            print_ir_after_all,
+            print_ir_after_pass,
+            print_ir_after_modified,
+            print_ir_filter,
+            print_hir_source_locations,
+            trim_path_prefixes,
+        } = UnstableOptions::parse_argv(unstable);
 
         // Determine if a specific output file has been requested
         let output_file = match output_file {
@@ -712,19 +735,21 @@ impl Compiler {
         options.entrypoint = entrypoint;
         options.workspace = workspace;
         options.packages = package;
-        options.parse_only = codegen.parse_only;
-        options.analyze_only = codegen.analyze_only;
-        options.link_only = codegen.link_only;
-        options.no_link = codegen.no_link;
-        options.lint = unstable.lint;
-        options.print_cfg_after_all = unstable.print_cfg_after_all;
-        options.print_cfg_after_pass = unstable.print_cfg_after_pass;
-        options.print_ir_after_all = unstable.print_ir_after_all;
-        options.print_ir_after_pass = unstable.print_ir_after_pass;
-        options.print_ir_after_modified = unstable.print_ir_after_modified;
-        options.print_ir_filters = unstable.print_ir_filter;
-        options.print_hir_source_locations = unstable.print_hir_source_locations;
-        options.trim_path_prefixes = unstable.trim_path_prefixes;
+        options.parse_only = parse_only;
+        options.analyze_only = analyze_only;
+        options.link_only = link_only;
+        options.no_link = no_link;
+        options.lint = lint;
+        options.cargo_frontmatter = cargo_frontmatter;
+        options.print_cfg_after_all = print_cfg_after_all;
+        options.print_cfg_after_pass = print_cfg_after_pass;
+        options.print_ir_before_stage = print_ir_before_stage;
+        options.print_ir_after_all = print_ir_after_all;
+        options.print_ir_after_pass = print_ir_after_pass;
+        options.print_ir_after_modified = print_ir_after_modified;
+        options.print_ir_filters = print_ir_filter;
+        options.print_hir_source_locations = print_hir_source_locations;
+        options.trim_path_prefixes = trim_path_prefixes;
 
         options
     }

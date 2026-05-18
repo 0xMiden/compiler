@@ -2,7 +2,7 @@ use core::str::FromStr;
 use std::{
     boxed::Box,
     collections::BTreeSet,
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     string::{String, ToString},
     sync::Arc,
@@ -239,4 +239,84 @@ fn cargo_build(
     registry.publish_package(package.clone())?;
 
     Ok(package)
+}
+
+/// Parse `cargo -Zscript`-style frontmatter from a given input string, if present.
+///
+/// Returns `Ok(None)` if the input does not define Cargo frontmatter.
+///
+/// The following are expected of the input:
+///
+/// * The frontmatter is defined in a Rust module doc, i.e. `//!`
+/// * The module doc begins on the first line of the input
+/// * The frontmatter block is opened with "```cargo" and closed with "```"
+/// * The contents of the frontmatter block must be valid TOML, and should define only
+///   the `[dependencies] table
+pub fn parse_cargo_frontmatter(
+    input: &str,
+    working_dir: &Path,
+) -> CompilerResult<Option<toml_edit::Table>> {
+    let mut cargo_frontmatter = String::new();
+    let mut opened = false;
+    for line in input.lines() {
+        let line = line.trim_start();
+        if let Some(line) = line.strip_prefix("//!") {
+            let line = line.trim();
+            if !opened && line.starts_with("```cargo") {
+                opened = true;
+            } else if opened && line.starts_with("```") {
+                // The end of the frontmatter section has been reached
+                break;
+            } else if opened {
+                cargo_frontmatter.push_str(line);
+                cargo_frontmatter.push('\n');
+            }
+        } else if opened {
+            return Err(Report::msg(
+                "unclosed Cargo frontmatter block: reached end of module doc before closing ```",
+            ));
+        }
+    }
+
+    if cargo_frontmatter.is_empty() {
+        return Ok(None);
+    }
+
+    let toml = toml_edit::Document::parse(&cargo_frontmatter).map_err(|err| {
+        Report::msg(format!("unable to parse Cargo frontmatter as valid TOML table: {err}"))
+    })?;
+
+    let Some(toml) = toml.get("dependencies") else {
+        return Err(Report::msg(
+            "invalid Cargo frontmatter: expected `[dependencies]` table to be present",
+        ));
+    };
+
+    let Some(mut dependencies) = toml.as_table().cloned() else {
+        return Err(Report::msg(
+            "invalid Cargo frontmatter: expected `dependencies` key to be a table",
+        ));
+    };
+
+    for (k, v) in dependencies.iter_mut() {
+        let Some(dep) = v.as_inline_table_mut() else {
+            continue;
+        };
+        let Some(path) = dep.get_mut("path") else {
+            continue;
+        };
+        let toml_edit::Value::String(path) = path else {
+            return Err(Report::msg(format!(
+                "invalid dependency spec for '{k}': expected 'path' to be a string"
+            )));
+        };
+        let dependency_path = Path::new(path.value());
+        if dependency_path.is_absolute() {
+            continue;
+        }
+        let new_path = working_dir.join(dependency_path);
+        *path = toml_edit::Formatted::new(new_path.display().to_string());
+    }
+
+    Ok(Some(dependencies))
 }

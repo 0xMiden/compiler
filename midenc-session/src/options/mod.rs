@@ -110,6 +110,8 @@ pub struct Options {
     pub save_temps: bool,
     /// Custom RUSTFLAGS to set when building Rust
     pub rustflags: Option<String>,
+    /// Look for `cargo -Zscript`-style frontmatter when compiling standalone Rust sources
+    pub cargo_frontmatter: bool,
     /// We store any leftover argument matches in the session options for use
     /// by any downstream crates that register custom flags
     pub flags: CompileFlags,
@@ -175,6 +177,7 @@ impl Options {
             no_link: false,
             save_temps: false,
             lint: false,
+            cargo_frontmatter: false,
             print_cfg_after_all: false,
             print_cfg_after_pass: vec![],
             print_ir_before_stage: vec![],

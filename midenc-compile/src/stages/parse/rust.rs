@@ -17,6 +17,12 @@ impl Stage for ParseRustStage {
     type Input = InputFile;
     type Output = InputFile;
 
+    #[cfg(not(feature = "std"))]
+    fn run(&mut self, _input: Self::Input, _context: Rc<Context>) -> CompilerResult<Self::Output> {
+        Err(Report::msg("compilation of Rust sources in no-std builds is unsupported"))
+    }
+
+    #[cfg(feature = "std")]
     fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
         let file_type = input.file_type();
         if !matches!(input.file_type(), midenc_session::FileType::Rust) {
@@ -24,35 +30,43 @@ impl Stage for ParseRustStage {
                 "invalid input file: expected '.rs', got {file_type}"
             )));
         }
-        let options = &context.session().options;
-        let use_cargo = options.target_requires_protocol()
-            || options.link_libraries.iter().any(|lib| {
-                lib.name == "std"
-                    || lib.name == "core"
-                    || lib.name == "protocol"
-                    || lib.name == "standards"
-            });
-        match &input.file {
-            #[cfg(feature = "std")]
-            InputType::Real(path) if use_cargo => {
-                let tmp = std::env::temp_dir();
-                let name = context.session().project.package().name().into_inner();
-                let project_dir = tmp.join(&*name);
-                let src_dir = project_dir.join("src");
-                let tmp_rs = src_dir.join("lib.rs");
-                std::fs::create_dir_all(&src_dir).map_err(|err| {
-                    Report::msg(format!("failed to create temporary Cargo project: {err}"))
-                })?;
-                std::fs::copy(path, &tmp_rs).map_err(|err| {
-                    Report::msg(format!(
-                        "failed to copy input file to temporary Cargo project: {err}"
-                    ))
-                })?;
-                cargo_build(&project_dir, context.session(), options)
+        let session = context.session();
+        let options = &session.options;
+        let dependencies = if options.cargo_frontmatter {
+            match &input.file {
+                InputType::Real(path) => {
+                    let working_dir = if path.is_absolute() {
+                        path.parent().unwrap().to_path_buf()
+                    } else {
+                        path.canonicalize().map_err(|err| {
+                            Report::msg(format!("unable to canonicalize input file path: {err}"))
+                        })?
+                    };
+                    let input = std::fs::read_to_string(path)
+                        .map_err(|err| Report::msg(format!("unable to read input: {err}")))?;
+                    crate::cargo::parse_cargo_frontmatter(&input, &working_dir)?
+                }
+                InputType::Stdin { input, .. } => {
+                    let input = core::str::from_utf8(input)
+                        .map_err(|err| Report::msg(format!("input is not valid utf-8: {err}")))?;
+                    let working_dir = std::env::current_dir().map_err(|err| {
+                        Report::msg(format!("unable to obtain current working directory: {err}"))
+                    })?;
+                    crate::cargo::parse_cargo_frontmatter(input, &working_dir)?
+                }
             }
-            #[cfg(feature = "std")]
+        } else {
+            None
+        };
+        let use_cargo = dependencies.is_some()
+            || options.target_requires_protocol()
+            || options.link_libraries.iter().any(|lib| lib.is_core() || lib.is_protocol());
+        match &input.file {
+            InputType::Real(path) if use_cargo => {
+                let project_dir = prepare_temporary_cargo_project(path, session)?;
+                cargo_build(&project_dir, dependencies, session, options)
+            }
             InputType::Real(path) => rustc(path, context.session(), options),
-            #[cfg(feature = "std")]
             InputType::Stdin { input, .. } => {
                 let tmp = std::env::temp_dir();
                 let name = context.session().project.package().name().into_inner();
@@ -66,13 +80,13 @@ impl Stage for ParseRustStage {
                     std::fs::write(&tmp_rs, input).map_err(|err| {
                         Report::msg(format!("failed to write Rust input to temporary file: {err}"))
                     })?;
-                    cargo_build(&project_dir, context.session(), options)
+                    cargo_build(&project_dir, dependencies, session, options)
                 } else {
                     let tmp_rs = tmp.join(&*name).with_extension("rs");
                     std::fs::write(&tmp_rs, input).map_err(|err| {
                         Report::msg(format!("failed to write Rust input to temporary file: {err}"))
                     })?;
-                    rustc(&tmp_rs, context.session(), options)
+                    rustc(&tmp_rs, session, options)
                 }
             }
             #[cfg(not(feature = "std"))]
@@ -81,45 +95,62 @@ impl Stage for ParseRustStage {
     }
 }
 
+/// Creates a temporary Cargo project structure for the Rust source file at `path`
+///
+/// NOTE: This does not write the `Cargo.toml` file - that is handled by the caller, depending on
+/// how the Cargo metadata is derived.
+#[cfg(feature = "std")]
+fn prepare_temporary_cargo_project(path: &Path, session: &Session) -> CompilerResult<PathBuf> {
+    let tmp = std::env::temp_dir();
+    let name = session.project.package().name().into_inner();
+    let project_dir = tmp.join(&*name);
+    let src_dir = project_dir.join("src");
+    let tmp_rs = src_dir.join("lib.rs");
+    std::fs::create_dir_all(&src_dir)
+        .map_err(|err| Report::msg(format!("failed to create temporary Cargo project: {err}")))?;
+    std::fs::copy(path, &tmp_rs).map_err(|err| {
+        Report::msg(format!("failed to copy input file to temporary Cargo project: {err}"))
+    })?;
+    Ok(project_dir)
+}
+
 #[cfg(feature = "std")]
 fn cargo_build(
     project_dir: &Path,
+    frontmatter_dependencies: Option<toml_edit::Table>,
     session: &Session,
     options: &Options,
 ) -> CompilerResult<InputFile> {
-    use core::fmt::Write;
-
     let package = session.project.package();
     let package_name = package.name().into_inner();
     let package_version = package.version().into_inner();
 
-    let mut dependencies = String::with_capacity(1024);
+    let mut dependencies = frontmatter_dependencies.unwrap_or_default();
+    let requires_protocol = options.target_requires_protocol();
     if let Ok(path) = std::env::var("MIDENC_SOURCE_TREE")
         && std::env::var("MIDENC_LINK_FROM_SOURCE_TREE").is_ok_and(|v| v == "1")
     {
         let path = Path::new(&path);
-        let alloc_path = path.join("sdk/alloc");
-        writeln!(&mut dependencies, "miden-sdk-alloc = {{ path = \"{}\" }}", alloc_path.display())
-            .unwrap();
-        if options.target_requires_protocol() {
+        if !dependencies.contains_key("miden-sdk-alloc") {
+            let alloc_path = path.join("sdk/alloc");
+            dependencies.insert("miden-sdk-alloc", dependency_path_to_toml_item(&alloc_path));
+        }
+        if requires_protocol && !dependencies.contains_key("miden") {
             let miden_path = path.join("sdk/sdk");
-            writeln!(&mut dependencies, "miden = {{ path = \"{}\" }}", miden_path.display())
-                .unwrap();
-        } else {
+            dependencies.insert("miden", dependency_path_to_toml_item(&miden_path));
+        } else if !requires_protocol && !dependencies.contains_key("miden-stdlib-sys") {
             let stdlib_sys_path = path.join("sdk/stdlib-sys");
-            writeln!(
-                &mut dependencies,
-                "miden-stdlib-sys = {{ path = \"{}\" }}",
-                stdlib_sys_path.display()
-            )
-            .unwrap();
+            dependencies.insert("miden-stdlib-sys", dependency_path_to_toml_item(&stdlib_sys_path));
         }
     } else {
-        writeln!(&mut dependencies, "miden-sdk-alloc = \"*\"").unwrap();
-        if options.target_requires_protocol() {
-            writeln!(&mut dependencies, "miden = \"*\"").unwrap();
-        } else {
-            writeln!(&mut dependencies, "miden-stdlib-sys = \"*\"").unwrap();
+        if !dependencies.contains_key("miden-sdk-alloc") {
+            dependencies.insert("miden-sdk-alloc", str_to_toml_item("*"));
+        }
+        let requires_protocol = options.target_requires_protocol();
+        if requires_protocol && !dependencies.contains_key("miden") {
+            dependencies.insert("miden", str_to_toml_item("*"));
+        } else if !requires_protocol && !dependencies.contains_key("miden-stdlib-sys") {
+            dependencies.insert("miden-stdlib-sys", str_to_toml_item("*"));
         }
     }
 
@@ -385,4 +416,20 @@ fn build_cargo_args(manifest_path: &Path, options: &Options) -> Vec<String> {
     }
 
     args
+}
+
+#[cfg(feature = "std")]
+fn dependency_path_to_toml_item(path: &std::path::Path) -> toml_edit::Item {
+    use toml_edit::*;
+
+    let mut table = Table::new();
+    table.insert("path", Item::Value(Value::String(Formatted::new(path.display().to_string()))));
+    Item::Table(table)
+}
+
+#[cfg(feature = "std")]
+fn str_to_toml_item(s: &str) -> toml_edit::Item {
+    use toml_edit::*;
+
+    Item::Value(Value::String(Formatted::new(s.to_string())))
 }
