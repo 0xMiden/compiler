@@ -112,6 +112,24 @@ pub extern "C" fn entrypoint{fn_body}
     );
 
     let cargo_proj = project(name)
+        .file(
+            "miden-project.toml",
+            format!(
+                r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+
+[[bin]]
+name = "{name}"
+path = "<virtual>"
+
+[dependencies]
+miden-core = "*"
+"#
+            )
+            .as_str(),
+        )
         .file("Cargo.toml", &cargo_toml)
         .file("src/lib.rs", &lib_rs)
         .build();
