@@ -1,7 +1,10 @@
 use midenc_hir::{
     CallConv, FunctionType, FxHashMap, SymbolNameComponent, SymbolPath, Visibility,
     diagnostics::WrapErr,
-    dialects::builtin::{FunctionRef, ModuleBuilder, WorldBuilder, attributes::Signature},
+    dialects::builtin::{
+        FunctionRef, ModuleBuilder, WorldBuilder,
+        attributes::{AdviceEffectDescriptor, MemoryEffectDescriptor, Signature},
+    },
     interner::Symbol,
     smallvec,
 };
@@ -9,8 +12,10 @@ use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
 use super::{FuncIndex, Module, instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder};
 use crate::{
-    callable::CallableFunction, component::lower_imports::generate_import_lowering_function,
-    error::WasmResult, intrinsics::Intrinsic, miden_abi::miden_abi_function_type,
+    callable::CallableFunction,
+    component::lower_imports::generate_import_lowering_function,
+    error::WasmResult,
+    intrinsics::{Intrinsic, IntrinsicEffect, IntrinsicsConversionResult},
     translation_utils::sig_from_func_type,
 };
 
@@ -136,12 +141,10 @@ impl<'a> ModuleTranslationState<'a> {
             return Ok(None);
         };
 
-        if conv.is_function() {
+        if let IntrinsicsConversionResult::FunctionType { ty, effects } = conv {
             // Create import function reference for the intrinsic
             let import_path = intrinsic.into_symbol_path();
-            let import_ft: FunctionType = intrinsic
-                .function_type()
-                .unwrap_or_else(|| miden_abi_function_type(&import_path));
+            let import_ft: FunctionType = ty;
             let context = self.world_builder.context_rc();
             let import_sig = Signature::new(&context, import_ft.params, import_ft.results);
 
@@ -150,9 +153,43 @@ impl<'a> ModuleTranslationState<'a> {
                 .declare_module_tree(&import_path.without_leaf())
                 .wrap_err("failed to create module for intrinsic imports")?;
             let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-            let intrinsic_func_ref = import_module_builder
+            let mut intrinsic_func_ref = import_module_builder
                 .define_function(import_path.name().into(), Visibility::Public, import_sig)
                 .wrap_err("failed to create intrinsic function ref")?;
+
+            {
+                let mut intrinsic_func = intrinsic_func_ref.borrow_mut();
+                for effect in effects.iter() {
+                    match effect {
+                        IntrinsicEffect::Memory {
+                            effect,
+                            result,
+                            argument,
+                        } => {
+                            intrinsic_func.memory_effects_mut().push(MemoryEffectDescriptor {
+                                effect: *effect,
+                                argument: *argument,
+                                result: *result,
+                            });
+                        }
+                        IntrinsicEffect::Advice {
+                            effect,
+                            resource,
+                            result,
+                            argument,
+                        } => {
+                            let resource =
+                                resource.name().parse().expect("unknown advice resource");
+                            intrinsic_func.advice_effects_mut().push(AdviceEffectDescriptor {
+                                effect: *effect,
+                                resource,
+                                argument: *argument,
+                                result: *result,
+                            });
+                        }
+                    }
+                }
+            }
 
             self.functions.insert(
                 func_index,

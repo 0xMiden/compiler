@@ -9,7 +9,15 @@ use crate::{
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
-        attributes::{LocalVariable, Signature, SignatureAttr, TypeArrayAttr, VisibilityAttr},
+        attributes::{
+            AdviceEffectArrayAttr, AdviceResourceKind, LocalVariable, MemoryEffectArrayAttr,
+            Signature, SignatureAttr, TypeArrayAttr, VisibilityAttr,
+        },
+    },
+    effects::{
+        AdviceEffect, AdviceEffectOpInterface, AdviceMapResource, AdviceStackResource,
+        EffectInstance, EffectIterator, EffectOpInterface, HasRecursiveAdviceEffects,
+        HasRecursiveMemoryEffects, MemoryEffect, MemoryEffectOpInterface, MerkleStoreResource,
     },
     interner,
     parse::ParserExt,
@@ -23,13 +31,15 @@ pub type FunctionRef = UnsafeIntrusiveEntityRef<Function>;
 
 #[operation(
     dialect = BuiltinDialect,
-    traits(SingleRegion, IsolatedFromAbove),
+    traits(SingleRegion, IsolatedFromAbove, HasRecursiveMemoryEffects, HasRecursiveAdviceEffects),
     implements(
         UsableSymbol,
         Symbol,
         CallableOpInterface,
         CallableSymbol,
         RegionKindInterface,
+        MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
         OpPrinter
     )
 )]
@@ -42,6 +52,12 @@ pub struct Function {
     signature: SignatureAttr,
     #[region]
     body: RegionRef,
+    #[attr]
+    #[default]
+    memory_effects: MemoryEffectArrayAttr,
+    #[attr]
+    #[default]
+    advice_effects: AdviceEffectArrayAttr,
     /// The set of local variables allocated within this function
     #[attr]
     #[default]
@@ -49,6 +65,48 @@ pub struct Function {
     /// The uses of this function as a symbol
     #[default]
     uses: SymbolUseList,
+}
+
+impl EffectOpInterface<MemoryEffect> for Function {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        if self.is_declaration() {
+            let memory_effects = self.memory_effects();
+            EffectIterator::new(
+                memory_effects.as_value().iter().map(|desc| EffectInstance::new(desc.effect)),
+            )
+        } else {
+            EffectIterator::new(
+                self.as_operation()
+                    .get_effects_recursively::<MemoryEffect>()
+                    .unwrap_or_default(),
+            )
+        }
+    }
+}
+
+impl EffectOpInterface<AdviceEffect> for Function {
+    fn effects(&self) -> crate::effects::EffectIterator<AdviceEffect> {
+        if self.is_declaration() {
+            let advice_effects = self.advice_effects();
+            EffectIterator::new(advice_effects.as_value().iter().map(|desc| match desc.resource {
+                AdviceResourceKind::Map => {
+                    EffectInstance::new_with_resource(desc.effect, AdviceMapResource)
+                }
+                AdviceResourceKind::Stack => {
+                    EffectInstance::new_with_resource(desc.effect, AdviceStackResource)
+                }
+                AdviceResourceKind::MerkleStore => {
+                    EffectInstance::new_with_resource(desc.effect, MerkleStoreResource)
+                }
+            }))
+        } else {
+            EffectIterator::new(
+                self.as_operation()
+                    .get_effects_recursively::<AdviceEffect>()
+                    .unwrap_or_default(),
+            )
+        }
+    }
 }
 
 impl OpParser for Function {
