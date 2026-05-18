@@ -62,18 +62,25 @@ pub(super) fn assemble_with_registry(
         }
     }
 
-    let sources =
-        prepare_sources(component, &mut assembler, session.get_flag("test_harness"), session)?;
     let is_executable_target = session.options.target_type.is_some_and(|tt| tt.is_executable())
         || project_package.library_target().is_none()
         || session.options.target.as_deref().is_some_and(|tname| {
             project_package.executable_targets().iter().any(|t| tname == &**t.name)
         });
-    let mut project_assembler = assembler.for_project(project_package, registry)?;
+    let sources = prepare_sources(
+        component,
+        &mut assembler,
+        session.get_flag("test_harness"),
+        session,
+        is_executable_target,
+    )?;
+    let mut project_assembler = assembler.for_project(project_package.clone(), registry)?;
 
-    let executable_name = session.name.as_ref();
-    let selector = if component.entrypoint.as_ref().is_some() || is_executable_target {
-        ProjectTargetSelector::Executable(executable_name)
+    let selector = if is_executable_target {
+        ProjectTargetSelector::Executable(selected_executable_target_name(
+            project_package.as_ref(),
+            session,
+        )?)
     } else {
         ProjectTargetSelector::Library
     };
@@ -88,12 +95,29 @@ pub(super) fn assemble_with_registry(
     Ok(package)
 }
 
+fn selected_executable_target_name<'a>(
+    project_package: &'a midenc_session::miden_project::Package,
+    session: &'a Session,
+) -> Result<&'a str, Report> {
+    if let Some(target_name) = session.options.target.as_deref() {
+        return Ok(target_name);
+    }
+
+    let executable_targets = project_package.executable_targets();
+    if executable_targets.len() == 1 {
+        return Ok(&**executable_targets[0].name);
+    }
+
+    Ok(session.name.as_ref())
+}
+
 /// Prepare the synthetic project target and source inputs used to assemble compiler-generated MASM.
 fn prepare_sources(
     component: &MasmComponent,
     assembler: &mut Assembler,
     emit_test_harness: bool,
     session: &Session,
+    generate_executable_main: bool,
 ) -> Result<ProjectSourceInputs, Report> {
     // Intrinsics must be linked into the assembler context directly so they do not become part of
     // the assembled package surface.
@@ -118,7 +142,7 @@ fn prepare_sources(
         support.push(Box::new(Arc::unwrap_or_clone(module.clone())));
     }
 
-    if let Some(entrypoint) = component.entrypoint.as_ref() {
+    if generate_executable_main && let Some(entrypoint) = component.entrypoint.as_ref() {
         // Our generated main module takes precedence here, so move the root module into support
         support.extend(root);
         let root = component.generate_main(
