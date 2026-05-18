@@ -3,9 +3,9 @@ use miden_assembly::ProjectSourceInputs;
 use super::*;
 
 /// Perform analysis of HIR before lowering to Miden Assembly
-pub struct AnalysisStage;
+pub struct MasmAnalysisStage;
 
-impl Stage for AnalysisStage {
+impl Stage for MasmAnalysisStage {
     type Input = Option<ProjectSourceInputs>;
     type Output = Option<ProjectSourceInputs>;
 
@@ -57,6 +57,38 @@ impl Stage for AnalysisStage {
             }
             #[cfg(not(feature = "std"))]
             log::warn!("skipping lint stage, as compiler was built without std feature");
+        }
+
+        Ok(input)
+    }
+}
+
+/// Perform analysis of HIR before lowering to Miden Assembly
+pub struct ComponentAnalysisStage;
+
+impl Stage for ComponentAnalysisStage {
+    type Input = MidenComponent;
+    type Output = MidenComponent;
+
+    fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
+        let session = context.session();
+        if session.options.lint {
+            let analysis_manager =
+                midenc_hir::pass::AnalysisManager::new(input.world.as_operation_ref(), None);
+            let analysis = analysis_manager
+                .get_analysis::<midenc_dialect_hir::analyses::AdviceTaintAnalysis>()?;
+            let source_manager = context.source_manager();
+            if !analysis.findings().is_empty() {
+                for diagnostic in analysis.diagnostics(&source_manager) {
+                    session.diagnostics.emit(diagnostic);
+                }
+                if session.diagnostics.has_errors() || session.analyze_only() {
+                    return Err(CompilerStopped(
+                        "either errors were raised, or analyze-only is set",
+                    )
+                    .into());
+                }
+            }
         }
 
         Ok(input)

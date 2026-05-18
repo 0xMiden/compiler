@@ -18,7 +18,7 @@ mod parse;
 mod rewrite;
 
 pub use self::{
-    analyze::AnalysisStage,
+    analyze::{ComponentAnalysisStage, MasmAnalysisStage},
     assemble::{Artifact, AssembleProjectStage, AssembleStage},
     cargo::CargoBuildStage,
     codegen::{CodegenOutput, CodegenStage},
@@ -86,6 +86,7 @@ fn wasm_pipeline(
     context: Rc<Context>,
 ) -> CompilerResult<Artifact> {
     let mut stages = ParseWasmStage
+        .next(ComponentAnalysisStage)
         .map(apply_rewrites_to_miden_component)
         .next(CodegenStage)
         .next(AssembleStage);
@@ -99,7 +100,7 @@ fn masm_source_pipeline(
 ) -> CompilerResult<Artifact> {
     let mut stages = ParseMasmStage
         .map(|input, _| Ok(Some(input)))
-        .next(AnalysisStage)
+        .next(MasmAnalysisStage)
         .next(AssembleProjectStage);
 
     stages.run(input, context)
@@ -123,7 +124,7 @@ fn masm_project_pipeline(
                 Rc<Context>,
             ) -> CompilerResult<Option<ProjectSourceInputs>>,
         >;
-    let mut stages = maybe_parse_masm_stage.next(AnalysisStage).next(AssembleProjectStage);
+    let mut stages = maybe_parse_masm_stage.next(MasmAnalysisStage).next(AssembleProjectStage);
 
     stages.run(input, context)
 }
