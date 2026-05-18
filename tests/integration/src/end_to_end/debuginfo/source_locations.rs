@@ -15,7 +15,7 @@ fn rust_assert_macro_source_location_with_debug_executor() {
     let mut test = CompilerTest::rust_source_cargo_miden(
         "../fixtures/components/assert-debug-test",
         config,
-        [],
+        ["--entrypoint".to_string(), "assert_debug_test::entrypoint".to_string()],
     );
 
     let package = test.compile_package();

@@ -2,4 +2,6 @@
 name = "assert-debug-test"
 version = "0.1.0"
 
-[lib]
+[[bin]]
+name = "assert-debug-test"
+path = "<virtual>"

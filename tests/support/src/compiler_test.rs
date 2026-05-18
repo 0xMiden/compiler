@@ -601,6 +601,46 @@ impl CompilerTestBuilder {
         config: WasmTranslationConfig,
         midenc_flags: impl IntoIterator<Item = String>,
     ) -> Self {
+        Self::rust_source_with_sdk_project_dependencies(
+            name,
+            source,
+            config,
+            midenc_flags,
+            r#"
+                miden-core = "*"
+                miden-protocol = "*"
+                "#,
+        )
+    }
+
+    /// Set the Rust source code to compile with the `miden` SDK crate available, but without
+    /// linking the Miden protocol package through the generated project manifest.
+    ///
+    /// This is intended for tests which inject mock protocol modules explicitly.
+    pub fn rust_source_with_sdk_without_protocol(
+        name: impl Into<Cow<'static, str>>,
+        source: &str,
+        config: WasmTranslationConfig,
+        midenc_flags: impl IntoIterator<Item = String>,
+    ) -> Self {
+        Self::rust_source_with_sdk_project_dependencies(
+            name,
+            source,
+            config,
+            midenc_flags,
+            r#"
+                miden-core = "*"
+                "#,
+        )
+    }
+
+    fn rust_source_with_sdk_project_dependencies(
+        name: impl Into<Cow<'static, str>>,
+        source: &str,
+        config: WasmTranslationConfig,
+        midenc_flags: impl IntoIterator<Item = String>,
+        project_dependencies: &str,
+    ) -> Self {
         let name = name.into();
         let sdk_path = sdk_crate_path();
         let sdk_alloc_path = sdk_alloc_crate_path();
@@ -618,8 +658,7 @@ impl CompilerTestBuilder {
                 path = "<virtual>"
 
                 [dependencies]
-                miden-core = "*"
-                miden-protocol = "*"
+                {project_dependencies}
                 "#
                 )
                 .as_str(),
@@ -708,6 +747,18 @@ use alloc::vec::Vec;
     ) -> Self {
         let source = format!("#[unsafe(no_mangle)]\npub extern \"C\" fn entrypoint{source}");
         Self::rust_source_with_sdk(name, &source, config, midenc_flags)
+    }
+
+    /// Like `rust_fn_body_with_sdk`, but without linking the protocol package in the generated
+    /// Miden project manifest.
+    pub fn rust_fn_body_with_sdk_without_protocol(
+        name: impl Into<Cow<'static, str>>,
+        source: &str,
+        config: WasmTranslationConfig,
+        midenc_flags: impl IntoIterator<Item = String>,
+    ) -> Self {
+        let source = format!("#[unsafe(no_mangle)]\npub extern \"C\" fn entrypoint{source}");
+        Self::rust_source_with_sdk_without_protocol(name, &source, config, midenc_flags)
     }
 }
 

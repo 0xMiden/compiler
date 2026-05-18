@@ -47,8 +47,12 @@ end
 
     let artifact_name = "abi_transform_tx_kernel_get_metadata";
     let config = WasmTranslationConfig::default();
-    let mut test_builder =
-        CompilerTestBuilder::rust_fn_body_with_sdk(artifact_name, &main_fn, config, []);
+    let mut test_builder = CompilerTestBuilder::rust_fn_body_with_sdk_without_protocol(
+        artifact_name,
+        &main_fn,
+        config,
+        [],
+    );
     test_builder.link_with_masm_module("miden::protocol::active_note", masm);
     let mut test = test_builder.build();
 
