@@ -44,9 +44,15 @@ fn assert_manifest_exports_match_library(package: &miden_mast_package::Package) 
     );
 }
 
+fn component_namespace(name: &str) -> String {
+    let package = name.replace('_', "-");
+    format!("miden:{package}/miden-{package}@0.0.1")
+}
+
 #[test]
 fn rust_sdk_swapp_note_bindings() {
     let name = "rust_sdk_swapp_note_bindings";
+    let namespace = component_namespace(name);
     let sdk_path = sdk_crate_path();
     let sdk_alloc_path = sdk_alloc_crate_path();
     let miden_project_toml = format!(
@@ -57,6 +63,7 @@ fn rust_sdk_swapp_note_bindings() {
 
         [lib]
         kind = "note"
+        namespace = "{namespace}"
         "#
     );
     let cargo_toml = format!(

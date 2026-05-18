@@ -322,7 +322,12 @@ fn expand_component_impl(
         ));
     }
 
-    validate_auth_script_count(metadata.target.ty, auth_method_count, impl_block.span())?;
+    validate_auth_script_count(
+        metadata.target.ty,
+        metadata.requires_auth_script(),
+        auth_method_count,
+        impl_block.span(),
+    )?;
 
     let wit_source = build_component_wit(
         &package_name,
@@ -395,16 +400,22 @@ fn expand_component_impl(
 /// Validates how many methods may be annotated with `#[auth_script]` for the current project kind.
 fn validate_auth_script_count(
     target_type: TargetType,
+    requires_auth_script: bool,
     auth_method_count: usize,
     span: Span2,
 ) -> Result<(), syn::Error> {
-    match target_type {
-        TargetType::AccountComponent if auth_method_count == 1 => Ok(()),
-        TargetType::AccountComponent if auth_method_count > 1 => Err(syn::Error::new(
+    match (target_type, requires_auth_script, auth_method_count) {
+        (TargetType::AccountComponent, true, 1) => Ok(()),
+        (TargetType::AccountComponent, true, 0) => Err(syn::Error::new(
+            span,
+            "authentication components require exactly one `#[auth_script]` method",
+        )),
+        (TargetType::AccountComponent, _, count) if count > 1 => Err(syn::Error::new(
             span,
             "only one `#[auth_script]` method is allowed per `#[component]` impl block",
         )),
-        _ if auth_method_count > 0 => Err(syn::Error::new(
+        (TargetType::AccountComponent, ..) => Ok(()),
+        (_, _, count) if count > 0 => Err(syn::Error::new(
             span,
             "`#[auth_script]` method is only permitted on components of 'account-component' type",
         )),
@@ -1151,16 +1162,23 @@ mod tests {
 
     #[test]
     fn authentication_components_require_exactly_one_auth_script() {
-        let err = validate_auth_script_count(TargetType::AccountComponent, 0, Span2::call_site())
-            .expect_err("expected authentication components to require an auth script");
+        let err =
+            validate_auth_script_count(TargetType::AccountComponent, true, 0, Span2::call_site())
+                .expect_err("expected authentication components to require an auth script");
 
         assert!(
             err.to_string()
                 .contains("authentication components require exactly one `#[auth_script]` method")
         );
 
-        validate_auth_script_count(TargetType::AccountComponent, 1, Span2::call_site())
+        validate_auth_script_count(TargetType::AccountComponent, true, 1, Span2::call_site())
             .expect("expected exactly one auth script to be accepted");
+    }
+
+    #[test]
+    fn ordinary_account_components_may_omit_auth_script() {
+        validate_auth_script_count(TargetType::AccountComponent, false, 0, Span2::call_site())
+            .expect("expected ordinary account components to allow no auth script");
     }
 
     #[test]

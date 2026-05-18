@@ -21,6 +21,7 @@ use crate::{
 pub struct ManifestPackage {
     pub manifest_dir: PathBuf,
     pub package_table: Table,
+    pub project_kind: Option<String>,
     pub package: Arc<miden_project::Package>,
     pub target: miden_project::Target,
     pub description: Arc<str>,
@@ -42,6 +43,7 @@ impl ManifestPackage {
             return Ok(Self {
                 manifest_dir,
                 package_table: Default::default(),
+                project_kind: None,
                 package: Arc::from(miden_project::Package::new("empty", target.clone())),
                 target,
                 description: Default::default(),
@@ -76,6 +78,16 @@ impl ManifestPackage {
             .and_then(Value::as_table)
             .ok_or_else(|| syn::Error::new(error_span, "manifest missing [package] table"))?
             .clone();
+        let project_kind = manifest
+            .get("package")
+            .and_then(Value::as_table)
+            .and_then(|package| package.get("metadata"))
+            .and_then(Value::as_table)
+            .and_then(|metadata| metadata.get("miden"))
+            .and_then(Value::as_table)
+            .and_then(|miden| miden.get("project-kind"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
 
         let miden_project_toml_path = manifest_dir.join("miden-project.toml");
         let source_manager = Arc::new(DefaultSourceManager::default());
@@ -121,6 +133,7 @@ impl ManifestPackage {
         Ok(Self {
             manifest_dir,
             package_table,
+            project_kind,
             package,
             target,
             description,
@@ -144,6 +157,11 @@ impl ManifestPackage {
     /// Returns the declared component version from manifest metadata.
     pub(crate) fn component_version(&self) -> &miden_mast_package::Version {
         self.package.version().into_inner()
+    }
+
+    /// Returns true if Cargo metadata declares this crate as an authentication component.
+    pub(crate) fn requires_auth_script(&self) -> bool {
+        self.project_kind.as_deref() == Some("authentication-component")
     }
 
     /// Resolves fully-qualified imports exported by `package.metadata.miden.dependencies`.
