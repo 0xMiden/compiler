@@ -3,7 +3,7 @@ use std::{env, fs, path::Path};
 use cargo_miden::run;
 use midenc_session::diagnostics::assert_matches;
 
-use crate::utils::current_dir_lock;
+use crate::utils::{current_dir_lock, project_template_arg, workspace_root};
 
 /// Creates a minimal Cargo workspace at `root` with a single member named `member_name`.
 fn write_workspace_root(root: &Path, member_name: &str) {
@@ -21,6 +21,8 @@ repository = "https://example.com/test"
 "#
     );
     fs::write(root.join("Cargo.toml"), ws_toml).expect("write workspace Cargo.toml");
+    fs::copy(workspace_root().join("Cargo.lock"), root.join("Cargo.lock"))
+        .expect("copy workspace Cargo.lock");
 }
 
 /// Creates a minimal Cargo workspace at `root` without members array.
@@ -36,6 +38,8 @@ license = "MIT"
 repository = "https://example.com/test"
 "#;
     fs::write(root.join("Cargo.toml"), ws_toml).expect("write workspace Cargo.toml");
+    fs::copy(workspace_root().join("Cargo.lock"), root.join("Cargo.lock"))
+        .expect("copy workspace Cargo.lock");
 }
 
 /// Creates a minimal Cargo workspace at `root` with existing members.
@@ -55,19 +59,18 @@ repository = "https://example.com/test"
 "#
     );
     fs::write(root.join("Cargo.toml"), ws_toml).expect("write workspace Cargo.toml");
+    fs::copy(workspace_root().join("Cargo.lock"), root.join("Cargo.lock"))
+        .expect("copy workspace Cargo.lock");
 }
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
-    let template = if let Ok(templates_path) = std::env::var("TEST_LOCAL_TEMPLATES_PATH") {
-        &format!("--template-path={templates_path}/{}", template.trim_start_matches("--"))
-    } else {
-        template
-    };
-    ["cargo", "miden", "new", project_name, template]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect()
+    vec![
+        "cargo".to_string(),
+        "miden".to_string(),
+        "new".to_string(),
+        project_name.to_string(),
+        project_template_arg(template),
+    ]
 }
 
 #[test]
@@ -153,11 +156,9 @@ fn build_from_workspace_root_is_rejected() {
     // write workspace manifest and scaffold a member
     let member_name = "member_account";
     write_workspace_root(&ws_root, member_name);
-    let _ = run(["cargo", "miden", "new", member_name, "--account"]
-        .into_iter()
-        .map(|s| s.to_string()))
-    .expect("cargo miden new failed")
-    .expect("expected NewCommandOutput");
+    let _ = run(new_project_args(member_name, "--account").into_iter())
+        .expect("cargo miden new failed")
+        .expect("expected NewCommandOutput");
 
     // Run cargo miden build at the workspace root without selecting a package
     env::set_current_dir(&ws_root).unwrap();

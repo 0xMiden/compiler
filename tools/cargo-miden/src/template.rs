@@ -86,24 +86,20 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
 
     render_template(&source_root, &project_dir, &parser, &variables, &config)?;
 
-    // Generate miden-project.toml directly temporarily, if not rendered by template
+    // Generate miden-project.toml directly temporarily, if not rendered by template.
     let miden_project_toml = project_dir.join("miden-project.toml");
-    if miden_project_toml.try_exists().is_ok_and(|exists| !exists) {
-        std::fs::write(
+    let cargo_manifest_path = project_dir.join("Cargo.toml");
+    if miden_project_toml.try_exists().is_ok_and(|exists| !exists)
+        && cargo_manifest_path.try_exists().is_ok_and(|exists| exists)
+    {
+        let cargo_manifest = fs::read_to_string(&cargo_manifest_path)
+            .context("Failed to read generated Cargo.toml")?;
+        let cargo_manifest = cargo_manifest
+            .parse::<DocumentMut>()
+            .context("Failed to parse generated Cargo.toml")?;
+        fs::write(
             &miden_project_toml,
-            format!(
-                "\
-[package]
-name = {project_name}
-version = \"0.1.0\"
-
-[lib]
-
-[dependencies]
-miden-core = \"^0.22\"
-miden-protocol = \"^0.14\"
-"
-            ),
+            render_miden_project_manifest(&project_name, &cargo_manifest),
         )?;
     }
 
@@ -118,6 +114,166 @@ miden-protocol = \"^0.14\"
     println!("Created project {}", project_dir.display());
 
     Ok(project_dir)
+}
+
+fn render_miden_project_manifest(project_name: &str, cargo_manifest: &DocumentMut) -> String {
+    let cargo_package_name = toml_str(cargo_manifest, &["package", "name"]).unwrap_or(project_name);
+    let package_name = toml_str(cargo_manifest, &["package", "metadata", "component", "package"])
+        .and_then(component_package_name)
+        .unwrap_or(cargo_package_name);
+    let package_version = toml_str(cargo_manifest, &["package", "version"]).unwrap_or("0.1.0");
+    let project_kind = toml_str(cargo_manifest, &["package", "metadata", "miden", "project-kind"])
+        .unwrap_or("program");
+
+    let mut manifest = format!(
+        "\
+[package]
+name = \"{}\"
+version = \"{}\"
+
+",
+        toml_escape(package_name),
+        toml_escape(package_version)
+    );
+
+    match project_kind {
+        "account" | "account-component" | "authentication-component" => {
+            manifest.push_str("[lib]\n");
+            manifest.push_str("kind = \"account-component\"\n");
+            manifest.push_str(&format!(
+                "namespace = \"{}\"\n\n",
+                component_namespace(package_name, package_version)
+            ));
+        }
+        "note" | "note-script" => {
+            manifest.push_str("[lib]\n");
+            manifest.push_str("kind = \"note\"\n");
+            manifest.push_str(&format!(
+                "namespace = \"{}\"\n\n",
+                component_namespace(package_name, package_version)
+            ));
+        }
+        "tx-script" | "transaction-script" => {
+            manifest.push_str("[lib]\n");
+            manifest.push_str("kind = \"tx-script\"\n");
+            manifest.push_str("namespace = \"miden:base/transaction-script@1.0.0\"\n\n");
+        }
+        _ => {
+            manifest.push_str("[[bin]]\n");
+            manifest.push_str(&format!("name = \"{}\"\n", toml_escape(package_name)));
+            manifest.push_str("path = \"<virtual>\"\n\n");
+        }
+    }
+
+    let metadata_dependencies = cargo_manifest
+        .get("package")
+        .and_then(|package| package.get("metadata"))
+        .and_then(|metadata| metadata.get("miden"))
+        .and_then(|miden| miden.get("dependencies"))
+        .and_then(|dependencies| dependencies.as_table_like());
+    let component_target_dependencies = cargo_manifest
+        .get("package")
+        .and_then(|package| package.get("metadata"))
+        .and_then(|metadata| metadata.get("component"))
+        .and_then(|component| component.get("target"))
+        .and_then(|target| target.get("dependencies"))
+        .and_then(|dependencies| dependencies.as_table_like());
+
+    manifest.push_str("[dependencies]\n");
+    manifest.push_str("miden-core = \"*\"\n");
+    if project_kind != "program" {
+        manifest.push_str("miden-protocol = \"*\"\n");
+    }
+    if let Some(dependencies) = metadata_dependencies {
+        for (name, dependency) in dependencies.iter() {
+            if let Some(path) = dependency.get("path").and_then(|path| path.as_str()) {
+                let name = miden_dependency_name(name);
+                manifest.push_str(&format!(
+                    "{} = {{ path = \"{}\" }}\n",
+                    toml_key(name),
+                    toml_escape(path)
+                ));
+            }
+        }
+    }
+
+    let supported_types = cargo_manifest
+        .get("package")
+        .and_then(|package| package.get("metadata"))
+        .and_then(|metadata| metadata.get("miden"))
+        .and_then(|miden| miden.get("supported-types"));
+    let mut wit_dependencies = Vec::new();
+    if let Some(dependencies) = metadata_dependencies {
+        for (name, dependency) in dependencies.iter() {
+            if let Some(wit) = dependency.get("wit").and_then(|wit| wit.as_str()) {
+                wit_dependencies.push((miden_dependency_name(name).to_string(), wit.to_string()));
+            }
+        }
+    }
+    if let Some(dependencies) = component_target_dependencies {
+        for (name, dependency) in dependencies.iter() {
+            let wit = dependency
+                .get("wit")
+                .or_else(|| dependency.get("path"))
+                .and_then(|wit| wit.as_str());
+            if let Some(wit) = wit {
+                wit_dependencies.push((miden_dependency_name(name).to_string(), wit.to_string()));
+            }
+        }
+    }
+
+    if supported_types.is_some() || !wit_dependencies.is_empty() {
+        manifest.push('\n');
+    }
+    if let Some(supported_types) = supported_types {
+        manifest.push_str("[package.metadata.miden]\n");
+        manifest.push_str(&format!("supported-types = {supported_types}\n"));
+    }
+    if !wit_dependencies.is_empty() {
+        manifest.push_str("\n[package.metadata.miden.dependencies]\n");
+        for (name, wit) in wit_dependencies {
+            manifest.push_str(&format!(
+                "{} = {{ wit = \"{}\" }}\n",
+                toml_key(&name),
+                toml_escape(&wit)
+            ));
+        }
+    }
+
+    manifest
+}
+
+fn toml_str<'a>(document: &'a DocumentMut, path: &[&str]) -> Option<&'a str> {
+    let mut item = document.get(path.first()?)?;
+    for segment in &path[1..] {
+        item = item.get(*segment)?;
+    }
+    item.as_str()
+}
+
+fn component_namespace(package_name: &str, version: &str) -> String {
+    let package = package_name.replace('_', "-");
+    format!("miden:{package}/miden-{package}@{}", toml_escape(version))
+}
+
+fn component_package_name(package: &str) -> Option<&str> {
+    package.rsplit_once(':').map(|(_, name)| name).filter(|name| !name.is_empty())
+}
+
+fn miden_dependency_name(name: &str) -> &str {
+    name.rsplit_once(':').map(|(_, name)| name).unwrap_or(name)
+}
+
+fn toml_key(key: &str) -> String {
+    if key.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_') {
+        key.to_string()
+    } else {
+        format!("\"{}\"", toml_escape(key))
+    }
+}
+
+fn toml_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 struct TemplateSource {
@@ -448,9 +604,10 @@ fn render_file(
             let template = parser
                 .parse(content)
                 .with_context(|| format!("Failed to parse template '{}'", source.display()))?;
-            let rendered = template
+            let mut rendered = template
                 .render(variables)
                 .with_context(|| format!("Failed to render template '{}'", source.display()))?;
+            apply_template_compatibility_fixes(&mut rendered);
             fs::write(destination, rendered).with_context(|| {
                 format!("Failed to write rendered file '{}'", destination.display())
             })?;
@@ -469,6 +626,15 @@ fn render_file(
         .with_context(|| format!("Failed to set permissions on '{}'", destination.display()))?;
 
     Ok(())
+}
+
+fn apply_template_compatibility_fixes(rendered: &mut String) {
+    // rust-templates v0.30.0 references the add-contract helper through the old generated binding
+    // module name. Keep that template tag usable until the upstream template is updated.
+    *rendered = rendered.replace(
+        "bindings::miden::add_contract::add_contract::add",
+        "bindings::miden::add_contract::miden_add_contract::add",
+    );
 }
 
 fn initialise_git_repo(project_dir: &Path) -> Result<()> {
