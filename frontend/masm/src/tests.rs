@@ -31,7 +31,11 @@ use midenc_hir::{
     AddressSpace, ArrayType, CallConv, CallOpInterface, FunctionType, Immediate, Op, PointerType,
     SymbolName, SymbolPath, SymbolTable, Type,
     diagnostics::{Report, Severity},
-    dialects::builtin::{self, Function, UnrealizedConversionCast},
+    dialects::builtin::{
+        self, Function, UnrealizedConversionCast,
+        attributes::{AdviceEffectDescriptor, AdviceResourceKind},
+    },
+    effects::AdviceEffect,
     pass::AnalysisManager,
 };
 
@@ -3807,7 +3811,7 @@ end
 }
 
 #[test]
-fn advice_taint_treats_external_call_results_as_unconstrained() -> Result<()> {
+fn advice_taint_does_not_taint_external_result_without_advice_effects() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
     external_signatures
@@ -3825,6 +3829,36 @@ end
         &external_signatures,
         context,
     )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_treats_external_call_results_with_advice_effects_as_unconstrained() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures
+        .insert(ast::Path::new("::dep::source").into(), masm_signature([], [Type::Felt]));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry(rhs: u32) -> u32
+    exec.::dep::source
+    u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+    mark_external_function_with_advice_effect(output.world, "dep", "source");
 
     let findings = advice_taint_findings(output.module)?;
     assert_eq!(sink_names(&findings), ["arith.add"]);
@@ -3871,6 +3905,7 @@ end
         &external_signatures,
         context,
     )?;
+    mark_external_function_with_advice_effect(output.world, "dep", "source");
 
     let findings = advice_taint_findings(output.module)?;
     assert!(findings.is_empty(), "{findings:#?}");
@@ -4000,6 +4035,7 @@ end
         &external_signatures,
         context,
     )?;
+    mark_external_function_with_advice_effect(output.world, "dep", "source");
 
     let findings = advice_taint_findings(output.module)?;
     assert!(findings.is_empty(), "{findings:#?}");
@@ -4121,6 +4157,7 @@ end
         &external_signatures,
         context,
     )?;
+    mark_external_function_with_advice_effect(output.world, "dep", "source");
 
     let exits = advice_taint_exit_findings(output.module)?;
     assert_eq!(exits.len(), 1);
@@ -5004,6 +5041,21 @@ fn find_world_module(world: builtin::WorldRef, module_path: &str) -> builtin::Mo
         .downcast_ref::<builtin::Module>()
         .unwrap_or_else(|| panic!("expected symbol '{module_path}' to be a module"))
         .as_module_ref()
+}
+
+fn mark_external_function_with_advice_effect(
+    world: builtin::WorldRef,
+    module_path: &str,
+    function_name: &str,
+) {
+    let module = find_world_module(world, module_path);
+    let mut function = find_function(module, function_name);
+    function.borrow_mut().advice_effects_mut().push(AdviceEffectDescriptor {
+        effect: AdviceEffect::Read,
+        resource: AdviceResourceKind::Stack,
+        argument: None,
+        result: None,
+    });
 }
 
 fn top_level_op_count<T: midenc_hir::Op + 'static>(function: builtin::FunctionRef) -> usize {

@@ -43,16 +43,17 @@ impl Stage for MasmAnalysisStage {
                 let analysis = analysis_manager
                     .get_analysis::<midenc_dialect_hir::analyses::AdviceTaintAnalysis>()?;
                 let source_manager = context.source_manager();
-                if !analysis.findings().is_empty() {
-                    for diagnostic in analysis.diagnostics(&source_manager) {
+                let diagnostics = analysis.diagnostics(&source_manager);
+                if !diagnostics.is_empty() {
+                    for diagnostic in diagnostics {
                         session.diagnostics.emit(diagnostic);
                     }
-                    if session.diagnostics.has_errors() || session.analyze_only() {
-                        return Err(CompilerStopped(
-                            "either errors were raised, or analyze-only is set",
-                        )
-                        .into());
-                    }
+                }
+                if session.diagnostics.has_errors() || session.analyze_only() {
+                    return Err(CompilerStopped(
+                        "either errors were raised, or analyze-only is set",
+                    )
+                    .into());
                 }
             }
             #[cfg(not(feature = "std"))]
@@ -78,16 +79,16 @@ impl Stage for ComponentAnalysisStage {
             let analysis = analysis_manager
                 .get_analysis::<midenc_dialect_hir::analyses::AdviceTaintAnalysis>()?;
             let source_manager = context.source_manager();
-            if !analysis.findings().is_empty() {
-                for diagnostic in analysis.diagnostics(&source_manager) {
+            let diagnostics = analysis.diagnostics(&source_manager);
+            if !diagnostics.is_empty() {
+                for diagnostic in diagnostics {
                     session.diagnostics.emit(diagnostic);
                 }
-                if session.diagnostics.has_errors() || session.analyze_only() {
-                    return Err(CompilerStopped(
-                        "either errors were raised, or analyze-only is set",
-                    )
-                    .into());
-                }
+            }
+            if session.diagnostics.has_errors() || session.analyze_only() {
+                return Err(
+                    CompilerStopped("either errors were raised, or analyze-only is set").into()
+                );
             }
         }
 

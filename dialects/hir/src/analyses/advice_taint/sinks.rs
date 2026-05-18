@@ -1,7 +1,11 @@
 use alloc::vec::Vec;
 
 use midenc_dialect_arith as arith;
-use midenc_hir::{CallOpInterface, Operation, Symbol, Type, Value, dialects::builtin};
+use midenc_hir::{
+    CallOpInterface, Operation, Symbol, Type, Value,
+    dialects::builtin,
+    effects::{AdviceEffect, EffectOpInterface},
+};
 
 pub(super) fn is_external_call(call: &dyn CallOpInterface) -> bool {
     let Some(callee) = call.resolve() else {
@@ -19,6 +23,21 @@ pub(super) fn external_call_param_types(call: &dyn CallOpInterface) -> Option<Ve
     let callee = callee.borrow();
     let function = callee.as_symbol_operation().downcast_ref::<builtin::Function>()?;
     Some(function.get_signature().params().iter().map(|param| param.ty.clone()).collect())
+}
+
+pub(super) fn external_call_has_advice_effects(call: &dyn CallOpInterface) -> bool {
+    let Some(callee) = call.resolve() else {
+        return false;
+    };
+    let callee = callee.borrow();
+    let Some(function) = callee.as_symbol_operation().downcast_ref::<builtin::Function>() else {
+        return false;
+    };
+
+    function.is_declaration()
+        && <builtin::Function as EffectOpInterface<AdviceEffect>>::effects(function)
+            .next()
+            .is_some()
 }
 
 pub(super) fn is_constrained_external_parameter_type(ty: &Type) -> bool {

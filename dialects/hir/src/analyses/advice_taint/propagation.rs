@@ -9,7 +9,10 @@ use midenc_hir_analysis::{
 use super::{
     lattice::{AdviceTaintSparseLattice, CallContextFrame, ContextualAdviceTaintValue},
     layout::ADVICE_PIPE_RAW_RESULT_COUNT,
-    sinks::{is_u32_presuming_sink, is_unconstrained_external_result_type},
+    sinks::{
+        external_call_has_advice_effects, is_u32_presuming_sink,
+        is_unconstrained_external_result_type,
+    },
 };
 use crate::{AdviceLoadWord, AdvicePipe, AdvicePop, AssertU32};
 
@@ -77,10 +80,13 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
             }
             CallControlFlowAction::External => {
                 let span = call.as_operation().span();
+                let has_advice_effects = external_call_has_advice_effects(call);
                 for (result_value, result) in call.as_operation().results().all().iter().zip(after)
                 {
                     let result_value = result_value.borrow();
-                    let value = if is_unconstrained_external_result_type(result_value.ty()) {
+                    let value = if has_advice_effects
+                        && is_unconstrained_external_result_type(result_value.ty())
+                    {
                         ContextualAdviceTaintValue::external_call(span)
                     } else {
                         ContextualAdviceTaintValue::clean()

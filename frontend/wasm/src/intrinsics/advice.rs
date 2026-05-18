@@ -67,7 +67,7 @@ pub fn function_type(function: Symbol) -> Option<FunctionType> {
 
 pub fn function_effects(function: Symbol) -> Option<SmallVec<[IntrinsicEffect; 2]>> {
     match function.as_str() {
-        "adv_push_mapvln" => Some(smallvec![
+        "adv_push_mapvaln" => Some(smallvec![
             IntrinsicEffect::Advice {
                 effect: midenc_hir::effects::AdviceEffect::Read,
                 resource: Box::new(AdviceMapResource),
@@ -165,5 +165,36 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
         _ => {
             panic!("unsupported io intrinsic: '{function}'")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::intrinsics::IntrinsicEffect;
+
+    #[test]
+    fn adv_push_mapvaln_declares_advice_effects() {
+        let effects = function_effects(Symbol::intern("adv_push_mapvaln"))
+            .expect("adv_push_mapvaln should be modeled as an intrinsic function");
+
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                IntrinsicEffect::Advice {
+                    effect: midenc_hir::effects::AdviceEffect::Read,
+                    ..
+                }
+            )
+        }));
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                IntrinsicEffect::Advice {
+                    effect: midenc_hir::effects::AdviceEffect::Allocate,
+                    ..
+                }
+            )
+        }));
     }
 }

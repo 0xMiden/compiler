@@ -38,9 +38,10 @@ impl Stage for ParseRustStage {
                     let working_dir = if path.is_absolute() {
                         path.parent().unwrap().to_path_buf()
                     } else {
-                        path.canonicalize().map_err(|err| {
+                        let path = path.canonicalize().map_err(|err| {
                             Report::msg(format!("unable to canonicalize input file path: {err}"))
-                        })?
+                        })?;
+                        path.parent().unwrap().to_path_buf()
                     };
                     let input = std::fs::read_to_string(path)
                         .map_err(|err| Report::msg(format!("unable to read input: {err}")))?;

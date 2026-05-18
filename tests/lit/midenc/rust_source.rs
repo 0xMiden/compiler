@@ -1,9 +1,12 @@
-//! RUN: midenc -Zlint -Zcargo-frontmatter %s | filecheck %s
+//! RUN: midenc -Zlint -Canalyze-only -Zcargo-frontmatter %s 2>&1 | filecheck %s
+//! CHECK: unconstrained external call result reaches u32-presuming operation
+//! CHECK: pipe_words_to_memory
+//! CHECK: unconstrained value is passed as a call argument here
 //!
 //! ```cargo
 //! [dependencies]
-//! miden-sdk-alloc = { path = "../../../../sdk/alloc" }
-//! miden-stdlib-sys = { path = "../../../../sdk/stdlib-sys" }
+//! miden-sdk-alloc = { path = "../../../sdk/alloc" }
+//! miden-stdlib-sys = { path = "../../../sdk/stdlib-sys" }
 //! ```
 #![no_std]
 #![no_main]

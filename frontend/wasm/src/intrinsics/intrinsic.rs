@@ -1,6 +1,10 @@
 use midenc_hir::{
     FunctionType, SmallVec, SymbolNameComponent, SymbolPath,
     diagnostics::{Diagnostic, miette},
+    dialects::builtin::{
+        Function,
+        attributes::{AdviceEffectDescriptor, MemoryEffectDescriptor},
+    },
     effects::{AdviceEffect, MemoryEffect, Resource},
     interner::{Symbol, symbols},
 };
@@ -168,6 +172,41 @@ pub enum IntrinsicEffect {
         result: Option<u8>,
         argument: Option<u8>,
     },
+}
+
+pub fn attach_effects_to_function<'a>(
+    function: &mut Function,
+    effects: impl IntoIterator<Item = &'a IntrinsicEffect>,
+) {
+    for effect in effects {
+        match effect {
+            IntrinsicEffect::Memory {
+                effect,
+                result,
+                argument,
+            } => {
+                function.memory_effects_mut().push(MemoryEffectDescriptor {
+                    effect: *effect,
+                    argument: *argument,
+                    result: *result,
+                });
+            }
+            IntrinsicEffect::Advice {
+                effect,
+                resource,
+                result,
+                argument,
+            } => {
+                let resource = resource.name().parse().expect("unknown advice resource");
+                function.advice_effects_mut().push(AdviceEffectDescriptor {
+                    effect: *effect,
+                    resource,
+                    argument: *argument,
+                    result: *result,
+                });
+            }
+        }
+    }
 }
 
 impl IntrinsicsConversionResult {

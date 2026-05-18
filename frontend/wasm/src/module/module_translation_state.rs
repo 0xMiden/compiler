@@ -1,10 +1,7 @@
 use midenc_hir::{
     CallConv, FunctionType, FxHashMap, SymbolNameComponent, SymbolPath, Visibility,
     diagnostics::WrapErr,
-    dialects::builtin::{
-        FunctionRef, ModuleBuilder, WorldBuilder,
-        attributes::{AdviceEffectDescriptor, MemoryEffectDescriptor, Signature},
-    },
+    dialects::builtin::{FunctionRef, ModuleBuilder, WorldBuilder, attributes::Signature},
     interner::Symbol,
     smallvec,
 };
@@ -15,7 +12,7 @@ use crate::{
     callable::CallableFunction,
     component::lower_imports::generate_import_lowering_function,
     error::WasmResult,
-    intrinsics::{Intrinsic, IntrinsicEffect, IntrinsicsConversionResult},
+    intrinsics::{Intrinsic, IntrinsicsConversionResult, attach_effects_to_function},
     translation_utils::sig_from_func_type,
 };
 
@@ -159,36 +156,7 @@ impl<'a> ModuleTranslationState<'a> {
 
             {
                 let mut intrinsic_func = intrinsic_func_ref.borrow_mut();
-                for effect in effects.iter() {
-                    match effect {
-                        IntrinsicEffect::Memory {
-                            effect,
-                            result,
-                            argument,
-                        } => {
-                            intrinsic_func.memory_effects_mut().push(MemoryEffectDescriptor {
-                                effect: *effect,
-                                argument: *argument,
-                                result: *result,
-                            });
-                        }
-                        IntrinsicEffect::Advice {
-                            effect,
-                            resource,
-                            result,
-                            argument,
-                        } => {
-                            let resource =
-                                resource.name().parse().expect("unknown advice resource");
-                            intrinsic_func.advice_effects_mut().push(AdviceEffectDescriptor {
-                                effect: *effect,
-                                resource,
-                                argument: *argument,
-                                result: *result,
-                            });
-                        }
-                    }
-                }
+                attach_effects_to_function(&mut intrinsic_func, effects.iter());
             }
 
             self.functions.insert(
