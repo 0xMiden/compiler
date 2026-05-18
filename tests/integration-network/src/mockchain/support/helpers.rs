@@ -12,7 +12,7 @@ use miden_client::{
     transaction::RawOutputNote,
 };
 use miden_core::Felt;
-use miden_mast_package::Package;
+use miden_mast_package::{Package, PackageExport, TargetType};
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
@@ -69,6 +69,40 @@ pub(crate) fn note_script_root(package: &Package) -> Word {
     NoteScript::from_package(package)
         .expect("compiled package should contain exactly one note script export")
         .root()
+}
+
+/// Builds a transaction script from a compiled transaction-script package.
+fn transaction_script_from_package(package: &Package) -> TransactionScript {
+    assert_eq!(
+        package.kind,
+        TargetType::TransactionScript,
+        "expected a transaction-script package"
+    );
+
+    let mut first_procedure = None;
+    let mut selected_procedure = None;
+    let mut num_procedures = 0usize;
+    for export in package.manifest.exports() {
+        let PackageExport::Procedure(procedure) = export else {
+            continue;
+        };
+        num_procedures += 1;
+        first_procedure.get_or_insert(procedure);
+        if matches!(export.name(), "main" | "run") {
+            selected_procedure = Some(procedure);
+        }
+    }
+
+    let procedure = selected_procedure
+        .or_else(|| (num_procedures == 1).then(|| first_procedure.unwrap()))
+        .expect("transaction-script package should export exactly one entry procedure");
+    let entrypoint = package
+        .mast
+        .mast_forest()
+        .find_procedure_root(procedure.digest)
+        .expect("transaction-script main export should have a MAST node");
+
+    TransactionScript::from_parts(package.mast.mast_forest().clone(), entrypoint)
 }
 
 // ================================================================================================
@@ -148,11 +182,7 @@ pub(crate) fn build_asset_transfer_tx(
     tx_script_package: Arc<Package>,
     rng: &mut impl FeltRng,
 ) -> (TransactionContextBuilder, Note) {
-    let tx_script_program = tx_script_package.unwrap_program();
-    let tx_script = TransactionScript::from_parts(
-        tx_script_program.mast_forest().clone(),
-        tx_script_program.entrypoint(),
-    );
+    let tx_script = transaction_script_from_package(&tx_script_package);
 
     let serial_num = rng.draw_word();
 
@@ -203,12 +233,12 @@ pub(crate) fn build_asset_transfer_tx(
 
 /// Returns the storage slot name used by the counter contract's storage map.
 pub(crate) fn counter_storage_slot_name() -> StorageSlotName {
-    StorageSlotName::new("miden_counter_contract::counter_contract::count_map")
+    StorageSlotName::new("counter_contract::counter_contract::count_map")
         .expect("counter storage slot name should be valid")
 }
 
 fn auth_public_key_slot_name() -> StorageSlotName {
-    StorageSlotName::new("miden_auth_component_rpo_falcon512::auth_component::owner_public_key")
+    StorageSlotName::new("auth_component_rpo_falcon512::auth_component::owner_public_key")
         .expect("auth component storage slot name should be valid")
 }
 

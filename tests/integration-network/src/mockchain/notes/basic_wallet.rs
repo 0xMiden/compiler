@@ -105,7 +105,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     let consume_tx_context_builder =
         chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["3216"].assert_eq(prologue_cycles(&tx_measurements));
+    expect!["3235"].assert_eq(prologue_cycles(&tx_measurements));
     expect!["7275"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
@@ -126,7 +126,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx(&mut chain, alice_tx_context_builder);
-    expect!["6723"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["6479"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let consume_tx_context_builder = chain.build_tx_context(bob_id, &[bob_note.id()], &[]).unwrap();
