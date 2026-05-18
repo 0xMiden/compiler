@@ -41,7 +41,18 @@ pub(super) fn external_call_has_advice_effects(call: &dyn CallOpInterface) -> bo
 }
 
 pub(super) fn is_constrained_external_parameter_type(ty: &Type) -> bool {
-    matches!(ty, Type::U32 | Type::U16 | Type::U8 | Type::I1)
+    matches!(
+        ty,
+        Type::Enum(_)
+            | Type::Ptr(_)
+            | Type::I32
+            | Type::U32
+            | Type::I16
+            | Type::U16
+            | Type::I8
+            | Type::U8
+            | Type::I1
+    )
 }
 
 pub(super) fn is_unconstrained_external_result_type(ty: &Type) -> bool {
