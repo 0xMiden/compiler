@@ -58,8 +58,8 @@ impl AdviceTaintAnalysis {
     }
 
     pub fn diagnostics(&self, source_manager: &dyn SourceManager) -> Vec<AdviceTaintDiagnostic> {
-        self.findings
-            .iter()
+        diagnostics::visible_advice_findings(&self.findings, source_manager)
+            .into_iter()
             .map(|finding| finding.diagnostic(source_manager))
             .chain(self.exit_findings.iter().map(|finding| finding.diagnostic(source_manager)))
             .chain(
@@ -71,8 +71,8 @@ impl AdviceTaintAnalysis {
     }
 
     pub fn reports(&self, source_manager: &dyn SourceManager) -> Vec<Report> {
-        self.findings
-            .iter()
+        diagnostics::visible_advice_findings(&self.findings, source_manager)
+            .into_iter()
             .map(|finding| finding.into_report(source_manager))
             .chain(self.exit_findings.iter().map(|finding| finding.into_report(source_manager)))
             .chain(

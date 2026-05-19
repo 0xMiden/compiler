@@ -98,6 +98,66 @@ impl AdviceTaintExternalCallFinding {
     }
 }
 
+/// Return the advice-taint findings that should be rendered as user-facing diagnostics.
+///
+/// Interprocedural Rust lowering can produce both a useful user-source finding and a lower-quality
+/// internal finding for the same origin along the same call path. Keep the more actionable finding
+/// for diagnostics, but leave the raw analysis findings unchanged for debugging and tests that need
+/// full solver visibility.
+pub(super) fn visible_advice_findings<'a>(
+    findings: &'a [AdviceTaintFinding],
+    source_manager: &dyn SourceManager,
+) -> Vec<&'a AdviceTaintFinding> {
+    let mut visible = Vec::<&AdviceTaintFinding>::new();
+    for finding in findings {
+        if let Some(existing_index) = visible
+            .iter()
+            .position(|existing| same_user_visible_path(existing, finding, source_manager))
+        {
+            if is_more_actionable_finding(finding, visible[existing_index], source_manager) {
+                visible[existing_index] = finding;
+            }
+        } else {
+            visible.push(finding);
+        }
+    }
+    visible
+}
+
+fn same_user_visible_path(
+    lhs: &AdviceTaintFinding,
+    rhs: &AdviceTaintFinding,
+    source_manager: &dyn SourceManager,
+) -> bool {
+    lhs.origin == rhs.origin
+        && !lhs.contexts.is_empty()
+        && same_contexts(&lhs.contexts, &rhs.contexts)
+        && (is_low_quality_span(lhs.sink_span, source_manager)
+            || is_low_quality_span(rhs.sink_span, source_manager))
+}
+
+fn same_contexts(lhs: &[AdviceTaintContext], rhs: &[AdviceTaintContext]) -> bool {
+    lhs.len() == rhs.len() && lhs.iter().all(|context| rhs.contains(context))
+}
+
+fn is_more_actionable_finding(
+    candidate: &AdviceTaintFinding,
+    current: &AdviceTaintFinding,
+    source_manager: &dyn SourceManager,
+) -> bool {
+    finding_quality(candidate, source_manager) > finding_quality(current, source_manager)
+}
+
+fn finding_quality(
+    finding: &AdviceTaintFinding,
+    source_manager: &dyn SourceManager,
+) -> (bool, bool) {
+    (
+        !is_low_quality_span(finding.sink_span, source_manager),
+        finding.function.is_some(),
+    )
+}
+
 /// The kind of call-boundary context associated with a tainted value.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum AdviceTaintContextKind {

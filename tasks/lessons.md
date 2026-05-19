@@ -4,3 +4,4 @@
 - When diagnosing compiler pipeline regressions, prefer the user's direct CLI reproduction before reasoning from integration-test harness behavior; generated test crates can introduce separate build-path artifacts that mask the actual issue.
 - After a user fixes suspected root causes, re-run the exact reproduction before relying on earlier conclusions; similar Rust/Cargo failures can move to a different dependency edge after pipeline fixes.
 - When using HIR effects for analysis, check both declaration-level summaries and operation-level `EffectOpInterface` implementations; native HIR ops can carry more precise per-result effect information than external function attributes.
+- `cargo make lit` forwards task arguments directly; do not insert a `--` separator before the `litcheck` subcommand.

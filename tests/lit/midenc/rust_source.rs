@@ -1,9 +1,11 @@
 //! RUN: midenc -Zlint -Canalyze-only -Zcargo-frontmatter %s 2>&1 | filecheck %s
-//! CHECK: unconstrained external call result reaches u32-presuming operation
+//! CHECK: unconstrained external call result reaches operation requiring a constrained value
 //! CHECK-LABEL: let advice = intrinsics::advice::adv_push_mapvaln(Word::default());
 //! CHECK: unconstrained value returns from a call here
 //! CHECK-LABEL: pipe_words_to_memory
-//! CHECK: unconstrained advice from an external call is passed here before reaching a u32-presuming operation
+//! CHECK: unconstrained value is passed as a call argument here
+//! CHECK: unconstrained advice from an external call is consumed here as a constrained value
+//! CHECK-NOT: unconstrained external call result reaches operation requiring a constrained value
 //!
 //! ```cargo
 //! [dependencies]
