@@ -198,7 +198,12 @@ fn generate_fpi_lowering(
     fb.switch_to_block(exit_block);
     let results = lower_fpi_result_felts(fb, &fpi_abi.flattened_results, &results, span)?;
     if let Some(output_ptr) = fpi_abi.output_ptr {
-        assert_eq!(import_func_ty.results.len(), 1, "expected a single FPI result type");
+        if import_func_ty.results.len() != 1 {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "FPI import with an output pointer expected one result type, got {}",
+                import_func_ty.results.len()
+            )));
+        }
         let mut results_iter = results.into_iter();
         store(fb, output_ptr, &import_func_ty.results[0], &mut results_iter, span)?;
         fb.ret([], span)?;
@@ -294,9 +299,21 @@ fn lower_fpi_canonical_args(
         }
     }
 
-    let output_ptr = has_output_ptr.then(|| *args.last().expect("expected FPI output pointer"));
+    let output_ptr = if has_output_ptr {
+        Some(*args.last().ok_or_else(|| {
+            midenc_session::diagnostics::Report::msg(
+                "FPI import with an output pointer did not receive an output pointer argument",
+            )
+        })?)
+    } else {
+        None
+    };
     let args = if has_arg_ptr {
-        let arg_ptr = *args.first().expect("expected FPI argument tuple pointer");
+        let arg_ptr = *args.first().ok_or_else(|| {
+            midenc_session::diagnostics::Report::msg(
+                "FPI import with more than 16 flattened params did not receive an argument pointer",
+            )
+        })?;
         FpiExecArgs::Indirect {
             arg_ptr,
             layout: fpi_flat_arg_layout(&import_func_ty.params)?,
@@ -482,37 +499,53 @@ fn push_fpi_flat_arg_layout(
             layout.types.push(ty.clone());
         }
         Type::I64 | Type::U64 => {
-            layout.offsets.push(offset + 4);
+            layout.offsets.push(fpi_layout_offset(offset, 4, ty)?);
             layout.types.push(Type::U32);
             layout.offsets.push(offset);
             layout.types.push(Type::U32);
         }
         Type::Enum(enum_ty) => {
-            assert!(
-                enum_ty.is_c_like(),
-                "non-C-like enums are not yet supported in FPI argument layout: {enum_ty}"
-            );
+            if !enum_ty.is_c_like() {
+                return Err(midenc_session::diagnostics::Report::msg(format!(
+                    "unsupported non-C-like enum in FPI argument layout `{enum_ty}`"
+                )));
+            }
             push_fpi_flat_arg_layout(enum_ty.discriminant(), offset, layout)?;
         }
         Type::Struct(struct_ty) => {
             for field in struct_ty.fields() {
-                push_fpi_flat_arg_layout(&field.ty, offset + field.offset, layout)?;
+                let field_offset = fpi_layout_offset(offset, field.offset, &field.ty)?;
+                push_fpi_flat_arg_layout(&field.ty, field_offset, layout)?;
             }
         }
         Type::Array(array_ty) => {
             let elem_ty = array_ty.element_type();
-            let elem_stride = u32::try_from(elem_ty.aligned_size_in_bytes())
-                .expect("array element size must fit in u32");
+            let elem_stride = u32::try_from(elem_ty.aligned_size_in_bytes()).map_err(|_| {
+                midenc_session::diagnostics::Report::msg(format!(
+                    "FPI argument layout array element type `{elem_ty}` has a byte stride that \
+                     does not fit in u32"
+                ))
+            })?;
             for index in 0..array_ty.len() {
-                let index = u32::try_from(index).expect("array index must fit in u32");
-                push_fpi_flat_arg_layout(elem_ty, offset + index * elem_stride, layout)?;
+                let index = u32::try_from(index).map_err(|_| {
+                    midenc_session::diagnostics::Report::msg(format!(
+                        "FPI argument layout array index {index} does not fit in u32"
+                    ))
+                })?;
+                let elem_offset = index.checked_mul(elem_stride).ok_or_else(|| {
+                    midenc_session::diagnostics::Report::msg(format!(
+                        "FPI argument layout array byte offset for `{elem_ty}` overflowed u32"
+                    ))
+                })?;
+                let elem_offset = fpi_layout_offset(offset, elem_offset, elem_ty)?;
+                push_fpi_flat_arg_layout(elem_ty, elem_offset, layout)?;
             }
         }
         Type::List(_) => {
             let ptr_ty = Type::I32;
             layout.offsets.push(offset);
             layout.types.push(ptr_ty.clone());
-            layout.offsets.push(offset + 4);
+            layout.offsets.push(fpi_layout_offset(offset, 4, ty)?);
             layout.types.push(ptr_ty);
         }
         other => {
@@ -523,6 +556,15 @@ fn push_fpi_flat_arg_layout(
     }
 
     Ok(())
+}
+
+/// Adds a relative byte offset within an FPI canonical ABI layout.
+fn fpi_layout_offset(base: u32, relative: u32, ty: &Type) -> WasmResult<u32> {
+    base.checked_add(relative).ok_or_else(|| {
+        midenc_session::diagnostics::Report::msg(format!(
+            "FPI argument layout offset for `{ty}` overflowed u32"
+        ))
+    })
 }
 
 fn take_value(values: &[ValueRef], next: &mut usize, label: &str) -> WasmResult<ValueRef> {
@@ -690,14 +732,9 @@ fn execute_foreign_procedure_path() -> SymbolPath {
 
 /// Compiler-internal path for indirect FPI calls lowered specially by the MASM backend.
 fn execute_foreign_procedure_indirect_path() -> SymbolPath {
-    SymbolPath::from_iter(
-        tx::MODULE_PREFIX
-            .iter()
-            .copied()
-            .chain([SymbolNameComponent::Leaf(Symbol::intern(
-                "execute_foreign_procedure_indirect",
-            ))]),
-    )
+    SymbolPath::from_iter(tx::MODULE_PREFIX.iter().copied().chain([SymbolNameComponent::Leaf(
+        Symbol::intern(tx::EXECUTE_FOREIGN_PROCEDURE_INDIRECT),
+    )]))
 }
 
 /// Generates a lowering function for component imports that require transformation.
@@ -945,8 +982,9 @@ fn generate_direct_lowering(
 #[cfg(test)]
 mod tests {
     use alloc::rc::Rc;
+    use std::sync::Arc;
 
-    use midenc_hir::{Context, StructType};
+    use midenc_hir::{Context, EnumType, StructType, Variant};
 
     use super::*;
 
@@ -1144,5 +1182,42 @@ mod tests {
                 && message.contains("`execute_foreign_procedure` supports at most 16"),
             "unexpected error message: {message}"
         );
+    }
+
+    #[test]
+    fn fpi_flat_arg_layout_rejects_non_c_like_enum() {
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "result".into(),
+                Type::U8,
+                [
+                    Variant::c_like("ok".into(), Some(0)),
+                    Variant::new("err".into(), Type::I32, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let err = match fpi_flat_arg_layout(&[enum_ty]) {
+            Ok(_) => panic!("non-C-like enum layouts must return a diagnostic"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+
+        assert!(message.contains("unsupported non-C-like enum"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn fpi_flat_arg_layout_reports_offset_overflow() {
+        let mut layout = FpiFlatArgLayout {
+            offsets: Vec::new(),
+            types: Vec::new(),
+        };
+
+        let err = push_fpi_flat_arg_layout(&Type::U64, u32::MAX, &mut layout)
+            .expect_err("overflowing FPI layout offsets must return a diagnostic");
+        let message = err.to_string();
+
+        assert!(message.contains("overflowed u32"), "unexpected error: {message}");
     }
 }

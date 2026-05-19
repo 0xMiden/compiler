@@ -12,8 +12,8 @@ use miden_client::{
     note::{Note, NoteType},
     transaction::RawOutputNote,
 };
-use miden_core::{Felt, serde::Deserializable, utils::ToHex};
-use miden_mast_package::{Package, PackageExport};
+use miden_core::{Felt, serde::Deserializable};
+use miden_mast_package::Package;
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
@@ -86,36 +86,9 @@ pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool
 
     let package_bytes = fs::read(&artifact_path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", artifact_path.display()));
-    let package = Arc::new(Package::read_from_bytes(&package_bytes).unwrap_or_else(|err| {
+    Arc::new(Package::read_from_bytes(&package_bytes).unwrap_or_else(|err| {
         panic!("failed to decode Miden package {}: {err}", artifact_path.display())
-    }));
-
-    print_package_exports("mockchain compile_rust_package", project_path, package.as_ref());
-    package
-}
-
-/// Prints exported procedure roots for packages compiled by mock-chain tests.
-fn print_package_exports(context: &str, project_path: &Path, package: &Package) {
-    eprintln!(
-        "[miden package exports] context={context} project={} package={} exports={}",
-        project_path.display(),
-        package.name,
-        package.manifest.num_exports()
-    );
-
-    for export in package.manifest.exports() {
-        let PackageExport::Procedure(proc_export) = export else {
-            continue;
-        };
-
-        eprintln!(
-            "[miden package export] context={context} project={} package={} path={} root={}",
-            project_path.display(),
-            package.name,
-            proc_export.path,
-            proc_export.digest.as_bytes().to_hex_with_prefix()
-        );
-    }
+    }))
 }
 
 /// Returns the root of the note script exported by the compiled package.

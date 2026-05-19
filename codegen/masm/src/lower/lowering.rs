@@ -269,6 +269,21 @@ fn canonicalize_indirect_fpi_arg_load(
     }
 }
 
+/// Returns the byte offset immediate used to load an indirect FPI argument.
+fn fpi_byte_offset_immediate(byte_offset: u32) -> Result<Option<Immediate>, Report> {
+    if byte_offset == 0 {
+        return Ok(None);
+    }
+
+    let byte_offset = i32::try_from(byte_offset).map_err(|_| {
+        Report::msg(format!(
+            "`{EXECUTE_FOREIGN_PROCEDURE_INDIRECT}` argument layout contains byte offset \
+             {byte_offset}, which does not fit in i32"
+        ))
+    })?;
+    Ok(Some(Immediate::I32(byte_offset)))
+}
+
 /// Emits MASM for an FPI call whose canonical ABI lowered the argument list to one pointer.
 fn emit_execute_foreign_procedure_indirect(
     op: &hir::Exec,
@@ -307,10 +322,8 @@ fn emit_execute_foreign_procedure_indirect(
         let ptr_ty =
             Type::from(PointerType::new_with_address_space(load_ty.clone(), AddressSpace::Byte));
         inst_emitter.dup(0, span);
-        if *byte_offset > 0 {
-            let byte_offset = i32::try_from(*byte_offset)
-                .expect("FPI canonical ABI tuple byte offset must fit in i32");
-            inst_emitter.add_imm(Immediate::I32(byte_offset), midenc_hir::Overflow::Wrapping, span);
+        if let Some(byte_offset) = fpi_byte_offset_immediate(*byte_offset)? {
+            inst_emitter.add_imm(byte_offset, midenc_hir::Overflow::Wrapping, span);
         }
         inst_emitter.inttoptr(&ptr_ty, span);
         inst_emitter.load(load_ty.clone(), span);
@@ -1954,5 +1967,15 @@ mod tests {
             block.is_empty(),
             "unsigned narrow indirect FPI loads already carry the correct felt value"
         );
+    }
+
+    #[test]
+    fn fpi_byte_offset_immediate_rejects_offsets_that_do_not_fit_i32() {
+        let byte_offset = i32::MAX as u32 + 1;
+        let err = fpi_byte_offset_immediate(byte_offset)
+            .expect_err("oversized indirect FPI byte offsets must return a diagnostic");
+        let message = err.to_string();
+
+        assert!(message.contains("does not fit in i32"), "unexpected error: {message}");
     }
 }
