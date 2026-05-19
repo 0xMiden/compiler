@@ -123,8 +123,8 @@ pub struct MemCpy {
     implements(OpPrinter, MemoryEffectOpInterface)
 )]
 pub struct PrintLn {
-    // Not adding `MemoryEffect::Read` to avoid optimizations that eliminate this operation
-    // which doesn't have a result.
+    // TODO(pauls): The Write effect here is added to prevent DCE from removing this op, but
+    // we should model this with a specific I/O effect
     #[operand]
     #[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
     ptr: PointerOf<UInt8>,
