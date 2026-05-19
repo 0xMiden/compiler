@@ -194,7 +194,7 @@ fn cargo_build(
         toolchain: options.toolchain.clone(),
         color: options.color,
         diagnostics: options.diagnostics,
-        trim_path_prefixes: options.trim_path_prefixes.clone(),
+        remap_path_prefixes: options.remap_path_prefixes.clone(),
         rustflags: options.rustflags.clone(),
         link_libraries: vec![LinkLibrary::core()],
         ..midenc_session::Options::new(

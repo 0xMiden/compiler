@@ -246,6 +246,28 @@ impl Session {
             );
             if let InputType::Real(path) = &input.file {
                 default_target.path = Some(Span::unknown(miden_project::Uri::from(path.as_path())));
+
+                #[cfg(feature = "std")]
+                {
+                    let tmp = std::env::temp_dir().canonicalize().unwrap();
+                    let project_dir = tmp.join(&name).join("src");
+                    let project_remap_target = if path.is_absolute() {
+                        Some(
+                            path.strip_prefix(&options.current_dir)
+                                .ok()
+                                .or(path.as_path().parent())
+                                .unwrap()
+                                .to_path_buf()
+                                .into_boxed_path(),
+                        )
+                    } else {
+                        path.parent().map(|p| p.to_path_buf().into_boxed_path())
+                    };
+                    options.remap_path_prefixes.push(RemapPathPrefix {
+                        from: project_dir.into_boxed_path(),
+                        to: project_remap_target,
+                    });
+                }
             }
             let package = miden_project::Package::new(name.clone(), default_target);
 

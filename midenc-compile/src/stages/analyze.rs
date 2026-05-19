@@ -92,6 +92,10 @@ impl Stage for ComponentAnalysisStage {
             }
         }
 
+        if session.analyze_only() {
+            return Err(CompilerStopped("analyze-only=true").into());
+        }
+
         Ok(input)
     }
 }

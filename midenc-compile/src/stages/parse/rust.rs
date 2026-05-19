@@ -1,7 +1,10 @@
 #[cfg(feature = "std")]
 use alloc::string::{String, ToString};
 #[cfg(feature = "std")]
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
 #[cfg(feature = "std")]
 use midenc_hir::formatter::DisplayMany;
@@ -61,14 +64,20 @@ impl Stage for ParseRustStage {
         };
         let use_cargo = dependencies.is_some()
             || options.target_requires_protocol()
-            || options.link_libraries.iter().any(|lib| lib.is_core() || lib.is_protocol());
+            || options.link_libraries.iter().any(|lib| lib.is_protocol());
         match &input.file {
             InputType::Real(path) if use_cargo => {
-                let project_dir = prepare_temporary_cargo_project(path, session)?;
-                cargo_build(&project_dir, dependencies, session, options)
+                let filename = path
+                    .file_name()
+                    .ok_or_else(|| Report::msg("invalid input path: not a valid file name"))?;
+                let project_dir = prepare_temporary_cargo_project(path, filename, session)?;
+                cargo_build(&project_dir, filename, dependencies, session, options)
             }
-            InputType::Real(path) => rustc(path, context.session(), options),
-            InputType::Stdin { input, .. } => {
+            InputType::Real(path) => rustc(path, None, context.session(), options),
+            InputType::Stdin {
+                name: filename,
+                input,
+            } => {
                 let tmp = std::env::temp_dir();
                 let name = context.session().project.package().name().into_inner();
                 if use_cargo {
@@ -77,17 +86,24 @@ impl Stage for ParseRustStage {
                     std::fs::create_dir_all(&src_dir).map_err(|err| {
                         Report::msg(format!("failed to create temporary Cargo project: {err}"))
                     })?;
-                    let tmp_rs = src_dir.join("lib.rs");
+                    let filename = format!("{}.rs", filename.file_stem().unwrap_or("lib"));
+                    let tmp_rs = src_dir.join(&filename);
                     std::fs::write(&tmp_rs, input).map_err(|err| {
                         Report::msg(format!("failed to write Rust input to temporary file: {err}"))
                     })?;
-                    cargo_build(&project_dir, dependencies, session, options)
+                    cargo_build(
+                        &project_dir,
+                        Path::new(&filename).as_os_str(),
+                        dependencies,
+                        session,
+                        options,
+                    )
                 } else {
                     let tmp_rs = tmp.join(&*name).with_extension("rs");
                     std::fs::write(&tmp_rs, input).map_err(|err| {
                         Report::msg(format!("failed to write Rust input to temporary file: {err}"))
                     })?;
-                    rustc(&tmp_rs, session, options)
+                    rustc(&tmp_rs, Some(&tmp), session, options)
                 }
             }
             #[cfg(not(feature = "std"))]
@@ -101,12 +117,16 @@ impl Stage for ParseRustStage {
 /// NOTE: This does not write the `Cargo.toml` file - that is handled by the caller, depending on
 /// how the Cargo metadata is derived.
 #[cfg(feature = "std")]
-fn prepare_temporary_cargo_project(path: &Path, session: &Session) -> CompilerResult<PathBuf> {
-    let tmp = std::env::temp_dir();
+fn prepare_temporary_cargo_project(
+    path: &Path,
+    filename: &OsStr,
+    session: &Session,
+) -> CompilerResult<PathBuf> {
+    let tmp = std::env::temp_dir().canonicalize().unwrap();
     let name = session.project.package().name().into_inner();
     let project_dir = tmp.join(&*name);
     let src_dir = project_dir.join("src");
-    let tmp_rs = src_dir.join("lib.rs");
+    let tmp_rs = src_dir.join(filename);
     std::fs::create_dir_all(&src_dir)
         .map_err(|err| Report::msg(format!("failed to create temporary Cargo project: {err}")))?;
     std::fs::copy(path, &tmp_rs).map_err(|err| {
@@ -118,6 +138,7 @@ fn prepare_temporary_cargo_project(path: &Path, session: &Session) -> CompilerRe
 #[cfg(feature = "std")]
 fn cargo_build(
     project_dir: &Path,
+    filename: &OsStr,
     frontmatter_dependencies: Option<toml_edit::Table>,
     session: &Session,
     options: &Options,
@@ -170,6 +191,7 @@ authors = []
 
 [lib]
 crate-type = [\"cdylib\"]
+path = \"src/{filename}\"
 
 [profile.release]
 panic = \"abort\"
@@ -177,7 +199,8 @@ panic = \"abort\"
 opt-level = \"s\"
 debug = true
 trim-paths = [\"diagnostics\", \"object\"]
-"
+",
+        filename = filename.display(),
     );
 
     let manifest_path = project_dir.join("Cargo.toml");
@@ -275,10 +298,20 @@ trim-paths = [\"diagnostics\", \"object\"]
 }
 
 #[cfg(feature = "std")]
-fn rustc(input: &Path, session: &Session, options: &Options) -> CompilerResult<InputFile> {
+fn rustc(
+    input: &Path,
+    tmp_dir: Option<&Path>,
+    session: &Session,
+    options: &Options,
+) -> CompilerResult<InputFile> {
     use std::string::ToString;
 
     let package_name = session.project.package().name().into_inner();
+
+    log::debug!(target: "rustc", "preparing to invoke rustc for {package_name}");
+    log::debug!(target: "rustc", "  current_dir = {}", options.current_dir.display());
+    log::debug!(target: "rustc", "  target_dir  = {}", options.target_dir.display());
+    log::debug!(target: "rustc", "  tmp_dir     = {}", tmp_dir.unwrap_or(Path::new("unknown")).display());
 
     // Output is the same name as the input, just with a different extension
     let output_file = options.target_dir.join(format!("{package_name}.wasm"));
@@ -324,9 +357,10 @@ fn rustc(input: &Path, session: &Session, options: &Options) -> CompilerResult<I
         }
     }
 
-    let command = command
+    let mut command = command;
+    command
         .arg("--crate-name")
-        .arg(&*package_name)
+        .arg(package_name.replace("-", "_"))
         .args(["--crate-type", "cdylib"])
         .args(["--edition", "2024"])
         // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
@@ -334,8 +368,23 @@ fn rustc(input: &Path, session: &Session, options: &Options) -> CompilerResult<I
         .args(["--cfg", "miden"])
         // Enable errors on missing stub functions
         .args(["-C", "link-args=--fatal-warnings"])
+        .arg("--remap-path-scope=diagnostics,debuginfo,coverage,object")
         .arg("--remap-path-prefix")
-        .arg(format!("{}=.", options.current_dir.display()))
+        .arg(format!("{}=.", options.current_dir.display()));
+    for remap_prefix in options.remap_path_prefixes.iter() {
+        command.args([
+            "--remap-path-prefix".into(),
+            format!(
+                "{}={}",
+                remap_prefix.source_prefix().display(),
+                remap_prefix.target_prefix().display()
+            ),
+        ]);
+    }
+    if let Some(tmp_dir) = tmp_dir {
+        command.arg("--remap-path-prefix").arg(format!("{}=.", tmp_dir.display()));
+    }
+    command
         .args(["-Z", "unstable-options"])
         // Remove the source file paths in the data segment for panics
         // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html

@@ -9,8 +9,8 @@ use clap::{Parser, builder::ArgPredicate};
 use miden_mast_package::TargetType;
 use midenc_session::{
     ColorChoice, DebugInfo, InputFile, IrFilter, LinkLibrary, OptLevel, Options, OutputFile,
-    OutputTypeSpec, OutputTypes, PathBuf, Session, Verbosity, Warnings, add_target_link_libraries,
-    diagnostics::Emitter,
+    OutputTypeSpec, OutputTypes, PathBuf, RemapPathPrefix, Session, Verbosity, Warnings,
+    add_target_link_libraries, diagnostics::Emitter,
 };
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.
@@ -351,6 +351,19 @@ pub struct Compiler {
     /// If unspecified, the compiler will create a virtual manifest for the given input
     #[cfg_attr(feature = "std", arg(long, value_name = "PATH",))]
     pub manifest_path: Option<PathBuf>,
+    /// Specify path prefixes to remap for any file paths encoded in debug info
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "remap-path-prefix",
+            action = clap::ArgAction::Append,
+            value_name = "PATH",
+            value_delimiter = ',',
+            help_heading = "Debugging",
+            value_parser(midenc_session::RemapPathPrefixParser)
+        )
+    )]
+    pub remap_path_prefixes: Vec<RemapPathPrefix>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -498,16 +511,6 @@ pub struct UnstableOptions {
         )
     )]
     pub print_hir_source_locations: bool,
-    /// Specify path prefixes to try when resolving relative paths from DWARF debug info
-    #[cfg_attr(
-        feature = "std",
-        arg(
-            long = "trim-path-prefix",
-            value_name = "PATH",
-            help_heading = "Debugging"
-        )
-    )]
-    pub trim_path_prefixes: Vec<PathBuf>,
 }
 
 impl CodegenOptions {
@@ -669,6 +672,7 @@ impl Compiler {
             workspace,
             package,
             manifest_path,
+            remap_path_prefixes,
         } = self;
         let CodegenOptions {
             parse_only,
@@ -687,7 +691,6 @@ impl Compiler {
             print_ir_after_modified,
             print_ir_filter,
             print_hir_source_locations,
-            trim_path_prefixes,
         } = UnstableOptions::parse_argv(unstable);
 
         // Determine if a specific output file has been requested
@@ -749,7 +752,15 @@ impl Compiler {
         options.print_ir_after_modified = print_ir_after_modified;
         options.print_ir_filters = print_ir_filter;
         options.print_hir_source_locations = print_hir_source_locations;
-        options.trim_path_prefixes = trim_path_prefixes;
+        options.remap_path_prefixes = remap_path_prefixes;
+
+        #[cfg(feature = "std")]
+        if options.remap_path_prefixes.is_empty() {
+            options.remap_path_prefixes.push(RemapPathPrefix {
+                from: options.current_dir.clone().into_boxed_path(),
+                to: None,
+            });
+        }
 
         options
     }

@@ -44,7 +44,9 @@ pub mod support {
         Report,
         diagnostics::{IntoDiagnostic, SourceManagerExt},
     };
-    use midenc_session::{InputFile, miden_project, registry::HybridPackageRegistry};
+    use midenc_session::{
+        InputFile, RemapPathPrefix, miden_project, registry::HybridPackageRegistry,
+    };
     use tempfile::TempDir;
 
     use crate::{CompilerResult, cargo::CargoOptions};
@@ -399,7 +401,10 @@ pub mod support {
         if options.debug != midenc_session::DebugInfo::None
             && let Some(source_dir) = package_source_dir
         {
-            options.trim_path_prefixes.push(source_dir.to_path_buf());
+            options.remap_path_prefixes.push(RemapPathPrefix {
+                from: source_dir.to_path_buf().into_boxed_path(),
+                to: None,
+            });
         }
 
         let target_type = match options.target_type {

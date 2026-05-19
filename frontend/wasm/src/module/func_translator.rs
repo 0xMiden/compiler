@@ -367,10 +367,25 @@ fn resolve_source_location(
     let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
     let span = source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN);
 
-    Ok((!span.is_unknown()).then_some(ResolvedSourceLocation {
-        path: absolute_path,
-        span,
-    }))
+    let path = if path.is_absolute() {
+        config
+            .remap_path_prefixes
+            .iter()
+            .filter_map(|remap_prefix| {
+                path.strip_prefix(remap_prefix.source_prefix()).ok().map(|p| {
+                    match remap_prefix.to.as_deref() {
+                        Some(parent) => parent.join(p),
+                        None => p.to_path_buf(),
+                    }
+                })
+            })
+            .max_by_key(|p| p.components().count())
+            .unwrap_or(path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    };
+
+    Ok((!span.is_unknown()).then_some(ResolvedSourceLocation { path, span }))
 }
 
 fn resolve_source_path(
@@ -379,11 +394,11 @@ fn resolve_source_path(
     config: &crate::WasmTranslationConfig,
 ) -> Option<PathBuf> {
     if path.is_relative() {
-        // Strategy 1: Try trim_path_prefixes.
-        if let Some(resolved) = config.trim_path_prefixes.iter().find_map(|prefix| {
-            let candidate = prefix.join(path);
-            if candidate.exists() {
-                candidate.canonicalize().ok()
+        // Strategy 1: Try remap_path_prefixes.
+        if let Some(resolved) = config.remap_path_prefixes.iter().find_map(|prefix| {
+            let candidate = prefix.source_prefix().join(path).canonicalize().ok();
+            if candidate.as_ref().is_some_and(|candidate| candidate.exists()) {
+                candidate
             } else {
                 None
             }
@@ -392,9 +407,9 @@ fn resolve_source_path(
         }
 
         // Strategy 2: Try session.options.current_dir as fallback.
-        let current_dir_candidate = session.options.current_dir.join(path);
-        if current_dir_candidate.exists() {
-            current_dir_candidate.canonicalize().ok()
+        let current_dir_candidate = session.options.current_dir.join(path).canonicalize().ok();
+        if current_dir_candidate.as_ref().is_some_and(|candidate| candidate.exists()) {
+            current_dir_candidate
         } else {
             None
         }

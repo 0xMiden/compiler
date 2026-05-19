@@ -1,16 +1,20 @@
-# RUN: midenc -Zlint --lib %s | filecheck %s
+# RUN: midenc -Zlint -Canalyze-only %s 2>&1 | filecheck %s
 
 const FOO = 1
 
 
 pub proc dirty
    push.FOO
+# CHECK-LABEL: u32wrapping_add
+# CHECK: unconstrained advice data is consumed here as a constrained value
    u32wrapping_add
 end
 
 pub proc entry() -> u32
+# CHECK-LABEL: adv_push.1
+# CHECK: advice data is obtained here which is later used unconstrained
    adv_push.1
+# CHECK-LABEL: exec.dirty
+# CHECK: unconstrained value is passed as a call argument here
    exec.dirty
 end
-
-# CHECK:  unconstrained advice value reaches u32-presuming operation `arith.add` in function 'dirty'

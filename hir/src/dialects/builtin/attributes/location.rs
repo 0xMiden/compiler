@@ -69,10 +69,18 @@ impl Location {
             let uri = context
                 .session()
                 .options
-                .trim_path_prefixes
+                .remap_path_prefixes
                 .iter()
-                .filter_map(|p| {
-                    Path::new(file.uri().path()).strip_prefix(p).ok().and_then(|p| p.to_str())
+                .filter_map(|remap_prefix| {
+                    Path::new(file.uri().path())
+                        .strip_prefix(remap_prefix.source_prefix())
+                        .ok()
+                        .and_then(|p| match remap_prefix.to.as_deref() {
+                            Some(parent) => {
+                                parent.join(p).to_str().map(alloc::string::ToString::to_string)
+                            }
+                            None => p.to_str().map(alloc::string::ToString::to_string),
+                        })
                 })
                 .max_by_key(|p| p.len())
                 .map(Uri::new)

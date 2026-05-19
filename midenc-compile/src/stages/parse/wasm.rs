@@ -8,6 +8,7 @@ use super::*;
 use crate::CompilerStopped;
 
 /// Parses Wasm binaries or WebAssembly Text to an HIR component
+#[derive(Default)]
 pub struct ParseWasmStage;
 
 impl Stage for ParseWasmStage {
@@ -66,7 +67,7 @@ impl Stage for ParseWasmStage {
             InputType::Stdin { name, input } => {
                 let config = WasmTranslationConfig {
                     source_name: name.file_stem().unwrap().to_owned().into(),
-                    trim_path_prefixes: context.session().options.trim_path_prefixes.clone(),
+                    remap_path_prefixes: context.session().options.remap_path_prefixes.clone(),
                     world: Some(world),
                     ..Default::default()
                 };
@@ -153,7 +154,7 @@ impl ParseWasmStage {
 
         let config = WasmTranslationConfig {
             source_name: file_name.into(),
-            trim_path_prefixes: context.session().options.trim_path_prefixes.clone(),
+            remap_path_prefixes: context.session().options.remap_path_prefixes.clone(),
             world: Some(world),
             ..Default::default()
         };

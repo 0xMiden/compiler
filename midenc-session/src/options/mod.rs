@@ -75,8 +75,8 @@ pub struct Options {
     pub output_dir: Option<PathBuf>,
     /// The output file requested by the user, if requested
     pub output_file: Option<OutputFile>,
-    /// Path prefixes to try when resolving relative paths in DWARF debug info
-    pub trim_path_prefixes: Vec<PathBuf>,
+    /// Path prefixes to remap for any file paths encoded in debug info
+    pub remap_path_prefixes: Vec<RemapPathPrefix>,
     /// Print source location information in HIR output
     pub print_hir_source_locations: bool,
     /// Only parse inputs
@@ -169,7 +169,6 @@ impl Options {
             target_dir,
             output_dir,
             output_file: None,
-            trim_path_prefixes: vec![],
             print_hir_source_locations: false,
             parse_only: false,
             analyze_only: false,
@@ -186,6 +185,7 @@ impl Options {
             print_ir_after_modified: false,
             print_ir_filters: vec![],
             rustflags: None,
+            remap_path_prefixes: vec![],
             flags: CompileFlags::default(),
         }
     }
@@ -392,6 +392,61 @@ pub enum Verbosity {
     Error,
     /// Do not emit anything to stdout/stderr
     Silent,
+}
+
+/// Represents the `--remap-path-prefix` flag, which rewrites source paths encoded in debug info
+/// with a different path, typically to avoid encoding machine-specific details in artifacts.
+#[derive(Debug, Clone)]
+pub struct RemapPathPrefix {
+    /// The path prefix to remap
+    pub from: Box<crate::Path>,
+    /// The remapped path prefix
+    ///
+    /// If `None`, the value `.` is used, representing the current working directory
+    pub to: Option<Box<crate::Path>>,
+}
+
+impl RemapPathPrefix {
+    pub fn source_prefix(&self) -> &crate::Path {
+        &self.from
+    }
+
+    pub fn target_prefix(&self) -> &crate::Path {
+        self.to.as_deref().unwrap_or(crate::Path::new(""))
+    }
+}
+
+/// Parses `--remap-path-prefix=<from>`, `--remap-path-prefix=<from>=<to>`
+#[doc(hidden)]
+#[derive(Clone)]
+#[cfg(feature = "std")]
+pub struct RemapPathPrefixParser;
+
+#[cfg(feature = "std")]
+impl clap::builder::TypedValueParser for RemapPathPrefixParser {
+    type Value = RemapPathPrefix;
+
+    fn parse_ref(
+        &self,
+        _cmd: &clap::Command,
+        _arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Self::Value, clap::error::Error> {
+        use clap::error::{Error, ErrorKind};
+
+        let input = value.to_str().ok_or_else(|| Error::new(ErrorKind::InvalidUtf8))?;
+
+        Ok(match input.split_once('=') {
+            Some((from, to)) => RemapPathPrefix {
+                from: PathBuf::from(from.trim()).into_boxed_path(),
+                to: Some(PathBuf::from(to.trim()).into_boxed_path()),
+            },
+            None => RemapPathPrefix {
+                from: PathBuf::from(input.trim()).into_boxed_path(),
+                to: None,
+            },
+        })
+    }
 }
 
 #[cfg(feature = "std")]

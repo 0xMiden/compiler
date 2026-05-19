@@ -3,11 +3,11 @@ builtin.component private @root_ns:root@1.0.0 {
         builtin.function public extern("C") @entrypoint(%0: i32, %1: i32) -> i32 {
             hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
             hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
-            di.debug_value %0 <{ variable = #di.variable<{ name = "a", file = "/private/var/folders/h7/2tf4y2v50ks4hh8j3975l77w0000gn/T/test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537/src/lib.rs", line = 18, column = 1, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 2+8)]> }> : (i32);
-            di.debug_value %1 <{ variable = #di.variable<{ name = "b", file = "/private/var/folders/h7/2tf4y2v50ks4hh8j3975l77w0000gn/T/test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537/src/lib.rs", line = 18, column = 1, arg = 1, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 2+12)]> }> : (i32);
             %3 = builtin.global_symbol ::@root_ns:root@1.0.0::@test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537::@__stack_pointer : ptr<u8, byte>;
             %4 = hir.bitcast %3 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %5 = hir.load %4;
+            di.debug_value %0 <{ variable = #di.variable<{ name = "a", file = "test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537.rs", line = 19, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 2+8)]> }> : (i32);
+            di.debug_value %1 <{ variable = #di.variable<{ name = "b", file = "test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537.rs", line = 19, arg = 1, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 2+12)]> }> : (i32);
             %6 = arith.constant 16 : i32;
             %7 = arith.sub %5, %6 <{ overflow = #builtin.overflow<wrapping> }>;
             hir.store_local %7 <{ local = #builtin.local_variable<2, i32> }> : (i32);

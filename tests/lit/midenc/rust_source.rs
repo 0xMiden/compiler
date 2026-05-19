@@ -1,11 +1,4 @@
 //! RUN: midenc -Zlint -Canalyze-only -Zcargo-frontmatter %s 2>&1 | filecheck %s
-//! CHECK: unconstrained external call result reaches operation requiring a constrained value
-//! CHECK-LABEL: let advice = intrinsics::advice::adv_push_mapvaln(Word::default());
-//! CHECK: unconstrained value returns from a call here
-//! CHECK-LABEL: pipe_words_to_memory
-//! CHECK: unconstrained value is passed as a call argument here
-//! CHECK: unconstrained advice from an external call is consumed here as a constrained value
-//! CHECK-NOT: unconstrained external call result reaches operation requiring a constrained value
 //!
 //! ```cargo
 //! [dependencies]
@@ -40,7 +33,12 @@ fn unreachable_alloc_error(_info: core::alloc::Layout) -> ! {
 #[unsafe(no_mangle)]
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn entrypoint() -> Vec<Felt> {
+    // CHECK: unconstrained external call result reaches operation requiring a constrained value
+    // CHECK-LABEL: let advice = intrinsics::advice::adv_push_mapvaln(Word::default());
     let advice = intrinsics::advice::adv_push_mapvaln(Word::default());
     let (_, out) = pipe_words_to_memory(advice);
+    // CHECK: unconstrained value is passed as a call argument here
+    // CHECK-NEXT: unconstrained advice from an external call is consumed here as a constrained value
+    // CHECK: add an explicit range check
     out
 }

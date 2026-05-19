@@ -2,13 +2,13 @@ builtin.component private @root_ns:root@1.0.0 {
     builtin.module private @test_rust_0c3ae86ec9024ba37eabb5e0f732abe49b77e739f7696fe0d9cb0b5d1f72d1c1 {
         builtin.function public extern("C") @entrypoint(%0: i32) -> i32 {
             hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
-            di.debug_value %0 <{ variable = #di.variable<{ name = "n", file = "/private/var/folders/h7/2tf4y2v50ks4hh8j3975l77w0000gn/T/test_rust_0c3ae86ec9024ba37eabb5e0f732abe49b77e739f7696fe0d9cb0b5d1f72d1c1/src/lib.rs", line = 18, column = 1, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+12)]> }> : (i32);
             %2 = builtin.global_symbol ::@root_ns:root@1.0.0::@test_rust_0c3ae86ec9024ba37eabb5e0f732abe49b77e739f7696fe0d9cb0b5d1f72d1c1::@__stack_pointer : ptr<u8, byte>;
             %3 = hir.bitcast %2 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %4 = hir.load %3;
-            di.debug_declare <{ variable = #di.variable<{ name = "total", file = "lib.rs", line = 20 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+0)]> }>;
-            di.debug_declare <{ variable = #di.variable<{ name = "i", file = "lib.rs", line = 21 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+4)]> }>;
-            di.debug_declare <{ variable = #di.variable<{ name = "j", file = "lib.rs", line = 23 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+8)]> }>;
+            di.debug_value %0 <{ variable = #di.variable<{ name = "n", file = "test_rust_0c3ae86ec9024ba37eabb5e0f732abe49b77e739f7696fe0d9cb0b5d1f72d1c1.rs", line = 19, column = 23, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+12)]> }> : (i32);
+            di.debug_declare <{ variable = #di.variable<{ name = "total", file = "test_rust_0c3ae86ec9024ba37eabb5e0f732abe49b77e739f7696fe0d9cb0b5d1f72d1c1.rs", line = 20 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+0)]> }>;
+            di.debug_declare <{ variable = #di.variable<{ name = "i", file = "test_rust_0c3ae86ec9024ba37eabb5e0f732abe49b77e739f7696fe0d9cb0b5d1f72d1c1.rs", line = 21 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+4)]> }>;
+            di.debug_declare <{ variable = #di.variable<{ name = "j", file = "test_rust_0c3ae86ec9024ba37eabb5e0f732abe49b77e739f7696fe0d9cb0b5d1f72d1c1.rs", line = 23 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+8)]> }>;
             %5 = arith.constant 16 : i32;
             %6 = arith.sub %4, %5 <{ overflow = #builtin.overflow<wrapping> }>;
             hir.store_local %6 <{ local = #builtin.local_variable<1, i32> }> : (i32);
