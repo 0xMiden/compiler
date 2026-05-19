@@ -35,6 +35,7 @@ const FPI_IMPORT_PREFIX: &str = "fpi-";
 const FPI_ABI_PREFIX_ARGS: usize = 6;
 const FPI_DIRECT_MAX_FLAT_PARAMS: usize = 16;
 const FPI_EXEC_INPUTS: usize = 16;
+const FPI_EXEC_TOTAL_INPUTS: usize = FPI_ABI_PREFIX_ARGS + FPI_EXEC_INPUTS;
 const FPI_EXEC_RESULTS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_PARAMS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_RESULTS: usize = 1;
@@ -151,7 +152,7 @@ fn generate_fpi_lowering(
         FpiExecArgs::Direct(fpi_args) => {
             let exec_func_ref = declare_execute_foreign_procedure(world_builder)?;
 
-            let mut exec_args = Vec::with_capacity(2 + 4 + FPI_EXEC_INPUTS);
+            let mut exec_args = Vec::with_capacity(FPI_EXEC_TOTAL_INPUTS);
             let account_id_prefix = fpi_args[0];
             let account_id_suffix = fpi_args[1];
             let foreign_proc_root = &fpi_args[2..6];
@@ -579,10 +580,10 @@ fn validate_fpi_core_signature(
     {
         return Err(midenc_session::diagnostics::Report::msg(format!(
             "FPI import `{core_func_path}` lowers to {flattened_arg_count} flattened parameter \
-             felts, but direct FPI lowering supports at most {FPI_DIRECT_MAX_FLAT_PARAMS}"
+             felts after expanding 64-bit values, but direct FPI lowering supports at most \
+             {FPI_DIRECT_MAX_FLAT_PARAMS}"
         )));
     }
-
     let fpi_result_count = fpi_flat_value_count(&fpi_abi.flattened_results)?;
     if fpi_result_count > FPI_EXEC_RESULTS {
         return Err(midenc_session::diagnostics::Report::msg(format!(
@@ -628,7 +629,7 @@ fn declare_execute_foreign_procedure(world_builder: &mut WorldBuilder) -> WasmRe
     let signature = Signature::with_convention(
         &context,
         CallConv::Wasm,
-        vec![Type::Felt; 2 + 4 + FPI_EXEC_INPUTS],
+        vec![Type::Felt; FPI_EXEC_TOTAL_INPUTS],
         vec![Type::Felt; FPI_EXEC_RESULTS],
     );
     let import_module_ref = world_builder
@@ -998,15 +999,19 @@ mod tests {
     #[test]
     fn validate_fpi_core_signature_rejects_too_many_direct_flat_params() {
         let context = Rc::new(Context::default());
-        let block = context.create_block_with_params((0..17).map(|_| Type::Felt));
+        let flattened_arg_count = FPI_ABI_PREFIX_ARGS + 12;
+        let block = context.create_block_with_params((0..flattened_arg_count).map(|_| Type::Felt));
         let args = block
             .borrow()
             .arguments()
             .iter()
             .map(|arg| *arg as ValueRef)
             .collect::<Vec<_>>();
-        let import_func_ty =
-            FunctionType::new(CallConv::Wasm, vec![Type::Felt; 17], vec![Type::Felt]);
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            vec![Type::Felt; flattened_arg_count],
+            vec![Type::Felt],
+        );
         let core_func_path = SymbolPath::from_iter([
             SymbolNameComponent::Root,
             SymbolNameComponent::Component(Symbol::intern("miden")),
@@ -1016,7 +1021,7 @@ mod tests {
         let core_func_sig = Signature::with_convention(
             &context,
             CallConv::Wasm,
-            vec![Type::Felt; 17],
+            vec![Type::Felt; flattened_arg_count],
             vec![Type::Felt; FPI_EXEC_RESULTS],
         );
         let fpi_abi = LoweredFpiAbi {
@@ -1031,7 +1036,7 @@ mod tests {
         let message = err.to_string();
 
         assert!(
-            message.contains("lowers to 17 flattened parameter felts")
+            message.contains("lowers to 18 flattened parameter felts")
                 && message.contains("direct FPI lowering supports at most 16"),
             "unexpected error message: {message}"
         );
