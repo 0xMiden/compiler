@@ -86,8 +86,7 @@ pub(super) fn operation_result_has_advice_read_effect(
     }
 
     interface.effects().any(|effect| {
-        effect.effect() == &AdviceEffect::Read
-            && effect.value().is_none_or(|value| value == result)
+        effect.effect() == AdviceEffect::Read && effect.value().is_none_or(|value| value == result)
     })
 }
 

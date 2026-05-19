@@ -661,6 +661,7 @@ impl RegionBranchTerminatorOpInterface for Condition {
     implements(
         RegionBranchTerminatorOpInterface,
         MemoryEffectOpInterface,
+        OperandRangeRequirementOpInterface,
         ConditionallySpeculatable,
         OpPrinter,
     )
@@ -668,6 +669,12 @@ impl RegionBranchTerminatorOpInterface for Condition {
 pub struct Yield {
     #[operands]
     yielded: AnyType,
+}
+
+impl OperandRangeRequirementOpInterface for Yield {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
+    }
 }
 
 impl RegionBranchTerminatorOpInterface for Yield {

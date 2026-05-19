@@ -162,3 +162,90 @@ fn transfer_taint(
         operand_taint
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloc::{
+        string::{String, ToString},
+        vec::Vec,
+    };
+
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{
+        SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, pass::AnalysisManager, testing::Test,
+    };
+
+    use super::super::{AdviceTaintAnalysis, AdviceTaintFinding};
+    use crate::HirOpBuilder;
+
+    #[test]
+    fn checked_cast_sanitizes_raw_advice() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::new("checked_cast", &[], &[Type::U32]);
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let advice = builder.advice_pop(span)?;
+            let cast = builder.cast(advice, Type::U32, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(cast, one, span)?;
+            builder.ret([sum], span)?;
+        }
+
+        let findings = advice_taint_findings(&test)?;
+        assert!(findings.is_empty(), "checked cast should sanitize raw advice");
+
+        Ok(())
+    }
+
+    #[test]
+    fn unrealized_conversion_cast_propagates_raw_advice() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::new("unrealized_cast", &[], &[Type::U32]);
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let advice = builder.advice_pop(span)?;
+            let cast = builder.unrealized_conversion_cast(advice, Type::U32, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(cast, one, span)?;
+            builder.ret([sum], span)?;
+        }
+
+        let findings = advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn checked_assertion_sanitizes_unrealized_cast_result() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::new("checked_assertion", &[], &[Type::U32]);
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let advice = builder.advice_pop(span)?;
+            let cast = builder.unrealized_conversion_cast(advice, Type::U32, span)?;
+            let asserted = builder.assert_u32(cast, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(asserted, one, span)?;
+            builder.ret([sum], span)?;
+        }
+
+        let findings = advice_taint_findings(&test)?;
+        assert!(
+            findings.is_empty(),
+            "checked assertion should sanitize even when the input type is already u32"
+        );
+
+        Ok(())
+    }
+
+    fn advice_taint_findings(test: &Test) -> Result<Vec<AdviceTaintFinding>, midenc_hir::Report> {
+        let analysis_manager = AnalysisManager::new(test.function().as_operation_ref(), None);
+        let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+        Ok(analysis.findings().to_vec())
+    }
+
+    fn sink_names(findings: &[AdviceTaintFinding]) -> Vec<String> {
+        findings.iter().map(|finding| finding.sink.to_string()).collect()
+    }
+}

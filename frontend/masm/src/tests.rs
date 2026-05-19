@@ -2963,16 +2963,16 @@ end
     assert!(
         diagnostic
             .message()
-            .contains("unconstrained advice value reaches u32-presuming operation"),
+            .contains("unconstrained advice value reaches operation requiring a constrained value"),
         "{}",
         diagnostic.message()
     );
     assert!(diagnostic.message().contains("function 'entry'"), "{}", diagnostic.message());
-    assert!(diagnostic.help_message().contains("u32assert"));
+    assert!(diagnostic.help_message().contains("explicit range check"));
     assert_eq!(
         diagnostic.label_messages().collect::<Vec<_>>(),
         [
-            "unconstrained advice data is consumed here as a u32",
+            "unconstrained advice data is consumed here as a constrained value",
             "advice data is obtained here which is later used unconstrained",
         ]
     );
@@ -3444,7 +3444,7 @@ end
     assert_eq!(
         diagnostics[0].label_messages().collect::<Vec<_>>(),
         [
-            "unconstrained advice data is consumed here as a u32",
+            "unconstrained advice data is consumed here as a constrained value",
             "unconstrained value is passed as a call argument here",
             "advice data is obtained here which is later used unconstrained",
         ]
@@ -3481,7 +3481,7 @@ end
     assert_eq!(
         diagnostics[0].label_messages().collect::<Vec<_>>(),
         [
-            "unconstrained advice data is consumed here as a u32",
+            "unconstrained advice data is consumed here as a constrained value",
             "unconstrained value returns from a call here",
             "advice data is obtained here which is later used unconstrained",
         ]
@@ -3901,16 +3901,16 @@ end
     assert_eq!(diagnostics.len(), 1);
     let diagnostic = &diagnostics[0];
     assert!(
-        diagnostic
-            .message()
-            .contains("unconstrained external call result reaches u32-presuming operation"),
+        diagnostic.message().contains(
+            "unconstrained external call result reaches operation requiring a constrained value"
+        ),
         "{}",
         diagnostic.message()
     );
     assert_eq!(
         diagnostic.label_messages().collect::<Vec<_>>(),
         [
-            "unconstrained advice from an external call is consumed here as a u32",
+            "unconstrained advice from an external call is consumed here as a constrained value",
             "the result of the external call here is tainted as unconstrained",
         ]
     );

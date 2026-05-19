@@ -9,7 +9,12 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface, InferTypeOpInterface, OpPrinter)
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
 )]
 pub struct Exec {
     #[symbol(callable)]
@@ -30,6 +35,12 @@ impl InferTypeOpInterface for Exec {
             self.op.results.push(value);
         }
         Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Exec {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
     }
 }
 
@@ -180,7 +191,12 @@ impl CallOpInterface for Exec {
 // any types which are invalid for cross-context calls
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface, InferTypeOpInterface, OpPrinter)
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
 )]
 pub struct Call {
     #[symbol(callable)]
@@ -201,6 +217,12 @@ impl InferTypeOpInterface for Call {
             self.op.results.push(value);
         }
         Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Call {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
     }
 }
 
@@ -290,7 +312,12 @@ impl CallOpInterface for Call {
 // any types which are invalid for syscalls
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface, InferTypeOpInterface, OpPrinter)
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
 )]
 pub struct Syscall {
     #[symbol(callable)]
@@ -311,6 +338,12 @@ impl InferTypeOpInterface for Syscall {
             self.op.results.push(value);
         }
         Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Syscall {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
     }
 }
 

@@ -150,7 +150,8 @@ impl AdviceTaintDiagnostic {
             ),
             AdviceTaintOriginKind::ExternalCall => (
                 "unconstrained external call result",
-                "unconstrained advice from an external call is consumed here as a constrained value",
+                "unconstrained advice from an external call is consumed here as a constrained \
+                 value",
                 "the result of the external call here is tainted as unconstrained",
                 "add an explicit range check after the call, or provide an analyzable callee \
                  body/summary proving the result is constrained before this operation"
@@ -468,8 +469,8 @@ fn primary_context_label(
              operation"
         }
         (AdviceTaintContextKind::CallResult, AdviceTaintOriginKind::ExternalCall) => {
-            "unconstrained advice from an external call returns here before reaching a \
-             constrained operation"
+            "unconstrained advice from an external call returns here before reaching a constrained \
+             operation"
         }
     }
 }

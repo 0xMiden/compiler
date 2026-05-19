@@ -22,7 +22,10 @@ use crate::{
     interner,
     parse::ParserExt,
     print::AsmPrinter,
-    traits::{AnyType, IsolatedFromAbove, ReturnLike, SingleRegion, Terminator},
+    traits::{
+        AnyType, IsolatedFromAbove, OperandRangeRequirement, OperandRangeRequirementOpInterface,
+        ReturnLike, SingleRegion, Terminator,
+    },
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
@@ -383,11 +386,17 @@ impl CallableOpInterface for Function {
 #[operation(
     dialect = BuiltinDialect,
     traits(Terminator, ReturnLike),
-    implements(OpPrinter)
+    implements(OperandRangeRequirementOpInterface, OpPrinter)
 )]
 pub struct Ret {
     #[operands]
     values: AnyType,
+}
+
+impl OperandRangeRequirementOpInterface for Ret {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
+    }
 }
 
 impl OpPrinter for Ret {
