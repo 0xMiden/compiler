@@ -17,13 +17,10 @@ macro_rules! op_results {
 }
 
 pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
-    fn assert(
-        &mut self,
-        value: ValueRef,
-        span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assert>, Report> {
+    fn assert(&mut self, value: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Assert, (ValueRef,)>(span);
-        op_builder(value)
+        let op = op_builder(value)?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     fn assert_with_error(
@@ -31,11 +28,12 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         value: ValueRef,
         code: u32,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assert>, Report> {
+    ) -> Result<ValueRef, Report> {
         let op_builder = self
             .builder_mut()
             .create::<crate::ops::Assert, (ValueRef, u32, CompactString)>(span);
-        op_builder(value, code, CompactString::default())
+        let op = op_builder(value, code, CompactString::default())?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     fn assert_with_message(
@@ -43,20 +41,18 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         value: ValueRef,
         message: impl Into<CompactString>,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assert>, Report> {
+    ) -> Result<ValueRef, Report> {
         let op_builder = self
             .builder_mut()
             .create::<crate::ops::Assert, (ValueRef, u32, CompactString)>(span);
-        op_builder(value, 0u32, message.into())
+        let op = op_builder(value, 0u32, message.into())?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
-    fn assertz(
-        &mut self,
-        value: ValueRef,
-        span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assertz>, Report> {
+    fn assertz(&mut self, value: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Assertz, (ValueRef,)>(span);
-        op_builder(value)
+        let op = op_builder(value)?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     fn assertz_with_error(
@@ -64,11 +60,12 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         value: ValueRef,
         code: u32,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assertz>, Report> {
+    ) -> Result<ValueRef, Report> {
         let op_builder = self
             .builder_mut()
             .create::<crate::ops::Assertz, (ValueRef, u32, CompactString)>(span);
-        op_builder(value, code, CompactString::default())
+        let op = op_builder(value, code, CompactString::default())?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     fn assertz_with_message(
@@ -76,11 +73,12 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         value: ValueRef,
         message: impl Into<CompactString>,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assertz>, Report> {
+    ) -> Result<ValueRef, Report> {
         let op_builder = self
             .builder_mut()
             .create::<crate::ops::Assertz, (ValueRef, u32, CompactString)>(span);
-        op_builder(value, 0u32, message.into())
+        let op = op_builder(value, 0u32, message.into())?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     fn assert_eq(

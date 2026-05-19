@@ -11,7 +11,13 @@ use crate::HirDialect;
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface, OpPrinter)
+    implements(
+        InferTypeOpInterface,
+        MemoryEffectOpInterface,
+        OperandRangeRequirementOpInterface,
+        ValueRangeAssertionOpInterface,
+        OpPrinter
+    )
 )]
 #[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct Assert {
@@ -23,12 +29,20 @@ pub struct Assert {
     #[attr]
     #[default]
     message: StringAttr,
+    #[result]
+    result: AnyInteger,
 }
 
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
-    implements(MemoryEffectOpInterface, OpPrinter)
+    implements(
+        InferTypeOpInterface,
+        MemoryEffectOpInterface,
+        OperandRangeRequirementOpInterface,
+        ValueRangeAssertionOpInterface,
+        OpPrinter
+    )
 )]
 #[effects(MemoryEffect(MemoryEffect::Write))]
 pub struct Assertz {
@@ -40,6 +54,8 @@ pub struct Assertz {
     #[attr]
     #[default]
     message: StringAttr,
+    #[result]
+    result: AnyInteger,
 }
 
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
@@ -86,6 +102,60 @@ pub struct AssertU32 {
     message: StringAttr,
     #[result]
     result: AnyInteger,
+}
+
+impl InferTypeOpInterface for Assert {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.value().ty().clone();
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Assert {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        // `assert` checks that the input is exactly one; it establishes the range/value contract
+        // rather than requiring one before the assertion.
+        OperandRangeRequirement::None
+    }
+}
+
+impl ValueRangeAssertionOpInterface for Assert {
+    fn value_range_assertion(&self, result: ValueRef) -> Option<ValueRangeRefinement> {
+        let asserted = self.result().as_value_ref();
+        (asserted == result).then(|| ValueRangeRefinement {
+            input: self.value().as_value_ref(),
+            result: asserted,
+            constraint: ValueRangeConstraint::Type(Type::I1),
+        })
+    }
+}
+
+impl InferTypeOpInterface for Assertz {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = self.value().ty().clone();
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Assertz {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        // `assertz` checks that the input is exactly zero; it establishes the range/value contract
+        // rather than requiring one before the assertion.
+        OperandRangeRequirement::None
+    }
+}
+
+impl ValueRangeAssertionOpInterface for Assertz {
+    fn value_range_assertion(&self, result: ValueRef) -> Option<ValueRangeRefinement> {
+        let asserted = self.result().as_value_ref();
+        (asserted == result).then(|| ValueRangeRefinement {
+            input: self.value().as_value_ref(),
+            result: asserted,
+            constraint: ValueRangeConstraint::Type(Type::I1),
+        })
+    }
 }
 
 impl InferTypeOpInterface for AssertU32 {

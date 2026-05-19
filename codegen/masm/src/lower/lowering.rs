@@ -7,7 +7,7 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
+    Felt, Immediate, Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
     dialects::{builtin, debuginfo},
     traits::{BinaryOp, Commutative},
 };
@@ -154,6 +154,42 @@ fn schedule_ext2_operands<T: HirLowering>(
         });
 
     Ok(())
+}
+
+fn zero_immediate_for_type(ty: &Type) -> Immediate {
+    match ty {
+        Type::I1 => Immediate::I1(false),
+        Type::U8 => Immediate::U8(0),
+        Type::I8 => Immediate::I8(0),
+        Type::U16 => Immediate::U16(0),
+        Type::I16 => Immediate::I16(0),
+        Type::U32 => Immediate::U32(0),
+        Type::I32 => Immediate::I32(0),
+        Type::U64 => Immediate::U64(0),
+        Type::I64 => Immediate::I64(0),
+        Type::U128 => Immediate::U128(0),
+        Type::I128 => Immediate::I128(0),
+        Type::Felt => Immediate::Felt(Felt::ZERO),
+        ty => panic!("invalid assertion result type: expected integer, got {ty}"),
+    }
+}
+
+fn one_immediate_for_type(ty: &Type) -> Immediate {
+    match ty {
+        Type::I1 => Immediate::I1(true),
+        Type::U8 => Immediate::U8(1),
+        Type::I8 => Immediate::I8(1),
+        Type::U16 => Immediate::U16(1),
+        Type::I16 => Immediate::I16(1),
+        Type::U32 => Immediate::U32(1),
+        Type::I32 => Immediate::I32(1),
+        Type::U64 => Immediate::U64(1),
+        Type::I64 => Immediate::I64(1),
+        Type::U128 => Immediate::U128(1),
+        Type::I128 => Immediate::I128(1),
+        Type::Felt => Immediate::Felt(Felt::ONE),
+        ty => panic!("invalid assertion result type: expected integer, got {ty}"),
+    }
 }
 
 impl HirLowering for builtin::Ret {
@@ -466,8 +502,11 @@ impl HirLowering for hir::Assert {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let code = *self.get_code();
         let message = self.get_message();
+        let result_ty = self.result().ty().clone();
 
-        emitter.emitter().assert(Some(code), Some(message.as_str()), self.span());
+        let mut emitter = emitter.inst_emitter(self.as_operation());
+        emitter.assert(Some(code), Some(message.as_str()), self.span());
+        emitter.literal(one_immediate_for_type(&result_ty), self.span());
 
         Ok(())
     }
@@ -477,8 +516,11 @@ impl HirLowering for hir::Assertz {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let code = *self.get_code();
         let message = self.get_message();
+        let result_ty = self.result().ty().clone();
 
-        emitter.emitter().assertz(Some(code), Some(message.as_str()), self.span());
+        let mut emitter = emitter.inst_emitter(self.as_operation());
+        emitter.assertz(Some(code), Some(message.as_str()), self.span());
+        emitter.literal(zero_immediate_for_type(&result_ty), self.span());
 
         Ok(())
     }

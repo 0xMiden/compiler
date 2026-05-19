@@ -239,6 +239,46 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn assert_sanitizes_raw_advice_as_known_one() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::new("assert_one", &[], &[Type::U32]);
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let advice = builder.advice_pop(span)?;
+            let asserted = builder.assert(advice, span)?;
+            let cast = builder.unrealized_conversion_cast(asserted, Type::U32, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(cast, one, span)?;
+            builder.ret([sum], span)?;
+        }
+
+        let findings = advice_taint_findings(&test)?;
+        assert!(findings.is_empty(), "assert should sanitize raw advice as known one");
+
+        Ok(())
+    }
+
+    #[test]
+    fn assertz_sanitizes_raw_advice_as_known_zero() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::new("assert_zero", &[], &[Type::U32]);
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let advice = builder.advice_pop(span)?;
+            let asserted = builder.assertz(advice, span)?;
+            let cast = builder.unrealized_conversion_cast(asserted, Type::U32, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(cast, one, span)?;
+            builder.ret([sum], span)?;
+        }
+
+        let findings = advice_taint_findings(&test)?;
+        assert!(findings.is_empty(), "assertz should sanitize raw advice as known zero");
+
+        Ok(())
+    }
+
     fn advice_taint_findings(test: &Test) -> Result<Vec<AdviceTaintFinding>, midenc_hir::Report> {
         let analysis_manager = AnalysisManager::new(test.function().as_operation_ref(), None);
         let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;

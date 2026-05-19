@@ -6,9 +6,9 @@ builtin.function public extern("C") @test_wrapper() {
     %4 = hir.bitcast %0 <{ ty = #builtin.type<u32> }>;
     %5 = arith.constant 4 : u32;
     %6 = arith.mod %4, %5;
-    hir.assertz %6 <{ code = #builtin.u32<250>, message = #builtin.string<""> }> : (u32);
-    %7 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u32, byte>> }>;
-    hir.store %7, %3 : (ptr<u32, byte>, u32);
+    %7 = hir.assertz %6 <{ code = #builtin.u32<250>, message = #builtin.string<""> }>;
+    %8 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+    hir.store %8, %3 : (ptr<u32, byte>, u32);
     cf.br ^block5;
 ^block5:
     builtin.ret;
