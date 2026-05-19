@@ -2,14 +2,21 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     Builder, Immediate, Op, OpExt, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
-    dialects::builtin::{FunctionRef, attributes::U32Attr},
+    dialects::builtin::{
+        FunctionRef,
+        attributes::{TypeArrayAttr, U32ArrayAttr},
+    },
     interner::symbols,
 };
 
 use super::{stdlib, tx_kernel};
-use crate::{FPI_FLATTENED_ARG_COUNT_ATTR, module::function_builder_ext::FunctionBuilderExt};
+use crate::{
+    FPI_FLATTENED_ARG_OFFSETS_ATTR, FPI_FLATTENED_ARG_TYPES_ATTR,
+    module::function_builder_ext::FunctionBuilderExt,
+};
 
 const RAW_FPI_FLATTENED_ARG_COUNT: u32 = 22;
+const RAW_FPI_FLATTENED_ARG_COUNT_USIZE: usize = RAW_FPI_FLATTENED_ARG_COUNT as usize;
 
 /// The strategy to use for transforming a function call
 enum TransformStrategy {
@@ -341,7 +348,7 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     Vec::new()
 }
 
-/// The indirect FPI executor returns felts on the stack and needs its flattened input count set.
+/// The indirect FPI executor returns felts on the stack and needs its input layout attributes set.
 pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
@@ -360,10 +367,13 @@ pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
         .exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)
         .expect("failed to build an exec op in fpi_indirect_return_via_pointer strategy");
     let context = import_func_ref.borrow().as_operation().context_rc();
-    let flattened_arg_count_attr =
-        context.create_attribute::<U32Attr, _>(RAW_FPI_FLATTENED_ARG_COUNT);
-    exec.borrow_mut()
-        .set_attribute(FPI_FLATTENED_ARG_COUNT_ATTR, flattened_arg_count_attr);
+    let offsets_attr = context.create_attribute::<U32ArrayAttr, _>(
+        (0..RAW_FPI_FLATTENED_ARG_COUNT).map(|index| index * 4).collect::<Vec<_>>(),
+    );
+    exec.borrow_mut().set_attribute(FPI_FLATTENED_ARG_OFFSETS_ATTR, offsets_attr);
+    let types_attr = context
+        .create_attribute::<TypeArrayAttr, _>(vec![Type::Felt; RAW_FPI_FLATTENED_ARG_COUNT_USIZE]);
+    exec.borrow_mut().set_attribute(FPI_FLATTENED_ARG_TYPES_ATTR, types_attr);
 
     let borrow = exec.borrow();
     let results_storage = borrow.results();

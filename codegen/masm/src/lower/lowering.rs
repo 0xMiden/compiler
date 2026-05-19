@@ -10,7 +10,7 @@ use midenc_hir::{
     dialects::{
         builtin::{
             self,
-            attributes::{Signature, U32Attr},
+            attributes::{Signature, TypeArrayAttr, U32ArrayAttr},
         },
         debuginfo,
     },
@@ -30,7 +30,8 @@ const EXECUTE_FOREIGN_PROCEDURE_INDIRECT: &str = "execute_foreign_procedure_indi
 const FPI_ABI_PREFIX_ARGS: usize = 6;
 const FPI_EXEC_TOTAL_INPUTS: usize = 22;
 const FPI_MAX_PADDED_ARGS: usize = 15;
-const FPI_FLATTENED_ARG_COUNT_ATTR: &str = "fpi.flattened_arg_count";
+const FPI_FLATTENED_ARG_OFFSETS_ATTR: &str = "fpi.flattened_arg_offsets";
+const FPI_FLATTENED_ARG_TYPES_ATTR: &str = "fpi.flattened_arg_types";
 
 /// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
 fn invocation_target_from_symbol_path(
@@ -97,18 +98,38 @@ fn is_execute_foreign_procedure_indirect_path(path: &SymbolPath) -> bool {
     )
 }
 
-/// Returns the flattened argument count attached to a compiler-internal indirect FPI call.
-fn indirect_fpi_input_count(op: &hir::Exec) -> Result<usize, Report> {
-    let attr = op
+/// Returns the canonical ABI tuple layout attached to a compiler-internal indirect FPI call.
+fn indirect_fpi_arg_layout(op: &hir::Exec) -> Result<Vec<(u32, Type)>, Report> {
+    let offsets_attr = op
         .as_operation()
-        .get_typed_attribute::<U32Attr>(FPI_FLATTENED_ARG_COUNT_ATTR)
-        .ok_or_else(|| {
-            Report::msg(format!(
-                "`{EXECUTE_FOREIGN_PROCEDURE_INDIRECT}` call is missing \
-                 `{FPI_FLATTENED_ARG_COUNT_ATTR}`"
-            ))
-        })?;
-    Ok(*attr.borrow().as_value() as usize)
+        .get_typed_attribute::<U32ArrayAttr>(FPI_FLATTENED_ARG_OFFSETS_ATTR);
+    let types_attr = op
+        .as_operation()
+        .get_typed_attribute::<TypeArrayAttr>(FPI_FLATTENED_ARG_TYPES_ATTR);
+
+    let (offsets_attr, types_attr) = match (offsets_attr, types_attr) {
+        (Some(offsets_attr), Some(types_attr)) => (offsets_attr, types_attr),
+        _ => {
+            return Err(Report::msg(format!(
+                "`{EXECUTE_FOREIGN_PROCEDURE_INDIRECT}` call must provide both \
+                 `{FPI_FLATTENED_ARG_OFFSETS_ATTR}` and `{FPI_FLATTENED_ARG_TYPES_ATTR}`"
+            )));
+        }
+    };
+
+    let offsets_ref = offsets_attr.borrow();
+    let offsets = offsets_ref.as_value();
+    let types_ref = types_attr.borrow();
+    let types = types_ref.as_value();
+    if offsets.len() != types.len() {
+        return Err(Report::msg(format!(
+            "`{EXECUTE_FOREIGN_PROCEDURE_INDIRECT}` call has {} offsets and {} load types",
+            offsets.len(),
+            types.len()
+        )));
+    }
+
+    Ok(offsets.iter().copied().zip(types.iter().cloned()).collect())
 }
 
 /// Returns the protocol executor path used after expanding an indirect FPI argument tuple.
@@ -236,8 +257,9 @@ fn push_fpi_padding_scratch_addr(
 fn emit_execute_foreign_procedure_indirect(
     op: &hir::Exec,
     emitter: &mut BlockEmitter<'_>,
-    flattened_arg_count: usize,
 ) -> Result<(), Report> {
+    let arg_layout = indirect_fpi_arg_layout(op)?;
+    let flattened_arg_count = arg_layout.len();
     if !(FPI_ABI_PREFIX_ARGS..=FPI_EXEC_TOTAL_INPUTS).contains(&flattened_arg_count) {
         return Err(Report::msg(format!(
             "`{EXECUTE_FOREIGN_PROCEDURE}` indirect lowering received {flattened_arg_count} \
@@ -248,7 +270,6 @@ fn emit_execute_foreign_procedure_indirect(
 
     let span = op.span();
     let padding = FPI_EXEC_TOTAL_INPUTS - flattened_arg_count;
-    let ptr_ty = Type::from(PointerType::new_with_address_space(Type::Felt, AddressSpace::Byte));
     let exec_path = execute_foreign_procedure_path();
     let callee = invocation_target_from_symbol_path(&exec_path, span);
 
@@ -266,14 +287,20 @@ fn emit_execute_foreign_procedure_indirect(
         .chain(2..flattened_arg_count)
         .collect::<Vec<_>>();
     for index in fpi_arg_order.into_iter().rev() {
+        let (byte_offset, load_ty) = &arg_layout[index];
+        let ptr_ty =
+            Type::from(PointerType::new_with_address_space(load_ty.clone(), AddressSpace::Byte));
         inst_emitter.dup(0, span);
-        if index > 0 {
-            let byte_offset = i32::try_from(index * 4)
+        if *byte_offset > 0 {
+            let byte_offset = i32::try_from(*byte_offset)
                 .expect("FPI canonical ABI tuple byte offset must fit in i32");
             inst_emitter.add_imm(Immediate::I32(byte_offset), midenc_hir::Overflow::Wrapping, span);
         }
         inst_emitter.inttoptr(&ptr_ty, span);
-        inst_emitter.load(Type::Felt, span);
+        inst_emitter.load(load_ty.clone(), span);
+        if load_ty != &Type::Felt {
+            inst_emitter.bitcast(&Type::Felt, span);
+        }
         inst_emitter.swap(1, span);
     }
     OpEmitter::drop(&mut inst_emitter, span);
@@ -1116,8 +1143,7 @@ impl HirLowering for hir::Exec {
         use midenc_hir::{CallOpInterface, CallableOpInterface};
 
         if is_execute_foreign_procedure_indirect_path(self.callee().path()) {
-            let flattened_arg_count = indirect_fpi_input_count(self)?;
-            return emit_execute_foreign_procedure_indirect(self, emitter, flattened_arg_count);
+            return emit_execute_foreign_procedure_indirect(self, emitter);
         }
 
         let callee = self.resolve().ok_or_else(|| {
