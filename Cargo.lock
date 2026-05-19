@@ -516,7 +516,6 @@ dependencies = [
  "clap",
  "liquid",
  "log",
- "miden-core",
  "miden-mast-package",
  "midenc-compile",
  "midenc-log",
