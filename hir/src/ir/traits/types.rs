@@ -5,8 +5,8 @@ use midenc_hir_type::PointerType;
 use midenc_session::diagnostics::Severity;
 
 use crate::{
-    CompactString, Context, Op, Operation, Report, Type, ValueRef, derive::operation_trait,
-    ir::value::Value,
+    CompactString, Context, IntegerValueRange, Op, Operation, Report, Type, ValueRef,
+    derive::operation_trait, ir::value::Value,
 };
 
 /// OpInterface to compute the return type(s) of an operation.
@@ -25,8 +25,8 @@ pub trait InferTypeOpInterface: Op {
 /// A value-range constraint implied by an operation operand or by a checked refinement operation.
 ///
 /// This describes semantic constraints beyond the raw Miden field element representation. For
-/// example, a `u32`-typed operand implies that a raw field element must have been checked to fit in
-/// the `u32` range before it reaches that operand.
+/// example, a `u32`-typed operand implies that a raw field element must have been checked to fit
+/// in the `u32` range before it reaches that operand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValueRangeConstraint {
     /// The value must be a valid member of this HIR type's value range.
@@ -103,8 +103,8 @@ pub fn default_operand_range_requirement(
 
 /// Return true if values of `ty` are unconstrained by type alone.
 ///
-/// MASM has field elements and words as native unconstrained value representations. HIR types other
-/// than `felt` and four-felt words imply additional range/shape constraints.
+/// MASM has field elements and words as native unconstrained value representations. HIR types
+/// other than `felt` and four-felt words imply additional range/shape constraints.
 pub fn is_unconstrained_value_type(ty: &Type) -> bool {
     matches!(ty, Type::Unknown | Type::Never | Type::Felt) || is_word_type(ty)
 }
@@ -119,6 +119,7 @@ pub fn is_word_type(ty: &Type) -> bool {
 
 /// OpInterface for operations with operand-specific value-range requirements.
 pub trait OperandRangeRequirementOpInterface: Op {
+    /// Returns the [OperandRangeRequirement] for the operand at `operand_index`
     fn operand_range_requirement(&self, operand_index: usize) -> OperandRangeRequirement;
 }
 
@@ -135,6 +136,7 @@ pub struct ValueRangeRefinement {
 /// Implementing this interface indicates that the operation result is produced by checking the
 /// input value against the output range before materializing the cast result.
 pub trait CheckedCastOpInterface: Op {
+    /// Return a [ValueRangeRefinement], if possible, for `result`
     fn checked_cast_refinement(&self, result: ValueRef) -> Option<ValueRangeRefinement>;
 }
 
@@ -143,7 +145,22 @@ pub trait CheckedCastOpInterface: Op {
 /// Implementing this interface indicates that the operation result is a checked/refined version of
 /// one of the operation's input values.
 pub trait ValueRangeAssertionOpInterface: Op {
+    /// Return a [ValueRangeRefinement], if possible, for `result`
     fn value_range_assertion(&self, result: ValueRef) -> Option<ValueRangeRefinement>;
+}
+
+/// OpInterface for operations that can infer integer ranges for their results.
+///
+/// This is the HIR equivalent of MLIR's `InferIntRangeInterface`. Implementations receive the
+/// current operand lattice values and may call `set_result_range` for any result whose range can
+/// be inferred. The sparse dataflow analysis owns joining those inferred ranges into the result
+/// lattices.
+pub trait InferIntRangeInterface: Op {
+    fn infer_result_ranges(
+        &self,
+        operands: &[IntegerValueRange],
+        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
+    );
 }
 
 /// Return the value-range refinement that produces `result`, if `op` has one.

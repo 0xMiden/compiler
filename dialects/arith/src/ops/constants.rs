@@ -14,7 +14,7 @@ use crate::*;
 #[operation(
     dialect = ArithDialect,
     traits(ConstantLike),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
+    implements(InferTypeOpInterface, InferIntRangeInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 )]
 pub struct Constant {
     #[attr(hidden)]
@@ -29,6 +29,17 @@ impl InferTypeOpInterface for Constant {
         self.result_mut().set_type(ty);
 
         Ok(())
+    }
+}
+
+impl InferIntRangeInterface for Constant {
+    fn infer_result_ranges(
+        &self,
+        _operands: &[IntegerValueRange],
+        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
+    ) {
+        let value = self.get_value();
+        set_result_range(self.result().as_value_ref(), IntegerValueRange::constant(*value));
     }
 }
 

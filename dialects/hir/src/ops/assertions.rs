@@ -16,6 +16,7 @@ use crate::HirDialect;
     dialect = HirDialect,
     implements(
         InferTypeOpInterface,
+        InferIntRangeInterface,
         MemoryEffectOpInterface,
         OperandRangeRequirementOpInterface,
         ValueRangeAssertionOpInterface,
@@ -41,6 +42,7 @@ pub struct Assert {
     dialect = HirDialect,
     implements(
         InferTypeOpInterface,
+        InferIntRangeInterface,
         MemoryEffectOpInterface,
         OperandRangeRequirementOpInterface,
         ValueRangeAssertionOpInterface,
@@ -93,6 +95,7 @@ pub struct AssertEq {
     dialect = HirDialect,
     implements(
         InferTypeOpInterface,
+        InferIntRangeInterface,
         MemoryEffectOpInterface,
         OperandRangeRequirementOpInterface,
         ValueRangeAssertionOpInterface,
@@ -140,6 +143,17 @@ impl ValueRangeAssertionOpInterface for Assert {
     }
 }
 
+impl InferIntRangeInterface for Assert {
+    fn infer_result_ranges(
+        &self,
+        _operands: &[IntegerValueRange],
+        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
+    ) {
+        let result = self.result().as_value_ref();
+        set_result_range(result, exact_zero_or_one_range(self.result().ty(), true));
+    }
+}
+
 impl InferTypeOpInterface for Assertz {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         let ty = self.value().ty().clone();
@@ -167,10 +181,46 @@ impl ValueRangeAssertionOpInterface for Assertz {
     }
 }
 
+impl InferIntRangeInterface for Assertz {
+    fn infer_result_ranges(
+        &self,
+        _operands: &[IntegerValueRange],
+        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
+    ) {
+        let result = self.result().as_value_ref();
+        set_result_range(result, exact_zero_or_one_range(self.result().ty(), false));
+    }
+}
+
 impl InferTypeOpInterface for AssertU32 {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         self.result_mut().set_type(Type::U32);
         Ok(())
+    }
+}
+
+impl InferIntRangeInterface for AssertU32 {
+    fn infer_result_ranges(
+        &self,
+        operands: &[IntegerValueRange],
+        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
+    ) {
+        let result = self.result().as_value_ref();
+        let Some(refinement) = self.value_range_assertion(result) else {
+            return;
+        };
+        let range = operands.first().cloned().unwrap_or_else(IntegerValueRange::uninitialized);
+        set_result_range(result, range.constrained_by(&refinement.constraint));
+    }
+}
+
+fn exact_zero_or_one_range(ty: &Type, one: bool) -> IntegerValueRange {
+    let width = ConstantIntRange::max_for_type(ty).width();
+    if width == 0 {
+        IntegerValueRange::max_for_type(ty)
+    } else {
+        let value = u128::from(one);
+        IntegerValueRange::new(ConstantIntRange::from_unsigned(width, value, value))
     }
 }
 

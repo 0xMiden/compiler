@@ -9,6 +9,7 @@ pub mod effects;
 pub mod entity;
 mod ident;
 mod immediates;
+mod int_range;
 pub mod loops;
 mod op;
 mod operands;
@@ -52,6 +53,7 @@ pub use self::{
     },
     ident::{FunctionIdent, Ident, IdentAttr},
     immediates::{Felt, Immediate, ImmediateAttr},
+    int_range::{ConstantIntRange, IntegerValueRange},
     op::{BuildableOp, GenericSuccessorLayout, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,

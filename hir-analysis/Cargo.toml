@@ -24,4 +24,5 @@ midenc-hir.workspace = true
 # Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 midenc-dialect-hir = { path = "../dialects/hir" }
 midenc-dialect-arith = { path = "../dialects/arith" }
+midenc-dialect-scf = { path = "../dialects/scf" }
 midenc-hir = { path = "../hir", features = ["logging"] }

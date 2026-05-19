@@ -64,7 +64,7 @@ macro_rules! infer_return_ty_for_binary_op {
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, InferIntRangeInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Add {
     #[operand]
@@ -78,6 +78,29 @@ pub struct Add {
 }
 
 infer_return_ty_for_binary_op!(Add);
+
+impl InferIntRangeInterface for Add {
+    fn infer_result_ranges(
+        &self,
+        operands: &[IntegerValueRange],
+        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
+    ) {
+        let [lhs, rhs] = operands else {
+            return;
+        };
+        let (Some(lhs), Some(rhs)) = (lhs.range(), rhs.range()) else {
+            return;
+        };
+
+        let result_top = ConstantIntRange::max_for_type(self.result().ty());
+        let range = lhs
+            .add_without_overflow(rhs)
+            .filter(|range| result_top.union(range) == result_top)
+            .map(IntegerValueRange::new)
+            .unwrap_or_else(|| IntegerValueRange::max_for_type(self.result().ty()));
+        set_result_range(self.result().as_value_ref(), range);
+    }
+}
 
 /// Two's complement sum with overflow bit
 #[derive(EffectOpInterface, OpPrinter, OpParser)]

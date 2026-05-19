@@ -186,6 +186,7 @@ impl Foldable for IntToPtr {
     traits(UnaryOp),
     implements(
         InferTypeOpInterface,
+        InferIntRangeInterface,
         MemoryEffectOpInterface,
         OperandRangeRequirementOpInterface,
         CheckedCastOpInterface,
@@ -234,6 +235,21 @@ impl CheckedCastOpInterface for Cast {
             result: cast_result,
             constraint: ValueRangeConstraint::from_type(self.result().ty())?,
         })
+    }
+}
+
+impl InferIntRangeInterface for Cast {
+    fn infer_result_ranges(
+        &self,
+        operands: &[IntegerValueRange],
+        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
+    ) {
+        let result = self.result().as_value_ref();
+        let Some(refinement) = self.checked_cast_refinement(result) else {
+            return;
+        };
+        let range = operands.first().cloned().unwrap_or_else(IntegerValueRange::uninitialized);
+        set_result_range(result, range.constrained_by(&refinement.constraint));
     }
 }
 
