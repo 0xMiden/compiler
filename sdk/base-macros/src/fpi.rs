@@ -7,6 +7,7 @@ use std::{
 };
 
 use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
+use miden_assembly_syntax::ast::{Path as MasmPath, PathComponent};
 use miden_mast_package::{Package, PackageExport};
 use miden_protocol::utils::serde::Deserializable;
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -149,14 +150,33 @@ struct Dependency {
     package_path: PathBuf,
     /// Fully-qualified WIT import path.
     import: String,
-    /// Procedure roots keyed by WIT function name.
-    roots: HashMap<String, ProcedureRoot>,
+    /// Procedure roots keyed by full WIT interface path and function name.
+    roots: HashMap<ProcedureRootKey, ProcedureRoot>,
+}
+
+/// Identifies a WIT procedure export in a dependency package.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct ProcedureRootKey {
+    /// Fully-qualified WIT interface path, including package version.
+    interface: String,
+    /// WIT function name.
+    function: String,
 }
 
 /// Four field elements that make up a foreign procedure root.
 #[derive(Clone, Copy)]
 struct ProcedureRoot {
     felts: [u64; 4],
+}
+
+impl ProcedureRootKey {
+    /// Creates a root key for one WIT interface function.
+    fn new(interface: impl Into<String>, function: impl Into<String>) -> Self {
+        Self {
+            interface: interface.into(),
+            function: function.into(),
+        }
+    }
 }
 
 /// Returns the fully-qualified import path used for a resolved interface.
@@ -333,11 +353,13 @@ fn build_struct(module: &Module, dependency: &Dependency) -> syn::Result<(ItemSt
 
     for func in &module.functions {
         let wit_name = function_wit_name(func)?;
-        let root = dependency.roots.get(&wit_name).ok_or_else(|| {
+        let root_key = ProcedureRootKey::new(dependency.import.as_str(), wit_name.as_str());
+        let root = dependency.roots.get(&root_key).ok_or_else(|| {
             Error::new(
                 func.sig.ident.span(),
                 format!(
-                    "failed to find procedure root for `{wit_name}` in package '{}'",
+                    "failed to find procedure root for `{}#{wit_name}` in package '{}'",
+                    dependency.import,
                     dependency.package_path.display()
                 ),
             )
@@ -483,13 +505,13 @@ fn load_dependency(dependency: MidenDependency) -> syn::Result<Dependency> {
         let PackageExport::Procedure(proc_export) = export else {
             continue;
         };
-        let Some(function_name) = proc_export.path.last() else {
+        let Some(root_key) = procedure_root_key_from_export_path(proc_export.path.as_ref()) else {
             continue;
         };
-        if !procedure_path_matches_import(proc_export.path.as_ref().as_str(), &dependency.import) {
+        if root_key.interface != dependency.import {
             continue;
         }
-        roots.insert(function_name.to_string(), procedure_root_from_digest(&proc_export.digest));
+        roots.insert(root_key, procedure_root_from_digest(&proc_export.digest));
     }
 
     Ok(Dependency {
@@ -663,9 +685,30 @@ fn push_dependency_stem(stems: &mut Vec<String>, name: &str) {
     }
 }
 
-/// Returns true when an exported procedure belongs to the dependency import interface.
-fn procedure_path_matches_import(path: &str, import: &str) -> bool {
-    path.contains(import)
+/// Extracts the WIT interface/function key encoded in a package procedure export path.
+fn procedure_root_key_from_export_path(path: &MasmPath) -> Option<ProcedureRootKey> {
+    let interface = single_non_root_path_component(path.parent()?)?;
+    let function = path.last()?;
+    Some(ProcedureRootKey::new(interface, function))
+}
+
+/// Returns the only non-root path component if `path` has exactly one.
+fn single_non_root_path_component(path: &MasmPath) -> Option<&str> {
+    let mut component = None;
+
+    for next in path.components() {
+        let next = next.ok()?;
+        match next {
+            PathComponent::Root => continue,
+            PathComponent::Normal(_) => {
+                if component.replace(next.as_str()).is_some() {
+                    return None;
+                }
+            }
+        }
+    }
+
+    component
 }
 
 /// Converts a MAST digest word into literal field elements.
@@ -702,4 +745,42 @@ fn check_struct_name_collisions(modules: &[Module]) -> syn::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn procedure_root_key_uses_full_wit_interface_component() {
+        let path =
+            MasmPath::validate(r#"::"miden:no-arg-account/no-arg-account@0.0.1"::"get-count""#)
+                .expect("fixture path must be valid");
+
+        let key = procedure_root_key_from_export_path(path)
+            .expect("WIT export path must produce a procedure root key");
+
+        assert_eq!(
+            key,
+            ProcedureRootKey::new("miden:no-arg-account/no-arg-account@0.0.1", "get-count")
+        );
+    }
+
+    #[test]
+    fn procedure_root_key_rejects_nested_non_wit_export_path() {
+        let path = MasmPath::validate(
+            r#"::"miden:no-arg-note/no-arg-note@0.0.1"::no_arg_note::cabi_realloc"#,
+        )
+        .expect("fixture path must be valid");
+
+        assert_eq!(procedure_root_key_from_export_path(path), None);
+    }
+
+    #[test]
+    fn procedure_root_key_separates_same_function_in_different_interfaces() {
+        let first = ProcedureRootKey::new("miden:foo/account@0.0.1", "get-count");
+        let second = ProcedureRootKey::new("miden:foo/account-admin@0.0.1", "get-count");
+
+        assert_ne!(first, second);
+    }
 }

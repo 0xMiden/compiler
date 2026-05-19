@@ -18,6 +18,7 @@ doctest = false
 [dependencies]
 proc-macro2.workspace = true
 quote.workspace = true
+miden-assembly-syntax.workspace = true
 miden-protocol.workspace = true
 miden-mast-package.workspace = true
 semver.workspace = true
