@@ -253,6 +253,22 @@ fn push_fpi_padding_scratch_addr(
     )));
 }
 
+/// Converts one value loaded from an indirect FPI argument tuple to its protocol felt form.
+fn canonicalize_indirect_fpi_arg_load(
+    inst_emitter: &mut OpEmitter<'_>,
+    load_ty: &Type,
+    span: midenc_hir::SourceSpan,
+) {
+    match load_ty {
+        Type::I8 | Type::I16 => {
+            inst_emitter.sext(&Type::I32, span);
+            inst_emitter.bitcast(&Type::Felt, span);
+        }
+        Type::Felt => {}
+        _ => inst_emitter.bitcast(&Type::Felt, span),
+    }
+}
+
 /// Emits MASM for an FPI call whose canonical ABI lowered the argument list to one pointer.
 fn emit_execute_foreign_procedure_indirect(
     op: &hir::Exec,
@@ -298,9 +314,7 @@ fn emit_execute_foreign_procedure_indirect(
         }
         inst_emitter.inttoptr(&ptr_ty, span);
         inst_emitter.load(load_ty.clone(), span);
-        if load_ty != &Type::Felt {
-            inst_emitter.bitcast(&Type::Felt, span);
-        }
+        canonicalize_indirect_fpi_arg_load(&mut inst_emitter, load_ty, span);
         inst_emitter.swap(1, span);
     }
     OpEmitter::drop(&mut inst_emitter, span);
@@ -1888,3 +1902,57 @@ impl_hir_lowering_load_sext!(wasm::I32Load16S);
 impl_hir_lowering_load_sext!(wasm::I64Load8S);
 impl_hir_lowering_load_sext!(wasm::I64Load16S);
 impl_hir_lowering_load_sext!(wasm::I64Load32S);
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::BTreeSet, rc::Rc};
+
+    use midenc_hir::{Context, SourceSpan};
+
+    use super::*;
+    use crate::stack::OperandStack;
+
+    #[test]
+    fn indirect_fpi_arg_load_sign_extends_signed_narrow_values() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+
+        {
+            let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+            emitter.push(Type::I8);
+            canonicalize_indirect_fpi_arg_load(&mut emitter, &Type::I8, SourceSpan::default());
+
+            assert_eq!(emitter.stack_len(), 1);
+            assert_eq!(emitter.stack()[0], Type::Felt);
+        }
+
+        assert!(
+            !block.is_empty(),
+            "signed narrow indirect FPI loads must emit sign-extension code"
+        );
+    }
+
+    #[test]
+    fn indirect_fpi_arg_load_bitcasts_unsigned_narrow_values_without_code() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+
+        {
+            let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+            emitter.push(Type::U8);
+            canonicalize_indirect_fpi_arg_load(&mut emitter, &Type::U8, SourceSpan::default());
+
+            assert_eq!(emitter.stack_len(), 1);
+            assert_eq!(emitter.stack()[0], Type::Felt);
+        }
+
+        assert!(
+            block.is_empty(),
+            "unsigned narrow indirect FPI loads already carry the correct felt value"
+        );
+    }
+}
