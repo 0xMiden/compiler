@@ -690,7 +690,7 @@ where
         let (name_span, name_token) = name_token.into_parts();
         let op = match name_token {
             Token::BareIdent(_) => self.parse_custom_operation(&result_ids)?,
-            Token::String(_) => self.parse_generic_operation(None)?,
+            Token::String(_) => self.parse_generic_operation_internal(None, false)?,
             invalid => {
                 return Err(ParserError::UnexpectedToken {
                     span: name_span,
@@ -737,10 +737,15 @@ where
             for (result_group, result_record) in result_ids.iter().enumerate() {
                 let group = op.results().group(result_group);
                 for result_index in 0..result_record.count {
+                    let name = ValueId::from_symbol(result_record.id);
+                    let name = if result_record.count == 1 {
+                        name
+                    } else {
+                        name.with_result_index(result_index)
+                    };
                     let use_info = UnresolvedOperand {
                         loc: result_record.loc,
-                        name: ValueId::from_symbol(result_record.id)
-                            .with_result_index(result_index),
+                        name,
                     };
                     let value = group[result_index as usize] as ValueRef;
                     self.add_definition(use_info, value);
@@ -811,6 +816,15 @@ where
         &mut self,
         ip: Option<ProgramPoint>,
     ) -> ParseResult<OperationRef> {
+        self.parse_generic_operation_internal(ip, true)
+    }
+
+    /// Parse a generic operation, optionally leaving source-state finalization to the caller.
+    fn parse_generic_operation_internal(
+        &mut self,
+        ip: Option<ProgramPoint>,
+        finalize_definition: bool,
+    ) -> ParseResult<OperationRef> {
         let (span, name) = self
             .token_stream_mut()
             .expect_map("operation name", |tok| match tok {
@@ -871,9 +885,11 @@ where
 
         self.parse_semicolon()?;
 
-        let end = self.current_location();
-        if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
-            asm_state.finalize_operation_definition(op, span, end, &[]);
+        if finalize_definition {
+            let end = self.current_location();
+            if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
+                asm_state.finalize_operation_definition(op, span, end, &[]);
+            }
         }
 
         Ok(op)
@@ -935,6 +951,7 @@ where
         if let Some(provided_regions) = parsed_regions {
             result.regions.extend_from_slice(provided_regions);
         } else if self.token_stream_mut().is_next(|tok| matches!(tok, Token::Lparen)) {
+            self.parser.parse_lparen()?;
             // Create temporary regions with the top level region as parent.
             loop {
                 let region = self.builder().context().create_region();
@@ -944,6 +961,7 @@ where
                     break;
                 }
             }
+            self.parser.parse_rparen()?;
         }
 
         // Parse the attributes, if not explicitly provided.
