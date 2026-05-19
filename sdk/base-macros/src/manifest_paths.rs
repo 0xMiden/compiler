@@ -8,7 +8,7 @@ use std::{
 
 use proc_macro2::Span;
 use syn::Error;
-use toml::Value;
+use toml::{Value, value::Table};
 
 use crate::util::{bundled_wit_folder, strip_line_comment};
 
@@ -22,6 +22,16 @@ pub(crate) const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
 pub(crate) struct ResolvedWit {
     pub paths: Vec<String>,
     pub world: Option<String>,
+}
+
+/// Resolved `[package.metadata.component.target.dependencies]` entry.
+pub(crate) struct ComponentTargetDependency {
+    /// Manifest key for this dependency.
+    pub name: String,
+    /// Canonical dependency path exactly as declared by the manifest entry.
+    pub path: PathBuf,
+    /// Directory passed to WIT resolvers for this dependency.
+    pub search_path: PathBuf,
 }
 
 #[derive(Default)]
@@ -66,73 +76,16 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
 
     resolved.push(prelude_dir);
 
-    if let Some(dependencies) = manifest
-        .get("package")
-        .and_then(Value::as_table)
-        .and_then(|package| package.get("metadata"))
-        .and_then(Value::as_table)
-        .and_then(|metadata| metadata.get("component"))
-        .and_then(Value::as_table)
-        .and_then(|component| component.get("target"))
-        .and_then(Value::as_table)
-        .and_then(|target| target.get("dependencies"))
-        .and_then(Value::as_table)
-    {
-        for (name, dependency) in dependencies.iter() {
-            let table = dependency.as_table().ok_or_else(|| {
+    if let Some(package_table) = manifest.get("package").and_then(Value::as_table) {
+        for dependency in resolve_component_target_dependencies(
+            Path::new(&manifest_dir),
+            package_table,
+            Span::call_site(),
+        )? {
+            let path_str = dependency.search_path.to_str().ok_or_else(|| {
                 Error::new(
                     Span::call_site(),
-                    format!(
-                        "dependency '{name}' under \
-                         [package.metadata.component.target.dependencies] must be a table"
-                    ),
-                )
-            })?;
-
-            let path_value = table.get("path").and_then(Value::as_str).ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!("dependency '{name}' is missing a 'path' entry"),
-                )
-            })?;
-
-            let raw_path = PathBuf::from(path_value);
-            let absolute = if raw_path.is_absolute() {
-                raw_path
-            } else {
-                Path::new(&manifest_dir).join(&raw_path)
-            };
-
-            let canonical = fs::canonicalize(&absolute).unwrap_or_else(|_| absolute.clone());
-
-            let metadata = fs::metadata(&canonical).map_err(|err| {
-                Error::new(
-                    Span::call_site(),
-                    format!(
-                        "failed to read metadata for dependency '{name}' path '{}': {err}",
-                        canonical.display()
-                    ),
-                )
-            })?;
-
-            let search_path = if metadata.is_dir() {
-                canonical
-            } else if let Some(parent) = canonical.parent() {
-                parent.to_path_buf()
-            } else {
-                return Err(Error::new(
-                    Span::call_site(),
-                    format!(
-                        "dependency '{name}' path '{}' does not have a parent directory",
-                        canonical.display()
-                    ),
-                ));
-            };
-
-            let path_str = search_path.to_str().ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!("dependency '{name}' path contains invalid UTF-8"),
+                    format!("dependency '{}' path contains invalid UTF-8", dependency.name),
                 )
             })?;
 
@@ -163,6 +116,90 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
         paths: resolved,
         world,
     })
+}
+
+/// Resolves component target dependency paths from a package manifest table.
+pub(crate) fn resolve_component_target_dependencies(
+    manifest_dir: &Path,
+    package_table: &Table,
+    error_span: Span,
+) -> Result<Vec<ComponentTargetDependency>, Error> {
+    let mut resolved = Vec::new();
+
+    if let Some(dependencies) = package_table
+        .get("metadata")
+        .and_then(Value::as_table)
+        .and_then(|metadata| metadata.get("component"))
+        .and_then(Value::as_table)
+        .and_then(|component| component.get("target"))
+        .and_then(Value::as_table)
+        .and_then(|target| target.get("dependencies"))
+        .and_then(Value::as_table)
+    {
+        for (name, dependency) in dependencies.iter() {
+            let table = dependency.as_table().ok_or_else(|| {
+                Error::new(
+                    error_span,
+                    format!(
+                        "dependency '{name}' under \
+                         [package.metadata.component.target.dependencies] must be a table"
+                    ),
+                )
+            })?;
+
+            let path_value = table.get("path").and_then(Value::as_str).ok_or_else(|| {
+                Error::new(
+                    error_span,
+                    format!(
+                        "dependency '{name}' under \
+                         [package.metadata.component.target.dependencies] is missing a 'path' \
+                         entry"
+                    ),
+                )
+            })?;
+
+            let raw_path = PathBuf::from(path_value);
+            let absolute = if raw_path.is_absolute() {
+                raw_path
+            } else {
+                manifest_dir.join(&raw_path)
+            };
+
+            let canonical = fs::canonicalize(&absolute).unwrap_or_else(|_| absolute.clone());
+
+            let metadata = fs::metadata(&canonical).map_err(|err| {
+                Error::new(
+                    error_span,
+                    format!(
+                        "failed to read metadata for dependency '{name}' path '{}': {err}",
+                        canonical.display()
+                    ),
+                )
+            })?;
+
+            let search_path = if metadata.is_dir() {
+                canonical.clone()
+            } else if let Some(parent) = canonical.parent() {
+                parent.to_path_buf()
+            } else {
+                return Err(Error::new(
+                    error_span,
+                    format!(
+                        "dependency '{name}' path '{}' does not have a parent directory",
+                        canonical.display()
+                    ),
+                ));
+            };
+
+            resolved.push(ComponentTargetDependency {
+                name: name.clone(),
+                path: canonical,
+                search_path,
+            });
+        }
+    }
+
+    Ok(resolved)
 }
 
 /// Ensures the embedded Miden SDK WIT is materialized in the project's folder.

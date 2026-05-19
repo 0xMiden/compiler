@@ -1,7 +1,4 @@
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-};
+use std::{env, fs, path::PathBuf};
 
 use midenc_frontend_wasm_metadata::{FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME};
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
@@ -50,18 +47,6 @@ pub fn generated_wit_folder() -> Result<PathBuf, Error> {
                 "failed to create WIT dependencies directory '{}': {err}",
                 wit_deps_dir.display()
             ),
-        )
-    })?;
-    Ok(wit_deps_dir)
-}
-
-pub fn generated_wit_folder_at(manifest_dir: &Path) -> Result<PathBuf, String> {
-    let out_dir = { manifest_dir.join("target/") };
-    let wit_deps_dir = out_dir.join(GENERATED_WIT_DIR);
-    fs::create_dir_all(&wit_deps_dir).map_err(|err| {
-        format!(
-            "failed to create WIT dependencies directory '{}': {err}",
-            wit_deps_dir.display()
         )
     })?;
     Ok(wit_deps_dir)

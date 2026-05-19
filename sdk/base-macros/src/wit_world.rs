@@ -8,10 +8,7 @@ use std::{
 use proc_macro2::Span;
 use toml::{Value, value::Table};
 
-use crate::{
-    util::{generated_wit_folder_at, strip_line_comment},
-    wit_builder::WitBuilder,
-};
+use crate::{manifest_paths, util::strip_line_comment, wit_builder::WitBuilder};
 
 /// Parsed package metadata from the consuming crate's manifest.
 pub(crate) struct ManifestPackage {
@@ -97,6 +94,7 @@ impl ManifestPackage {
 }
 
 /// Resolved metadata for one `package.metadata.miden.dependencies` entry.
+#[derive(Debug)]
 pub(crate) struct MidenDependency {
     /// Manifest key used for this dependency.
     pub(crate) name: String,
@@ -139,6 +137,11 @@ fn collect_miden_dependencies(
         .and_then(Value::as_table)
         .and_then(|miden| miden.get("dependencies"))
         .and_then(Value::as_table);
+    let component_target_dependencies = manifest_paths::resolve_component_target_dependencies(
+        manifest_dir,
+        package_table,
+        error_span,
+    )?;
 
     let mut resolved = Vec::new();
 
@@ -165,27 +168,47 @@ fn collect_miden_dependencies(
                     )
                 })?;
 
-            let absolute_path = manifest_dir.join(dependency_path);
-            let canonical = fs::canonicalize(&absolute_path).map_err(|err| {
+            let dependency_root = canonicalize_manifest_path(
+                manifest_dir,
+                dependency_path,
+                error_span,
+                &format!("dependency '{dep_name}' path"),
+            )?;
+            let wit_root = if let Some(component_dependency) = component_target_dependencies
+                .iter()
+                .find(|dependency| dependency.name == *dep_name)
+            {
+                component_dependency.path.clone()
+            } else if dependency_root.is_file() {
+                return Err(syn::Error::new(
+                    error_span,
+                    format!(
+                        "dependency '{dep_name}' under package.metadata.miden.dependencies points \
+                         to file '{}', which can be used as a `.masp` package artifact but cannot \
+                         supply typed FPI WIT metadata; add a matching entry under \
+                         package.metadata.component.target.dependencies with a path to the \
+                         dependency's generated WIT",
+                        dependency_root.display()
+                    ),
+                ));
+            } else {
+                dependency_root.clone()
+            };
+
+            let dependency_wit = parse_dependency_wit(&wit_root).map_err(|msg| {
                 syn::Error::new(
                     error_span,
                     format!(
-                        "failed to canonicalize dependency '{dep_name}' path '{}': {err}",
-                        absolute_path.display()
+                        "failed to process typed FPI WIT metadata for dependency '{dep_name}' \
+                         from '{}': {msg}",
+                        wit_root.display()
                     ),
-                )
-            })?;
-
-            let dependency_wit = parse_dependency_wit(&canonical).map_err(|msg| {
-                syn::Error::new(
-                    error_span,
-                    format!("failed to process WIT for dependency '{dep_name}': {msg}"),
                 )
             })?;
 
             resolved.push(MidenDependency {
                 name: dep_name.clone(),
-                root: canonical,
+                root: dependency_root,
                 import: qualify_dependency_export(&dependency_wit, error_span)?,
             });
         }
@@ -193,6 +216,22 @@ fn collect_miden_dependencies(
 
     resolved.sort_by(|a, b| a.import.cmp(&b.import));
     Ok(resolved)
+}
+
+/// Resolves a path from manifest metadata relative to `manifest_dir`.
+fn canonicalize_manifest_path(
+    manifest_dir: &Path,
+    path: &str,
+    error_span: Span,
+    label: &str,
+) -> Result<PathBuf, syn::Error> {
+    let absolute_path = manifest_dir.join(path);
+    fs::canonicalize(&absolute_path).map_err(|err| {
+        syn::Error::new(
+            error_span,
+            format!("failed to canonicalize {label} '{}': {err}", absolute_path.display()),
+        )
+    })
 }
 
 /// Parses the first exported WIT world exposed by a dependency root or WIT file.
@@ -203,9 +242,10 @@ fn parse_dependency_wit(root: &Path) -> Result<DependencyWit, String> {
         });
     }
 
+    let direct_wit_dir = root.to_path_buf();
     let default_wit_dir = root.join("wit");
-    let generated_wit_dir = generated_wit_folder_at(root)?;
-    let wit_dirs = [default_wit_dir, generated_wit_dir];
+    let generated_wit_dir = root.join("target/generated-wit");
+    let wit_dirs = [direct_wit_dir, default_wit_dir, generated_wit_dir];
     for wit_dir in &wit_dirs {
         if !wit_dir.exists() {
             continue;
@@ -338,10 +378,11 @@ mod tests {
     };
 
     use proc_macro2::Span;
+    use toml::{Value, value::Table};
 
     use super::{
-        extract_package_identifier, extract_world_exports, parse_dependency_wit,
-        qualify_dependency_export,
+        collect_miden_dependencies, extract_package_identifier, extract_world_exports,
+        parse_dependency_wit, qualify_dependency_export,
     };
 
     // This WIT is generated for the basic wallet example at examples/basic-wallet/target/generated-wit/miden-basic-wallet.wit
@@ -377,6 +418,16 @@ world basic-wallet-world {
         root
     }
 
+    fn package_table(contents: &str) -> Table {
+        contents
+            .parse::<Table>()
+            .expect("fixture manifest must parse")
+            .get("package")
+            .and_then(Value::as_table)
+            .expect("fixture manifest must contain [package]")
+            .clone()
+    }
+
     #[test]
     fn parses_generated_component_wit_fixture_contents() {
         let package = extract_package_identifier(BASIC_WALLET_GENERATED_WIT);
@@ -399,6 +450,19 @@ world basic-wallet-world {
     }
 
     #[test]
+    fn parses_direct_generated_wit_directory() {
+        let fixture_root = basic_wallet_fixture_root();
+        let dependency_wit =
+            parse_dependency_wit(&fixture_root.join("target/generated-wit")).unwrap();
+
+        assert_eq!(dependency_wit.package, "miden:basic-wallet");
+        assert_eq!(dependency_wit.version.as_deref(), Some("0.1.0"));
+        assert_eq!(dependency_wit.exports, vec!["basic-wallet"]);
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
     fn qualifies_generated_component_export_as_dependency_import() {
         let fixture_root = basic_wallet_fixture_root();
         let dependency_wit = parse_dependency_wit(&fixture_root).unwrap();
@@ -406,6 +470,76 @@ world basic-wallet-world {
         let import = qualify_dependency_export(&dependency_wit, Span::call_site()).unwrap();
 
         assert_eq!(import, "miden:basic-wallet/basic-wallet@0.1.0");
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn miden_file_dependency_uses_component_target_wit_metadata() {
+        let fixture_root = basic_wallet_fixture_root();
+        let package_path = fixture_root.join("target/release/basic_wallet.masp");
+        fs::create_dir_all(package_path.parent().expect("package path must have a parent"))
+            .expect("package directory must be created");
+        fs::write(&package_path, b"package bytes").expect("package fixture must be written");
+
+        let manifest = package_table(&format!(
+            r#"
+[package]
+name = "consumer"
+version = "0.0.1"
+
+[package.metadata.miden.dependencies]
+"miden:basic-wallet" = {{ path = "{}" }}
+
+[package.metadata.component.target.dependencies]
+"miden:basic-wallet" = {{ path = "{}" }}
+"#,
+            package_path.display(),
+            fixture_root.join("target/generated-wit").display(),
+        ));
+
+        let dependencies =
+            collect_miden_dependencies(&fixture_root, &manifest, Span::call_site()).unwrap();
+        let package_path =
+            fs::canonicalize(package_path).expect("package path fixture must canonicalize");
+
+        assert_eq!(dependencies.len(), 1);
+        assert_eq!(dependencies[0].root, package_path);
+        assert_eq!(dependencies[0].import, "miden:basic-wallet/basic-wallet@0.1.0");
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn miden_file_dependency_without_component_wit_reports_typed_fpi_error() {
+        let fixture_root = basic_wallet_fixture_root();
+        let package_path = fixture_root.join("target/release/basic_wallet.masp");
+        fs::create_dir_all(package_path.parent().expect("package path must have a parent"))
+            .expect("package directory must be created");
+        fs::write(&package_path, b"package bytes").expect("package fixture must be written");
+
+        let manifest = package_table(&format!(
+            r#"
+[package]
+name = "consumer"
+version = "0.0.1"
+
+[package.metadata.miden.dependencies]
+"miden:basic-wallet" = {{ path = "{}" }}
+"#,
+            package_path.display(),
+        ));
+
+        let error = collect_miden_dependencies(&fixture_root, &manifest, Span::call_site())
+            .expect_err("artifact-only dependency must not provide typed FPI metadata");
+        let message = error.to_string();
+
+        assert!(message.contains("points to file"), "unexpected error: {message}");
+        assert!(
+            message.contains("package.metadata.component.target.dependencies"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("typed FPI WIT metadata"), "unexpected error: {message}");
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
