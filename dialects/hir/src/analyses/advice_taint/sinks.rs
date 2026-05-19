@@ -1,10 +1,12 @@
 use alloc::vec::Vec;
 
-use midenc_dialect_arith as arith;
 use midenc_hir::{
-    CallOpInterface, Operation, Symbol, Type, Value,
+    CallOpInterface, Operation, Symbol, Type,
     dialects::builtin,
     effects::{AdviceEffect, AdviceEffectOpInterface},
+    traits::{
+        ValueRangeConstraint, is_unconstrained_value_type, operation_operand_range_requirement,
+    },
 };
 
 pub(super) fn is_external_call(call: &dyn CallOpInterface) -> bool {
@@ -48,41 +50,26 @@ pub(super) fn external_call_result_has_unconstrained_advice_effect(
     })
 }
 
-pub(super) fn is_constrained_external_parameter_type(ty: &Type) -> bool {
-    matches!(
-        ty,
-        Type::Enum(_)
-            | Type::Ptr(_)
-            | Type::I32
-            | Type::U32
-            | Type::I16
-            | Type::U16
-            | Type::I8
-            | Type::U8
-            | Type::I1
-    )
+pub(super) fn external_parameter_range_constraint(ty: &Type) -> Option<ValueRangeConstraint> {
+    ValueRangeConstraint::from_type(ty)
 }
 
 pub(super) fn is_unconstrained_external_result_type(ty: &Type) -> bool {
-    matches!(ty, Type::Felt | Type::Array(_))
+    is_unconstrained_value_type(ty)
 }
 
-pub(super) fn is_u32_presuming_sink(op: &Operation) -> bool {
-    is_u32_presuming_arith_op(op) || is_u32_to_u64_zext(op)
-}
-
-pub(super) fn u32_presuming_operand_indices(op: &Operation) -> Vec<usize> {
-    if !is_u32_presuming_sink(op) {
-        return Vec::new();
-    }
-
+pub(super) fn is_range_constrained_sink(op: &Operation) -> bool {
     op.operands()
         .iter()
         .enumerate()
-        .filter_map(|(index, operand)| {
-            let value = operand.borrow().as_value_ref();
-            (value.borrow().ty() == &Type::U32).then_some(index)
-        })
+        .any(|(index, _)| operation_operand_range_requirement(op, index).is_some())
+}
+
+pub(super) fn range_constrained_operand_indices(op: &Operation) -> Vec<usize> {
+    op.operands()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, _)| operation_operand_range_requirement(op, index).map(|_| index))
         .collect()
 }
 
@@ -94,62 +81,13 @@ pub(super) fn operation_result_has_advice_read_effect(
         return false;
     };
 
-    interface.effects().any(|effect| {
-        effect.effect() == &AdviceEffect::Read
-            && effect.value().is_some_and(|value| value == result)
-    })
-}
-
-fn is_u32_presuming_arith_op(op: &Operation) -> bool {
-    if !has_u32_operand(op) {
+    if !is_unconstrained_value_type(result.borrow().ty()) {
         return false;
     }
 
-    op.is::<arith::Add>()
-        || op.is::<arith::AddOverflowing>()
-        || op.is::<arith::Sub>()
-        || op.is::<arith::SubOverflowing>()
-        || op.is::<arith::Mul>()
-        || op.is::<arith::MulOverflowing>()
-        || op.is::<arith::Div>()
-        || op.is::<arith::Mod>()
-        || op.is::<arith::Divmod>()
-        || op.is::<arith::Band>()
-        || op.is::<arith::Bor>()
-        || op.is::<arith::Bxor>()
-        || op.is::<arith::Shl>()
-        || op.is::<arith::Shr>()
-        || op.is::<arith::Rotl>()
-        || op.is::<arith::Rotr>()
-        || op.is::<arith::Eq>()
-        || op.is::<arith::Neq>()
-        || op.is::<arith::Gt>()
-        || op.is::<arith::Gte>()
-        || op.is::<arith::Lt>()
-        || op.is::<arith::Lte>()
-        || op.is::<arith::Min>()
-        || op.is::<arith::Max>()
-        || op.is::<arith::Bnot>()
-        || op.is::<arith::Popcnt>()
-        || op.is::<arith::Ctz>()
-        || op.is::<arith::Clz>()
-        || op.is::<arith::Clo>()
-        || op.is::<arith::Cto>()
-}
-
-fn is_u32_to_u64_zext(op: &Operation) -> bool {
-    // MASM widening/add3/madd u32 instructions lower by first refining operands to u32, then
-    // zero-extending them to u64 for the widened arithmetic. The zext is the u32-consuming
-    // boundary that remains visible after lifting.
-    op.is::<arith::Zext>()
-        && has_u32_operand(op)
-        && op.results().all().iter().any(|result| result.borrow().ty() == &Type::U64)
-}
-
-fn has_u32_operand(op: &Operation) -> bool {
-    op.operands().iter().any(|operand| {
-        let value = operand.borrow().as_value_ref();
-        value.borrow().ty() == &Type::U32
+    interface.effects().any(|effect| {
+        effect.effect() == &AdviceEffect::Read
+            && effect.value().is_none_or(|value| value == result)
     })
 }
 
@@ -162,7 +100,7 @@ mod tests {
     use crate::HirOpBuilder;
 
     #[test]
-    fn shift_only_treats_u32_typed_operands_as_u32_presuming() {
+    fn shift_treats_only_constrained_typed_operands_as_range_constrained() {
         let mut test = Test::new("shift", &[], &[]);
         let mut builder = test.function_builder();
         let lhs = builder.i32(7, SourceSpan::UNKNOWN);
@@ -171,7 +109,7 @@ mod tests {
         let op = result.borrow().get_defining_op().unwrap();
         let op = op.borrow();
 
-        assert_eq!(u32_presuming_operand_indices(&op), [1]);
+        assert_eq!(range_constrained_operand_indices(&op), [0, 1]);
     }
 
     #[test]

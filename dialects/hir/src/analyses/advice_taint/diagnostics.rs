@@ -13,10 +13,10 @@ use midenc_hir::{
 
 use super::lattice::{AdviceTaintOrigin, AdviceTaintOriginKind};
 
-/// The first unsafe u32-presuming use of raw advice data.
+/// The first unsafe range-constrained use of raw advice data.
 #[derive(Debug, Clone)]
 pub struct AdviceTaintFinding {
-    /// The operation that consumed raw advice as a u32.
+    /// The operation that consumed raw advice as a range-constrained value.
     pub sink: OperationName,
     /// The span of the unsafe sink operation.
     pub sink_span: SourceSpan,
@@ -142,19 +142,18 @@ impl AdviceTaintDiagnostic {
         let (subject, sink_label, origin_label, help) = match finding.origin.kind {
             AdviceTaintOriginKind::Advice => (
                 "unconstrained advice value",
-                "unconstrained advice data is consumed here as a u32",
+                "unconstrained advice data is consumed here as a constrained value",
                 "advice data is obtained here which is later used unconstrained",
-                "add an explicit u32 range check, such as MASM's `u32assert`, before this value \
-                 is consumed by a u32-presuming operation"
+                "add an explicit range check or checked cast before this value is consumed by an \
+                 operation that requires a constrained value"
                     .to_string(),
             ),
             AdviceTaintOriginKind::ExternalCall => (
                 "unconstrained external call result",
-                "unconstrained advice from an external call is consumed here as a u32",
+                "unconstrained advice from an external call is consumed here as a constrained value",
                 "the result of the external call here is tainted as unconstrained",
-                "add an explicit u32 range check after the call, or provide an analyzable callee \
-                 body/summary proving the result is constrained before this u32-presuming \
-                 operation"
+                "add an explicit range check after the call, or provide an analyzable callee \
+                 body/summary proving the result is constrained before this operation"
                     .to_string(),
             ),
         };
@@ -174,7 +173,8 @@ impl AdviceTaintDiagnostic {
             })
             .unwrap_or_else(|| (finding.sink_span, sink_label.to_string()));
         let sink_source = source_manager.get(primary_span.source_id()).ok();
-        let message = format!("{subject} reaches u32-presuming operation{function_suffix}");
+        let message =
+            format!("{subject} reaches operation requiring a constrained value{function_suffix}");
         let mut labels =
             vec![LabeledSpan::new_primary_with_span(Some(primary_label), primary_span)];
         let mut related = vec![];
@@ -457,19 +457,19 @@ fn primary_context_label(
 ) -> &'static str {
     match (kind, origin_kind) {
         (AdviceTaintContextKind::CallArgument, AdviceTaintOriginKind::Advice) => {
-            "unconstrained advice value is passed here before reaching a u32-presuming operation"
+            "unconstrained advice value is passed here before reaching a constrained operation"
         }
         (AdviceTaintContextKind::CallArgument, AdviceTaintOriginKind::ExternalCall) => {
             "unconstrained advice from an external call is passed here before reaching a \
-             u32-presuming operation"
+             constrained operation"
         }
         (AdviceTaintContextKind::CallResult, AdviceTaintOriginKind::Advice) => {
-            "unconstrained advice value returns from this call before reaching a u32-presuming \
+            "unconstrained advice value returns from this call before reaching a constrained \
              operation"
         }
         (AdviceTaintContextKind::CallResult, AdviceTaintOriginKind::ExternalCall) => {
             "unconstrained advice from an external call returns here before reaching a \
-             u32-presuming operation"
+             constrained operation"
         }
     }
 }

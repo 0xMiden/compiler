@@ -29,8 +29,8 @@ pub use self::{
 use self::{
     lattice::value_taint,
     sinks::{
-        external_call_param_types, is_constrained_external_parameter_type, is_external_call,
-        is_u32_presuming_sink, u32_presuming_operand_indices,
+        external_call_param_types, external_parameter_range_constraint, is_external_call,
+        is_range_constrained_sink, range_constrained_operand_indices,
     },
     storage::AdviceTaintStoragePropagation,
 };
@@ -128,12 +128,12 @@ impl Analysis for AdviceTaintAnalysis {
 fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
-        if !is_u32_presuming_sink(operation) {
+        if !is_range_constrained_sink(operation) {
             return;
         }
 
         let mut operand_taint = ContextualAdviceTaintValue::clean();
-        for operand_index in u32_presuming_operand_indices(operation) {
+        for operand_index in range_constrained_operand_indices(operation) {
             let operand = &operation.operands()[operand_index];
             let value = operand.borrow().as_value_ref();
             operand_taint = LatticeLike::join(&operand_taint, &value_taint(value, solver));
@@ -231,7 +231,7 @@ fn collect_external_call_findings(
         for (argument_index, (argument, parameter_type)) in
             call.arguments().iter().zip(param_types).enumerate()
         {
-            if !is_constrained_external_parameter_type(&parameter_type) {
+            if external_parameter_range_constraint(&parameter_type).is_none() {
                 continue;
             }
 
