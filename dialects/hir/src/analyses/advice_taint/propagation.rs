@@ -10,11 +10,12 @@ use super::{
     lattice::{AdviceTaintSparseLattice, CallContextFrame, ContextualAdviceTaintValue},
     layout::ADVICE_PIPE_RAW_RESULT_COUNT,
     sinks::{
-        external_call_has_advice_effects, is_u32_presuming_sink,
-        is_unconstrained_external_result_type,
+        external_call_result_has_unconstrained_advice_effect, is_u32_presuming_sink,
+        is_unconstrained_external_result_type, operation_result_has_advice_read_effect,
+        u32_presuming_operand_indices,
     },
 };
-use crate::{AdviceLoadWord, AdvicePipe, AdvicePop, AssertU32};
+use crate::{AdvicePipe, AssertU32};
 
 /// Sparse propagation of unconstrained advice taint through SSA values.
 #[derive(Default)]
@@ -54,8 +55,12 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
 
         let operand_taint =
             ContextualAdviceTaintValue::join_all(operands.iter().map(|operand| operand.value()));
-        let result_taint = transfer_taint(op, operand_taint);
-        join_results(results, &result_taint)
+        let constrained_operand_taint = ContextualAdviceTaintValue::join_all(
+            u32_presuming_operand_indices(op)
+                .into_iter()
+                .filter_map(|index| operands.get(index).map(|operand| operand.value())),
+        );
+        transfer_results(op, operand_taint, constrained_operand_taint, results)
     }
 
     fn visit_call_control_flow_transfer(
@@ -80,17 +85,18 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
             }
             CallControlFlowAction::External => {
                 let span = call.as_operation().span();
-                let has_advice_effects = external_call_has_advice_effects(call);
-                for (result_value, result) in call.as_operation().results().all().iter().zip(after)
+                for (result_index, (result_value, result)) in
+                    call.as_operation().results().all().iter().zip(after).enumerate()
                 {
                     let result_value = result_value.borrow();
-                    let value = if has_advice_effects
-                        && is_unconstrained_external_result_type(result_value.ty())
-                    {
-                        ContextualAdviceTaintValue::external_call(span)
-                    } else {
-                        ContextualAdviceTaintValue::clean()
-                    };
+                    let value =
+                        if external_call_result_has_unconstrained_advice_effect(call, result_index)
+                            && is_unconstrained_external_result_type(result_value.ty())
+                        {
+                            ContextualAdviceTaintValue::external_call(span)
+                        } else {
+                            ContextualAdviceTaintValue::clean()
+                        };
                     result.join(&value);
                 }
             }
@@ -102,12 +108,22 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
     }
 }
 
-fn join_results(
+fn transfer_results(
+    op: &Operation,
+    operand_taint: ContextualAdviceTaintValue,
+    constrained_operand_taint: ContextualAdviceTaintValue,
     results: &mut [AnalysisStateGuardMut<'_, AdviceTaintSparseLattice>],
-    value: &ContextualAdviceTaintValue,
 ) -> Result<(), Report> {
-    for result in results {
-        result.join(value);
+    let transferred_operand_taint = transfer_taint(op, operand_taint, constrained_operand_taint);
+    let op_results = op.results().all();
+    for (index, result) in results.iter_mut().enumerate() {
+        let result_value = op_results[index].borrow().as_value_ref();
+        let result_taint = if operation_result_has_advice_read_effect(op, result_value) {
+            ContextualAdviceTaintValue::raw(op.span())
+        } else {
+            transferred_operand_taint.clone()
+        };
+        result.join(&result_taint);
     }
     Ok(())
 }
@@ -132,17 +148,14 @@ fn join_advice_pipe_results(
 fn transfer_taint(
     op: &Operation,
     operand_taint: ContextualAdviceTaintValue,
+    constrained_operand_taint: ContextualAdviceTaintValue,
 ) -> ContextualAdviceTaintValue {
-    if op.is::<AdvicePop>() || op.is::<AdviceLoadWord>() {
-        return ContextualAdviceTaintValue::raw(op.span());
-    }
-
     if op.is::<AssertU32>() {
         return ContextualAdviceTaintValue::clean();
     }
 
-    if is_u32_presuming_sink(op) && operand_taint.has_unreported_origin() {
-        operand_taint.mark_reported()
+    if is_u32_presuming_sink(op) && constrained_operand_taint.has_unreported_origin() {
+        operand_taint.mark_origins_reported(constrained_operand_taint.unreported_origins())
     } else {
         operand_taint
     }

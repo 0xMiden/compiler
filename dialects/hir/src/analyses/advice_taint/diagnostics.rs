@@ -134,7 +134,7 @@ pub struct AdviceTaintDiagnostic {
 
 impl AdviceTaintDiagnostic {
     fn new(finding: &AdviceTaintFinding, source_manager: &dyn SourceManager) -> Self {
-        let function = finding
+        let function_suffix = finding
             .function
             .map(|name| format!(" in function '{}'", name.as_str()))
             .unwrap_or_default();
@@ -158,30 +158,54 @@ impl AdviceTaintDiagnostic {
                     .to_string(),
             ),
         };
-        let sink_source = source_manager.get(finding.sink_span.source_id()).ok();
-        let message = format!("{subject} reaches u32-presuming operation {}", function);
-        let label =
-            LabeledSpan::new_primary_with_span(Some(sink_label.to_string()), finding.sink_span);
-        let mut labels = vec![label];
-        let mut related = vec![];
-        context_labels(
-            finding.sink_span,
-            &finding.contexts,
-            &mut labels,
-            &mut related,
-            source_manager,
-        );
-        let source_source = source_manager.get(finding.origin.span.source_id()).ok();
-        if finding.origin.span.source_id() == finding.advice_span.source_id() {
-            labels.push(LabeledSpan::new_with_span(
-                Some(origin_label.to_string()),
-                finding.origin.span,
-            ));
+        let primary_context =
+            best_primary_context(finding.sink_span, &finding.contexts, source_manager);
+        let function_suffix = if primary_context.is_some() {
+            String::new()
         } else {
-            related.push(
-                RelatedLabel::advice("unconstrained advice")
-                    .with_labeled_span(finding.origin.span, origin_label)
-                    .with_source_file(source_source),
+            function_suffix
+        };
+        let (primary_span, primary_label) = primary_context
+            .map(|context| {
+                (
+                    context.span,
+                    primary_context_label(context.kind, finding.origin.kind).to_string(),
+                )
+            })
+            .unwrap_or_else(|| (finding.sink_span, sink_label.to_string()));
+        let sink_source = source_manager.get(primary_span.source_id()).ok();
+        let message = format!("{subject} reaches u32-presuming operation{function_suffix}");
+        let mut labels =
+            vec![LabeledSpan::new_primary_with_span(Some(primary_label), primary_span)];
+        let mut related = vec![];
+        if let Some(primary_context) = primary_context {
+            promoted_primary_context_label(
+                primary_span,
+                primary_context,
+                &finding.contexts,
+                &mut labels,
+                &mut related,
+                source_manager,
+            );
+        } else {
+            context_labels(
+                primary_span,
+                &finding.contexts,
+                None,
+                &mut labels,
+                &mut related,
+                source_manager,
+            );
+        }
+        if should_show_secondary_span(finding.origin.span, primary_span, source_manager) {
+            push_label_or_related(
+                primary_span,
+                finding.origin.span,
+                origin_label,
+                "unconstrained advice",
+                &mut labels,
+                &mut related,
+                source_manager,
             );
         }
         Self {
@@ -227,26 +251,25 @@ impl AdviceTaintDiagnostic {
         let label = LabeledSpan::new_primary_with_span(Some(return_label), finding.return_span);
         let mut labels = vec![label];
         let mut related = vec![];
+        if should_show_secondary_span(finding.origin.span, finding.function_span, source_manager) {
+            push_label_or_related(
+                finding.function_span,
+                finding.origin.span,
+                &origin_label,
+                "unconstrained advice",
+                &mut labels,
+                &mut related,
+                source_manager,
+            );
+        }
         context_labels(
             finding.function_span,
             &finding.contexts,
+            None,
             &mut labels,
             &mut related,
             source_manager,
         );
-        if finding.origin.span.source_id() == finding.advice_span.source_id() {
-            labels.push(LabeledSpan::new_with_span(
-                Some(origin_label.to_string()),
-                finding.origin.span,
-            ));
-        } else {
-            let source_source = source_manager.get(finding.origin.span.source_id()).ok();
-            related.push(
-                RelatedLabel::advice("unconstrained advice")
-                    .with_labeled_span(finding.origin.span, origin_label)
-                    .with_source_file(source_source),
-            );
-        }
 
         Self {
             message,
@@ -340,25 +363,157 @@ impl AdviceTaintDiagnostic {
 fn context_labels(
     sink_span: SourceSpan,
     contexts: &[AdviceTaintContext],
+    skip_span: Option<SourceSpan>,
     labels: &mut Vec<LabeledSpan>,
     related: &mut Vec<RelatedLabel>,
     source_manager: &dyn SourceManager,
 ) {
     for context in contexts {
-        let label = match context.kind {
-            AdviceTaintContextKind::CallArgument => {
-                "unconstrained value is passed as a call argument here"
+        if Some(context.span) == skip_span
+            || !should_show_secondary_span(context.span, sink_span, source_manager)
+        {
+            continue;
+        }
+        push_context_label(sink_span, context, labels, related, source_manager);
+    }
+}
+
+fn promoted_primary_context_label(
+    primary_span: SourceSpan,
+    primary_context: &AdviceTaintContext,
+    contexts: &[AdviceTaintContext],
+    labels: &mut Vec<LabeledSpan>,
+    related: &mut Vec<RelatedLabel>,
+    source_manager: &dyn SourceManager,
+) {
+    let wanted_kind = match primary_context.kind {
+        AdviceTaintContextKind::CallArgument => AdviceTaintContextKind::CallResult,
+        AdviceTaintContextKind::CallResult => AdviceTaintContextKind::CallArgument,
+    };
+    let selected = contexts
+        .iter()
+        .filter(|context| {
+            context.kind == wanted_kind
+                && context.span != primary_span
+                && should_show_secondary_span(context.span, primary_span, source_manager)
+        })
+        .max_by_key(|context| {
+            if context.span.source_id() == primary_span.source_id()
+                && context.span.start().to_u32() <= primary_span.start().to_u32()
+            {
+                context.span.start().to_u32()
+            } else {
+                0
             }
-            AdviceTaintContextKind::CallResult => "unconstrained value returns from a call here",
-        };
-        if sink_span.source_id() == context.span.source_id() {
-            labels.push(LabeledSpan::new_with_span(Some(label.to_string()), context.span));
-        } else {
-            related.push(
-                RelatedLabel::advice("relevant context for unconstrained advice")
-                    .with_labeled_span(context.span, label)
-                    .with_source_file(source_manager.get(context.span.source_id()).ok()),
-            );
+        });
+
+    if let Some(context) = selected {
+        push_context_label(primary_span, context, labels, related, source_manager);
+    }
+}
+
+fn push_context_label(
+    sink_span: SourceSpan,
+    context: &AdviceTaintContext,
+    labels: &mut Vec<LabeledSpan>,
+    related: &mut Vec<RelatedLabel>,
+    source_manager: &dyn SourceManager,
+) {
+    let label = match context.kind {
+        AdviceTaintContextKind::CallArgument => {
+            "unconstrained value is passed as a call argument here"
+        }
+        AdviceTaintContextKind::CallResult => "unconstrained value returns from a call here",
+    };
+    push_label_or_related(
+        sink_span,
+        context.span,
+        label,
+        "relevant context for unconstrained advice",
+        labels,
+        related,
+        source_manager,
+    );
+}
+
+fn best_primary_context<'a>(
+    sink_span: SourceSpan,
+    contexts: &'a [AdviceTaintContext],
+    source_manager: &dyn SourceManager,
+) -> Option<&'a AdviceTaintContext> {
+    if !is_low_quality_span(sink_span, source_manager) {
+        return None;
+    }
+
+    contexts
+        .iter()
+        .rev()
+        .find(|context| !is_low_quality_span(context.span, source_manager))
+}
+
+fn primary_context_label(
+    kind: AdviceTaintContextKind,
+    origin_kind: AdviceTaintOriginKind,
+) -> &'static str {
+    match (kind, origin_kind) {
+        (AdviceTaintContextKind::CallArgument, AdviceTaintOriginKind::Advice) => {
+            "unconstrained advice value is passed here before reaching a u32-presuming operation"
+        }
+        (AdviceTaintContextKind::CallArgument, AdviceTaintOriginKind::ExternalCall) => {
+            "unconstrained advice from an external call is passed here before reaching a \
+             u32-presuming operation"
+        }
+        (AdviceTaintContextKind::CallResult, AdviceTaintOriginKind::Advice) => {
+            "unconstrained advice value returns from this call before reaching a u32-presuming \
+             operation"
+        }
+        (AdviceTaintContextKind::CallResult, AdviceTaintOriginKind::ExternalCall) => {
+            "unconstrained advice from an external call returns here before reaching a \
+             u32-presuming operation"
         }
     }
+}
+
+fn should_show_secondary_span(
+    span: SourceSpan,
+    primary_span: SourceSpan,
+    source_manager: &dyn SourceManager,
+) -> bool {
+    span.source_id() == primary_span.source_id() || !is_low_quality_span(span, source_manager)
+}
+
+fn push_label_or_related(
+    primary_span: SourceSpan,
+    span: SourceSpan,
+    label: &str,
+    related_title: &'static str,
+    labels: &mut Vec<LabeledSpan>,
+    related: &mut Vec<RelatedLabel>,
+    source_manager: &dyn SourceManager,
+) {
+    if primary_span.source_id() == span.source_id() {
+        labels.push(LabeledSpan::new_with_span(Some(label.to_string()), span));
+    } else {
+        related.push(
+            RelatedLabel::advice(related_title)
+                .with_labeled_span(span, label.to_string())
+                .with_source_file(source_manager.get(span.source_id()).ok()),
+        );
+    }
+}
+
+fn is_low_quality_span(span: SourceSpan, source_manager: &dyn SourceManager) -> bool {
+    if span.is_unknown() || span.is_synthetic() {
+        return true;
+    }
+
+    let Ok(location) = source_manager.file_line_col(span) else {
+        return true;
+    };
+    let path = location.uri().path();
+
+    path.contains("/rust/library/")
+        || path.contains("/.cargo/registry/")
+        || path.contains("/registry/src/")
+        || path.contains("/compiler/sdk/")
 }

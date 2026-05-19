@@ -4,7 +4,7 @@ use midenc_dialect_arith as arith;
 use midenc_hir::{
     CallOpInterface, Operation, Symbol, Type, Value,
     dialects::builtin,
-    effects::{AdviceEffect, EffectOpInterface},
+    effects::{AdviceEffect, AdviceEffectOpInterface},
 };
 
 pub(super) fn is_external_call(call: &dyn CallOpInterface) -> bool {
@@ -25,7 +25,10 @@ pub(super) fn external_call_param_types(call: &dyn CallOpInterface) -> Option<Ve
     Some(function.get_signature().params().iter().map(|param| param.ty.clone()).collect())
 }
 
-pub(super) fn external_call_has_advice_effects(call: &dyn CallOpInterface) -> bool {
+pub(super) fn external_call_result_has_unconstrained_advice_effect(
+    call: &dyn CallOpInterface,
+    result_index: usize,
+) -> bool {
     let Some(callee) = call.resolve() else {
         return false;
     };
@@ -33,11 +36,16 @@ pub(super) fn external_call_has_advice_effects(call: &dyn CallOpInterface) -> bo
     let Some(function) = callee.as_symbol_operation().downcast_ref::<builtin::Function>() else {
         return false;
     };
+    if !function.is_declaration() {
+        return false;
+    }
 
-    function.is_declaration()
-        && <builtin::Function as EffectOpInterface<AdviceEffect>>::effects(function)
-            .next()
-            .is_some()
+    function.advice_effects().as_value().iter().any(|effect| {
+        effect.effect == AdviceEffect::Read
+            && effect
+                .result
+                .is_none_or(|effect_result| usize::from(effect_result) == result_index)
+    })
 }
 
 pub(super) fn is_constrained_external_parameter_type(ty: &Type) -> bool {
@@ -61,6 +69,35 @@ pub(super) fn is_unconstrained_external_result_type(ty: &Type) -> bool {
 
 pub(super) fn is_u32_presuming_sink(op: &Operation) -> bool {
     is_u32_presuming_arith_op(op) || is_u32_to_u64_zext(op)
+}
+
+pub(super) fn u32_presuming_operand_indices(op: &Operation) -> Vec<usize> {
+    if !is_u32_presuming_sink(op) {
+        return Vec::new();
+    }
+
+    op.operands()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, operand)| {
+            let value = operand.borrow().as_value_ref();
+            (value.borrow().ty() == &Type::U32).then_some(index)
+        })
+        .collect()
+}
+
+pub(super) fn operation_result_has_advice_read_effect(
+    op: &Operation,
+    result: midenc_hir::ValueRef,
+) -> bool {
+    let Some(interface) = op.as_trait::<dyn AdviceEffectOpInterface>() else {
+        return false;
+    };
+
+    interface.effects().any(|effect| {
+        effect.effect() == &AdviceEffect::Read
+            && effect.value().is_some_and(|value| value == result)
+    })
 }
 
 fn is_u32_presuming_arith_op(op: &Operation) -> bool {
@@ -114,4 +151,37 @@ fn has_u32_operand(op: &Operation) -> bool {
         let value = operand.borrow().as_value_ref();
         value.borrow().ty() == &Type::U32
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{SourceSpan, testing::Test};
+
+    use super::*;
+    use crate::HirOpBuilder;
+
+    #[test]
+    fn shift_only_treats_u32_typed_operands_as_u32_presuming() {
+        let mut test = Test::new("shift", &[], &[]);
+        let mut builder = test.function_builder();
+        let lhs = builder.i32(7, SourceSpan::UNKNOWN);
+        let rhs = builder.u32(1, SourceSpan::UNKNOWN);
+        let result = builder.shl(lhs, rhs, SourceSpan::UNKNOWN).unwrap();
+        let op = result.borrow().get_defining_op().unwrap();
+        let op = op.borrow();
+
+        assert_eq!(u32_presuming_operand_indices(&op), [1]);
+    }
+
+    #[test]
+    fn operation_result_advice_read_effects_mark_result_producers() {
+        let mut test = Test::new("advice_pop", &[], &[]);
+        let mut builder = test.function_builder();
+        let result = builder.advice_pop(SourceSpan::UNKNOWN).unwrap();
+        let op = result.borrow().get_defining_op().unwrap();
+        let op = op.borrow();
+
+        assert!(operation_result_has_advice_read_effect(&op, result));
+    }
 }

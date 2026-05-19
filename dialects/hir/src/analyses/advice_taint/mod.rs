@@ -30,7 +30,7 @@ use self::{
     lattice::value_taint,
     sinks::{
         external_call_param_types, is_constrained_external_parameter_type, is_external_call,
-        is_u32_presuming_sink,
+        is_u32_presuming_sink, u32_presuming_operand_indices,
     },
     storage::AdviceTaintStoragePropagation,
 };
@@ -133,7 +133,8 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
         }
 
         let mut operand_taint = ContextualAdviceTaintValue::clean();
-        for operand in operation.operands().iter() {
+        for operand_index in u32_presuming_operand_indices(operation) {
+            let operand = &operation.operands()[operand_index];
             let value = operand.borrow().as_value_ref();
             operand_taint = LatticeLike::join(&operand_taint, &value_taint(value, solver));
         }
@@ -277,13 +278,9 @@ fn collect_call_contexts(
             return;
         };
 
-        let caller_function = operation.nearest_parent_op::<builtin::Function>().map(|function| {
-            let function = function.borrow();
-            Symbol::name(&*function)
-        });
         let callee_function = resolved_callee_function_name(call);
 
-        if caller_function == Some(use_function)
+        if callee_function != Some(use_function)
             && call_results_contain_origin(operation, solver, origin)
         {
             push_context(&mut contexts, operation.span(), AdviceTaintContextKind::CallResult);
@@ -292,6 +289,10 @@ fn collect_call_contexts(
         if callee_function == Some(use_function)
             && call_arguments_contain_origin(call, solver, origin)
         {
+            push_context(&mut contexts, operation.span(), AdviceTaintContextKind::CallArgument);
+        }
+
+        if call_arguments_contain_origin(call, solver, origin) {
             push_context(&mut contexts, operation.span(), AdviceTaintContextKind::CallArgument);
         }
     });

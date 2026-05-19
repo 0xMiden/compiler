@@ -3840,6 +3840,38 @@ end
 }
 
 #[test]
+fn advice_taint_does_not_taint_external_result_for_non_read_advice_effects() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures
+        .insert(ast::Path::new("::dep::source").into(), masm_signature([], [Type::Felt]));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry(rhs: u32) -> u32
+    exec.::dep::source
+    u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+    mark_external_function_with_advice_effect_kind(
+        output.world,
+        "dep",
+        "source",
+        AdviceEffect::Allocate,
+    );
+
+    let findings = advice_taint_findings(output.module)?;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_treats_external_call_results_with_advice_effects_as_unconstrained() -> Result<()> {
     let context = Rc::new(Context::default());
     let mut external_signatures = ExternalSignatureMap::new();
@@ -5048,10 +5080,24 @@ fn mark_external_function_with_advice_effect(
     module_path: &str,
     function_name: &str,
 ) {
+    mark_external_function_with_advice_effect_kind(
+        world,
+        module_path,
+        function_name,
+        AdviceEffect::Read,
+    );
+}
+
+fn mark_external_function_with_advice_effect_kind(
+    world: builtin::WorldRef,
+    module_path: &str,
+    function_name: &str,
+    effect: AdviceEffect,
+) {
     let module = find_world_module(world, module_path);
     let mut function = find_function(module, function_name);
     function.borrow_mut().advice_effects_mut().push(AdviceEffectDescriptor {
-        effect: AdviceEffect::Read,
+        effect,
         resource: AdviceResourceKind::Stack,
         argument: None,
         result: None,

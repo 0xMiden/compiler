@@ -1,4 +1,7 @@
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    vec::Vec,
+};
 use core::fmt;
 
 use midenc_hir::{
@@ -101,6 +104,23 @@ impl AdviceTaintValue {
                 .keys()
                 .copied()
                 .map(|origin| (origin, OriginState::Reported))
+                .collect(),
+        }
+    }
+
+    fn mark_origins_reported(&self, origins: &BTreeSet<AdviceTaintOrigin>) -> Self {
+        Self {
+            origins: self
+                .origins
+                .iter()
+                .map(|(&origin, &state)| {
+                    let state = if origins.contains(&origin) {
+                        OriginState::Reported
+                    } else {
+                        state
+                    };
+                    (origin, state)
+                })
                 .collect(),
         }
     }
@@ -211,6 +231,24 @@ impl ContextualAdviceTaintValue {
                 .contexts
                 .iter()
                 .map(|(context, taint)| (context.clone(), taint.mark_reported()))
+                .collect(),
+        }
+    }
+
+    pub fn mark_origins_reported(
+        &self,
+        origins: impl IntoIterator<Item = AdviceTaintOrigin>,
+    ) -> Self {
+        let origins = origins.into_iter().collect::<BTreeSet<_>>();
+        if origins.is_empty() {
+            return self.clone();
+        }
+
+        Self {
+            contexts: self
+                .contexts
+                .iter()
+                .map(|(context, taint)| (context.clone(), taint.mark_origins_reported(&origins)))
                 .collect(),
         }
     }
