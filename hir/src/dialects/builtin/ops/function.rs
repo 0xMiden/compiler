@@ -189,6 +189,12 @@ impl OpParser for Function {
         let locals = parser.context_rc().create_attribute::<TypeArrayAttr, _>([]);
         state.add_attribute("locals", locals);
 
+        let memory_effects = parser.context_rc().create_attribute::<MemoryEffectArrayAttr, _>([]);
+        state.add_attribute("memory_effects", memory_effects);
+
+        let advice_effects = parser.context_rc().create_attribute::<AdviceEffectArrayAttr, _>([]);
+        state.add_attribute("advice_effects", advice_effects);
+
         if let Some(body) = parser.parse_optional_region(&args, false)? {
             state.add_region(body);
         }

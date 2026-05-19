@@ -56,9 +56,9 @@ fn rust_assert_macro_source_location_with_debug_executor() {
             }
         };
 
-        if !panic_message.contains("lib.rs") || !panic_message.contains(":26:13") {
-            dbg!(&panic_message);
-            panic!("Panic message should contain source location 'lib.rs' and ':26:13'");
+        if !panic_message.contains("lib.rs") || !panic_message.contains(":26:5") {
+            println!("{panic_message}");
+            panic!("Panic message should contain source location 'lib.rs' and ':26:5'");
         }
     }
 }

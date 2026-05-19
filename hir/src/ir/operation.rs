@@ -1218,10 +1218,10 @@ impl Operation {
 
         let effects = RecursiveEffectIterator::<AdviceEffect>::new(this_op);
         for (_, effect) in effects {
-            // The presence of an unknown effect, then we must treat this op as conservatively
-            // having effects
+            // Advice ffects are precise, so we don't need to be conservative in the face
+            // of unknown effects
             let Some(effect) = effect else {
-                return false;
+                continue;
             };
 
             // We can drop effects if:
