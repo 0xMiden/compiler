@@ -526,6 +526,7 @@ args = [
     "clippy",
     "--all",
     "--all-targets",
+    "${@}",
     "--",
     "-D",
     "clippy::all",

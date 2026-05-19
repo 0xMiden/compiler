@@ -1,6 +1,8 @@
-// Test file to verify location expressions in debug info
-// Using no_std to avoid runtime overhead
-
+//! Test that debug info with source locations is properly represented in HIR
+//! This test verifies that operations include source location annotations
+//!
+//! RUN: env RUSTFLAGS="-Copt-level=0 -Cdebuginfo=2" midenc %s --entrypoint=location_expressions::test_expressions -Zprint-hir-source-locations --emit=hir=- -Canalyze-only 2>&1 | filecheck %s
+//!
 #![no_std]
 #![no_main]
 
@@ -9,7 +11,9 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[no_mangle]
+// Test that the function exists with 4 parameters
+// CHECK-LABEL: builtin.function{{.*}}@test_expressions({{.*}}: i32, {{.*}}: i32, {{.*}}: i32, {{.*}}: i32) -> i32
+#[unsafe(no_mangle)]
 pub extern "C" fn test_expressions(p0: i32, p1: i32, p2: i32, p3: i32) -> i32 {
     // These parameters should be in WASM locals 0, 1, 2, 3
     // The debug info expressions should show:
@@ -23,3 +27,6 @@ pub extern "C" fn test_expressions(p0: i32, p1: i32, p2: i32, p3: i32) -> i32 {
     let sum2 = p2.wrapping_add(p3);
     sum1.wrapping_add(sum2)
 }
+
+// Test that operations have source location annotations
+// CHECK: loc({{.*}}location_expressions.rs:{{[0-9]+}}

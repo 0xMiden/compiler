@@ -492,6 +492,7 @@ pub fn schedule_stack_realignment(
 #[cfg(test)]
 mod tests {
     use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_dialect_hir::HirOpBuilder;
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
@@ -506,6 +507,126 @@ mod tests {
 
     use super::*;
     use crate::{OperandStack, linker::LinkInfo};
+
+    #[derive(Copy, Clone)]
+    enum UnaryAssertionKind {
+        Assert,
+        Assertz,
+    }
+
+    fn lower_unary_assertion_result(
+        name: &'static str,
+        kind: UnaryAssertionKind,
+    ) -> Result<String, Report> {
+        let mut test = Test::new(name, &[Type::Felt], &[Type::Felt]);
+        let function_ref = test.function();
+
+        let value = {
+            let span = function_ref.span();
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let value = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let result = match kind {
+                UnaryAssertionKind::Assert => builder.assert(value, span)?,
+                UnaryAssertionKind::Assertz => builder.assertz(value, span)?,
+            };
+            builder.ret(Some(result), span)?;
+            builder.switch_to_block(entry);
+            value
+        };
+
+        let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
+            namespace: "root".into(),
+            name: "root".into(),
+            version: Version::new(1, 0, 0),
+        }));
+
+        let mut stack = OperandStack::new(test.context_rc());
+        stack.push(value);
+
+        let function_name = *function_ref.borrow().get_name();
+        let mut invoked = Default::default();
+        let emitter = BlockEmitter {
+            liveness: &liveness,
+            link_info: &link_info,
+            invoked: &mut invoked,
+            target: Default::default(),
+            stack,
+            trace_target: TraceTarget::category("codegen")
+                .with_relevant_symbol(function_name.as_symbol()),
+        };
+
+        let function = function_ref.borrow();
+        let entry = function.entry_block();
+        Ok(emitter.emit(&entry.borrow()).to_pretty_string())
+    }
+
+    #[test]
+    fn lowers_assert_u32_message_to_masm_u32assert_err() -> Result<(), Report> {
+        let mut test = Test::new("assert_u32_message", &[Type::Felt], &[Type::U32]);
+        let function_ref = test.function();
+
+        let value = {
+            let span = function_ref.span();
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let value = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let result = builder.assert_u32_with_message(value, "must be u32", span)?;
+            builder.ret(Some(result), span)?;
+            builder.switch_to_block(entry);
+            value
+        };
+
+        let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
+            namespace: "root".into(),
+            name: "root".into(),
+            version: Version::new(1, 0, 0),
+        }));
+
+        let mut stack = OperandStack::new(test.context_rc());
+        stack.push(value);
+
+        let function_name = *function_ref.borrow().get_name();
+        let mut invoked = Default::default();
+        let emitter = BlockEmitter {
+            liveness: &liveness,
+            link_info: &link_info,
+            invoked: &mut invoked,
+            target: Default::default(),
+            stack,
+            trace_target: TraceTarget::category("codegen")
+                .with_relevant_symbol(function_name.as_symbol()),
+        };
+
+        let function = function_ref.borrow();
+        let entry = function.entry_block();
+        let output = emitter.emit(&entry.borrow()).to_pretty_string();
+
+        assert!(output.contains("u32assert.err=\"must be u32\""), "{output}");
+        Ok(())
+    }
+
+    #[test]
+    fn lowers_assert_result_to_known_one() -> Result<(), Report> {
+        let output = lower_unary_assertion_result("assert_result", UnaryAssertionKind::Assert)?;
+
+        assert!(output.contains("assert.err=\"expected felt value to equal 1\""), "{output}");
+        assert!(output.contains("push.1"), "{output}");
+        Ok(())
+    }
+
+    #[test]
+    fn lowers_assertz_result_to_known_zero() -> Result<(), Report> {
+        let output = lower_unary_assertion_result("assertz_result", UnaryAssertionKind::Assertz)?;
+
+        assert!(output.contains("assertz.err=\"expected felt value to equal 0\""), "{output}");
+        assert!(output.contains("push.0"), "{output}");
+        Ok(())
+    }
 
     #[test]
     fn util_emit_if_test() -> Result<(), Report> {
@@ -548,11 +669,11 @@ mod tests {
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
-        let link_info = LinkInfo::new(builtin::ComponentId {
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
             namespace: "root".into(),
             name: "root".into(),
             version: Version::new(1, 0, 0),
-        });
+        }));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
@@ -642,11 +763,11 @@ mod tests {
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
-        let link_info = LinkInfo::new(builtin::ComponentId {
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
             namespace: "root".into(),
             name: "root".into(),
             version: Version::new(1, 0, 0),
-        });
+        }));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);
@@ -868,11 +989,11 @@ mod tests {
         let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
 
         // Generate linker info
-        let link_info = LinkInfo::new(builtin::ComponentId {
+        let link_info = LinkInfo::new(Some(builtin::ComponentId {
             namespace: "root".into(),
             name: "root".into(),
             version: Version::new(1, 0, 0),
-        });
+        }));
 
         let mut stack = OperandStack::new(test.context_rc());
         stack.push(b);

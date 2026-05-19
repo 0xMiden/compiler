@@ -42,7 +42,7 @@ fn counter_contract() {
         supported-types = ["RegularAccountUpdatableCode"]
 
         [[storage.slots]]
-        name = "miden_counter_contract::counter_contract::count_map"
+        name = "counter_contract::counter_contract::count_map"
         description = "counter contract storage map"
 
         [storage.slots.type]

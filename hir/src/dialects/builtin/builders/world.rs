@@ -131,3 +131,30 @@ impl WorldBuilder {
         Ok(leaf_module.expect("invalid empty module path"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BuilderExt, SourceSpan};
+
+    #[test]
+    fn declare_module_tree_creates_nested_modules_resolvable_from_world() {
+        let context = Rc::new(Context::default());
+        let mut builder = OpBuilder::new(context);
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+
+        let path = SymbolPath::from_masm_module_id("pkg::util::math");
+        let leaf = world_builder
+            .declare_module_tree(&path)
+            .expect("failed to declare nested module tree");
+
+        assert_eq!(leaf.borrow().get_name().as_str(), "math");
+        let resolved = world
+            .borrow()
+            .resolve(&path)
+            .expect("nested module should resolve from the world");
+        assert!(resolved.borrow().as_symbol_operation().is::<Module>());
+    }
+}

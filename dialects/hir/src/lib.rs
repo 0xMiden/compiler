@@ -11,6 +11,7 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
+pub mod analyses;
 pub mod assertions;
 mod attributes;
 mod builders;

@@ -1,28 +1,25 @@
 use std::{env, fs};
 
-use cargo_miden::{OutputType, run};
+use cargo_miden::run;
 use miden_mast_package::Package;
 use midenc_session::diagnostics::serde::Deserializable;
 
-use crate::utils::current_dir_lock;
+use crate::utils::{current_dir_lock, project_template_arg};
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
-    let template = if template.is_empty() {
+    let mut args = vec![
+        "cargo".to_string(),
+        "miden".to_string(),
+        "new".to_string(),
+        project_name.to_string(),
+    ];
+    if template.is_empty() {
         if let Ok(project_template_path) = std::env::var("TEST_LOCAL_PROJECT_TEMPLATE_PATH") {
-            &format!("--template-path={project_template_path}")
-        } else {
-            template
+            args.push(format!("--template-path={project_template_path}"));
         }
-    } else if let Ok(templates_path) = std::env::var("TEST_LOCAL_TEMPLATES_PATH") {
-        &format!("--template-path={templates_path}/{}", template.strip_prefix("--").unwrap())
     } else {
-        template
-    };
-    let args: Vec<String> = ["cargo", "miden", "new", project_name, template]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
+        args.push(project_template_arg(template));
+    }
     args
 }
 
@@ -50,7 +47,7 @@ fn test_all_templates() {
     assert!(note.is_library());
 
     let tx_script = build_new_project_from_template("--tx-script");
-    assert!(tx_script.is_program());
+    assert!(tx_script.is_library());
 
     let program = build_new_project_from_template("--program");
     assert!(program.is_program());
@@ -83,7 +80,7 @@ fn build_new_project_from_template(template: &str) -> Package {
         if expected_new_project_dir.exists() {
             fs::remove_dir_all(expected_new_project_dir).unwrap();
         }
-        let _ = run(new_project_args(project_name, "--account").into_iter(), OutputType::Masm)
+        let _ = run(new_project_args(project_name, "--account").into_iter())
             .expect("Failed to create new add-contract dependency project")
             .expect("'cargo miden new' should return Some(CommandOutput)");
     }
@@ -96,7 +93,7 @@ fn build_new_project_from_template(template: &str) -> Package {
 
     let args = new_project_args(project_name, template);
 
-    let output = run(args.into_iter(), OutputType::Masm)
+    let output = run(args.into_iter())
         .expect("Failed to create new project from {template} template")
         .expect("'cargo miden new' should return Some(CommandOutput)");
     let new_project_path = match output {
@@ -111,7 +108,7 @@ fn build_new_project_from_template(template: &str) -> Package {
 
     // build with the dev profile
     let args = ["cargo", "miden", "build"].iter().map(|s| s.to_string());
-    let output = run(args, OutputType::Masm)
+    let output = run(args)
         .unwrap_or_else(|e| {
             panic!(
                 "Failed to compile with the dev profile for template: {template} \nwith error: {e}"
@@ -119,26 +116,26 @@ fn build_new_project_from_template(template: &str) -> Package {
         })
         .expect("'cargo miden build' should return Some(CommandOutput)");
     let expected_masm_path = match output {
-        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
-            cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {other:?}"),
+        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output.as_slice() {
+            [artifact_path] => artifact_path.clone(),
+            outputs => panic!("Expected single Masm output, got {outputs:#?}"),
         },
         other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };
     assert!(expected_masm_path.exists());
-    assert!(expected_masm_path.to_str().unwrap().contains("/debug/"));
+    assert!(expected_masm_path.to_str().unwrap().contains("/dev/"));
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
     assert!(expected_masm_path.metadata().unwrap().len() > 0);
 
     // build with the release profile
     let args = ["cargo", "miden", "build", "--release"].iter().map(|s| s.to_string());
-    let output = run(args, OutputType::Masm)
+    let output = run(args)
         .expect("Failed to compile with the release profile")
         .expect("'cargo miden build --release' should return Some(CommandOutput)");
     let expected_masm_path = match output {
-        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
-            cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {other:?}"),
+        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output.as_slice() {
+            [artifact_path] => artifact_path.clone(),
+            outputs => panic!("Expected single Masm output, got {outputs:#?}"),
         },
         other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };

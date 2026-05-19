@@ -1,0 +1,6 @@
+const FOO = 1
+
+pub proc dirty
+   push.FOO
+   u32wrapping_add
+end

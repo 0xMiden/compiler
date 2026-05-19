@@ -270,6 +270,66 @@ pub trait ArithOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    /// Extension-field addition over two felt limbs.
+    fn ext2add(
+        &mut self,
+        lhs0: ValueRef,
+        lhs1: ValueRef,
+        rhs0: ValueRef,
+        rhs1: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Ext2Add, _>(span);
+        let op = op_builder(lhs0, lhs1, rhs0, rhs1)?;
+        let op = op.borrow();
+        Ok((op.result0().as_value_ref(), op.result1().as_value_ref()))
+    }
+
+    /// Extension-field subtraction over two felt limbs.
+    fn ext2sub(
+        &mut self,
+        lhs0: ValueRef,
+        lhs1: ValueRef,
+        rhs0: ValueRef,
+        rhs1: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Ext2Sub, _>(span);
+        let op = op_builder(lhs0, lhs1, rhs0, rhs1)?;
+        let op = op.borrow();
+        Ok((op.result0().as_value_ref(), op.result1().as_value_ref()))
+    }
+
+    /// Extension-field multiplication over two felt limbs.
+    fn ext2mul(
+        &mut self,
+        lhs0: ValueRef,
+        lhs1: ValueRef,
+        rhs0: ValueRef,
+        rhs1: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Ext2Mul, _>(span);
+        let op = op_builder(lhs0, lhs1, rhs0, rhs1)?;
+        let op = op.borrow();
+        Ok((op.result0().as_value_ref(), op.result1().as_value_ref()))
+    }
+
+    /// Extension-field division over two felt limbs. Traps if `rhs` is zero.
+    fn ext2div(
+        &mut self,
+        lhs0: ValueRef,
+        lhs1: ValueRef,
+        rhs0: ValueRef,
+        rhs1: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Ext2Div, _>(span);
+        let op = op_builder(lhs0, lhs1, rhs0, rhs1)?;
+        let op = op.borrow();
+        Ok((op.result0().as_value_ref(), op.result1().as_value_ref()))
+    }
+
     /// Integer Euclidean modulo. Traps if `rhs` is zero.
     fn r#mod(
         &mut self,
@@ -323,6 +383,32 @@ pub trait ArithOpBuilder<'f, B: ?Sized + Builder> {
         let op_builder = self.builder_mut().create::<crate::ops::Inv, _>(span);
         let op = op_builder(n)?;
         Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Extension-field negation over two felt limbs.
+    fn ext2neg(
+        &mut self,
+        operand0: ValueRef,
+        operand1: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Ext2Neg, _>(span);
+        let op = op_builder(operand0, operand1)?;
+        let op = op.borrow();
+        Ok((op.result0().as_value_ref(), op.result1().as_value_ref()))
+    }
+
+    /// Extension-field inversion over two felt limbs.
+    fn ext2inv(
+        &mut self,
+        operand0: ValueRef,
+        operand1: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Ext2Inv, _>(span);
+        let op = op_builder(operand0, operand1)?;
+        let op = op.borrow();
+        Ok((op.result0().as_value_ref(), op.result1().as_value_ref()))
     }
 
     /// Unary negation

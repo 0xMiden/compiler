@@ -1,20 +1,20 @@
 #[cfg(feature = "std")]
 use alloc::{borrow::ToOwned, format, string::ToString, vec};
-use alloc::{string::String, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
 #[cfg(feature = "std")]
 use std::ffi::OsString;
 
 #[cfg(feature = "std")]
 use clap::{Parser, builder::ArgPredicate};
+use miden_mast_package::TargetType;
 use midenc_session::{
     ColorChoice, DebugInfo, InputFile, IrFilter, LinkLibrary, OptLevel, Options, OutputFile,
-    OutputType, OutputTypeSpec, OutputTypes, Path, PathBuf, ProjectType, Session, TargetEnv,
-    Verbosity, Warnings, add_target_link_libraries,
-    diagnostics::{DefaultSourceManager, Emitter},
+    OutputTypeSpec, OutputTypes, PathBuf, RemapPathPrefix, Session, Verbosity, Warnings,
+    add_target_link_libraries, diagnostics::Emitter,
 };
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "std", derive(Parser))]
 #[cfg_attr(feature = "std", command(name = "midenc"))]
 pub struct Compiler {
@@ -40,19 +40,38 @@ pub struct Compiler {
         arg(long, value_name = "DIR", help_heading = "Output")
     )]
     pub working_dir: Option<PathBuf>,
-    /// The path to the root directory of the Miden toolchain libraries
+    /// The path to the root directory of the current Miden toolchain.
     ///
-    /// By default this is assumed to be `~/.miden/toolchains/<version>`
+    /// This is expected to be set by `midenup`, but may be specified manually if needed.
+    ///
+    /// The path given should be a directory whose layout matches `$MIDENUP_HOME/toolchains/<version>`
     #[cfg_attr(
         feature = "std",
         arg(
             long,
             value_name = "DIR",
-            env = "MIDENC_SYSROOT",
+            env = "MIDEN_SYSROOT",
             help_heading = "Compiler"
         )
     )]
     pub sysroot: Option<PathBuf>,
+    /// The path to the `midenup` home directory.
+    ///
+    /// By default this is assumed to be `$HOME/.miden`, if `$MIDENUP_HOME` is unset
+    #[cfg_attr(
+        feature = "std",
+        arg(long, value_name = "DIR", env = "MIDENUP_HOME", hide = true)
+    )]
+    pub midenup_home: Option<PathBuf>,
+    /// The name of the toolchain to use during compilation, e.g. `0.14.0` or `stable`
+    ///
+    /// This is read from `$MIDENUP_TOOLCHAIN` by default - if unset, the compiler will assume no
+    /// toolchain is availabe.
+    #[cfg_attr(
+        feature = "std",
+        arg(long, value_name = "NAME", env = "MIDEN_SYSROOT", hide = true)
+    )]
+    pub toolchain: Option<String>,
     /// Write compiled output to compiler-chosen filename in `<dir>`
     #[cfg_attr(
         feature = "std",
@@ -77,18 +96,36 @@ pub struct Compiler {
         arg(long, conflicts_with("output_file"), help_heading = "Output")
     )]
     pub stdout: bool,
-    /// Specify the name of the project being compiled
+    /// Specify the name of the project target being compiled
     ///
-    /// The default is derived from the name of the first input file, or if reading from stdin,
-    /// the base name of the working directory.
+    /// By default, if this is not specified, then the target is inferred based on the type of
+    /// target requested, and the available project context.
+    ///
+    /// If no project context is available, then the default project name is derived from the
+    /// input file, or the base name of the working directory if the input file is read from stdin.
     #[cfg_attr(feature = "std", arg(
         long,
-        short = 'n',
-        value_name = "NAME",
+        value_name = "TARGET",
         default_value = None,
         help_heading = "Diagnostics"
     ))]
-    pub name: Option<String>,
+    pub target: Option<String>,
+    /// The target environment to compile for
+    #[cfg_attr(feature = "std", arg(
+        long,
+        value_name = "TYPE",
+        help_heading = "Compiler",
+        value_parser(TargetTypeValueParser),
+        default_value_ifs([
+            // When an entrypoint is specified, always set the target type to executable
+            ("entrypoint", ArgPredicate::IsPresent, Some("executable")),
+            // When --exe is specified, always set the target type to executable
+            ("is_program", ArgPredicate::IsPresent, Some("executable")),
+            // When --lib is specified, always set the target type to library
+            ("is_library", ArgPredicate::IsPresent, Some("library")),
+        ]),
+    ))]
+    pub target_type: Option<TargetType>,
     /// Specify what type and level of informational output to emit
     #[cfg_attr(feature = "std", arg(
         long = "verbose",
@@ -123,14 +160,6 @@ pub struct Compiler {
         help_heading = "Diagnostics"
     ))]
     pub color: ColorChoice,
-    /// The target environment to compile for
-    #[cfg_attr(feature = "std", arg(
-        long,
-        value_name = "TARGET",
-        default_value_t = TargetEnv::Base,
-        help_heading = "Compiler"
-    ))]
-    pub target: TargetEnv,
     /// Specify the function to call as the entrypoint for the program
     /// in the format `<module_name>::<function>`
     #[cfg_attr(feature = "std", arg(long, help_heading = "Compiler", hide(true)))]
@@ -140,10 +169,11 @@ pub struct Compiler {
     /// Implied by `--entrypoint`, defaults to true for non-rollup targets.
     #[cfg_attr(feature = "std", arg(
         long = "exe",
-        default_value_t = true,
+        conflicts_with("target_type"),
+        default_value_t = false,
         default_value_ifs([
-            // When targeting the rollup, never build an executable
-            ("target", "rollup".into(), Some("false")),
+            // When the executable target is explicit, set this to true
+            ("target_type", "executable".into(), Some("true")),
             // Setting the entrypoint implies building an executable in all other cases
             ("entrypoint", ArgPredicate::IsPresent, Some("true")),
         ]),
@@ -152,17 +182,18 @@ pub struct Compiler {
     pub is_program: bool,
     /// Tells the compiler to produce a Miden library
     ///
-    /// Implied by `--target rollup`, defaults to false.
+    /// Defaults to true, unless `--target-type` is a library target
     #[cfg_attr(feature = "std", arg(
         long = "lib",
         conflicts_with("is_program"),
         conflicts_with("entrypoint"),
-        default_value_t = false,
+        conflicts_with("target_type"),
+        default_value_t = true,
         default_value_ifs([
             // When an entrypoint is specified, always set the default to false
             ("entrypoint", ArgPredicate::IsPresent, Some("false")),
             // When targeting the rollup, we always build as a library
-            ("target", "rollup".into(), Some("true")),
+            ("target_type", "executable".into(), Some("false")),
         ]),
         help_heading = "Linker"
     ))]
@@ -270,21 +301,69 @@ pub struct Compiler {
         )
     )]
     pub unstable: Vec<String>,
-
-    // The following options are primarily used by `cargo miden build` to pass through
-    // familiar Cargo options. They are hidden from `midenc --help` output.
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            value_name = "NAME",
+            help_heading = "Compiler",
+            default_value = "dev",
+            default_value_ifs([
+                // When an entrypoint is specified, always set the target type to executable
+                ("release", ArgPredicate::IsPresent, Some("release")),
+            ]),
+        )
+    )]
+    pub profile: String,
     /// Build in release mode (used by cargo miden build)
-    #[cfg_attr(feature = "std", arg(long, hide = true, default_value_t = false))]
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            help_heading = "Compiler",
+            conflicts_with("profile"),
+            default_value_t = false,
+            default_value_ifs([
+                ("profile", ArgPredicate::from("release"), Some("true")),
+            ])
+        )
+    )]
     pub release: bool,
-    /// Path to Cargo.toml (used by cargo miden build)
-    #[cfg_attr(feature = "std", arg(long, value_name = "PATH", hide = true))]
-    pub manifest_path: Option<PathBuf>,
-    /// Build all packages in the workspace (used by cargo miden build)
-    #[cfg_attr(feature = "std", arg(long, hide = true, default_value_t = false))]
+    /// Build all packages in the workspace
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            help_heading = "Compiler",
+            conflicts_with("package"),
+            default_value_t = false,
+        )
+    )]
     pub workspace: bool,
-    /// Package(s) to build (used by cargo miden build)
-    #[cfg_attr(feature = "std", arg(long, value_name = "SPEC", hide = true))]
+    /// Package(s) to build
+    #[cfg_attr(
+        feature = "std",
+        arg(long, short = 'p', value_name = "SPEC", conflicts_with("workspace"),)
+    )]
     pub package: Vec<String>,
+    /// Path to the package/project manifest
+    ///
+    /// If unspecified, the compiler will create a virtual manifest for the given input
+    #[cfg_attr(feature = "std", arg(long, value_name = "PATH",))]
+    pub manifest_path: Option<PathBuf>,
+    /// Specify path prefixes to remap for any file paths encoded in debug info
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "remap-path-prefix",
+            action = clap::ArgAction::Append,
+            value_name = "PATH",
+            value_delimiter = ',',
+            help_heading = "Debugging",
+            value_parser(midenc_session::RemapPathPrefixParser)
+        )
+    )]
+    pub remap_path_prefixes: Vec<RemapPathPrefix>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -321,6 +400,18 @@ pub struct CodegenOptions {
 #[cfg_attr(feature = "std", derive(Parser))]
 #[cfg_attr(feature = "std", command(name = "-Z"))]
 pub struct UnstableOptions {
+    /// When compiling Rust source files, look for Cargo frontmatter and build via Cargo
+    #[cfg_attr(
+        feature = "std",
+        arg(long, default_value_t = false, help_heading = "Rust")
+    )]
+    pub cargo_frontmatter: bool,
+    /// Run the experimental Miden Assembly linter prior to assembly
+    #[cfg_attr(
+        feature = "std",
+        arg(long, default_value_t = false, help_heading = "Analysis")
+    )]
+    pub lint: bool,
     /// Print the CFG after each HIR pass is applied
     #[cfg_attr(
         feature = "std",
@@ -420,16 +511,6 @@ pub struct UnstableOptions {
         )
     )]
     pub print_hir_source_locations: bool,
-    /// Specify path prefixes to try when resolving relative paths from DWARF debug info
-    #[cfg_attr(
-        feature = "std",
-        arg(
-            long = "trim-path-prefix",
-            value_name = "PATH",
-            help_heading = "Debugging"
-        )
-    )]
-    pub trim_path_prefixes: Vec<PathBuf>,
 }
 
 impl CodegenOptions {
@@ -517,13 +598,14 @@ NOTE: When specifying these options, strip the leading '--'",
 }
 
 impl Compiler {
-    /// Parse compiler options from command-line arguments.
+    /// Parse command-line arguments into compiler [Options].
     ///
     /// Returns the parsed options or an error if parsing failed.
-    /// This is used by `cargo miden build` to parse all arguments into `Compiler`
-    /// options before selectively forwarding them to `cargo build` and `midenc`.
+    ///
+    /// This is used by `cargo miden build` to parse all arguments into `Compiler` options before
+    /// selectively forwarding them to `cargo build` and `midenc`.
     #[cfg(feature = "std")]
-    pub fn try_parse_from<I, T>(iter: I) -> Result<Self, clap::Error>
+    pub fn try_parse_from<I, T>(cwd: PathBuf, iter: I) -> Result<Box<Options>, clap::Error>
     where
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
@@ -534,115 +616,163 @@ impl Compiler {
         let command = <Self as clap::CommandFactory>::command();
         let command = midenc_session::flags::register_flags(command);
         let mut matches = command.try_get_matches_from(argv)?;
+        let compile_matches = matches.clone();
 
-        <Self as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)
-            .map_err(format_error::<Self>)
+        let opts = <Self as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)
+            .map_err(format_error::<Self>)?;
+
+        let mut opts = opts.into_options(cwd);
+        opts.set_extra_flags(compile_matches.into());
+        Ok(opts)
     }
 
     /// Construct a [Compiler] programatically
     #[cfg(feature = "std")]
-    pub fn new_session<I, A, S>(inputs: I, emitter: Option<Arc<dyn Emitter>>, argv: A) -> Session
+    pub fn new_session<A, S>(
+        cwd: PathBuf,
+        input: Option<InputFile>,
+        emitter: Option<Arc<dyn Emitter>>,
+        argv: A,
+    ) -> Session
     where
-        I: IntoIterator<Item = InputFile>,
         A: IntoIterator<Item = S>,
         S: Into<std::ffi::OsString> + Clone,
     {
-        let argv = [OsString::from("midenc")]
-            .into_iter()
-            .chain(argv.into_iter().map(|arg| arg.into()));
-        let command = <Self as clap::CommandFactory>::command();
-        let command = midenc_session::flags::register_flags(command);
-        let mut matches = command.try_get_matches_from(argv).unwrap_or_else(|err| err.exit());
-        let compile_matches = matches.clone();
-
-        let opts = <Self as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)
-            .map_err(format_error::<Self>)
-            .unwrap_or_else(|err| err.exit());
-
-        let inputs = inputs.into_iter().collect();
-        opts.into_session(inputs, emitter).with_extra_flags(compile_matches.into())
+        let opts = Self::try_parse_from(cwd, argv).unwrap_or_else(|err| err.exit());
+        Self::into_session(opts, input, emitter)
     }
 
-    /// Use this configuration to obtain a [Session] used for compilation
-    pub fn into_session(
-        self,
-        inputs: Vec<InputFile>,
-        emitter: Option<Arc<dyn Emitter>>,
-    ) -> Session {
-        let cwd = self.working_dir.unwrap_or_else(current_dir);
-
-        log::trace!(target: "driver", "current working directory = {}", cwd.display());
+    pub fn into_options(self, cwd: PathBuf) -> Box<Options> {
+        let Self {
+            target_dir,
+            working_dir,
+            sysroot,
+            midenup_home,
+            toolchain,
+            output_dir,
+            output_file,
+            stdout,
+            target,
+            target_type,
+            verbosity,
+            warn,
+            color,
+            entrypoint,
+            is_program: _,
+            is_library: _,
+            search_path,
+            mut link_libraries,
+            output_types,
+            debug,
+            opt_level,
+            codegen,
+            unstable,
+            profile,
+            release: _,
+            workspace,
+            package,
+            manifest_path,
+            remap_path_prefixes,
+        } = self;
+        let CodegenOptions {
+            parse_only,
+            analyze_only,
+            link_only,
+            no_link,
+        } = CodegenOptions::parse_argv(codegen);
+        let UnstableOptions {
+            cargo_frontmatter,
+            lint,
+            print_cfg_after_all,
+            print_cfg_after_pass,
+            print_ir_before_stage,
+            print_ir_after_all,
+            print_ir_after_pass,
+            print_ir_after_modified,
+            print_ir_filter,
+            print_hir_source_locations,
+        } = UnstableOptions::parse_argv(unstable);
 
         // Determine if a specific output file has been requested
-        let output_file = match self.output_file {
+        let output_file = match output_file {
             Some(path) => Some(OutputFile::Real(path)),
-            None if self.stdout => Some(OutputFile::Stdout),
+            None if stdout => Some(OutputFile::Stdout),
             None => None,
         };
 
         // Initialize output types
-        let mut output_types = OutputTypes::new(self.output_types).unwrap_or_else(|err| err.exit());
-        let has_final_output =
-            output_types.keys().any(|ty| matches!(ty, OutputType::Mast | OutputType::Masp));
-        if !has_final_output {
-            // By default, we always produce a final artifact; `--emit` selects additional outputs.
-            output_types.insert(OutputType::Masp, output_file.clone());
-        } else if output_file.is_some() && output_types.get(&OutputType::Masp).is_some() {
-            // The -o flag overrides --emit
-            output_types.insert(OutputType::Masp, output_file.clone());
-        }
+        let output_types = OutputTypes::new(output_types).unwrap_or_else(|err| err.exit());
 
-        // Rollup note scripts and components are always packaged as libraries, even when the CLI
-        // defaulted `--exe` before the target was resolved.
-        let project_type = match self.target {
-            TargetEnv::Rollup {
-                target:
-                    midenc_session::RollupTarget::Account
-                    | midenc_session::RollupTarget::NoteScript
-                    | midenc_session::RollupTarget::AuthComponent,
-            } => ProjectType::Library,
-            _ if self.is_program => ProjectType::Program,
-            _ => ProjectType::Library,
-        };
-
-        let codegen = CodegenOptions::parse_argv(self.codegen);
-        let unstable = UnstableOptions::parse_argv(self.unstable);
-
-        // Consolidate all compiler options
-        let mut options = Options::new(self.name, self.target, project_type, cwd, self.sysroot)
-            .with_color(self.color)
-            .with_verbosity(self.verbosity)
-            .with_warnings(self.warn)
-            .with_debug_info(self.debug)
-            .with_optimization(self.opt_level)
-            .with_output_types(output_types);
-        options.search_paths = self.search_path;
-        let link_libraries = add_target_link_libraries(self.link_libraries, &self.target);
-        options.link_libraries = link_libraries;
-        options.entrypoint = self.entrypoint;
-        options.parse_only = codegen.parse_only;
-        options.analyze_only = codegen.analyze_only;
-        options.link_only = codegen.link_only;
-        options.no_link = codegen.no_link;
-        options.print_cfg_after_all = unstable.print_cfg_after_all;
-        options.print_cfg_after_pass = unstable.print_cfg_after_pass;
-        options.print_ir_after_all = unstable.print_ir_after_all;
-        options.print_ir_after_pass = unstable.print_ir_after_pass;
-        options.print_ir_after_modified = unstable.print_ir_after_modified;
-        options.print_ir_filters = unstable.print_ir_filter;
-        options.print_hir_source_locations = unstable.print_hir_source_locations;
-        options.trim_path_prefixes = unstable.trim_path_prefixes;
+        let cwd = working_dir.unwrap_or(cwd);
 
         // Establish --target-dir
-        let target_dir = if self.target_dir.is_absolute() {
-            self.target_dir
+        let target_dir = if target_dir.is_absolute() {
+            target_dir
         } else {
-            options.current_dir.join(&self.target_dir)
+            cwd.join(&target_dir)
         };
-        create_target_dir(target_dir.as_path());
 
+        // Consolidate all compiler options
+        let mut options = Box::new(Options::new(
+            target.clone(),
+            target_type,
+            cwd,
+            target_dir,
+            output_dir,
+            sysroot,
+        ))
+        .with_color(color)
+        .with_verbosity(verbosity)
+        .with_warnings(warn)
+        .with_debug_info(debug)
+        .with_optimization(opt_level)
+        .with_output_types(output_types, output_file);
+        options.target = target;
+        options.profile = profile;
+        options.manifest_path = manifest_path;
+        options.midenup_home = midenup_home;
+        options.toolchain = toolchain;
+        options.search_paths.extend(search_path);
+        add_target_link_libraries(&mut link_libraries, options.target_requires_protocol());
+        options.link_libraries = link_libraries;
+        options.entrypoint = entrypoint;
+        options.workspace = workspace;
+        options.packages = package;
+        options.parse_only = parse_only;
+        options.analyze_only = analyze_only;
+        options.link_only = link_only;
+        options.no_link = no_link;
+        options.lint = lint;
+        options.cargo_frontmatter = cargo_frontmatter;
+        options.print_cfg_after_all = print_cfg_after_all;
+        options.print_cfg_after_pass = print_cfg_after_pass;
+        options.print_ir_before_stage = print_ir_before_stage;
+        options.print_ir_after_all = print_ir_after_all;
+        options.print_ir_after_pass = print_ir_after_pass;
+        options.print_ir_after_modified = print_ir_after_modified;
+        options.print_ir_filters = print_ir_filter;
+        options.print_hir_source_locations = print_hir_source_locations;
+        options.remap_path_prefixes = remap_path_prefixes;
+
+        #[cfg(feature = "std")]
+        if options.remap_path_prefixes.is_empty() {
+            options.remap_path_prefixes.push(RemapPathPrefix {
+                from: options.current_dir.clone().into_boxed_path(),
+                to: None,
+            });
+        }
+
+        options
+    }
+
+    /// Use this configuration to obtain a [Session] used for compilation
+    fn into_session(
+        options: Box<Options>,
+        input: Option<InputFile>,
+        emitter: Option<Arc<dyn Emitter>>,
+    ) -> Session {
         // Raise an error if no inputs were provided
-        if inputs.is_empty() {
+        let Some(input) = input else {
             let cmd = <Compiler as clap::CommandFactory>::command();
             let mut err =
                 clap::Error::new(clap::error::ErrorKind::MissingRequiredArgument).with_cmd(&cmd);
@@ -651,18 +781,19 @@ impl Compiler {
                 clap::error::ContextValue::String("INPUT".to_string()),
             );
             err.exit();
-        }
+        };
 
-        let source_manager = Arc::new(DefaultSourceManager::default());
-        Session::new(
-            inputs,
-            self.output_dir,
-            output_file,
-            target_dir,
-            options,
-            emitter,
-            source_manager,
-        )
+        log::trace!(target: "driver", "current working directory = {}", options.current_dir.display());
+
+        match options.into_session(input, emitter, None) {
+            Ok(session) => session,
+            Err(err) => {
+                let cmd = <Compiler as clap::CommandFactory>::command();
+                let err =
+                    clap::Error::raw(clap::error::ErrorKind::ValueValidation, err).with_cmd(&cmd);
+                err.exit();
+            }
+        }
     }
 }
 
@@ -672,21 +803,28 @@ fn format_error<I: clap::CommandFactory>(err: clap::Error) -> clap::Error {
     err.format(&mut cmd)
 }
 
-#[cfg(feature = "std")]
-fn current_dir() -> PathBuf {
-    std::env::current_dir().expect("no working directory available")
-}
+#[derive(Clone)]
+struct TargetTypeValueParser;
 
-#[cfg(not(feature = "std"))]
-fn current_dir() -> PathBuf {
-    <str as AsRef<Path>>::as_ref(".").to_path_buf()
-}
+impl clap::builder::TypedValueParser for TargetTypeValueParser {
+    type Value = TargetType;
 
-#[cfg(feature = "std")]
-fn create_target_dir(path: &Path) {
-    std::fs::create_dir_all(path)
-        .unwrap_or_else(|err| panic!("unable to create --target-dir '{}': {err}", path.display()));
+    fn parse_ref(
+        &self,
+        _cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Self::Value, clap::Error> {
+        let value = value.to_string_lossy();
+        value.parse::<TargetType>().map_err(|err| {
+            let mut err = clap::Error::raw(clap::error::ErrorKind::ValueValidation, err);
+            if let Some(arg) = arg {
+                err.insert(
+                    clap::error::ContextKind::InvalidArg,
+                    clap::error::ContextValue::String(arg.to_string()),
+                );
+            }
+            err
+        })
+    }
 }
-
-#[cfg(not(feature = "std"))]
-fn create_target_dir(_path: &Path) {}

@@ -1,0 +1,10 @@
+[package]
+name = "is-prime"
+version = "0.1.0"
+
+[[bin]]
+name = "is_prime"
+path = "<virtual>"
+
+[dependencies]
+miden-core = "*"

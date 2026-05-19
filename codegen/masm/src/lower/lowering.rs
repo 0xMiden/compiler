@@ -1,3 +1,5 @@
+use alloc::sync::Arc;
+
 use midenc_dialect_arith as arith;
 use midenc_dialect_cf as cf;
 use midenc_dialect_hir as hir;
@@ -5,7 +7,7 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
+    Felt, Immediate, Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
     dialects::{builtin, debuginfo},
     traits::{BinaryOp, Commutative},
 };
@@ -126,6 +128,70 @@ pub trait HirLowering: Op {
     }
 }
 
+fn schedule_ext2_operands<T: HirLowering>(
+    inst: &T,
+    emitter: &mut BlockEmitter<'_>,
+) -> Result<(), Report> {
+    let op = inst.as_operation();
+    let args = inst.required_operands();
+    let mut constraints = emitter.constraints_for(op, &args);
+    let mut args = args.into_smallvec();
+
+    // MASM extension-field ops consume limbs in stack order: rhs0, rhs1, lhs0, lhs1.
+    // The HIR op operands use semantic order: lhs0, lhs1, rhs0, rhs1.
+    args.rotate_left(2);
+    constraints.rotate_left(2);
+
+    emitter
+        .schedule_operands(&args, &constraints, op.span(), SolverOptions::default())
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to schedule ext2 operands: {args:?}\nfor inst '{}'\nwith error: \
+                 {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
+                op.name(),
+                &emitter.stack,
+            )
+        });
+
+    Ok(())
+}
+
+fn zero_immediate_for_type(ty: &Type) -> Immediate {
+    match ty {
+        Type::I1 => Immediate::I1(false),
+        Type::U8 => Immediate::U8(0),
+        Type::I8 => Immediate::I8(0),
+        Type::U16 => Immediate::U16(0),
+        Type::I16 => Immediate::I16(0),
+        Type::U32 => Immediate::U32(0),
+        Type::I32 => Immediate::I32(0),
+        Type::U64 => Immediate::U64(0),
+        Type::I64 => Immediate::I64(0),
+        Type::U128 => Immediate::U128(0),
+        Type::I128 => Immediate::I128(0),
+        Type::Felt => Immediate::Felt(Felt::ZERO),
+        ty => panic!("invalid assertion result type: expected integer, got {ty}"),
+    }
+}
+
+fn one_immediate_for_type(ty: &Type) -> Immediate {
+    match ty {
+        Type::I1 => Immediate::I1(true),
+        Type::U8 => Immediate::U8(1),
+        Type::I8 => Immediate::I8(1),
+        Type::U16 => Immediate::U16(1),
+        Type::I16 => Immediate::I16(1),
+        Type::U32 => Immediate::U32(1),
+        Type::I32 => Immediate::I32(1),
+        Type::U64 => Immediate::U64(1),
+        Type::I64 => Immediate::I64(1),
+        Type::U128 => Immediate::U128(1),
+        Type::I128 => Immediate::I128(1),
+        Type::Felt => Immediate::Felt(Felt::ONE),
+        ty => panic!("invalid assertion result type: expected integer, got {ty}"),
+    }
+}
+
 impl HirLowering for builtin::Ret {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let span = self.span();
@@ -151,6 +217,27 @@ impl HirLowering for builtin::RetImm {
         // We need to push the return value on the stack at this point.
         emitter.literal(*self.get_value(), span);
 
+        Ok(())
+    }
+}
+
+impl HirLowering for builtin::UnrealizedConversionCast {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let result = self.result().as_value_ref();
+        let result_operand = crate::Operand::from(result);
+        let mut inst_emitter = emitter.inst_emitter(self.as_operation());
+        let operand = inst_emitter.pop().expect("operand stack is empty");
+        if operand.size() != result_operand.size() {
+            return Err(Report::msg(format!(
+                "cannot lower builtin.unrealized_conversion_cast from {} to {}: VM stack shape \
+                 changes from {} to {} field element(s)",
+                operand.ty(),
+                result_operand.ty(),
+                operand.size(),
+                result_operand.size()
+            )));
+        }
+        inst_emitter.push(result_operand);
         Ok(())
     }
 }
@@ -414,8 +501,12 @@ impl HirLowering for arith::Constant {
 impl HirLowering for hir::Assert {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let code = *self.get_code();
+        let message = self.get_message();
+        let result_ty = self.result().ty().clone();
 
-        emitter.emitter().assert(Some(code), self.span());
+        let mut emitter = emitter.inst_emitter(self.as_operation());
+        emitter.assert(Some(code), Some(message.as_str()), self.span());
+        emitter.literal(one_immediate_for_type(&result_ty), self.span());
 
         Ok(())
     }
@@ -424,8 +515,12 @@ impl HirLowering for hir::Assert {
 impl HirLowering for hir::Assertz {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let code = *self.get_code();
+        let message = self.get_message();
+        let result_ty = self.result().ty().clone();
 
-        emitter.emitter().assertz(Some(code), self.span());
+        let mut emitter = emitter.inst_emitter(self.as_operation());
+        emitter.assertz(Some(code), Some(message.as_str()), self.span());
+        emitter.literal(zero_immediate_for_type(&result_ty), self.span());
 
         Ok(())
     }
@@ -434,9 +529,26 @@ impl HirLowering for hir::Assertz {
 impl HirLowering for hir::AssertEq {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let code = *self.get_code();
+        let message = self.get_message();
 
-        emitter.emitter().assert_eq(Some(code), self.span());
+        emitter.emitter().assert_eq(Some(code), Some(message.as_str()), self.span());
 
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::AssertU32 {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let message = self.get_message();
+        let instruction = if message.is_empty() {
+            masm::Instruction::U32Assert
+        } else {
+            masm::Instruction::U32AssertWithError(masm::Immediate::Value(masm::Span::new(
+                self.span(),
+                Arc::<str>::from(message.as_str()),
+            )))
+        };
+        emitter.inst_emitter(self.as_operation()).emit(instruction, self.span());
         Ok(())
     }
 }
@@ -581,6 +693,26 @@ impl HirLowering for arith::Div {
         Ok(())
     }
 }
+
+macro_rules! impl_ext2_binary_lowering {
+    ($Op:ident, $emit:ident) => {
+        impl HirLowering for arith::$Op {
+            fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+                emitter.inst_emitter(self.as_operation()).$emit(self.span());
+                Ok(())
+            }
+
+            fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+                schedule_ext2_operands(self, emitter)
+            }
+        }
+    };
+}
+
+impl_ext2_binary_lowering!(Ext2Add, ext2add);
+impl_ext2_binary_lowering!(Ext2Sub, ext2sub);
+impl_ext2_binary_lowering!(Ext2Mul, ext2mul);
+impl_ext2_binary_lowering!(Ext2Div, ext2div);
 
 impl HirLowering for arith::Sdiv {
     fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
@@ -904,6 +1036,58 @@ impl HirLowering for hir::Call {
     }
 }
 
+impl HirLowering for hir::Syscall {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        use midenc_hir::{CallOpInterface, CallableOpInterface};
+
+        let callee = self.resolve().ok_or_else(|| {
+            let context = self.as_operation().context();
+            context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message("invalid syscall operation: unable to resolve callee")
+                .with_primary_label(
+                    self.span(),
+                    "this symbol path is not resolvable from this operation",
+                )
+                .with_help(
+                    "Make sure that all referenced symbols are reachable via the root symbol \
+                     table, and use absolute paths to refer to symbols in ancestor/sibling modules",
+                )
+                .into_report()
+        })?;
+        let callee = callee.borrow();
+        let callee_path = callee.path();
+        let signature = match callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>() {
+            Some(callable) => callable.signature(),
+            None => {
+                let context = self.as_operation().context();
+                return Err(context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid syscall operation: callee is not a callable op")
+                    .with_primary_label(
+                        self.span(),
+                        format!(
+                            "this symbol resolved to a '{}' op, which does not implement Callable",
+                            callee.as_symbol_operation().name()
+                        ),
+                    )
+                    .into_report());
+            }
+        };
+
+        // Convert the symbol path to a fully-qualified procedure path
+        let callee = invocation_target_from_symbol_path(&callee_path, self.span());
+
+        emitter
+            .inst_emitter(self.as_operation())
+            .syscall(callee, &signature, self.span());
+
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Load {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let result = self.result();
@@ -920,6 +1104,84 @@ impl HirLowering for hir::LoadLocal {
         Ok(())
     }
 }
+
+impl HirLowering for hir::LocalAddress {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter
+            .inst_emitter(self.as_operation())
+            .local_address(&self.get_local(), self.span());
+        Ok(())
+    }
+}
+
+macro_rules! impl_simple_hir_lowering {
+    ($Op:path => $emit:ident) => {
+        impl HirLowering for $Op {
+            fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+                emitter.inst_emitter(self.as_operation()).$emit(self.span());
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_simple_hir_lowering!(hir::Caller => caller);
+impl_simple_hir_lowering!(hir::Clk => clk);
+impl_simple_hir_lowering!(hir::AdvicePop => advice_pop);
+impl_simple_hir_lowering!(hir::AdviceLoadWord => advice_load_word);
+impl_simple_hir_lowering!(hir::EmitEvent => emit_event);
+
+impl HirLowering for hir::EmitEventImm {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let event_id = match *self.get_event_id() {
+            midenc_hir::Immediate::Felt(event_id) => event_id,
+            event_id => panic!("expected hir.emit_event_imm event_id to be felt, got {event_id}"),
+        };
+        emitter.emitter().emit_event_imm(event_id, self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for hir::SystemEvent {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let event_id = match *self.get_event_id() {
+            midenc_hir::Immediate::Felt(event_id) => event_id,
+            event_id => panic!("expected hir.system_event event_id to be felt, got {event_id}"),
+        };
+        emitter.inst_emitter(self.as_operation()).system_event(
+            event_id,
+            self.num_operands(),
+            self.span(),
+        );
+        Ok(())
+    }
+}
+
+impl_simple_hir_lowering!(hir::Hash => hash);
+impl_simple_hir_lowering!(hir::HMerge => hmerge);
+impl_simple_hir_lowering!(hir::HPerm => hperm);
+impl_simple_hir_lowering!(hir::MTreeGet => mtree_get);
+impl_simple_hir_lowering!(hir::MTreeSet => mtree_set);
+impl_simple_hir_lowering!(hir::MTreeMerge => mtree_merge);
+
+impl HirLowering for hir::MTreeVerify {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let message = self.get_message();
+        emitter
+            .inst_emitter(self.as_operation())
+            .mtree_verify(Some(message.as_str()), self.span());
+        Ok(())
+    }
+}
+
+impl_simple_hir_lowering!(hir::CryptoStream => crypto_stream);
+impl_simple_hir_lowering!(hir::FriExt2Fold4 => fri_ext2fold4);
+impl_simple_hir_lowering!(hir::HornerBase => horner_base);
+impl_simple_hir_lowering!(hir::HornerExt => horner_ext);
+impl_simple_hir_lowering!(hir::EvalCircuit => eval_circuit);
+impl_simple_hir_lowering!(hir::LogPrecompile => log_precompile);
+impl_simple_hir_lowering!(hir::MemStream => mem_stream);
+impl_simple_hir_lowering!(hir::AdvicePipe => advice_pipe);
 
 impl HirLowering for hir::Store {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
@@ -1126,6 +1388,20 @@ impl HirLowering for arith::Neg {
 impl HirLowering for arith::Inv {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         emitter.inst_emitter(self.as_operation()).inv(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for arith::Ext2Neg {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).ext2neg(self.span());
+        Ok(())
+    }
+}
+
+impl HirLowering for arith::Ext2Inv {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).ext2inv(self.span());
         Ok(())
     }
 }

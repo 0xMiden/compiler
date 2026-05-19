@@ -10,13 +10,11 @@ use midenc_hir::{
         builtin,
         debuginfo::attributes::{decode_frame_base_local_index, encode_frame_base_local_offset},
     },
+    interner,
     pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
-use midenc_session::{
-    TargetEnv,
-    diagnostics::{Report, Spanned, WrapErr},
-};
+use midenc_session::diagnostics::{Report, Spanned, WrapErr};
 use smallvec::SmallVec;
 
 use crate::{
@@ -33,6 +31,106 @@ pub trait ToMasmComponent {
     -> Result<MasmComponent, Report>;
 }
 
+/// Derivation of a MASM component from an HIR world
+///
+/// This currently works by treating all definition-carrying modules in the world as part of a
+/// single logical component.
+impl ToMasmComponent for builtin::World {
+    fn to_masm_component(
+        &self,
+        analysis_manager: AnalysisManager,
+    ) -> Result<MasmComponent, Report> {
+        // Get the current compiler context
+        let context = self.as_operation().context_rc();
+
+        // Run the linker for this component in order to compute its data layout
+        let link_info = Linker::default().link(None, self.as_operation()).map_err(Report::msg)?;
+
+        // Get the entrypoint, if specified
+        let entrypoint = match context.session().options.entrypoint.as_deref() {
+            Some(entry) => {
+                let entry_id = entry.parse::<FunctionIdent>().map_err(|_| {
+                    Report::msg(format!("invalid entrypoint identifier: '{entry}'"))
+                })?;
+                let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
+                    Span::new(entry_id.function.span, entry_id.function.as_str().into()),
+                ));
+
+                let path = LibraryPath::new(entry_id.module.as_str()).into_diagnostic()?;
+                let qualified = masm::QualifiedProcedureName::new(path.as_path(), name);
+                Some(masm::InvocationTarget::Path(Span::new(
+                    entry_id.function.span,
+                    qualified.into_inner(),
+                )))
+            }
+            None => None,
+        };
+
+        // If we have global variables or data segments, we will require a component initializer
+        // function, as well as a module to hold component-level functions such as init
+        let requires_init = link_info.has_globals() || link_info.has_data_segments();
+        let init = if requires_init {
+            let name = masm::ProcedureName::new("init").unwrap();
+            let qualified = masm::QualifiedProcedureName::new("::init", name);
+            Some(masm::InvocationTarget::Path(Span::new(
+                SourceSpan::default(),
+                qualified.into_inner(),
+            )))
+        } else {
+            None
+        };
+
+        // Define the initial component modules set
+        //
+        // The top-level component module is always defined, but may be empty
+        let root =
+            Arc::<miden_assembly_syntax::Path>::from(miden_assembly_syntax::Path::new("::init"));
+        let init_module = Arc::new(masm::Module::new(masm::ModuleKind::Library, &root));
+        let modules = vec![init_module];
+
+        let rodata = data_segments_to_rodata(&link_info)?;
+
+        let kernel = if context.session().options.target_requires_protocol() {
+            Some(miden_protocol::transaction::TransactionKernel::kernel())
+        } else {
+            None
+        };
+
+        // Compute the first page boundary after the end of the globals table (or reserved memory
+        // if no globals) to use as the start of the dynamic heap when the program is executed
+        let heap_base = core::cmp::max(
+            link_info.reserved_memory_bytes(),
+            link_info.globals_layout().next_page_boundary() as usize,
+        );
+        let heap_base = u32::try_from(heap_base)
+            .expect("unable to allocate dynamic heap: global table too large");
+        let stack_pointer = link_info.globals_layout().stack_pointer_offset();
+        let mut masm_component = MasmComponent {
+            id: None,
+            root,
+            init,
+            entrypoint,
+            kernel,
+            rodata,
+            heap_base,
+            stack_pointer,
+            modules,
+        };
+        let builder = MasmComponentBuilder {
+            analysis_manager,
+            component: &mut masm_component,
+            link_info: &link_info,
+            source_manager: context.session().source_manager.clone(),
+            init_body: Default::default(),
+            invoked_from_init: Default::default(),
+        };
+
+        builder.build(self.as_operation())?;
+
+        Ok(masm_component)
+    }
+}
+
 /// 1:1 conversion from HIR component to MASM component
 impl ToMasmComponent for builtin::Component {
     fn to_masm_component(
@@ -43,10 +141,13 @@ impl ToMasmComponent for builtin::Component {
         let context = self.as_operation().context_rc();
 
         // Run the linker for this component in order to compute its data layout
-        let link_info = Linker::default().link(self).map_err(Report::msg)?;
+        let id = self.id();
+        let link_info = Linker::default()
+            .link(Some(id.clone()), self.as_operation())
+            .map_err(Report::msg)?;
 
         // Get the library path of the component
-        let component_path = link_info.component().to_library_path();
+        let component_path = id.to_library_path();
 
         // Get the entrypoint, if specified
         let entrypoint = match context.session().options.entrypoint.as_deref() {
@@ -66,7 +167,7 @@ impl ToMasmComponent for builtin::Component {
                 // TODO(pauls): Narrow this to only be true if the target env is not 'rollup', we
                 // cannot currently do so because we do not have sufficient Cargo metadata yet in
                 // 'cargo miden build' to detect the target env, and we default it to 'rollup'
-                let is_wrapper = link_info.component().is_synthetic_wrapper();
+                let is_wrapper = id.is_synthetic_wrapper();
                 let path = if is_wrapper {
                     let mut path = component_path.clone();
                     path.push(entry_id.module.as_str());
@@ -90,7 +191,8 @@ impl ToMasmComponent for builtin::Component {
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
         let init = if requires_init {
             let name = masm::ProcedureName::new("init").unwrap();
-            let qualified = masm::QualifiedProcedureName::new(component_path.as_path(), name);
+            let qualified =
+                masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
             Some(masm::InvocationTarget::Path(Span::new(
                 SourceSpan::default(),
                 qualified.into_inner(),
@@ -99,18 +201,16 @@ impl ToMasmComponent for builtin::Component {
             None
         };
 
-        // Initialize the MASM component with basic information we have already
-        let id = link_info.component().clone();
-
         // Define the initial component modules set
         //
         // The top-level component module is always defined, but may be empty
-        let modules =
-            vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, id.to_library_path()))];
+        let root: Arc<miden_assembly_syntax::Path> =
+            id.to_library_path().to_absolute().into_owned().into();
+        let modules = vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, &root))];
 
         let rodata = data_segments_to_rodata(&link_info)?;
 
-        let kernel = if matches!(context.session().options.target, TargetEnv::Rollup { .. }) {
+        let kernel = if context.session().options.target_requires_protocol() {
             Some(miden_protocol::transaction::TransactionKernel::kernel())
         } else {
             None
@@ -126,7 +226,8 @@ impl ToMasmComponent for builtin::Component {
             .expect("unable to allocate dynamic heap: global table too large");
         let stack_pointer = link_info.globals_layout().stack_pointer_offset();
         let mut masm_component = MasmComponent {
-            id,
+            id: Some(id),
+            root,
             init,
             entrypoint,
             kernel,
@@ -144,7 +245,7 @@ impl ToMasmComponent for builtin::Component {
             invoked_from_init: Default::default(),
         };
 
-        builder.build(self)?;
+        builder.build(self.as_operation())?;
 
         Ok(masm_component)
     }
@@ -170,7 +271,11 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
             let felts = crate::Rodata::bytes_to_elements(data.as_slice());
             let digest = miden_core::crypto::hash::Poseidon2::hash_elements(&felts);
             alloc::vec![crate::Rodata {
-                component: link_info.component().clone(),
+                component: link_info.component().cloned().unwrap_or(builtin::ComponentId {
+                    namespace: interner::Symbol::intern("root_ns"),
+                    name: interner::Symbol::intern("root"),
+                    version: midenc_hir::version::Version::new(1, 0, 0)
+                }),
                 digest,
                 start: super::NativePtr::from_ptr(merged.offset),
                 data,
@@ -190,7 +295,7 @@ struct MasmComponentBuilder<'a> {
 
 impl MasmComponentBuilder<'_> {
     /// Convert the component body to Miden Assembly
-    pub fn build(mut self, component: &builtin::Component) -> Result<(), Report> {
+    pub fn build(mut self, component: &midenc_hir::Operation) -> Result<(), Report> {
         use masm::{Instruction as Inst, InvocationTarget, Op};
 
         // If a component-level init is required, emit code to initialize the heap before any other
@@ -223,7 +328,7 @@ impl MasmComponentBuilder<'_> {
         }
 
         // Translate component body
-        let region = component.body();
+        let region = component.region(0);
         let block = region.entry();
         for op in block.body() {
             if let Some(module) = op.downcast_ref::<builtin::Module>() {
@@ -249,11 +354,16 @@ impl MasmComponentBuilder<'_> {
             let init_body = core::mem::take(&mut self.init_body);
             let init = masm::Procedure::new(
                 Default::default(),
-                masm::Visibility::Private,
+                masm::Visibility::Public,
                 init_name,
                 0,
                 masm::Block::new(component.span(), init_body),
-            );
+            )
+            .with_signature(masm::FunctionType::new(
+                midenc_hir::CallConv::Fast,
+                vec![],
+                vec![],
+            ));
 
             module
                 .define_procedure(init, self.source_manager.clone())
@@ -270,9 +380,13 @@ impl MasmComponentBuilder<'_> {
     }
 
     fn define_interface(&mut self, interface: &builtin::Interface) -> Result<(), Report> {
-        let component_path = self.component.id.to_library_path();
-        let mut interface_path = component_path;
-        interface_path.push(interface.name().as_str());
+        let interface_path = if let Some(id) = self.component.id.as_ref() {
+            let mut path = id.to_library_path();
+            path.push(interface.name().as_str());
+            path
+        } else {
+            interface.path().to_library_path()
+        };
         let mut masm_module =
             Box::new(masm::Module::new(masm::ModuleKind::Library, interface_path));
         let builder = MasmModuleBuilder {
@@ -293,9 +407,13 @@ impl MasmComponentBuilder<'_> {
     }
 
     fn define_module(&mut self, module: &builtin::Module) -> Result<(), Report> {
-        let component_path = self.component.id.to_library_path();
-        let mut module_path = component_path;
-        module_path.push(module.name().as_str());
+        let module_path = if let Some(id) = self.component.id.as_ref() {
+            let mut path = id.to_library_path();
+            path.push(module.name().as_str());
+            path
+        } else {
+            module.path().to_library_path()
+        };
         let mut masm_module = Box::new(masm::Module::new(masm::ModuleKind::Library, module_path));
         let builder = MasmModuleBuilder {
             module: &mut masm_module,
@@ -612,10 +730,15 @@ impl MasmFunctionBuilder {
         if function.signature().cc.is_wasm_canonical_abi()
             && (link_info.has_globals() || link_info.has_data_segments())
         {
-            let component_path = link_info.component().to_library_path();
-            let init = {
+            let init = if let Some(id) = link_info.component() {
+                let component_path = id.to_library_path();
                 let name = masm::ProcedureName::new("init").unwrap();
-                let qualified = masm::QualifiedProcedureName::new(component_path.as_path(), name);
+                let qualified =
+                    masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
+                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
+            } else {
+                let name = masm::ProcedureName::new("init").unwrap();
+                let qualified = masm::QualifiedProcedureName::new("::init", name);
                 InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
             };
             let span = SourceSpan::default();

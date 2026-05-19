@@ -6,8 +6,10 @@ use midenc_hir::{
     ValueRef,
     dialects::builtin::{FunctionRef, attributes::Signature},
     interner::{Symbol, symbols},
+    smallvec,
 };
 
+use super::{IntrinsicEffect, IntrinsicsConversionResult};
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
@@ -20,9 +22,27 @@ pub const HEAP_BASE: &str = "heap_base";
 
 const HEAP_BASE_FUNC: ([Type; 0], [Type; 1]) = ([], [Type::U32]);
 
+pub fn as_intrinsic(function: Symbol) -> Option<IntrinsicsConversionResult> {
+    let ty = function_type(function)?;
+    let effects = function_effects(function)?;
+
+    Some(IntrinsicsConversionResult::FunctionType { ty, effects })
+}
+
 pub fn function_type(function: Symbol) -> Option<FunctionType> {
     match function.as_str() {
         HEAP_BASE => Some(FunctionType::new(CallConv::Wasm, HEAP_BASE_FUNC.0, HEAP_BASE_FUNC.1)),
+        _ => None,
+    }
+}
+
+pub fn function_effects(function: Symbol) -> Option<SmallVec<[IntrinsicEffect; 2]>> {
+    match function.as_str() {
+        HEAP_BASE => Some(smallvec![IntrinsicEffect::Memory {
+            effect: midenc_hir::effects::MemoryEffect::Read,
+            result: None,
+            argument: None,
+        }]),
         _ => None,
     }
 }

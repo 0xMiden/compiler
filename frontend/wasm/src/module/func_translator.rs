@@ -6,7 +6,11 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use cranelift_entity::EntityRef;
 use midenc_hir::{
@@ -244,71 +248,9 @@ fn parse_function_body<B: ?Sized + Builder>(
         let offset = (offset as u64)
             .checked_sub(module.wasm_file.code_section_offset)
             .expect("offset occurs before start of code section");
-        let mut span = SourceSpan::UNKNOWN;
-        if let Some(loc) = addr2line.find_location(offset).into_diagnostic()? {
-            if let Some(file) = loc.file {
-                let path = std::path::Path::new(file);
-
-                // Resolve relative paths to absolute paths
-                let resolved_path = if path.is_relative() {
-                    // Strategy 1: Try trim_path_prefixes
-                    if let Some(resolved) = config.trim_path_prefixes.iter().find_map(|prefix| {
-                        let candidate = prefix.join(path);
-                        if candidate.exists() {
-                            // Canonicalize to get absolute path
-                            candidate.canonicalize().ok()
-                        } else {
-                            None
-                        }
-                    }) {
-                        Some(resolved)
-                    }
-                    // Strategy 2: Try session.options.current_dir as fallback
-                    else {
-                        let current_dir_candidate = session.options.current_dir.join(path);
-                        if current_dir_candidate.exists() {
-                            current_dir_candidate.canonicalize().ok()
-                        } else {
-                            None
-                        }
-                    }
-                } else {
-                    // Path is absolute, but verify it exists and canonicalize it
-                    if path.exists() {
-                        path.canonicalize().ok()
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(absolute_path) = resolved_path {
-                    debug_assert!(
-                        absolute_path.is_absolute(),
-                        "resolved path should be absolute: {}",
-                        absolute_path.display()
-                    );
-                    log::debug!(target: "module-parser",
-                        "resolved source path '{}' -> '{}'",
-                        file,
-                        absolute_path.display()
-                    );
-                    let source_file =
-                        session.source_manager.load_file(&absolute_path).into_diagnostic()?;
-                    let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
-                    let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
-                    span = source_file
-                        .line_column_to_span(line, column)
-                        .unwrap_or(SourceSpan::UNKNOWN);
-                    if !span.is_unknown() {
-                        last_valid_span = span;
-                    }
-                } else {
-                    log::debug!(target: "module-parser",
-                        "failed to resolve source path '{file}' for instruction at offset \
-                         {offset} in function {func_name}"
-                    );
-                }
-            }
+        let span = resolve_instruction_span(addr2line, offset, session, config)?;
+        if !span.is_unknown() {
+            last_valid_span = span;
         } else {
             log::debug!(target: "module-parser",
                 "failed to locate span for instruction at offset {offset} in function {func_name}"
@@ -358,4 +300,130 @@ fn parse_function_body<B: ?Sized + Builder>(
     state.stack.clear();
 
     Ok(())
+}
+
+struct ResolvedSourceLocation {
+    path: PathBuf,
+    span: SourceSpan,
+}
+
+fn resolve_instruction_span(
+    addr2line: &addr2line::Context<DwarfReader<'_>>,
+    offset: u64,
+    session: &Session,
+    config: &crate::WasmTranslationConfig,
+) -> WasmResult<SourceSpan> {
+    let mut frames = addr2line.find_frames(offset).skip_all_loads().into_diagnostic()?;
+    let mut fallback = SourceSpan::UNKNOWN;
+
+    while let Some(frame) = frames.next().into_diagnostic()? {
+        let Some(location) = frame.location else {
+            continue;
+        };
+        let Some(resolved) = resolve_source_location(&location, session, config)? else {
+            continue;
+        };
+
+        if fallback.is_unknown() {
+            fallback = resolved.span;
+        }
+
+        if !is_internal_source_path(&resolved.path) {
+            return Ok(resolved.span);
+        }
+    }
+
+    Ok(fallback)
+}
+
+fn resolve_source_location(
+    loc: &addr2line::Location<'_>,
+    session: &Session,
+    config: &crate::WasmTranslationConfig,
+) -> WasmResult<Option<ResolvedSourceLocation>> {
+    let Some(file) = loc.file else {
+        return Ok(None);
+    };
+
+    let path = Path::new(file);
+    let Some(absolute_path) = resolve_source_path(path, session, config) else {
+        log::debug!(target: "module-parser", "failed to resolve source path '{file}'");
+        return Ok(None);
+    };
+
+    debug_assert!(
+        absolute_path.is_absolute(),
+        "resolved path should be absolute: {}",
+        absolute_path.display()
+    );
+    log::debug!(target: "module-parser",
+        "resolved source path '{}' -> '{}'",
+        file,
+        absolute_path.display()
+    );
+
+    let source_file = session.source_manager.load_file(&absolute_path).into_diagnostic()?;
+    let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
+    let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
+    let span = source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN);
+
+    let path = if path.is_absolute() {
+        config
+            .remap_path_prefixes
+            .iter()
+            .filter_map(|remap_prefix| {
+                path.strip_prefix(remap_prefix.source_prefix()).ok().map(|p| {
+                    match remap_prefix.to.as_deref() {
+                        Some(parent) => parent.join(p),
+                        None => p.to_path_buf(),
+                    }
+                })
+            })
+            .max_by_key(|p| p.components().count())
+            .unwrap_or(path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    };
+
+    Ok((!span.is_unknown()).then_some(ResolvedSourceLocation { path, span }))
+}
+
+fn resolve_source_path(
+    path: &Path,
+    session: &Session,
+    config: &crate::WasmTranslationConfig,
+) -> Option<PathBuf> {
+    if path.is_relative() {
+        // Strategy 1: Try remap_path_prefixes.
+        if let Some(resolved) = config.remap_path_prefixes.iter().find_map(|prefix| {
+            let candidate = prefix.source_prefix().join(path).canonicalize().ok();
+            if candidate.as_ref().is_some_and(|candidate| candidate.exists()) {
+                candidate
+            } else {
+                None
+            }
+        }) {
+            return Some(resolved);
+        }
+
+        // Strategy 2: Try session.options.current_dir as fallback.
+        let current_dir_candidate = session.options.current_dir.join(path).canonicalize().ok();
+        if current_dir_candidate.as_ref().is_some_and(|candidate| candidate.exists()) {
+            current_dir_candidate
+        } else {
+            None
+        }
+    } else if path.exists() {
+        path.canonicalize().ok()
+    } else {
+        None
+    }
+}
+
+fn is_internal_source_path(path: &Path) -> bool {
+    let path = path.to_string_lossy();
+    path.contains("/rust/library/")
+        || path.contains("/.cargo/registry/")
+        || path.contains("/registry/src/")
+        || path.contains("/compiler/sdk/")
 }

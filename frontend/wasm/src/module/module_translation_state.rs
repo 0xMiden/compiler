@@ -9,8 +9,10 @@ use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
 use super::{FuncIndex, Module, instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder};
 use crate::{
-    callable::CallableFunction, component::lower_imports::generate_import_lowering_function,
-    error::WasmResult, intrinsics::Intrinsic, miden_abi::miden_abi_function_type,
+    callable::CallableFunction,
+    component::lower_imports::generate_import_lowering_function,
+    error::WasmResult,
+    intrinsics::{Intrinsic, IntrinsicsConversionResult, attach_effects_to_function},
     translation_utils::sig_from_func_type,
 };
 
@@ -136,12 +138,10 @@ impl<'a> ModuleTranslationState<'a> {
             return Ok(None);
         };
 
-        if conv.is_function() {
+        if let IntrinsicsConversionResult::FunctionType { ty, effects } = conv {
             // Create import function reference for the intrinsic
             let import_path = intrinsic.into_symbol_path();
-            let import_ft: FunctionType = intrinsic
-                .function_type()
-                .unwrap_or_else(|| miden_abi_function_type(&import_path));
+            let import_ft: FunctionType = ty;
             let context = self.world_builder.context_rc();
             let import_sig = Signature::new(&context, import_ft.params, import_ft.results);
 
@@ -150,9 +150,14 @@ impl<'a> ModuleTranslationState<'a> {
                 .declare_module_tree(&import_path.without_leaf())
                 .wrap_err("failed to create module for intrinsic imports")?;
             let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-            let intrinsic_func_ref = import_module_builder
+            let mut intrinsic_func_ref = import_module_builder
                 .define_function(import_path.name().into(), Visibility::Public, import_sig)
                 .wrap_err("failed to create intrinsic function ref")?;
+
+            {
+                let mut intrinsic_func = intrinsic_func_ref.borrow_mut();
+                attach_effects_to_function(&mut intrinsic_func, effects.iter());
+            }
 
             self.functions.insert(
                 func_index,

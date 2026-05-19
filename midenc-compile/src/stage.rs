@@ -33,6 +33,19 @@ pub trait Stage {
         ChainOptional::new(self, stage)
     }
 
+    #[allow(clippy::type_complexity)]
+    fn map<I, O, F>(
+        self,
+        mapper: F,
+    ) -> Chain<Self, Box<dyn FnMut(I, Rc<Context>) -> CompilerResult<O>>>
+    where
+        Self: Sized,
+        F: FnMut(I, Rc<Context>) -> CompilerResult<O> + 'static,
+    {
+        Chain::new(self, Box::new(mapper) as Box<_>)
+    }
+
+    #[allow(unused)]
     fn collect<S, I>(self, stage: S) -> Collect<Self, S, I>
     where
         Self: Sized,
@@ -87,11 +100,11 @@ where
         context: Rc<Context>,
     ) -> CompilerResult<Self::Output> {
         if !self.a.enabled(&context) {
-            return Err(CompilerStopped.into());
+            return Err(CompilerStopped("first stage of chain is disabled").into());
         }
         let output = self.a.run(input, context.clone())?;
         if !self.b.enabled(&context) {
-            return Err(CompilerStopped.into());
+            return Err(CompilerStopped("second stage of chain is disabled").into());
         }
         self.b.run(output, context)
     }
@@ -121,7 +134,7 @@ where
         context: Rc<Context>,
     ) -> CompilerResult<Self::Output> {
         if !self.a.enabled(&context) {
-            return Err(CompilerStopped.into());
+            return Err(CompilerStopped("required stage in optional chain was not enabled").into());
         }
         let output = self.a.run(input, context.clone())?;
         if !self.b.enabled(&context) {

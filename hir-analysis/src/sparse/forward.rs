@@ -9,7 +9,7 @@ use midenc_hir::{
 use super::{SparseDataFlowAnalysis, SparseLattice};
 use crate::{
     AnalysisState, AnalysisStateGuard, AnalysisStateGuardMut, BuildableAnalysisState,
-    DataFlowSolver,
+    CallControlFlowAction, DataFlowSolver,
     analyses::dce::{CfgEdge, Executable, PredecessorState},
 };
 
@@ -30,6 +30,18 @@ pub trait SparseForwardDataFlowAnalysis: 'static {
         core::any::type_name::<Self>()
     }
 
+    /// Indicates that this analysis can continue using known predecessor facts when some
+    /// predecessors are unknown.
+    ///
+    /// When unknown predecessors are present, the solver first seeds affected states with the
+    /// analysis entry state. If this returns true, it then also applies transfers from every known
+    /// predecessor. The default is false because most analyses cannot safely combine partial
+    /// predecessor information with an unknown-predecessor fixpoint.
+    #[inline]
+    fn allow_unknown_predecessors(&self) -> bool {
+        false
+    }
+
     /// The operation transfer function.
     ///
     /// Given the operand lattices, this function is expected to set the result lattices.
@@ -41,15 +53,46 @@ pub trait SparseForwardDataFlowAnalysis: 'static {
         solver: &mut DataFlowSolver,
     ) -> Result<(), Report>;
 
-    /// The transfer function for calls to external functions.
-    fn visit_external_call(
+    /// Propagate the operand lattices forward along a call control flow edge, which can be either
+    /// entering or exiting the callee.
+    ///
+    /// The default implementation for enter and exit callee actions invokes `join` on the states.
+    /// The handling for external callees defaults to setting the `after` states to the entry state.
+    ///
+    /// Two types of forward-propagation are possible here:
+    ///
+    /// * `CallControlFlowAction::Enter` indicates:
+    ///   - `before` is the states of each argument passed to the callee
+    ///   - `after` is the state of each callee parameter at the beginning of the callee entry block
+    /// * `CallControlFlowAction::Exit` indicates:
+    ///   - `before` is the state of each result being returned from the callee
+    ///   - `after` is the state of each result after the call operation
+    /// * `CallControlFlowAction::External` indicates:
+    ///   - `before` is the state of each argument being passed to the callee
+    ///   - `after` is the state of each result after the call operation
+    ///
+    /// Implementations can implement additional custom behavior by handling specific cases manually.
+    /// For example, if `call` may affect the lattice prior to entering the callee, the impl can
+    /// handle `CallControlFlowAction::Enter`. Similarly, if `call` may affect the lattice post-
+    /// exiting the callee, the impl can handle `CallControlFlowAction::Exit`.
+    fn visit_call_control_flow_transfer(
         &self,
         call: &dyn CallOpInterface,
-        arguments: &[AnalysisStateGuard<'_, Self::Lattice>],
-        results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
+        action: CallControlFlowAction,
+        before: &[AnalysisStateGuard<'_, Self::Lattice>],
+        after: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
         solver: &mut DataFlowSolver,
     ) {
-        set_all_to_entry_states(self, results);
+        // Note that `set_to_entry_state` may be a "partial fixpoint" for some
+        // lattices, e.g., lattices that are lists of maps of other lattices will
+        // only set fixpoint for "known" lattices.
+        if matches!(action, CallControlFlowAction::External) {
+            set_all_to_entry_states(self, after);
+        } else {
+            for (before, after) in before.iter().zip(after.iter_mut()) {
+                after.join(before.lattice());
+            }
+        }
     }
 
     /// Given an operation with region control-flow, the lattices of the operands, and a region
@@ -207,11 +250,18 @@ where
         let callable = callable
             .as_ref()
             .and_then(|c| c.as_symbol_operation().as_trait::<dyn CallableOpInterface>());
-        if !solver.config().is_interprocedural()
-            || callable.is_some_and(|c| c.get_callable_region().is_none())
-        {
+        let is_external_call = callable
+            .as_ref()
+            .is_none_or(|callable| callable.get_callable_region().is_none());
+        if !solver.config().is_interprocedural() || is_external_call {
             log::trace!(target: analysis.debug_name(), "callee {} is external", call.callable_for_callee());
-            analysis.visit_external_call(call, &operand_lattices, &mut result_lattices, solver);
+            analysis.visit_call_control_flow_transfer(
+                call,
+                CallControlFlowAction::External,
+                &operand_lattices,
+                &mut result_lattices,
+                solver,
+            );
             return Ok(());
         }
 
@@ -224,26 +274,31 @@ where
         log::trace!(target: analysis.debug_name(), "found {} known predecessors", predecessors.known_predecessors().len());
 
         // If not all return sites are known, then conservatively assume we can't reason about the
-        //data-flow.
+        // data-flow, unless the analysis specfically indicates that it can safely do so.
         if !predecessors.all_predecessors_known() {
             log::trace!(target: analysis.debug_name(), "not all predecessors are known - setting result lattices to entry state");
             set_all_to_entry_states(analysis, &mut result_lattices);
-            return Ok(());
+            if !analysis.allow_unknown_predecessors() {
+                return Ok(());
+            }
         }
 
         let current_point = ProgramPoint::after(op);
         log::trace!(target: analysis.debug_name(), "joining lattices from all call site predecessors at {current_point}");
         for predecessor in predecessors.known_predecessors() {
-            for (operand, result_lattice) in
-                predecessor.borrow().operands().all().iter().zip(result_lattices.iter_mut())
-            {
-                let operand_lattice = get_lattice_element_for::<A>(
-                    current_point,
-                    operand.borrow().as_value_ref(),
-                    solver,
-                );
-                result_lattice.join(operand_lattice.lattice());
+            let inputs = predecessors.successor_inputs(predecessor);
+            let mut operand_lattices = SmallVec::<[_; 4]>::with_capacity(inputs.len());
+            for operand in inputs.iter().copied() {
+                let operand_lattice = get_lattice_element_for::<A>(current_point, operand, solver);
+                operand_lattices.push(operand_lattice);
             }
+            analysis.visit_call_control_flow_transfer(
+                call,
+                CallControlFlowAction::Exit,
+                &operand_lattices,
+                &mut result_lattices,
+                solver,
+            );
         }
 
         return Ok(());
@@ -311,24 +366,45 @@ pub(super) fn visit_block<A>(
 
             // If not all callsites are known, conservatively mark all lattices as having reached
             // their pessimistic fixpoints.
-            if !callsites.all_predecessors_known() || !solver.config().is_interprocedural() {
+            if !solver.config().is_interprocedural() {
                 log::trace!(
                     target: analysis.debug_name(),
                     "not all call sites are known - setting arguments to entry state"
                 );
                 return set_all_to_entry_states(analysis, &mut arg_lattices);
             }
+            if !callsites.all_predecessors_known() {
+                log::trace!(
+                    target: analysis.debug_name(),
+                    "not all call sites are known - setting arguments to entry state"
+                );
+                set_all_to_entry_states(analysis, &mut arg_lattices);
+                if !analysis.allow_unknown_predecessors() {
+                    return;
+                }
+            }
 
             log::trace!(target: analysis.debug_name(), "joining lattices from all call site predecessors at {current_point}");
             for callsite in callsites.known_predecessors() {
                 let callsite = callsite.borrow();
                 let call = callsite.as_trait::<dyn CallOpInterface>().unwrap();
-                for (arg, arg_lattice) in call.arguments().iter().zip(arg_lattices.iter_mut()) {
-                    let arg = arg.borrow().as_value_ref();
-                    let input = get_lattice_element_for::<A>(current_point, arg, solver);
-                    let change_result = arg_lattice.join(input.lattice());
-                    log::debug!(target: analysis.debug_name(), "updated lattice for {arg} to {arg_lattice:#?}: {change_result}");
+                let arguments = call.arguments();
+                let mut input_lattices = SmallVec::<[_; 4]>::with_capacity(arguments.len());
+                for input in call.arguments().iter() {
+                    let input_lattice = get_lattice_element_for::<A>(
+                        current_point,
+                        input.borrow().as_value_ref(),
+                        solver,
+                    );
+                    input_lattices.push(input_lattice);
                 }
+                analysis.visit_call_control_flow_transfer(
+                    call,
+                    CallControlFlowAction::Enter,
+                    &input_lattices,
+                    &mut arg_lattices,
+                    solver,
+                );
             }
 
             return;

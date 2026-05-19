@@ -5,6 +5,7 @@ use std::{
 };
 
 use heck::{ToKebabCase, ToSnakeCase};
+use miden_project::TargetType;
 use miden_protocol::{account::AccountType, utils::serde::Serializable};
 use midenc_frontend_wasm_metadata::FrontendMetadata;
 use proc_macro::Span;
@@ -21,7 +22,6 @@ use crate::{
     boilerplate::runtime_boilerplate,
     component_macro::{
         generate_wit::{build_component_wit, write_component_wit_file},
-        metadata::get_package_metadata,
         storage::process_storage_fields,
     },
     types::{
@@ -31,7 +31,6 @@ use crate::{
 };
 
 mod generate_wit;
-pub(crate) mod metadata;
 mod storage;
 
 /// Fully-qualified identifier for the core types package used by exported component interfaces.
@@ -40,8 +39,6 @@ const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 const AUTH_SCRIPT_ATTR: &str = "auth_script";
 /// Helper attribute preserved by `#[auth_script]` so `#[component]` can recognize the method.
 const AUTH_SCRIPT_MARKER_ATTR: &str = "miden_auth_script_requires_component";
-/// Cargo project kind used by authentication component crates.
-const AUTH_COMPONENT_PROJECT_KIND: &str = "authentication-component";
 
 /// Receiver kinds supported by the derived guest trait implementation.
 #[derive(Clone, Copy)]
@@ -96,7 +93,7 @@ pub fn component(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     if !attr.is_empty() {
-        return syn::Error::new(Span::call_site().into(), "#[component] does not accept arguments")
+        return syn::Error::new(Span2::call_site(), "this attribute does not accept arguments")
             .into_compile_error()
             .into();
     }
@@ -188,10 +185,10 @@ fn expand_component_struct(
 ) -> Result<TokenStream2, syn::Error> {
     let struct_name = &input_struct.ident;
 
-    let metadata = get_package_metadata(call_site_span)?;
+    let metadata = crate::wit_world::ManifestPackage::load_or_default(call_site_span.into())?;
     let mut acc_builder = AccountComponentMetadataBuilder::new(
-        metadata.name.clone(),
-        metadata.version.clone(),
+        metadata.package.name().to_string(),
+        metadata.package.version().into_inner().clone(),
         metadata.description.clone(),
     );
 
@@ -209,12 +206,12 @@ fn expand_component_struct(
 
     let default_impl = match &mut input_struct.fields {
         syn::Fields::Named(fields) => {
-            let storage_namespace = metadata.component_package.as_deref().unwrap_or(&metadata.name);
+            let storage_namespace = metadata.package.name().into_inner();
             let component_struct_name = struct_name.to_string();
             let field_inits = process_storage_fields(
                 fields,
                 &mut acc_builder,
-                storage_namespace,
+                &storage_namespace,
                 &component_struct_name,
             )?;
             generate_default_impl(struct_name, &field_inits)
@@ -274,16 +271,9 @@ fn expand_component_impl(
         ));
     }
 
-    let metadata = get_package_metadata(call_site_span)?;
-    let component_package = metadata.component_package.clone().ok_or_else(|| {
-        syn::Error::new(
-            call_site_span.into(),
-            "package.metadata.component.package in Cargo.toml is required to derive the component \
-             interface",
-        )
-    })?;
-
-    let interface_name = metadata.name.to_kebab_case();
+    let metadata = crate::wit_world::ManifestPackage::load_or_default(call_site_span.into())?;
+    let package_name = format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
+    let interface_name = package_name.to_kebab_case();
     let interface_module = {
         let name: &str = &interface_name;
         name.to_snake_case()
@@ -333,30 +323,32 @@ fn expand_component_impl(
     }
 
     validate_auth_script_count(
-        metadata.project_kind.as_deref(),
+        metadata.target.ty,
+        metadata.requires_auth_script(),
         auth_method_count,
         impl_block.span(),
     )?;
 
     let wit_source = build_component_wit(
-        &component_package,
-        &metadata.version,
+        &package_name,
+        metadata.package.version().inner(),
         &interface_name,
         &world_name,
         &type_imports,
         &methods,
         &exported_types,
     )?;
-    write_component_wit_file(call_site_span, &wit_source, &component_package)?;
+    write_component_wit_file(call_site_span, &wit_source, &package_name)?;
     let inline_literal = Literal::string(&wit_source);
 
-    let guest_trait_path = build_guest_trait_path(&component_package, &interface_module)?;
+    let guest_trait_path = build_guest_trait_path(&package_name, &interface_module)?;
     let guest_methods: Vec<TokenStream2> = methods
         .iter()
         .map(|method| render_guest_method(method, &component_type))
         .collect();
 
-    let interface_path = format!("{}/{}@{}", component_package, interface_name, metadata.version);
+    let interface_path =
+        format!("{}/{}@{}", package_name, interface_name, metadata.package.version());
     let module_prefix = component_module_prefix(&component_type);
     let module_prefix_segments: Option<Vec<String>> = module_prefix
         .as_ref()
@@ -374,8 +366,7 @@ fn expand_component_impl(
 
     if env::var_os("MIDEN_COMPONENT_DEBUG_WITH").is_some() {
         eprintln!(
-            "[miden::component] with mappings for {}: {}",
-            component_package,
+            "[miden::component] with mappings for {package_name}: {}",
             debug_with_entries.join(", ")
         );
     }
@@ -408,34 +399,36 @@ fn expand_component_impl(
 
 /// Validates how many methods may be annotated with `#[auth_script]` for the current project kind.
 fn validate_auth_script_count(
-    project_kind: Option<&str>,
+    target_type: TargetType,
+    requires_auth_script: bool,
     auth_method_count: usize,
     span: Span2,
 ) -> Result<(), syn::Error> {
-    if project_kind == Some(AUTH_COMPONENT_PROJECT_KIND) {
-        if auth_method_count != 1 {
-            return Err(syn::Error::new(
-                span,
-                "authentication components require exactly one `#[auth_script]` method",
-            ));
-        }
-    } else if auth_method_count > 1 {
-        return Err(syn::Error::new(
+    match (target_type, requires_auth_script, auth_method_count) {
+        (TargetType::AccountComponent, true, 1) => Ok(()),
+        (TargetType::AccountComponent, true, 0) => Err(syn::Error::new(
+            span,
+            "authentication components require exactly one `#[auth_script]` method",
+        )),
+        (TargetType::AccountComponent, _, count) if count > 1 => Err(syn::Error::new(
             span,
             "only one `#[auth_script]` method is allowed per `#[component]` impl block",
-        ));
+        )),
+        (TargetType::AccountComponent, ..) => Ok(()),
+        (_, _, count) if count > 0 => Err(syn::Error::new(
+            span,
+            "`#[auth_script]` method is only permitted on components of 'account-component' type",
+        )),
+        _ => Ok(()),
     }
-
-    Ok(())
 }
 
 /// Synthesizes the guest trait path exposed by `wit-bindgen` for the generated interface.
 fn build_guest_trait_path(
-    component_package: &str,
+    package_name: &str,
     interface_module: &str,
 ) -> Result<TokenStream2, syn::Error> {
-    let package_without_version =
-        component_package.split('@').next().unwrap_or(component_package).trim();
+    let package_without_version = package_name.split('@').next().unwrap_or(package_name).trim();
 
     let segments: Vec<_> = package_without_version
         .split([':', '/'])
@@ -1170,7 +1163,7 @@ mod tests {
     #[test]
     fn authentication_components_require_exactly_one_auth_script() {
         let err =
-            validate_auth_script_count(Some(AUTH_COMPONENT_PROJECT_KIND), 0, Span2::call_site())
+            validate_auth_script_count(TargetType::AccountComponent, true, 0, Span2::call_site())
                 .expect_err("expected authentication components to require an auth script");
 
         assert!(
@@ -1178,8 +1171,14 @@ mod tests {
                 .contains("authentication components require exactly one `#[auth_script]` method")
         );
 
-        validate_auth_script_count(Some(AUTH_COMPONENT_PROJECT_KIND), 1, Span2::call_site())
+        validate_auth_script_count(TargetType::AccountComponent, true, 1, Span2::call_site())
             .expect("expected exactly one auth script to be accepted");
+    }
+
+    #[test]
+    fn ordinary_account_components_may_omit_auth_script() {
+        validate_auth_script_count(TargetType::AccountComponent, false, 0, Span2::call_site())
+            .expect("expected ordinary account components to allow no auth script");
     }
 
     #[test]

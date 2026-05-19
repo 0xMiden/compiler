@@ -38,17 +38,17 @@ fn storage_example() {
         supported-types = ["RegularAccountUpdatableCode"]
 
         [[storage.slots]]
-        name = "miden_storage_example::my_account::owner_public_key"
-        description = "owner public key"
-        type = "word"
-
-        [[storage.slots]]
-        name = "miden_storage_example::my_account::asset_qty_map"
+        name = "storage_example::my_account::asset_qty_map"
         description = "asset quantity map"
 
         [storage.slots.type]
         key = "word"
         value = "felt"
+
+        [[storage.slots]]
+        name = "storage_example::my_account::owner_public_key"
+        description = "owner public key"
+        type = "word"
     "#]]
     .assert_eq(&toml);
 }

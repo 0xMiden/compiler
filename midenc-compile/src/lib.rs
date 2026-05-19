@@ -1,15 +1,20 @@
 #![no_std]
 #![deny(warnings)]
 
+#[macro_use]
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "std")]
+pub mod cargo;
 mod compiler;
+#[cfg(feature = "std")]
+pub mod rust;
 mod stage;
-mod stages;
+pub mod stages;
 
-use alloc::{rc::Rc, vec::Vec};
+use alloc::rc::Rc;
 
 pub use midenc_hir::Context;
 use midenc_hir::Op;
@@ -18,28 +23,29 @@ use midenc_session::{
     diagnostics::{Diagnostic, Report, WrapErr, miette},
 };
 
+use self::stages::*;
 pub use self::{
     compiler::Compiler,
-    stages::{CodegenOutput, LinkOutput},
+    stage::Stage,
+    stages::{CodegenOutput, MidenComponent},
 };
-use self::{stage::Stage, stages::*};
 
 pub type CompilerResult<T> = Result<T, Report>;
 
 /// The compilation pipeline was stopped early
 #[derive(Debug, thiserror::Error, Diagnostic)]
-#[error("compilation was canceled by user")]
+#[error("compilation was canceled by user: {0}")]
 #[diagnostic()]
-pub struct CompilerStopped;
+pub struct CompilerStopped(&'static str);
 
 /// Run the compiler using the provided [midenc_session::Session]
 pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
     use midenc_hir::formatter::DisplayHex;
 
-    log::info!("starting compilation session");
+    log::info!(target: "driver", "starting compilation session");
 
     let session = context.session();
-    match compile_inputs(session.inputs.clone(), context.clone())? {
+    match compile_to_memory(context.clone())? {
         Artifact::Assembled(ref package) => {
             log::info!(
                 "succesfully assembled mast package '{}' with digest {}",
@@ -64,8 +70,8 @@ pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
 
 /// Same as `compile`, but return compiled artifacts to the caller
 pub fn compile_to_memory(context: Rc<Context>) -> CompilerResult<Artifact> {
-    let inputs = context.session().inputs.clone();
-    compile_inputs(inputs, context)
+    let session = context.session_rc();
+    stages::run_default_pipeline(session.input.clone(), context)
 }
 
 /// Same as `compile_to_memory`, but allows registering a callback which will be used as an extra
@@ -77,9 +83,8 @@ pub fn compile_to_memory_with_pre_assembly_stage<F>(
 where
     F: FnMut(CodegenOutput, Rc<Context>) -> CompilerResult<CodegenOutput>,
 {
-    let mut stages = ParseStage
-        .collect(LinkStage)
-        .next_optional(ApplyRewritesStage)
+    let mut stages = ParseComponentStage
+        .map(stages::apply_rewrites_to_miden_component)
         .next(CodegenStage)
         .next(
             pre_assembly_stage
@@ -89,37 +94,40 @@ where
         )
         .next(AssembleStage);
 
-    let inputs = context.session().inputs.clone();
-    stages.run(inputs, context)
+    let session = context.session_rc();
+    let input = session.input.clone().ok_or_else(|| Report::msg("no inputs"))?;
+    stages.run(input, context)
 }
 
 /// Compile the current inputs without lowering to Miden Assembly.
 ///
 /// Returns the translated pre-link outputs of the compiler's link stage.
-pub fn compile_to_optimized_hir(context: Rc<Context>) -> CompilerResult<LinkOutput> {
-    let mut stages = ParseStage.collect(LinkStage).next_optional(ApplyRewritesStage);
+pub fn compile_to_optimized_hir(context: Rc<Context>) -> CompilerResult<MidenComponent> {
+    let mut stages = ParseComponentStage.map(stages::apply_rewrites_to_miden_component);
 
-    let inputs = context.session().inputs.clone();
-    stages.run(inputs, context)
+    let session = context.session_rc();
+    let input = session.input.clone().ok_or_else(|| Report::msg("no inputs"))?;
+    stages.run(input, context)
 }
 
 /// Compile the current inputs without lowering to Miden Assembly and without any IR transformations.
 ///
 /// Returns the translated pre-link outputs of the compiler's link stage.
-pub fn compile_to_unoptimized_hir(context: Rc<Context>) -> CompilerResult<LinkOutput> {
-    let mut stages = ParseStage.collect(LinkStage);
+pub fn compile_to_unoptimized_hir(context: Rc<Context>) -> CompilerResult<MidenComponent> {
+    let mut stages = ParseComponentStage;
 
-    let inputs = context.session().inputs.clone();
-    stages.run(inputs, context)
+    let session = context.session_rc();
+    let input = session.input.clone().ok_or_else(|| Report::msg("no inputs"))?;
+    stages.run(input, context)
 }
 
 /// Lowers previously-generated pre-link outputs of the compiler to Miden Assembly/MAST.
 ///
 /// Returns the compiled artifact, just like `compile_to_memory` would.
-pub fn compile_link_output_to_masm(link_output: LinkOutput) -> CompilerResult<Artifact> {
+pub fn compile_link_output_to_masm(link_output: MidenComponent) -> CompilerResult<Artifact> {
     let mut stages = CodegenStage.next(AssembleStage);
 
-    let context = link_output.component.borrow().as_operation().context_rc();
+    let context = link_output.world.borrow().as_operation().context_rc();
     stages.run(link_output, context)
 }
 
@@ -128,7 +136,7 @@ pub fn compile_link_output_to_masm(link_output: LinkOutput) -> CompilerResult<Ar
 ///
 /// Returns the compiled artifact, just like `compile_to_memory` would.
 pub fn compile_link_output_to_masm_with_pre_assembly_stage<F>(
-    link_output: LinkOutput,
+    link_output: MidenComponent,
     pre_assembly_stage: &mut F,
 ) -> CompilerResult<Artifact>
 where
@@ -143,19 +151,31 @@ where
         )
         .next(AssembleStage);
 
-    let context = link_output.component.borrow().as_operation().context_rc();
+    let context = link_output.world.borrow().as_operation().context_rc();
     stages.run(link_output, context)
 }
 
-fn compile_inputs(
-    inputs: Vec<midenc_session::InputFile>,
+pub(crate) fn emit_hir_if_requested(
+    op: &midenc_hir::Operation,
     context: Rc<Context>,
-) -> CompilerResult<Artifact> {
-    let mut stages = ParseStage
-        .collect(LinkStage)
-        .next_optional(ApplyRewritesStage)
-        .next(CodegenStage)
-        .next(AssembleStage);
+) -> CompilerResult<()> {
+    use alloc::string::ToString;
 
-    stages.run(inputs, context)
+    use midenc_hir::{
+        OpPrintingFlags,
+        diagnostics::IntoDiagnostic,
+        print::{AsmPrinter, OpPrinter},
+    };
+    use midenc_session::OutputType;
+
+    let session = context.session();
+    if session.should_emit(OutputType::Hir) {
+        let flags = OpPrintingFlags::from(context.session().options.as_ref());
+        let mut printer = AsmPrinter::new(context.clone(), &flags);
+        op.print(&mut printer);
+        let hir_str = printer.finish().to_string();
+        session.emit(OutputMode::Text, &hir_str).into_diagnostic()?;
+    }
+
+    Ok(())
 }

@@ -24,24 +24,30 @@ std = [
     "dep:parking_lot",
     "dep:clap",
     "anyhow/std",
-    "miden-assembly/std",
+    "miden-debug-types/std",
     "miden-protocol/std",
+    "miden-project/std",
+    "miden-package-registry/std",
 ]
 
 [dependencies]
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
+hashbrown.workspace = true
+heck.workspace = true
 inventory.workspace = true
 log.workspace = true
-miden-assembly.workspace = true
 miden-assembly-syntax.workspace = true
 miden-core-lib.workspace = true
 miden-core.workspace = true
 miden-debug-types.workspace = true
 miden-mast-package.workspace = true
+miden-project.workspace = true
+miden-package-registry.workspace = true
 midenc-hir-symbol.workspace = true
 midenc-hir-macros.workspace = true
 miden-protocol.workspace = true
+rustc-hash.workspace = true
 smallvec.workspace = true
 parking_lot = { workspace = true, optional = true }
 termcolor = { version = "1.4.1", optional = true }

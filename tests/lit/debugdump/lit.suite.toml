@@ -1,5 +1,5 @@
 name = "debugdump"
-patterns = ["*.wat"]
+patterns = ["*.wat", "*.rs"]
 working_dir = "../../../"
 
 [substitutions]

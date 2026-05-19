@@ -1,0 +1,15 @@
+[package]
+name = "p2ide"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "miden:p2ide/miden-p2ide@0.1.0"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+basic-wallet = { path = "../basic-wallet" }
+
+[package.metadata.miden.dependencies]
+basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }

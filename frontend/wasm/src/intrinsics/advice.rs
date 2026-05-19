@@ -2,9 +2,12 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     Builder, FunctionType, Op, SmallVec, SourceSpan, SymbolNameComponent, Type, ValueRef,
     dialects::builtin::FunctionRef,
+    effects::{AdviceMapResource, AdviceStackResource},
     interner::{Symbol, symbols},
+    smallvec,
 };
 
+use super::{IntrinsicEffect, IntrinsicsConversionResult};
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
 /// The module path prefix for advice intrinsics, not including the function name
@@ -62,6 +65,53 @@ pub fn function_type(function: Symbol) -> Option<FunctionType> {
     }
 }
 
+pub fn function_effects(function: Symbol) -> Option<SmallVec<[IntrinsicEffect; 2]>> {
+    match function.as_str() {
+        "adv_push_mapvaln" => Some(smallvec![
+            IntrinsicEffect::Advice {
+                effect: midenc_hir::effects::AdviceEffect::Read,
+                resource: Box::new(AdviceMapResource),
+                result: None,
+                argument: None,
+            },
+            IntrinsicEffect::Advice {
+                effect: midenc_hir::effects::AdviceEffect::Allocate,
+                resource: Box::new(AdviceStackResource),
+                result: None,
+                argument: None,
+            }
+        ]),
+        "adv_insert_mem" => Some(smallvec![
+            IntrinsicEffect::Advice {
+                effect: midenc_hir::effects::AdviceEffect::Allocate,
+                resource: Box::new(AdviceMapResource),
+                result: None,
+                argument: None,
+            },
+            IntrinsicEffect::Advice {
+                effect: midenc_hir::effects::AdviceEffect::Write,
+                resource: Box::new(AdviceMapResource),
+                result: None,
+                argument: None,
+            }
+        ]),
+        "emit_falcon_sig_to_stack" => Some(smallvec![IntrinsicEffect::Advice {
+            effect: midenc_hir::effects::AdviceEffect::Allocate,
+            resource: Box::new(AdviceStackResource),
+            result: None,
+            argument: None,
+        }]),
+        _ => None,
+    }
+}
+
+pub fn as_intrinsic(function: Symbol) -> Option<IntrinsicsConversionResult> {
+    let ty = function_type(function)?;
+    let effects = function_effects(function)?;
+
+    Some(IntrinsicsConversionResult::FunctionType { ty, effects })
+}
+
 /// Convert a call to an advice intrinsic function into instruction(s)
 pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
     function: Symbol,
@@ -115,5 +165,36 @@ pub fn convert_advice_intrinsics<B: ?Sized + Builder>(
         _ => {
             panic!("unsupported io intrinsic: '{function}'")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::intrinsics::IntrinsicEffect;
+
+    #[test]
+    fn adv_push_mapvaln_declares_advice_effects() {
+        let effects = function_effects(Symbol::intern("adv_push_mapvaln"))
+            .expect("adv_push_mapvaln should be modeled as an intrinsic function");
+
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                IntrinsicEffect::Advice {
+                    effect: midenc_hir::effects::AdviceEffect::Read,
+                    ..
+                }
+            )
+        }));
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                IntrinsicEffect::Advice {
+                    effect: midenc_hir::effects::AdviceEffect::Allocate,
+                    ..
+                }
+            )
+        }));
     }
 }

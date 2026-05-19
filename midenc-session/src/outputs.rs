@@ -228,7 +228,7 @@ impl fmt::Display for OutputFile {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OutputFiles {
     stem: String,
     /// The compiler working directory
@@ -268,7 +268,8 @@ impl OutputFiles {
     }
 
     /// Return the [OutputFile] representing where an output of `ty` type should be written,
-    /// with an optional `name`, which overrides the file stem of the resulting path.
+    /// with an optional `name`, which overrides the file stem of the resulting path, if a
+    /// specific path was not provided.
     pub fn output_file(&self, ty: OutputType, name: Option<&str>) -> OutputFile {
         let requested = self.outputs.contains_key(&ty);
         let default_name = escape_path_component(name.unwrap_or(self.stem.as_str()));
@@ -281,9 +282,6 @@ impl OutputFiles {
                 };
                 if path.is_dir() {
                     path.join(default_name.as_ref()).with_extension(ty.extension())
-                } else if let Some(name) = name {
-                    let name = escape_path_component(name);
-                    path.with_stem_and_extension(name.as_ref(), ty.extension())
                 } else {
                     path
                 }

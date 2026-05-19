@@ -1,0 +1,14 @@
+[package]
+name = "basic-wallet"
+version = "0.1.0"
+
+[lib]
+kind = "account-component"
+namespace = "miden:basic-wallet/miden-basic-wallet@0.1.0"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]

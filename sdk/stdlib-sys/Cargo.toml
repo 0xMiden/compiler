@@ -19,7 +19,7 @@ test = false
 doctest = false
 
 [dependencies]
-miden-field.workspace = true
+miden-field = { workspace = true, default-features = false }
 
 [features]
 default = []

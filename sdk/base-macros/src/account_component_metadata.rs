@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
 use miden_protocol::account::{
     AccountType, StorageSlotName,
@@ -71,7 +71,7 @@ pub struct AccountComponentMetadataBuilder {
     name: String,
 
     /// A brief description of what this component is and how it works.
-    description: String,
+    description: Arc<str>,
 
     /// The version of the component using semantic versioning.
     version: Version,
@@ -85,10 +85,10 @@ pub struct AccountComponentMetadataBuilder {
 
 impl AccountComponentMetadataBuilder {
     /// Creates a new metadata builder.
-    pub fn new(name: String, version: Version, description: String) -> Self {
+    pub fn new(name: String, version: Version, description: impl Into<Arc<str>>) -> Self {
         Self {
             name,
-            description,
+            description: description.into(),
             version,
             supported_types: BTreeSet::new(),
             storage: Vec::new(),
@@ -159,7 +159,7 @@ impl AccountComponentMetadataBuilder {
         })?;
 
         Ok(AccountComponentMetadata::new(self.name, self.supported_types)
-            .with_description(self.description)
+            .with_description(self.description.as_ref())
             .with_version(self.version)
             .with_storage_schema(storage_schema))
     }

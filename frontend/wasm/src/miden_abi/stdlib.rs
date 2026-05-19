@@ -1,8 +1,10 @@
 //! Function types and lowered signatures for the Miden stdlib API functions
 
-use midenc_hir_symbol::sync::LazyLock;
+use midenc_hir::{SmallVec, SymbolPath, interner::Symbol, smallvec};
+use midenc_hir_symbol::{symbols, sync::LazyLock};
 
 use super::ModuleFunctionTypeMap;
+use crate::intrinsics::IntrinsicEffect;
 
 pub(crate) mod collections;
 pub(crate) mod crypto;
@@ -20,4 +22,23 @@ pub(crate) fn signatures() -> &'static ModuleFunctionTypeMap {
         m
     });
     &TYPES
+}
+
+pub(crate) fn function_effects(
+    module_path: &SymbolPath,
+    function: Symbol,
+) -> Option<SmallVec<[IntrinsicEffect; 2]>> {
+    let mut components = module_path.components().peekable();
+    components.next_if_eq(&midenc_hir::SymbolNameComponent::Root);
+    if components.next()?.as_symbol_name() != symbols::Miden {
+        return None;
+    }
+    if components.next()?.as_symbol_name() != symbols::Core {
+        return None;
+    }
+
+    match components.next()?.as_symbol_name() {
+        symbols::Mem => mem::function_effects(function),
+        _ => Some(smallvec![]),
+    }
 }

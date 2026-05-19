@@ -1,6 +1,11 @@
 use midenc_hir::{
-    FunctionType, SymbolNameComponent, SymbolPath, Type,
+    FunctionType, SmallVec, SymbolNameComponent, SymbolPath,
     diagnostics::{Diagnostic, miette},
+    dialects::builtin::{
+        Function,
+        attributes::{AdviceEffectDescriptor, MemoryEffectDescriptor},
+    },
+    effects::{AdviceEffect, MemoryEffect, Resource},
     interner::{Symbol, symbols},
 };
 
@@ -125,25 +130,7 @@ impl Intrinsic {
             // All field element intrinsics are currently implemented as native instructions
             Self::Felt(_) => None,
             // Crypto intrinsics are converted to function calls
-            Self::Crypto(function) => {
-                match function.as_str() {
-                    "hmerge" => {
-                        // The WASM import signature: takes 2 i32 pointers (digests array pointer + result pointer)
-                        let sig = midenc_hir::FunctionType::new(
-                            midenc_hir::CallConv::Wasm,
-                            vec![
-                                // Pointer to array of two digests
-                                Type::I32,
-                                // Result pointer
-                                Type::I32,
-                            ],
-                            vec![], // No returns - writes to the result pointer
-                        );
-                        Some(sig)
-                    }
-                    _ => None,
-                }
-            }
+            Self::Crypto(function) => crypto::function_type(*function),
             Self::Advice(function) => advice::function_type(*function),
         }
     }
@@ -153,19 +140,11 @@ impl Intrinsic {
     /// Returns `None` for intrinsics which are unknown.
     pub fn conversion_result(&self) -> Option<IntrinsicsConversionResult> {
         match self {
-            Self::Mem(function) => {
-                mem::function_type(*function).map(IntrinsicsConversionResult::FunctionType)
-            }
+            Self::Mem(function) => mem::as_intrinsic(*function),
             Self::Debug(_) | Self::Felt(_) => Some(IntrinsicsConversionResult::MidenVmOp),
-            Self::Advice(_function) => self
-                .function_type()
-                .map(IntrinsicsConversionResult::FunctionType)
-                .or(Some(IntrinsicsConversionResult::MidenVmOp)),
+            Self::Advice(function) => advice::as_intrinsic(*function),
             // Crypto intrinsics are converted to function calls
-            Self::Crypto(_function) => self
-                .function_type()
-                .map(IntrinsicsConversionResult::FunctionType)
-                .or(Some(IntrinsicsConversionResult::MidenVmOp)),
+            Self::Crypto(function) => crypto::as_intrinsic(*function),
         }
     }
 }
@@ -173,14 +152,66 @@ impl Intrinsic {
 /// Represents how an intrinsic will be converted to IR
 pub enum IntrinsicsConversionResult {
     /// As a function
-    FunctionType(FunctionType),
+    FunctionType {
+        ty: FunctionType,
+        effects: SmallVec<[IntrinsicEffect; 2]>,
+    },
     /// As a native instruction
     MidenVmOp,
 }
 
+pub enum IntrinsicEffect {
+    Advice {
+        effect: AdviceEffect,
+        resource: Box<dyn Resource + 'static>,
+        result: Option<u8>,
+        argument: Option<u8>,
+    },
+    Memory {
+        effect: MemoryEffect,
+        result: Option<u8>,
+        argument: Option<u8>,
+    },
+}
+
+pub fn attach_effects_to_function<'a>(
+    function: &mut Function,
+    effects: impl IntoIterator<Item = &'a IntrinsicEffect>,
+) {
+    for effect in effects {
+        match effect {
+            IntrinsicEffect::Memory {
+                effect,
+                result,
+                argument,
+            } => {
+                function.memory_effects_mut().push(MemoryEffectDescriptor {
+                    effect: *effect,
+                    argument: *argument,
+                    result: *result,
+                });
+            }
+            IntrinsicEffect::Advice {
+                effect,
+                resource,
+                result,
+                argument,
+            } => {
+                let resource = resource.name().parse().expect("unknown advice resource");
+                function.advice_effects_mut().push(AdviceEffectDescriptor {
+                    effect: *effect,
+                    resource,
+                    argument: *argument,
+                    result: *result,
+                });
+            }
+        }
+    }
+}
+
 impl IntrinsicsConversionResult {
     pub fn is_function(&self) -> bool {
-        matches!(self, IntrinsicsConversionResult::FunctionType(_))
+        matches!(self, IntrinsicsConversionResult::FunctionType { .. })
     }
 
     pub fn is_operation(&self) -> bool {
