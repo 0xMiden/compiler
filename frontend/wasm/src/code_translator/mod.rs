@@ -476,22 +476,22 @@ pub fn translate_operator<B: ?Sized + Builder>(
         }
         Operator::I32Rotl => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.bitcast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.rotl(arg1, arg2, span)?);
         }
         Operator::I64Rotl => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.cast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.rotl(arg1, arg2, span)?);
         }
         Operator::I32Rotr => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.bitcast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.rotr(arg1, arg2, span)?);
         }
         Operator::I64Rotr => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.cast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.rotr(arg1, arg2, span)?);
         }
         Operator::I32Sub | Operator::I64Sub => {

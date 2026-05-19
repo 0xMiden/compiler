@@ -413,7 +413,6 @@ fn overflowing_mul_i8() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn overflowing_mul_i16() {
     test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -728,7 +727,6 @@ fn checked_mul_i8() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1091"]
 fn checked_mul_i16() {
     test_checked_arith(i16::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
