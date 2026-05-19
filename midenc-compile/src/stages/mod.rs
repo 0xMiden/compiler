@@ -3,7 +3,7 @@ use alloc::{format, rc::Rc};
 use miden_assembly::ProjectSourceInputs;
 use midenc_hir::{Context, dialects::builtin};
 use midenc_session::{
-    OutputMode, Session,
+    FileType, OutputMode, Session,
     diagnostics::{IntoDiagnostic, Report},
 };
 
@@ -111,19 +111,20 @@ fn masm_project_pipeline(
     context: Rc<Context>,
 ) -> CompilerResult<Artifact> {
     use alloc::boxed::Box;
-    let maybe_parse_masm_stage = Box::new(|input, context| match input {
-        Some(input) => {
-            let mut parse = ParseMasmStage;
-            parse.run(input, context).map(Some)
-        }
-        None => Ok(None),
-    })
-        as Box<
-            dyn FnMut(
-                Option<midenc_session::InputFile>,
-                Rc<Context>,
-            ) -> CompilerResult<Option<ProjectSourceInputs>>,
-        >;
+    let maybe_parse_masm_stage =
+        Box::new(|input: Option<midenc_session::InputFile>, context| match input {
+            Some(input) if input.file_type() == FileType::Masm => {
+                let mut parse = ParseMasmStage;
+                parse.run(input, context).map(Some)
+            }
+            _ => Ok(None),
+        })
+            as Box<
+                dyn FnMut(
+                    Option<midenc_session::InputFile>,
+                    Rc<Context>,
+                ) -> CompilerResult<Option<ProjectSourceInputs>>,
+            >;
     let mut stages = maybe_parse_masm_stage.next(MasmAnalysisStage).next(AssembleProjectStage);
 
     stages.run(input, context)
