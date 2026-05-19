@@ -33,7 +33,6 @@ pub struct HirOpt {
     /// An optional pass pipeline to apply
     #[arg(
         long,
-        short = 'p',
         value_name = "PIPELINE",
         default_value = "any",
         default_missing_value = "any",
@@ -106,7 +105,7 @@ impl HirOpt {
             .session()
             .input
             .as_ref()
-            .is_none_or(|input| input.file_type() != FileType::Hir);
+            .is_some_and(|input| input.file_type() == FileType::Hir);
         if !is_valid_input {
             return Err(Report::msg("invalid input file: expected HIR source file"));
         }
