@@ -302,6 +302,130 @@ mod tests {
     }
 
     #[test]
+    fn comparisons_infer_exact_true_values() -> Result<(), Report> {
+        let mut test = Test::new(
+            "comparisons_infer_exact_true_values",
+            &[],
+            &[Type::I1, Type::I1, Type::I1, Type::I1, Type::I1, Type::I1],
+        );
+        let comparisons = {
+            let mut builder = test.function_builder();
+            let lt_lhs = builder.u32(1, SourceSpan::UNKNOWN);
+            let lt_rhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let lt = builder.lt(lt_lhs, lt_rhs, SourceSpan::UNKNOWN)?;
+            let lte_lhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let lte_rhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let lte = builder.lte(lte_lhs, lte_rhs, SourceSpan::UNKNOWN)?;
+            let gt_lhs = builder.u32(3, SourceSpan::UNKNOWN);
+            let gt_rhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let gt = builder.gt(gt_lhs, gt_rhs, SourceSpan::UNKNOWN)?;
+            let gte_lhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let gte_rhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let gte = builder.gte(gte_lhs, gte_rhs, SourceSpan::UNKNOWN)?;
+            let eq_lhs = builder.u32(5, SourceSpan::UNKNOWN);
+            let eq_rhs = builder.u32(5, SourceSpan::UNKNOWN);
+            let eq = builder.eq(eq_lhs, eq_rhs, SourceSpan::UNKNOWN)?;
+            let neq_lhs = builder.u32(5, SourceSpan::UNKNOWN);
+            let neq_rhs = builder.u32(6, SourceSpan::UNKNOWN);
+            let neq = builder.neq(neq_lhs, neq_rhs, SourceSpan::UNKNOWN)?;
+            let comparisons = [lt, lte, gt, gte, eq, neq];
+            builder.ret(comparisons, SourceSpan::UNKNOWN)?;
+            comparisons
+        };
+
+        let solver = run_integer_range_analysis(&test)?;
+        for comparison in comparisons {
+            assert_bool_range(&solver, comparison, true);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn comparisons_infer_exact_false_values() -> Result<(), Report> {
+        let mut test = Test::new(
+            "comparisons_infer_exact_false_values",
+            &[],
+            &[Type::I1, Type::I1, Type::I1, Type::I1, Type::I1, Type::I1],
+        );
+        let comparisons = {
+            let mut builder = test.function_builder();
+            let lt_lhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let lt_rhs = builder.u32(1, SourceSpan::UNKNOWN);
+            let lt = builder.lt(lt_lhs, lt_rhs, SourceSpan::UNKNOWN)?;
+            let lte_lhs = builder.u32(3, SourceSpan::UNKNOWN);
+            let lte_rhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let lte = builder.lte(lte_lhs, lte_rhs, SourceSpan::UNKNOWN)?;
+            let gt_lhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let gt_rhs = builder.u32(3, SourceSpan::UNKNOWN);
+            let gt = builder.gt(gt_lhs, gt_rhs, SourceSpan::UNKNOWN)?;
+            let gte_lhs = builder.u32(2, SourceSpan::UNKNOWN);
+            let gte_rhs = builder.u32(3, SourceSpan::UNKNOWN);
+            let gte = builder.gte(gte_lhs, gte_rhs, SourceSpan::UNKNOWN)?;
+            let eq_lhs = builder.u32(5, SourceSpan::UNKNOWN);
+            let eq_rhs = builder.u32(6, SourceSpan::UNKNOWN);
+            let eq = builder.eq(eq_lhs, eq_rhs, SourceSpan::UNKNOWN)?;
+            let neq_lhs = builder.u32(5, SourceSpan::UNKNOWN);
+            let neq_rhs = builder.u32(5, SourceSpan::UNKNOWN);
+            let neq = builder.neq(neq_lhs, neq_rhs, SourceSpan::UNKNOWN)?;
+            let comparisons = [lt, lte, gt, gte, eq, neq];
+            builder.ret(comparisons, SourceSpan::UNKNOWN)?;
+            comparisons
+        };
+
+        let solver = run_integer_range_analysis(&test)?;
+        for comparison in comparisons {
+            assert_bool_range(&solver, comparison, false);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn comparisons_use_signed_bounds_for_signed_types() -> Result<(), Report> {
+        let mut test =
+            Test::new("comparisons_use_signed_bounds_for_signed_types", &[], &[Type::I1, Type::I1]);
+        let (lt, gt) = {
+            let mut builder = test.function_builder();
+            let minus_one = builder.i32(-1, SourceSpan::UNKNOWN);
+            let one = builder.i32(1, SourceSpan::UNKNOWN);
+            let lt = builder.lt(minus_one, one, SourceSpan::UNKNOWN)?;
+            let minus_one = builder.i32(-1, SourceSpan::UNKNOWN);
+            let one = builder.i32(1, SourceSpan::UNKNOWN);
+            let gt = builder.gt(minus_one, one, SourceSpan::UNKNOWN)?;
+            builder.ret([lt, gt], SourceSpan::UNKNOWN)?;
+            (lt, gt)
+        };
+
+        let solver = run_integer_range_analysis(&test)?;
+        assert_bool_range(&solver, lt, true);
+        assert_bool_range(&solver, gt, false);
+
+        Ok(())
+    }
+
+    #[test]
+    fn comparisons_remain_unknown_when_ranges_overlap() -> Result<(), Report> {
+        let mut test =
+            Test::new("comparisons_remain_unknown_when_ranges_overlap", &[Type::U32], &[Type::I1]);
+        let comparison = {
+            let arg = test.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+            let mut builder = test.function_builder();
+            let limit = builder.u32(10, SourceSpan::UNKNOWN);
+            let comparison = builder.lt(arg, limit, SourceSpan::UNKNOWN)?;
+            builder.ret([comparison], SourceSpan::UNKNOWN)?;
+            comparison
+        };
+
+        let solver = run_integer_range_analysis(&test)?;
+        let range = range_for(&solver, comparison);
+        assert_eq!(range.umin(), 0);
+        assert_eq!(range.umax(), 1);
+
+        Ok(())
+    }
+
+    #[test]
     fn unknown_ops_fall_back_to_type_range() -> Result<(), Report> {
         let mut test = Test::new("unknown_ops_fall_back_to_type_range", &[], &[Type::Felt]);
         let value = {
@@ -376,5 +500,12 @@ mod tests {
         value_range(solver, value)
             .and_then(|range| range.range().copied())
             .expect("expected integer range")
+    }
+
+    fn assert_bool_range(solver: &DataFlowSolver, value: ValueRef, expected: bool) {
+        let range = range_for(solver, value);
+        let expected = u128::from(expected);
+        assert_eq!(range.umin(), expected);
+        assert_eq!(range.umax(), expected);
     }
 }

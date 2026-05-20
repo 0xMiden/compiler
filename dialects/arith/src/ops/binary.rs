@@ -617,12 +617,45 @@ impl Canonicalizable for Rotr {
     }
 }
 
+#[derive(Copy, Clone)]
+enum IntComparison {
+    Eq,
+    Neq,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+}
+
+macro_rules! impl_infer_int_range_for_comparison {
+    ($Op:ty, $comparison:expr) => {
+        impl InferIntRangeInterface for $Op {
+            fn infer_result_ranges(
+                &self,
+                operands: &[IntegerValueRange],
+                set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
+            ) {
+                let [lhs, rhs] = operands else {
+                    return;
+                };
+                let (Some(lhs), Some(rhs)) = (lhs.range(), rhs.range()) else {
+                    return;
+                };
+                let operand_ty = self.lhs().ty();
+                let range =
+                    infer_comparison_range(&operand_ty, lhs, rhs, $comparison, self.result().ty());
+                set_result_range(self.result().as_value_ref(), range);
+            }
+        }
+    };
+}
+
 /// Equality comparison
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, InferIntRangeInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Eq {
     #[operand]
@@ -634,6 +667,7 @@ pub struct Eq {
 }
 
 infer_return_ty_for_binary_op!(Eq as Type::I1);
+impl_infer_int_range_for_comparison!(Eq, IntComparison::Eq);
 
 impl Canonicalizable for Eq {
     fn get_canonicalization_patterns(
@@ -652,7 +686,7 @@ impl Canonicalizable for Eq {
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, Commutative, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, InferIntRangeInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Neq {
     #[operand]
@@ -664,6 +698,7 @@ pub struct Neq {
 }
 
 infer_return_ty_for_binary_op!(Neq as Type::I1);
+impl_infer_int_range_for_comparison!(Neq, IntComparison::Neq);
 
 impl Canonicalizable for Neq {
     fn get_canonicalization_patterns(
@@ -682,7 +717,7 @@ impl Canonicalizable for Neq {
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, InferIntRangeInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Gt {
     #[operand]
@@ -694,13 +729,14 @@ pub struct Gt {
 }
 
 infer_return_ty_for_binary_op!(Gt as Type::I1);
+impl_infer_int_range_for_comparison!(Gt, IntComparison::Gt);
 
 /// Greater-than-or-equal comparison
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, InferIntRangeInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Gte {
     #[operand]
@@ -712,13 +748,14 @@ pub struct Gte {
 }
 
 infer_return_ty_for_binary_op!(Gte as Type::I1);
+impl_infer_int_range_for_comparison!(Gte, IntComparison::Gte);
 
 /// Less-than comparison
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, InferIntRangeInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Lt {
     #[operand]
@@ -730,13 +767,14 @@ pub struct Lt {
 }
 
 infer_return_ty_for_binary_op!(Lt as Type::I1);
+impl_infer_int_range_for_comparison!(Lt, IntComparison::Lt);
 
 /// Less-than-or-equal comparison
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, InferIntRangeInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct Lte {
     #[operand]
@@ -748,6 +786,146 @@ pub struct Lte {
 }
 
 infer_return_ty_for_binary_op!(Lte as Type::I1);
+impl_infer_int_range_for_comparison!(Lte, IntComparison::Lte);
+
+fn infer_comparison_range(
+    operand_ty: &Type,
+    lhs: &ConstantIntRange,
+    rhs: &ConstantIntRange,
+    comparison: IntComparison,
+    result_ty: &Type,
+) -> IntegerValueRange {
+    if lhs.is_untracked() || rhs.is_untracked() || lhs.width() != rhs.width() {
+        return IntegerValueRange::max_for_type(result_ty);
+    }
+
+    let outcome = match comparison {
+        IntComparison::Eq => infer_eq(lhs, rhs),
+        IntComparison::Neq => infer_eq(lhs, rhs).map(|is_equal| !is_equal),
+        comparison if is_signed_ordering(operand_ty) => infer_signed_ordering(lhs, rhs, comparison),
+        comparison => infer_unsigned_ordering(lhs, rhs, comparison),
+    };
+
+    outcome
+        .map(|value| exact_bool_range(result_ty, value))
+        .unwrap_or_else(|| IntegerValueRange::max_for_type(result_ty))
+}
+
+fn infer_eq(lhs: &ConstantIntRange, rhs: &ConstantIntRange) -> Option<bool> {
+    if lhs.umin() == lhs.umax() && rhs.umin() == rhs.umax() && lhs.umin() == rhs.umin() {
+        Some(true)
+    } else if lhs.umax() < rhs.umin() || rhs.umax() < lhs.umin() {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn infer_signed_ordering(
+    lhs: &ConstantIntRange,
+    rhs: &ConstantIntRange,
+    comparison: IntComparison,
+) -> Option<bool> {
+    match comparison {
+        IntComparison::Lt => {
+            if lhs.smax() < rhs.smin() {
+                Some(true)
+            } else if lhs.smin() >= rhs.smax() {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        IntComparison::Lte => {
+            if lhs.smax() <= rhs.smin() {
+                Some(true)
+            } else if lhs.smin() > rhs.smax() {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        IntComparison::Gt => {
+            if lhs.smin() > rhs.smax() {
+                Some(true)
+            } else if lhs.smax() <= rhs.smin() {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        IntComparison::Gte => {
+            if lhs.smin() >= rhs.smax() {
+                Some(true)
+            } else if lhs.smax() < rhs.smin() {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        IntComparison::Eq | IntComparison::Neq => unreachable!("handled separately"),
+    }
+}
+
+fn infer_unsigned_ordering(
+    lhs: &ConstantIntRange,
+    rhs: &ConstantIntRange,
+    comparison: IntComparison,
+) -> Option<bool> {
+    match comparison {
+        IntComparison::Lt => {
+            if lhs.umax() < rhs.umin() {
+                Some(true)
+            } else if lhs.umin() >= rhs.umax() {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        IntComparison::Lte => {
+            if lhs.umax() <= rhs.umin() {
+                Some(true)
+            } else if lhs.umin() > rhs.umax() {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        IntComparison::Gt => {
+            if lhs.umin() > rhs.umax() {
+                Some(true)
+            } else if lhs.umax() <= rhs.umin() {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        IntComparison::Gte => {
+            if lhs.umin() >= rhs.umax() {
+                Some(true)
+            } else if lhs.umax() < rhs.umin() {
+                Some(false)
+            } else {
+                None
+            }
+        }
+        IntComparison::Eq | IntComparison::Neq => unreachable!("handled separately"),
+    }
+}
+
+fn is_signed_ordering(ty: &Type) -> bool {
+    matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::I128)
+}
+
+fn exact_bool_range(ty: &Type, value: bool) -> IntegerValueRange {
+    let width = ConstantIntRange::max_for_type(ty).width();
+    if width == 0 {
+        IntegerValueRange::max_for_type(ty)
+    } else {
+        let value = u128::from(value);
+        IntegerValueRange::new(ConstantIntRange::from_unsigned(width, value, value))
+    }
+}
 
 /// Select minimum value
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
