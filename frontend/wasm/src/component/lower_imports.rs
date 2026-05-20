@@ -141,6 +141,7 @@ fn generate_fpi_lowering(
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
     let context = world_builder.context_rc();
+    validate_fpi_typed_signature(&core_func_path, import_func_ty)?;
     let fpi_abi =
         lower_fpi_canonical_args(&context, import_func_ty, import_lowered_sig, fb, args, span)
             .wrap_err_with(|| {
@@ -256,6 +257,84 @@ impl FpiFlatArgLayout {
     fn len(&self) -> usize {
         self.types.len()
     }
+}
+
+/// Validates that a typed FPI import signature contains only self-contained value types.
+fn validate_fpi_typed_signature(
+    import_func_path: &SymbolPath,
+    import_func_ty: &FunctionType,
+) -> WasmResult<()> {
+    for (index, ty) in import_func_ty.params.iter().enumerate() {
+        validate_fpi_value_type(import_func_path, &format!("parameter {index}"), ty)?;
+    }
+    for (index, ty) in import_func_ty.results.iter().enumerate() {
+        validate_fpi_value_type(import_func_path, &format!("result {index}"), ty)?;
+    }
+
+    Ok(())
+}
+
+/// Validates that an FPI value type does not contain caller-local pointer-like values.
+fn validate_fpi_value_type(
+    import_func_path: &SymbolPath,
+    location: &str,
+    ty: &Type,
+) -> WasmResult<()> {
+    match ty {
+        Type::List(_) | Type::Ptr(_) => {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "FPI import `{import_func_path}` {location} contains pointer-like type `{ty}`; \
+                 typed FPI does not support list, string, or pointer values because they lower to \
+                 caller linear-memory addresses"
+            )));
+        }
+        Type::Struct(struct_ty) => {
+            for field in struct_ty.fields() {
+                let field_location = field.name.as_ref().map_or_else(
+                    || format!("{location}.{}", field.index),
+                    |name| format!("{location}.{name}"),
+                );
+                validate_fpi_value_type(import_func_path, &field_location, &field.ty)?;
+            }
+        }
+        Type::Array(array_ty) => {
+            validate_fpi_value_type(
+                import_func_path,
+                &format!("{location}[]"),
+                array_ty.element_type(),
+            )?;
+        }
+        Type::Enum(enum_ty) => {
+            for variant in enum_ty.variants() {
+                if let Some(value_ty) = variant.value.as_ref() {
+                    validate_fpi_value_type(
+                        import_func_path,
+                        &format!("{location}::{}", variant.name),
+                        value_ty,
+                    )?;
+                }
+            }
+        }
+        Type::Unknown
+        | Type::Never
+        | Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::I64
+        | Type::U64
+        | Type::I128
+        | Type::U128
+        | Type::U256
+        | Type::F64
+        | Type::Felt
+        | Type::Function(_) => {}
+    }
+
+    Ok(())
 }
 
 /// Lowers canonical ABI FPI import arguments to the felt-only protocol ABI.
@@ -1064,7 +1143,7 @@ mod tests {
     use alloc::rc::Rc;
     use std::sync::Arc;
 
-    use midenc_hir::{Context, EnumType, StructType, Variant};
+    use midenc_hir::{Context, EnumType, PointerType, StructType, Variant};
 
     use super::*;
 
@@ -1099,6 +1178,10 @@ mod tests {
                 (Arc::from("d"), felt_ty),
             ],
         ))
+    }
+
+    fn fpi_params_with_user_args(user_args: impl IntoIterator<Item = Type>) -> Vec<Type> {
+        (0..FPI_ABI_PREFIX_ARGS).map(|_| Type::Felt).chain(user_args).collect()
     }
 
     #[test]
@@ -1178,6 +1261,80 @@ mod tests {
         assert!(
             message.contains("reserved FPI prefix `fpi-`")
                 && message.contains("generated FPI ABI prefix `felt, felt, word`"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn validate_fpi_typed_signature_rejects_list_param_on_direct_path() {
+        let context = Rc::new(Context::default());
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            fpi_params_with_user_args([Type::List(Arc::new(Type::U32))]),
+            vec![Type::Felt],
+        );
+        let flattened_params = flatten_types(&context, &import_func_ty.params).unwrap();
+        let import_func_path = test_import_path("fpi-read-list");
+
+        let err = validate_fpi_typed_signature(&import_func_path, &import_func_ty)
+            .expect_err("list parameters must not lower directly across typed FPI");
+        let message = err.to_string();
+
+        assert!(flattened_params.len() <= CANONICAL_ABI_MAX_FLAT_PARAMS);
+        assert!(
+            message.contains("parameter 6")
+                && message.contains("pointer-like type")
+                && message.contains("list, string, or pointer values"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn validate_fpi_typed_signature_rejects_string_like_list_in_indirect_arg() {
+        let context = Rc::new(Context::default());
+        let string_like_list = Type::List(Arc::new(Type::U8));
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            fpi_params_with_user_args((0..15).map(|_| Type::U32).chain([string_like_list])),
+            vec![Type::Felt],
+        );
+        let flattened_params = flatten_types(&context, &import_func_ty.params).unwrap();
+        let import_func_path = test_import_path("fpi-read-string-like-list");
+
+        let err = validate_fpi_typed_signature(&import_func_path, &import_func_ty)
+            .expect_err("string-like list values must not lower indirectly across typed FPI");
+        let message = err.to_string();
+
+        assert!(flattened_params.len() > CANONICAL_ABI_MAX_FLAT_PARAMS);
+        assert!(
+            message.contains("parameter 21")
+                && message.contains("pointer-like type")
+                && message.contains("caller linear-memory addresses"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn validate_fpi_typed_signature_rejects_pointer_inside_struct_param() {
+        let pointer_struct = Type::from(StructType::new([(
+            Arc::from("ptr"),
+            Type::from(PointerType::new(Type::U8)),
+        )]));
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            fpi_params_with_user_args([pointer_struct]),
+            vec![Type::Felt],
+        );
+        let import_func_path = test_import_path("fpi-read-pointer-struct");
+
+        let err = validate_fpi_typed_signature(&import_func_path, &import_func_ty)
+            .expect_err("pointer fields inside aggregate parameters must be rejected");
+        let message = err.to_string();
+
+        assert!(
+            message.contains("parameter 6.ptr")
+                && message.contains("pointer-like type")
+                && message.contains("list, string, or pointer values"),
             "unexpected error: {message}"
         );
     }
