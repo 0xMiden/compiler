@@ -433,29 +433,30 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let (arg1, arg2) = state.pop2();
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
-            let arg2 = builder.bitcast(arg2, U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.shl(arg1, arg2, span)?);
         }
         Operator::I64Shl => {
             let (arg1, arg2) = state.pop2();
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
-            let arg2 = builder.cast(arg2, U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.shl(arg1, arg2, span)?);
         }
         Operator::I32ShrU => {
             let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span)?;
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             let val = builder.shr(arg1, arg2, span)?;
             state.push1(builder.bitcast(val, I32, span)?);
         }
         Operator::I64ShrU => {
             let (arg1, arg2) = state.pop2();
             let arg1 = builder.bitcast(arg1, U64, span)?;
-            let arg2 = builder.cast(arg2, U32, span)?;
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             let val = builder.shr(arg1, arg2, span)?;
             state.push1(builder.bitcast(val, I64, span)?);
         }
@@ -463,34 +464,34 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let (arg1, arg2) = state.pop2();
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
-            let arg2 = builder.bitcast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.shr(arg1, arg2, span)?);
         }
         Operator::I64ShrS => {
             let (arg1, arg2) = state.pop2();
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
-            let arg2 = builder.cast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.shr(arg1, arg2, span)?);
         }
         Operator::I32Rotl => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.bitcast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.rotl(arg1, arg2, span)?);
         }
         Operator::I64Rotl => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.cast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.rotl(arg1, arg2, span)?);
         }
         Operator::I32Rotr => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.bitcast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.rotr(arg1, arg2, span)?);
         }
         Operator::I64Rotr => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.cast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.rotr(arg1, arg2, span)?);
         }
         Operator::I32Sub | Operator::I64Sub => {
@@ -928,6 +929,35 @@ fn translate_br_if_args(
     };
     let inputs = state.peekn_mut(return_count);
     (br_destination, inputs)
+}
+
+/// Masks the shift count according to Wasm semantics of [shift] and [rotate].
+///
+/// Wasm allows unbounded shift counts, wrapping them modulo `value_width`. Since Masm only
+/// accepts counts in `[0, value_width)`, adjust the shift count here.
+///
+/// [shift]: https://webassembly.github.io/spec/core/exec/numerics.html#xref-exec-numerics-op-ishl-mathrm-ishl-n-i-1-i-2
+/// [rotate]: https://webassembly.github.io/spec/core/exec/numerics.html#xref-exec-numerics-op-irotl-mathrm-irotl-n-i-1-i-2
+fn mask_movement_count<B: ?Sized + Builder>(
+    builder: &mut FunctionBuilderExt<'_, B>,
+    count: ValueRef,
+    value_width: u32,
+    span: SourceSpan,
+) -> Result<ValueRef, Report> {
+    let count_ty = count.borrow().ty().clone();
+    let count = match count_ty {
+        Type::I32 => builder.bitcast(count, U32, span)?,
+        Type::U32 => count,
+        Type::I64 | Type::U64 => {
+            // Safe to narrow: the mask below only keeps the low 5 or 6 bits anyway.
+            builder.trunc(count, U32, span)?
+        }
+        ty => unreachable!("invalid wasm shift count type: {ty}"),
+    };
+
+    // Use `count & (value_width - 1)` to calculate `count % value_width`
+    let mask = builder.u32(value_width - 1, span);
+    builder.band(count, mask, span)
 }
 
 fn translate_br_table<B: ?Sized + Builder>(

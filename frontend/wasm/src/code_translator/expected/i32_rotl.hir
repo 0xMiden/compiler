@@ -2,7 +2,9 @@ builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 2 : i32;
     %1 = arith.constant 1 : i32;
     %2 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
-    %3 = arith.rotl %0, %2;
+    %3 = arith.constant 31 : u32;
+    %4 = arith.band %2, %3;
+    %5 = arith.rotl %0, %4;
     cf.br ^block5;
 ^block5:
     builtin.ret;

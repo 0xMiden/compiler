@@ -428,7 +428,7 @@ fn overflowing_mul_i64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1115"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn overflowing_mul_i128() {
     test_overflowing_arith(i128::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
@@ -470,7 +470,7 @@ fn overflowing_div_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1121"]
 fn overflowing_div_u128() {
     test_overflowing_arith(
         u128::overflowing_div,
@@ -562,7 +562,7 @@ fn overflowing_rem_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1122"]
 fn overflowing_rem_u128() {
     test_overflowing_arith(
         u128::overflowing_rem,
@@ -612,7 +612,7 @@ fn overflowing_rem_i64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1115"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn overflowing_rem_i128() {
     test_overflowing_arith(
         i128::overflowing_rem,
@@ -1133,19 +1133,16 @@ fn wrapping_shl_u16() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shl_u32() {
     test_binary_fn(u32::wrapping_shl, "wrapping_shl", (any::<u32>(), any::<u32>()));
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shl_u64() {
     test_binary_fn(u64::wrapping_shl, "wrapping_shl", (any::<u64>(), any::<u32>()));
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shl_u128() {
     test_binary_fn(u128::wrapping_shl, "wrapping_shl", (any::<u128>(), any::<u32>()));
 }
@@ -1161,19 +1158,16 @@ fn wrapping_shl_i16() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shl_i32() {
     test_binary_fn(i32::wrapping_shl, "wrapping_shl", (any::<i32>(), any::<u32>()));
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shl_i64() {
     test_binary_fn(i64::wrapping_shl, "wrapping_shl", (any::<i64>(), any::<u32>()));
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shl_i128() {
     test_binary_fn(i128::wrapping_shl, "wrapping_shl", (any::<i128>(), any::<u32>()));
 }
@@ -1199,19 +1193,16 @@ fn wrapping_shr_u16() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shr_u32() {
     test_binary_fn(u32::wrapping_shr, "wrapping_shr", (any::<u32>(), any::<u32>()));
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shr_u64() {
     test_binary_fn(u64::wrapping_shr, "wrapping_shr", (any::<u64>(), any::<u32>()));
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shr_u128() {
     test_binary_fn(u128::wrapping_shr, "wrapping_shr", (any::<u128>(), any::<u32>()));
 }
@@ -1227,19 +1218,16 @@ fn wrapping_shr_i16() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shr_i32() {
     test_binary_fn(i32::wrapping_shr, "wrapping_shr", (any::<i32>(), any::<u32>()));
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shr_i64() {
     test_binary_fn(i64::wrapping_shr, "wrapping_shr", (any::<i64>(), any::<u32>()));
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn wrapping_shr_i128() {
     test_binary_fn(i128::wrapping_shr, "wrapping_shr", (any::<i128>(), any::<u32>()));
 }
