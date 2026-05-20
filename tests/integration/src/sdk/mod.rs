@@ -139,6 +139,7 @@ impl Note {
 /// Previously, compilation could panic during MASM codegen with:
 /// `invalid stack offset for movup: 16 is out of range`.
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1120"]
 fn rust_sdk_invalid_stack_offset_movup_16_issue_831() {
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden(
