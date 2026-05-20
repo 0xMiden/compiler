@@ -7,8 +7,8 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    AsValueRange, Builder, CallConv, FunctionType, Op, OpExt, SourceSpan, StructType,
-    SymbolNameComponent, SymbolPath, Type, ValueRef, Visibility,
+    AsValueRange, Builder, CallConv, FunctionType, Op, OpExt, SourceSpan, SymbolNameComponent,
+    SymbolPath, Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ComponentId, FunctionRef, ModuleBuilder, WorldBuilder,
@@ -19,7 +19,10 @@ use midenc_hir::{
 
 use super::{
     canon_abi_utils::store,
-    flat::{CanonicalAbiMode, flatten_function_type, flatten_types, needs_transformation},
+    flat::{
+        CanonicalAbiMode, flatten_function_type, flatten_types, flattened_types_layout,
+        needs_transformation,
+    },
 };
 use crate::{
     FPI_FLATTENED_ARG_OFFSETS_ATTR, FPI_FLATTENED_ARG_TYPES_ATTR,
@@ -546,23 +549,22 @@ fn fpi_flat_type_felt_count(ty: &Type) -> WasmResult<usize> {
 
 /// Returns the canonical ABI tuple layout for flattened FPI argument values.
 fn fpi_flat_arg_layout(params: &[Type]) -> WasmResult<FpiFlatArgLayout> {
-    let tuple = StructType::new(params.iter().cloned());
     let mut layout = FpiFlatArgLayout {
         offsets: Vec::new(),
         types: Vec::new(),
     };
 
-    for field in tuple.fields() {
-        push_fpi_flat_arg_layout(&field.ty, field.offset, &mut layout)?;
+    for entry in flattened_types_layout(params)? {
+        push_fpi_flat_arg_layout_entry(entry.offset, &entry.ty, &mut layout)?;
     }
 
     Ok(layout)
 }
 
-/// Appends the canonical ABI memory layout for one value flattened across FPI.
-fn push_fpi_flat_arg_layout(
-    ty: &Type,
+/// Appends the FPI protocol layout for one canonical ABI flattened memory value.
+fn push_fpi_flat_arg_layout_entry(
     offset: u32,
+    ty: &Type,
     layout: &mut FpiFlatArgLayout,
 ) -> WasmResult<()> {
     match ty {
@@ -578,54 +580,11 @@ fn push_fpi_flat_arg_layout(
             layout.types.push(ty.clone());
         }
         Type::I64 | Type::U64 => {
+            // FPI transmits 64-bit integers as two felt-compatible 32-bit limbs.
             layout.offsets.push(fpi_layout_offset(offset, 4, ty)?);
             layout.types.push(Type::U32);
             layout.offsets.push(offset);
             layout.types.push(Type::U32);
-        }
-        Type::Enum(enum_ty) => {
-            if !enum_ty.is_c_like() {
-                return Err(midenc_session::diagnostics::Report::msg(format!(
-                    "unsupported non-C-like enum in FPI argument layout `{enum_ty}`"
-                )));
-            }
-            push_fpi_flat_arg_layout(enum_ty.discriminant(), offset, layout)?;
-        }
-        Type::Struct(struct_ty) => {
-            for field in struct_ty.fields() {
-                let field_offset = fpi_layout_offset(offset, field.offset, &field.ty)?;
-                push_fpi_flat_arg_layout(&field.ty, field_offset, layout)?;
-            }
-        }
-        Type::Array(array_ty) => {
-            let elem_ty = array_ty.element_type();
-            let elem_stride = u32::try_from(elem_ty.aligned_size_in_bytes()).map_err(|_| {
-                midenc_session::diagnostics::Report::msg(format!(
-                    "FPI argument layout array element type `{elem_ty}` has a byte stride that \
-                     does not fit in u32"
-                ))
-            })?;
-            for index in 0..array_ty.len() {
-                let index = u32::try_from(index).map_err(|_| {
-                    midenc_session::diagnostics::Report::msg(format!(
-                        "FPI argument layout array index {index} does not fit in u32"
-                    ))
-                })?;
-                let elem_offset = index.checked_mul(elem_stride).ok_or_else(|| {
-                    midenc_session::diagnostics::Report::msg(format!(
-                        "FPI argument layout array byte offset for `{elem_ty}` overflowed u32"
-                    ))
-                })?;
-                let elem_offset = fpi_layout_offset(offset, elem_offset, elem_ty)?;
-                push_fpi_flat_arg_layout(elem_ty, elem_offset, layout)?;
-            }
-        }
-        Type::List(_) => {
-            let ptr_ty = Type::I32;
-            layout.offsets.push(offset);
-            layout.types.push(ptr_ty.clone());
-            layout.offsets.push(fpi_layout_offset(offset, 4, ty)?);
-            layout.types.push(ptr_ty);
         }
         other => {
             return Err(midenc_session::diagnostics::Report::msg(format!(
@@ -1555,7 +1514,7 @@ mod tests {
         };
         let message = err.to_string();
 
-        assert!(message.contains("unsupported non-C-like enum"), "unexpected error: {message}");
+        assert!(message.contains("non-C-like enum"), "unexpected error: {message}");
     }
 
     #[test]
@@ -1565,7 +1524,7 @@ mod tests {
             types: Vec::new(),
         };
 
-        let err = push_fpi_flat_arg_layout(&Type::U64, u32::MAX, &mut layout)
+        let err = push_fpi_flat_arg_layout_entry(u32::MAX, &Type::U64, &mut layout)
             .expect_err("overflowing FPI layout offsets must return a diagnostic");
         let message = err.to_string();
 
