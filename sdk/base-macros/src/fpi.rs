@@ -553,12 +553,10 @@ fn load_dependency(dependency: MidenDependency) -> syn::Result<Dependency> {
             continue;
         };
 
-        for alias in procedure_root_key_aliases(&root_key) {
-            if alias.interface != dependency.import {
-                continue;
-            }
-            roots.insert(alias, procedure_root_from_digest(&proc_export.digest));
+        if root_key.interface != dependency.import {
+            continue;
         }
+        roots.insert(root_key, procedure_root_from_digest(&proc_export.digest));
     }
 
     Ok(Dependency {
@@ -756,16 +754,13 @@ fn dependency_manifest_package_name(root: &Path) -> Option<String> {
 
 /// Adds Miden package stem candidates if they have not already been added.
 fn push_dependency_stem(stems: &mut Vec<String>, name: &str) {
-    push_dependency_stem_candidate(stems, name);
+    if !name.is_empty() && !stems.iter().any(|existing| existing == name) {
+        stems.push(name.to_owned());
+    }
 
     let normalized = name.replace('-', "_");
-    push_dependency_stem_candidate(stems, &normalized);
-}
-
-/// Adds one Miden package stem candidate if it has not already been added.
-fn push_dependency_stem_candidate(stems: &mut Vec<String>, stem: &str) {
-    if !stem.is_empty() && !stems.iter().any(|existing| existing == stem) {
-        stems.push(stem.to_owned());
+    if !normalized.is_empty() && !stems.iter().any(|existing| existing == &normalized) {
+        stems.push(normalized);
     }
 }
 
@@ -774,28 +769,6 @@ fn procedure_root_key_from_export_path(path: &MasmPath) -> Option<ProcedureRootK
     let interface = single_non_root_path_component(path.parent()?)?;
     let function = path.last()?;
     Some(ProcedureRootKey::new(interface, function))
-}
-
-/// Returns lookup aliases for exports normalized from Wasm component-model names.
-fn procedure_root_key_aliases(key: &ProcedureRootKey) -> Vec<ProcedureRootKey> {
-    let Some((package, interface_and_version)) = key.interface.rsplit_once('/') else {
-        return vec![key.clone()];
-    };
-    let Some((interface, version)) = interface_and_version.split_once('@') else {
-        return vec![key.clone()];
-    };
-
-    let generated_interface = package.to_kebab_case();
-    if interface == generated_interface {
-        return vec![key.clone()];
-    }
-
-    let generated = ProcedureRootKey::new(
-        format!("{package}/{generated_interface}@{version}"),
-        key.function.clone(),
-    );
-
-    vec![key.clone(), generated]
 }
 
 /// Returns the only non-root path component if `path` has exactly one.
@@ -899,20 +872,6 @@ mod tests {
             key,
             ProcedureRootKey::new("miden:no-arg-account/no-arg-account@0.0.1", "get-count")
         );
-    }
-
-    #[test]
-    fn procedure_root_key_aliases_generated_component_interface() {
-        let key =
-            ProcedureRootKey::new("miden:counter-contract/counter-contract@0.1.0", "get-count");
-
-        let aliases = procedure_root_key_aliases(&key);
-
-        assert!(aliases.contains(&key));
-        assert!(aliases.contains(&ProcedureRootKey::new(
-            "miden:counter-contract/miden-counter-contract@0.1.0",
-            "get-count"
-        )));
     }
 
     #[test]
