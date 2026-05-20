@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Represents the structured output of a successful `cargo miden` command.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum CommandOutput {
     /// Output from the `new` command.
     NewCommandOutput {
@@ -11,14 +11,14 @@ pub enum CommandOutput {
     /// Output from the `build` command.
     BuildCommandOutput {
         /// The type and path of the artifact produced by the build.
-        output: BuildOutput,
+        output: Vec<PathBuf>,
     },
     // Add other variants here if other commands need structured output later.
 }
 
 impl CommandOutput {
     /// Panics if the output is not `BuildCommandOutput`, otherwise returns the inner `BuildOutput`.
-    pub fn unwrap_build_output(self) -> BuildOutput {
+    pub fn unwrap_build_output(self) -> Vec<PathBuf> {
         match self {
             CommandOutput::BuildCommandOutput { output } => output,
             _ => panic!("called `unwrap_build_output()` on a non-BuildCommandOutput value"),
@@ -30,40 +30,6 @@ impl CommandOutput {
         match self {
             CommandOutput::NewCommandOutput { project_path } => project_path,
             _ => panic!("called `unwrap_new_output()` on a non-NewCommandOutput value"),
-        }
-    }
-}
-
-/// Represents the specific artifact produced by the `build` command.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BuildOutput {
-    /// Miden Assembly (.masm) output.
-    Masm {
-        /// Path to the compiled MASM file or directory containing artifacts.
-        artifact_path: PathBuf,
-        // Potentially add other relevant info like package name, component type etc.
-    },
-    /// WebAssembly (.wasm) output.
-    Wasm {
-        /// Path to the compiled WASM file.
-        artifact_path: PathBuf,
-        /// Additional arguments passed to the Miden compiler.
-        midenc_flags: Vec<String>,
-    },
-}
-
-impl BuildOutput {
-    /// Get a reference to the filesystem path where the build artifact was placed
-    pub fn artifact_path(&self) -> &Path {
-        match self {
-            Self::Masm { artifact_path } | Self::Wasm { artifact_path, .. } => artifact_path,
-        }
-    }
-
-    /// Convert this build output to the underlying filesystem path of the build artifact
-    pub fn into_artifact_path(self) -> PathBuf {
-        match self {
-            Self::Masm { artifact_path } | Self::Wasm { artifact_path, .. } => artifact_path,
         }
     }
 }

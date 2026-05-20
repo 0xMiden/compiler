@@ -274,8 +274,33 @@ impl ProjectBuilder {
             symlink.mk();
         }
 
+        self.copy_workspace_lockfile();
+
         let ProjectBuilder { root, .. } = self;
         root
+    }
+
+    /// Seed generated standalone workspaces with the repository lockfile.
+    ///
+    /// Test projects use path dependencies into this repository, whose own dependencies are
+    /// resolved in the workspace `Cargo.lock`. Since generated projects are intentionally made
+    /// standalone workspaces, Cargo would otherwise try to resolve inherited registry
+    /// dependencies online.
+    fn copy_workspace_lockfile(&self) {
+        let source = workspace_lockfile_path();
+        let destination = self.root.root().join("Cargo.lock");
+
+        let Ok(contents) = fs::read(&source) else {
+            return;
+        };
+
+        if fs::read(&destination).ok().as_deref() == Some(contents.as_slice()) {
+            return;
+        }
+
+        fs::write(&destination, contents).unwrap_or_else(|e| {
+            panic!("could not copy {} to {}: {}", source.display(), destination.display(), e)
+        });
     }
 
     fn rm_root(&self) {
@@ -379,6 +404,14 @@ fn ensure_workspace_root_manifest(manifest: &str) -> Cow<'_, str> {
     s.push('\n');
     s.push_str("[workspace]\n");
     Cow::Owned(s)
+}
+
+fn workspace_lockfile_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("tests/support should live under the repository root")
+        .join("Cargo.lock")
 }
 
 impl Project {

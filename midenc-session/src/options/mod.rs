@@ -1,26 +1,43 @@
 mod printing;
 
-use alloc::{fmt, str::FromStr, string::String, sync::Arc, vec, vec::Vec};
+use alloc::{
+    boxed::Box,
+    fmt,
+    str::FromStr,
+    string::{String, ToString},
+    sync::Arc,
+    vec,
+    vec::Vec,
+};
+
+use miden_debug_types::SourceManager;
+use miden_project::TargetType;
 
 pub use self::printing::IrFilter;
-#[cfg(feature = "std")]
-use crate::Path;
 use crate::{
-    ColorChoice, CompileFlags, LinkLibrary, OutputTypes, PathBuf, ProjectType, TargetEnv,
-    diagnostics::{DiagnosticsConfig, Emitter},
+    ColorChoice, CompileFlags, InputFile, LinkLibrary, OutputFile, OutputTypes, PathBuf,
+    diagnostics::{DiagnosticsConfig, Emitter, Report},
 };
 
 /// This struct contains all of the configuration options for the compiler
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Options {
+    /// The path to the current project manifest, if present
+    pub manifest_path: Option<PathBuf>,
     /// The name of the program being compiled
     pub name: Option<String>,
-    /// The type of project we're compiling this session
-    pub project_type: ProjectType,
     /// The name of the function to call as the entrypoint
     pub entrypoint: Option<String>,
-    /// The current target environment for this session
-    pub target: TargetEnv,
+    /// The name of the build profile to use
+    pub profile: String,
+    /// Build all packages in the current workspace (used by `cargo miden`)
+    pub workspace: bool,
+    /// Build the specified packages in the current workspace (used by `cargo miden`)
+    pub packages: Vec<String>,
+    /// The name of the current project target being compiled
+    pub target: Option<String>,
+    /// The type of target that was requested
+    pub target_type: Option<TargetType>,
     /// The optimization level for the current program
     pub optimize: OptLevel,
     /// The level of debugging info for the current program
@@ -31,16 +48,35 @@ pub struct Options {
     pub search_paths: Vec<PathBuf>,
     /// The set of Miden libraries to link against
     pub link_libraries: Vec<LinkLibrary>,
-    /// The location of the libraries which are shipped with the compiler
+    /// A set of Miden Assembly modules to link against
+    pub link_modules: Vec<(miden_assembly_syntax::PathBuf, String)>,
+    /// The path to the current toolchain directory, which contains libraries and other tools that
+    /// the compiler may use.
+    ///
+    /// This is expected to be set by `midenup` when the compiler is invoked via `miden` CLI
     pub sysroot: Option<PathBuf>,
+    /// The path to `midenup`'s home directory
+    ///
+    /// This is expected to be set by `midenup` when the compiler is invoked via `miden` CLI
+    pub midenup_home: Option<PathBuf>,
+    /// The name of the current `midenup` toolchain
+    ///
+    /// This is expected to be set by `midenup` when the compiler is invoked via `miden` CLI
+    pub toolchain: Option<String>,
     /// Whether, and how, to color terminal output
     pub color: ColorChoice,
     /// The current diagnostics configuration
     pub diagnostics: DiagnosticsConfig,
     /// The current working directory of the compiler
     pub current_dir: PathBuf,
-    /// Path prefixes to try when resolving relative paths in DWARF debug info
-    pub trim_path_prefixes: Vec<PathBuf>,
+    /// The target directory of the compiler
+    pub target_dir: PathBuf,
+    /// The artifact output directory of the compiler
+    pub output_dir: Option<PathBuf>,
+    /// The output file requested by the user, if requested
+    pub output_file: Option<OutputFile>,
+    /// Path prefixes to remap for any file paths encoded in debug info
+    pub remap_path_prefixes: Vec<RemapPathPrefix>,
     /// Print source location information in HIR output
     pub print_hir_source_locations: bool,
     /// Only parse inputs
@@ -51,6 +87,11 @@ pub struct Options {
     pub link_only: bool,
     /// Generate Miden Assembly from the inputs without the linker
     pub no_link: bool,
+    /// Run the experimental Miden Assembly linter prior to codegen
+    ///
+    /// This linter uses the HIR dataflow analysis framework to check for issues such as
+    /// unconstrained advice usage.
+    pub lint: bool,
     /// Print CFG to stdout after each pass
     pub print_cfg_after_all: bool,
     /// Print CFG to stdout each time the named passes are applied
@@ -67,6 +108,10 @@ pub struct Options {
     pub print_ir_filters: Vec<IrFilter>,
     /// Save intermediate artifacts in memory during compilation
     pub save_temps: bool,
+    /// Custom RUSTFLAGS to set when building Rust
+    pub rustflags: Option<String>,
+    /// Look for `cargo -Zscript`-style frontmatter when compiling standalone Rust sources
+    pub cargo_frontmatter: bool,
     /// We store any leftover argument matches in the session options for use
     /// by any downstream crates that register custom flags
     pub flags: CompileFlags,
@@ -75,68 +120,63 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         let current_dir = current_dir();
-        let target = TargetEnv::default();
-        let project_type = ProjectType::default_for_target(target);
-        Self::new(None, target, project_type, current_dir, None)
+        let target_dir = current_dir.join("target");
+        Self::new(None, None, current_dir, target_dir, None, None)
     }
-}
-
-#[cfg(feature = "std")]
-fn current_dir() -> PathBuf {
-    std::env::current_dir().expect("could not get working directory")
-}
-
-#[cfg(not(feature = "std"))]
-fn current_dir() -> PathBuf {
-    PathBuf::from(".")
-}
-
-#[cfg(feature = "std")]
-fn current_sysroot() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(|home| {
-        Path::new(&home)
-            .join(".miden")
-            .join("toolchains")
-            .join(crate::MIDENC_BUILD_VERSION)
-    })
-}
-
-#[cfg(not(feature = "std"))]
-fn current_sysroot() -> Option<PathBuf> {
-    None
 }
 
 impl Options {
     pub fn new(
         name: Option<String>,
-        target: TargetEnv,
-        project_type: ProjectType,
+        target: Option<TargetType>,
         current_dir: PathBuf,
+        target_dir: PathBuf,
+        output_dir: Option<PathBuf>,
         sysroot: Option<PathBuf>,
     ) -> Self {
-        let sysroot = sysroot.or_else(current_sysroot);
+        let search_paths = if let Some(sysroot) = sysroot.as_deref() {
+            let lib_dir = sysroot.join("lib");
+            if lib_dir.try_exists().is_ok_and(|exists| exists) {
+                vec![lib_dir]
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
 
         Self {
+            manifest_path: None,
             name,
-            target,
-            project_type,
+            profile: "dev".to_string(),
+            workspace: false,
+            packages: vec![],
+            target: None,
+            target_type: target,
             entrypoint: None,
             optimize: OptLevel::None,
             debug: DebugInfo::None,
             output_types: Default::default(),
-            search_paths: vec![],
+            search_paths,
             link_libraries: vec![],
+            link_modules: vec![],
             sysroot,
+            midenup_home: None,
+            toolchain: None,
             color: Default::default(),
             diagnostics: Default::default(),
             current_dir,
-            trim_path_prefixes: vec![],
+            target_dir,
+            output_dir,
+            output_file: None,
             print_hir_source_locations: false,
             parse_only: false,
             analyze_only: false,
             link_only: false,
             no_link: false,
             save_temps: false,
+            lint: false,
+            cargo_frontmatter: false,
             print_cfg_after_all: false,
             print_cfg_after_pass: vec![],
             print_ir_before_stage: vec![],
@@ -144,47 +184,61 @@ impl Options {
             print_ir_after_pass: vec![],
             print_ir_after_modified: false,
             print_ir_filters: vec![],
+            rustflags: None,
+            remap_path_prefixes: vec![],
             flags: CompileFlags::default(),
         }
     }
 
     #[inline(always)]
-    pub fn with_color(mut self, color: ColorChoice) -> Self {
+    pub fn with_color(mut self: Box<Self>, color: ColorChoice) -> Box<Self> {
         self.color = color;
         self
     }
 
     #[inline(always)]
-    pub fn with_verbosity(mut self, verbosity: Verbosity) -> Self {
+    pub fn with_verbosity(mut self: Box<Self>, verbosity: Verbosity) -> Box<Self> {
         self.diagnostics.verbosity = verbosity;
         self
     }
 
     #[inline(always)]
-    pub fn with_debug_info(mut self, debug: DebugInfo) -> Self {
+    pub fn with_debug_info(mut self: Box<Self>, debug: DebugInfo) -> Box<Self> {
         self.debug = debug;
         self
     }
 
     #[inline(always)]
-    pub fn with_optimization(mut self, level: OptLevel) -> Self {
+    pub fn with_optimization(mut self: Box<Self>, level: OptLevel) -> Box<Self> {
         self.optimize = level;
         self
     }
 
-    pub fn with_warnings(mut self, warnings: Warnings) -> Self {
+    pub fn with_warnings(mut self: Box<Self>, warnings: Warnings) -> Box<Self> {
         self.diagnostics.warnings = warnings;
         self
     }
 
-    #[inline(always)]
-    pub fn with_output_types(mut self, output_types: OutputTypes) -> Self {
+    pub fn with_output_types(
+        mut self: Box<Self>,
+        mut output_types: OutputTypes,
+        output_file: Option<OutputFile>,
+    ) -> Box<Self> {
+        use crate::OutputType;
+        let has_final_output = output_types.keys().any(|ty| matches!(ty, OutputType::Masp));
+        if !has_final_output {
+            // By default, we always produce a final artifact; `--emit` selects additional outputs.
+            output_types.insert(OutputType::Masp, output_file);
+        } else if output_file.is_some() && output_types.get(&OutputType::Masp).is_some() {
+            // The -o flag overrides --emit
+            output_types.insert(OutputType::Masp, output_file);
+        }
         self.output_types = output_types;
         self
     }
 
     #[doc(hidden)]
-    pub fn with_extra_flags(mut self, flags: CompileFlags) -> Self {
+    pub fn with_extra_flags(mut self: Box<Self>, flags: CompileFlags) -> Box<Self> {
         self.flags = flags;
         self
     }
@@ -192,6 +246,20 @@ impl Options {
     #[doc(hidden)]
     pub fn set_extra_flags(&mut self, flags: CompileFlags) {
         self.flags = flags;
+    }
+
+    /// Use this configuration to obtain a [Session] used for compilation
+    pub fn into_session(
+        self: Box<Self>,
+        input: InputFile,
+        emitter: Option<Arc<dyn Emitter>>,
+        source_manager: Option<Arc<dyn SourceManager + Send + Sync>>,
+    ) -> Result<crate::Session, Report> {
+        use crate::diagnostics::DefaultSourceManager;
+
+        let source_manager =
+            source_manager.unwrap_or_else(|| Arc::new(DefaultSourceManager::default()));
+        crate::Session::new(input, self, emitter, source_manager)
     }
 
     /// Get a new [Emitter] based on the current options.
@@ -220,6 +288,15 @@ impl Options {
     #[inline(always)]
     pub fn emit_debug_assertions(&self) -> bool {
         self.debug != DebugInfo::None && matches!(self.optimize, OptLevel::None | OptLevel::Basic)
+    }
+
+    /// Returns true if the requested target type is a protocol target
+    pub fn target_requires_protocol(&self) -> bool {
+        use miden_project::TargetType;
+        !matches!(
+            self.target_type,
+            Some(TargetType::Kernel | TargetType::Executable | TargetType::Library) | None
+        )
     }
 }
 
@@ -267,6 +344,17 @@ pub enum Warnings {
     /// Promotes warnings to errors
     Error,
 }
+impl Warnings {
+    #[inline]
+    pub fn should_be_pedantic(&self) -> bool {
+        matches!(self, Self::All)
+    }
+
+    #[inline]
+    pub fn warnings_as_errors(&self) -> bool {
+        matches!(self, Self::Error)
+    }
+}
 impl fmt::Display for Warnings {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -304,4 +392,69 @@ pub enum Verbosity {
     Error,
     /// Do not emit anything to stdout/stderr
     Silent,
+}
+
+/// Represents the `--remap-path-prefix` flag, which rewrites source paths encoded in debug info
+/// with a different path, typically to avoid encoding machine-specific details in artifacts.
+#[derive(Debug, Clone)]
+pub struct RemapPathPrefix {
+    /// The path prefix to remap
+    pub from: Box<crate::Path>,
+    /// The remapped path prefix
+    ///
+    /// If `None`, the value `.` is used, representing the current working directory
+    pub to: Option<Box<crate::Path>>,
+}
+
+impl RemapPathPrefix {
+    pub fn source_prefix(&self) -> &crate::Path {
+        &self.from
+    }
+
+    pub fn target_prefix(&self) -> &crate::Path {
+        self.to.as_deref().unwrap_or(crate::Path::new(""))
+    }
+}
+
+/// Parses `--remap-path-prefix=<from>`, `--remap-path-prefix=<from>=<to>`
+#[doc(hidden)]
+#[derive(Clone)]
+#[cfg(feature = "std")]
+pub struct RemapPathPrefixParser;
+
+#[cfg(feature = "std")]
+impl clap::builder::TypedValueParser for RemapPathPrefixParser {
+    type Value = RemapPathPrefix;
+
+    fn parse_ref(
+        &self,
+        _cmd: &clap::Command,
+        _arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Self::Value, clap::error::Error> {
+        use clap::error::{Error, ErrorKind};
+
+        let input = value.to_str().ok_or_else(|| Error::new(ErrorKind::InvalidUtf8))?;
+
+        Ok(match input.split_once('=') {
+            Some((from, to)) => RemapPathPrefix {
+                from: PathBuf::from(from.trim()).into_boxed_path(),
+                to: Some(PathBuf::from(to.trim()).into_boxed_path()),
+            },
+            None => RemapPathPrefix {
+                from: PathBuf::from(input.trim()).into_boxed_path(),
+                to: None,
+            },
+        })
+    }
+}
+
+#[cfg(feature = "std")]
+fn current_dir() -> PathBuf {
+    std::env::current_dir().expect("could not get working directory")
+}
+
+#[cfg(not(feature = "std"))]
+fn current_dir() -> PathBuf {
+    PathBuf::from(".")
 }

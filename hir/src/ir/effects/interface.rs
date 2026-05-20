@@ -12,6 +12,7 @@ use crate::{OperationRef, SymbolRef, ValueRef};
 pub trait HasRecursiveEffects<T: Effect> {}
 
 impl<T: HasRecursiveMemoryEffects> HasRecursiveEffects<MemoryEffect> for T {}
+impl<T: HasRecursiveAdviceEffects> HasRecursiveEffects<AdviceEffect> for T {}
 
 pub trait EffectOpInterface<T: Effect> {
     /// Return the set all of the operation's effects

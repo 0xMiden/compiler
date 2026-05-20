@@ -9,12 +9,23 @@ use crate::{
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
-        attributes::{LocalVariable, Signature, SignatureAttr, TypeArrayAttr, VisibilityAttr},
+        attributes::{
+            AdviceEffectArrayAttr, AdviceResourceKind, LocalVariable, MemoryEffectArrayAttr,
+            Signature, SignatureAttr, TypeArrayAttr, VisibilityAttr,
+        },
+    },
+    effects::{
+        AdviceEffect, AdviceEffectOpInterface, AdviceMapResource, AdviceStackResource,
+        EffectInstance, EffectIterator, EffectOpInterface, HasRecursiveAdviceEffects,
+        HasRecursiveMemoryEffects, MemoryEffect, MemoryEffectOpInterface, MerkleStoreResource,
     },
     interner,
     parse::ParserExt,
     print::AsmPrinter,
-    traits::{AnyType, IsolatedFromAbove, ReturnLike, SingleRegion, Terminator},
+    traits::{
+        AnyType, IsolatedFromAbove, OperandRangeRequirement, OperandRangeRequirementOpInterface,
+        ReturnLike, SingleRegion, Terminator,
+    },
 };
 
 trait UsableSymbol = Usable<Use = SymbolUse>;
@@ -23,13 +34,15 @@ pub type FunctionRef = UnsafeIntrusiveEntityRef<Function>;
 
 #[operation(
     dialect = BuiltinDialect,
-    traits(SingleRegion, IsolatedFromAbove),
+    traits(SingleRegion, IsolatedFromAbove, HasRecursiveMemoryEffects, HasRecursiveAdviceEffects),
     implements(
         UsableSymbol,
         Symbol,
         CallableOpInterface,
         CallableSymbol,
         RegionKindInterface,
+        MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
         OpPrinter
     )
 )]
@@ -42,6 +55,12 @@ pub struct Function {
     signature: SignatureAttr,
     #[region]
     body: RegionRef,
+    #[attr]
+    #[default]
+    memory_effects: MemoryEffectArrayAttr,
+    #[attr]
+    #[default]
+    advice_effects: AdviceEffectArrayAttr,
     /// The set of local variables allocated within this function
     #[attr]
     #[default]
@@ -49,6 +68,48 @@ pub struct Function {
     /// The uses of this function as a symbol
     #[default]
     uses: SymbolUseList,
+}
+
+impl EffectOpInterface<MemoryEffect> for Function {
+    fn effects(&self) -> EffectIterator<MemoryEffect> {
+        if self.is_declaration() {
+            let memory_effects = self.memory_effects();
+            EffectIterator::new(
+                memory_effects.as_value().iter().map(|desc| EffectInstance::new(desc.effect)),
+            )
+        } else {
+            EffectIterator::new(
+                self.as_operation()
+                    .get_effects_recursively::<MemoryEffect>()
+                    .unwrap_or_default(),
+            )
+        }
+    }
+}
+
+impl EffectOpInterface<AdviceEffect> for Function {
+    fn effects(&self) -> crate::effects::EffectIterator<AdviceEffect> {
+        if self.is_declaration() {
+            let advice_effects = self.advice_effects();
+            EffectIterator::new(advice_effects.as_value().iter().map(|desc| match desc.resource {
+                AdviceResourceKind::Map => {
+                    EffectInstance::new_with_resource(desc.effect, AdviceMapResource)
+                }
+                AdviceResourceKind::Stack => {
+                    EffectInstance::new_with_resource(desc.effect, AdviceStackResource)
+                }
+                AdviceResourceKind::MerkleStore => {
+                    EffectInstance::new_with_resource(desc.effect, MerkleStoreResource)
+                }
+            }))
+        } else {
+            EffectIterator::new(
+                self.as_operation()
+                    .get_effects_recursively::<AdviceEffect>()
+                    .unwrap_or_default(),
+            )
+        }
+    }
 }
 
 impl OpParser for Function {
@@ -127,6 +188,12 @@ impl OpParser for Function {
 
         let locals = parser.context_rc().create_attribute::<TypeArrayAttr, _>([]);
         state.add_attribute("locals", locals);
+
+        let memory_effects = parser.context_rc().create_attribute::<MemoryEffectArrayAttr, _>([]);
+        state.add_attribute("memory_effects", memory_effects);
+
+        let advice_effects = parser.context_rc().create_attribute::<AdviceEffectArrayAttr, _>([]);
+        state.add_attribute("advice_effects", advice_effects);
 
         if let Some(body) = parser.parse_optional_region(&args, false)? {
             state.add_region(body);
@@ -325,11 +392,17 @@ impl CallableOpInterface for Function {
 #[operation(
     dialect = BuiltinDialect,
     traits(Terminator, ReturnLike),
-    implements(OpPrinter)
+    implements(OperandRangeRequirementOpInterface, OpPrinter)
 )]
 pub struct Ret {
     #[operands]
     values: AnyType,
+}
+
+impl OperandRangeRequirementOpInterface for Ret {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
+    }
 }
 
 impl OpPrinter for Ret {

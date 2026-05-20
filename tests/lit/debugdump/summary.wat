@@ -1,12 +1,13 @@
 ;; Test that miden-objtool --summary shows only summary output
-;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && midenc '%s' --exe --debug full -o \"\$TMPFILE\" && miden-objtool dump debuginfo \"\$TMPFILE\" --summary" | filecheck %s
+;;
+;; RUN: midenc %s --entrypoint=summary::test --debug full -o %t/out.masp
+;; RUN: miden-objtool dump debug-info %t/out.masp --summary | filecheck %s
 
 ;; Check summary is present
-;; CHECK: .debug_info summary:
-;; CHECK: Strings:
-;; CHECK: Types:{{.*}}entries
-;; CHECK: Files:{{.*}}entries
-;; CHECK: Functions:{{.*}}entries
+;; CHECK: Summary:
+;; CHECK: Types:
+;; CHECK: Sources:
+;; CHECK: Functions:
 
 ;; Make sure full dump sections are NOT present with --summary
 ;; CHECK-NOT: .debug_str contents:

@@ -3,7 +3,6 @@ use alloc::boxed::Box;
 use midenc_dialect_hir::transforms::{Local2Reg, TransformSpills};
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_hir::{
-    Op,
     pass::{IRPrintingConfig, Nesting, PassManager},
     patterns::{GreedyRewriteConfig, RegionSimplificationLevel},
 };
@@ -16,12 +15,13 @@ use super::*;
 
 /// This stage applies all registered (and enabled) module-scoped rewrites to input HIR module(s)
 pub struct ApplyRewritesStage;
+
 impl Stage for ApplyRewritesStage {
-    type Input = LinkOutput;
-    type Output = LinkOutput;
+    type Input = midenc_hir::OperationRef;
+    type Output = midenc_hir::OperationRef;
 
     fn enabled(&self, context: &Context) -> bool {
-        !context.session().options.link_only
+        !context.session().options.parse_only
     }
 
     fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
@@ -51,7 +51,7 @@ impl Stage for ApplyRewritesStage {
         */
 
         // Construct a pass manager with the default pass pipeline
-        let ir_print_config = IRPrintingConfig::try_from(&context.session().options)?;
+        let ir_print_config = IRPrintingConfig::try_from(context.session().options.as_ref())?;
         let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit)
             .enable_ir_printing(ir_print_config);
 
@@ -100,25 +100,20 @@ impl Stage for ApplyRewritesStage {
             }
         }
 
-        log::trace!(target: "driver", "before rewrites: {}", input.world.borrow().as_operation());
+        log::trace!(target: "driver", "before rewrites: {}", input.borrow());
 
         // Run pass pipeline
-        pm.run(input.world.as_operation_ref())?;
+        pm.run(input)?;
 
-        log::trace!(target: "driver", "after rewrites: {}", input.world.borrow().as_operation());
+        log::trace!(target: "driver", "after rewrites: {}", input.borrow());
         log::debug!(target: "driver", "rewrites successful");
 
         // Emit HIR if requested
-        let session = context.session();
-        if session.should_emit(midenc_session::OutputType::Hir) {
-            session
-                .emit(midenc_session::OutputMode::Text, &*input.component.borrow())
-                .into_diagnostic()?;
-        }
+        crate::emit_hir_if_requested(&input.borrow(), context.clone())?;
 
         if context.session().rewrite_only() {
             log::debug!(target: "driver", "stopping compiler early (rewrite-only=true)");
-            Err(CompilerStopped.into())
+            Err(CompilerStopped("rewrite-only=true").into())
         } else {
             Ok(input)
         }

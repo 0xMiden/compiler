@@ -19,7 +19,8 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 /// A [Module] is a namespaced container for [super::Function] definitions, and represents the most
 /// atomic translation unit that supports compilation to Miden Assembly.
 ///
-/// [Module] cannot be nested, use [super::Component] for such use cases.
+/// [Module] operations may be nested under a [super::World], [super::Component], or another
+/// [Module] to represent source-level namespace hierarchy.
 ///
 /// Modules can contain one of the following entities:
 ///
@@ -34,9 +35,9 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 /// * [super::GlobalVariable], either a declaration of an externally-defined global, or a
 ///   definition, same as [super::Function].
 ///
-/// Multiple modules can be grouped together into a [super::Component]. Doing so allows
-/// interprocedural analysis to reason across call boundaries for functions defined in different
-/// modules, in particular, dead code analysis.
+/// Multiple modules can be grouped together into a [super::Component] or [super::World]. Doing so
+/// allows interprocedural analysis to reason across call boundaries for functions defined in
+/// different modules, in particular, dead code analysis.
 ///
 /// Modules may also have a specified [crate::dialects::builtin::attributes::Visibility]:
 ///

@@ -46,7 +46,7 @@ pub struct Config {
 
 pub fn dump(config: &Config) -> Result<(), DumpError> {
     // Read the MASP file
-    let bytes = std::fs::read_to_string(&config.input)?.into_bytes();
+    let bytes = std::fs::read(&config.input)?;
 
     // Parse the package
     let package: Package = Package::read_from(&mut SliceReader::new(&bytes))

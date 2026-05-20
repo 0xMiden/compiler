@@ -14,7 +14,13 @@ use crate::ClapDiagnostic;
 /// This struct provides the command-line interface used by `midenc`
 #[derive(Debug, Parser)]
 #[command(name = "midenc")]
-#[command(author, version, about = "A compiler for Miden Assembly", long_about = None)]
+#[command(
+    author,
+    version,
+    about = "A compiler for Miden Assembly",
+    long_about = None,
+    arg_required_else_help = true,
+)]
 pub struct Midenc {
     /// The input file to compile
     ///
@@ -50,26 +56,31 @@ impl Midenc {
         P: Into<PathBuf>,
         A: IntoIterator<Item = OsString>,
     {
+        log::set_boxed_logger(logger)
+            .unwrap_or_else(|err| panic!("failed to install logger: {err}"));
+        log::set_max_level(filter);
+
         let command = <Self as clap::CommandFactory>::command();
         let command = midenc_session::flags::register_flags(command);
 
         let mut matches = command.try_get_matches_from(args).map_err(ClapDiagnostic::from)?;
-        let Self { input, mut options } =
+        let compile_matches = matches.clone();
+        let Self { input, options } =
             <Self as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)
                 .map_err(format_error::<Self>)
                 .map_err(ClapDiagnostic::from)?;
 
-        log::set_boxed_logger(logger)
-            .unwrap_or_else(|err| panic!("failed to install logger: {err}"));
-        log::set_max_level(filter);
-        if options.working_dir.is_none() {
-            options.working_dir = Some(cwd.into());
-        }
-        let session = Rc::new(
-            options
-                .into_session(Vec::from_iter(input), emitter)
-                .with_extra_flags(matches.into()),
-        );
+        let mut options = options.into_options(cwd.into());
+        options.set_extra_flags(compile_matches.into());
+
+        let Some(input) = input else {
+            let mut command = <Self as clap::CommandFactory>::command();
+            command
+                .error(clap::error::ErrorKind::MissingRequiredArgument, "expected input file")
+                .exit();
+        };
+
+        let session = Rc::new(options.into_session(input, emitter, None)?);
         let context = Rc::new(Context::new(session));
         compile::compile(context)
     }

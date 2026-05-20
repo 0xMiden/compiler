@@ -1,6 +1,7 @@
 mod array;
 mod boolean;
 mod bytes;
+mod effects;
 mod integer;
 mod list;
 mod local_variable;
@@ -15,9 +16,10 @@ pub mod version;
 mod visibility;
 
 pub use self::{
-    array::{Array, TypeArrayAttr, U32ArrayAttr},
+    array::{AdviceEffectArrayAttr, Array, MemoryEffectArrayAttr, TypeArrayAttr, U32ArrayAttr},
     boolean::BoolAttr,
     bytes::{Bytes, BytesAttr},
+    effects::{AdviceEffectDescriptor, AdviceResourceKind, MemoryEffectDescriptor},
     integer::*,
     list::{List, ListAttr},
     local_variable::{LocalVariable, LocalVariableAttr},

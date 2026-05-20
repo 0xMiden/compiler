@@ -61,8 +61,8 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::six_u64_struct_account::six_u64_struct_account::SixU64Record;
-use crate::bindings::SixU64StructAccount as CounterContract;
+use crate::bindings::miden::six_u64_struct_account::miden_six_u64_struct_account::SixU64Record;
+use crate::bindings::MidenSixU64StructAccount as CounterContract;
 
 /// First double-word value used by the six-`u64` record FPI test.
 const FIRST: u64 = 0x0000_0001_0000_0002;

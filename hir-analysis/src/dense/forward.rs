@@ -26,6 +26,18 @@ pub trait DenseForwardDataFlowAnalysis: 'static {
         core::any::type_name::<Self>()
     }
 
+    /// Indicates that this analysis can continue using known predecessor facts when some
+    /// predecessors are unknown.
+    ///
+    /// When unknown predecessors are present, the solver first seeds affected states with the
+    /// analysis entry state. If this returns true, it then also applies transfers from every known
+    /// predecessor. The default is false because most analyses cannot safely combine partial
+    /// predecessor information with an unknown-predecessor fixpoint.
+    #[inline]
+    fn allow_unknown_predecessors(&self) -> bool {
+        false
+    }
+
     /// Propagate the dense lattice before the execution of an operation to the lattice after its
     /// execution.
     fn visit_operation(
@@ -241,8 +253,14 @@ pub fn visit_block<A>(
                 // If not all callsites are known, conservatively mark all lattices as having
                 // reached their pessimistic fixpoints. Do the same if interprocedural analysis
                 // is not enabled.
-                if !callsites.all_predecessors_known() || !solver.config().is_interprocedural() {
+                if !solver.config().is_interprocedural() {
                     return analysis.set_to_entry_state(&mut after, solver);
+                }
+                if !callsites.all_predecessors_known() {
+                    analysis.set_to_entry_state(&mut after, solver);
+                    if !analysis.allow_unknown_predecessors() {
+                        return;
+                    }
                 }
 
                 for callsite in callsites.known_predecessors() {
@@ -330,7 +348,10 @@ pub fn visit_call_operation<A>(
     let after_call = ProgramPoint::after(call_op);
     let predecessors = solver.require::<PredecessorState, _>(after_call, after_call);
     if !predecessors.all_predecessors_known() {
-        return analysis.set_to_entry_state(after, solver);
+        analysis.set_to_entry_state(after, solver);
+        if !analysis.allow_unknown_predecessors() {
+            return;
+        }
     }
 
     for predecessor in predecessors.known_predecessors() {

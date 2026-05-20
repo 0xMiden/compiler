@@ -73,6 +73,7 @@ fn lower_builtin_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<builtin::Ret, dyn HirLowering>();
     info.register_operation_trait::<builtin::RetImm, dyn HirLowering>();
     info.register_operation_trait::<builtin::GlobalSymbol, dyn HirLowering>();
+    info.register_operation_trait::<builtin::UnrealizedConversionCast, dyn HirLowering>();
 }
 
 fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
@@ -85,6 +86,10 @@ fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<arith::MulOverflowing, dyn HirLowering>();
     info.register_operation_trait::<arith::Exp, dyn HirLowering>();
     info.register_operation_trait::<arith::Div, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Add, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Sub, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Mul, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Div, dyn HirLowering>();
     info.register_operation_trait::<arith::Sdiv, dyn HirLowering>();
     info.register_operation_trait::<arith::Mod, dyn HirLowering>();
     info.register_operation_trait::<arith::Smod, dyn HirLowering>();
@@ -115,6 +120,8 @@ fn lower_arith_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<arith::Incr, dyn HirLowering>();
     info.register_operation_trait::<arith::Neg, dyn HirLowering>();
     info.register_operation_trait::<arith::Inv, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Neg, dyn HirLowering>();
+    info.register_operation_trait::<arith::Ext2Inv, dyn HirLowering>();
     info.register_operation_trait::<arith::Ilog2, dyn HirLowering>();
     info.register_operation_trait::<arith::Pow2, dyn HirLowering>();
     info.register_operation_trait::<arith::Not, dyn HirLowering>();
@@ -151,6 +158,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::Assert, dyn HirLowering>();
     info.register_operation_trait::<hir::Assertz, dyn HirLowering>();
     info.register_operation_trait::<hir::AssertEq, dyn HirLowering>();
+    info.register_operation_trait::<hir::AssertU32, dyn HirLowering>();
     info.register_operation_trait::<hir::PtrToInt, dyn HirLowering>();
     info.register_operation_trait::<hir::IntToPtr, dyn HirLowering>();
     info.register_operation_trait::<hir::Cast, dyn HirLowering>();
@@ -159,10 +167,34 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::ConstantPointer, dyn HirLowering>();
     info.register_operation_trait::<hir::Exec, dyn HirLowering>();
     info.register_operation_trait::<hir::Call, dyn HirLowering>();
+    info.register_operation_trait::<hir::Syscall, dyn HirLowering>();
     info.register_operation_trait::<hir::Store, dyn HirLowering>();
     info.register_operation_trait::<hir::StoreLocal, dyn HirLowering>();
     info.register_operation_trait::<hir::Load, dyn HirLowering>();
     info.register_operation_trait::<hir::LoadLocal, dyn HirLowering>();
+    info.register_operation_trait::<hir::LocalAddress, dyn HirLowering>();
+    info.register_operation_trait::<hir::Caller, dyn HirLowering>();
+    info.register_operation_trait::<hir::Clk, dyn HirLowering>();
+    info.register_operation_trait::<hir::AdvicePop, dyn HirLowering>();
+    info.register_operation_trait::<hir::AdviceLoadWord, dyn HirLowering>();
+    info.register_operation_trait::<hir::AdvicePipe, dyn HirLowering>();
+    info.register_operation_trait::<hir::EmitEvent, dyn HirLowering>();
+    info.register_operation_trait::<hir::EmitEventImm, dyn HirLowering>();
+    info.register_operation_trait::<hir::SystemEvent, dyn HirLowering>();
+    info.register_operation_trait::<hir::Hash, dyn HirLowering>();
+    info.register_operation_trait::<hir::HMerge, dyn HirLowering>();
+    info.register_operation_trait::<hir::HPerm, dyn HirLowering>();
+    info.register_operation_trait::<hir::MTreeGet, dyn HirLowering>();
+    info.register_operation_trait::<hir::MTreeSet, dyn HirLowering>();
+    info.register_operation_trait::<hir::MTreeMerge, dyn HirLowering>();
+    info.register_operation_trait::<hir::MTreeVerify, dyn HirLowering>();
+    info.register_operation_trait::<hir::CryptoStream, dyn HirLowering>();
+    info.register_operation_trait::<hir::FriExt2Fold4, dyn HirLowering>();
+    info.register_operation_trait::<hir::HornerBase, dyn HirLowering>();
+    info.register_operation_trait::<hir::HornerExt, dyn HirLowering>();
+    info.register_operation_trait::<hir::EvalCircuit, dyn HirLowering>();
+    info.register_operation_trait::<hir::LogPrecompile, dyn HirLowering>();
+    info.register_operation_trait::<hir::MemStream, dyn HirLowering>();
     info.register_operation_trait::<hir::MemGrow, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSize, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSet, dyn HirLowering>();

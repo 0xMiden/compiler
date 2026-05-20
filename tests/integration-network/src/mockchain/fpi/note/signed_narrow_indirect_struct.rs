@@ -100,8 +100,8 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::signed_narrow_indirect_struct_account::signed_narrow_indirect_struct_account::SignedNarrowRecord;
-use crate::bindings::SignedNarrowIndirectStructAccount as CounterContract;
+use crate::bindings::miden::signed_narrow_indirect_struct_account::miden_signed_narrow_indirect_struct_account::SignedNarrowRecord;
+use crate::bindings::MidenSignedNarrowIndirectStructAccount as CounterContract;
 
 /// Negative byte-sized value used by the signed-narrow indirect FPI test.
 const I8_VALUE: i8 = -7;

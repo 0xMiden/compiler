@@ -35,3 +35,18 @@ pub(super) fn cargo_toml(name: &str) -> String {
         sdk_path = sdk_path.display(),
     )
 }
+
+pub(super) fn miden_project_toml(name: &str) -> String {
+    format!(
+        r#"
+                [package]
+                name = "{name}"
+                version = "0.0.1"
+
+                [lib]
+
+                [dependencies]
+                miden-core = "*"
+            "#,
+    )
+}

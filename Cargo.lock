@@ -512,18 +512,15 @@ name = "cargo-miden"
 version = "0.8.1"
 dependencies = [
  "anyhow",
- "cargo_metadata 0.23.1",
  "clap",
  "liquid",
  "log",
  "miden-mast-package",
  "midenc-compile",
+ "midenc-hir",
  "midenc-log",
  "midenc-session",
  "path-absolutize",
- "semver 1.0.28",
- "serde",
- "serde_json",
  "tempfile",
  "toml_edit 0.25.11+spec-1.1.0",
  "walkdir",
@@ -2644,10 +2641,12 @@ version = "0.12.0"
 dependencies = [
  "heck",
  "miden-assembly-syntax",
+ "miden-debug-types",
  "miden-field 0.25.0",
  "miden-field-repr",
  "miden-formatting",
  "miden-mast-package",
+ "miden-project",
  "miden-protocol",
  "midenc-frontend-wasm-metadata",
  "proc-macro2",
@@ -3465,9 +3464,7 @@ dependencies = [
  "miden-assembly-syntax",
  "miden-core",
  "miden-mast-package",
- "miden-package-registry",
  "miden-processor",
- "miden-project",
  "miden-protocol",
  "miden-thiserror",
  "midenc-dialect-arith",
@@ -3490,18 +3487,23 @@ dependencies = [
 name = "midenc-compile"
 version = "0.8.1"
 dependencies = [
+ "cargo_metadata 0.23.1",
  "clap",
  "log",
  "miden-assembly",
  "miden-mast-package",
+ "miden-package-registry",
  "miden-thiserror",
  "midenc-codegen-masm",
  "midenc-dialect-hir",
  "midenc-dialect-scf",
+ "midenc-frontend-masm",
  "midenc-frontend-wasm",
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
+ "tempfile",
+ "toml_edit 0.25.11+spec-1.1.0",
  "wat",
 ]
 
@@ -3528,6 +3530,7 @@ version = "0.8.1"
 dependencies = [
  "litcheck-filecheck",
  "log",
+ "miden-thiserror",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-scf",
@@ -3585,6 +3588,28 @@ version = "0.8.1"
 dependencies = [
  "once_cell",
  "similar 3.1.0",
+]
+
+[[package]]
+name = "midenc-frontend-masm"
+version = "0.8.1"
+dependencies = [
+ "miden-assembly",
+ "miden-assembly-syntax",
+ "miden-core",
+ "miden-core-lib",
+ "miden-mast-package",
+ "miden-package-registry",
+ "miden-processor",
+ "miden-project",
+ "midenc-codegen-masm",
+ "midenc-dialect-arith",
+ "midenc-dialect-cf",
+ "midenc-dialect-hir",
+ "midenc-dialect-scf",
+ "midenc-hir",
+ "midenc-session",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -3763,7 +3788,6 @@ dependencies = [
 name = "midenc-integration-network-tests"
 version = "0.8.1"
 dependencies = [
- "cargo-miden",
  "miden-client",
  "miden-core",
  "miden-mast-package",
@@ -3771,6 +3795,7 @@ dependencies = [
  "miden-standards",
  "miden-testing",
  "midenc-expect-test",
+ "midenc-frontend-wasm",
  "midenc-integration-test-support",
  "rand 0.9.4",
  "tokio",
@@ -3781,11 +3806,9 @@ name = "midenc-integration-test-support"
 version = "0.8.1"
 dependencies = [
  "anyhow",
- "cargo-miden",
  "cargo-util",
  "filetime",
  "glob",
- "log",
  "miden-assembly",
  "miden-core",
  "miden-core-lib",
@@ -3803,7 +3826,6 @@ dependencies = [
  "proptest",
  "sha2 0.11.0",
  "walkdir",
- "wasmprinter",
 ]
 
 [[package]]
@@ -3856,19 +3878,23 @@ version = "0.8.1"
 dependencies = [
  "anyhow",
  "clap",
+ "hashbrown 0.17.0",
+ "heck",
  "inventory",
  "log",
- "miden-assembly",
  "miden-assembly-syntax",
  "miden-core",
  "miden-core-lib",
  "miden-debug-types",
  "miden-mast-package",
+ "miden-package-registry",
+ "miden-project",
  "miden-protocol",
  "miden-thiserror",
  "midenc-hir-macros",
  "midenc-hir-symbol",
  "parking_lot",
+ "rustc-hash",
  "smallvec",
  "termcolor",
 ]

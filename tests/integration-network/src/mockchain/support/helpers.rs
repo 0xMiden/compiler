@@ -1,8 +1,7 @@
 //! Common helper functions for mock-chain integration tests.
 
-use std::{fs, future::Future, path::Path, sync::Arc};
+use std::{future::Future, path::Path, sync::Arc};
 
-use cargo_miden::{BuildOutput, OutputType};
 use miden_client::{
     Word,
     account::component::{BasicWallet, InitStorageData},
@@ -12,8 +11,8 @@ use miden_client::{
     note::{Note, NoteType},
     transaction::RawOutputNote,
 };
-use miden_core::{Felt, serde::Deserializable};
-use miden_mast_package::Package;
+use miden_core::Felt;
+use miden_mast_package::{Package, PackageExport, TargetType};
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
@@ -28,6 +27,8 @@ use miden_standards::{
     testing::note::NoteBuilder,
 };
 use miden_testing::{MockChain, TransactionContextBuilder};
+use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_test_support::CompilerTestBuilder;
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Converts a value's felt representation into `miden_core::Felt` elements.
@@ -51,44 +52,23 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
 // COMPILATION
 // ================================================================================================
 
-/// Compiles a Cargo Miden project into a MAST package.
 pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool) -> Arc<Package> {
     let project_path = project_path.as_ref();
-    let manifest_path = project_path.join("Cargo.toml");
-    let mut args = vec![
-        "cargo".to_string(),
-        "miden".to_string(),
-        "build".to_string(),
-        "--manifest-path".to_string(),
-        manifest_path.to_string_lossy().into_owned(),
-    ];
+    let config = WasmTranslationConfig::default();
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
+
     if release {
-        args.push("--release".to_string());
+        builder.with_release(true);
     }
 
-    let output = cargo_miden::run(args.into_iter(), OutputType::Masm)
-        .unwrap_or_else(|err| {
-            panic!("failed to compile Miden package at {}: {err}", project_path.display())
-        })
-        .expect("`cargo miden build` should produce a command output")
-        .unwrap_build_output();
+    let mut test = builder.build();
+    let package = test.compile_package();
+    let profile = if release { "release" } else { "debug" };
+    package
+        .write_masp_file(project_path.join("target").join("miden").join(profile))
+        .expect("failed to persist compiled Miden package");
 
-    let artifact_path = match output {
-        BuildOutput::Masm { artifact_path } => artifact_path,
-        BuildOutput::Wasm { artifact_path, .. } => {
-            panic!(
-                "expected MASM package for {}, got Wasm artifact {}",
-                project_path.display(),
-                artifact_path.display()
-            )
-        }
-    };
-
-    let package_bytes = fs::read(&artifact_path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", artifact_path.display()));
-    Arc::new(Package::read_from_bytes(&package_bytes).unwrap_or_else(|err| {
-        panic!("failed to decode Miden package {}: {err}", artifact_path.display())
-    }))
+    package
 }
 
 /// Returns the root of the note script exported by the compiled package.
@@ -96,6 +76,40 @@ pub(crate) fn note_script_root(package: &Package) -> Word {
     NoteScript::from_package(package)
         .expect("compiled package should contain exactly one note script export")
         .root()
+}
+
+/// Builds a transaction script from a compiled transaction-script package.
+fn transaction_script_from_package(package: &Package) -> TransactionScript {
+    assert_eq!(
+        package.kind,
+        TargetType::TransactionScript,
+        "expected a transaction-script package"
+    );
+
+    let mut first_procedure = None;
+    let mut selected_procedure = None;
+    let mut num_procedures = 0usize;
+    for export in package.manifest.exports() {
+        let PackageExport::Procedure(procedure) = export else {
+            continue;
+        };
+        num_procedures += 1;
+        first_procedure.get_or_insert(procedure);
+        if matches!(export.name(), "main" | "run") {
+            selected_procedure = Some(procedure);
+        }
+    }
+
+    let procedure = selected_procedure
+        .or_else(|| (num_procedures == 1).then(|| first_procedure.unwrap()))
+        .expect("transaction-script package should export exactly one entry procedure");
+    let entrypoint = package
+        .mast
+        .mast_forest()
+        .find_procedure_root(procedure.digest)
+        .expect("transaction-script main export should have a MAST node");
+
+    TransactionScript::from_parts(package.mast.mast_forest().clone(), entrypoint)
 }
 
 // ================================================================================================
@@ -175,11 +189,7 @@ pub(crate) fn build_asset_transfer_tx(
     tx_script_package: Arc<Package>,
     rng: &mut impl FeltRng,
 ) -> (TransactionContextBuilder, Note) {
-    let tx_script_program = tx_script_package.unwrap_program();
-    let tx_script = TransactionScript::from_parts(
-        tx_script_program.mast_forest().clone(),
-        tx_script_program.entrypoint(),
-    );
+    let tx_script = transaction_script_from_package(&tx_script_package);
 
     let serial_num = rng.draw_word();
 
@@ -230,12 +240,12 @@ pub(crate) fn build_asset_transfer_tx(
 
 /// Returns the storage slot name used by the counter contract's storage map.
 pub(crate) fn counter_storage_slot_name() -> StorageSlotName {
-    StorageSlotName::new("miden_counter_contract::counter_contract::count_map")
+    StorageSlotName::new("counter_contract::counter_contract::count_map")
         .expect("counter storage slot name should be valid")
 }
 
 fn auth_public_key_slot_name() -> StorageSlotName {
-    StorageSlotName::new("miden_auth_component_rpo_falcon512::auth_component::owner_public_key")
+    StorageSlotName::new("auth_component_rpo_falcon512::auth_component::owner_public_key")
         .expect("auth component storage slot name should be valid")
 }
 

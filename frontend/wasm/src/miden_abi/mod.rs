@@ -2,8 +2,12 @@ pub(crate) mod stdlib;
 pub(crate) mod transform;
 pub(crate) mod tx_kernel;
 
-use midenc_hir::{FunctionType, FxHashMap, SymbolNameComponent, SymbolPath, interner::Symbol};
+use midenc_hir::{
+    FunctionType, FxHashMap, SmallVec, SymbolNameComponent, SymbolPath, interner::Symbol, smallvec,
+};
 use midenc_hir_symbol::symbols;
+
+use crate::intrinsics::IntrinsicEffect;
 
 pub(crate) type FunctionTypeMap = FxHashMap<Symbol, FunctionType>;
 pub(crate) type ModuleFunctionTypeMap = FxHashMap<SymbolPath, FunctionTypeMap>;
@@ -35,6 +39,20 @@ pub fn miden_abi_function_type(path: &SymbolPath) -> FunctionType {
     }
 }
 
+pub fn miden_abi_function_effects(path: &SymbolPath) -> SmallVec<[IntrinsicEffect; 2]> {
+    const STD: &[SymbolNameComponent] = &[
+        SymbolNameComponent::Root,
+        SymbolNameComponent::Component(symbols::Miden),
+        SymbolNameComponent::Component(symbols::Core),
+    ];
+
+    if path.is_prefixed_by(STD) {
+        miden_stdlib_function_effects(path)
+    } else {
+        smallvec![]
+    }
+}
+
 /// Get the target Miden ABI tx kernel function type for the given module and function id
 pub fn miden_sdk_function_type(path: &SymbolPath) -> FunctionType {
     let module_path = path.without_leaf();
@@ -57,4 +75,9 @@ fn miden_stdlib_function_type(path: &SymbolPath) -> FunctionType {
         .get(&path.name())
         .cloned()
         .unwrap_or_else(|| panic!("No Miden ABI function type found for function {path}"))
+}
+
+fn miden_stdlib_function_effects(path: &SymbolPath) -> SmallVec<[IntrinsicEffect; 2]> {
+    let module_path = path.without_leaf();
+    stdlib::function_effects(module_path.as_ref(), path.name()).unwrap_or_default()
 }

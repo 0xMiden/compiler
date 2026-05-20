@@ -44,12 +44,28 @@ fn assert_manifest_exports_match_library(package: &miden_mast_package::Package) 
     );
 }
 
+fn component_namespace(name: &str) -> String {
+    let package = name.replace('_', "-");
+    format!("miden:{package}/miden-{package}@0.0.1")
+}
+
 #[test]
 fn rust_sdk_swapp_note_bindings() {
     let name = "rust_sdk_swapp_note_bindings";
+    let namespace = component_namespace(name);
     let sdk_path = sdk_crate_path();
     let sdk_alloc_path = sdk_alloc_crate_path();
-    let component_package = format!("miden:{}", name.replace('_', "-"));
+    let miden_project_toml = format!(
+        r#"
+        [package]
+        name = "{name}"
+        version = "0.0.1"
+
+        [lib]
+        kind = "note"
+        namespace = "{namespace}"
+        "#
+    );
     let cargo_toml = format!(
         r#"
 [package]
@@ -65,12 +81,6 @@ crate-type = ["cdylib"]
 miden-sdk-alloc = {{ path = "{sdk_alloc_path}" }}
 miden = {{ path = "{sdk_path}" }}
 
-[package.metadata.component]
-package = "{component_package}"
-
-[package.metadata.miden]
-project-kind = "note-script"
-
 [profile.release]
 opt-level = "z"
 panic = "abort"
@@ -79,7 +89,6 @@ debug = false
         name = name,
         sdk_path = sdk_path.display(),
         sdk_alloc_path = sdk_alloc_path.display(),
-        component_package = component_package,
     );
 
     let lib_rs = r#"#![no_std]
@@ -108,8 +117,11 @@ impl Note {
 }
 "#;
 
-    let cargo_proj =
-        project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build();
+    let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", lib_rs)
+        .build();
 
     let mut test = CompilerTestBuilder::rust_source_cargo_miden(
         cargo_proj.root(),

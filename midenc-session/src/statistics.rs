@@ -39,6 +39,16 @@ impl Default for Statistics {
         Self::new(Instant::now())
     }
 }
+impl Clone for Statistics {
+    fn clone(&self) -> Self {
+        Self {
+            start_time: self.start_time,
+            parse_time: AtomicU64::new(self.parse_time.load(Ordering::Relaxed)),
+            opt_time: AtomicU64::new(self.opt_time.load(Ordering::Relaxed)),
+            codegen_time: AtomicU64::new(self.codegen_time.load(Ordering::Relaxed)),
+        }
+    }
+}
 impl Statistics {
     pub fn new(start_time: Instant) -> Self {
         Self {

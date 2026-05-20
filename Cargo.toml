@@ -70,6 +70,7 @@ clap = { version = "4.6", default-features = false, features = [
 ] }
 cranelift-entity = "0.131"
 compact_str = { version = "0.9", default-features = false }
+darling = { version = "0.23", features = ["diagnostics"] }
 hashbrown = { version = "0.17", features = ["nightly"] }
 Inflector = "0.11"
 intrusive-collections = "0.10"
@@ -123,8 +124,10 @@ syn = { version = "2.0", features = [
     "extra-traits",
     "printing",
 ] }
+tempfile = "3.19"
 thiserror = { package = "miden-thiserror", version = "1.0" }
 toml = { version = "^1.1.2", features = ["preserve_order"] }
+toml_edit = { version = "^0.25", features = ["serde"] }
 tokio = { version = "^1.39.2", features = ["rt", "time", "macros", "rt-multi-thread"] }
 wat = "^1.248"
 wasmprinter = "^0.248"
@@ -149,16 +152,16 @@ midenc-hir-eval = { version = "0.8.1", path = "eval" }
 midenc-hir-macros = { version = "0.8.1", path = "hir-macros" }
 midenc-hir-symbol = { version = "0.8.1", path = "hir-symbol" }
 midenc-hir-transform = { version = "0.8.1", path = "hir-transform" }
+midenc-frontend-masm = { version = "0.8.1", path = "frontend/masm" }
 midenc-frontend-wasm = { version = "0.8.1", path = "frontend/wasm" }
 midenc-frontend-wasm-metadata = { version = "0.12.0", path = "sdk/wasm-metadata" }
 midenc-compile = { version = "0.8.1", path = "midenc-compile" }
 midenc-driver = { version = "0.8.1", path = "midenc-driver" }
 midenc-log = { version = "0.8.1", path = "midenc-log", features = ["kv"] }
 midenc-session = { version = "0.8.1", path = "midenc-session" }
-cargo-miden = { version = "0.8.1", path = "tools/cargo-miden" }
 midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
-miden-field = { version = "^0.25" }
+miden-field = { version = "^0.25", default-features = false }
 miden-base-sys = { version = "0.12.0", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.12.0", path = "sdk/field-repr/repr" }
 miden-stdlib-sys = { version = "0.12.0", path = "sdk/stdlib-sys" }

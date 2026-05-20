@@ -182,7 +182,7 @@ const CALLER_ACCOUNT_SOURCE: &str = r#"
 
 use miden::{component, felt, AccountId, Felt, Word};
 
-use crate::bindings::AccountToAccountCalleeAccount as CalleeAccount;
+use crate::bindings::MidenAccountToAccountCalleeAccount as CalleeAccount;
 
 /// Account component which forwards reads to another account through FPI.
 #[component]

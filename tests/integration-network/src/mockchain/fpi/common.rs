@@ -35,12 +35,17 @@ pub(super) fn build_fpi_test_packages(
     let counter_storage_slot = counter_storage_slot_name_for_package(&names.account_package);
 
     let account_project = project(&names.account_name)
+        .file("miden-project.toml", &account_miden_project_toml(&names))
         .file("Cargo.toml", &account_cargo_toml(&names))
         .file("src/lib.rs", counter_source)
         .build();
     let counter_package = compile_rust_package(account_project.root(), true);
 
     let note_project = project(&names.note_name)
+        .file(
+            "miden-project.toml",
+            &note_miden_project_toml(&names, account_project.root().as_path()),
+        )
         .file("Cargo.toml", &note_cargo_toml(&names, account_project.root().as_path()))
         .file("src/lib.rs", caller_source)
         .build();
@@ -62,6 +67,13 @@ pub(super) fn build_account_to_account_fpi_test_packages(
 
     let callee_project = project(&names.callee_account_name)
         .file(
+            "miden-project.toml",
+            &account_miden_project_toml_for(
+                &names.callee_account_name,
+                &names.callee_account_package,
+            ),
+        )
+        .file(
             "Cargo.toml",
             &account_cargo_toml_for(&names.callee_account_name, &names.callee_account_package),
         )
@@ -70,6 +82,15 @@ pub(super) fn build_account_to_account_fpi_test_packages(
     let callee_package = compile_rust_package(callee_project.root(), true);
 
     let caller_project = project(&names.caller_account_name)
+        .file(
+            "miden-project.toml",
+            &dependent_account_miden_project_toml(
+                &names.caller_account_name,
+                &names.caller_account_package,
+                &names.callee_account_package,
+                callee_project.root().as_path(),
+            ),
+        )
         .file(
             "Cargo.toml",
             &dependent_account_cargo_toml(
@@ -84,6 +105,15 @@ pub(super) fn build_account_to_account_fpi_test_packages(
     let caller_package = compile_rust_package(caller_project.root(), true);
 
     let note_project = project(&names.note_name)
+        .file(
+            "miden-project.toml",
+            &note_miden_project_toml_for_dependency(
+                &names.note_name,
+                &names.note_package,
+                &names.caller_account_package,
+                caller_project.root().as_path(),
+            ),
+        )
         .file(
             "Cargo.toml",
             &note_cargo_toml_for_dependency(
@@ -222,11 +252,10 @@ pub(super) fn execute_counter_caller_note(
         expected_count,
     );
 
-    let foreign_account_inputs = chain.get_foreign_account_inputs(counter_account.id()).unwrap();
     let tx_context_builder = chain
         .build_tx_context(caller_account.clone(), &[caller_note.id()], &[])
         .unwrap()
-        .foreign_accounts([foreign_account_inputs]);
+        .foreign_accounts([chain.get_foreign_account_inputs(counter_account.id()).unwrap()]);
     execute_tx(&mut chain, tx_context_builder);
 
     assert_counter_storage_at_key(
@@ -239,7 +268,8 @@ pub(super) fn execute_counter_caller_note(
 
 /// Returns the derived storage slot name for the generated counter account package.
 fn counter_storage_slot_name_for_package(account_package: &str) -> StorageSlotName {
-    let namespace = sanitize_slot_name_component(account_package);
+    let package_name = account_package.strip_prefix("miden:").unwrap_or(account_package);
+    let namespace = sanitize_slot_name_component(package_name);
     StorageSlotName::new(format!("{namespace}::counter_contract::count_map"))
         .expect("generated FPI counter storage slot name must be valid")
 }
@@ -266,6 +296,34 @@ fn sanitize_slot_name_component(component: &str) -> String {
     }
 
     out
+}
+
+/// Returns the generated account project manifest used by an FPI test.
+fn account_miden_project_toml(names: &FpiTestProjectNames) -> String {
+    account_miden_project_toml_for(&names.account_name, &names.account_package)
+}
+
+/// Returns the generated account project manifest for a package without FPI dependencies.
+fn account_miden_project_toml_for(account_name: &str, account_package: &str) -> String {
+    let namespace = miden_project_namespace(account_package, account_name);
+    format!(
+        r#"
+[package]
+name = "{account_name}"
+version = "0.0.1"
+
+[lib]
+kind = "account-component"
+namespace = "{namespace}"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+"#
+    )
 }
 
 /// Returns the generated account manifest used by an FPI test.
@@ -315,6 +373,42 @@ debug = false
     )
 }
 
+/// Returns the generated account project manifest for a package with one FPI account dependency.
+fn dependent_account_miden_project_toml(
+    account_name: &str,
+    account_package: &str,
+    dependency_package: &str,
+    dependency_root: &Path,
+) -> String {
+    let namespace = miden_project_namespace(account_package, account_name);
+    let dependency_name = miden_dependency_name(dependency_package);
+    let dependency_wit_path = dependency_root.join("target/generated-wit");
+    format!(
+        r#"
+[package]
+name = "{account_name}"
+version = "0.0.1"
+
+[lib]
+kind = "account-component"
+namespace = "{namespace}"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+"{dependency_name}" = {{ path = "{dependency_root}" }}
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+
+[package.metadata.miden.dependencies]
+"{dependency_name}" = {{ wit = "{dependency_wit_path}" }}
+"#,
+        dependency_root = dependency_root.display(),
+        dependency_wit_path = dependency_wit_path.display(),
+    )
+}
+
 /// Returns the generated account manifest for a package with one FPI account dependency.
 fn dependent_account_cargo_toml(
     account_name: &str,
@@ -339,6 +433,16 @@ fn dependent_account_cargo_toml(
     manifest
 }
 
+/// Returns the generated caller note project manifest used by an FPI test.
+fn note_miden_project_toml(names: &FpiTestProjectNames, account_project_root: &Path) -> String {
+    note_miden_project_toml_for_dependency(
+        &names.note_name,
+        &names.note_package,
+        &names.account_package,
+        account_project_root,
+    )
+}
+
 /// Returns the generated caller note manifest used by an FPI test.
 fn note_cargo_toml(names: &FpiTestProjectNames, account_project_root: &Path) -> String {
     note_cargo_toml_for_dependency(
@@ -347,6 +451,69 @@ fn note_cargo_toml(names: &FpiTestProjectNames, account_project_root: &Path) -> 
         &names.account_package,
         account_project_root,
     )
+}
+
+/// Returns the generated note project manifest with one Miden dependency.
+fn note_miden_project_toml_for_dependency(
+    note_name: &str,
+    note_package: &str,
+    dependency_package: &str,
+    dependency_root: &Path,
+) -> String {
+    let namespace = miden_project_namespace(note_package, note_name);
+    let mut manifest = format!(
+        r#"
+[package]
+name = "{note_name}"
+version = "0.0.1"
+
+[lib]
+kind = "note"
+namespace = "{namespace}"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+"#
+    );
+    append_miden_project_dependency(&mut manifest, dependency_package, dependency_root);
+    manifest
+}
+
+/// Appends one path dependency and WIT mapping to a generated Miden project manifest.
+fn append_miden_project_dependency(
+    manifest: &mut String,
+    dependency_package: &str,
+    dependency_root: &Path,
+) {
+    let dependency_name = miden_dependency_name(dependency_package);
+    let dependency_wit_path = dependency_root.join("target/generated-wit");
+    manifest.push_str(&format!(
+        r#"
+"{dependency_name}" = {{ path = "{dependency_root}" }}
+
+[package.metadata.miden.dependencies]
+"{dependency_name}" = {{ wit = "{dependency_wit_path}" }}
+"#,
+        dependency_root = dependency_root.display(),
+        dependency_wit_path = dependency_wit_path.display(),
+    ));
+}
+
+/// Returns the package-local dependency name accepted by `miden-project.toml`.
+fn miden_dependency_name(package: &str) -> &str {
+    package
+        .rsplit([':', '/'])
+        .next()
+        .unwrap_or(package)
+        .split('@')
+        .next()
+        .unwrap_or(package)
+}
+
+/// Returns the generated WIT namespace used by temporary FPI projects.
+fn miden_project_namespace(package: &str, project_name: &str) -> String {
+    format!("{package}/miden-{project_name}@0.0.1")
 }
 
 /// Returns the generated note manifest with one Miden dependency.

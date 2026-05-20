@@ -9,7 +9,12 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface, InferTypeOpInterface, OpPrinter)
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
 )]
 pub struct Exec {
     #[symbol(callable)]
@@ -30,6 +35,12 @@ impl InferTypeOpInterface for Exec {
             self.op.results.push(value);
         }
         Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Exec {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
     }
 }
 
@@ -105,7 +116,7 @@ impl OpParser for Exec {
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
         let type_params =
-            signature.results.iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
+            signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
         let mut operand_values = SmallVec::default();
         parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
 
@@ -180,7 +191,12 @@ impl CallOpInterface for Exec {
 // any types which are invalid for cross-context calls
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface, InferTypeOpInterface, OpPrinter)
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
 )]
 pub struct Call {
     #[symbol(callable)]
@@ -201,6 +217,12 @@ impl InferTypeOpInterface for Call {
             self.op.results.push(value);
         }
         Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Call {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
     }
 }
 
@@ -286,15 +308,149 @@ impl CallOpInterface for Call {
     }
 }
 
+// TODO(pauls): Validate that the arguments/results of the callee of this operation do not contain
+// any types which are invalid for syscalls
+#[operation(
+    dialect = HirDialect,
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
+)]
+pub struct Syscall {
+    #[symbol(callable)]
+    callee: SymbolPath,
+    #[attr]
+    signature: SignatureAttr,
+    #[operands]
+    arguments: AnyType,
+}
+
+impl InferTypeOpInterface for Syscall {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        let span = self.span();
+        let signature = self.signature.borrow();
+        let owner = self.as_operation_ref();
+        for (i, result) in signature.results().iter().enumerate() {
+            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
+            self.op.results.push(value);
+        }
+        Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Syscall {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
+    }
+}
+
+impl OpPrinter for Syscall {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use formatter::*;
+
+        let callee = self.callee();
+        printer.print_space();
+        printer.print_symbol_path(callee.path());
+        printer.print_operand_list(self.arguments());
+        *printer += const_text(" <");
+        printer.print_attribute_dictionary(self.op.properties().filter(|p| p.name == "signature"));
+        *printer += const_text(" >");
+        if self.op.has_attributes() {
+            printer.print_space();
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+    }
+}
+
+impl CallOpInterface for Syscall {
+    #[inline(always)]
+    fn callable_for_callee(&self) -> Callable {
+        self.callee().path().into()
+    }
+
+    fn set_callee(&mut self, callable: Callable) {
+        let callee = callable.unwrap_symbol_path();
+        let symbol_table = self
+            .as_operation()
+            .nearest_symbol_table()
+            .expect("cannot set callee outside of symbol table");
+        let resolved = symbol_table
+            .borrow()
+            .as_symbol_table()
+            .unwrap()
+            .resolve(&callee)
+            .expect("invalid callee: could not be resolved");
+        let callable = resolved
+            .as_trait_ref::<dyn CallableSymbol>()
+            .expect("invalid callee: not a callable symbol");
+        Syscall::set_callee(self, callable).expect("invalid callee");
+    }
+
+    #[inline(always)]
+    fn arguments(&self) -> OpOperandRange<'_> {
+        self.operands().group(0)
+    }
+
+    #[inline(always)]
+    fn arguments_mut(&mut self) -> OpOperandRangeMut<'_> {
+        self.operands_mut().group_mut(0)
+    }
+
+    fn resolve(&self) -> Option<SymbolRef> {
+        let callee = self.callee();
+        let symbol_table = self.as_operation().nearest_symbol_table()?;
+        let symbol_table = symbol_table.borrow();
+        let symbol_table = symbol_table.as_symbol_table().unwrap();
+        symbol_table.resolve(callee.path())
+    }
+
+    fn resolve_in_symbol_table(&self, symbols: &dyn SymbolTable) -> Option<SymbolRef> {
+        let callee = self.callee();
+        symbols.resolve(callee.path())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use midenc_hir::{
         CallOpInterface, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        diagnostics::Uri,
         dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
+        parse::{self, ParserConfig},
         testing::Test,
     };
 
     use crate::HirOpBuilder;
+
+    #[test]
+    fn exec_parser_resolves_operand_types_from_signature_params() {
+        let test = Test::default();
+        let source = r#"
+builtin.module public @test {
+    builtin.function private extern("C") @callee(%arg: i32) -> u64 {
+        %result = builtin.unrealized_conversion_cast %arg <{ ty = #builtin.type<u64> }>;
+        builtin.ret %result : (u64);
+    };
+
+    builtin.function public extern("C") @entrypoint(%arg: i32) -> u64 {
+        %result = hir.exec @callee(%arg) : extern("C") (i32) -> u64;
+        builtin.ret %result : (u64);
+    };
+};"#;
+
+        parse::parse_any(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("exec_parser_resolves_operand_types_from_signature_params.hir"),
+            source,
+        )
+        .expect("hir.exec parser should type operands from signature params");
+    }
 
     #[test]
     fn call_set_callee_rebinds_property_backed_symbol_use() {
@@ -405,6 +561,37 @@ mod tests {
 
         let replacement_path = replacement.borrow().path();
         assert_eq!(call.borrow().callee().path(), &replacement_path);
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert_eq!(replacement.borrow().iter_uses().count(), 1);
+    }
+
+    #[test]
+    fn syscall_set_callee_rebinds_property_backed_symbol_use() {
+        let mut test =
+            Test::named("syscall_set_callee_rebinds_property_backed_symbol_use").in_module("test");
+        let original = test.define_function("original", &[], &[]);
+        let replacement = test.define_function("replacement", &[], &[]);
+        test.with_function("caller", &[], &[]);
+
+        let signature = Signature::new(
+            &test.context_rc(),
+            core::iter::empty::<Type>(),
+            core::iter::empty::<Type>(),
+        );
+        let mut syscall = {
+            let mut builder = test.function_builder();
+            let syscall = builder.syscall(original, signature, [], SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            syscall
+        };
+
+        assert_eq!(original.borrow().iter_uses().count(), 1);
+        assert_eq!(replacement.borrow().iter_uses().count(), 0);
+
+        syscall.borrow_mut().set_callee(replacement).unwrap();
+
+        let replacement_path = replacement.borrow().path();
+        assert_eq!(syscall.borrow().callee().path(), &replacement_path);
         assert_eq!(original.borrow().iter_uses().count(), 0);
         assert_eq!(replacement.borrow().iter_uses().count(), 1);
     }

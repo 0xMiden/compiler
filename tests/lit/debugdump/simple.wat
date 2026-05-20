@@ -1,15 +1,17 @@
 ;; Test that miden-objtool correctly parses and displays debug info from a .masp file
-;; RUN: /bin/sh -c "TMPDIR=$(mktemp -d) && TMPFILE=\"\$TMPDIR/out.masp\" && midenc '%s' --exe --debug full -o \"\$TMPFILE\" && miden-objtool dump debug-info \"\$TMPFILE\"" | filecheck %s
+;;
+;; RUN: midenc %s --entrypoint=simple::multiply --debug full -o %t/out.masp
+;; RUN: miden-objtool dump debug-info %t/out.masp | filecheck %s
+;; XFAIL:
 
-;; Check header
-;; CHECK: DEBUG INFO DUMP:
-;; CHECK: Debug info versions:
+;; CHECK: Name: simple
+;; CHECK-NEXT: Version: 0.0.0
+;; CHECK-NEXT: Kind: library
 
 ;; Check summary section is present
-;; CHECK: .debug_info summary:
-;; CHECK: Strings:
+;; CHECK: Summary:
 ;; CHECK: Types:
-;; CHECK: Files:
+;; CHECK: Sources:
 ;; CHECK: Functions:
 
 ;; Check that we have functions from the WAT

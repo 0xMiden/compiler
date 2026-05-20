@@ -110,23 +110,33 @@ impl OpEmitter<'_> {
         self.raw_exec("::intrinsics::mem::memory_size", span);
         self.push(Type::U32);
     }
+
+    /// Load two VM words from memory and update the top-13 stack window.
+    pub fn mem_stream(&mut self, span: SourceSpan) {
+        self.felt_stack_transform(masm::Instruction::MemStream, 13, 13, "mem_stream", span);
+    }
 }
 
 /// Loads
 impl OpEmitter<'_> {
+    /// Push an element-address-space pointer to the given local.
+    pub fn local_address(&mut self, local: &LocalVariable, span: SourceSpan) {
+        let local_index = local.absolute_offset();
+        self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
+        self.push(Type::from(PointerType::new_with_address_space(
+            local.ty(),
+            AddressSpace::Element,
+        )));
+    }
+
     /// Load a value corresponding to the type of the given local, from the memory allocated for
     /// that local.
     ///
     /// Internally, this pushes the address of the local on the stack, then delegates to
     /// [OpEmitter::load]
     pub fn load_local(&mut self, local: &LocalVariable, span: SourceSpan) {
-        let local_index = local.absolute_offset();
         let ty = local.ty();
-        self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
-        self.push(Type::from(PointerType::new_with_address_space(
-            ty.clone(),
-            AddressSpace::Element,
-        )));
+        self.local_address(local, span);
         self.load(ty, span)
     }
 
@@ -618,12 +628,7 @@ impl OpEmitter<'_> {
     /// Internally, this pushes the address of the given local on the stack, and delegates to
     /// [OpEmitter::store] to perform the actual store.
     pub fn store_local(&mut self, local: &LocalVariable, span: SourceSpan) {
-        let local_index = local.absolute_offset();
-        self.emit(masm::Instruction::Locaddr((local_index as u16).into()), span);
-        self.push(Type::from(PointerType::new_with_address_space(
-            local.ty(),
-            AddressSpace::Element,
-        )));
+        self.local_address(local, span);
         self.store(span)
     }
 
@@ -1286,5 +1291,34 @@ impl OpEmitter<'_> {
 
     fn store_struct(&mut self, _ty: &StructType, _ptr: Option<NativePtr>, _span: SourceSpan) {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{collections::BTreeSet, rc::Rc};
+
+    use midenc_hir::Context;
+
+    use super::*;
+    use crate::masm::Op;
+
+    #[test]
+    fn mem_stream_emits_vm_instruction_and_preserves_window_shape() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+        for _ in 0..13 {
+            emitter.push(Type::Felt);
+        }
+
+        let span = SourceSpan::default();
+        emitter.mem_stream(span);
+
+        assert_eq!(emitter.stack_len(), 13);
+        assert!(emitter.stack().iter().all(|ty| *ty == Type::Felt));
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::MemStream)));
     }
 }

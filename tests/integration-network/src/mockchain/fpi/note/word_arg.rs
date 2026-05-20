@@ -56,7 +56,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::WordArgAccount as CounterContract;
+use crate::bindings::MidenWordArgAccount as CounterContract;
 
 /// Note script input containing the foreign counter account id.
 #[note]

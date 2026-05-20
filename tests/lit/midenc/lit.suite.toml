@@ -1,0 +1,7 @@
+name = "midenc"
+patterns = ["*.masm", "*.shtest", "*.rs"]
+
+[substitutions]
+"%target_dir" = "$$CARGO_TARGET_DIR"
+
+[format.shtest]

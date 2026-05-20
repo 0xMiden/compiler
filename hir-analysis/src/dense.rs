@@ -153,6 +153,10 @@ impl<A: DenseForwardDataFlowAnalysis> DataFlowAnalysis for DenseDataFlowAnalysis
         if is_ssa_cfg {
             let dominfo = analysis_manager.get_analysis::<DominanceInfo>()?;
             for (region_index, region) in top.regions().iter().enumerate() {
+                if region.is_empty() {
+                    continue;
+                }
+
                 // Single-block regions do not require a dominance tree (and do not have one)
                 if region.has_one_block() {
                     let block = region.entry();
@@ -391,6 +395,10 @@ impl<A: DenseForwardDataFlowAnalysis> DenseForwardDataFlowAnalysis
 
     fn debug_name(&self) -> &'static str {
         <A as DenseForwardDataFlowAnalysis>::debug_name(&self.analysis)
+    }
+
+    fn allow_unknown_predecessors(&self) -> bool {
+        <A as DenseForwardDataFlowAnalysis>::allow_unknown_predecessors(&self.analysis)
     }
 
     fn visit_operation(

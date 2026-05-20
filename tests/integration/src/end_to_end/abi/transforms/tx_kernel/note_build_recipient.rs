@@ -43,7 +43,7 @@ end
         "abi_transform_tx_kernel_note_build_recipient",
         &main_fn,
         config,
-        ["--test-harness".into(), "--link-library".into(), "base".into()],
+        ["--test-harness".into()],
     )
     .build();
 

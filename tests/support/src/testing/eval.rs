@@ -6,7 +6,7 @@ use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
-use midenc_compile::LinkOutput;
+use midenc_compile::MidenComponent;
 use midenc_hir::{Type, dialects::builtin::attributes::Signature};
 use midenc_session::{STDLIB, Session};
 use proptest::{prop_assert_eq, test_runner::TestCaseError};
@@ -179,19 +179,23 @@ pub fn compile_test_module(
     params: impl IntoIterator<Item = Type>,
     results: impl IntoIterator<Item = Type>,
     build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
-) -> (miden_mast_package::Package, std::rc::Rc<midenc_hir::Context>) {
+) -> (Arc<miden_mast_package::Package>, std::rc::Rc<midenc_hir::Context>) {
     let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
     let signature = Signature::new(&context, params, results);
-    let link_output = setup::build_empty_component_for_test(context.clone());
-    setup::build_entrypoint(link_output.component, &signature, build_fn);
-    let package = compile_link_output_to_package(link_output).unwrap();
+    let component = setup::build_empty_component_for_test(context.clone());
+    setup::build_entrypoint(
+        component.component.expect("expected HIR component"),
+        &signature,
+        build_fn,
+    );
+    let package = compile_miden_component_to_package(component).unwrap();
     (package, context)
 }
 
 /// Compiles a LinkOutput to a Package, suitable for execution
-pub fn compile_link_output_to_package(
-    link_output: LinkOutput,
-) -> Result<miden_mast_package::Package, TestCaseError> {
+pub fn compile_miden_component_to_package(
+    component: MidenComponent,
+) -> Result<Arc<miden_mast_package::Package>, TestCaseError> {
     use midenc_compile::{CodegenOutput, compile_link_output_to_masm_with_pre_assembly_stage};
 
     // Compile to Package
@@ -200,7 +204,7 @@ pub fn compile_link_output_to_package(
         Ok(output)
     };
     let artifact =
-        compile_link_output_to_masm_with_pre_assembly_stage(link_output, &mut pre_assembly_stage)
+        compile_link_output_to_masm_with_pre_assembly_stage(component, &mut pre_assembly_stage)
             .map_err(|err| TestCaseError::fail(format_report(err)))?;
     Ok(artifact.unwrap_mast())
 }
@@ -218,8 +222,8 @@ pub fn compile_link_output_to_package(
 ///   appearance
 /// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
 ///   things about the trace, such as the state of memory at program exit.
-pub fn eval_link_output<'a, T, I, F>(
-    link_output: LinkOutput,
+pub fn eval_miden_component<'a, T, I, F>(
+    component: MidenComponent,
     initializers: I,
     args: &[Felt],
     session: &Session,
@@ -230,8 +234,8 @@ where
     I: IntoIterator<Item = Initializer<'a>>,
     F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
 {
-    eval_link_output_with_advice_stack(
-        link_output,
+    eval_miden_component_with_advice_stack(
+        component,
         initializers,
         core::iter::empty::<Felt>(),
         args,
@@ -250,8 +254,8 @@ where
 ///   appearance
 /// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
 ///   things about the trace, such as the state of memory at program exit.
-pub fn eval_link_output_with_advice_stack<'a, T, I, A, F>(
-    link_output: LinkOutput,
+pub fn eval_miden_component_with_advice_stack<'a, T, I, A, F>(
+    component: MidenComponent,
     initializers: I,
     advice_stack: A,
     args: &[Felt],
@@ -264,7 +268,7 @@ where
     A: IntoIterator<Item = Felt>,
     F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
 {
-    let package = compile_link_output_to_package(link_output)?;
+    let package = compile_miden_component_to_package(component)?;
     eval_package_with_advice_stack(
         &package,
         initializers,

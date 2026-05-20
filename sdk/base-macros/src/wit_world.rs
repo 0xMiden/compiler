@@ -3,26 +3,60 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
+use heck::ToKebabCase;
+use miden_assembly_syntax::ast;
+use miden_debug_types::DefaultSourceManager;
 use proc_macro2::Span;
 use toml::{Value, value::Table};
 
-use crate::{manifest_paths, util::strip_line_comment, wit_builder::WitBuilder};
+use crate::{util::strip_line_comment, wit_builder::WitBuilder};
 
 /// Parsed package metadata from the consuming crate's manifest.
-pub(crate) struct ManifestPackage {
-    manifest_dir: PathBuf,
-    package_table: Table,
+pub struct ManifestPackage {
+    pub manifest_dir: PathBuf,
+    pub package_table: Table,
+    pub project_kind: Option<String>,
+    pub package: Arc<miden_project::Package>,
+    pub target: miden_project::Target,
+    pub description: Arc<str>,
+    pub supported_types: Vec<String>,
 }
 
 impl ManifestPackage {
+    pub fn load_or_default(call_site_span: Span) -> Result<Self, syn::Error> {
+        let manifest_dir =
+            PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string()));
+
+        let miden_project_toml_path = manifest_dir.join("miden-project.toml");
+        if !miden_project_toml_path.is_file() {
+            let target = miden_project::Target::r#virtual(
+                Default::default(),
+                "default",
+                ast::Path::new("empty"),
+            );
+            return Ok(Self {
+                manifest_dir,
+                package_table: Default::default(),
+                project_kind: None,
+                package: Arc::from(miden_project::Package::new("empty", target.clone())),
+                target,
+                description: Default::default(),
+                supported_types: vec![],
+            });
+        }
+
+        Self::load(call_site_span)
+    }
+
     /// Loads the current crate's `[package]` table from `Cargo.toml`.
     pub(crate) fn load(error_span: Span) -> Result<Self, syn::Error> {
-        let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(|err| {
+        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").map_err(|err| {
             syn::Error::new(error_span, format!("failed to read CARGO_MANIFEST_DIR: {err}"))
-        })?;
-        let manifest_path = Path::new(&manifest_dir).join("Cargo.toml");
+        })?);
+        let manifest_path = manifest_dir.join("Cargo.toml");
         let manifest_content = fs::read_to_string(&manifest_path).map_err(|err| {
             syn::Error::new(
                 error_span,
@@ -41,10 +75,66 @@ impl ManifestPackage {
             .and_then(Value::as_table)
             .ok_or_else(|| syn::Error::new(error_span, "manifest missing [package] table"))?
             .clone();
+        let project_kind = manifest
+            .get("package")
+            .and_then(Value::as_table)
+            .and_then(|package| package.get("metadata"))
+            .and_then(Value::as_table)
+            .and_then(|metadata| metadata.get("miden"))
+            .and_then(Value::as_table)
+            .and_then(|miden| miden.get("project-kind"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+
+        let miden_project_toml_path = manifest_dir.join("miden-project.toml");
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let project = miden_project::Project::load(&miden_project_toml_path, &source_manager)
+            .map_err(|err| {
+                syn::Error::new(
+                    error_span,
+                    format!(
+                        "Failed to read project manifest from {}: {err}",
+                        miden_project_toml_path.display()
+                    ),
+                )
+            })?;
+        let package = project.package();
+        let Some(target) = package.library_target() else {
+            return Err(syn::Error::new(
+                error_span,
+                "Expected miden-project.toml to define a library target",
+            ));
+        };
+        let target = target.inner().clone();
+
+        let description = package.description().unwrap_or_else(|| {
+            package_table
+                .get("description")
+                .and_then(|d| d.as_str())
+                .map(|s| Arc::from(s.to_string().into_boxed_str()))
+                .unwrap_or_default()
+        });
+
+        let supported_types = package
+            .metadata()
+            .get("miden")
+            .and_then(|meta| meta.get("supported-types"))
+            .and_then(|st| st.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default();
 
         Ok(Self {
-            manifest_dir: PathBuf::from(manifest_dir),
+            manifest_dir,
             package_table,
+            project_kind,
+            package,
+            target,
+            description,
+            supported_types,
         })
     }
 
@@ -57,17 +147,18 @@ impl ManifestPackage {
     }
 
     /// Returns the declared component package identifier from manifest metadata.
-    pub(crate) fn component_package(&self, error_span: Span) -> Result<&str, syn::Error> {
-        self.package_table
-            .get("metadata")
-            .and_then(Value::as_table)
-            .and_then(|meta| meta.get("component"))
-            .and_then(Value::as_table)
-            .and_then(|component| component.get("package"))
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                syn::Error::new(error_span, "manifest missing package.metadata.component.package")
-            })
+    pub(crate) fn component_package(&self) -> String {
+        format!("miden:{}", self.package.name().into_inner().to_kebab_case())
+    }
+
+    /// Returns the declared component version from manifest metadata.
+    pub(crate) fn component_version(&self) -> &miden_mast_package::Version {
+        self.package.version().into_inner()
+    }
+
+    /// Returns true if Cargo metadata declares this crate as an authentication component.
+    pub(crate) fn requires_auth_script(&self) -> bool {
+        self.project_kind.as_deref() == Some("authentication-component")
     }
 
     /// Resolves fully-qualified imports exported by `package.metadata.miden.dependencies`.
@@ -84,16 +175,16 @@ impl ManifestPackage {
         Ok(imports)
     }
 
-    /// Resolves metadata for dependencies declared under `package.metadata.miden.dependencies`.
+    /// Resolves metadata for dependencies declared in `miden-project.toml`.
     pub(crate) fn collect_miden_dependencies(
         &self,
         error_span: Span,
     ) -> Result<Vec<MidenDependency>, syn::Error> {
-        collect_miden_dependencies(&self.manifest_dir, &self.package_table, error_span)
+        collect_miden_dependencies(&self.manifest_dir, &self.package, error_span)
     }
 }
 
-/// Resolved metadata for one `package.metadata.miden.dependencies` entry.
+/// Resolved metadata for one Miden package dependency.
 #[derive(Debug)]
 pub(crate) struct MidenDependency {
     /// Manifest key used for this dependency.
@@ -124,98 +215,108 @@ pub(crate) fn write_world_block(
     });
 }
 
-/// Collects fully-qualified imports from `[package.metadata.miden.dependencies]`.
+/// Collects dependency metadata needed for typed FPI imports.
 fn collect_miden_dependencies(
     manifest_dir: &Path,
-    package_table: &Table,
+    package: &miden_project::Package,
     error_span: Span,
 ) -> Result<Vec<MidenDependency>, syn::Error> {
-    let dependencies = package_table
-        .get("metadata")
-        .and_then(Value::as_table)
-        .and_then(|meta| meta.get("miden"))
-        .and_then(Value::as_table)
-        .and_then(|miden| miden.get("dependencies"))
-        .and_then(Value::as_table);
-    let component_target_dependencies = manifest_paths::resolve_component_target_dependencies(
-        manifest_dir,
-        package_table,
-        error_span,
-    )?;
+    let mut dependencies = Vec::new();
 
-    let mut resolved = Vec::new();
-
-    if let Some(dep_table) = dependencies {
-        for (dep_name, dep_value) in dep_table {
-            let dep_config = dep_value.as_table().ok_or_else(|| {
-                syn::Error::new(
-                    error_span,
-                    format!(
-                        "dependency '{dep_name}' under package.metadata.miden.dependencies must \
-                         be a table"
-                    ),
-                )
-            })?;
-
-            let dependency_path =
-                dep_config.get("path").and_then(Value::as_str).ok_or_else(|| {
+    for dependency in package.dependencies() {
+        match dependency.scheme() {
+            miden_project::DependencyVersionScheme::Path { path, .. } => {
+                let absolute_path = manifest_dir.join(path.path());
+                let dependency_root = fs::canonicalize(&absolute_path).map_err(|err| {
                     syn::Error::new(
                         error_span,
                         format!(
-                            "dependency '{dep_name}' under package.metadata.miden.dependencies is \
-                             missing a 'path' entry"
+                            "failed to canonicalize dependency '{}' path '{}': {err}",
+                            dependency.name(),
+                            absolute_path.display()
+                        ),
+                    )
+                })?;
+                let wit_root =
+                    dependency_wit_root(manifest_dir, package, dependency, &dependency_root)?;
+
+                let dependency_wit = parse_dependency_wit(&wit_root).map_err(|msg| {
+                    syn::Error::new(
+                        error_span,
+                        format!(
+                            "failed to process typed FPI WIT metadata for dependency '{}' from \
+                             '{}': {msg}",
+                            dependency.name(),
+                            wit_root.display()
                         ),
                     )
                 })?;
 
-            let dependency_root = canonicalize_manifest_path(
-                manifest_dir,
-                dependency_path,
-                error_span,
-                &format!("dependency '{dep_name}' path"),
-            )?;
-            let wit_root = if let Some(component_dependency) = component_target_dependencies
-                .iter()
-                .find(|dependency| dependency.name == *dep_name)
-            {
-                component_dependency.path.clone()
-            } else if dependency_root.is_file() {
-                return Err(syn::Error::new(
-                    error_span,
-                    format!(
-                        "dependency '{dep_name}' under package.metadata.miden.dependencies points \
-                         to file '{}', which can be used as a `.masp` package artifact but cannot \
-                         supply typed FPI WIT metadata; add a matching entry under \
-                         package.metadata.component.target.dependencies with a path to the \
-                         dependency's generated WIT",
-                        dependency_root.display()
-                    ),
-                ));
-            } else {
-                dependency_root.clone()
-            };
-
-            let dependency_wit = parse_dependency_wit(&wit_root).map_err(|msg| {
-                syn::Error::new(
-                    error_span,
-                    format!(
-                        "failed to process typed FPI WIT metadata for dependency '{dep_name}' \
-                         from '{}': {msg}",
-                        wit_root.display()
-                    ),
-                )
-            })?;
-
-            resolved.push(MidenDependency {
-                name: dep_name.clone(),
-                root: dependency_root,
-                import: qualify_dependency_export(&dependency_wit, error_span)?,
-            });
+                dependencies.push(MidenDependency {
+                    name: dependency.name().to_string(),
+                    root: dependency_root,
+                    import: qualify_dependency_export(&dependency_wit, error_span)?,
+                });
+            }
+            _ => continue,
         }
     }
 
-    resolved.sort_by(|a, b| a.import.cmp(&b.import));
-    Ok(resolved)
+    dependencies.sort_by(|a, b| a.import.cmp(&b.import));
+
+    Ok(dependencies)
+}
+
+/// Returns the WIT root for a dependency, honoring explicit Miden project metadata.
+fn dependency_wit_root(
+    manifest_dir: &Path,
+    package: &miden_project::Package,
+    dependency: &miden_project::Dependency,
+    dependency_root: &Path,
+) -> Result<PathBuf, syn::Error> {
+    let error_span = Span::call_site();
+    if let Some(wit_path) = package
+        .metadata()
+        .get("miden")
+        .and_then(|meta| meta.get("dependencies"))
+        .and_then(|value| value.as_table())
+        .and_then(|dependencies| dependencies.get(dependency.name().as_ref()))
+        .and_then(|config| config.as_table())
+        .and_then(|config| config.get("wit"))
+    {
+        let wit_path = wit_path.as_str().ok_or_else(|| {
+            syn::Error::new(
+                error_span,
+                format!(
+                    "invalid miden-project.toml configuration: expected \
+                     package.metadata.miden.dependencies.{}.wit to be a string",
+                    dependency.name()
+                ),
+            )
+        })?;
+        return canonicalize_manifest_path(
+            manifest_dir,
+            wit_path,
+            error_span,
+            &format!("dependency '{}' WIT path", dependency.name()),
+        );
+    }
+
+    if dependency_root.is_file() {
+        return Err(syn::Error::new(
+            error_span,
+            format!(
+                "dependency '{}' points to file '{}', which can be used as a `.masp` package \
+                 artifact but cannot supply typed FPI WIT metadata; add a matching \
+                 package.metadata.miden.dependencies entry with a `wit` path to the dependency's \
+                 generated WIT",
+                dependency.name(),
+                dependency_root.display()
+            ),
+        ));
+    }
+
+    Ok(dependency_root.to_path_buf())
 }
 
 /// Resolves a path from manifest metadata relative to `manifest_dir`.
@@ -225,7 +326,12 @@ fn canonicalize_manifest_path(
     error_span: Span,
     label: &str,
 ) -> Result<PathBuf, syn::Error> {
-    let absolute_path = manifest_dir.join(path);
+    let raw_path = Path::new(path);
+    let absolute_path = if raw_path.is_absolute() {
+        raw_path.to_path_buf()
+    } else {
+        manifest_dir.join(raw_path)
+    };
     fs::canonicalize(&absolute_path).map_err(|err| {
         syn::Error::new(
             error_span,
@@ -374,9 +480,11 @@ mod tests {
     use std::{
         fs,
         path::PathBuf,
+        sync::Arc,
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use miden_assembly_syntax::{ast, debuginfo::Span as MidenSpan};
     use proc_macro2::Span;
     use toml::{Value, value::Table};
 
@@ -418,14 +526,55 @@ world basic-wallet-world {
         root
     }
 
-    fn package_table(contents: &str) -> Table {
-        contents
-            .parse::<Table>()
-            .expect("fixture manifest must parse")
-            .get("package")
-            .and_then(Value::as_table)
-            .expect("fixture manifest must contain [package]")
-            .clone()
+    fn package_with_dependency(
+        package_path: PathBuf,
+        wit_path: Option<PathBuf>,
+    ) -> Box<miden_project::Package> {
+        let target = miden_project::Target::r#virtual(
+            Default::default(),
+            "default",
+            ast::Path::new("empty"),
+        );
+        let dependency = miden_project::Dependency::new(
+            MidenSpan::unknown(Arc::<str>::from("basic-wallet")),
+            miden_project::DependencyVersionScheme::Path {
+                path: MidenSpan::unknown(miden_project::Uri::new(package_path.to_string_lossy())),
+                version: None,
+            },
+            miden_project::Linkage::Dynamic,
+        );
+        let package =
+            miden_project::Package::new("consumer", target).with_dependencies([dependency]);
+
+        if let Some(wit_path) = wit_path {
+            package.with_metadata(miden_metadata_dependencies(
+                "basic-wallet",
+                wit_path.to_string_lossy().as_ref(),
+            ))
+        } else {
+            package
+        }
+    }
+
+    fn miden_metadata_dependencies(
+        dependency_name: &str,
+        wit_path: &str,
+    ) -> miden_project::MetadataSet {
+        let mut dependency_config = Table::new();
+        dependency_config.insert("wit".to_string(), Value::String(wit_path.to_string()));
+
+        let mut dependencies = Table::new();
+        dependencies.insert(dependency_name.to_string(), Value::Table(dependency_config));
+
+        let mut miden_metadata = miden_project::Metadata::default();
+        miden_metadata.insert(
+            MidenSpan::unknown(Arc::<str>::from("dependencies")),
+            MidenSpan::unknown(Value::Table(dependencies)),
+        );
+
+        let mut metadata = miden_project::MetadataSet::default();
+        metadata.insert(MidenSpan::unknown(Arc::<str>::from("miden")), miden_metadata);
+        metadata
     }
 
     #[test]
@@ -475,31 +624,21 @@ world basic-wallet-world {
     }
 
     #[test]
-    fn miden_file_dependency_uses_component_target_wit_metadata() {
+    fn miden_file_dependency_uses_project_wit_metadata() {
         let fixture_root = basic_wallet_fixture_root();
         let package_path = fixture_root.join("target/release/basic_wallet.masp");
         fs::create_dir_all(package_path.parent().expect("package path must have a parent"))
             .expect("package directory must be created");
         fs::write(&package_path, b"package bytes").expect("package fixture must be written");
 
-        let manifest = package_table(&format!(
-            r#"
-[package]
-name = "consumer"
-version = "0.0.1"
-
-[package.metadata.miden.dependencies]
-"miden:basic-wallet" = {{ path = "{}" }}
-
-[package.metadata.component.target.dependencies]
-"miden:basic-wallet" = {{ path = "{}" }}
-"#,
-            package_path.display(),
-            fixture_root.join("target/generated-wit").display(),
-        ));
+        let package = package_with_dependency(
+            package_path.clone(),
+            Some(fixture_root.join("target/generated-wit")),
+        );
 
         let dependencies =
-            collect_miden_dependencies(&fixture_root, &manifest, Span::call_site()).unwrap();
+            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
+                .unwrap();
         let package_path =
             fs::canonicalize(package_path).expect("package path fixture must canonicalize");
 
@@ -511,32 +650,23 @@ version = "0.0.1"
     }
 
     #[test]
-    fn miden_file_dependency_without_component_wit_reports_typed_fpi_error() {
+    fn miden_file_dependency_without_project_wit_reports_typed_fpi_error() {
         let fixture_root = basic_wallet_fixture_root();
         let package_path = fixture_root.join("target/release/basic_wallet.masp");
         fs::create_dir_all(package_path.parent().expect("package path must have a parent"))
             .expect("package directory must be created");
         fs::write(&package_path, b"package bytes").expect("package fixture must be written");
 
-        let manifest = package_table(&format!(
-            r#"
-[package]
-name = "consumer"
-version = "0.0.1"
+        let package = package_with_dependency(package_path, None);
 
-[package.metadata.miden.dependencies]
-"miden:basic-wallet" = {{ path = "{}" }}
-"#,
-            package_path.display(),
-        ));
-
-        let error = collect_miden_dependencies(&fixture_root, &manifest, Span::call_site())
-            .expect_err("artifact-only dependency must not provide typed FPI metadata");
+        let error =
+            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
+                .expect_err("artifact-only dependency must not provide typed FPI metadata");
         let message = error.to_string();
 
         assert!(message.contains("points to file"), "unexpected error: {message}");
         assert!(
-            message.contains("package.metadata.component.target.dependencies"),
+            message.contains("package.metadata.miden.dependencies"),
             "unexpected error: {message}"
         );
         assert!(message.contains("typed FPI WIT metadata"), "unexpected error: {message}");

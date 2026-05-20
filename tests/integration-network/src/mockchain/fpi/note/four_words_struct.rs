@@ -228,8 +228,8 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::four_words_struct_account::four_words_struct_account::KeyQuad;
-use crate::bindings::FourWordsStructAccount as CounterContract;
+use crate::bindings::miden::four_words_struct_account::miden_four_words_struct_account::KeyQuad;
+use crate::bindings::MidenFourWordsStructAccount as CounterContract;
 
 /// Note script input containing the foreign counter account id.
 #[note]

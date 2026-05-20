@@ -9,7 +9,6 @@ use syn::{
 
 use crate::{
     boilerplate::runtime_boilerplate,
-    component_macro::metadata::get_package_metadata,
     util::generate_frontend_link_section,
     wit_builder::WitBuilder,
     wit_world::{ManifestPackage, write_world_block},
@@ -253,14 +252,13 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     };
     let call = quote! { __miden_note.#entrypoint_ident(#(#args),*); };
 
-    let metadata = match get_package_metadata(proc_macro::Span::call_site()) {
+    let metadata = match ManifestPackage::load_or_default(proc_macro::Span::call_site().into()) {
         Ok(metadata) => metadata,
         Err(err) => return err.to_compile_error(),
     };
-    let component_package = metadata
-        .component_package
-        .unwrap_or_else(|| format!("miden:{}", metadata.name.to_kebab_case()));
-    let interface_name = metadata.name.to_kebab_case();
+    let component_package =
+        format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
+    let interface_name = component_package.to_kebab_case();
     let world_name = format!("{interface_name}-world");
     let interface_module = interface_name.to_snake_case();
     let manifest = match ManifestPackage::load(Span::call_site()) {
@@ -274,7 +272,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
 
     let inline_wit = build_note_script_wit(
         &component_package,
-        &metadata.version,
+        metadata.package.version().inner(),
         &interface_name,
         &world_name,
         &export_name,

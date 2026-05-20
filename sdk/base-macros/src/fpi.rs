@@ -552,10 +552,13 @@ fn load_dependency(dependency: MidenDependency) -> syn::Result<Dependency> {
         let Some(root_key) = procedure_root_key_from_export_path(proc_export.path.as_ref()) else {
             continue;
         };
-        if root_key.interface != dependency.import {
-            continue;
+
+        for alias in procedure_root_key_aliases(&root_key) {
+            if alias.interface != dependency.import {
+                continue;
+            }
+            roots.insert(alias, procedure_root_from_digest(&proc_export.digest));
         }
-        roots.insert(root_key, procedure_root_from_digest(&proc_export.digest));
     }
 
     Ok(Dependency {
@@ -619,6 +622,13 @@ fn resolve_dependency_package_path(dependency: &MidenDependency) -> syn::Result<
 fn dependency_output_dirs(dependency: &MidenDependency, profiles: &[String]) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
+    // The dependency root is the most precise location for path dependencies. Prefer it over
+    // ambient target directories so restored or previously built artifacts cannot shadow the
+    // package that belongs to the dependency being wrapped.
+    push_profile_dirs(&mut dirs, dependency.root.join("target"), profiles);
+    push_manifest_ancestor_target_profile_dirs(&mut dirs, &dependency.root, profiles);
+    push_ancestor_target_profile_dirs(&mut dirs, &dependency.root, profiles);
+
     if let Ok(target_dir) = env::var("CARGO_TARGET_DIR") {
         push_profile_dirs(&mut dirs, PathBuf::from(target_dir), profiles);
     }
@@ -629,10 +639,11 @@ fn dependency_output_dirs(dependency: &MidenDependency, profiles: &[String]) -> 
         }
     }
 
-    // When Cargo builds a dependency with `CARGO_TARGET_DIR` set, `cargo miden build` writes the
-    // fresh `.masp` there. Keep the dependency-local target as a fallback so stale restored
-    // artifacts cannot shadow the package that was just built for this compilation.
-    push_profile_dirs(&mut dirs, dependency.root.join("target"), profiles);
+    if let Ok(current_dir) = env::current_dir() {
+        push_profile_dirs(&mut dirs, current_dir.join("target"), profiles);
+        push_manifest_ancestor_target_profile_dirs(&mut dirs, &current_dir, profiles);
+        push_ancestor_target_profile_dirs(&mut dirs, &current_dir, profiles);
+    }
 
     dirs
 }
@@ -643,6 +654,28 @@ fn push_profile_dirs(dirs: &mut Vec<PathBuf>, target_root: PathBuf, profiles: &[
         let dir = target_root.join("miden").join(profile);
         if !dirs.iter().any(|existing| existing == &dir) {
             dirs.push(dir);
+        }
+    }
+}
+
+/// Adds `target/miden/<profile>` directories found in ancestors of `path`.
+fn push_ancestor_target_profile_dirs(dirs: &mut Vec<PathBuf>, path: &Path, profiles: &[String]) {
+    for ancestor in path.ancestors() {
+        if ancestor.file_name().is_some_and(|name| name == "target") {
+            push_profile_dirs(dirs, ancestor.to_path_buf(), profiles);
+        }
+    }
+}
+
+/// Adds `target/miden/<profile>` directories for Cargo manifest ancestors.
+fn push_manifest_ancestor_target_profile_dirs(
+    dirs: &mut Vec<PathBuf>,
+    path: &Path,
+    profiles: &[String],
+) {
+    for ancestor in path.ancestors() {
+        if ancestor.join("Cargo.toml").is_file() || ancestor.join("Cargo.lock").is_file() {
+            push_profile_dirs(dirs, ancestor.join("target"), profiles);
         }
     }
 }
@@ -721,11 +754,18 @@ fn dependency_manifest_package_name(root: &Path) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-/// Adds a normalized Miden package stem if it has not already been added.
+/// Adds Miden package stem candidates if they have not already been added.
 fn push_dependency_stem(stems: &mut Vec<String>, name: &str) {
-    let stem = name.replace('-', "_");
-    if !stem.is_empty() && !stems.iter().any(|existing| existing == &stem) {
-        stems.push(stem);
+    push_dependency_stem_candidate(stems, name);
+
+    let normalized = name.replace('-', "_");
+    push_dependency_stem_candidate(stems, &normalized);
+}
+
+/// Adds one Miden package stem candidate if it has not already been added.
+fn push_dependency_stem_candidate(stems: &mut Vec<String>, stem: &str) {
+    if !stem.is_empty() && !stems.iter().any(|existing| existing == stem) {
+        stems.push(stem.to_owned());
     }
 }
 
@@ -734,6 +774,28 @@ fn procedure_root_key_from_export_path(path: &MasmPath) -> Option<ProcedureRootK
     let interface = single_non_root_path_component(path.parent()?)?;
     let function = path.last()?;
     Some(ProcedureRootKey::new(interface, function))
+}
+
+/// Returns lookup aliases for exports normalized from Wasm component-model names.
+fn procedure_root_key_aliases(key: &ProcedureRootKey) -> Vec<ProcedureRootKey> {
+    let Some((package, interface_and_version)) = key.interface.rsplit_once('/') else {
+        return vec![key.clone()];
+    };
+    let Some((interface, version)) = interface_and_version.split_once('@') else {
+        return vec![key.clone()];
+    };
+
+    let generated_interface = package.to_kebab_case();
+    if interface == generated_interface {
+        return vec![key.clone()];
+    }
+
+    let generated = ProcedureRootKey::new(
+        format!("{package}/{generated_interface}@{version}"),
+        key.function.clone(),
+    );
+
+    vec![key.clone(), generated]
 }
 
 /// Returns the only non-root path component if `path` has exactly one.
@@ -837,6 +899,55 @@ mod tests {
             key,
             ProcedureRootKey::new("miden:no-arg-account/no-arg-account@0.0.1", "get-count")
         );
+    }
+
+    #[test]
+    fn procedure_root_key_aliases_generated_component_interface() {
+        let key =
+            ProcedureRootKey::new("miden:counter-contract/counter-contract@0.1.0", "get-count");
+
+        let aliases = procedure_root_key_aliases(&key);
+
+        assert!(aliases.contains(&key));
+        assert!(aliases.contains(&ProcedureRootKey::new(
+            "miden:counter-contract/miden-counter-contract@0.1.0",
+            "get-count"
+        )));
+    }
+
+    #[test]
+    fn dependency_stem_preserves_package_filename_before_legacy_alias() {
+        let mut stems = Vec::new();
+
+        push_dependency_stem(&mut stems, "no-arg-account");
+
+        assert_eq!(stems, ["no-arg-account", "no_arg_account"]);
+    }
+
+    #[test]
+    fn dependency_output_dirs_include_manifest_ancestor_targets() {
+        let temp_root = env::temp_dir()
+            .join(format!("midenc-fpi-dependency-output-dirs-{}", std::process::id()));
+        let workspace_root = temp_root.join("workspace");
+        let dependency_root = workspace_root.join("tests/fixtures/dependency");
+        std::fs::create_dir_all(&dependency_root).unwrap();
+        std::fs::write(workspace_root.join("Cargo.lock"), "").unwrap();
+        std::fs::write(dependency_root.join("Cargo.toml"), "").unwrap();
+
+        let mut dirs = Vec::new();
+        push_manifest_ancestor_target_profile_dirs(
+            &mut dirs,
+            &dependency_root,
+            &[String::from("release")],
+        );
+
+        assert_eq!(dirs[0], dependency_root.join("target/miden/release"));
+        assert!(
+            dirs.contains(&workspace_root.join("target/miden/release")),
+            "expected workspace target in {dirs:?}"
+        );
+
+        std::fs::remove_dir_all(temp_root).unwrap();
     }
 
     #[test]

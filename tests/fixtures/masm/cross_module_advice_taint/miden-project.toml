@@ -1,0 +1,8 @@
+[package]
+name = "example"
+version = "0.1.0"
+
+[lib]
+path = "lib/mod.masm"
+
+[dependencies]

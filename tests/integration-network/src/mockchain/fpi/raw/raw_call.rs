@@ -97,11 +97,35 @@ fn build_raw_fpi_note_package(test_name: &str, note_source: &str) -> Arc<Package
     let note_package = format!("miden:{note_name}");
 
     let note_project = project(&note_name)
+        .file(
+            "miden-project.toml",
+            &raw_fpi_note_miden_project_toml(&note_name, &note_package),
+        )
         .file("Cargo.toml", &raw_fpi_note_cargo_toml(&note_name, &note_package))
         .file("src/lib.rs", note_source)
         .build();
 
     compile_rust_package(note_project.root(), true)
+}
+
+/// Returns the generated note project manifest for a raw FPI SDK binding test.
+fn raw_fpi_note_miden_project_toml(note_name: &str, note_package: &str) -> String {
+    let namespace = format!("{note_package}/miden-{note_name}@0.0.1");
+    format!(
+        r#"
+[package]
+name = "{note_name}"
+version = "0.0.1"
+
+[lib]
+kind = "note"
+namespace = "{namespace}"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+"#
+    )
 }
 
 /// Deploys the raw callee account and consumes a note that calls it through FPI.

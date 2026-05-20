@@ -246,7 +246,10 @@ impl AsmParserState {
             // refined further later.
             let parent_op = result.owner();
             let Some(existing) = self.operation_to_idx.get(&parent_op) else {
-                self.placeholder_value_uses[&value].extend_from_slice(locations);
+                self.placeholder_value_uses
+                    .entry(value)
+                    .or_default()
+                    .extend_from_slice(locations);
                 return;
             };
 

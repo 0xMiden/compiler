@@ -1,7 +1,6 @@
-use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
-use miden_assembly::{Library, ast::Module};
-use miden_mast_package::Package;
+use miden_assembly::ast::Module;
 use midenc_codegen_masm::{
     self as masm, MasmComponent, ToMasmComponent,
     intrinsics::{
@@ -9,15 +8,13 @@ use midenc_codegen_masm::{
         MEM_INTRINSICS_MODULE_NAME,
     },
 };
-use midenc_hir::{interner::Symbol, pass::AnalysisManager};
+use midenc_hir::pass::AnalysisManager;
 use midenc_session::OutputType;
 
 use super::*;
 
 pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
-    pub link_libraries: Vec<Arc<Library>>,
-    pub link_packages: BTreeMap<Symbol, Arc<Package>>,
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<Vec<u8>>,
 }
@@ -26,31 +23,30 @@ pub struct CodegenOutput {
 pub struct CodegenStage;
 
 impl Stage for CodegenStage {
-    type Input = LinkOutput;
+    type Input = MidenComponent;
     type Output = CodegenOutput;
 
     fn enabled(&self, context: &Context) -> bool {
         context.session().should_codegen()
     }
 
-    fn run(
-        &mut self,
-        linker_output: Self::Input,
-        context: Rc<Context>,
-    ) -> CompilerResult<Self::Output> {
-        let LinkOutput {
+    fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
+        let MidenComponent {
+            world,
             component,
-            masm: masm_modules,
-            mast: link_libraries,
-            packages: link_packages,
-            ..
-        } = linker_output;
+            account_component_metadata_bytes,
+        } = input;
 
-        log::debug!("lowering hir program to masm");
+        log::debug!("lowering miden component to masm");
 
-        let analysis_manager = AnalysisManager::new(component.as_operation_ref(), None);
-        let mut masm_component =
-            component.borrow().to_masm_component(analysis_manager).map(Box::new)?;
+        let anchor = component.map(|c| c.as_operation_ref()).unwrap_or(world.as_operation_ref());
+        let analysis_manager = AnalysisManager::new(anchor, None);
+        let mut masm_component = match component {
+            Some(component) => {
+                component.borrow().to_masm_component(analysis_manager).map(Box::new)?
+            }
+            None => world.borrow().to_masm_component(analysis_manager).map(Box::new)?,
+        };
 
         let session = context.session();
 
@@ -63,21 +59,18 @@ impl Stage for CodegenStage {
             masm_component.modules.push(intrinsics_module);
         }
 
-        // Link in any MASM inputs provided to the compiler
-        for module in masm_modules {
-            log::debug!("adding external masm module '{}' to masm program", module.path());
-            masm_component.modules.push(module);
-        }
-
         if session.should_emit(OutputType::Masm) {
             session.emit(OutputMode::Text, masm_component.as_ref()).into_diagnostic()?;
         }
 
+        if session.options.link_only {
+            log::debug!("stopping compiler early (link-only=true)");
+            return Err(CompilerStopped("link-only=true").into());
+        }
+
         Ok(CodegenOutput {
             component: Arc::from(masm_component),
-            link_libraries,
-            link_packages,
-            account_component_metadata_bytes: linker_output.account_component_metadata_bytes,
+            account_component_metadata_bytes,
         })
     }
 }

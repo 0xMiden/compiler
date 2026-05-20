@@ -11,14 +11,22 @@ use crate::{
 
 pub type WorldRef = UnsafeIntrusiveEntityRef<World>;
 
-/// A [World] is a component abstraction operation, i.e. it is designed to tie particular
-/// [super::Component]s together.
+/// [World] represents the global namespace which all symbols are resolved relative to.
 ///
-/// Worlds can contain only [super::Component]s.
+/// A world consists of a single region in which `Symbol`-like operations are declared/defined. It
+/// is most analagous to worlds in the WebAssembly Interface Types spec.
+///
+/// Currently, worlds are presumed to contain one of the following:
+///
+/// * [super::Component]s
+/// * [super::Interface]s
+/// * [super::Module]s
+///
+/// The codegen backend currently does not support lowering from [World] directly when the world
+/// contains [super::Component]s - each component must be lowered independently, as we currently
+/// expect components to map 1:1 with packages.
 ///
 /// NOTE: Worlds always have `Public` visibility.
-///
-/// Worlds are linked into Miden Assembly according to the following rules:
 #[derive(OpPrinter, OpParser)]
 #[operation(
     dialect = BuiltinDialect,

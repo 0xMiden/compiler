@@ -1,3 +1,10 @@
+//! Test that debug info tracks source locations in a loop
+//!
+//! RUN: midenc %s --entrypoint=variable_locations::entrypoint -Zprint-hir-source-locations --emit=hir=- -Canalyze-only 2>&1 | filecheck %s
+//!
+//! Check that function has source location annotations
+//! CHECK-LABEL: builtin.function{{.*}}@entrypoint
+//! CHECK: loc({{.*}}variable_locations.rs:{{[0-9]+}}
 #![no_std]
 #![no_main]
 #![allow(unused_unsafe)]
@@ -9,7 +16,7 @@ fn panic(_info: &PanicInfo) -> ! {
     unsafe { core::arch::wasm32::unreachable() }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(n: u32) -> u32 {
     let mut sum = 0u32;
     let mut i = 0u32;

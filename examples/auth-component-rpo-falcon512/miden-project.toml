@@ -1,0 +1,14 @@
+[package]
+name = "auth-component-rpo-falcon512"
+version = "0.1.0"
+
+[lib]
+kind = "account-component"
+namespace = "miden:auth-component-rpo-falcon512/miden-auth-component-rpo-falcon512@0.1.0"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
