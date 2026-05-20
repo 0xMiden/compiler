@@ -601,19 +601,60 @@ fn resolve_dependency_package_path(dependency: &MidenDependency) -> syn::Result<
         }
     }
 
+    Err(Error::new(
+        Span::call_site(),
+        missing_dependency_package_message(dependency, &package_stems, &output_dirs, &profiles),
+    ))
+}
+
+/// Formats the diagnostic emitted when FPI wrapper generation cannot load a dependency package.
+fn missing_dependency_package_message(
+    dependency: &MidenDependency,
+    package_stems: &[String],
+    output_dirs: &[PathBuf],
+    profiles: &[String],
+) -> String {
     let searched = output_dirs
         .iter()
         .map(|dir| format!("'{}'", dir.display()))
         .collect::<Vec<_>>()
         .join(", ");
-    Err(Error::new(
-        Span::call_site(),
+    let expected_files = package_stems
+        .iter()
+        .flat_map(|stem| profiles.iter().map(move |profile| format!("{stem}.masp in {profile}")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let build_hint = dependency_build_hint(dependency);
+
+    format!(
+        "miden::generate! could not find a built `.masp` package for FPI dependency '{}' (import \
+         '{}', root '{}'). FPI wrappers need the dependency package during Rust macro expansion \
+         to read procedure roots. Expected one of: {expected_files}. Searched: {searched}. \
+         {build_hint}",
+        dependency.name,
+        dependency.import,
+        dependency.root.display(),
+    )
+}
+
+/// Returns a command hint for building a dependency package before generating FPI wrappers.
+fn dependency_build_hint(dependency: &MidenDependency) -> String {
+    let manifest_path = dependency.root.join("Cargo.toml");
+    if manifest_path.is_file() {
         format!(
-            "failed to find built `.masp` artifact for dependency '{}'; searched {searched}; \
-             build the dependency with `cargo miden build` first",
-            dependency.name,
-        ),
-    ))
+            "Build the dependency first with `cargo miden build --manifest-path {} --release`, or \
+             persist the compiled package to '{}/target/miden/<profile>' before compiling this \
+             crate.",
+            manifest_path.display(),
+            dependency.root.display(),
+        )
+    } else {
+        format!(
+            "Build the dependency first with `cargo miden build`, or persist the compiled package \
+             to '{}/target/miden/<profile>' before compiling this crate.",
+            dependency.root.display(),
+        )
+    }
 }
 
 /// Returns candidate output directories where a dependency `.masp` may have been written.
@@ -905,6 +946,36 @@ mod tests {
             dirs.contains(&workspace_root.join("target/miden/release")),
             "expected workspace target in {dirs:?}"
         );
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn missing_dependency_package_message_explains_macro_time_requirement() {
+        let temp_root =
+            env::temp_dir().join(format!("midenc-fpi-missing-package-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_root).unwrap();
+        std::fs::write(temp_root.join("Cargo.toml"), "[package]\nname = \"counter\"\n").unwrap();
+
+        let dependency = MidenDependency {
+            name: "counter".to_string(),
+            root: temp_root.clone(),
+            import: "miden:counter/counter@0.0.1".to_string(),
+        };
+        let profiles = vec!["release".to_string(), "debug".to_string()];
+        let stems = vec!["counter".to_string(), "counter_component".to_string()];
+        let output_dirs =
+            vec![temp_root.join("target/miden/release"), temp_root.join("target/miden/debug")];
+
+        let message =
+            missing_dependency_package_message(&dependency, &stems, &output_dirs, &profiles);
+
+        assert!(message.contains("miden::generate! could not find a built `.masp` package"));
+        assert!(message.contains("FPI wrappers need the dependency package during Rust macro"));
+        assert!(message.contains("counter.masp in release"));
+        assert!(message.contains("counter_component.masp in debug"));
+        assert!(message.contains("cargo miden build --manifest-path"));
+        assert!(message.contains(&temp_root.display().to_string()));
 
         std::fs::remove_dir_all(temp_root).unwrap();
     }
