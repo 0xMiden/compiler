@@ -1980,10 +1980,19 @@ impl_hir_lowering_load_sext!(wasm::I64Load32S);
 mod tests {
     use std::{collections::BTreeSet, rc::Rc};
 
-    use midenc_hir::{Context, SourceSpan};
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_hir::{
+        Context, SourceSpan, TraceTarget,
+        dialects::builtin::{self, BuiltinOpBuilder},
+        formatter::PrettyPrint,
+        pass::AnalysisManager,
+        testing::Test,
+        version::Version,
+    };
+    use midenc_hir_analysis::analyses::LivenessAnalysis;
 
     use super::*;
-    use crate::stack::OperandStack;
+    use crate::{linker::LinkInfo, stack::OperandStack};
 
     #[test]
     fn indirect_fpi_arg_load_sign_extends_signed_narrow_values() {
@@ -2069,5 +2078,118 @@ mod tests {
         let message = err.to_string();
 
         assert!(message.contains("unsupported load type `u64`"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn direct_fpi_padding_emits_expected_movups_for_regular_widths() -> Result<(), Report> {
+        for (actual_arg_count, expected_padding) in [(6, 16), (7, 15), (15, 7)] {
+            let block = emit_direct_fpi_padding(actual_arg_count)?;
+            let output = block.to_pretty_string();
+            let movup = format!("movup.{actual_arg_count}");
+
+            assert_eq!(
+                output.matches(&movup).count(),
+                actual_arg_count * expected_padding,
+                "unexpected padding sequence for {actual_arg_count} operands:\n{output}"
+            );
+            assert_eq!(
+                block.len(),
+                expected_padding * (actual_arg_count + 1),
+                "unexpected instruction count for {actual_arg_count} operands:\n{output}"
+            );
+            assert!(
+                !output.contains("locaddr"),
+                "regular direct FPI padding must not use the scratch slot:\n{output}"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn direct_fpi_padding_uses_scratch_for_sixteen_operands() -> Result<(), Report> {
+        let block = emit_direct_fpi_padding(16)?;
+        let output = block.to_pretty_string();
+
+        assert_eq!(
+            output.matches("movup.15").count(),
+            91,
+            "sixteen-operand padding must spill once and pad through movup.15:\n{output}"
+        );
+        assert_eq!(
+            output.matches("locaddr.0").count(),
+            2,
+            "sixteen-operand padding must store and reload the scratch slot:\n{output}"
+        );
+        assert!(
+            output.contains("exec.::intrinsics::mem::store_felt"),
+            "sixteen-operand padding must spill the deepest operand:\n{output}"
+        );
+        assert!(
+            output.contains("exec.::intrinsics::mem::load_felt"),
+            "sixteen-operand padding must reload the deepest operand:\n{output}"
+        );
+        assert!(
+            output.contains("movdn.15"),
+            "sixteen-operand padding must restore the deepest operand:\n{output}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn direct_fpi_padding_rejects_seventeen_operands() {
+        let err = emit_direct_fpi_padding(17)
+            .expect_err("direct FPI padding must reject operands past the scratch-slot boundary");
+        let message = err.to_string();
+
+        assert!(
+            message.contains("supports at most 10 flattened procedure input felts"),
+            "unexpected error: {message}"
+        );
+    }
+
+    fn emit_direct_fpi_padding(actual_arg_count: usize) -> Result<masm::Block, Report> {
+        let params = vec![Type::Felt; actual_arg_count];
+        let mut test = Test::new("direct_fpi_padding_test", &params, &[]);
+        let function_ref = test.function();
+        let span = function_ref.span();
+        let exec = {
+            let signature = function_ref.borrow().get_signature().clone();
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let args = {
+                let entry = entry.borrow();
+                entry.arguments().iter().copied().map(|arg| arg as ValueRef).collect::<Vec<_>>()
+            };
+            let exec = builder.exec(function_ref, signature, args, span)?;
+            builder.ret(core::iter::empty::<ValueRef>(), span)?;
+            exec
+        };
+
+        let analysis_manager = AnalysisManager::new(function_ref.as_operation_ref(), None);
+        let liveness = analysis_manager.get_analysis::<LivenessAnalysis>()?;
+        let link_info = LinkInfo::new(builtin::ComponentId {
+            namespace: "root".into(),
+            name: "root".into(),
+            version: Version::new(1, 0, 0),
+        });
+        let mut invoked = BTreeSet::default();
+        let mut stack = OperandStack::new(test.context_rc());
+        for _ in 0..actual_arg_count {
+            stack.push(Type::Felt);
+        }
+
+        let mut emitter = BlockEmitter {
+            liveness: &liveness,
+            link_info: &link_info,
+            invoked: &mut invoked,
+            target: Default::default(),
+            stack,
+            trace_target: TraceTarget::category("codegen"),
+        };
+
+        append_fpi_padding(&mut emitter, &exec.borrow(), actual_arg_count, span)?;
+        Ok(emitter.into_emitted_block(span))
     }
 }
