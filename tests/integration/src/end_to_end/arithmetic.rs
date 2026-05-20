@@ -470,7 +470,6 @@ fn overflowing_div_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1121"]
 fn overflowing_div_u128() {
     test_overflowing_arith(
         u128::overflowing_div,
@@ -516,7 +515,6 @@ fn overflowing_div_i64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1109"]
 fn overflowing_div_i128() {
     test_overflowing_arith(
         i128::overflowing_div,
@@ -562,7 +560,6 @@ fn overflowing_rem_u64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1122"]
 fn overflowing_rem_u128() {
     test_overflowing_arith(
         u128::overflowing_rem,
