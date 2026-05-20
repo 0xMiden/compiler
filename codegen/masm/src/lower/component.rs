@@ -648,9 +648,8 @@ fn function_requires_fpi_padding_scratch(function: &builtin::Function) -> bool {
     function
         .as_operation()
         .prewalk(|op: &Operation| -> WalkResult<(), ()> {
-            let needs_scratch = op
-                .downcast_ref::<hir::Exec>()
-                .is_some_and(super::lowering::requires_fpi_padding_scratch);
+            let needs_scratch =
+                op.downcast_ref::<hir::Exec>().is_some_and(super::fpi::requires_padding_scratch);
             if needs_scratch {
                 WalkResult::Break(())
             } else {
