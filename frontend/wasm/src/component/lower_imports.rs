@@ -85,7 +85,7 @@ pub fn generate_import_lowering_function(
         .map(|ba| ba as ValueRef)
         .collect();
 
-    if is_fpi_import(&import_func_path) {
+    if is_fpi_import(&import_func_path, import_func_ty)? {
         return generate_fpi_lowering(
             world_builder,
             import_func_ty,
@@ -591,8 +591,88 @@ fn canonical_arg_to_felt(
 }
 
 /// Returns true for WIT imports generated for foreign procedure invocation.
-fn is_fpi_import(import_func_path: &SymbolPath) -> bool {
-    import_func_path.name().as_str().starts_with(FPI_IMPORT_PREFIX)
+fn is_fpi_import(import_func_path: &SymbolPath, import_func_ty: &FunctionType) -> WasmResult<bool> {
+    if !import_func_path.name().as_str().starts_with(FPI_IMPORT_PREFIX) {
+        return Ok(false);
+    }
+
+    validate_fpi_import_shape(import_func_path, import_func_ty)?;
+    Ok(true)
+}
+
+/// Validates that an import with the reserved FPI prefix has the generated FPI ABI prefix.
+fn validate_fpi_import_shape(
+    import_func_path: &SymbolPath,
+    import_func_ty: &FunctionType,
+) -> WasmResult<()> {
+    let params = import_func_ty.params.as_slice();
+    let valid_shape = has_structured_fpi_abi_prefix(params) || has_flattened_fpi_abi_prefix(params);
+    if !valid_shape {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "import `{import_func_path}` uses reserved FPI prefix `{FPI_IMPORT_PREFIX}` but does \
+             not have the generated FPI ABI prefix `felt, felt, word`"
+        )));
+    }
+
+    Ok(())
+}
+
+/// Returns true when `params` begin with the generated `felt, felt, word` prefix.
+fn has_structured_fpi_abi_prefix(params: &[Type]) -> bool {
+    matches!(
+        params,
+        [account_id_prefix, account_id_suffix, proc_root, ..]
+            if is_fpi_felt_type(account_id_prefix)
+                && is_fpi_felt_type(account_id_suffix)
+                && is_fpi_proc_root_type(proc_root)
+    )
+}
+
+/// Returns true when `params` begin with a flattened generated `felt, felt, word` prefix.
+fn has_flattened_fpi_abi_prefix(params: &[Type]) -> bool {
+    matches!(
+        params,
+        [
+            account_id_prefix,
+            account_id_suffix,
+            proc_root_a,
+            proc_root_b,
+            proc_root_c,
+            proc_root_d,
+            ..
+        ] if [
+            account_id_prefix,
+            account_id_suffix,
+            proc_root_a,
+            proc_root_b,
+            proc_root_c,
+            proc_root_d,
+        ]
+        .into_iter()
+        .all(is_fpi_felt_type)
+    )
+}
+
+/// Returns true when `ty` matches the generated FPI `felt` type.
+fn is_fpi_felt_type(ty: &Type) -> bool {
+    matches!(ty, Type::Felt)
+        || matches!(
+            ty,
+            Type::Struct(struct_ty)
+                if struct_ty.fields().len() == 1
+                    && struct_ty.fields()[0].offset == 0
+                    && struct_ty.fields()[0].ty == Type::Felt
+        )
+}
+
+/// Returns true when `ty` matches the generated FPI procedure-root `word` record.
+fn is_fpi_proc_root_type(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Struct(struct_ty)
+            if struct_ty.fields().len() == 4
+                && struct_ty.fields().iter().all(|field| is_fpi_felt_type(&field.ty))
+    )
 }
 
 /// Validates the FPI import ABI that the Rust wrapper generates.
@@ -987,6 +1067,120 @@ mod tests {
     use midenc_hir::{Context, EnumType, StructType, Variant};
 
     use super::*;
+
+    fn test_import_path(name: &str) -> SymbolPath {
+        SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(Symbol::intern("miden")),
+            SymbolNameComponent::Component(Symbol::intern("counter-account")),
+            SymbolNameComponent::Leaf(Symbol::intern(name)),
+        ])
+    }
+
+    fn word_type() -> Type {
+        Type::from(StructType::new(vec![Type::Felt; 4]))
+    }
+
+    fn wit_felt_type() -> Type {
+        Type::from(StructType::named(
+            Arc::from("miden:base/core-types@1.0.0/felt"),
+            [(Arc::from("inner"), Type::Felt)],
+        ))
+    }
+
+    fn wit_word_type() -> Type {
+        let felt_ty = wit_felt_type();
+        Type::from(StructType::named(
+            Arc::from("miden:base/core-types@1.0.0/word"),
+            [
+                (Arc::from("a"), felt_ty.clone()),
+                (Arc::from("b"), felt_ty.clone()),
+                (Arc::from("c"), felt_ty.clone()),
+                (Arc::from("d"), felt_ty),
+            ],
+        ))
+    }
+
+    #[test]
+    fn is_fpi_import_ignores_non_prefixed_imports() {
+        let import_func_ty = FunctionType::new(CallConv::Wasm, vec![Type::Felt], vec![Type::Felt]);
+        let import_func_path = test_import_path("get-count");
+
+        let is_fpi = is_fpi_import(&import_func_path, &import_func_ty)
+            .expect("non-prefixed imports should not validate the FPI ABI shape");
+
+        assert!(!is_fpi);
+    }
+
+    #[test]
+    fn is_fpi_import_accepts_generated_abi_prefix() {
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            vec![Type::Felt, Type::Felt, word_type(), Type::Felt],
+            vec![Type::Felt],
+        );
+        let import_func_path = test_import_path("fpi-get-count");
+
+        let is_fpi = is_fpi_import(&import_func_path, &import_func_ty)
+            .expect("generated FPI imports should pass the ABI shape check");
+
+        assert!(is_fpi);
+    }
+
+    #[test]
+    fn is_fpi_import_accepts_wrapped_generated_abi_prefix() {
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            vec![wit_felt_type(), wit_felt_type(), wit_word_type()],
+            vec![wit_felt_type()],
+        );
+        let import_func_path = test_import_path("fpi-get-count");
+
+        let is_fpi = is_fpi_import(&import_func_path, &import_func_ty)
+            .expect("generated FPI imports should accept the WIT core-types wrappers");
+
+        assert!(is_fpi);
+    }
+
+    #[test]
+    fn is_fpi_import_accepts_flattened_generated_abi_prefix() {
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            vec![
+                Type::Felt,
+                Type::Felt,
+                Type::Felt,
+                Type::Felt,
+                Type::Felt,
+                Type::Felt,
+                Type::U32,
+            ],
+            vec![Type::Felt],
+        );
+        let import_func_path = test_import_path("fpi-get-count");
+
+        let is_fpi = is_fpi_import(&import_func_path, &import_func_ty)
+            .expect("generated FPI imports may reach lowering with the word prefix flattened");
+
+        assert!(is_fpi);
+    }
+
+    #[test]
+    fn is_fpi_import_rejects_reserved_prefix_without_generated_abi() {
+        let import_func_ty =
+            FunctionType::new(CallConv::Wasm, vec![Type::Felt, Type::Felt], vec![Type::Felt]);
+        let import_func_path = test_import_path("fpi-ordinary-import");
+
+        let err = is_fpi_import(&import_func_path, &import_func_ty)
+            .expect_err("reserved FPI prefix without the generated ABI must be rejected");
+        let message = err.to_string();
+
+        assert!(
+            message.contains("reserved FPI prefix `fpi-`")
+                && message.contains("generated FPI ABI prefix `felt, felt, word`"),
+            "unexpected error: {message}"
+        );
+    }
 
     #[test]
     fn validate_fpi_core_signature_rejects_too_many_procedure_inputs() {
