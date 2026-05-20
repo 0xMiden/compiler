@@ -88,6 +88,11 @@ impl InferIntRangeInterface for Add {
         let [lhs, rhs] = operands else {
             return;
         };
+        let confidence = if lhs.is_proven() && rhs.is_proven() {
+            IntegerRangeConfidence::Proven
+        } else {
+            IntegerRangeConfidence::Assumed
+        };
         let (Some(lhs), Some(rhs)) = (lhs.range(), rhs.range()) else {
             return;
         };
@@ -96,8 +101,17 @@ impl InferIntRangeInterface for Add {
         let range = lhs
             .add_without_overflow(rhs)
             .filter(|range| result_top.union(range) == result_top)
-            .map(IntegerValueRange::new)
-            .unwrap_or_else(|| IntegerValueRange::max_for_type(self.result().ty()));
+            .map(|range| IntegerValueRange::with_confidence(range, confidence))
+            .unwrap_or_else(|| {
+                // Unchecked arithmetic can produce a field value outside the
+                // declared integer type; only checked/wrapping operations prove
+                // the fallback bound at runtime.
+                if self.get_overflow().is_unchecked() {
+                    IntegerValueRange::assumed(result_top)
+                } else {
+                    IntegerValueRange::proven(result_top)
+                }
+            });
         set_result_range(self.result().as_value_ref(), range);
     }
 }
@@ -638,12 +652,23 @@ macro_rules! impl_infer_int_range_for_comparison {
                 let [lhs, rhs] = operands else {
                     return;
                 };
+                let confidence = if lhs.is_proven() && rhs.is_proven() {
+                    IntegerRangeConfidence::Proven
+                } else {
+                    IntegerRangeConfidence::Assumed
+                };
                 let (Some(lhs), Some(rhs)) = (lhs.range(), rhs.range()) else {
                     return;
                 };
                 let operand_ty = self.lhs().ty();
-                let range =
-                    infer_comparison_range(&operand_ty, lhs, rhs, $comparison, self.result().ty());
+                let range = infer_comparison_range(
+                    &operand_ty,
+                    lhs,
+                    rhs,
+                    $comparison,
+                    self.result().ty(),
+                    confidence,
+                );
                 set_result_range(self.result().as_value_ref(), range);
             }
         }
@@ -794,9 +819,16 @@ fn infer_comparison_range(
     rhs: &ConstantIntRange,
     comparison: IntComparison,
     result_ty: &Type,
+    confidence: IntegerRangeConfidence,
 ) -> IntegerValueRange {
     if lhs.is_untracked() || rhs.is_untracked() || lhs.width() != rhs.width() {
         return IntegerValueRange::max_for_type(result_ty);
+    }
+
+    if lhs.width() != ConstantIntRange::max_for_type(operand_ty).width() {
+        // Unrealized casts preserve the source's bounds. Those signed bounds
+        // cannot be used to order values interpreted at a different width.
+        return IntegerValueRange::proven(ConstantIntRange::max_for_type(result_ty));
     }
 
     let outcome = match comparison {
@@ -807,8 +839,8 @@ fn infer_comparison_range(
     };
 
     outcome
-        .map(|value| exact_bool_range(result_ty, value))
-        .unwrap_or_else(|| IntegerValueRange::max_for_type(result_ty))
+        .map(|value| exact_bool_range(result_ty, value, confidence))
+        .unwrap_or_else(|| IntegerValueRange::proven(ConstantIntRange::max_for_type(result_ty)))
 }
 
 fn infer_eq(lhs: &ConstantIntRange, rhs: &ConstantIntRange) -> Option<bool> {
@@ -917,13 +949,20 @@ fn is_signed_ordering(ty: &Type) -> bool {
     matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::I128)
 }
 
-fn exact_bool_range(ty: &Type, value: bool) -> IntegerValueRange {
+fn exact_bool_range(
+    ty: &Type,
+    value: bool,
+    confidence: IntegerRangeConfidence,
+) -> IntegerValueRange {
     let width = ConstantIntRange::max_for_type(ty).width();
     if width == 0 {
         IntegerValueRange::max_for_type(ty)
     } else {
         let value = u128::from(value);
-        IntegerValueRange::new(ConstantIntRange::from_unsigned(width, value, value))
+        IntegerValueRange::with_confidence(
+            ConstantIntRange::from_unsigned(width, value, value),
+            confidence,
+        )
     }
 }
 

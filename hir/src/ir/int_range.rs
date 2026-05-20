@@ -82,13 +82,7 @@ impl ConstantIntRange {
             Type::I32 => Self::from_signed(32, i32::MIN as i128, i32::MAX as i128),
             Type::I64 => Self::from_signed(64, i64::MIN as i128, i64::MAX as i128),
             Type::I128 => Self::from_signed(128, i128::MIN, i128::MAX),
-            Type::Felt => Self {
-                width: 64,
-                umin: 0,
-                umax: (Felt::ORDER - 1) as u128,
-                smin: 0,
-                smax: (Felt::ORDER - 1) as i128,
-            },
+            Type::Felt => Self::from_unsigned(64, 0, (Felt::ORDER - 1) as u128),
             _ => Self::untracked(),
         }
     }
@@ -190,6 +184,38 @@ impl ConstantIntRange {
         }
     }
 
+    /// Widen expanding bounds to the limits of their representation, ensuring that
+    /// repeated loop-carried joins reach a fixed point in a bounded number of steps.
+    pub fn widen(&self, other: &Self) -> Self {
+        let joined = self.union(other);
+        if joined.is_untracked() {
+            return joined;
+        }
+        Self {
+            width: joined.width,
+            umin: if joined.umin < self.umin {
+                0
+            } else {
+                joined.umin
+            },
+            umax: if joined.umax > self.umax {
+                unsigned_max(joined.width)
+            } else {
+                joined.umax
+            },
+            smin: if joined.smin < self.smin {
+                signed_min(joined.width)
+            } else {
+                joined.smin
+            },
+            smax: if joined.smax > self.smax {
+                signed_max(joined.width)
+            } else {
+                joined.smax
+            },
+        }
+    }
+
     /// Compute the greatest lower bound of two ranges.
     pub fn intersection(&self, other: &Self) -> Self {
         if self.is_untracked() {
@@ -260,10 +286,17 @@ impl ConstantIntRange {
                 if self.is_untracked() || constraint.is_untracked() {
                     return false;
                 }
-                self.umin >= constraint.umin
-                    && self.umax <= constraint.umax
-                    && self.smin >= constraint.smin
-                    && self.smax <= constraint.smax
+                let unsigned_fits = self.umin >= constraint.umin && self.umax <= constraint.umax;
+                if matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::I128) {
+                    // Signed bounds describe bit patterns at a particular width. Do not
+                    // interpret wider bounds as facts about a narrower signed value.
+                    unsigned_fits
+                        && self.width == constraint.width
+                        && self.smin >= constraint.smin
+                        && self.smax <= constraint.smax
+                } else {
+                    unsigned_fits
+                }
             }
         }
     }
@@ -289,41 +322,106 @@ impl fmt::Display for ConstantIntRange {
     }
 }
 
+/// Whether an integer range is a proven fact or only an assumption derived from type fallback.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum IntegerRangeConfidence {
+    /// The range is derived from operation semantics or a checked runtime refinement.
+    Proven,
+    /// The range is only the conservative range of the value's static type.
+    Assumed,
+}
+
+impl IntegerRangeConfidence {
+    #[inline]
+    pub const fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Proven, Self::Proven) => Self::Proven,
+            _ => Self::Assumed,
+        }
+    }
+}
+
 /// The integer range lattice value attached to an SSA value.
 #[derive(Default, Clone, PartialEq, Eq)]
 pub struct IntegerValueRange {
     value: Option<ConstantIntRange>,
+    confidence: Option<IntegerRangeConfidence>,
 }
 
 impl IntegerValueRange {
     /// Create an uninitialized lattice value.
     #[inline]
     pub const fn uninitialized() -> Self {
-        Self { value: None }
+        Self {
+            value: None,
+            confidence: None,
+        }
     }
 
-    /// Create an initialized lattice value from `range`.
+    /// Create a proven initialized lattice value from `range`.
     #[inline]
     pub const fn new(range: ConstantIntRange) -> Self {
-        Self { value: Some(range) }
+        Self::proven(range)
     }
 
-    /// Create a top value for the range of `ty`.
+    /// Create a proven initialized lattice value from `range`.
+    #[inline]
+    pub const fn proven(range: ConstantIntRange) -> Self {
+        Self {
+            value: Some(range),
+            confidence: Some(IntegerRangeConfidence::Proven),
+        }
+    }
+
+    /// Create an assumed initialized lattice value from `range`.
+    #[inline]
+    pub const fn assumed(range: ConstantIntRange) -> Self {
+        Self {
+            value: Some(range),
+            confidence: Some(IntegerRangeConfidence::Assumed),
+        }
+    }
+
+    /// Create an initialized lattice value from `range` and `confidence`.
+    #[inline]
+    pub const fn with_confidence(
+        range: ConstantIntRange,
+        confidence: IntegerRangeConfidence,
+    ) -> Self {
+        Self {
+            value: Some(range),
+            confidence: Some(confidence),
+        }
+    }
+
+    /// Create an assumed top value for the range of `ty`.
     #[inline]
     pub fn max_for_type(ty: &Type) -> Self {
-        Self::new(ConstantIntRange::max_for_type(ty))
+        Self::assumed(ConstantIntRange::max_for_type(ty))
     }
 
-    /// Create an exact range for `value`.
+    /// Create a proven exact range for `value`.
     #[inline]
     pub fn constant(value: Immediate) -> Self {
-        Self::new(ConstantIntRange::constant(value))
+        Self::proven(ConstantIntRange::constant(value))
     }
 
     /// Return true if this lattice value has not been initialized.
     #[inline]
     pub const fn is_uninitialized(&self) -> bool {
         self.value.is_none()
+    }
+
+    /// Return the confidence for this range, if initialized.
+    #[inline]
+    pub const fn confidence(&self) -> Option<IntegerRangeConfidence> {
+        self.confidence
+    }
+
+    /// Return true if this lattice value is a proven range fact.
+    #[inline]
+    pub const fn is_proven(&self) -> bool {
+        matches!(self.confidence, Some(IntegerRangeConfidence::Proven))
     }
 
     /// Return the underlying range if initialized.
@@ -335,23 +433,28 @@ impl IntegerValueRange {
     /// Return this range intersected with `constraint`.
     pub fn constrained_by(&self, constraint: &ValueRangeConstraint) -> Self {
         let constraint = ConstantIntRange::max_for_type(constraint.ty());
+        // A runtime check proves its own constraint, not unchecked assumptions
+        // inherited from the input's static type.
+        if !self.is_proven() {
+            return Self::proven(constraint);
+        }
         match self.value {
-            None => Self::new(constraint),
+            None => Self::proven(constraint),
             Some(current) if current.width == constraint.width => {
-                Self::new(current.intersection(&constraint))
+                Self::proven(current.intersection(&constraint))
             }
             Some(current) if !current.is_untracked() && !constraint.is_untracked() => {
                 let umin = current.umin.max(constraint.umin);
                 let umax = current.umax.min(constraint.umax);
                 if umin <= umax {
-                    Self::new(ConstantIntRange::from_unsigned(constraint.width, umin, umax))
+                    Self::proven(ConstantIntRange::from_unsigned(constraint.width, umin, umax))
                 } else {
                     // A checked assertion/cast with no overlapping runtime values would trap. The
                     // result can only exist on paths where the constraint holds.
-                    Self::new(constraint)
+                    Self::proven(constraint)
                 }
             }
-            Some(_) => Self::new(constraint),
+            Some(_) => Self::proven(constraint),
         }
     }
 }
@@ -364,9 +467,16 @@ impl fmt::Debug for IntegerValueRange {
 
 impl fmt::Display for IntegerValueRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.value {
-            None => f.write_str("uninitialized"),
-            Some(range) => fmt::Display::fmt(&range, f),
+        match (self.value, self.confidence) {
+            (None, _) => f.write_str("uninitialized"),
+            (Some(range), confidence) => {
+                fmt::Display::fmt(&range, f)?;
+                match confidence {
+                    Some(IntegerRangeConfidence::Proven) => f.write_str(" proven"),
+                    Some(IntegerRangeConfidence::Assumed) => f.write_str(" assumed"),
+                    None => Ok(()),
+                }
+            }
         }
     }
 }
@@ -422,5 +532,33 @@ const fn signed_to_unsigned(width: u16, value: i128) -> u128 {
         value as u128
     } else {
         (1u128 << width) - value.unsigned_abs()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regression_checked_refinement_does_not_prove_assumed_bounds() {
+        let assumed = IntegerValueRange::max_for_type(&Type::U8);
+        let refined = assumed.constrained_by(&ValueRangeConstraint::Type(Type::U32));
+        assert!(refined.is_proven());
+        assert_eq!(refined.range().unwrap().umax(), u32::MAX as u128);
+    }
+
+    #[test]
+    fn regression_unsigned_constraint_accepts_wider_representation() {
+        let range = ConstantIntRange::constant(Immediate::Felt(Felt::new(1u64 << 31).unwrap()));
+        assert!(range.satisfies(&ValueRangeConstraint::Type(Type::U32)));
+        assert!(!range.satisfies(&ValueRangeConstraint::Type(Type::U16)));
+    }
+
+    #[test]
+    fn regression_felt_type_range_contains_all_felt_constants() {
+        let top = ConstantIntRange::max_for_type(&Type::Felt);
+        let constant =
+            ConstantIntRange::constant(Immediate::Felt(Felt::new(Felt::ORDER - 1).unwrap()));
+        assert_eq!(top.union(&constant), top);
     }
 }

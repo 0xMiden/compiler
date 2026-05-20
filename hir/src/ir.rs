@@ -53,7 +53,7 @@ pub use self::{
     },
     ident::{FunctionIdent, Ident, IdentAttr},
     immediates::{Felt, Immediate, ImmediateAttr},
-    int_range::{ConstantIntRange, IntegerValueRange},
+    int_range::{ConstantIntRange, IntegerRangeConfidence, IntegerValueRange},
     op::{BuildableOp, GenericSuccessorLayout, Op, OpExt, OpRegistration},
     operands::{
         OpOperand, OpOperandImpl, OpOperandList, OpOperandRange, OpOperandRangeMut,

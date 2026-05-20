@@ -548,7 +548,7 @@ pub proc bad
 end
 "#;
 
-    /// A root that yields a finding during initialization and queues interprocedural solver work.
+    /// A root with a tainted sink and interprocedural solver work.
     const BUDGET_ROOT: &str = r#"
 proc duplicate(value: u32) -> (u32, u32)
     dup
@@ -1103,30 +1103,38 @@ end
     #[test]
     fn lint_reports_partial_findings_when_the_worklist_budget_is_exhausted() {
         let project = budget_project("masm_frontend_partial_budget");
-        let (context, diagnostics) = capturing_context(&project, |options| options.lint = true);
-        let assembly = project.assembly_context().expect("assembly context");
-        let state = RequestState::new(Goal::at(CheckpointId::HIR_ANALYZED), vec![]);
-        let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
-        let frontend = MasmProjectFrontend::with_lint_worklist_budget(12);
+        let incomplete_prefix = "MASM advice taint analysis incomplete: dataflow solver exceeded \
+                                 worklist iteration budget";
 
-        let flow = frontend.compile(&cx).expect("budget exhaustion must return a partial result");
+        // Each loaded analysis changes the worklist order and the cost of reaching
+        // the first finding. Find a cutoff after that finding, before convergence,
+        // rather than pinning the test to one solver schedule.
+        for budget in 0..256 {
+            let (context, diagnostics) = capturing_context(&project, |options| options.lint = true);
+            let assembly = project.assembly_context().expect("assembly context");
+            let state = RequestState::new(Goal::at(CheckpointId::HIR_ANALYZED), vec![]);
+            let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
+            let frontend = MasmProjectFrontend::with_lint_worklist_budget(budget);
+            let flow =
+                frontend.compile(&cx).expect("budget exhaustion must return a partial result");
+            assert!(flow.is_break(), "the partial HIR world must reach hir.analyzed");
 
-        assert!(flow.is_break(), "the partial HIR world must reach hir.analyzed");
-        let diagnostics = diagnostics.captured();
-        assert_eq!(
-            warning_messages(&diagnostics),
-            vec![
-                "unconstrained advice value reaches operation requiring a constrained value in \
-                 function 'entry'"
-                    .to_string(),
-                "MASM advice taint analysis incomplete: dataflow solver exceeded worklist \
-                 iteration budget of 12; next analysis would run sparse-constant-propagation at \
-                 after(arith.add in ^block3) in function 'entry', with 2 queued item(s) \
-                 remaining; queued analyses: sparse-constant-propagation=1, \
-                 unconstrained-advice-taint=1; queued functions: entry=2"
-                    .to_string(),
-            ]
-        );
+            let warnings = warning_messages(&diagnostics.captured());
+            match warnings.as_slice() {
+                [finding, incomplete] => {
+                    assert_eq!(
+                        finding,
+                        "unconstrained advice value reaches operation requiring a constrained \
+                         value in function 'entry'"
+                    );
+                    assert!(incomplete.starts_with(incomplete_prefix), "{warnings:?}");
+                    return;
+                }
+                [incomplete] if incomplete.starts_with(incomplete_prefix) => {}
+                _ => panic!("expected partial findings before convergence, got {warnings:?}"),
+            }
+        }
+        panic!("fixture did not produce partial findings within the worklist budget");
     }
 
     /// Coverage warnings use the session diagnostics policy and fail under `-Dwarnings`.

@@ -1,10 +1,13 @@
+mod lattice;
+
 use midenc_hir::{
     AttributeRef, Forward, Immediate, Operation, ProgramPoint, Report, SmallVec, ValueRef,
     attributes::IntegerLikeAttr,
     traits::{InferIntRangeInterface, operation_result_value_range_refinement},
 };
-pub use midenc_hir::{ConstantIntRange, IntegerValueRange};
+pub use midenc_hir::{ConstantIntRange, IntegerRangeConfidence, IntegerValueRange};
 
+pub use self::lattice::IntegerRangeLattice;
 use super::{DeadCodeAnalysis, SparseConstantPropagation, constant_propagation::ConstantValue};
 use crate::{
     AnalysisState, AnalysisStateGuard, AnalysisStateGuardMut, BuildableDataFlowAnalysis,
@@ -17,15 +20,33 @@ impl LatticeLike for IntegerValueRange {
         match (self.range().copied(), other.range().copied()) {
             (None, None) | (Some(_), None) => self.clone(),
             (None, Some(_)) => other.clone(),
-            (Some(lhs), Some(rhs)) => Self::new(lhs.union(&rhs)),
+            (Some(lhs), Some(rhs)) => Self::with_confidence(
+                lhs.union(&rhs),
+                join_confidence(self.confidence(), other.confidence()),
+            ),
         }
     }
 
     fn meet(&self, other: &Self) -> Self {
         match (self.range().copied(), other.range().copied()) {
             (None, _) | (_, None) => Self::uninitialized(),
-            (Some(lhs), Some(rhs)) => Self::new(lhs.intersection(&rhs)),
+            (Some(lhs), Some(rhs)) => Self::with_confidence(
+                lhs.intersection(&rhs),
+                join_confidence(self.confidence(), other.confidence()),
+            ),
         }
+    }
+}
+
+fn join_confidence(
+    lhs: Option<IntegerRangeConfidence>,
+    rhs: Option<IntegerRangeConfidence>,
+) -> IntegerRangeConfidence {
+    match (lhs, rhs) {
+        (Some(IntegerRangeConfidence::Proven), Some(IntegerRangeConfidence::Proven)) => {
+            IntegerRangeConfidence::Proven
+        }
+        _ => IntegerRangeConfidence::Assumed,
     }
 }
 
@@ -44,7 +65,7 @@ impl BuildableDataFlowAnalysis for IntegerRangeAnalysis {
 }
 
 impl SparseForwardDataFlowAnalysis for IntegerRangeAnalysis {
-    type Lattice = Lattice<IntegerValueRange>;
+    type Lattice = IntegerRangeLattice;
 
     fn debug_name(&self) -> &'static str {
         "integer-range-analysis"
@@ -153,7 +174,7 @@ impl IntegerRangeAnalysis {
 /// Return the currently known integer range for `value`, if available.
 pub fn value_range(solver: &DataFlowSolver, value: ValueRef) -> Option<IntegerValueRange> {
     solver
-        .get::<Lattice<IntegerValueRange>, _>(&value)
+        .get::<IntegerRangeLattice, _>(&value)
         .map(|range| range.value().clone())
         .filter(|range| !range.is_uninitialized())
 }
@@ -192,7 +213,7 @@ fn immediate_from_attribute(attr: AttributeRef) -> Option<Immediate> {
 fn refined_result_range(
     op: &Operation,
     result: ValueRef,
-    operands: &[AnalysisStateGuard<'_, Lattice<IntegerValueRange>>],
+    operands: &[AnalysisStateGuard<'_, IntegerRangeLattice>],
 ) -> Option<IntegerValueRange> {
     let refinement = operation_result_value_range_refinement(op, result)?;
     let operand_range = op
@@ -212,7 +233,7 @@ mod tests {
     use midenc_dialect_hir::HirOpBuilder;
     use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_hir::{
-        Felt, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, pass::AnalysisManager,
+        Felt, Op, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, pass::AnalysisManager,
         testing::Test,
     };
 
@@ -236,6 +257,7 @@ mod tests {
         assert_eq!(range.smin(), 42);
         assert_eq!(range.smax(), 42);
         assert!(statically_non_negative(&solver, value));
+        assert!(value_range(&solver, value).expect("expected integer range").is_proven());
 
         Ok(())
     }
@@ -257,6 +279,7 @@ mod tests {
         assert_eq!(range.umax(), u32::MAX as u128);
         assert_eq!(range.smin(), i32::MIN as i128);
         assert_eq!(range.smax(), i32::MAX as i128);
+        assert!(value_range(&solver, asserted).expect("expected integer range").is_proven());
 
         Ok(())
     }
@@ -267,7 +290,8 @@ mod tests {
             Test::new("unrealized_conversion_cast_preserves_input_range", &[], &[Type::U32]);
         let cast = {
             let mut builder = test.function_builder();
-            let raw = builder.felt(Felt::new(u64::from(u32::MAX) + 1).unwrap(), SourceSpan::UNKNOWN);
+            let raw =
+                builder.felt(Felt::new(u64::from(u32::MAX) + 1).unwrap(), SourceSpan::UNKNOWN);
             let cast = builder.unrealized_conversion_cast(raw, Type::U32, SourceSpan::UNKNOWN)?;
             builder.ret([cast], SourceSpan::UNKNOWN)?;
             cast
@@ -421,6 +445,7 @@ mod tests {
         let range = range_for(&solver, comparison);
         assert_eq!(range.umin(), 0);
         assert_eq!(range.umax(), 1);
+        assert!(value_range(&solver, comparison).expect("expected integer range").is_proven());
 
         Ok(())
     }
@@ -441,6 +466,7 @@ mod tests {
         let range = range_for(&solver, value);
         assert_eq!(range.umin(), 0);
         assert_eq!(range.umax(), (Felt::ORDER - 1) as u128);
+        assert!(!value_range(&solver, value).expect("expected integer range").is_proven());
 
         Ok(())
     }
@@ -485,9 +511,77 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn regression_unchecked_overflow_does_not_prove_the_result_type() -> Result<(), Report> {
+        let mut test = Test::new("unchecked_overflow", &[], &[Type::U32]);
+        let sum = {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let lhs = builder.u32(u32::MAX, span);
+            let rhs = builder.u32(1, span);
+            let sum = builder.add_unchecked(lhs, rhs, span)?;
+            builder.ret([sum], span)?;
+            sum
+        };
+        let solver = run_integer_range_analysis(&test)?;
+        assert!(!value_range(&solver, sum).expect("expected integer range").is_proven());
+        Ok(())
+    }
+
+    #[test]
+    fn regression_signed_comparison_does_not_reuse_wider_signed_bounds() -> Result<(), Report> {
+        let mut test = Test::new("signed_cast_comparison", &[], &[Type::I1]);
+        let comparison = {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let lhs = builder.felt(Felt::new(u64::from(u32::MAX)).unwrap(), span);
+            let rhs = builder.felt(Felt::new(1).unwrap(), span);
+            let lhs = builder.unrealized_conversion_cast(lhs, Type::I32, span)?;
+            let rhs = builder.unrealized_conversion_cast(rhs, Type::I32, span)?;
+            let comparison = builder.lt(lhs, rhs, span)?;
+            builder.ret([comparison], span)?;
+            comparison
+        };
+        let solver = run_integer_range_analysis(&test)?;
+        // In i32, 0xffffffff is -1, so a false-only range is unsound.
+        assert_eq!(range_for(&solver, comparison).umax(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn regression_loop_ranges_converge_within_solver_budget() -> Result<(), Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::new("incrementing_loop", &[Type::I1], &[Type::U32]);
+        let loop_result = {
+            let cond = test.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+            let mut builder = test.function_builder();
+            let entry = builder.current_block();
+            let zero = builder.u32(0, span);
+            let loop_op = builder.r#while([zero], &[Type::U32], span)?;
+            let before = loop_op.borrow().before().entry().as_block_ref();
+            let after = loop_op.borrow().after().entry().as_block_ref();
+            builder.switch_to_block(before);
+            let current = before.borrow().arguments()[0].borrow().as_value_ref();
+            builder.condition(cond, [current], span)?;
+            builder.switch_to_block(after);
+            let current = after.borrow().arguments()[0].borrow().as_value_ref();
+            let one = builder.u32(1, span);
+            let next = builder.add(current, one, span)?;
+            builder.r#yield([next], span)?;
+            builder.switch_to_block(entry);
+            let result = loop_op.borrow().results()[0].borrow().as_value_ref();
+            builder.ret([result], span)?;
+            result
+        };
+        let solver = run_integer_range_analysis(&test)?;
+        assert!(range_for(&solver, loop_result).umax() >= 100);
+        Ok(())
+    }
+
     fn run_integer_range_analysis(test: &Test) -> Result<DataFlowSolver, Report> {
         let mut config = DataFlowConfig::new();
         config.set_interprocedural(true);
+        config.set_max_worklist_iterations(Some(1024));
         let mut solver = DataFlowSolver::new(config);
         solver.load::<DeadCodeAnalysis>();
         solver.load::<IntegerRangeAnalysis>();
@@ -503,7 +597,9 @@ mod tests {
     }
 
     fn assert_bool_range(solver: &DataFlowSolver, value: ValueRef, expected: bool) {
-        let range = range_for(solver, value);
+        let value_range = value_range(solver, value).expect("expected integer range");
+        assert!(value_range.is_proven());
+        let range = value_range.range().copied().expect("expected integer range");
         let expected = u128::from(expected);
         assert_eq!(range.umin(), expected);
         assert_eq!(range.umax(), expected);

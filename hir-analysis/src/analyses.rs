@@ -9,7 +9,9 @@ pub use self::{
     callable_uses::{CallableUseInfo, CallableUseSnapshot},
     constant_propagation::SparseConstantPropagation,
     dce::DeadCodeAnalysis,
-    integer_range::{ConstantIntRange, IntegerRangeAnalysis, IntegerValueRange},
+    integer_range::{
+        ConstantIntRange, IntegerRangeAnalysis, IntegerRangeConfidence, IntegerValueRange,
+    },
     liveness::LivenessAnalysis,
     loops::{LoopAction, LoopState},
 };
