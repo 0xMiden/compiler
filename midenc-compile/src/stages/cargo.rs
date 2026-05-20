@@ -408,8 +408,10 @@ pub mod support {
         }
 
         let target_type = match options.target_type {
-            None if project.library_target().is_some() => TargetType::Library,
-            None => TargetType::Executable,
+            None => project
+                .library_target()
+                .map(|target| target.ty)
+                .unwrap_or(TargetType::Executable),
             Some(target_type) => target_type,
         };
 

@@ -1,12 +1,25 @@
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
+use super::persist_cargo_miden_dependency;
 use crate::{CompilerTestBuilder, assert_helpers::assert_unique_protocol_export};
 
 #[test]
 fn counter_note() {
-    // build and check counter-note
     let config = WasmTranslationConfig::default();
+    let counter_contract_builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../../examples/counter-contract",
+        config.clone(),
+        [],
+    );
+    let mut counter_contract = counter_contract_builder.build();
+    let counter_contract_package = counter_contract.compile_package();
+    persist_cargo_miden_dependency(
+        "../../examples/counter-contract",
+        counter_contract_package.as_ref(),
+    );
+
+    // build and check counter-note
     let builder =
         CompilerTestBuilder::rust_source_cargo_miden("../../examples/counter-note", config, []);
 
