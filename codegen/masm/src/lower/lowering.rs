@@ -132,6 +132,71 @@ fn indirect_fpi_arg_layout(op: &hir::Exec) -> Result<Vec<(u32, Type)>, Report> {
     Ok(offsets.iter().copied().zip(types.iter().cloned()).collect())
 }
 
+/// Validates the operand shape for a compiler-internal indirect FPI executor call.
+fn validate_indirect_fpi_exec_operands(op: &hir::Exec) -> Result<(), Report> {
+    let arg_types = op.arguments().iter().map(|arg| arg.borrow().ty()).collect::<Vec<_>>();
+    validate_indirect_fpi_pointer_operand(&arg_types)
+}
+
+/// Validates that an indirect FPI executor call receives exactly one argument pointer.
+fn validate_indirect_fpi_pointer_operand(arg_types: &[Type]) -> Result<(), Report> {
+    if arg_types.len() != 1 {
+        return Err(Report::msg(format!(
+            "`{EXECUTE_FOREIGN_PROCEDURE_INDIRECT}` call expects exactly one canonical ABI \
+             argument pointer operand, but received {} operands",
+            arg_types.len()
+        )));
+    }
+
+    let arg_ty = &arg_types[0];
+    if arg_ty != &Type::I32 {
+        return Err(Report::msg(format!(
+            "`{EXECUTE_FOREIGN_PROCEDURE_INDIRECT}` call expects its canonical ABI argument \
+             pointer operand to have type `i32`, but received `{arg_ty}`"
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validates the load layout for a compiler-internal indirect FPI executor call.
+fn validate_indirect_fpi_arg_layout(arg_layout: &[(u32, Type)]) -> Result<(), Report> {
+    let flattened_arg_count = arg_layout.len();
+    if !(FPI_ABI_PREFIX_ARGS..=FPI_EXEC_TOTAL_INPUTS).contains(&flattened_arg_count) {
+        return Err(Report::msg(format!(
+            "`{EXECUTE_FOREIGN_PROCEDURE}` indirect lowering received {flattened_arg_count} \
+             flattened operands, but accepts between {FPI_ABI_PREFIX_ARGS} and \
+             {FPI_EXEC_TOTAL_INPUTS}"
+        )));
+    }
+
+    for (index, (byte_offset, load_ty)) in arg_layout.iter().enumerate() {
+        validate_indirect_fpi_arg_load_type(index, load_ty)?;
+        fpi_byte_offset_immediate(*byte_offset)?;
+    }
+
+    Ok(())
+}
+
+/// Validates one canonical ABI load type used by indirect FPI lowering.
+fn validate_indirect_fpi_arg_load_type(index: usize, load_ty: &Type) -> Result<(), Report> {
+    match load_ty {
+        Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::Felt => Ok(()),
+        other => Err(Report::msg(format!(
+            "`{EXECUTE_FOREIGN_PROCEDURE_INDIRECT}` argument layout entry {index} uses \
+             unsupported load type `{other}`; supported load types are i1, i8, u8, i16, u16, i32, \
+             u32, and felt"
+        ))),
+    }
+}
+
 /// Returns the protocol executor path used after expanding an indirect FPI argument tuple.
 fn execute_foreign_procedure_path() -> SymbolPath {
     SymbolPath::from_iter([
@@ -289,15 +354,10 @@ fn emit_execute_foreign_procedure_indirect(
     op: &hir::Exec,
     emitter: &mut BlockEmitter<'_>,
 ) -> Result<(), Report> {
+    validate_indirect_fpi_exec_operands(op)?;
     let arg_layout = indirect_fpi_arg_layout(op)?;
+    validate_indirect_fpi_arg_layout(&arg_layout)?;
     let flattened_arg_count = arg_layout.len();
-    if !(FPI_ABI_PREFIX_ARGS..=FPI_EXEC_TOTAL_INPUTS).contains(&flattened_arg_count) {
-        return Err(Report::msg(format!(
-            "`{EXECUTE_FOREIGN_PROCEDURE}` indirect lowering received {flattened_arg_count} \
-             flattened operands, but accepts between {FPI_ABI_PREFIX_ARGS} and \
-             {FPI_EXEC_TOTAL_INPUTS}"
-        )));
-    }
 
     let span = op.span();
     let padding = FPI_EXEC_TOTAL_INPUTS - flattened_arg_count;
@@ -1977,5 +2037,37 @@ mod tests {
         let message = err.to_string();
 
         assert!(message.contains("does not fit in i32"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn indirect_fpi_pointer_operand_rejects_wrong_arity() {
+        let err = validate_indirect_fpi_pointer_operand(&[])
+            .expect_err("indirect FPI calls must receive one pointer operand");
+        let message = err.to_string();
+
+        assert!(message.contains("exactly one"), "unexpected error: {message}");
+        assert!(message.contains("0 operands"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn indirect_fpi_pointer_operand_rejects_non_i32_type() {
+        let err = validate_indirect_fpi_pointer_operand(&[Type::Felt])
+            .expect_err("indirect FPI pointers must be wasm i32 values");
+        let message = err.to_string();
+
+        assert!(message.contains("type `i32`"), "unexpected error: {message}");
+        assert!(message.contains("felt"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn indirect_fpi_arg_layout_rejects_unsupported_load_type() {
+        let mut layout = vec![(0, Type::Felt); FPI_ABI_PREFIX_ARGS];
+        layout[2] = (8, Type::U64);
+
+        let err = validate_indirect_fpi_arg_layout(&layout)
+            .expect_err("indirect FPI layout must reject multi-felt load types");
+        let message = err.to_string();
+
+        assert!(message.contains("unsupported load type `u64`"), "unexpected error: {message}");
     }
 }

@@ -8,10 +8,11 @@ use midenc_hir::{
     },
     interner::symbols,
 };
+use midenc_session::diagnostics::Report;
 
 use super::{stdlib, tx_kernel};
 use crate::{
-    FPI_FLATTENED_ARG_OFFSETS_ATTR, FPI_FLATTENED_ARG_TYPES_ATTR,
+    FPI_FLATTENED_ARG_OFFSETS_ATTR, FPI_FLATTENED_ARG_TYPES_ATTR, error::WasmResult,
     module::function_builder_ext::FunctionBuilderExt,
 };
 
@@ -268,7 +269,7 @@ pub fn transform_miden_abi_call<B: ?Sized + Builder>(
     import_path: &SymbolPath,
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt<'_, B>,
-) -> Vec<ValueRef> {
+) -> WasmResult<Vec<ValueRef>> {
     use TransformStrategy::*;
     match get_transform_strategy(import_path) {
         Some(ListReturn) => list_return(import_func_ref, args, builder),
@@ -277,7 +278,7 @@ pub fn transform_miden_abi_call<B: ?Sized + Builder>(
             fpi_indirect_return_via_pointer(import_func_ref, args, builder)
         }
         Some(NoTransform) => no_transform(import_func_ref, args, builder),
-        None => panic!("no transform strategy implemented for '{import_path}'"),
+        None => Err(Report::msg(format!("no transform strategy implemented for '{import_path}'"))),
     }
 }
 
@@ -287,18 +288,16 @@ pub fn no_transform<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt<'_, B>,
-) -> Vec<ValueRef> {
+) -> WasmResult<Vec<ValueRef>> {
     let span = import_func_ref.borrow().name().span;
     let signature = import_func_ref.borrow().get_signature().clone();
-    let exec = builder
-        .exec(import_func_ref, signature, args.to_vec(), span)
-        .expect("failed to build an exec op in no_transform strategy");
+    let exec = builder.exec(import_func_ref, signature, args.to_vec(), span)?;
 
     let borrow = exec.borrow();
     let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
-    results
+    Ok(results)
 }
 
 /// The Miden ABI function returns a length and a pointer and we only want the length
@@ -306,21 +305,25 @@ pub fn list_return<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt<'_, B>,
-) -> Vec<ValueRef> {
+) -> WasmResult<Vec<ValueRef>> {
     let span = import_func_ref.borrow().name().span;
     let signature = import_func_ref.borrow().get_signature().clone();
-    let exec = builder
-        .exec(import_func_ref, signature, args.to_vec(), span)
-        .expect("failed to build an exec op in list_return strategy");
+    let exec = builder.exec(import_func_ref, signature, args.to_vec(), span)?;
 
     let borrow = exec.borrow();
     let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
-    assert_eq!(results.len(), 2, "List return strategy expects 2 results: length and pointer");
+    if results.len() != 2 {
+        return Err(Report::msg(format!(
+            "list return strategy expects 2 results, length and pointer, but received {}",
+            results.len()
+        )));
+    }
+
     // Return the first result (length) only
-    results[0..1].to_vec()
+    Ok(results[0..1].to_vec())
 }
 
 /// The Miden ABI function returns felts on the stack and we want to return via a pointer argument
@@ -328,24 +331,24 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt<'_, B>,
-) -> Vec<ValueRef> {
+) -> WasmResult<Vec<ValueRef>> {
     let span = import_func_ref.borrow().name().span;
-    // Omit the last argument (pointer)
-    let args_wo_pointer = &args[0..args.len() - 1];
+    let Some((ptr_arg, args_wo_pointer)) = args.split_last() else {
+        return Err(Report::msg(
+            "return-via-pointer strategy expects a trailing output pointer argument",
+        ));
+    };
     let signature = import_func_ref.borrow().get_signature().clone();
-    let exec = builder
-        .exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)
-        .expect("failed to build an exec op in return_via_pointer strategy");
+    let exec = builder.exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)?;
 
     let borrow = exec.borrow();
     let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
-    let ptr_arg = *args.last().expect("empty args");
-    store_results_to_pointer(&results, ptr_arg, builder, span);
+    store_results_to_pointer(&results, *ptr_arg, builder, span)?;
 
-    Vec::new()
+    Ok(Vec::new())
 }
 
 /// The indirect FPI executor returns felts on the stack and needs its input layout attributes set.
@@ -353,19 +356,22 @@ pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt<'_, B>,
-) -> Vec<ValueRef> {
+) -> WasmResult<Vec<ValueRef>> {
     let span = import_func_ref.borrow().name().span;
-    // Omit the last argument (pointer)
-    let args_wo_pointer = &args[0..args.len() - 1];
-    assert_eq!(
-        args_wo_pointer.len(),
-        1,
-        "indirect FPI return strategy expects exactly one input tuple pointer"
-    );
+    let Some((ptr_arg, args_wo_pointer)) = args.split_last() else {
+        return Err(Report::msg(
+            "indirect FPI return strategy expects one input tuple pointer and one output pointer",
+        ));
+    };
+    if args_wo_pointer.len() != 1 {
+        return Err(Report::msg(format!(
+            "indirect FPI return strategy expects exactly one input tuple pointer before the \
+             output pointer, but received {} input operands",
+            args_wo_pointer.len()
+        )));
+    }
     let signature = import_func_ref.borrow().get_signature().clone();
-    let mut exec = builder
-        .exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)
-        .expect("failed to build an exec op in fpi_indirect_return_via_pointer strategy");
+    let mut exec = builder.exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)?;
     let context = import_func_ref.borrow().as_operation().context_rc();
     let offsets_attr = context.create_attribute::<U32ArrayAttr, _>(
         (0..RAW_FPI_FLATTENED_ARG_COUNT).map(|index| index * 4).collect::<Vec<_>>(),
@@ -380,10 +386,9 @@ pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
-    let ptr_arg = *args.last().expect("empty args");
-    store_results_to_pointer(&results, ptr_arg, builder, span);
+    store_results_to_pointer(&results, *ptr_arg, builder, span)?;
 
-    Vec::new()
+    Ok(Vec::new())
 }
 
 /// Stores flattened stack results into the Rust return pointer used by linker stubs.
@@ -392,10 +397,16 @@ fn store_results_to_pointer<B: ?Sized + Builder>(
     ptr_arg: ValueRef,
     builder: &mut FunctionBuilderExt<'_, B>,
     span: midenc_hir::SourceSpan,
-) {
+) -> WasmResult<()> {
     let ptr_arg_ty = ptr_arg.borrow().ty().clone();
-    assert_eq!(ptr_arg_ty, Type::I32);
-    let ptr_u32 = builder.bitcast(ptr_arg, Type::U32, span).expect("failed bitcast to U32");
+    if ptr_arg_ty != Type::I32 {
+        return Err(Report::msg(format!(
+            "return-via-pointer strategy expects an `i32` output pointer argument, but received \
+             `{ptr_arg_ty}`"
+        )));
+    }
+
+    let ptr_u32 = builder.bitcast(ptr_arg, Type::U32, span)?;
 
     let result_ty = midenc_hir::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone()));
     for (idx, value) in results.iter().enumerate() {
@@ -406,11 +417,11 @@ fn store_results_to_pointer<B: ?Sized + Builder>(
         } else {
             let imm = Immediate::U32(result_ty.get(idx).offset);
             let imm_val = builder.imm(imm, span);
-            builder.add(ptr_u32, imm_val, span).expect("failed add")
+            builder.add(ptr_u32, imm_val, span)?
         };
-        let addr = builder
-            .inttoptr(eff_ptr, Type::from(PointerType::new(value_ty)), span)
-            .expect("failed inttoptr");
-        builder.store(addr, *value, span).expect("failed store");
+        let addr = builder.inttoptr(eff_ptr, Type::from(PointerType::new(value_ty)), span)?;
+        builder.store(addr, *value, span)?;
     }
+
+    Ok(())
 }

@@ -151,7 +151,7 @@ pub fn maybe_lower_linker_stub(
         let import_func_ref = import_module_builder
             .define_function(import_path.name().into(), Visibility::Public, import_sig)
             .wrap_err("failed to create MASM import function ref")?;
-        transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)
+        transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)?
     };
 
     // Return
