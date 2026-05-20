@@ -215,7 +215,7 @@ pub(crate) fn write_world_block(
     });
 }
 
-/// Collects dependency metadata needed for typed FPI imports.
+/// Collects dependency metadata needed for SDK-generated dependency imports.
 fn collect_miden_dependencies(
     manifest_dir: &Path,
     package: &miden_project::Package,
@@ -243,12 +243,7 @@ fn collect_miden_dependencies(
                 let dependency_wit = parse_dependency_wit(&wit_root).map_err(|msg| {
                     syn::Error::new(
                         error_span,
-                        format!(
-                            "failed to process typed FPI WIT metadata for dependency '{}' from \
-                             '{}': {msg}",
-                            dependency.name(),
-                            wit_root.display()
-                        ),
+                        dependency_wit_error_message(dependency, &dependency_root, &wit_root, &msg),
                     )
                 })?;
 
@@ -294,12 +289,7 @@ fn dependency_wit_root(
                 ),
             )
         })?;
-        return canonicalize_manifest_path(
-            manifest_dir,
-            wit_path,
-            error_span,
-            &format!("dependency '{}' WIT path", dependency.name()),
-        );
+        return canonicalize_dependency_wit_path(manifest_dir, dependency, wit_path, error_span);
     }
 
     if dependency_root.is_file() {
@@ -307,7 +297,7 @@ fn dependency_wit_root(
             error_span,
             format!(
                 "dependency '{}' points to file '{}', which can be used as a `.masp` package \
-                 artifact but cannot supply typed FPI WIT metadata; add a matching \
+                 artifact but cannot supply dependency WIT metadata; add a matching \
                  package.metadata.miden.dependencies entry with a `wit` path to the dependency's \
                  generated WIT",
                 dependency.name(),
@@ -319,12 +309,12 @@ fn dependency_wit_root(
     Ok(dependency_root.to_path_buf())
 }
 
-/// Resolves a path from manifest metadata relative to `manifest_dir`.
-fn canonicalize_manifest_path(
+/// Resolves an explicit dependency WIT path from manifest metadata.
+fn canonicalize_dependency_wit_path(
     manifest_dir: &Path,
+    dependency: &miden_project::Dependency,
     path: &str,
     error_span: Span,
-    label: &str,
 ) -> Result<PathBuf, syn::Error> {
     let raw_path = Path::new(path);
     let absolute_path = if raw_path.is_absolute() {
@@ -335,7 +325,16 @@ fn canonicalize_manifest_path(
     fs::canonicalize(&absolute_path).map_err(|err| {
         syn::Error::new(
             error_span,
-            format!("failed to canonicalize {label} '{}': {err}", absolute_path.display()),
+            format!(
+                "failed to resolve dependency WIT metadata for dependency '{}' from \
+                 package.metadata.miden.dependencies.{}.wit = '{}': '{}': {err}. The SDK macro \
+                 needs the dependency's generated WIT file or directory during Rust macro \
+                 expansion; generate the dependency WIT or update the `wit` path.",
+                dependency.name(),
+                dependency.name(),
+                path,
+                absolute_path.display()
+            ),
         )
     })
 }
@@ -348,10 +347,7 @@ fn parse_dependency_wit(root: &Path) -> Result<DependencyWit, String> {
         });
     }
 
-    let direct_wit_dir = root.to_path_buf();
-    let default_wit_dir = root.join("wit");
-    let generated_wit_dir = root.join("target/generated-wit");
-    let wit_dirs = [direct_wit_dir, default_wit_dir, generated_wit_dir];
+    let wit_dirs = dependency_wit_candidate_paths(root);
     for wit_dir in &wit_dirs {
         if !wit_dir.exists() {
             continue;
@@ -382,7 +378,42 @@ fn parse_dependency_wit(root: &Path) -> Result<DependencyWit, String> {
         }
     }
 
-    Err(format!("no WIT world definition found in directories '{wit_dirs:?}'"))
+    Err("no WIT world definition found".to_string())
+}
+
+/// Returns the WIT paths searched for generated dependency metadata.
+fn dependency_wit_candidate_paths(root: &Path) -> Vec<PathBuf> {
+    if root.is_file() {
+        vec![root.to_path_buf()]
+    } else {
+        vec![root.to_path_buf(), root.join("wit"), root.join("target/generated-wit")]
+    }
+}
+
+/// Formats the dependency WIT diagnostic emitted by SDK macros.
+fn dependency_wit_error_message(
+    dependency: &miden_project::Dependency,
+    dependency_root: &Path,
+    wit_root: &Path,
+    details: &str,
+) -> String {
+    let candidates = dependency_wit_candidate_paths(wit_root)
+        .into_iter()
+        .map(|path| format!("'{}'", path.display()))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!(
+        "failed to load dependency WIT metadata for dependency '{}' (dependency root '{}', WIT \
+         root '{}'): {details}. The SDK macro needs the dependency's generated WIT during Rust \
+         macro expansion to construct dependency imports. Searched for WIT world definitions in: \
+         {candidates}. Generate the dependency WIT by compiling the dependency component, or set \
+         package.metadata.miden.dependencies.{}.wit to the generated WIT file or directory.",
+        dependency.name(),
+        dependency_root.display(),
+        wit_root.display(),
+        dependency.name()
+    )
 }
 
 /// WIT package identifier plus exported world entries extracted from a dependency.
@@ -526,6 +557,16 @@ world basic-wallet-world {
         root
     }
 
+    fn empty_fixture_root() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time must be after unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("miden-base-macros-empty-wit-world-{unique}"));
+        fs::create_dir_all(&root).expect("empty fixture directory must be created");
+        root
+    }
+
     fn package_with_dependency(
         package_path: PathBuf,
         wit_path: Option<PathBuf>,
@@ -650,6 +691,78 @@ world basic-wallet-world {
     }
 
     #[test]
+    fn missing_dependency_wit_reports_actionable_sdk_macro_error() {
+        let fixture_root = empty_fixture_root();
+        let dependency_root = fixture_root.join("basic-wallet");
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        let package = package_with_dependency(dependency_root, None);
+
+        let error =
+            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
+                .expect_err("dependency without generated WIT must fail dependency metadata load");
+        let message = error.to_string();
+
+        assert!(
+            message
+                .contains("failed to load dependency WIT metadata for dependency 'basic-wallet'"),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains("The SDK macro needs the dependency's generated WIT"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("target/generated-wit"), "unexpected error: {message}");
+        assert!(
+            message.contains("package.metadata.miden.dependencies.basic-wallet.wit"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("Generate the dependency WIT"), "unexpected error: {message}");
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn missing_explicit_dependency_wit_reports_actionable_sdk_macro_error() {
+        let fixture_root = empty_fixture_root();
+        let dependency_root = fixture_root.join("basic-wallet");
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        let package = package_with_dependency(
+            dependency_root,
+            Some(PathBuf::from("target/generated-wit/missing.wit")),
+        );
+
+        let error =
+            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
+                .expect_err(
+                    "missing explicit dependency WIT path must fail dependency metadata load",
+                );
+        let message = error.to_string();
+
+        assert!(
+            message.contains(
+                "failed to resolve dependency WIT metadata for dependency 'basic-wallet'"
+            ),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains("package.metadata.miden.dependencies.basic-wallet.wit"),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains("target/generated-wit/missing.wit"),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message
+                .contains("The SDK macro needs the dependency's generated WIT file or directory"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("update the `wit` path"), "unexpected error: {message}");
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
     fn miden_file_dependency_without_project_wit_reports_typed_fpi_error() {
         let fixture_root = basic_wallet_fixture_root();
         let package_path = fixture_root.join("target/release/basic_wallet.masp");
@@ -661,7 +774,7 @@ world basic-wallet-world {
 
         let error =
             collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .expect_err("artifact-only dependency must not provide typed FPI metadata");
+                .expect_err("artifact-only dependency must not provide dependency WIT metadata");
         let message = error.to_string();
 
         assert!(message.contains("points to file"), "unexpected error: {message}");
@@ -669,7 +782,7 @@ world basic-wallet-world {
             message.contains("package.metadata.miden.dependencies"),
             "unexpected error: {message}"
         );
-        assert!(message.contains("typed FPI WIT metadata"), "unexpected error: {message}");
+        assert!(message.contains("dependency WIT metadata"), "unexpected error: {message}");
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
