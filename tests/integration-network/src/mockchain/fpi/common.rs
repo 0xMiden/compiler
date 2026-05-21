@@ -54,6 +54,81 @@ pub(super) fn build_fpi_test_packages(
     (counter_package, caller_note_package, counter_storage_slot)
 }
 
+/// Builds two isolated account projects and one note project for an FPI test case.
+pub(super) fn build_multi_package_fpi_test_packages(
+    test_name: &str,
+    first_account_source: &str,
+    second_account_source: &str,
+    caller_source: &str,
+) -> (Arc<Package>, Arc<Package>, Arc<Package>, StorageSlotName, StorageSlotName) {
+    let names = FpiMultiPackageProjectNames::new(test_name);
+    let first_storage_slot = counter_storage_slot_name_for_package(&names.first_account_package);
+    let second_storage_slot = counter_storage_slot_name_for_package(&names.second_account_package);
+
+    let first_account_project = project(&names.first_account_name)
+        .file(
+            "miden-project.toml",
+            &account_miden_project_toml_for(
+                &names.first_account_name,
+                &names.first_account_package,
+            ),
+        )
+        .file(
+            "Cargo.toml",
+            &account_cargo_toml_for(&names.first_account_name, &names.first_account_package),
+        )
+        .file("src/lib.rs", first_account_source)
+        .build();
+    let first_account_package = compile_rust_package(first_account_project.root(), true);
+
+    let second_account_project = project(&names.second_account_name)
+        .file(
+            "miden-project.toml",
+            &account_miden_project_toml_for(
+                &names.second_account_name,
+                &names.second_account_package,
+            ),
+        )
+        .file(
+            "Cargo.toml",
+            &account_cargo_toml_for(&names.second_account_name, &names.second_account_package),
+        )
+        .file("src/lib.rs", second_account_source)
+        .build();
+    let second_account_package = compile_rust_package(second_account_project.root(), true);
+
+    let first_account_root = first_account_project.root();
+    let second_account_root = second_account_project.root();
+    let dependencies = [
+        (names.first_account_package.as_str(), first_account_root.as_path()),
+        (names.second_account_package.as_str(), second_account_root.as_path()),
+    ];
+    let note_project = project(&names.note_name)
+        .file(
+            "miden-project.toml",
+            &note_miden_project_toml_for_dependencies(
+                &names.note_name,
+                &names.note_package,
+                &dependencies,
+            ),
+        )
+        .file(
+            "Cargo.toml",
+            &note_cargo_toml_for_dependencies(&names.note_name, &names.note_package, &dependencies),
+        )
+        .file("src/lib.rs", caller_source)
+        .build();
+    let caller_note_package = compile_rust_package(note_project.root(), true);
+
+    (
+        first_account_package,
+        second_account_package,
+        caller_note_package,
+        first_storage_slot,
+        second_storage_slot,
+    )
+}
+
 /// Builds isolated callee account, caller account, and note projects for an account-to-account FPI
 /// test case.
 pub(super) fn build_account_to_account_fpi_test_packages(
@@ -151,6 +226,38 @@ impl FpiTestProjectNames {
             account_name,
             note_name,
             account_package,
+            note_package,
+        }
+    }
+}
+
+/// Names derived from a test function for two generated account projects and one note project.
+struct FpiMultiPackageProjectNames {
+    first_account_name: String,
+    second_account_name: String,
+    note_name: String,
+    first_account_package: String,
+    second_account_package: String,
+    note_package: String,
+}
+
+impl FpiMultiPackageProjectNames {
+    /// Builds Cargo crate names, WIT package names, and project paths from `test_name`.
+    fn new(test_name: &str) -> Self {
+        let name = test_name.replace('_', "-");
+        let first_account_name = format!("{name}-first-account");
+        let second_account_name = format!("{name}-second-account");
+        let note_name = format!("{name}-note");
+        let first_account_package = format!("miden:{first_account_name}");
+        let second_account_package = format!("miden:{second_account_name}");
+        let note_package = format!("miden:{note_name}");
+
+        Self {
+            first_account_name,
+            second_account_name,
+            note_name,
+            first_account_package,
+            second_account_package,
             note_package,
         }
     }
@@ -460,6 +567,19 @@ fn note_miden_project_toml_for_dependency(
     dependency_package: &str,
     dependency_root: &Path,
 ) -> String {
+    note_miden_project_toml_for_dependencies(
+        note_name,
+        note_package,
+        &[(dependency_package, dependency_root)],
+    )
+}
+
+/// Returns the generated note project manifest with Miden dependencies.
+fn note_miden_project_toml_for_dependencies(
+    note_name: &str,
+    note_package: &str,
+    dependencies: &[(&str, &Path)],
+) -> String {
     let namespace = miden_project_namespace(note_package, note_name);
     let mut manifest = format!(
         r#"
@@ -476,28 +596,72 @@ miden-core = "*"
 miden-protocol = "*"
 "#
     );
-    append_miden_project_dependency(&mut manifest, dependency_package, dependency_root);
+    append_miden_project_dependencies(&mut manifest, dependencies);
     manifest
 }
 
-/// Appends one path dependency and WIT mapping to a generated Miden project manifest.
-fn append_miden_project_dependency(
-    manifest: &mut String,
-    dependency_package: &str,
-    dependency_root: &Path,
-) {
-    let dependency_name = miden_dependency_name(dependency_package);
-    let dependency_wit_path = dependency_root.join("target/generated-wit");
-    manifest.push_str(&format!(
-        r#"
+/// Appends path dependencies and WIT mappings to a generated Miden project manifest.
+fn append_miden_project_dependencies(manifest: &mut String, dependencies: &[(&str, &Path)]) {
+    for (dependency_package, dependency_root) in dependencies {
+        let dependency_name = miden_dependency_name(dependency_package);
+        manifest.push_str(&format!(
+            r#"
 "{dependency_name}" = {{ path = "{dependency_root}" }}
+"#,
+            dependency_root = dependency_root.display(),
+        ));
+    }
 
+    manifest.push_str(
+        r#"
 [package.metadata.miden.dependencies]
+"#,
+    );
+
+    for (dependency_package, dependency_root) in dependencies {
+        let dependency_name = miden_dependency_name(dependency_package);
+        let dependency_wit_path = dependency_root.join("target/generated-wit");
+        manifest.push_str(&format!(
+            r#"
 "{dependency_name}" = {{ wit = "{dependency_wit_path}" }}
 "#,
-        dependency_root = dependency_root.display(),
-        dependency_wit_path = dependency_wit_path.display(),
-    ));
+            dependency_wit_path = dependency_wit_path.display(),
+        ));
+    }
+}
+
+/// Appends package metadata for dependencies to a generated Cargo manifest.
+fn append_cargo_dependency_metadata(manifest: &mut String, dependencies: &[(&str, &Path)]) {
+    manifest.push_str(
+        r#"
+[package.metadata.miden.dependencies]
+"#,
+    );
+    for (dependency_package, dependency_root) in dependencies {
+        manifest.push_str(&format!(
+            r#"
+"{dependency_package}" = {{ path = "{dependency_root}" }}
+"#,
+            dependency_package = dependency_package,
+            dependency_root = dependency_root.display(),
+        ));
+    }
+
+    manifest.push_str(
+        r#"
+[package.metadata.component.target.dependencies]
+"#,
+    );
+    for (dependency_package, dependency_root) in dependencies {
+        let dependency_wit_path = dependency_root.join("target/generated-wit");
+        manifest.push_str(&format!(
+            r#"
+"{dependency_package}" = {{ path = "{dependency_wit_path}" }}
+"#,
+            dependency_package = dependency_package,
+            dependency_wit_path = dependency_wit_path.display(),
+        ));
+    }
 }
 
 /// Returns the package-local dependency name accepted by `miden-project.toml`.
@@ -523,10 +687,22 @@ fn note_cargo_toml_for_dependency(
     dependency_package: &str,
     dependency_root: &Path,
 ) -> String {
-    let sdk_path = sdk_crate_path();
-    let dependency_wit_path = dependency_root.join("target/generated-wit");
+    note_cargo_toml_for_dependencies(
+        note_name,
+        note_package,
+        &[(dependency_package, dependency_root)],
+    )
+}
 
-    format!(
+/// Returns the generated note manifest with Miden dependencies.
+fn note_cargo_toml_for_dependencies(
+    note_name: &str,
+    note_package: &str,
+    dependencies: &[(&str, &Path)],
+) -> String {
+    let sdk_path = sdk_crate_path();
+
+    let mut manifest = format!(
         r#"
 [package]
 name = "{note_name}"
@@ -546,12 +722,6 @@ project-kind = "note-script"
 [package.metadata.component]
 package = "{note_package}"
 
-[package.metadata.miden.dependencies]
-"{dependency_package}" = {{ path = "{dependency_root}" }}
-
-[package.metadata.component.target.dependencies]
-"{dependency_package}" = {{ path = "{dependency_wit_path}" }}
-
 [profile.release]
 opt-level = "z"
 panic = "abort"
@@ -565,12 +735,11 @@ overflow-checks = false
 debug = false
 "#,
         sdk_path = sdk_path.display(),
-        dependency_package = dependency_package,
         note_name = note_name,
         note_package = note_package,
-        dependency_root = dependency_root.display(),
-        dependency_wit_path = dependency_wit_path.display(),
-    )
+    );
+    append_cargo_dependency_metadata(&mut manifest, dependencies);
+    manifest
 }
 
 /// Asserts the counter value stored in the counter contract's storage map at `storage_key`.
